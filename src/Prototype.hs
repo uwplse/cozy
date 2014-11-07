@@ -34,10 +34,21 @@ data Plan =
 -- Data structures
 data DataStructure =
     Ty | -- the type over which the query computes, e.g. "Record"
+    Empty | -- an empty collection
     HashMap Field DataStructure |
     SortedList Field DataStructure |
     UnsortedList DataStructure |
     Pair DataStructure DataStructure
+    deriving (Show)
+
+-- Cost model
+data Cost =
+    N | -- total number of elements in the structure
+    Factor Rational |
+    Log Cost |
+    Times Cost Cost |
+    Plus Cost Cost |
+    Max Cost Cost
     deriving (Show)
 
 -- For a given plan, extract the data structure necessary to execute it.
@@ -52,6 +63,7 @@ structureFor p = helper p Ty
         mkPoly x = x
 
         helper All                    base = base
+        helper None                   base = Empty
         helper (HashLookup f v)       base = HashMap f (mkPoly base)
         helper (BinarySearch f cmp v) base = SortedList f base
         helper (Filter p _)           base = helper p base
@@ -81,6 +93,19 @@ answersQuery p q = postCond p `implies` q
         postCond (SubPlan p1 p2) = And (postCond p1) (postCond p2)
         postCond (Intersect p1 p2) = And (postCond p1) (postCond p2)
 
+-- Estimate how long a plan takes to execute.
+-- Our overall goal is to find a plan that minimizes this.
+cost :: Plan -> Cost
+cost p = helper p N
+    where
+        helper All base = base
+        helper None base = Factor 0
+        helper (HashLookup _ _) base = Factor 1
+        helper (BinarySearch _ _ _) base = Log base
+        helper (Filter p _) base = helper p base
+        helper (SubPlan p1 p2) base = Plus (helper p1 base) (helper p2 (Times base (Factor 0.5)))
+        helper (Intersect p1 p2) base = Max (helper p1 base) (helper p2 base)
+
 query = And (Cmp "age" Gt "x") (Cmp "name" Eq "y")
 plan1 = Intersect (BinarySearch "age" Gt "x") (HashLookup "name" "y")
 plan2 = SubPlan (HashLookup "name" "y") (BinarySearch "age" Gt "x")
@@ -93,12 +118,16 @@ main = do
     putStrLn $ "Plan 1:   " ++ show plan1
     putStrLn $ "    -->   structure -> " ++ show (structureFor plan1)
     putStrLn $ "    -->   valid? " ++ show (plan1 `answersQuery` query)
+    putStrLn $ "    -->   cost = " ++ show (cost plan1)
     putStrLn $ "Plan 2:   " ++ show plan2
     putStrLn $ "    -->   structure -> " ++ show (structureFor plan2)
     putStrLn $ "    -->   valid? " ++ show (plan2 `answersQuery` query)
+    putStrLn $ "    -->   cost = " ++ show (cost plan2)
     putStrLn $ "Plan 3:   " ++ show plan3
     putStrLn $ "    -->   structure -> " ++ show (structureFor plan3)
     putStrLn $ "    -->   valid? " ++ show (plan3 `answersQuery` query)
+    putStrLn $ "    -->   cost = " ++ show (cost plan3)
     putStrLn $ "Plan 4:   " ++ show plan4
     putStrLn $ "    -->   structure -> " ++ show (structureFor plan4)
     putStrLn $ "    -->   valid? " ++ show (plan4 `answersQuery` query)
+    putStrLn $ "    -->   cost = " ++ show (cost plan4)
