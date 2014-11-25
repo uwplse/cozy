@@ -1,121 +1,155 @@
 ; Translation of Haskell into SMT so Z3 can generate instances of Plan
+(set-logic UF)
 
 ; Query specific
 (declare-datatypes () ((QueryVar x y)))
+
 (declare-datatypes () ((Field Age Name)))
 
-(declare-datatypes () ((Comparison Eq Gt)))
+(declare-datatypes () ((Comparison Eq Gt Ge Lt Le)))
+
 (declare-datatypes () ((Query
     TrueQuery
     FalseQuery
     (Cmp (cmpField Field) (cmpOp Comparison) (cmpVar QueryVar))
-    (And (left Query) (right Query))
+    (And (andLeft Query) (andRight Query))
+    (Or (orLeft Query) (orRight Query))
+    (Not (notQ Query))
 )))
-;(declare-sort Query 0)
-;(declare-fun queryContains (Query Query) bool)
-;(assert (forall ((q Query) (r Query))
-    ;(or (not (= q r)) (queryContains q r))
-;))
-;(assert (forall ((q Query) (r Query))
-    ;(or (not (is-And r)) (and (queryContains q (left r)) (queryContains q (right r))))
-;))
-;(assert (forall ((q Query) (r Query))
-    ;(iff
-        ;(queryContains q r)
-        ;(or
-            ;(= q r)
-            ;(and (is-And r) (or (queryContains q (left r)) (queryContains q (right r))))
-;))))
-; Needle and Haystack
-(define-fun queryContainsBot ((n Query) (h Query)) bool
-    (= n h)
-)
-(define-fun queryContains1 ((n Query) (h Query)) bool
-    (or
-        (= n h)
-        (and (is-And h) (or (queryContainsBot n (left h)) (queryContainsBot n (right h))))
-))
-(define-fun queryContains ((n Query) (h Query)) bool
-    (or
-        (= n h)
-        (and (is-And h) (or (queryContains1 n (left h)) (queryContains1 n (right h))))
-))
-
-; check if a --> q (actually want a <--> q?)
-(define-fun impliesBot ((a Query) (q Query)) bool
-    (queryContains q a)
-)
-(define-fun implies1 ((a Query) (q Query)) bool
-    (or
-        (queryContains q a)
-        (and (is-And q) (and (impliesBot a (left q)) (impliesBot a (right q))))
-))
-(define-fun impliesQuery ((a Query) (q Query)) bool
-    (or
-        (queryContains q a)
-        (and (is-And q) (and (implies1 a (left q)) (implies1 a (right q))))
-))
-
-;(define-fun And ((q Query) (r Query)))
 
 (declare-datatypes () ((Plan
     All
     None
-    (HashLookup (hashField Field) (hashVar QueryVar))
-    (BinarySearch (bsField Field) (bsOp Comparison) (bsVar QueryVar))
+    (HashLookup (hashPlan Plan) (hashField Field) (hashVar QueryVar))
+    (BinarySearch (bsPlan Plan) (bsField Field) (bsOp Comparison) (bsVar QueryVar))
     (Filter (filterPlan Plan) (filterQuery Query))
-    (SubPlan (outerPlan Plan) (innerPlan Plan))
     (Intersect (isectFirstPlan Plan) (isectSecondPlan Plan))
+    (Union (uFirstPlan Plan) (uSecondPlan Plan))
 )))
 
-; Query specific
-; Query (define-fun defines constants; declare-const defines variables)
-(define-fun query () Query (And (Cmp Age Gt x) (Cmp Name Eq y)))
+; Can a plan produce a list sorted by the given field?
+(define-fun isSortedBy ((p Plan) (f Field)) Bool
+    (ite (is-All p) true
+    (ite (is-None p) true
+    (ite (is-BinarySearch p) (= (bsField p) f)
+    (ite (is-HashLookup p) true
+    false)))))
+
+; Is the plan well-formed?
+(define-fun planWf1 ((p Plan)) Bool (or (= p All) (= p None)))
+(define-fun planWf2 ((p Plan)) Bool
+    (and
+    (=> (is-HashLookup p) (and (planWf1 (hashPlan p)) (or (is-All (hashPlan p)) (is-HashLookup (hashPlan p)))))
+    (=> (is-BinarySearch p) (and (planWf1 (bsPlan p)) (isSortedBy (bsPlan p) (bsField p))))
+    (=> (is-Filter p) (planWf1 (filterPlan p)))
+    (=> (is-Intersect p) (and (planWf1 (isectFirstPlan p)) (planWf1 (isectSecondPlan p))))
+    (=> (is-Union p) (and (planWf1 (uFirstPlan p)) (planWf1 (uSecondPlan p))))
+    ))
+(define-fun planWf3 ((p Plan)) Bool
+    (and
+    (=> (is-HashLookup p) (and (planWf2 (hashPlan p)) (or (is-All (hashPlan p)) (is-HashLookup (hashPlan p)))))
+    (=> (is-BinarySearch p) (and (planWf2 (bsPlan p)) (isSortedBy (bsPlan p) (bsField p))))
+    (=> (is-Filter p) (planWf2 (filterPlan p)))
+    (=> (is-Intersect p) (and (planWf2 (isectFirstPlan p)) (planWf2 (isectSecondPlan p))))
+    (=> (is-Union p) (and (planWf2 (uFirstPlan p)) (planWf2 (uSecondPlan p))))
+    ))
+(define-fun planWf ((p Plan)) Bool (planWf3 p))
+
+; The type of values in our system
+; (TODO: Prove that this three-value system is equivalent to real arithmetic
+; for our purposes.)
+(declare-datatypes () ((Val lo mid hi)))
+
+; Does a comparison hold?
+(define-fun val-gt ((a Val) (b Val)) Bool
+    (and
+    (=> (= a hi)  (not (= b hi)))
+    (=> (= a mid) (= b lo))
+    (=> (= a lo)  false)
+    ))
+(define-fun cmpDenote ((cmp Comparison) (a Val) (b Val)) Bool
+    (and
+    (=> (= cmp Eq) (= a b))
+    (=> (= cmp Gt) (val-gt a b))
+    (=> (= cmp Ge) (or (= a b) (val-gt a b)))
+    (=> (= cmp Lt) (not (or (= a b) (val-gt a b))))
+    (=> (= cmp Le) (not (val-gt a b)))
+    ))
+
+; Select the right field value
+(define-fun get-field ((f Field) (ageVal Val) (nameVal Val)) Val
+    (ite (= f Age) ageVal nameVal))
+
+; Select the right query var value
+(define-fun get-queryvar ((qv QueryVar) (xVal Val) (yVal Val)) Val
+    (ite (= qv x) xVal yVal))
+
+; Does a query return true for a concrete (age, name) record?
+(define-fun queryDenote1 ((q Query) (ageVal Val) (nameVal Val) (xVal Val) (yVal Val)) Bool
+    (ite (is-TrueQuery q) true
+    (ite (is-FalseQuery q) false
+    (ite (is-Cmp q) (cmpDenote (cmpOp q) (get-field (cmpField q) ageVal nameVal) (get-queryvar (cmpVar q) xVal yVal))
+    false))))
+(define-fun queryDenote2 ((q Query) (ageVal Val) (nameVal Val) (xVal Val) (yVal Val)) Bool
+    (ite (is-TrueQuery q) true
+    (ite (is-FalseQuery q) false
+    (ite (is-Cmp q) (cmpDenote (cmpOp q) (get-field (cmpField q) ageVal nameVal) (get-queryvar (cmpVar q) xVal yVal))
+    (ite (is-And q) (and (queryDenote1 (andLeft q) ageVal nameVal xVal yVal) (queryDenote1 (andRight q) ageVal nameVal xVal yVal))
+    (ite (is-Or q)  (or (queryDenote1 (orLeft q) ageVal nameVal xVal yVal) (queryDenote1 (orRight q) ageVal nameVal xVal yVal))
+    (ite (is-Not q) (not (queryDenote1 (notQ q) ageVal nameVal xVal yVal))
+    false)))))))
+(define-fun queryDenote3 ((q Query) (ageVal Val) (nameVal Val) (xVal Val) (yVal Val)) Bool
+    (ite (is-TrueQuery q) true
+    (ite (is-FalseQuery q) false
+    (ite (is-Cmp q) (cmpDenote (cmpOp q) (get-field (cmpField q) ageVal nameVal) (get-queryvar (cmpVar q) xVal yVal))
+    (ite (is-And q) (and (queryDenote2 (andLeft q) ageVal nameVal xVal yVal) (queryDenote2 (andRight q) ageVal nameVal xVal yVal))
+    (ite (is-Or q)  (or (queryDenote2 (orLeft q) ageVal nameVal xVal yVal) (queryDenote2 (orRight q) ageVal nameVal xVal yVal))
+    (ite (is-Not q) (not (queryDenote2 (notQ q) ageVal nameVal xVal yVal))
+    false)))))))
+(define-fun queryDenote ((q Query) (ageVal Val) (nameVal Val) (xVal Val) (yVal Val)) Bool
+    (queryDenote3 q ageVal nameVal xVal yVal))
+
+; Does a plan include a concrete (age, name) record?
+(define-fun planIncludes1 ((p Plan) (ageVal Val) (nameVal Val) (xVal Val) (yVal Val)) Bool
+    (= p All))
+(define-fun planIncludes2 ((p Plan) (ageVal Val) (nameVal Val) (xVal Val) (yVal Val)) Bool
+    (and
+    (=> (is-None p) false)
+    (=> (is-HashLookup p) (and (planIncludes1 (hashPlan p) ageVal nameVal xVal yVal) (= (get-field (hashField p) ageVal nameVal) (get-queryvar (hashVar p) xVal yVal))))
+    (=> (is-BinarySearch p) (and (planIncludes1 (bsPlan p) ageVal nameVal xVal yVal) (cmpDenote (bsOp p) (get-field (bsField p) ageVal nameVal) (get-queryvar (bsVar p) xVal yVal))))
+    (=> (is-Filter p) (and (planIncludes1 (filterPlan p) ageVal nameVal xVal yVal) (queryDenote1 (filterQuery p) ageVal nameVal xVal yVal)))
+    (=> (is-Intersect p) (and (planIncludes1 (isectFirstPlan p) ageVal nameVal xVal yVal) (planIncludes1 (isectSecondPlan p) ageVal nameVal xVal yVal)))
+    (=> (is-Union p) (or (planIncludes1 (uFirstPlan p) ageVal nameVal xVal yVal) (planIncludes1 (uSecondPlan p) ageVal nameVal xVal yVal)))
+    ))
+(define-fun planIncludes3 ((p Plan) (ageVal Val) (nameVal Val) (xVal Val) (yVal Val)) Bool
+    (and
+    (=> (is-None p) false)
+    (=> (is-HashLookup p) (and (planIncludes2 (hashPlan p) ageVal nameVal xVal yVal) (= (get-field (hashField p) ageVal nameVal) (get-queryvar (hashVar p) xVal yVal))))
+    (=> (is-BinarySearch p) (and (planIncludes2 (bsPlan p) ageVal nameVal xVal yVal) (cmpDenote (bsOp p) (get-field (bsField p) ageVal nameVal) (get-queryvar (bsVar p) xVal yVal))))
+    (=> (is-Filter p) (and (planIncludes2 (filterPlan p) ageVal nameVal xVal yVal) (queryDenote2 (filterQuery p) ageVal nameVal xVal yVal)))
+    (=> (is-Intersect p) (and (planIncludes2 (isectFirstPlan p) ageVal nameVal xVal yVal) (planIncludes2 (isectSecondPlan p) ageVal nameVal xVal yVal)))
+    (=> (is-Union p) (or (planIncludes2 (uFirstPlan p) ageVal nameVal xVal yVal) (planIncludes2 (uSecondPlan p) ageVal nameVal xVal yVal)))
+    ))
+(define-fun planIncludes ((p Plan) (ageVal Val) (nameVal Val) (xVal Val) (yVal Val)) Bool
+    (planIncludes3 p ageVal nameVal xVal yVal))
+
+; Does a plan actually implement a query?
+(define-fun implements ((p Plan) (q Query)) Bool
+    (forall ((ageVal Val) (nameVal Val) (xVal Val) (yVal Val))
+        (= (planIncludes p ageVal nameVal xVal yVal) (queryDenote q ageVal nameVal xVal yVal))))
+
+; Query to synthesize for
+; (define-const query Query (And (Cmp Age Gt x) (Cmp Name Eq y)))
+; (define-const query Query (Cmp Age Eq x))
+; (define-const query Query (Or (Cmp Age Eq x) (Cmp Age Lt x)))
+(define-const query Query (Or (Cmp Age Eq x)
+       (And (Cmp Age Gt y)
+            (Cmp Age Lt x))))
 
 ; Actual output being synthesized
 (declare-const plan Plan)
-
-(define-fun postCondBot ((p Plan)) Query
-    (ite (is-All p) TrueQuery
-    (ite (is-None p) FalseQuery
-    (ite (is-HashLookup p) (Cmp (hashField p) Eq (hashVar p))
-    (ite (is-BinarySearch p) (Cmp (bsField p) (bsOp p) (bsVar p))
-        FalseQuery
-    ))))
-)
-(define-fun postCond1 ((p Plan)) Query
-    (ite (is-All p) TrueQuery
-    (ite (is-None p) FalseQuery
-    (ite (is-HashLookup p) (Cmp (hashField p) Eq (hashVar p))
-    (ite (is-BinarySearch p) (Cmp (bsField p) (bsOp p) (bsVar p))
-    (ite (is-Filter p) (And (postCondBot (filterPlan p)) (filterQuery p))
-    (ite (is-SubPlan p) (And (postCondBot (outerPlan p)) (postCondBot (innerPlan p)))
-    (ite (is-Intersect p) (And (postCondBot (isectFirstPlan p)) (postCondBot (isectSecondPlan p)))
-        FalseQuery
-    )))))))
-)
-(define-fun postCond ((p Plan)) Query
-    (ite (is-All p) TrueQuery
-    (ite (is-None p) FalseQuery
-    (ite (is-HashLookup p) (Cmp (hashField p) Eq (hashVar p))
-    (ite (is-BinarySearch p) (Cmp (bsField p) (bsOp p) (bsVar p))
-    (ite (is-Filter p) (And (postCond1 (filterPlan p)) (filterQuery p))
-    (ite (is-SubPlan p) (And (postCond1 (outerPlan p)) (postCond1 (innerPlan p)))
-    (ite (is-Intersect p) (And (postCond1 (isectFirstPlan p)) (postCond1 (isectSecondPlan p)))
-        FalseQuery
-    )))))))
-)
-
-;(define-fun implies ((q Query) (r Query)) bool
-    ;(ite (
-    ;)
-;)
-
-; Query equivalent of plan
-(define-fun pq () Query (postCond plan))
-
-(assert (impliesQuery pq query))
-(assert (impliesQuery query pq))
+(assert (planWf plan))
+(assert (implements plan query))
 
 (check-sat)
 (get-model)
