@@ -26,11 +26,11 @@ data Query =
 data Plan =
     All |
     None |
-    HashLookup Field QueryVar | -- get a singleton collection matching the predicate
-    BinarySearch Field Comparison QueryVar | -- get a sorted list of elements
+    HashLookup Plan Field QueryVar | -- get a collection by hash lookup
+    BinarySearch Plan Field Comparison QueryVar | -- get a sorted list of elements
     Filter Plan Query | -- execute the plan, then filter the result according to the predicate
-    SubPlan Plan Plan | -- super-tricky: execute the left plan, then execute the right plan on the result
-    Intersect Plan Plan -- execute the left plan and right plan, keeping only elements from both result sets
+    Intersect Plan Plan | -- execute the left plan and right plan, keeping only elements from both result sets
+    Union Plan Plan -- execute the left plan and right plan, keeping all elements from either result set
     deriving (Show)
 
 -- Data structures
@@ -49,8 +49,29 @@ data Cost =
     Factor Rational |
     Log Cost |
     Times Cost Cost |
-    Plus Cost Cost
+    Plus Cost Cost |
+    Min Cost Cost
     deriving (Show)
+
+isSortedBy :: Plan -> Field -> Bool
+isSortedBy All _ = True
+isSortedBy None _ = True
+isSortedBy (BinarySearch _ f1 _ _) f2 = f1 == f2
+isSortedBy (HashLookup _ _ _) _ = True
+isSortedBy (Filter p _) f = isSortedBy p f
+isSortedBy (Intersect p1 p2) f = p1 `isSortedBy` f && p2 `isSortedBy` f
+isSortedBy (Union p1 p2) f = p1 `isSortedBy` f && p2 `isSortedBy` f
+
+planWf :: Plan -> Bool
+planWf All = True
+planWf None = True
+planWf (HashLookup All _ _) = True
+planWf (HashLookup p@(HashLookup _ _ _) _ _) = planWf p
+planWf (BinarySearch p f _ _) = planWf p && p `isSortedBy` f
+planWf (Filter p _) = planWf p
+planWf (Intersect p1 p2) = planWf p1 && planWf p2
+planWf (Union p1 p2) = planWf p1 && planWf p2
+planWf _ = False
 
 -- For a given plan, extract the data structure necessary to execute it.
 structureFor :: Plan -> DataStructure
@@ -63,70 +84,72 @@ structureFor p = helper p Ty
         mkPoly Ty = UnsortedList Ty
         mkPoly x = x
 
-        helper All                    base = mkPoly base
-        helper None                   base = Empty
-        helper (HashLookup f v)       base = HashMap f (mkPoly base)
-        helper (BinarySearch f cmp v) base = SortedList f base
-        helper (Filter p _)           base = helper p base
-        helper (SubPlan p1 p2)        base = helper p1 (helper p2 base)
-        helper (Intersect p1 p2)      base = Pair (helper p1 base) (helper p2 base)
-
--- Determine whether a plan does, indeed, answer a query.
--- NOTE: This isn't totally correct; it may return False when
---       the answer is actually True.
-answersQuery :: Plan -> Query -> Bool
-answersQuery p q = postCond p `implies` q
-    where
-        implies :: Query -> Query -> Bool
-        implies a (And q1 q2) = implies a q1 && implies a q2
-        implies a q = any (== q) (simpl a)
-
-        simpl :: Query -> [Query]
-        simpl (And q1 q2) = simpl q1 ++ simpl q2
-        simpl x = [x]
-
-        postCond :: Plan -> Query
-        postCond All = T
-        postCond None = F
-        postCond (HashLookup f v) = Cmp f Eq v
-        postCond (BinarySearch f cmp v) = Cmp f cmp v
-        postCond (Filter p q) = And (postCond p) q
-        postCond (SubPlan p1 p2) = And (postCond p1) (postCond p2)
-        postCond (Intersect p1 p2) = And (postCond p1) (postCond p2)
+        helper All                      base = mkPoly base
+        helper None                     base = Empty
+        helper (HashLookup p f _)       base = helper p (HashMap f (mkPoly base))
+        helper (BinarySearch p@(BinarySearch _ _ _ _) _ _ _) base = helper p base
+        helper (BinarySearch p f cmp _) base = helper p (SortedList f base)
+        helper (Filter p _)             base = helper p base
+        helper (Intersect p1 p2)        base = Pair (helper p1 base) (helper p2 base)
+        helper (Union p1 p2)            base = Pair (helper p1 base) (helper p2 base)
 
 -- Estimate how long a plan takes to execute.
 -- Our overall goal is to find a plan that minimizes this for large N.
 cost :: Plan -> Cost
-cost p = helper p N
+cost p = fst $ helper p N
     where
-        helper All base = base
-        helper None base = Factor 0
-        helper (HashLookup _ _) base = Factor 1
-        helper (BinarySearch _ _ _) base = Log base
-        helper (Filter p _) base = helper p base
-        -- The 0.5 in the next line needs some justification...
+        -- helper returns (time, count)
+        -- where count is the number of elements, and time is how long it
+        -- took to find them
+        helper All base = (Factor 1, base)
+        helper None base = (Factor 1, Factor 0)
+        -- The 0.5 below needs some justification...
         -- Basically, in the absence of any other info, we assume that the
         -- probability of an object matching a given predicate is 50%, so
         -- the subplan will execute on (we expect) half the data.
-        helper (SubPlan p1 p2) base = Plus (helper p1 base) (helper p2 (Times base (Factor 0.5)))
-        helper (Intersect p1 p2) base = Plus (helper p1 base) (helper p2 base)
+        helper (HashLookup p _ _) base =
+            let (time, base') = helper p base
+            in (Plus (Factor 1) time, Times base' (Factor 0.5))
+        helper (BinarySearch p _ _ _) base =
+            let (time, base') = helper p base
+            in (Plus time (Log base'), Times base' (Factor 0.5))
+        helper (Filter p _) base =
+            let (time, base') = helper p base
+            in (Plus time base', Times base' (Factor 0.5))
+        helper (Intersect p1 p2) base =
+            let (time1, base1) = helper p1 base
+                (time2, base2) = helper p2 base
+            in (Plus (Plus time1 time2) (Plus base1 base2),
+                Times (Min base1 base2) (Factor 0.5))
+        helper (Union p1 p2) base =
+            let (time1, base1) = helper p1 base
+                (time2, base2) = helper p2 base
+            in (Plus (Plus time1 time2) (Plus base1 base2),
+                Plus base1 base2)
+
+-- for some value of N, figure out the concrete cost
+evalCost :: Cost -> Double -> Double
+evalCost N n = n
+evalCost (Factor x) _ = fromRational x
+evalCost (Log c) n = log (evalCost c n)
+evalCost (Plus c1 c2) n = evalCost c1 n + evalCost c2 n
+evalCost (Times c1 c2) n = evalCost c1 n * evalCost c2 n
+evalCost (Min c1 c2) n = min (evalCost c1 n) (evalCost c2 n)
 
 -- A query. Sort of like "SELECT * WHERE age > x AND name = y" where x and y can vary.
 query = And (Cmp "age" Gt "x") (Cmp "name" Eq "y")
 
 -- Various candidate plans to implement said query.
-plan1 = Intersect (BinarySearch "age" Gt "x") (HashLookup "name" "y")
-plan2 = SubPlan (HashLookup "name" "y") (BinarySearch "age" Gt "x")
+plan1 = Intersect (BinarySearch All "age" Gt "x") (HashLookup All "name" "y")
+plan2 = BinarySearch (HashLookup All "name" "y") "age" Gt "x"
 plan3 = Filter All query
-plan4 = Filter All (Cmp "name" Eq "y")
 
 main :: IO ()
 main = do
     putStrLn $ "Query: " ++ show query
-    mapM_ printPlanInfo [plan1, plan2, plan3, plan4]
+    mapM_ printPlanInfo [plan1, plan2, plan3]
     where
         printPlanInfo p = do
             print p
             putStrLn $ "    -->   structure = " ++ show (structureFor p)
-            putStrLn $ "    -->   valid? " ++ show (p `answersQuery` query)
-            putStrLn $ "    -->   cost = " ++ show (cost p)
+            putStrLn $ "    -->   cost = " ++ show (evalCost (cost p) 100000)
