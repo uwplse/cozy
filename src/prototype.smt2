@@ -46,38 +46,62 @@
     (=> (is-Union p1)        (is-Union p2))
     ))
 
+; Simple projection
+(define-fun leftPlan ((p Plan)) Plan
+    (ite (is-HashLookup p)   (hashPlan p)
+    (ite (is-BinarySearch p) (bsPlan p)
+    (ite (is-Filter p)       (filterPlan p)
+    (ite (is-Intersect p)    (isectFirstPlan p)
+    (ite (is-Union p)        (uFirstPlan p)
+    All))))))
+(define-fun rightPlan ((p Plan)) Plan
+    (ite (is-Intersect p)    (isectSecondPlan p)
+    (ite (is-Union p)        (isectFirstPlan p)
+    All)))
+
 ; Is the plan well-formed?
 (define-fun isTrivialPlan ((p Plan)) Bool (or (= p All) (= p None)))
 (define-fun planWf1 ((p Plan)) Bool (isTrivialPlan p))
 (define-fun planWf2 ((p Plan)) Bool
     (and
-    (=> (is-HashLookup p) (and (planWf1 (hashPlan p)) (or (is-All (hashPlan p)) (is-HashLookup (hashPlan p)))))
-    (=> (is-BinarySearch p) (and (planWf1 (bsPlan p)) (isSortedBy (bsPlan p) (bsField p))))
-    (=> (is-Filter p) (planWf1 (filterPlan p)))
+    (planWf1 (leftPlan p))
+    (planWf1 (rightPlan p))
+    (=> (is-HashLookup p) (or (is-All (hashPlan p)) (is-HashLookup (hashPlan p))))
+    (=> (is-BinarySearch p) (isSortedBy (bsPlan p) (bsField p)))
     (=> (is-Intersect p) (and
-        (planWf1 (isectFirstPlan p)) (planWf1 (isectSecondPlan p))
         (not (isTrivialPlan (isectFirstPlan p))) (not (isTrivialPlan (isectSecondPlan p)))
         (planLe (isectFirstPlan p) (isectSecondPlan p))))
     (=> (is-Union p) (and
-        (planWf1 (uFirstPlan p)) (planWf1 (uSecondPlan p))
         (not (isTrivialPlan (uFirstPlan p))) (not (isTrivialPlan (uSecondPlan p)))
         (planLe (uFirstPlan p) (uSecondPlan p))))
     ))
 (define-fun planWf3 ((p Plan)) Bool
     (and
-    (=> (is-HashLookup p) (and (planWf2 (hashPlan p)) (or (is-All (hashPlan p)) (is-HashLookup (hashPlan p)))))
-    (=> (is-BinarySearch p) (and (planWf2 (bsPlan p)) (isSortedBy (bsPlan p) (bsField p))))
-    (=> (is-Filter p) (planWf2 (filterPlan p)))
+    (planWf2 (leftPlan p))
+    (planWf2 (rightPlan p))
+    (=> (is-HashLookup p) (or (is-All (hashPlan p)) (is-HashLookup (hashPlan p))))
+    (=> (is-BinarySearch p) (isSortedBy (bsPlan p) (bsField p)))
     (=> (is-Intersect p) (and
-        (planWf2 (isectFirstPlan p)) (planWf2 (isectSecondPlan p))
         (not (isTrivialPlan (isectFirstPlan p))) (not (isTrivialPlan (isectSecondPlan p)))
         (planLe (isectFirstPlan p) (isectSecondPlan p))))
     (=> (is-Union p) (and
-        (planWf2 (uFirstPlan p)) (planWf2 (uSecondPlan p))
         (not (isTrivialPlan (uFirstPlan p))) (not (isTrivialPlan (uSecondPlan p)))
         (planLe (uFirstPlan p) (uSecondPlan p))))
     ))
-(define-fun planWf ((p Plan)) Bool (planWf3 p))
+(define-fun planWf4 ((p Plan)) Bool
+    (and
+    (planWf2 (leftPlan p))
+    (planWf2 (rightPlan p))
+    (=> (is-HashLookup p) (or (is-All (hashPlan p)) (is-HashLookup (hashPlan p))))
+    (=> (is-BinarySearch p) (isSortedBy (bsPlan p) (bsField p)))
+    (=> (is-Intersect p) (and
+        (not (isTrivialPlan (isectFirstPlan p))) (not (isTrivialPlan (isectSecondPlan p)))
+        (planLe (isectFirstPlan p) (isectSecondPlan p))))
+    (=> (is-Union p) (and
+        (not (isTrivialPlan (uFirstPlan p))) (not (isTrivialPlan (uSecondPlan p)))
+        (planLe (uFirstPlan p) (uSecondPlan p))))
+    ))
+(define-fun planWf ((p Plan)) Bool (planWf4 p))
 
 ; The type of values in our system
 ; (TODO: Prove that this three-value system is equivalent to real arithmetic
