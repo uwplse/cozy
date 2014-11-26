@@ -161,25 +161,37 @@
 (define-fun planIncludes1 ((p Plan) (ageVal Val) (nameVal Val) (xVal Val) (yVal Val)) Bool
     (= p All))
 (define-fun planIncludes2 ((p Plan) (ageVal Val) (nameVal Val) (xVal Val) (yVal Val)) Bool
+    (let ((inc1 (planIncludes1 (leftPlan p) ageVal nameVal xVal yVal)) (inc2 (planIncludes1 (rightPlan p) ageVal nameVal xVal yVal)))
     (and
     (=> (is-None p) false)
-    (=> (is-HashLookup p) (and (planIncludes1 (hashPlan p) ageVal nameVal xVal yVal) (= (get-field (hashField p) ageVal nameVal) (get-queryvar (hashVar p) xVal yVal))))
-    (=> (is-BinarySearch p) (and (planIncludes1 (bsPlan p) ageVal nameVal xVal yVal) (cmpDenote (bsOp p) (get-field (bsField p) ageVal nameVal) (get-queryvar (bsVar p) xVal yVal))))
-    (=> (is-Filter p) (and (planIncludes1 (filterPlan p) ageVal nameVal xVal yVal) (queryDenote1 (filterQuery p) ageVal nameVal xVal yVal)))
-    (=> (is-Intersect p) (and (planIncludes1 (isectFirstPlan p) ageVal nameVal xVal yVal) (planIncludes1 (isectSecondPlan p) ageVal nameVal xVal yVal)))
-    (=> (is-Union p) (or (planIncludes1 (uFirstPlan p) ageVal nameVal xVal yVal) (planIncludes1 (uSecondPlan p) ageVal nameVal xVal yVal)))
-    ))
+    (=> (is-HashLookup p) (and inc1 (= (get-field (hashField p) ageVal nameVal) (get-queryvar (hashVar p) xVal yVal))))
+    (=> (is-BinarySearch p) (and inc1 (cmpDenote (bsOp p) (get-field (bsField p) ageVal nameVal) (get-queryvar (bsVar p) xVal yVal))))
+    (=> (is-Filter p) (and inc1 (queryDenote1 (filterQuery p) ageVal nameVal xVal yVal)))
+    (=> (is-Intersect p) (and inc1 inc2))
+    (=> (is-Union p) (or inc1 inc2))
+    )))
 (define-fun planIncludes3 ((p Plan) (ageVal Val) (nameVal Val) (xVal Val) (yVal Val)) Bool
+    (let ((inc1 (planIncludes2 (leftPlan p) ageVal nameVal xVal yVal)) (inc2 (planIncludes2 (rightPlan p) ageVal nameVal xVal yVal)))
     (and
     (=> (is-None p) false)
-    (=> (is-HashLookup p) (and (planIncludes2 (hashPlan p) ageVal nameVal xVal yVal) (= (get-field (hashField p) ageVal nameVal) (get-queryvar (hashVar p) xVal yVal))))
-    (=> (is-BinarySearch p) (and (planIncludes2 (bsPlan p) ageVal nameVal xVal yVal) (cmpDenote (bsOp p) (get-field (bsField p) ageVal nameVal) (get-queryvar (bsVar p) xVal yVal))))
-    (=> (is-Filter p) (and (planIncludes2 (filterPlan p) ageVal nameVal xVal yVal) (queryDenote2 (filterQuery p) ageVal nameVal xVal yVal)))
-    (=> (is-Intersect p) (and (planIncludes2 (isectFirstPlan p) ageVal nameVal xVal yVal) (planIncludes2 (isectSecondPlan p) ageVal nameVal xVal yVal)))
-    (=> (is-Union p) (or (planIncludes2 (uFirstPlan p) ageVal nameVal xVal yVal) (planIncludes2 (uSecondPlan p) ageVal nameVal xVal yVal)))
-    ))
+    (=> (is-HashLookup p) (and inc1 (= (get-field (hashField p) ageVal nameVal) (get-queryvar (hashVar p) xVal yVal))))
+    (=> (is-BinarySearch p) (and inc1 (cmpDenote (bsOp p) (get-field (bsField p) ageVal nameVal) (get-queryvar (bsVar p) xVal yVal))))
+    (=> (is-Filter p) (and inc1 (queryDenote2 (filterQuery p) ageVal nameVal xVal yVal)))
+    (=> (is-Intersect p) (and inc1 inc2))
+    (=> (is-Union p) (or inc1 inc2))
+    )))
+(define-fun planIncludes4 ((p Plan) (ageVal Val) (nameVal Val) (xVal Val) (yVal Val)) Bool
+    (let ((inc1 (planIncludes3 (leftPlan p) ageVal nameVal xVal yVal)) (inc2 (planIncludes3 (rightPlan p) ageVal nameVal xVal yVal)))
+    (and
+    (=> (is-None p) false)
+    (=> (is-HashLookup p) (and inc1 (= (get-field (hashField p) ageVal nameVal) (get-queryvar (hashVar p) xVal yVal))))
+    (=> (is-BinarySearch p) (and inc1 (cmpDenote (bsOp p) (get-field (bsField p) ageVal nameVal) (get-queryvar (bsVar p) xVal yVal))))
+    (=> (is-Filter p) (and inc1 (queryDenote2 (filterQuery p) ageVal nameVal xVal yVal)))
+    (=> (is-Intersect p) (and inc1 inc2))
+    (=> (is-Union p) (or inc1 inc2))
+    )))
 (define-fun planIncludes ((p Plan) (ageVal Val) (nameVal Val) (xVal Val) (yVal Val)) Bool
-    (planIncludes3 p ageVal nameVal xVal yVal))
+    (planIncludes4 p ageVal nameVal xVal yVal))
 
 ; Does a plan actually implement a query?
 (define-fun implements ((p Plan) (q Query)) Bool
