@@ -46,7 +46,7 @@
     (=> (is-Union p1)        (is-Union p2))
     ))
 
-; Simple projection
+; Simple projections
 (define-fun leftPlan ((p Plan)) Plan
     (ite (is-HashLookup p)   (hashPlan p)
     (ite (is-BinarySearch p) (bsPlan p)
@@ -58,6 +58,15 @@
     (ite (is-Intersect p)    (isectSecondPlan p)
     (ite (is-Union p)        (isectFirstPlan p)
     All)))
+(define-fun leftQuery ((q Query)) Query
+    (ite (is-And q) (andLeft q)
+    (ite (is-Or q)  (orLeft q)
+    (ite (is-Not q) (notQ q)
+    TrueQuery))))
+(define-fun rightQuery ((q Query)) Query
+    (ite (is-And q) (andRight q)
+    (ite (is-Or q)  (orRight q)
+    TrueQuery)))
 
 ; Is the plan well-formed?
 (define-fun isTrivialPlan ((p Plan)) Bool (or (= p All) (= p None)))
@@ -139,23 +148,34 @@
     (ite (is-Cmp q) (cmpDenote (cmpOp q) (get-field (cmpField q) ageVal nameVal) (get-queryvar (cmpVar q) xVal yVal))
     false))))
 (define-fun queryDenote2 ((q Query) (ageVal Val) (nameVal Val) (xVal Val) (yVal Val)) Bool
+    (let ((denote1 (queryDenote1 (leftQuery q) ageVal nameVal xVal yVal)) (denote2 (queryDenote1 (rightQuery q) ageVal nameVal xVal yVal)))
     (ite (is-TrueQuery q) true
     (ite (is-FalseQuery q) false
     (ite (is-Cmp q) (cmpDenote (cmpOp q) (get-field (cmpField q) ageVal nameVal) (get-queryvar (cmpVar q) xVal yVal))
-    (ite (is-And q) (and (queryDenote1 (andLeft q) ageVal nameVal xVal yVal) (queryDenote1 (andRight q) ageVal nameVal xVal yVal))
-    (ite (is-Or q)  (or (queryDenote1 (orLeft q) ageVal nameVal xVal yVal) (queryDenote1 (orRight q) ageVal nameVal xVal yVal))
-    (ite (is-Not q) (not (queryDenote1 (notQ q) ageVal nameVal xVal yVal))
-    false)))))))
+    (ite (is-And q) (and denote1 denote2)
+    (ite (is-Or q)  (or denote1 denote2)
+    (ite (is-Not q) (not denote1)
+    false))))))))
 (define-fun queryDenote3 ((q Query) (ageVal Val) (nameVal Val) (xVal Val) (yVal Val)) Bool
+    (let ((denote1 (queryDenote2 (leftQuery q) ageVal nameVal xVal yVal)) (denote2 (queryDenote2 (rightQuery q) ageVal nameVal xVal yVal)))
     (ite (is-TrueQuery q) true
     (ite (is-FalseQuery q) false
     (ite (is-Cmp q) (cmpDenote (cmpOp q) (get-field (cmpField q) ageVal nameVal) (get-queryvar (cmpVar q) xVal yVal))
-    (ite (is-And q) (and (queryDenote2 (andLeft q) ageVal nameVal xVal yVal) (queryDenote2 (andRight q) ageVal nameVal xVal yVal))
-    (ite (is-Or q)  (or (queryDenote2 (orLeft q) ageVal nameVal xVal yVal) (queryDenote2 (orRight q) ageVal nameVal xVal yVal))
-    (ite (is-Not q) (not (queryDenote2 (notQ q) ageVal nameVal xVal yVal))
-    false)))))))
+    (ite (is-And q) (and denote1 denote2)
+    (ite (is-Or q)  (or denote1 denote2)
+    (ite (is-Not q) (not denote1)
+    false))))))))
+(define-fun queryDenote4 ((q Query) (ageVal Val) (nameVal Val) (xVal Val) (yVal Val)) Bool
+    (let ((denote1 (queryDenote3 (leftQuery q) ageVal nameVal xVal yVal)) (denote2 (queryDenote3 (rightQuery q) ageVal nameVal xVal yVal)))
+    (ite (is-TrueQuery q) true
+    (ite (is-FalseQuery q) false
+    (ite (is-Cmp q) (cmpDenote (cmpOp q) (get-field (cmpField q) ageVal nameVal) (get-queryvar (cmpVar q) xVal yVal))
+    (ite (is-And q) (and denote1 denote2)
+    (ite (is-Or q)  (or denote1 denote2)
+    (ite (is-Not q) (not denote1)
+    false))))))))
 (define-fun queryDenote ((q Query) (ageVal Val) (nameVal Val) (xVal Val) (yVal Val)) Bool
-    (queryDenote3 q ageVal nameVal xVal yVal))
+    (queryDenote4 q ageVal nameVal xVal yVal))
 
 ; Does a plan include a concrete (age, name) record?
 (define-fun planIncludes1 ((p Plan) (ageVal Val) (nameVal Val) (xVal Val) (yVal Val)) Bool
@@ -186,7 +206,7 @@
     (=> (is-None p) false)
     (=> (is-HashLookup p) (and inc1 (= (get-field (hashField p) ageVal nameVal) (get-queryvar (hashVar p) xVal yVal))))
     (=> (is-BinarySearch p) (and inc1 (cmpDenote (bsOp p) (get-field (bsField p) ageVal nameVal) (get-queryvar (bsVar p) xVal yVal))))
-    (=> (is-Filter p) (and inc1 (queryDenote2 (filterQuery p) ageVal nameVal xVal yVal)))
+    (=> (is-Filter p) (and inc1 (queryDenote3 (filterQuery p) ageVal nameVal xVal yVal)))
     (=> (is-Intersect p) (and inc1 inc2))
     (=> (is-Union p) (or inc1 inc2))
     )))
