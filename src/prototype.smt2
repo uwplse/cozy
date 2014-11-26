@@ -35,23 +35,47 @@
     (ite (is-HashLookup p) true
     false)))))
 
+; A simple ordering on plans, used for breaking symmetry
+(define-fun planLe ((p1 Plan) (p2 Plan)) Bool
+    (and
+    (=> (is-None p1)         (or (is-None p2) (is-HashLookup p2) (is-BinarySearch p2) (is-Filter p2) (is-Intersect p2) (is-Union p2)))
+    (=> (is-HashLookup p1)   (or (is-HashLookup p2) (is-BinarySearch p2) (is-Filter p2) (is-Intersect p2) (is-Union p2)))
+    (=> (is-BinarySearch p1) (or (is-BinarySearch p2) (is-Filter p2) (is-Intersect p2) (is-Union p2)))
+    (=> (is-Filter p1)       (or (is-Filter p2) (is-Intersect p2) (is-Union p2)))
+    (=> (is-Intersect p1)    (or (is-Intersect p2) (is-Union p2)))
+    (=> (is-Union p1)        (is-Union p2))
+    ))
+
 ; Is the plan well-formed?
-(define-fun planWf1 ((p Plan)) Bool (or (= p All) (= p None)))
+(define-fun isTrivialPlan ((p Plan)) Bool (or (= p All) (= p None)))
+(define-fun planWf1 ((p Plan)) Bool (isTrivialPlan p))
 (define-fun planWf2 ((p Plan)) Bool
     (and
     (=> (is-HashLookup p) (and (planWf1 (hashPlan p)) (or (is-All (hashPlan p)) (is-HashLookup (hashPlan p)))))
     (=> (is-BinarySearch p) (and (planWf1 (bsPlan p)) (isSortedBy (bsPlan p) (bsField p))))
     (=> (is-Filter p) (planWf1 (filterPlan p)))
-    (=> (is-Intersect p) (and (planWf1 (isectFirstPlan p)) (planWf1 (isectSecondPlan p))))
-    (=> (is-Union p) (and (planWf1 (uFirstPlan p)) (planWf1 (uSecondPlan p))))
+    (=> (is-Intersect p) (and
+        (planWf1 (isectFirstPlan p)) (planWf1 (isectSecondPlan p))
+        (not (isTrivialPlan (isectFirstPlan p))) (not (isTrivialPlan (isectSecondPlan p)))
+        (planLe (isectFirstPlan p) (isectSecondPlan p))))
+    (=> (is-Union p) (and
+        (planWf1 (uFirstPlan p)) (planWf1 (uSecondPlan p))
+        (not (isTrivialPlan (uFirstPlan p))) (not (isTrivialPlan (uSecondPlan p)))
+        (planLe (uFirstPlan p) (uSecondPlan p))))
     ))
 (define-fun planWf3 ((p Plan)) Bool
     (and
     (=> (is-HashLookup p) (and (planWf2 (hashPlan p)) (or (is-All (hashPlan p)) (is-HashLookup (hashPlan p)))))
     (=> (is-BinarySearch p) (and (planWf2 (bsPlan p)) (isSortedBy (bsPlan p) (bsField p))))
     (=> (is-Filter p) (planWf2 (filterPlan p)))
-    (=> (is-Intersect p) (and (planWf2 (isectFirstPlan p)) (planWf2 (isectSecondPlan p))))
-    (=> (is-Union p) (and (planWf2 (uFirstPlan p)) (planWf2 (uSecondPlan p))))
+    (=> (is-Intersect p) (and
+        (planWf2 (isectFirstPlan p)) (planWf2 (isectSecondPlan p))
+        (not (isTrivialPlan (isectFirstPlan p))) (not (isTrivialPlan (isectSecondPlan p)))
+        (planLe (isectFirstPlan p) (isectSecondPlan p))))
+    (=> (is-Union p) (and
+        (planWf2 (uFirstPlan p)) (planWf2 (uSecondPlan p))
+        (not (isTrivialPlan (uFirstPlan p))) (not (isTrivialPlan (uSecondPlan p)))
+        (planLe (uFirstPlan p) (uSecondPlan p))))
     ))
 (define-fun planWf ((p Plan)) Bool (planWf3 p))
 
