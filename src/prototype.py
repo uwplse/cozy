@@ -50,7 +50,7 @@ class SolverContext:
         if isinstance(name, Datatype):
             Type = name
         else:
-            Type = Datatype(name, ctx=self.ctx)
+            Type = Datatype(name)
         for (value, args) in values:
             Type.declare(value, *args)
         return Type.create()
@@ -60,8 +60,6 @@ class SolverContext:
 
 
     def __init__(self, varNames, fieldNames):
-        self.ctx = Context()
-
         self.varNames = varNames
         self.fieldNames = fieldNames
 
@@ -77,7 +75,7 @@ class SolverContext:
         Val = self.Val = self.declareSimpleDatatype('Val', ['lo', 'mid', 'hi'])
 
         # Need to do this for recursive datatype
-        Query = Datatype('Query', ctx=self.ctx)
+        Query = Datatype('Query')
         Query = self.Query = self.declareDatatype(Query, [
             ('TrueQuery', []),
             ('FalseQuery', []),
@@ -90,7 +88,7 @@ class SolverContext:
             ('Not', [('notQ', Query)]),
             ])
 
-        Plan = Datatype('Plan', ctx=self.ctx)
+        Plan = Datatype('Plan')
         Plan = self.Plan = self.declareDatatype(Plan, [
             ('All', []),
             ('None', []),
@@ -108,8 +106,8 @@ class SolverContext:
             ])
 
         self.CostResult = self.declareDatatype('CostResult', [
-            ('CostRes', [('cost', IntSort(ctx=self.ctx)),
-                         ('costN', IntSort(self.ctx))])
+            ('CostRes', [('cost', IntSort()),
+                         ('costN', IntSort())])
             ])
 
     # Note: define-fun is a macro, so the Z3 libary doesn't provide it because
@@ -385,7 +383,7 @@ class SolverContext:
         Val = self.Val
         Field = self.Field
 
-        s = SolverFor("IA", ctx=self.ctx)
+        s = SolverFor("IA")
 
         plan = Const('plan', Plan)
         s.add(self.planWf(plan))
