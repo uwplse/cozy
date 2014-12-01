@@ -2,6 +2,9 @@
 
 from z3 import *
 
+MAX_PLAN_DEPTH = 2
+MAX_QUERY_DEPTH = 2
+
 # TODO Is it possible (easy) to make an @z3Typed(Int, Int, Bool) annotation
 #       that will convert a Python function to z3? Recursion would be tricky
 #       ... maybe be slightly ugly... or use a type overriding callable?
@@ -127,6 +130,13 @@ class SolverContext:
                     # all of the tails of recs (whole list is a trivial case)
                     [recs[i:] for i in range(1, len(recs))]])
 
+    def queryLe(self, q1, q2):
+        # Order queries by the definition order of the constructors.
+        recs = allRecognizers(self.Query)
+        return And([Implies(l[0](q1), Or([rec(q2) for rec in l])) for l in
+                    # all of the tails of recs (whole list is a trivial case)
+                    [recs[i:] for i in range(1, len(recs))]])
+
     def leftPlan(self, p):
         Plan = self.Plan
         return getArgNum(value=p, Type=Plan, argIdx=0,
@@ -145,12 +155,40 @@ class SolverContext:
         return getArgNum(value=q, Type=Query, argIdx=1,
                          ArgType=Query, default=Query.TrueQuery)
 
+    def isTrivialQuery(self, q):
+        Query = self.Query
+        return Or(q == Query.TrueQuery, q == Query.FalseQuery)
+
+    def queryWf(self, q, depth=MAX_QUERY_DEPTH):
+        Query = self.Query
+
+        baseCase = Or(self.isTrivialQuery(q), Query.is_Cmp(q))
+        if depth == 0:
+            return baseCase
+        else:
+            rdepth = depth - 1
+            return Or(
+                baseCase,
+                And(
+                    self.queryWf(self.leftQuery(q), depth=rdepth),
+                    self.queryWf(self.rightQuery(q), depth=rdepth),
+                    Implies(Query.is_And(q), And(
+                        Not(self.isTrivialQuery(Query.andLeft(q))),
+                        Not(self.isTrivialQuery(Query.andRight(q))),
+                        self.queryLe(Query.andLeft(q), Query.andRight(q)))),
+                    Implies(Query.is_Or(q), And(
+                        Not(self.isTrivialQuery(Query.orLeft(q))),
+                        Not(self.isTrivialQuery(Query.orRight(q))),
+                        self.queryLe(Query.orLeft(q), Query.orRight(q)))),
+                    Implies(Query.is_Not(q),
+                        Not(self.isTrivialQuery(Query.notQ(q))))))
+
     def isTrivialPlan(self, p):
         Plan = self.Plan
 
         return Or(p == Plan.All, p == Plan.None)
 
-    def planWf(self, p, depth=2):
+    def planWf(self, p, depth=MAX_PLAN_DEPTH):
         Plan = self.Plan
 
         if depth == 0:
@@ -165,6 +203,9 @@ class SolverContext:
                        Plan.is_HashLookup(Plan.hashPlan(p)))),
                 Implies(Plan.is_BinarySearch(p),
                     self.isSortedBy(Plan.bsPlan(p), Plan.bsField(p))),
+                Implies(Plan.is_Filter(p), And(
+                    self.queryWf(Plan.filterQuery(p), depth=rdepth),
+                    Not(Plan.is_Filter(Plan.filterPlan(p))))),
                 Implies(Plan.is_Intersect(p), And(
                     Not(self.isTrivialPlan(Plan.isectFirstPlan(p))),
                     Not(self.isTrivialPlan(Plan.isectSecondPlan(p))),
@@ -202,7 +243,7 @@ class SolverContext:
     def getQueryVar(self, qv, vals):
         return doSymbolTableLookup(self.QueryVar, qv, vals)
 
-    def queryDenote(self, q, fieldVals, queryVals, depth=4):
+    def queryDenote(self, q, fieldVals, queryVals, depth=MAX_QUERY_DEPTH):
         Query = self.Query
 
         default = False
@@ -222,15 +263,15 @@ class SolverContext:
             def recurseDenote(subQuery):
                 return self.queryDenote(subQuery, fieldVals, queryVals,
                                         depth-1)
+            leftDenote = recurseDenote(self.leftQuery(q))
+            rightDenote = recurseDenote(self.rightQuery(q))
             return iteCases(baseCase,
-                    (Query.is_And(q), And(recurseDenote(Query.andLeft(q)),
-                                          recurseDenote(Query.andRight(q)))),
-                    (Query.is_Or(q), And(recurseDenote(Query.orLeft(q)),
-                                         recurseDenote(Query.orRight(q)))),
-                    (Query.is_Not(q), recurseDenote(Query.notQ(q))),
+                    (Query.is_And(q), And(leftDenote, rightDenote)),
+                    (Query.is_Or(q), Or(leftDenote, rightDenote)),
+                    (Query.is_Not(q), Not(leftDenote)),
                     )
 
-    def planIncludes(self, p, fieldVals, queryVals, depth=4):
+    def planIncludes(self, p, fieldVals, queryVals, depth=MAX_PLAN_DEPTH):
         Plan = self.Plan
 
         baseCase = p == Plan.All
@@ -247,44 +288,42 @@ class SolverContext:
                 return self.getField(f, fieldVals)
             def getQueryVarVal(qv):
                 return self.getQueryVar(qv, queryVals)
+            leftIncludes = recurseIncludes(self.leftPlan(p))
+            rightIncludes = recurseIncludes(self.rightPlan(p))
             return And(
                     Implies(Plan.is_None(p), False),
                     Implies(Plan.is_HashLookup(p),
-                        And(recurseIncludes(Plan.hashPlan(p)),
+                        And(leftIncludes,
                             getFieldVal(Plan.hashField(p))
                                 == getQueryVarVal(Plan.hashVar(p))
                             )),
                     Implies(Plan.is_BinarySearch(p),
-                        And(recurseIncludes(Plan.bsPlan(p)),
+                        And(leftIncludes,
                             self.cmpDenote(Plan.bsOp(p),
                                 getFieldVal(Plan.bsField(p)),
                                 getQueryVarVal(Plan.bsVar(p)))
                             )),
                     Implies(Plan.is_Filter(p),
-                        And(recurseIncludes(Plan.filterPlan(p)),
+                        And(leftIncludes,
                             recurseDenote(Plan.filterQuery(p))
                             )),
                     Implies(Plan.is_Intersect(p),
-                        And(recurseIncludes(Plan.isectFirstPlan(p)),
-                            recurseIncludes(Plan.isectSecondPlan(p))
-                            )),
+                        And(leftIncludes, rightIncludes)),
                     Implies(Plan.is_Union(p),
-                        And(recurseIncludes(Plan.uFirstPlan(p)),
-                            recurseIncludes(Plan.uSecondPlan(p))
-                            )),
+                        Or(leftIncludes, rightIncludes))
                     )
 
-    def implements(self, p, q, depth=2):
+    def implements(self, p, q):
         Val = self.Val
 
         fieldVals = Consts(self.fieldNames, Val)
         queryVarVals = Consts(self.varNames, Val)
         return ForAll(fieldVals + queryVarVals,
-                self.queryDenote(q, fieldVals, queryVarVals, depth=depth)
-                == 
-                self.planIncludes(p, fieldVals, queryVarVals, depth=depth))
+                self.queryDenote(q, fieldVals, queryVarVals)
+                ==
+                self.planIncludes(p, fieldVals, queryVarVals))
 
-    def cost_(self, p, N=100000, depth=4):
+    def cost_(self, p, N, depth):
         Plan = self.Plan
         CostResult = self.CostResult
 
@@ -298,31 +337,29 @@ class SolverContext:
             def costRecurse(p):
                 return self.cost_(p, N, depth-1)
 
+            leftRes = costRecurse(self.leftPlan(p))
+            rightRes = costRecurse(self.rightPlan(p))
+
             cases = []
 
             # hash lookup is O(1)
-            innerRes = costRecurse(Plan.hashPlan(p))
             cases.append((Plan.is_HashLookup(p),
-                          CostResult.CostRes(1 + CostResult.cost(innerRes),
-                                             CostResult.costN(innerRes)/2)))
+                          CostResult.CostRes(1 + CostResult.cost(leftRes),
+                                             CostResult.costN(leftRes)/2)))
 
             # TODO Estimate log(N), currently estimating (very poorly)
             #      with sqrt(N)
-            innerRes = costRecurse(Plan.bsPlan(p))
             cases.append((Plan.is_BinarySearch(p),
-                          CostResult.CostRes((CostResult.costN(innerRes))
-                                              + CostResult.cost(innerRes),
-                                             CostResult.costN(innerRes)/2)))
+                          CostResult.CostRes((CostResult.costN(leftRes))
+                                              + CostResult.cost(leftRes),
+                                             CostResult.costN(leftRes)/2)))
 
             # filter is O(N)
-            innerRes = costRecurse(Plan.filterPlan(p))
             cases.append((Plan.is_Filter(p),
-                          CostResult.CostRes(CostResult.costN(innerRes)
-                                              + CostResult.cost(innerRes),
-                                             CostResult.costN(innerRes)/2)))
+                          CostResult.CostRes(CostResult.costN(leftRes)
+                                              + CostResult.cost(leftRes),
+                                             CostResult.costN(leftRes)/2)))
 
-            leftRes = costRecurse(Plan.isectFirstPlan(p))
-            rightRes = costRecurse(Plan.isectSecondPlan(p))
             isectTime = (CostResult.costN(leftRes) + CostResult.cost(leftRes)
                     + CostResult.costN(rightRes) + CostResult.cost(rightRes))
             isectN = Min(CostResult.costN(leftRes),
@@ -330,8 +367,6 @@ class SolverContext:
             cases.append((Plan.is_Intersect(p),
                           CostResult.CostRes(isectTime, isectN)))
 
-            leftRes = costRecurse(Plan.uFirstPlan(p))
-            rightRes = costRecurse(Plan.uSecondPlan(p))
             uTime = (CostResult.costN(leftRes) + CostResult.cost(leftRes)
                     + CostResult.costN(rightRes) + CostResult.cost(rightRes))
             uN = CostResult.costN(leftRes) + CostResult.costN(rightRes)
@@ -340,7 +375,7 @@ class SolverContext:
 
             return iteCases(baseCase, *cases)
 
-    def cost(self, p, N=100000, depth=4):
+    def cost(self, p, N=100000, depth=MAX_PLAN_DEPTH):
         res = self.CostResult.cost(self.cost_(p, N, depth))
         return res
 
