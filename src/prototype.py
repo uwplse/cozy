@@ -39,7 +39,8 @@ def getArgNum(value, Type, argIdx, ArgType, default):
                 res = If(Type.recognizer(idx)(value), accessor(value), res)
     return res
 
-
+def Min(a, b):
+    return If(a < b, a, b)
 
 class SolverContext:
     def declareDatatype(self, name, values):
@@ -101,6 +102,11 @@ class SolverContext:
             ('Intersect', [('isectFirstPlan', Plan),
                            ('isectSecondPlan', Plan)]),
             ('Union', [('uFirstPlan', Plan), ('uSecondPlan', Plan)]),
+            ])
+
+        self.CostResult = self.declareDatatype('CostResult', [
+            ('CostRes', [('cost', IntSort(ctx=self.ctx)),
+                         ('costN', IntSort(self.ctx))])
             ])
 
     # Note: define-fun is a macro, so the Z3 libary doesn't provide it because
@@ -278,6 +284,65 @@ class SolverContext:
                 == 
                 self.planIncludes(p, fieldVals, queryVarVals, depth=depth))
 
+    def cost_(self, p, N=100000, depth=4):
+        Plan = self.Plan
+        CostResult = self.CostResult
+
+        baseCase = iteCases(CostResult.CostRes(0, 0),
+               (Plan.is_All(p), CostResult.CostRes(1, N)),
+               (Plan.is_None(p), CostResult.CostRes(1, 0)))
+
+        if depth == 0:
+            return baseCase
+        else:
+            def costRecurse(p):
+                return self.cost_(p, N, depth-1)
+
+            cases = []
+
+            # hash lookup is O(1)
+            innerRes = costRecurse(Plan.hashPlan(p))
+            cases.append((Plan.is_HashLookup(p),
+                          CostResult.CostRes(1 + CostResult.cost(innerRes),
+                                             CostResult.costN(innerRes)/2)))
+
+            # TODO Estimate log(N), currently estimating (very poorly)
+            #      with sqrt(N)
+            innerRes = costRecurse(Plan.bsPlan(p))
+            cases.append((Plan.is_BinarySearch(p),
+                          CostResult.CostRes((CostResult.costN(innerRes))
+                                              + CostResult.cost(innerRes),
+                                             CostResult.costN(innerRes)/2)))
+
+            # filter is O(N)
+            innerRes = costRecurse(Plan.filterPlan(p))
+            cases.append((Plan.is_Filter(p),
+                          CostResult.CostRes(CostResult.costN(innerRes)
+                                              + CostResult.cost(innerRes),
+                                             CostResult.costN(innerRes)/2)))
+
+            leftRes = costRecurse(Plan.isectFirstPlan(p))
+            rightRes = costRecurse(Plan.isectSecondPlan(p))
+            isectTime = (CostResult.costN(leftRes) + CostResult.cost(leftRes)
+                    + CostResult.costN(rightRes) + CostResult.cost(rightRes))
+            isectN = Min(CostResult.costN(leftRes),
+                         CostResult.costN(rightRes)) / 2
+            cases.append((Plan.is_Intersect(p),
+                          CostResult.CostRes(isectTime, isectN)))
+
+            leftRes = costRecurse(Plan.uFirstPlan(p))
+            rightRes = costRecurse(Plan.uSecondPlan(p))
+            uTime = (CostResult.costN(leftRes) + CostResult.cost(leftRes)
+                    + CostResult.costN(rightRes) + CostResult.cost(rightRes))
+            uN = CostResult.costN(leftRes) + CostResult.costN(rightRes)
+            cases.append((Plan.is_Union(p),
+                          CostResult.CostRes(uTime, uN)))
+
+            return iteCases(baseCase, *cases)
+
+    def cost(self, p, N=100000, depth=4):
+        res = self.CostResult.cost(self.cost_(p, N, depth))
+        return res
 
     def synthesizePlans(self, query):
         Plan = self.Plan
@@ -285,17 +350,25 @@ class SolverContext:
         Val = self.Val
         Field = self.Field
 
-        s = SolverFor("UF", ctx=self.ctx)
+        s = SolverFor("IA", ctx=self.ctx)
 
         plan = Const('plan', Plan)
         s.add(self.planWf(plan))
         s.add(self.implements(plan, query))
         res = []
         while(str(s.check()) == 'sat'):
-            model = s.model()[plan]
-            res.append(model)
-            print model
-            s.add(plan != model)
+            model = s.model()
+            modelPlan = model[plan]
+            res.append(modelPlan)
+            print modelPlan
+            if len(res) > 0:
+                # TODO Just computing this slows down future computations a lot
+                print "Cost: ", model.evaluate(self.cost(modelPlan))
+            s.add(plan != modelPlan)
+            # TODO Adding this constraint in slows down z3 a lot... enough
+            #      that it's better to just not include it in order to get
+            #      more models, one of which will hopefully be good.
+            #s.add(self.cost(plan) < model.evaluate(self.cost(modelPlan)))
 
         return res
 
