@@ -1,5 +1,6 @@
 #!/usr/bin/env python2
 
+import math
 from z3 import *
 
 MAX_PLAN_DEPTH = 2
@@ -321,61 +322,105 @@ class SolverContext:
                 ==
                 self.planIncludes(p, fieldVals, queryVarVals))
 
-    def cost_(self, p, N, depth):
-        Plan = self.Plan
-        CostResult = self.CostResult
+    def trees(self, p):
+        """Generates all AST nodes in the given plan"""
+        yield p
+        if str(p.decl()) in ["HashLookup", "BinarySearch", "Filter"]:
+            for n in self.trees(p.arg(0)): yield n
+        elif str(p.decl()) in ["Intersect", "Union"]:
+            for n in self.trees(p.arg(0)): yield n
+            for n in self.trees(p.arg(1)): yield n
 
-        baseCase = iteCases(CostResult.CostRes(0, 0),
-               (Plan.is_All(p), CostResult.CostRes(1, N)),
-               (Plan.is_None(p), CostResult.CostRes(1, 0)))
+    def size(self, p):
+        """Count how many AST nodes are in the given plan"""
+        return len(list(self.trees(p)))
 
-        if depth == 0:
-            return baseCase
+    def computeCost(self, p, n=100000.0):
+        """Returns (cost,size) tuples"""
+        if str(p.decl()) == "All":
+            return 1, n
+        elif str(p.decl()) == "None":
+            return 1, 0
+        elif str(p.decl()) == "HashLookup":
+            cost1, size1 = self.computeCost(p.arg(0))
+            return cost1 + 1, size1 / 2
+        elif str(p.decl()) == "BinarySearch":
+            cost1, size1 = self.computeCost(p.arg(0))
+            return cost1 + (math.log(size1) if size1 >= 1 else 1), size1 / 2
+        elif str(p.decl()) == "Filter":
+            cost1, size1 = self.computeCost(p.arg(0))
+            return cost1 + size1, size1 / 2
+        elif str(p.decl()) == "Intersect":
+            cost1, size1 = self.computeCost(p.arg(0))
+            cost2, size2 = self.computeCost(p.arg(1))
+            return cost1 + cost2 + size1 + size2, min(size1, size2) / 2
+        elif str(p.decl()) == "Union":
+            cost1, size1 = self.computeCost(p.arg(0))
+            cost2, size2 = self.computeCost(p.arg(1))
+            return cost1 + cost2 + size1 + size2, size1 + size2
         else:
-            def costRecurse(p):
-                return self.cost_(p, N, depth-1)
+            raise Exception("Couldn't parse plan: {}".format(p))
 
-            leftRes = costRecurse(self.leftPlan(p))
-            rightRes = costRecurse(self.rightPlan(p))
+    def smallestBadSubtree(self, p, maxCost):
+        """
+        Returns the smallest subtree of the given plan whose cost is
+        at least maxCost, or None if no such element exists.
+        """
+        candidates = sorted(
+            [t for t in self.trees(p) if self.computeCost(t)[0] >= maxCost],
+            key=lambda c: self.size(c))
+        if candidates:
+            return candidates[0]
 
-            cases = []
+    def treeMatch(self, p, pattern):
+        """
+        Determines if the node types of p match the node types of the pattern.
+        """
+        Plan = self.Plan
+        if str(pattern.decl()) == "All":
+            return Plan.is_All(p)
+        elif str(pattern.decl()) == "None":
+            return Plan.is_None(p)
+        elif str(pattern.decl()) == "HashLookup":
+            return And(
+                Plan.is_HashLookup(p),
+                self.treeMatch(Plan.hashPlan(p), pattern.arg(0)))
+        elif str(pattern.decl()) == "BinarySearch":
+            return And(
+                Plan.is_BinarySearch(p),
+                self.treeMatch(Plan.bsPlan(p), pattern.arg(0)))
+        elif str(pattern.decl()) == "Filter":
+            return And(
+                Plan.is_Filter(p),
+                self.treeMatch(Plan.filterPlan(p), pattern.arg(0)))
+        elif str(pattern.decl()) == "Intersect":
+            return And(
+                Plan.is_Intersect(p),
+                self.treeMatch(Plan.isectFirstPlan(p), pattern.arg(0)),
+                self.treeMatch(Plan.isectSecondPlan(p), pattern.arg(1)))
+        elif str(pattern.decl()) == "Union":
+            return And(
+                Plan.is_Union(p),
+                self.treeMatch(Plan.uFirstPlan(p), pattern.arg(0)),
+                self.treeMatch(Plan.uSecondPlan(p), pattern.arg(1)))
+        else:
+            raise Exception("Couldn't parse plan pattern: {}".format(p))
 
-            # hash lookup is O(1)
-            cases.append((Plan.is_HashLookup(p),
-                          CostResult.CostRes(1 + CostResult.cost(leftRes),
-                                             CostResult.costN(leftRes)/2)))
-
-            # TODO Estimate log(N), currently estimating (very poorly)
-            #      with sqrt(N)
-            cases.append((Plan.is_BinarySearch(p),
-                          CostResult.CostRes((CostResult.costN(leftRes))
-                                              + CostResult.cost(leftRes),
-                                             CostResult.costN(leftRes)/2)))
-
-            # filter is O(N)
-            cases.append((Plan.is_Filter(p),
-                          CostResult.CostRes(CostResult.costN(leftRes)
-                                              + CostResult.cost(leftRes),
-                                             CostResult.costN(leftRes)/2)))
-
-            isectTime = (CostResult.costN(leftRes) + CostResult.cost(leftRes)
-                    + CostResult.costN(rightRes) + CostResult.cost(rightRes))
-            isectN = Min(CostResult.costN(leftRes),
-                         CostResult.costN(rightRes)) / 2
-            cases.append((Plan.is_Intersect(p),
-                          CostResult.CostRes(isectTime, isectN)))
-
-            uTime = (CostResult.costN(leftRes) + CostResult.cost(leftRes)
-                    + CostResult.costN(rightRes) + CostResult.cost(rightRes))
-            uN = CostResult.costN(leftRes) + CostResult.costN(rightRes)
-            cases.append((Plan.is_Union(p),
-                          CostResult.CostRes(uTime, uN)))
-
-            return iteCases(baseCase, *cases)
-
-    def cost(self, p, N=100000, depth=MAX_PLAN_DEPTH):
-        res = self.CostResult.cost(self.cost_(p, N, depth))
-        return res
+    def forallNodes(self, p, predicate, depth=MAX_PLAN_DEPTH):
+        Plan = self.Plan
+        if depth == 0:
+            return predicate(p)
+        else:
+            rdepth = depth - 1
+            leftBranch = self.forallNodes(self.leftPlan(p), predicate, rdepth)
+            rightBranch = self.forallNodes(self.rightPlan(p), predicate, rdepth)
+            return And(
+                predicate(p),
+                Implies(Plan.is_HashLookup(p),   leftBranch),
+                Implies(Plan.is_BinarySearch(p), leftBranch),
+                Implies(Plan.is_Filter(p),       leftBranch),
+                Implies(Plan.is_Intersect(p),    And(leftBranch, rightBranch)),
+                Implies(Plan.is_Union(p),        And(leftBranch, rightBranch)))
 
     def synthesizePlans(self, query):
         Plan = self.Plan
@@ -383,30 +428,40 @@ class SolverContext:
         Val = self.Val
         Field = self.Field
 
-        s = SolverFor("IA")
+        s = SolverFor("UF")
 
         plan = Const('plan', Plan)
         s.add(self.planWf(plan))
         s.add(self.implements(plan, query))
         res = []
+        bestCost = None
+        bestPlan = None
+
+        def eliminate_pattern(pat):
+            print "Eliminating: ", pat
+            s.add(self.forallNodes(plan, lambda n: Not(self.treeMatch(n, pat))))
+
         while(str(s.check()) == 'sat'):
             model = s.model()
             modelPlan = model[plan]
             res.append(modelPlan)
             print modelPlan
-            if len(res) > 0:
-                # TODO Just computing this slows down future computations a lot
-                print "Cost: ", model.evaluate(self.cost(modelPlan))
-            s.add(plan != modelPlan)
-            # TODO Adding this constraint in slows down z3 a lot... enough
-            #      that it's better to just not include it in order to get
-            #      more models, one of which will hopefully be good.
-            #s.add(self.cost(plan) < model.evaluate(self.cost(modelPlan)))
 
+            cost = self.computeCost(modelPlan)[0]
+            print "Cost: ", cost
+            if bestCost is None or cost < bestCost:
+                bestCost = cost
+                bestPlan = modelPlan
+
+            elim = self.smallestBadSubtree(modelPlan, bestCost)
+            eliminate_pattern(elim)
+            print "="*60
+
+        print "Best plan found: {}; cost={}".format(bestPlan, bestCost)
         return res
 
 sc = SolverContext(varNames = ['x', 'y'], fieldNames = ['Age', 'Name'])
-sc.synthesizePlans(sc.Query.Or(
+sc.synthesizePlans(sc.Query.And(
     sc.Query.Cmp(sc.Field.Age, sc.Comparison.Gt, sc.QueryVar.x),
     sc.Query.Cmp(sc.Field.Name, sc.Comparison.Eq, sc.QueryVar.y)
     ))
