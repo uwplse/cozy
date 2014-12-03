@@ -5,16 +5,22 @@ from z3 import *
 
 MAX_PLAN_DEPTH = 2
 MAX_QUERY_DEPTH = 2
+COST_ITEM_COUNT = 1000
+COST_BITS = 11
 
 # TODO Is it possible (easy) to make an @z3Typed(Int, Int, Bool) annotation
 #       that will convert a Python function to z3? Recursion would be tricky
 #       ... maybe be slightly ugly... or use a type overriding callable?
 
 def iteCases(default, *caseList):
-    res = default
-    for (test, val) in caseList:
-        res = If(test, val, res)
-    return res
+    try:
+        res = default
+        for (test, val) in caseList:
+            res = If(test, val, res)
+        return res
+    except ValueError:
+        print caseList
+        raise
 def iteAllCases(*caseList):
     return iteCases(False, *caseList)
 
@@ -42,9 +48,20 @@ def getArgNum(value, Type, argIdx, ArgType, default):
             if accessor.range() == ArgType:
                 res = If(Type.recognizer(idx)(value), accessor(value), res)
     return res
+    res = default
+    for (test, val) in caseList:
+        res = If(test, val, res)
+    return res
 
 def Min(a, b):
     return If(a < b, a, b)
+
+def z3Log(bv):
+    size = bv.size()
+    return iteCases(BitVecVal(0, size),
+                    *[(Extract(bit, bit, bv) == BitVecVal(1, 1),
+                       BitVecVal(bit, size))
+                      for bit in range(0, size)])
 
 class SolverContext:
     def declareDatatype(self, name, values):
@@ -107,8 +124,8 @@ class SolverContext:
             ])
 
         self.CostResult = self.declareDatatype('CostResult', [
-            ('CostRes', [('cost', IntSort()),
-                         ('costN', IntSort())])
+            ('CostRes', [('cost', BitVecSort(COST_BITS)),
+                         ('costN', BitVecSort(COST_BITS))])
             ])
 
     # Note: define-fun is a macro, so the Z3 libary doesn't provide it because
@@ -335,7 +352,7 @@ class SolverContext:
         """Count how many AST nodes are in the given plan"""
         return len(list(self.trees(p)))
 
-    def computeCost(self, p, n=100000.0):
+    def computeCost(self, p, n=COST_ITEM_COUNT):
         """Returns (cost,size) tuples"""
         if str(p.decl()) == "All":
             return 1, n
@@ -360,6 +377,62 @@ class SolverContext:
             return cost1 + cost2 + size1 + size2, size1 + size2
         else:
             raise Exception("Couldn't parse plan: {}".format(p))
+
+    def z3Cost_(self, p, N, depth):
+        Plan = self.Plan
+        CostResult = self.CostResult
+
+        baseCase = iteCases(CostResult.CostRes(0, 0),
+               (Plan.is_All(p), CostResult.CostRes(1, N)),
+               (Plan.is_None(p), CostResult.CostRes(1, 0)))
+
+        if depth == 0:
+            return baseCase
+        else:
+            def costRecurse(p):
+                return self.z3Cost_(p, N, depth-1)
+
+            leftRes = costRecurse(self.leftPlan(p))
+            rightRes = costRecurse(self.rightPlan(p))
+
+            cases = []
+
+            # hash lookup is O(1)
+            cases.append((Plan.is_HashLookup(p),
+                          CostResult.CostRes(1 + CostResult.cost(leftRes),
+                                             CostResult.costN(leftRes)/2)))
+
+            # TODO Estimate log(N), currently estimating (very poorly)
+            #      with sqrt(N)
+            cases.append((Plan.is_BinarySearch(p),
+                          CostResult.CostRes((z3Log(CostResult.costN(leftRes)))
+                                              + CostResult.cost(leftRes),
+                                             CostResult.costN(leftRes)/2)))
+
+            # filter is O(N)
+            cases.append((Plan.is_Filter(p),
+                          CostResult.CostRes(CostResult.costN(leftRes)
+                                              + CostResult.cost(leftRes),
+                                             CostResult.costN(leftRes)/2)))
+
+            isectTime = (CostResult.costN(leftRes) + CostResult.cost(leftRes)
+                    + CostResult.costN(rightRes) + CostResult.cost(rightRes))
+            isectN = Min(CostResult.costN(leftRes),
+                         CostResult.costN(rightRes)) / 2
+            cases.append((Plan.is_Intersect(p),
+                          CostResult.CostRes(isectTime, isectN)))
+
+            uTime = (CostResult.costN(leftRes) + CostResult.cost(leftRes)
+                    + CostResult.costN(rightRes) + CostResult.cost(rightRes))
+            uN = CostResult.costN(leftRes) + CostResult.costN(rightRes)
+            cases.append((Plan.is_Union(p),
+                          CostResult.CostRes(uTime, uN)))
+
+            return iteCases(baseCase, *cases)
+
+    def z3Cost(self, p, N=COST_ITEM_COUNT, depth=MAX_PLAN_DEPTH):
+        res = self.CostResult.cost(self.z3Cost_(p, N, depth))
+        return res
 
     def smallestBadSubtree(self, p, maxCost):
         """
@@ -449,9 +522,13 @@ class SolverContext:
 
             cost = self.computeCost(modelPlan)[0]
             print "Cost: ", cost
+            z3Cost = model.evaluate(self.z3Cost(modelPlan))
+            print "z3 Cost: ", z3Cost
             if bestCost is None or cost < bestCost:
                 bestCost = cost
                 bestPlan = modelPlan
+
+            s.add(self.z3Cost(plan) < z3Cost)
 
             elim = self.smallestBadSubtree(modelPlan, bestCost)
             eliminate_pattern(elim)
