@@ -847,17 +847,19 @@ class SolverContext:
             # cache[size] = toKeep
             # print "pruned", len(toRemove), "plans,", len(toKeep), "remain"
 
-sc = SolverContext(varNames = ['x', 'y'], fieldNames = ['Age', 'Name'])
-q = sc.Query.And(
-    sc.Query.Cmp(sc.Field.Age, sc.Comparison.Gt, sc.QueryVar.x),
-    sc.Query.Cmp(sc.Field.Name, sc.Comparison.Eq, sc.QueryVar.y)
-    )
+if __name__ == "__main__":
 
-#### This line asks Z3 to straight-up find us an answer
-# sc.synthesizePlans(q)
+    sc = SolverContext(varNames = ['x', 'y'], fieldNames = ['Age', 'Name'])
+    q = sc.Query.And(
+        sc.Query.Cmp(sc.Field.Age, sc.Comparison.Gt, sc.QueryVar.x),
+        sc.Query.Cmp(sc.Field.Name, sc.Comparison.Eq, sc.QueryVar.y)
+        )
 
-#### This uses enumeration
-for p, cost in sc.synthesizePlansByEnumeration(q, 1000000):
-    print p
-    print "Cost =", cost
-    print "="*60
+    #### This line asks Z3 to straight-up find us an answer
+    # sc.synthesizePlans(q)
+
+    #### This uses enumeration
+    for p, cost in sc.synthesizePlansByEnumeration(q, 1000000):
+        print p
+        print "Cost =", cost
+        print "="*60
