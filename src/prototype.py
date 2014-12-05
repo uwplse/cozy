@@ -1,6 +1,10 @@
 #!/usr/bin/env python2
 
+import datetime
 import math
+import random
+import sys
+from collections import defaultdict
 from z3 import *
 
 MAX_PLAN_DEPTH = 2
@@ -537,8 +541,323 @@ class SolverContext:
         print "Best plan found: {}; cost={}".format(bestPlan, bestCost)
         return res
 
+    def synthesizePlansByEnumeration(self, query, maxSize):
+        Plan = self.Plan
+        Query = self.Query
+        Val = self.Val
+        Field = self.Field
+        QueryVar = self.QueryVar
+        Comparison = self.Comparison
+
+        def constructors(datatype):
+            # TODO
+            if datatype is Field:
+                return [Field.Age, Field.Name]
+            if datatype is QueryVar:
+                return [QueryVar.x, QueryVar.y]
+            if datatype is Comparison:
+                return [Comparison.Eq, Comparison.Gt, Comparison.Ge, Comparison.Lt, Comparison.Le]
+
+        s = SolverFor("QF_LRA")
+
+        cache = [[], []] # cache[i] contains all legal plans of size i
+        illegal = [] # contains all plan patterns forbidden thus far
+
+        # these are lists so that the closures below can modify their values
+        bestPlan = [None] # best plan found so far
+        bestCost = [None] # cost of bestPlan
+
+        def comparisons(q):
+            """returns (field,queryvar) tuples for a query"""
+            m = defaultdict(list)
+            if str(q.decl()) == "TrueQuery":
+                return set()
+            if str(q.decl()) == "FalseQuery":
+                return set()
+            if str(q.decl()) == "Cmp":
+                return set([(str(q.arg(0).decl()), str(q.arg(2).decl()))])
+            if str(q.decl()) == "And":
+                return comparisons(q.arg(0)) | comparisons(q.arg(1))
+            if str(q.decl()) == "Or":
+                return comparisons(q.arg(0)) | comparisons(q.arg(1))
+            if str(q.decl()) == "Not":
+                return comparisons(q.arg(0))
+            else:
+                raise Exception("Couldn't parse query: {}".format(q))
+
+        comps = comparisons(query)
+
+        def markIllegal(pattern):
+            illegal.append(pattern)
+            for i in range(len(cache)):
+                cache[i] = [p for p in cache[i] if not match(p, pattern)]
+
+        def match(plan, pattern):
+            if str(plan.decl()) == str(pattern.decl()):
+                if str(plan.decl()) in ["HashLookup", "BinarySearch", "Filter"]:
+                    return match(plan.arg(0), pattern.arg(0))
+                elif str(plan.decl()) in ["Intersect", "Union"]:
+                    return (
+                        match(plan.arg(0), pattern.arg(0)) and
+                        match(plan.arg(1), pattern.arg(1)))
+                else:
+                    return True
+            else:
+                return False
+
+        def cmpDenote(comp, a, b):
+            return And(
+                Implies(comp == Comparison.Eq, a == b),
+                Implies(comp == Comparison.Gt, a > b),
+                Implies(comp == Comparison.Ge, a >= b),
+                Implies(comp == Comparison.Lt, a < b),
+                Implies(comp == Comparison.Le, a <= b))
+
+        def planDenote(p, fieldVals, queryVals):
+            if str(p.decl()) == "All":
+                return True
+            elif str(p.decl()) == "None":
+                return False
+            elif str(p.decl()) == "HashLookup":
+                return And(
+                    planDenote(p.arg(0), fieldVals, queryVals),
+                    self.getField(Plan.hashField(p), fieldVals) == self.getQueryVar(Plan.hashVar(p), queryVals))
+            elif str(p.decl()) == "BinarySearch":
+                return And(
+                    planDenote(p.arg(0), fieldVals, queryVals),
+                    cmpDenote(Plan.bsOp(p), self.getField(Plan.bsField(p), fieldVals), self.getQueryVar(Plan.bsVar(p), queryVals)))
+            elif str(p.decl()) == "Filter":
+                return And(
+                    planDenote(p.arg(0), fieldVals, queryVals),
+                    cmpDenote(Plan.filterOp(p), self.getField(Plan.filterField(p), fieldVals), self.getQueryVar(Plan.filterVar(p), queryVals)))
+            elif str(p.decl()) == "Intersect":
+                return And(
+                    planDenote(p.arg(0), fieldVals, queryVals),
+                    planDenote(p.arg(1), fieldVals, queryVals))
+            elif str(p.decl()) == "Union":
+                return Or(
+                    planDenote(p.arg(0), fieldVals, queryVals),
+                    planDenote(p.arg(1), fieldVals, queryVals))
+            else:
+                raise Exception("Couldn't parse plan: {}".format(p))
+
+        def planEval(p, fieldVals, queryVals):
+            if str(p.decl()) == "All":
+                return True
+            elif str(p.decl()) == "None":
+                return False
+            elif str(p.decl()) == "HashLookup":
+                return (
+                    fieldVals[str(p.arg(1).decl())] == queryVals[str(p.arg(2).decl())] and
+                    planEval(p.arg(0), fieldVals, queryVals))
+            elif str(p.decl()) == "BinarySearch":
+                x = False
+                if str(p.arg(2)) == "Eq":   x = fieldVals[str(p.arg(1).decl())] == queryVals[str(p.arg(3).decl())]
+                elif str(p.arg(2)) == "Gt": x = fieldVals[str(p.arg(1).decl())] >  queryVals[str(p.arg(3).decl())]
+                elif str(p.arg(2)) == "Ge": x = fieldVals[str(p.arg(1).decl())] >= queryVals[str(p.arg(3).decl())]
+                elif str(p.arg(2)) == "Lt": x = fieldVals[str(p.arg(1).decl())] <  queryVals[str(p.arg(3).decl())]
+                elif str(p.arg(2)) == "Le": x = fieldVals[str(p.arg(1).decl())] <= queryVals[str(p.arg(3).decl())]
+                return x and planEval(p.arg(0), fieldVals, queryVals)
+            # elif str(p.decl()) == "Filter":
+            #     return (
+            #         planEval(p.arg(0), fieldVals, queryVals) and
+            #         cmpDenote(Plan.filterOp(p), self.getField(Plan.filterField(p), fieldVals), self.getQueryVar(Plan.filterVar(p), queryVals)))
+            elif str(p.decl()) == "Intersect":
+                return (
+                    planEval(p.arg(0), fieldVals, queryVals) and
+                    planEval(p.arg(1), fieldVals, queryVals))
+            elif str(p.decl()) == "Union":
+                return (
+                    planEval(p.arg(0), fieldVals, queryVals) or
+                    planEval(p.arg(1), fieldVals, queryVals))
+            else:
+                raise Exception("Couldn't parse plan: {}".format(p))
+
+        def queryDenote(q, fieldVals, queryVals):
+            if str(q.decl()) == "TrueQuery":
+                return True
+            if str(q.decl()) == "FalseQuery":
+                return False
+            if str(q.decl()) == "Cmp":
+                return cmpDenote(Query.cmpOp(q), self.getField(Query.cmpField(q), fieldVals), self.getQueryVar(Query.cmpVar(q), queryVals))
+            if str(q.decl()) == "And":
+                return And(queryDenote(q.arg(0), fieldVals, queryVals), queryDenote(q.arg(1), fieldVals, queryVals))
+            if str(q.decl()) == "Or":
+                return Or(queryDenote(q.arg(0), fieldVals, queryVals), queryDenote(q.arg(1), fieldVals, queryVals))
+            if str(q.decl()) == "Not":
+                return Not(queryDenote(q.arg(0), fieldVals, queryVals))
+            else:
+                raise Exception("Couldn't parse query: {}".format(q))
+
+        def isValid(plan):
+            s.push()
+            fieldVals = Consts(self.fieldNames, RealSort())
+            queryVals = Consts(self.varNames, RealSort())
+            s.add(planDenote(plan, fieldVals, queryVals) != queryDenote(query, fieldVals, queryVals))
+            result = str(s.check()) == 'unsat'
+            s.pop()
+            return result
+
+        def isSortedBy(p, f):
+            if str(p.decl()) == "All" or str(p.decl()) == "HashLookup":
+                return True
+            if str(p.decl()) == "BinarySearch":
+                return str(p.arg(1)) == str(f)
+            return False
+
+        def planCmp(p1, p2):
+            if str(p1.decl()) < str(p2.decl()):
+                return -1
+            if str(p1.decl()) > str(p2.decl()):
+                return 1
+            if str(p1.decl()) not in ["All", "None"]:
+                x = planCmp(p1.arg(0), p2.arg(0))
+                if x != 0:
+                    return x
+            if str(p1.decl()) in ["Intersect", "Union"]:
+                x = planCmp(p1.arg(1), p2.arg(1))
+                if x != 0:
+                    return x
+            return 0
+
+        def wf(p):
+            if str(p.decl()) in ["All", "None"]:
+                return True
+            elif str(p.decl()) == "HashLookup":
+                return (str(p.arg(1).decl()), str(p.arg(2).decl())) in comps and wf(p.arg(0)) and (
+                    str(p.arg(0).decl()) == "HashLookup" or
+                    str(p.arg(0).decl()) == "All")
+            elif str(p.decl()) == "BinarySearch":
+                return (str(p.arg(1).decl()), str(p.arg(3).decl())) in comps and wf(p.arg(0)) and isSortedBy(p.arg(0), p.arg(1))
+            elif str(p.decl()) == "Filter":
+                return wf(p.arg(0))
+            elif str(p.decl()) in ["Intersect", "Union"]:
+                return (planCmp(p.arg(0), p.arg(1)) < 0) and all(wf(p.arg(i)) and (str(p.arg(i).decl()) != "All") and (str(p.arg(i).decl()) != "None") for i in [0, 1])
+            else:
+                raise Exception("Couldn't parse plan: {}".format(p))
+
+        def consider(plan, size):
+            if not wf(plan):
+                return False
+            if any(match(plan, p) for p in illegal):
+                return False
+            cost = self.computeCost(plan)[0]
+            if bestCost[0] is not None and cost > bestCost[0]:
+                return False
+            result = False
+            if isValid(plan):
+                if bestCost[0] is None or cost < bestCost[0]:
+                    bestPlan[0] = plan
+                    bestCost[0] = cost
+                    result = True
+                subtree = self.smallestBadSubtree(plan, bestCost[0])
+                if subtree:
+                    markIllegal(subtree)
+            else:
+                cache[size].append(plan)
+            return result
+
+        def equiv(p1, p2):
+            # shotgun approach: try some random values!
+            # much faster than invoking solver; rules out many cases
+            for i in range(3):
+                fieldVals = { str(Field.constructor(i)) : random.random() for i in range(Field.num_constructors()) }
+                queryVals = { str(QueryVar.constructor(i)) : random.random() for i in range(QueryVar.num_constructors()) }
+                if planEval(p1, fieldVals, queryVals) != planEval(p2, fieldVals, queryVals):
+                    return False
+
+            # beefy case: invoke solver
+            s.push()
+            fieldVals = Consts(self.fieldNames, RealSort())
+            queryVals = Consts(self.varNames, RealSort())
+            s.add(planDenote(p1, fieldVals, queryVals) != planDenote(p2, fieldVals, queryVals))
+            result = str(s.check()) == 'unsat'
+            s.pop()
+            return result
+
+        def prune(plans):
+            """Prune unnecessary/duplicate plans. Returns (toRemove, toKeep)"""
+            m = [i for i in range(len(plans))]
+            equivalences = set()
+            # for each pair of plans p1, p2...
+            start = datetime.datetime.now()
+            for i in range(len(plans)):
+                now = datetime.datetime.now()
+                percentDone = float(i)/len(plans)
+                elapsed = now - start
+                remaining = 0
+                if percentDone > 0:
+                    remaining = datetime.timedelta(seconds=elapsed.total_seconds() / percentDone) - elapsed
+                sys.stdout.write("{} / {} ({:.3}%) remaining = {}\r".format(i+1, len(plans), percentDone * 100, remaining))
+                sys.stdout.flush()
+                p1 = plans[i]
+                # if a better version has already been found, ignore this plan
+                if m[i] != i:
+                    continue
+                for j in range(i+1, len(plans)):
+                    # plans[j] may already belong to an equivalence set, and
+                    # we *really* want to compare against the best candidate
+                    # in that set
+                    while m[j] != j:
+                        j = m[j]
+                    # the best candidate might be behind us, in which case
+                    # we have already been here
+                    if j <= i:
+                        continue
+                    p2 = plans[j]
+                    # if p1 and p2 are equivalent...
+                    if (i, j) in equivalences or equiv(p1, p2):
+                        equivalences.add((i, j))
+                        # indicate that the costlier one should be removed and
+                        # should be replaced with the better one
+                        cost1 = self.computeCost(p1)
+                        cost2 = self.computeCost(p2)
+                        if cost1 < cost2:
+                            m[j] = i
+                        else:
+                            m[i] = j
+            toRemove = [plans[i] for i in range(len(plans)) if m[i] != i]
+            toKeep = [plans[i] for i in range(len(plans)) if m[i] == i]
+            return toRemove, toKeep
+
+        print "considering plans of size 1"
+        for plan in [Plan.All, Plan.None]:
+            if consider(plan, 1):
+                yield bestPlan[0], bestCost[0]
+
+        for size in xrange(2, maxSize + 1):
+            print "considering plans of size", size
+            cache.append([]) # ensure that cache[size] exists and is a list
+            for plan in (Plan.HashLookup(p, f, v) for p in cache[size-1] for f in constructors(Field) for v in constructors(QueryVar)):
+                if consider(plan, size):
+                    yield bestPlan[0], bestCost[0]
+            for plan in (Plan.BinarySearch(p, f, op, v) for p in cache[size-1] for f in constructors(Field) for v in constructors(QueryVar) for op in constructors(Comparison)):
+                if consider(plan, size):
+                    yield bestPlan[0], bestCost[0]
+            # TODO: filter?
+            for plan in (ty(p1, p2) for ty in [Plan.Intersect, Plan.Union] for cut in xrange(1, size - 1) for p1 in cache[cut] for p2 in cache[size-cut-1]):
+                if consider(plan, size):
+                    yield bestPlan[0], bestCost[0]
+
+            print " --> found", len(cache[size]), "plans"
+
+            # prune plans for efficiency
+            # print len(cache[size]), "plans found, pruning now..."
+            # toRemove, toKeep = prune(cache[size])
+            # cache[size] = toKeep
+            # print "pruned", len(toRemove), "plans,", len(toKeep), "remain"
+
 sc = SolverContext(varNames = ['x', 'y'], fieldNames = ['Age', 'Name'])
-sc.synthesizePlans(sc.Query.And(
+q = sc.Query.And(
     sc.Query.Cmp(sc.Field.Age, sc.Comparison.Gt, sc.QueryVar.x),
     sc.Query.Cmp(sc.Field.Name, sc.Comparison.Eq, sc.QueryVar.y)
-    ))
+    )
+
+#### This line asks Z3 to straight-up find us an answer
+# sc.synthesizePlans(q)
+
+#### This uses enumeration
+for p, cost in sc.synthesizePlansByEnumeration(q, 1000000):
+    print p
+    print "Cost =", cost
+    print "="*60
