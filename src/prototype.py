@@ -550,13 +550,8 @@ class SolverContext:
         Comparison = self.Comparison
 
         def constructors(datatype):
-            # TODO
-            if datatype is Field:
-                return [Field.Age, Field.Name]
-            if datatype is QueryVar:
-                return [QueryVar.x, QueryVar.y]
-            if datatype is Comparison:
-                return [Comparison.Eq, Comparison.Gt, Comparison.Ge, Comparison.Lt, Comparison.Le]
+            l = (datatype.constructor(i) for i in xrange(datatype.num_constructors()))
+            return [(x if x.arity() > 0 else x()) for x in l]
 
         s = SolverFor("QF_LRA")
 
