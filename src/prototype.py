@@ -631,7 +631,7 @@ class SolverContext:
             elif str(p.decl()) == "Filter":
                 return And(
                     planDenote(p.arg(0), fieldVals, queryVals),
-                    cmpDenote(Plan.filterOp(p), self.getField(Plan.filterField(p), fieldVals), self.getQueryVar(Plan.filterVar(p), queryVals)))
+                    queryDenote(p.arg(1), fieldVals, queryVals))
             elif str(p.decl()) == "Intersect":
                 return And(
                     planDenote(p.arg(0), fieldVals, queryVals),
@@ -815,12 +815,13 @@ class SolverContext:
         for size in xrange(2, maxSize + 1):
             print "round", size
             smallerPlans = list(cache.values())
-            # cache.append([]) # ensure that cache[size] exists and is a list
             for plan in (Plan.HashLookup(p, f, v) for p in smallerPlans for f in constructors(Field) for v in constructors(QueryVar)):
                 yield consider(plan, size)
             for plan in (Plan.BinarySearch(p, f, op, v) for p in smallerPlans for f in constructors(Field) for v in constructors(QueryVar) for op in constructors(Comparison)):
                 yield consider(plan, size)
-            # TODO: filter?
+            # TODO: more elaborate filters
+            for plan in (Plan.Filter(p, Query.Cmp(f, op, v)) for p in smallerPlans for f in constructors(Field) for v in constructors(QueryVar) for op in constructors(Comparison)):
+                yield consider(plan, size)
             for plan in (ty(p1, p2) for ty in [Plan.Intersect, Plan.Union] for p1 in smallerPlans for p2 in smallerPlans):
                 yield consider(plan, size)
 
