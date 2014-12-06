@@ -541,7 +541,21 @@ class SolverContext:
         print "Best plan found: {}; cost={}".format(bestPlan, bestCost)
         return res
 
-    def synthesizePlansByEnumeration(self, query, maxSize):
+    def synthesizePlansByEnumeration(self, query, maxSize=1000):
+        examples = []
+        while True:
+            print "starting synthesis using", len(examples), "examples"
+            for responseType, response in self._synthesizePlansByEnumeration(query, maxSize, examples):
+                if responseType == "counterexample":
+                    print "found counterexample", response
+                    if response in examples:
+                        raise Exception("error: already saw counterexample!")
+                    examples.append(response)
+                    break
+                elif responseType == "validPlan":
+                    yield response
+
+    def _synthesizePlansByEnumeration(self, query, maxSize, examples):
         Plan = self.Plan
         Query = self.Query
         Val = self.Val
@@ -553,14 +567,8 @@ class SolverContext:
             l = (datatype.constructor(i) for i in xrange(datatype.num_constructors()))
             return [(x if x.arity() > 0 else x()) for x in l]
 
-        s = SolverFor("QF_LRA")
-
-        cache = [[], []] # cache[i] contains all legal plans of size i
-        illegal = [] # contains all plan patterns forbidden thus far
-
-        # these are lists so that the closures below can modify their values
-        bestPlan = [None] # best plan found so far
-        bestCost = [None] # cost of bestPlan
+        def outputvector(p):
+            return tuple([planEval(p, *e) for e in examples])
 
         def comparisons(q):
             """returns (field,queryvar) tuples for a query"""
@@ -580,12 +588,11 @@ class SolverContext:
             else:
                 raise Exception("Couldn't parse query: {}".format(q))
 
-        comps = comparisons(query)
-
         def markIllegal(pattern):
             illegal.append(pattern)
-            for i in range(len(cache)):
-                cache[i] = [p for p in cache[i] if not match(p, pattern)]
+            for k, p in list(cache.items()):
+                if match(p, pattern):
+                    del cache[k]
 
         def match(plan, pattern):
             if str(plan.decl()) == str(pattern.decl()):
@@ -636,6 +643,30 @@ class SolverContext:
             else:
                 raise Exception("Couldn't parse plan: {}".format(p))
 
+        def cmpEval(op, f, v, fieldVals, queryVals):
+            if   op == "Eq": return fieldVals[self.fieldNames.index(f)] == queryVals[self.varNames.index(v)]
+            elif op == "Gt": return fieldVals[self.fieldNames.index(f)] >  queryVals[self.varNames.index(v)]
+            elif op == "Ge": return fieldVals[self.fieldNames.index(f)] >= queryVals[self.varNames.index(v)]
+            elif op == "Lt": return fieldVals[self.fieldNames.index(f)] <  queryVals[self.varNames.index(v)]
+            elif op == "Le": return fieldVals[self.fieldNames.index(f)] <= queryVals[self.varNames.index(v)]
+            else: raise Exception("unknown comparison {}".format(op))
+
+        def queryEval(q, fieldVals, queryVals):
+            if str(q.decl()) == "TrueQuery":
+                return True
+            if str(q.decl()) == "FalseQuery":
+                return False
+            if str(q.decl()) == "Cmp":
+                return cmpEval(str(q.arg(1)), str(q.arg(0)), str(q.arg(2)), fieldVals, queryVals)
+            if str(q.decl()) == "And":
+                return queryEval(q.arg(0), fieldVals, queryVals) and queryEval(q.arg(1), fieldVals, queryVals)
+            if str(q.decl()) == "Or":
+                return queryEval(q.arg(0), fieldVals, queryVals) or queryEval(q.arg(1), fieldVals, queryVals)
+            if str(q.decl()) == "Not":
+                return not queryEval(q.arg(0), fieldVals, queryVals)
+            else:
+                raise Exception("Couldn't parse query: {}".format(q))
+
         def planEval(p, fieldVals, queryVals):
             if str(p.decl()) == "All":
                 return True
@@ -643,20 +674,16 @@ class SolverContext:
                 return False
             elif str(p.decl()) == "HashLookup":
                 return (
-                    fieldVals[str(p.arg(1).decl())] == queryVals[str(p.arg(2).decl())] and
+                    cmpEval("Eq", str(p.arg(1)), str(p.arg(2)), fieldVals, queryVals) and
                     planEval(p.arg(0), fieldVals, queryVals))
             elif str(p.decl()) == "BinarySearch":
-                x = False
-                if str(p.arg(2)) == "Eq":   x = fieldVals[str(p.arg(1).decl())] == queryVals[str(p.arg(3).decl())]
-                elif str(p.arg(2)) == "Gt": x = fieldVals[str(p.arg(1).decl())] >  queryVals[str(p.arg(3).decl())]
-                elif str(p.arg(2)) == "Ge": x = fieldVals[str(p.arg(1).decl())] >= queryVals[str(p.arg(3).decl())]
-                elif str(p.arg(2)) == "Lt": x = fieldVals[str(p.arg(1).decl())] <  queryVals[str(p.arg(3).decl())]
-                elif str(p.arg(2)) == "Le": x = fieldVals[str(p.arg(1).decl())] <= queryVals[str(p.arg(3).decl())]
-                return x and planEval(p.arg(0), fieldVals, queryVals)
-            # elif str(p.decl()) == "Filter":
-            #     return (
-            #         planEval(p.arg(0), fieldVals, queryVals) and
-            #         cmpDenote(Plan.filterOp(p), self.getField(Plan.filterField(p), fieldVals), self.getQueryVar(Plan.filterVar(p), queryVals)))
+                return (
+                    cmpEval(str(p.arg(2)), str(p.arg(1)), str(p.arg(3)), fieldVals, queryVals) and
+                    planEval(p.arg(0), fieldVals, queryVals))
+            elif str(p.decl()) == "Filter":
+                return (
+                    queryEval(p.arg(1), fieldVals, queryVals) and
+                    planEval(p.arg(0), fieldVals, queryVals))
             elif str(p.decl()) == "Intersect":
                 return (
                     planEval(p.arg(0), fieldVals, queryVals) and
@@ -685,11 +712,22 @@ class SolverContext:
                 raise Exception("Couldn't parse query: {}".format(q))
 
         def isValid(plan):
+            """returns True, False, or a new counterexample"""
+            if outputvector(plan) != queryVector:
+                return False
+
+            result = False
             s.push()
-            fieldVals = Consts(self.fieldNames, RealSort())
-            queryVals = Consts(self.varNames, RealSort())
+            fieldVals = Consts(self.fieldNames, IntSort())
+            queryVals = Consts(self.varNames, IntSort())
             s.add(planDenote(plan, fieldVals, queryVals) != queryDenote(query, fieldVals, queryVals))
-            result = str(s.check()) == 'unsat'
+            if str(s.check()) == 'unsat':
+                result = True
+            else:
+                m = s.model()
+                result = (
+                    [int(str(m[f])) for f in fieldVals],
+                    [int(str(m[v])) for v in queryVals])
             s.pop()
             return result
 
@@ -733,14 +771,13 @@ class SolverContext:
 
         def consider(plan, size):
             if not wf(plan):
-                return False
+                return None, None
             if any(match(plan, p) for p in illegal):
-                return False
+                return None, None
             cost = self.computeCost(plan)[0]
-            if bestCost[0] is not None and cost > bestCost[0]:
-                return False
-            result = False
-            if isValid(plan):
+            vec = outputvector(plan)
+            x = isValid(plan)
+            if x is True:
                 if bestCost[0] is None or cost < bestCost[0]:
                     bestPlan[0] = plan
                     bestCost[0] = cost
@@ -748,99 +785,44 @@ class SolverContext:
                 subtree = self.smallestBadSubtree(plan, bestCost[0])
                 if subtree:
                     markIllegal(subtree)
+                return "validPlan", plan
+            elif x is False:
+                if vec not in cache or self.computeCost(cache[vec]) < cost:
+                    cache[vec] = plan
+                return None, None
             else:
-                cache[size].append(plan)
-            return result
+                # x is new example!
+                return "counterexample", x
 
-        def equiv(p1, p2):
-            # shotgun approach: try some random values!
-            # much faster than invoking solver; rules out many cases
-            for i in range(3):
-                fieldVals = { str(Field.constructor(i)) : random.random() for i in range(Field.num_constructors()) }
-                queryVals = { str(QueryVar.constructor(i)) : random.random() for i in range(QueryVar.num_constructors()) }
-                if planEval(p1, fieldVals, queryVals) != planEval(p2, fieldVals, queryVals):
-                    return False
+        s = SolverFor("QF_LIA")
 
-            # beefy case: invoke solver
-            s.push()
-            fieldVals = Consts(self.fieldNames, RealSort())
-            queryVals = Consts(self.varNames, RealSort())
-            s.add(planDenote(p1, fieldVals, queryVals) != planDenote(p2, fieldVals, queryVals))
-            result = str(s.check()) == 'unsat'
-            s.pop()
-            return result
+        queryVector = tuple([queryEval(query, *e) for e in examples])
 
-        def prune(plans):
-            """Prune unnecessary/duplicate plans. Returns (toRemove, toKeep)"""
-            m = [i for i in range(len(plans))]
-            equivalences = set()
-            # for each pair of plans p1, p2...
-            start = datetime.datetime.now()
-            for i in range(len(plans)):
-                now = datetime.datetime.now()
-                percentDone = float(i)/len(plans)
-                elapsed = now - start
-                remaining = 0
-                if percentDone > 0:
-                    remaining = datetime.timedelta(seconds=elapsed.total_seconds() / percentDone) - elapsed
-                sys.stdout.write("{} / {} ({:.3}%) remaining = {}\r".format(i+1, len(plans), percentDone * 100, remaining))
-                sys.stdout.flush()
-                p1 = plans[i]
-                # if a better version has already been found, ignore this plan
-                if m[i] != i:
-                    continue
-                for j in range(i+1, len(plans)):
-                    # plans[j] may already belong to an equivalence set, and
-                    # we *really* want to compare against the best candidate
-                    # in that set
-                    while m[j] != j:
-                        j = m[j]
-                    # the best candidate might be behind us, in which case
-                    # we have already been here
-                    if j <= i:
-                        continue
-                    p2 = plans[j]
-                    # if p1 and p2 are equivalent...
-                    if (i, j) in equivalences or equiv(p1, p2):
-                        equivalences.add((i, j))
-                        # indicate that the costlier one should be removed and
-                        # should be replaced with the better one
-                        cost1 = self.computeCost(p1)
-                        cost2 = self.computeCost(p2)
-                        if cost1 < cost2:
-                            m[j] = i
-                        else:
-                            m[i] = j
-            toRemove = [plans[i] for i in range(len(plans)) if m[i] != i]
-            toKeep = [plans[i] for i in range(len(plans)) if m[i] == i]
-            return toRemove, toKeep
+        # cache maps output vectors to the best known plan implementing them
+        cache = {}
+        illegal = [] # contains all plan patterns forbidden thus far
 
-        print "considering plans of size 1"
+        # these are lists so that the closures below can modify their values
+        bestPlan = [None] # best plan found so far
+        bestCost = [None] # cost of bestPlan
+
+        comps = comparisons(query)
+
+        print "round 1"
         for plan in [Plan.All, Plan.None]:
-            if consider(plan, 1):
-                yield bestPlan[0], bestCost[0]
+            yield consider(plan, 1)
 
         for size in xrange(2, maxSize + 1):
-            print "considering plans of size", size
-            cache.append([]) # ensure that cache[size] exists and is a list
-            for plan in (Plan.HashLookup(p, f, v) for p in cache[size-1] for f in constructors(Field) for v in constructors(QueryVar)):
-                if consider(plan, size):
-                    yield bestPlan[0], bestCost[0]
-            for plan in (Plan.BinarySearch(p, f, op, v) for p in cache[size-1] for f in constructors(Field) for v in constructors(QueryVar) for op in constructors(Comparison)):
-                if consider(plan, size):
-                    yield bestPlan[0], bestCost[0]
+            print "round", size
+            smallerPlans = list(cache.values())
+            # cache.append([]) # ensure that cache[size] exists and is a list
+            for plan in (Plan.HashLookup(p, f, v) for p in smallerPlans for f in constructors(Field) for v in constructors(QueryVar)):
+                yield consider(plan, size)
+            for plan in (Plan.BinarySearch(p, f, op, v) for p in smallerPlans for f in constructors(Field) for v in constructors(QueryVar) for op in constructors(Comparison)):
+                yield consider(plan, size)
             # TODO: filter?
-            for plan in (ty(p1, p2) for ty in [Plan.Intersect, Plan.Union] for cut in xrange(1, size - 1) for p1 in cache[cut] for p2 in cache[size-cut-1]):
-                if consider(plan, size):
-                    yield bestPlan[0], bestCost[0]
-
-            print " --> found", len(cache[size]), "plans"
-
-            # prune plans for efficiency
-            # print len(cache[size]), "plans found, pruning now..."
-            # toRemove, toKeep = prune(cache[size])
-            # cache[size] = toKeep
-            # print "pruned", len(toRemove), "plans,", len(toKeep), "remain"
+            for plan in (ty(p1, p2) for ty in [Plan.Intersect, Plan.Union] for p1 in smallerPlans for p2 in smallerPlans):
+                yield consider(plan, size)
 
 if __name__ == "__main__":
 
@@ -854,7 +836,7 @@ if __name__ == "__main__":
     # sc.synthesizePlans(q)
 
     #### This uses enumeration
-    for p, cost in sc.synthesizePlansByEnumeration(q, 1000000):
+    for p in sc.synthesizePlansByEnumeration(q, 1000000):
         print p
-        print "Cost =", cost
+        print "Cost =", sc.computeCost(p)
         print "="*60

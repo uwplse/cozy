@@ -32,8 +32,19 @@ if __name__ == '__main__':
     q = mkQuery(sc, q_ast)
     print "Query:", q
 
-    # sc.synthesizePlans(q)
+    bestCost = None
+    bestPlan = None
 
-    for p, cost in sc.synthesizePlansByEnumeration(q, 1000000):
-        print cost, p
-        prettyPrintPlan(p)
+    try:
+        for p in sc.synthesizePlansByEnumeration(q):
+            cost = sc.computeCost(p)[0]
+            print "FOUND PLAN: ", p, "; cost = ", cost
+            if bestCost is None or cost < bestCost:
+                bestPlan = p
+                bestCost = cost
+    except KeyboardInterrupt as e:
+        print "stopping due to keyboard interrupt"
+
+    print "="*60
+    print "Best plan found: ", bestPlan
+    print "Cost: ", bestCost
