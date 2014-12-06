@@ -1,0 +1,3 @@
+fields age
+vars minAge maxAge
+query age >= minAge and age < maxAge

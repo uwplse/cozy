@@ -1,0 +1,3 @@
+fields age name
+vars minAge theName
+query age > minAge and name == theName
