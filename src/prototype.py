@@ -805,7 +805,8 @@ class SolverContext:
         # cache maps output vectors to the best known plan implementing them
         cache = {}
 
-        # these are lists so that the closures below can modify their values
+        # these are lists so that the closures can modify their values
+        # (grumble grumble "nonlocal" keyword missing grumble)
         bestPlan = [None] # best plan found so far
         bestCost = [None] # cost of bestPlan
         productive = [False]
