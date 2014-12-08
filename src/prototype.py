@@ -886,6 +886,10 @@ class SolverContext:
         productive = [False]
 
         comps = comparisonsNNF(query)
+        z3comps = [(getattr(Field, f),
+                    getattr(Comparison, op),
+                    getattr(QueryVar, v))
+                   for (f, op, v) in comps]
 
         print "round 1"
         for plan in [Plan.All, Plan.None]:
@@ -897,10 +901,10 @@ class SolverContext:
             smallerPlans = list(cache.values())
             for plan in (Plan.HashLookup(p, f, v) for p in smallerPlans for f in constructors(Field) for v in constructors(QueryVar)):
                 yield consider(plan, size)
-            for plan in (Plan.BinarySearch(p, f, op, v) for p in smallerPlans for f in constructors(Field) for v in constructors(QueryVar) for op in constructors(Comparison)):
+            for plan in (Plan.BinarySearch(p, f, op, v) for p in smallerPlans for (f, op, v) in z3comps):
                 yield consider(plan, size)
             # TODO: more elaborate filters
-            for plan in (Plan.Filter(p, Query.Cmp(f, op, v)) for p in smallerPlans for f in constructors(Field) for v in constructors(QueryVar) for op in constructors(Comparison)):
+            for plan in (Plan.Filter(p, Query.Cmp(f, op, v)) for p in smallerPlans for (f, op, v) in z3comps):
                 yield consider(plan, size)
             for plan in (ty(p1, p2) for ty in [Plan.Intersect, Plan.Union] for p1 in smallerPlans for p2 in smallerPlans):
                 yield consider(plan, size)
