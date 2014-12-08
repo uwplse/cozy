@@ -1,0 +1,19 @@
+Data Structure Synthesis
+
+This file documents how to use the data structure synthesis tool.
+
+Detailed documentation lives in the "docs" folder. To build the PDFs:
+    $ make -C docs
+
+Dependencies:
+    Python 2.7
+    Z3 Python bindings
+
+To run the tool:
+    $ python src/main.py < FILE
+
+Sample input files live in the "examples" folder.
+
+The synthesizer will run pretty much forever trying to find a low-cost plan.
+To stop it, press Ctrl+C and the tool will stop and output the best plan found
+so far.
