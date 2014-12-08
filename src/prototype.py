@@ -771,7 +771,7 @@ class SolverContext:
             elif str(p.decl()) == "Filter":
                 return wf(p.arg(0))
             elif str(p.decl()) in ["Intersect", "Union"]:
-                return (planCmp(p.arg(0), p.arg(1)) < 0) and all(wf(p.arg(i)) and (str(p.arg(i).decl()) != "All") and (str(p.arg(i).decl()) != "None") for i in [0, 1])
+                return (planCmp(p.arg(0), p.arg(1)) <= 0) and all(wf(p.arg(i)) and (str(p.arg(i).decl()) != "All") and (str(p.arg(i).decl()) != "None") for i in [0, 1])
             else:
                 raise Exception("Couldn't parse plan: {}".format(p))
 
