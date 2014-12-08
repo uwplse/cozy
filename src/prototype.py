@@ -89,9 +89,9 @@ class SolverContext:
                                                               varNames)
         Field = self.Field = self.declareSimpleDatatype('Field', fieldNames)
 
-        comparisonOperators = ['Eq', 'Gt', 'Ge', 'Lt', 'Le']
+        self.comparisonOperators = ['Eq', 'Gt', 'Ge', 'Lt', 'Le']
         self.Comparison = self.declareSimpleDatatype('Comparison',
-                                                     comparisonOperators)
+                                                     self.comparisonOperators)
         Comparison = self.Comparison
 
         Val = self.Val = self.declareSimpleDatatype('Val', ['lo', 'mid', 'hi'])
@@ -572,6 +572,50 @@ class SolverContext:
         def outputvector(p):
             return tuple([planEval(p, *e) for e in examples])
 
+        def toNNF(q):
+            """Converts a query q to negation normal form
+                (i.e. no use of "not"). If negate is true, then act like
+                there is a Not() wrapped around the query."""
+            if str(q.decl()) == "Not":
+                if str(q.decl()) == "TrueQuery":
+                    return Query.FalseQuery()
+                if str(q.decl()) == "FalseQuery":
+                    return Query.TrueQuery()
+                if str(q.decl()) == "Cmp":
+                    if str(q.arg(1)) == 'Eq':
+                        return q
+                    else:
+                        reverses = { 'Gt': Comparison.Le(),
+                                     'Le': Comparison.Gt(),
+                                     'Lt': Comparison.Ge(),
+                                     'Ge': Comparison.Lt() }
+                        opposite = reverses[str(q.arg(1))]
+                        return Query.Cmp(q.arg(0), opposite, q.arg(2))
+                if str(q.decl()) == "And":
+                    return Query.Or(toNNF(Query.Not(q.arg(0))),
+                                    toNNF(Query.Not(q.arg(1))))
+                if str(q.decl()) == "Or":
+                    return Query.And(toNNF(Query.Not(q.arg(0))),
+                                     toNNF(Query.Not(q.arg(1))))
+                if str(q.decl()) == "Not":
+                    return q.arg(0)
+                else:
+                    raise Exception("Couldn't parse query: {}".format(q))
+            elif str(q.decl()) == "And":
+                return Query.And(toNNF(Query.Not(q.arg(0))),
+                                 toNNF(Query.Not(q.arg(1))))
+            elif str(q.decl()) == "Or":
+                return Query.Or(toNNF(Query.Not(q.arg(0))),
+                                toNNF(Query.Not(q.arg(1))))
+            elif str(q.decl()) == "TrueQuery":
+                return q
+            elif str(q.decl()) == "FalseQuery":
+                return q
+            elif str(q.decl()) == "Cmp":
+                return q
+            else:
+                raise Exception("Couldn't parse query: {}".format(q))
+
         def comparisons(q):
             """returns (field,queryvar) tuples for a query"""
             m = defaultdict(list)
@@ -587,6 +631,34 @@ class SolverContext:
                 return comparisons(q.arg(0)) | comparisons(q.arg(1))
             if str(q.decl()) == "Not":
                 return comparisons(q.arg(0))
+            else:
+                raise Exception("Couldn't parse query: {}".format(q))
+
+        def comparisonsNNF(q):
+            """returns (field,cmp,queryvar) tuples for a query"""
+            m = defaultdict(list)
+            if str(q.decl()) == "TrueQuery":
+                return set()
+            if str(q.decl()) == "FalseQuery":
+                return set()
+            if str(q.decl()) == "Cmp":
+                return set([(str(q.arg(0).decl()), str(q.arg(1)),
+                             str(q.arg(2).decl()))])
+            if str(q.decl()) == "And":
+                return comparisonsNNF(q.arg(0)) | comparisonsNNF(q.arg(1))
+            if str(q.decl()) == "Or":
+                return comparisonsNNF(q.arg(0)) | comparisonsNNF(q.arg(1))
+            if str(q.decl()) == "Not":
+                # The only way to have Not is for !=, in which case, give up
+                #   and allow all operators.
+                if str(q.arg(0).decl()) == "Cmp" and\
+                   str(q.arg(0).arg(1)) == 'Eq':
+                    return set([(str(q.arg(0).arg(0).decl()),
+                                 c,
+                                 str(q.arg(0).arg(2).decl()))
+                                for c in self.comparisonOperators])
+                else:
+                    raise Exception("Query not in NNF: {}".format(q))
             else:
                 raise Exception("Couldn't parse query: {}".format(q))
 
@@ -763,11 +835,11 @@ class SolverContext:
             if str(p.decl()) in ["All", "None"]:
                 return True
             elif str(p.decl()) == "HashLookup":
-                return (str(p.arg(1).decl()), str(p.arg(2).decl())) in comps and wf(p.arg(0)) and (
+                return (str(p.arg(1).decl()), 'Eq', str(p.arg(2).decl())) in comps and wf(p.arg(0)) and (
                     str(p.arg(0).decl()) == "HashLookup" or
                     str(p.arg(0).decl()) == "All")
             elif str(p.decl()) == "BinarySearch":
-                return (str(p.arg(1).decl()), str(p.arg(3).decl())) in comps and wf(p.arg(0)) and isSortedBy(p.arg(0), p.arg(1))
+                return (str(p.arg(1).decl()), str(p.arg(2).decl()), str(p.arg(3).decl())) in comps and wf(p.arg(0)) and isSortedBy(p.arg(0), p.arg(1))
             elif str(p.decl()) == "Filter":
                 return wf(p.arg(0))
             elif str(p.decl()) in ["Intersect", "Union"]:
@@ -798,6 +870,8 @@ class SolverContext:
                 productive[0] = True
                 return "counterexample", x
 
+        query = toNNF(query)
+
         s = SolverFor("QF_LIA")
 
         queryVector = tuple([queryEval(query, *e) for e in examples])
@@ -811,7 +885,7 @@ class SolverContext:
         bestCost = [None] # cost of bestPlan
         productive = [False]
 
-        comps = comparisons(query)
+        comps = comparisonsNNF(query)
 
         print "round 1"
         for plan in [Plan.All, Plan.None]:
