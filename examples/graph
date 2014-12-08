@@ -1,0 +1,3 @@
+fields src dst weight
+vars node
+query src == node or dst == node
