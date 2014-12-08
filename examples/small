@@ -1,0 +1,6 @@
+fields locale currency price quality
+vars expectedLocale expectedCurrency minPrice maxPrice qualityCutoff
+query
+    price >= minPrice and
+    price <= maxPrice and
+    quality > qualityCutoff
