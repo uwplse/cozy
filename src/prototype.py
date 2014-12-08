@@ -543,9 +543,10 @@ class SolverContext:
 
     def synthesizePlansByEnumeration(self, query, maxSize=1000):
         examples = []
+        illegal = []
         while True:
             print "starting synthesis using", len(examples), "examples"
-            for responseType, response in self._synthesizePlansByEnumeration(query, maxSize, examples):
+            for responseType, response in self._synthesizePlansByEnumeration(query, maxSize, illegal, examples):
                 if responseType == "counterexample":
                     print "found counterexample", response
                     if response in examples:
@@ -554,8 +555,10 @@ class SolverContext:
                     break
                 elif responseType == "validPlan":
                     yield response
+                elif responseType == "stop":
+                    return
 
-    def _synthesizePlansByEnumeration(self, query, maxSize, examples):
+    def _synthesizePlansByEnumeration(self, query, maxSize, illegal, examples):
         Plan = self.Plan
         Query = self.Query
         Val = self.Val
@@ -594,7 +597,7 @@ class SolverContext:
                 if match(p, pattern):
                     del cache[k]
 
-        def match(plan, pattern):
+        def match_one(plan, pattern):
             if str(plan.decl()) == str(pattern.decl()):
                 if str(plan.decl()) in ["HashLookup", "BinarySearch", "Filter"]:
                     return match(plan.arg(0), pattern.arg(0))
@@ -604,6 +607,16 @@ class SolverContext:
                         match(plan.arg(1), pattern.arg(1)))
                 else:
                     return True
+            else:
+                return False
+
+        def match(plan, pattern):
+            if match_one(plan, pattern):
+                return True
+            elif str(plan.decl()) in ["HashLookup", "BinarySearch", "Filter"]:
+                return match(plan.arg(0), pattern)
+            elif str(plan.decl()) in ["Intersect", "Union"]:
+                return match(plan.arg(0), pattern) or match(plan.arg(1), pattern)
             else:
                 return False
 
@@ -726,8 +739,8 @@ class SolverContext:
             else:
                 m = s.model()
                 result = (
-                    [int(str(m[f])) for f in fieldVals],
-                    [int(str(m[v])) for v in queryVals])
+                    [int(str(m[f] or 0)) for f in fieldVals],
+                    [int(str(m[v] or 0)) for v in queryVals])
             s.pop()
             return result
 
@@ -779,6 +792,7 @@ class SolverContext:
             x = isValid(plan)
             if x is True:
                 if bestCost[0] is None or cost < bestCost[0]:
+                    productive[0] = True
                     bestPlan[0] = plan
                     bestCost[0] = cost
                     result = True
@@ -788,10 +802,12 @@ class SolverContext:
                 return "validPlan", plan
             elif x is False:
                 if vec not in cache or self.computeCost(cache[vec]) < cost:
+                    productive[0] = True
                     cache[vec] = plan
                 return None, None
             else:
                 # x is new example!
+                productive[0] = True
                 return "counterexample", x
 
         s = SolverFor("QF_LIA")
@@ -800,11 +816,11 @@ class SolverContext:
 
         # cache maps output vectors to the best known plan implementing them
         cache = {}
-        illegal = [] # contains all plan patterns forbidden thus far
 
         # these are lists so that the closures below can modify their values
         bestPlan = [None] # best plan found so far
         bestCost = [None] # cost of bestPlan
+        productive = [False]
 
         comps = comparisons(query)
 
@@ -813,6 +829,7 @@ class SolverContext:
             yield consider(plan, 1)
 
         for size in xrange(2, maxSize + 1):
+            productive[0] = False
             print "round", size
             smallerPlans = list(cache.values())
             for plan in (Plan.HashLookup(p, f, v) for p in smallerPlans for f in constructors(Field) for v in constructors(QueryVar)):
@@ -824,6 +841,9 @@ class SolverContext:
                 yield consider(plan, size)
             for plan in (ty(p1, p2) for ty in [Plan.Intersect, Plan.Union] for p1 in smallerPlans for p2 in smallerPlans):
                 yield consider(plan, size)
+            if not productive[0]:
+                print "last round was not productive; stopping"
+                yield "stop", None
 
 if __name__ == "__main__":
 
