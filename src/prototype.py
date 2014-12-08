@@ -544,10 +544,10 @@ class SolverContext:
     def synthesizePlansByEnumeration(self, query, maxSize=1000):
         examples = []
         while True:
-            print "starting synthesis using", len(examples), "examples"
+            #print "starting synthesis using", len(examples), "examples"
             for responseType, response in self._synthesizePlansByEnumeration(query, maxSize, examples):
                 if responseType == "counterexample":
-                    print "found counterexample", response
+                    #print "found counterexample", response
                     if response in examples:
                         raise Exception("error: already saw counterexample!")
                     examples.append(response)
@@ -891,13 +891,13 @@ class SolverContext:
                     getattr(QueryVar, v))
                    for (f, op, v) in comps]
 
-        print "round 1"
+        #print "round 1"
         for plan in [Plan.All, Plan.None]:
             yield consider(plan, 1)
 
         for size in xrange(2, maxSize + 1):
             productive[0] = False
-            print "round", size
+            #print "round", size
             smallerPlans = list(cache.values())
             for plan in (Plan.HashLookup(p, f, v) for p in smallerPlans for f in constructors(Field) for v in constructors(QueryVar)):
                 yield consider(plan, size)
@@ -1094,10 +1094,6 @@ public """ if public else '',
                     else:
                         return 'el.get%s().compareTo(%s) %s 0' % (q.arg(0), q.arg(2), op)
                 elif str(q.decl()) == "And":
-                    print "q", q
-                    print "q.arg(0)", q.arg(0)
-                    print "queryToJava(q.arg(0))", queryToJava(q.arg(0))
-                    print "q.arg(1)", q.arg(1)
                     return '(%s && %s)' % (queryToJava(q.arg(0)),
                                            queryToJava(q.arg(1)))
                 elif str(q.decl()) == "Or":

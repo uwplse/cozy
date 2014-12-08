@@ -33,6 +33,7 @@ if __name__ == '__main__':
     sc = SolverContext(varNames = qvars, fieldNames = fields)
     q = mkQuery(sc, q_ast)
     print "Query:", q
+    print "Query size:", str(q).count('Cmp')
 
     bestCost = None
     bestPlan = None
@@ -49,4 +50,5 @@ if __name__ == '__main__':
 
     print "="*60
     print "Best plan found: ", bestPlan
+    print "Best plan size: ", sc.size(bestPlan)
     print "Cost: ", bestCost
