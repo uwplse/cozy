@@ -1,3 +1,5 @@
+#!/usr/bin/env python2
+
 """
 Reads a query from stdin, writes nice output to stdout.
 """
