@@ -543,10 +543,9 @@ class SolverContext:
 
     def synthesizePlansByEnumeration(self, query, maxSize=1000):
         examples = []
-        illegal = []
         while True:
             print "starting synthesis using", len(examples), "examples"
-            for responseType, response in self._synthesizePlansByEnumeration(query, maxSize, illegal, examples):
+            for responseType, response in self._synthesizePlansByEnumeration(query, maxSize, examples):
                 if responseType == "counterexample":
                     print "found counterexample", response
                     if response in examples:
@@ -558,7 +557,7 @@ class SolverContext:
                 elif responseType == "stop":
                     return
 
-    def _synthesizePlansByEnumeration(self, query, maxSize, illegal, examples):
+    def _synthesizePlansByEnumeration(self, query, maxSize, examples):
         Plan = self.Plan
         Query = self.Query
         Val = self.Val
@@ -590,12 +589,6 @@ class SolverContext:
                 return comparisons(q.arg(0))
             else:
                 raise Exception("Couldn't parse query: {}".format(q))
-
-        def markIllegal(pattern):
-            illegal.append(pattern)
-            for k, p in list(cache.items()):
-                if match(p, pattern):
-                    del cache[k]
 
         def match_one(plan, pattern):
             if str(plan.decl()) == str(pattern.decl()):
@@ -785,8 +778,6 @@ class SolverContext:
         def consider(plan, size):
             if not wf(plan):
                 return None, None
-            if any(match(plan, p) for p in illegal):
-                return None, None
             cost = self.computeCost(plan)[0]
             vec = outputvector(plan)
             x = isValid(plan)
@@ -796,9 +787,6 @@ class SolverContext:
                     bestPlan[0] = plan
                     bestCost[0] = cost
                     result = True
-                subtree = self.smallestBadSubtree(plan, bestCost[0])
-                if subtree:
-                    markIllegal(subtree)
                 return "validPlan", plan
             elif x is False:
                 if vec not in cache or self.computeCost(cache[vec]) < cost:
