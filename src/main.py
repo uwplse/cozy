@@ -5,7 +5,7 @@ Reads a query from stdin, writes nice output to stdout.
 """
 
 import sys
-from prototype import SolverContext
+from synthesis import SolverContext
 from parse import parseQuery
 
 def mkQuery(sc, ast):
