@@ -2,16 +2,16 @@ import re
 import itertools
 
 _EOF = object()
-_regex = re.compile(r'\s*(\(|\)|\w+|>=|<=|>|<|==)')
+_TOKEN_REGEX = re.compile(r'\s*(\(|\)|\w+|>=|<=|>|<|==)')
 def _tokenize(text):
     while True:
-        match = _regex.match(text)
+        match = _TOKEN_REGEX.match(text)
         if not match:
+            assert text.strip() == ""
             yield _EOF
             return
         yield match.group(1)
         text = text[len(match.group(0)):]
-    assert text.strip() == ""
 
 class peekable(object):
     def __init__(self, i):

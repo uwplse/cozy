@@ -9,56 +9,11 @@ from z3 import *
 
 COST_ITEM_COUNT = 1000
 
-def iteCases(default, *caseList):
-    try:
-        res = default
-        for (test, val) in caseList:
-            res = If(test, val, res)
-        return res
-    except ValueError:
-        print caseList
-        raise
-def iteAllCases(*caseList):
-    return iteCases(False, *caseList)
-
-def getConstructorIdx(Type, name):
-    for idx in range(0, Type.num_constructors()):
-        if Type.constructor(idx).name() == name:
-            return idx
-    raise Exception("Type %s has no constructor named %s." % (Type, name))
-def getRecognizer(Type, name):
-    return Type.recognizer(getConstructorIdx(Type, name))
-def allRecognizers(Type):
-    return [Type.recognizer(i) for i in range(0, Type.num_constructors())]
-
 def doSymbolTableLookup(Type, variable, vals):
     res = vals[0]
     for idx in range(1, Type.num_constructors()):
         res = If(Type.recognizer(idx)(variable), vals[idx], res)
     return res
-
-def getArgNum(value, Type, argIdx, ArgType, default):
-    res = default
-    for idx in range(0, Type.num_constructors()):
-        if Type.constructor(idx).arity() > argIdx:
-            accessor = Type.accessor(idx, argIdx)
-            if accessor.range() == ArgType:
-                res = If(Type.recognizer(idx)(value), accessor(value), res)
-    return res
-    res = default
-    for (test, val) in caseList:
-        res = If(test, val, res)
-    return res
-
-def Min(a, b):
-    return If(a < b, a, b)
-
-def z3Log(bv):
-    size = bv.size()
-    return iteCases(BitVecVal(0, size),
-                    *[(Extract(bit, bit, bv) == BitVecVal(1, 1),
-                       BitVecVal(bit, size))
-                      for bit in range(0, size)])
 
 class SolverContext:
     def declareDatatype(self, name, values):
@@ -86,8 +41,6 @@ class SolverContext:
         self.Comparison = self.declareSimpleDatatype('Comparison',
                                                      self.comparisonOperators)
         Comparison = self.Comparison
-
-        Val = self.Val = self.declareSimpleDatatype('Val', ['lo', 'mid', 'hi'])
 
         # Need to do this for recursive datatype
         Query = Datatype('Query')
@@ -183,7 +136,6 @@ class SolverContext:
     def _synthesizePlansByEnumeration(self, query, maxSize, examples):
         Plan = self.Plan
         Query = self.Query
-        Val = self.Val
         Field = self.Field
         QueryVar = self.QueryVar
         Comparison = self.Comparison
@@ -798,10 +750,6 @@ if __name__ == "__main__":
         sc.Query.Cmp(sc.Field.Name, sc.Comparison.Eq, sc.QueryVar.y)
         )
 
-    #### This line asks Z3 to straight-up find us an answer
-    # sc.synthesizePlans(q)
-
-    #### This uses enumeration
     for p in sc.synthesizePlansByEnumeration(q, 1000000):
         print p
         print "Cost =", sc.computeCost(p)

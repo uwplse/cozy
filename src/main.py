@@ -24,9 +24,6 @@ def mkQuery(sc, ast):
     else:
         raise Exception("failed to make query from {}".format(ast))
 
-def prettyPrintPlan(p):
-    pass
-
 if __name__ == '__main__':
     fields, qvars, q_ast = parseQuery(sys.stdin.read())
 
