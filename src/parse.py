@@ -11,6 +11,7 @@ def _tokenize(text):
             return
         yield match.group(1)
         text = text[len(match.group(0)):]
+    assert text.strip() == ""
 
 class peekable(object):
     def __init__(self, i):
