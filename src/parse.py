@@ -54,6 +54,8 @@ def _parseQuery(fields, qvars, tokens, assoc=0):
             f = tok
             op = tokens.next()
             v = tokens.next()
+            if f in qvars and v in fields:
+                f, v = v, f
             assert f in fields
             m = { ">=" : "Ge", "<=" : "Le", ">" : "Gt", "<" : "Lt", "==" : "Eq" }
             assert op in m
