@@ -426,6 +426,9 @@ class SolverContext:
             if not wf(plan):
                 return None, None
             cost = self.computeCost(plan)[0]
+            if bestCost[0] is not None and cost >= bestCost[0]:
+                # oops! this can't possibly be part of a better plan
+                return None, None
             vec = outputvector(plan)
             x = isValid(plan)
             if x is True:
@@ -454,10 +457,14 @@ class SolverContext:
         # cache maps output vectors to the best known plan implementing them
         cache = {}
 
+        # the stupidest possible plan: linear search
+        dumbestPlan = Plan.Filter(Plan.All, query)
+
         # these are lists so that the closures can modify their values
         # (grumble grumble "nonlocal" keyword missing grumble)
-        bestPlan = [None] # best plan found so far
-        bestCost = [None] # cost of bestPlan
+        bestPlan = [dumbestPlan] # best plan found so far
+        bestCost = [self.computeCost(dumbestPlan)[0]] # cost of bestPlan
+        yield "validPlan", dumbestPlan
         productive = [False]
 
         comps = comparisonsNNF(query)
