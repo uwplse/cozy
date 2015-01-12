@@ -1,0 +1,4 @@
+fields start end id
+vars val
+query
+    start <= val and val <= end
