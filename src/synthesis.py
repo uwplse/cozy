@@ -62,7 +62,7 @@ class SolverContext:
             s.pop()
             return result
 
-        def consider(plan):
+        def consider(plan, size):
             if not plan.wellFormed():
                 return None, None
             cost = cost_model.cost(plan)
@@ -81,6 +81,7 @@ class SolverContext:
                 if vec not in cache or cost_model.cost(cache[vec]) > cost:
                     productive[0] = True
                     cache[vec] = plan
+                    plansOfSize[size].append(plan)
                 return None, None
             else:
                 # x is new example!
@@ -95,6 +96,9 @@ class SolverContext:
         # cache maps output vectors to the best known plan implementing them
         cache = {}
 
+        # plansOfSize[s] contains all interesting plans of size s
+        plansOfSize = [[], []]
+
         # the stupidest possible plan: linear search
         dumbestPlan = plans.Filter(plans.All(), query)
 
@@ -107,21 +111,22 @@ class SolverContext:
 
         # print "round 1"
         for plan in [plans.All(), plans.Empty()]:
-            yield consider(plan)
+            yield consider(plan, 1)
 
         for size in xrange(2, maxSize + 1):
+            assert len(plansOfSize) == size
+            plansOfSize.append([])
             productive[0] = False
             # print "round", size
-            smallerPlans = list(cache.values())
-            for plan in (plans.HashLookup(p, f, v) for p in smallerPlans for f in self.fieldNames for v in self.varNames if (f, v) in comps):
-                yield consider(plan)
-            for plan in (plans.BinarySearch(p, f, op, v) for p in smallerPlans for f in self.fieldNames for v in self.varNames if (f, v) in comps for op in predicates.operators):
-                yield consider(plan)
+            for plan in (plans.HashLookup(p, f, v) for p in plansOfSize[size-1] for f in self.fieldNames for v in self.varNames if (f, v) in comps):
+                yield consider(plan, size)
+            for plan in (plans.BinarySearch(p, f, op, v) for p in plansOfSize[size-1] for f in self.fieldNames for v in self.varNames if (f, v) in comps for op in predicates.operators):
+                yield consider(plan, size)
             # TODO: more elaborate filters
-            for plan in (plans.Filter(p, predicates.Compare(predicates.Var(f), op, predicates.Var(v))) for p in smallerPlans for f in self.fieldNames for v in self.varNames if (f, v) in comps for op in predicates.operators):
-                yield consider(plan)
-            for plan in (ty(p1, p2) for ty in [plans.Intersect, plans.Union] for p1 in smallerPlans if not p1.isTrivial() for p2 in smallerPlans if not p2.isTrivial()):
-                yield consider(plan)
+            for plan in (plans.Filter(p, predicates.Compare(predicates.Var(f), op, predicates.Var(v))) for p in plansOfSize[size-1] for f in self.fieldNames for v in self.varNames if (f, v) in comps for op in predicates.operators):
+                yield consider(plan, size)
+            for plan in (ty(p1, p2) for ty in [plans.Intersect, plans.Union] for split in xrange(1, size-1) for p1 in plansOfSize[split] if not p1.isTrivial() for p2 in plansOfSize[size-split-1] if not p2.isTrivial()):
+                yield consider(plan, size)
             if not productive[0]:
                 print "last round was not productive; stopping"
                 yield "stop", None
