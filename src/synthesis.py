@@ -1,129 +1,33 @@
 #!/usr/bin/env python2
 
 import datetime
+import itertools
 import math
 import random
 import sys
 from collections import defaultdict
 from z3 import *
 
-COST_ITEM_COUNT = 1000
+import predicates
+import plans
+import cost_model
 
-def doSymbolTableLookup(Type, variable, vals):
-    res = vals[0]
-    for idx in range(1, Type.num_constructors()):
-        res = If(Type.recognizer(idx)(variable), vals[idx], res)
-    return res
+COST_ITEM_COUNT = float(1000)
 
 class SolverContext:
-    def declareDatatype(self, name, values):
-        if isinstance(name, Datatype):
-            Type = name
-        else:
-            Type = Datatype(name)
-        for (value, args) in values:
-            Type.declare(value, *args)
-        return Type.create()
-
-    def declareSimpleDatatype(self, name, values):
-        return self.declareDatatype(name, [(v, []) for v in values])
-
 
     def __init__(self, varNames, fieldNames):
         self.varNames = varNames
         self.fieldNames = fieldNames
 
-        QueryVar = self.QueryVar = self.declareSimpleDatatype('QueryVar',
-                                                              varNames)
-        Field = self.Field = self.declareSimpleDatatype('Field', fieldNames)
-
-        self.comparisonOperators = ['Eq', 'Gt', 'Ge', 'Lt', 'Le']
-        self.Comparison = self.declareSimpleDatatype('Comparison',
-                                                     self.comparisonOperators)
-        Comparison = self.Comparison
-
-        # Need to do this for recursive datatype
-        Query = Datatype('Query')
-        Query = self.Query = self.declareDatatype(Query, [
-            ('TrueQuery', []),
-            ('FalseQuery', []),
-            ('Cmp', [
-                ('cmpField', Field),
-                ('cmpOp', Comparison),
-                ('cmpVar', QueryVar)]),
-            ('And', [('andLeft', Query), ('andRight', Query)]),
-            ('Or', [('orLeft', Query), ('orRight', Query)]),
-            ('Not', [('notQ', Query)]),
-            ])
-
-        Plan = Datatype('Plan')
-        Plan = self.Plan = self.declareDatatype(Plan, [
-            ('All', []),
-            ('None', []),
-            ('HashLookup', [
-                ('hashPlan', Plan),
-                ('hashField', Field),
-                ('hashVar', QueryVar)]),
-            ('BinarySearch', [
-                ('bsPlan', Plan), ('bsField', Field),
-                ('bsOp', Comparison), ('bsVar', QueryVar)]),
-            ('Filter', [('filterPlan', Plan), ('filterQuery', Query)]),
-            ('Intersect', [('isectFirstPlan', Plan),
-                           ('isectSecondPlan', Plan)]),
-            ('Union', [('uFirstPlan', Plan), ('uSecondPlan', Plan)]),
-            ])
-
-    def getField(self, f, vals):
-        return doSymbolTableLookup(self.Field, f, vals)
-    def getQueryVar(self, qv, vals):
-        return doSymbolTableLookup(self.QueryVar, qv, vals)
-
-    def trees(self, p):
-        """Generates all AST nodes in the given plan"""
-        yield p
-        if str(p.decl()) in ["HashLookup", "BinarySearch", "Filter"]:
-            for n in self.trees(p.arg(0)): yield n
-        elif str(p.decl()) in ["Intersect", "Union"]:
-            for n in self.trees(p.arg(0)): yield n
-            for n in self.trees(p.arg(1)): yield n
-
-    def size(self, p):
-        """Count how many AST nodes are in the given plan"""
-        return len(list(self.trees(p)))
-
-    def computeCost(self, p, n=COST_ITEM_COUNT):
-        """Returns (cost,size) tuples"""
-        if str(p.decl()) == "All":
-            return 1, n
-        elif str(p.decl()) == "None":
-            return 1, 0
-        elif str(p.decl()) == "HashLookup":
-            cost1, size1 = self.computeCost(p.arg(0))
-            return cost1 + 1, size1 / 2
-        elif str(p.decl()) == "BinarySearch":
-            cost1, size1 = self.computeCost(p.arg(0))
-            return cost1 + (math.log(size1) if size1 >= 1 else 1), size1 / 2
-        elif str(p.decl()) == "Filter":
-            cost1, size1 = self.computeCost(p.arg(0))
-            return cost1 + size1, size1 / 2
-        elif str(p.decl()) == "Intersect":
-            cost1, size1 = self.computeCost(p.arg(0))
-            cost2, size2 = self.computeCost(p.arg(1))
-            return cost1 + cost2 + size1 + size2, min(size1, size2) / 2
-        elif str(p.decl()) == "Union":
-            cost1, size1 = self.computeCost(p.arg(0))
-            cost2, size2 = self.computeCost(p.arg(1))
-            return cost1 + cost2 + size1 + size2, size1 + size2
-        else:
-            raise Exception("Couldn't parse plan: {}".format(p))
-
     def synthesizePlansByEnumeration(self, query, maxSize=1000):
         examples = []
+        query = query.toNNF()
         while True:
-            #print "starting synthesis using", len(examples), "examples"
+            # print "starting synthesis using", len(examples), "examples"
             for responseType, response in self._synthesizePlansByEnumeration(query, maxSize, examples):
                 if responseType == "counterexample":
-                    #print "found counterexample", response
+                    # print "found counterexample", response
                     if response in examples:
                         raise Exception("error: already saw counterexample!")
                     examples.append(response)
@@ -134,312 +38,47 @@ class SolverContext:
                     return
 
     def _synthesizePlansByEnumeration(self, query, maxSize, examples):
-        Plan = self.Plan
-        Query = self.Query
-        Field = self.Field
-        QueryVar = self.QueryVar
-        Comparison = self.Comparison
+        """note: query should be in NNF"""
 
-        def constructors(datatype):
-            l = (datatype.constructor(i) for i in xrange(datatype.num_constructors()))
-            return [(x if x.arity() > 0 else x()) for x in l]
-
-        def outputvector(p):
-            return tuple([planEval(p, *e) for e in examples])
-
-        def toNNF(q):
-            """Converts a query q to negation normal form
-                (i.e. no use of "not"). If negate is true, then act like
-                there is a Not() wrapped around the query."""
-            if str(q.decl()) == "Not":
-                if str(q.decl()) == "TrueQuery":
-                    return Query.FalseQuery()
-                if str(q.decl()) == "FalseQuery":
-                    return Query.TrueQuery()
-                if str(q.decl()) == "Cmp":
-                    if str(q.arg(1)) == 'Eq':
-                        return q
-                    else:
-                        reverses = { 'Gt': Comparison.Le(),
-                                     'Le': Comparison.Gt(),
-                                     'Lt': Comparison.Ge(),
-                                     'Ge': Comparison.Lt() }
-                        opposite = reverses[str(q.arg(1))]
-                        return Query.Cmp(q.arg(0), opposite, q.arg(2))
-                if str(q.decl()) == "And":
-                    return Query.Or(toNNF(Query.Not(q.arg(0))),
-                                    toNNF(Query.Not(q.arg(1))))
-                if str(q.decl()) == "Or":
-                    return Query.And(toNNF(Query.Not(q.arg(0))),
-                                     toNNF(Query.Not(q.arg(1))))
-                if str(q.decl()) == "Not":
-                    return q.arg(0)
-                else:
-                    raise Exception("Couldn't parse query: {}".format(q))
-            elif str(q.decl()) == "And":
-                return Query.And(toNNF(Query.Not(q.arg(0))),
-                                 toNNF(Query.Not(q.arg(1))))
-            elif str(q.decl()) == "Or":
-                return Query.Or(toNNF(Query.Not(q.arg(0))),
-                                toNNF(Query.Not(q.arg(1))))
-            elif str(q.decl()) == "TrueQuery":
-                return q
-            elif str(q.decl()) == "FalseQuery":
-                return q
-            elif str(q.decl()) == "Cmp":
-                return q
-            else:
-                raise Exception("Couldn't parse query: {}".format(q))
-
-        def comparisons(q):
-            """returns (field,queryvar) tuples for a query"""
-            m = defaultdict(list)
-            if str(q.decl()) == "TrueQuery":
-                return set()
-            if str(q.decl()) == "FalseQuery":
-                return set()
-            if str(q.decl()) == "Cmp":
-                return set([(str(q.arg(0).decl()), str(q.arg(2).decl()))])
-            if str(q.decl()) == "And":
-                return comparisons(q.arg(0)) | comparisons(q.arg(1))
-            if str(q.decl()) == "Or":
-                return comparisons(q.arg(0)) | comparisons(q.arg(1))
-            if str(q.decl()) == "Not":
-                return comparisons(q.arg(0))
-            else:
-                raise Exception("Couldn't parse query: {}".format(q))
-
-        def comparisonsNNF(q):
-            """returns (field,cmp,queryvar) tuples for a query"""
-            m = defaultdict(list)
-            if str(q.decl()) == "TrueQuery":
-                return set()
-            if str(q.decl()) == "FalseQuery":
-                return set()
-            if str(q.decl()) == "Cmp":
-                return set([(str(q.arg(0).decl()), str(q.arg(1)),
-                             str(q.arg(2).decl()))])
-            if str(q.decl()) == "And":
-                return comparisonsNNF(q.arg(0)) | comparisonsNNF(q.arg(1))
-            if str(q.decl()) == "Or":
-                return comparisonsNNF(q.arg(0)) | comparisonsNNF(q.arg(1))
-            if str(q.decl()) == "Not":
-                # The only way to have Not is for !=, in which case, give up
-                #   and allow all operators.
-                if str(q.arg(0).decl()) == "Cmp" and\
-                   str(q.arg(0).arg(1)) == 'Eq':
-                    return set([(str(q.arg(0).arg(0).decl()),
-                                 c,
-                                 str(q.arg(0).arg(2).decl()))
-                                for c in self.comparisonOperators])
-                else:
-                    raise Exception("Query not in NNF: {}".format(q))
-            else:
-                raise Exception("Couldn't parse query: {}".format(q))
-
-        def match_one(plan, pattern):
-            if str(plan.decl()) == str(pattern.decl()):
-                if str(plan.decl()) in ["HashLookup", "BinarySearch", "Filter"]:
-                    return match(plan.arg(0), pattern.arg(0))
-                elif str(plan.decl()) in ["Intersect", "Union"]:
-                    return (
-                        match(plan.arg(0), pattern.arg(0)) and
-                        match(plan.arg(1), pattern.arg(1)))
-                else:
-                    return True
-            else:
-                return False
-
-        def match(plan, pattern):
-            if match_one(plan, pattern):
-                return True
-            elif str(plan.decl()) in ["HashLookup", "BinarySearch", "Filter"]:
-                return match(plan.arg(0), pattern)
-            elif str(plan.decl()) in ["Intersect", "Union"]:
-                return match(plan.arg(0), pattern) or match(plan.arg(1), pattern)
-            else:
-                return False
-
-        def cmpDenote(comp, a, b):
-            return And(
-                Implies(comp == Comparison.Eq, a == b),
-                Implies(comp == Comparison.Gt, a > b),
-                Implies(comp == Comparison.Ge, a >= b),
-                Implies(comp == Comparison.Lt, a < b),
-                Implies(comp == Comparison.Le, a <= b))
-
-        def planDenote(p, fieldVals, queryVals):
-            if str(p.decl()) == "All":
-                return True
-            elif str(p.decl()) == "None":
-                return False
-            elif str(p.decl()) == "HashLookup":
-                return And(
-                    planDenote(p.arg(0), fieldVals, queryVals),
-                    self.getField(Plan.hashField(p), fieldVals) == self.getQueryVar(Plan.hashVar(p), queryVals))
-            elif str(p.decl()) == "BinarySearch":
-                return And(
-                    planDenote(p.arg(0), fieldVals, queryVals),
-                    cmpDenote(Plan.bsOp(p), self.getField(Plan.bsField(p), fieldVals), self.getQueryVar(Plan.bsVar(p), queryVals)))
-            elif str(p.decl()) == "Filter":
-                return And(
-                    planDenote(p.arg(0), fieldVals, queryVals),
-                    queryDenote(p.arg(1), fieldVals, queryVals))
-            elif str(p.decl()) == "Intersect":
-                return And(
-                    planDenote(p.arg(0), fieldVals, queryVals),
-                    planDenote(p.arg(1), fieldVals, queryVals))
-            elif str(p.decl()) == "Union":
-                return Or(
-                    planDenote(p.arg(0), fieldVals, queryVals),
-                    planDenote(p.arg(1), fieldVals, queryVals))
-            else:
-                raise Exception("Couldn't parse plan: {}".format(p))
-
-        def cmpEval(op, f, v, fieldVals, queryVals):
-            if   op == "Eq": return fieldVals[self.fieldNames.index(f)] == queryVals[self.varNames.index(v)]
-            elif op == "Gt": return fieldVals[self.fieldNames.index(f)] >  queryVals[self.varNames.index(v)]
-            elif op == "Ge": return fieldVals[self.fieldNames.index(f)] >= queryVals[self.varNames.index(v)]
-            elif op == "Lt": return fieldVals[self.fieldNames.index(f)] <  queryVals[self.varNames.index(v)]
-            elif op == "Le": return fieldVals[self.fieldNames.index(f)] <= queryVals[self.varNames.index(v)]
-            else: raise Exception("unknown comparison {}".format(op))
-
-        def queryEval(q, fieldVals, queryVals):
-            if str(q.decl()) == "TrueQuery":
-                return True
-            if str(q.decl()) == "FalseQuery":
-                return False
-            if str(q.decl()) == "Cmp":
-                return cmpEval(str(q.arg(1)), str(q.arg(0)), str(q.arg(2)), fieldVals, queryVals)
-            if str(q.decl()) == "And":
-                return queryEval(q.arg(0), fieldVals, queryVals) and queryEval(q.arg(1), fieldVals, queryVals)
-            if str(q.decl()) == "Or":
-                return queryEval(q.arg(0), fieldVals, queryVals) or queryEval(q.arg(1), fieldVals, queryVals)
-            if str(q.decl()) == "Not":
-                return not queryEval(q.arg(0), fieldVals, queryVals)
-            else:
-                raise Exception("Couldn't parse query: {}".format(q))
-
-        def planEval(p, fieldVals, queryVals):
-            if str(p.decl()) == "All":
-                return True
-            elif str(p.decl()) == "None":
-                return False
-            elif str(p.decl()) == "HashLookup":
-                return (
-                    cmpEval("Eq", str(p.arg(1)), str(p.arg(2)), fieldVals, queryVals) and
-                    planEval(p.arg(0), fieldVals, queryVals))
-            elif str(p.decl()) == "BinarySearch":
-                return (
-                    cmpEval(str(p.arg(2)), str(p.arg(1)), str(p.arg(3)), fieldVals, queryVals) and
-                    planEval(p.arg(0), fieldVals, queryVals))
-            elif str(p.decl()) == "Filter":
-                return (
-                    queryEval(p.arg(1), fieldVals, queryVals) and
-                    planEval(p.arg(0), fieldVals, queryVals))
-            elif str(p.decl()) == "Intersect":
-                return (
-                    planEval(p.arg(0), fieldVals, queryVals) and
-                    planEval(p.arg(1), fieldVals, queryVals))
-            elif str(p.decl()) == "Union":
-                return (
-                    planEval(p.arg(0), fieldVals, queryVals) or
-                    planEval(p.arg(1), fieldVals, queryVals))
-            else:
-                raise Exception("Couldn't parse plan: {}".format(p))
-
-        def queryDenote(q, fieldVals, queryVals):
-            if str(q.decl()) == "TrueQuery":
-                return True
-            if str(q.decl()) == "FalseQuery":
-                return False
-            if str(q.decl()) == "Cmp":
-                return cmpDenote(Query.cmpOp(q), self.getField(Query.cmpField(q), fieldVals), self.getQueryVar(Query.cmpVar(q), queryVals))
-            if str(q.decl()) == "And":
-                return And(queryDenote(q.arg(0), fieldVals, queryVals), queryDenote(q.arg(1), fieldVals, queryVals))
-            if str(q.decl()) == "Or":
-                return Or(queryDenote(q.arg(0), fieldVals, queryVals), queryDenote(q.arg(1), fieldVals, queryVals))
-            if str(q.decl()) == "Not":
-                return Not(queryDenote(q.arg(0), fieldVals, queryVals))
-            else:
-                raise Exception("Couldn't parse query: {}".format(q))
+        def outputvector(predicate):
+            return tuple([predicate.eval(dict(itertools.chain(zip(self.varNames, vs), zip(self.fieldNames, fs)))) for fs,vs in examples])
 
         def isValid(plan):
             """returns True, False, or a new counterexample"""
-            if outputvector(plan) != queryVector:
+            planPred = plan.toPredicate()
+            if outputvector(planPred) != queryVector:
                 return False
 
             result = False
             s.push()
-            fieldVals = Consts(self.fieldNames, IntSort())
-            queryVals = Consts(self.varNames, IntSort())
-            s.add(planDenote(plan, fieldVals, queryVals) != queryDenote(query, fieldVals, queryVals))
+            s.add(planPred.toZ3() != query.toZ3())
             if str(s.check()) == 'unsat':
                 result = True
             else:
                 m = s.model()
                 result = (
-                    [int(str(m[f] or 0)) for f in fieldVals],
-                    [int(str(m[v] or 0)) for v in queryVals])
+                    [int(str(m[Int(f)] or 0)) for f in self.fieldNames],
+                    [int(str(m[Int(v)] or 0)) for v in self.varNames])
             s.pop()
             return result
 
-        def isSortedBy(p, f):
-            if str(p.decl()) == "All" or str(p.decl()) == "HashLookup":
-                return True
-            if str(p.decl()) == "BinarySearch":
-                return str(p.arg(1)) == str(f)
-            return False
-
-        def planCmp(p1, p2):
-            if str(p1.decl()) < str(p2.decl()):
-                return -1
-            if str(p1.decl()) > str(p2.decl()):
-                return 1
-            if str(p1.decl()) not in ["All", "None"]:
-                x = planCmp(p1.arg(0), p2.arg(0))
-                if x != 0:
-                    return x
-            if str(p1.decl()) in ["Intersect", "Union"]:
-                x = planCmp(p1.arg(1), p2.arg(1))
-                if x != 0:
-                    return x
-            return 0
-
-        def wf(p):
-            if str(p.decl()) in ["All", "None"]:
-                return True
-            elif str(p.decl()) == "HashLookup":
-                return (str(p.arg(1).decl()), 'Eq', str(p.arg(2).decl())) in comps and wf(p.arg(0)) and (
-                    str(p.arg(0).decl()) == "HashLookup" or
-                    str(p.arg(0).decl()) == "All")
-            elif str(p.decl()) == "BinarySearch":
-                return (str(p.arg(1).decl()), str(p.arg(2).decl()), str(p.arg(3).decl())) in comps and wf(p.arg(0)) and isSortedBy(p.arg(0), p.arg(1))
-            elif str(p.decl()) == "Filter":
-                return wf(p.arg(0))
-            elif str(p.decl()) in ["Intersect", "Union"]:
-                return (planCmp(p.arg(0), p.arg(1)) <= 0) and all(wf(p.arg(i)) and (str(p.arg(i).decl()) != "All") and (str(p.arg(i).decl()) != "None") for i in [0, 1])
-            else:
-                raise Exception("Couldn't parse plan: {}".format(p))
-
-        def consider(plan, size):
-            if not wf(plan):
+        def consider(plan):
+            if not plan.wellFormed():
                 return None, None
-            cost = self.computeCost(plan)[0]
+            cost = cost_model.cost(plan)
             if bestCost[0] is not None and cost >= bestCost[0]:
                 # oops! this can't possibly be part of a better plan
                 return None, None
-            vec = outputvector(plan)
             x = isValid(plan)
             if x is True:
                 if bestCost[0] is None or cost < bestCost[0]:
                     productive[0] = True
                     bestPlan[0] = plan
                     bestCost[0] = cost
-                    result = True
                 return "validPlan", plan
             elif x is False:
-                if vec not in cache or self.computeCost(cache[vec]) < cost:
+                vec = outputvector(plan.toPredicate())
+                if vec not in cache or cost_model.cost(cache[vec]) > cost:
                     productive[0] = True
                     cache[vec] = plan
                 return None, None
@@ -448,52 +87,44 @@ class SolverContext:
                 productive[0] = True
                 return "counterexample", x
 
-        query = toNNF(query)
-
         s = SolverFor("QF_LIA")
 
-        queryVector = tuple([queryEval(query, *e) for e in examples])
+        queryVector = outputvector(query)
+        comps = set(query.comparisons())
 
         # cache maps output vectors to the best known plan implementing them
         cache = {}
 
         # the stupidest possible plan: linear search
-        dumbestPlan = Plan.Filter(Plan.All, query)
+        dumbestPlan = plans.Filter(plans.All(), query)
 
         # these are lists so that the closures can modify their values
         # (grumble grumble "nonlocal" keyword missing grumble)
         bestPlan = [dumbestPlan] # best plan found so far
-        bestCost = [self.computeCost(dumbestPlan)[0]] # cost of bestPlan
+        bestCost = [cost_model.cost(dumbestPlan)] # cost of bestPlan
         yield "validPlan", dumbestPlan
         productive = [False]
 
-        comps = comparisonsNNF(query)
-        z3comps = [(getattr(Field, f),
-                    getattr(Comparison, op),
-                    getattr(QueryVar, v))
-                   for (f, op, v) in comps]
-
-        #print "round 1"
-        for plan in [Plan.All, Plan.None]:
-            yield consider(plan, 1)
+        # print "round 1"
+        for plan in [plans.All(), plans.Empty()]:
+            yield consider(plan)
 
         for size in xrange(2, maxSize + 1):
             productive[0] = False
-            #print "round", size
+            # print "round", size
             smallerPlans = list(cache.values())
-            for plan in (Plan.HashLookup(p, f, v) for p in smallerPlans for f in constructors(Field) for v in constructors(QueryVar)):
-                yield consider(plan, size)
-            for plan in (Plan.BinarySearch(p, f, op, v) for p in smallerPlans for (f, op, v) in z3comps):
-                yield consider(plan, size)
+            for plan in (plans.HashLookup(p, f, v) for p in smallerPlans for f in self.fieldNames for v in self.varNames if (f, v) in comps):
+                yield consider(plan)
+            for plan in (plans.BinarySearch(p, f, op, v) for p in smallerPlans for f in self.fieldNames for v in self.varNames if (f, v) in comps for op in predicates.operators):
+                yield consider(plan)
             # TODO: more elaborate filters
-            for plan in (Plan.Filter(p, Query.Cmp(f, op, v)) for p in smallerPlans for (f, op, v) in z3comps):
-                yield consider(plan, size)
-            for plan in (ty(p1, p2) for ty in [Plan.Intersect, Plan.Union] for p1 in smallerPlans for p2 in smallerPlans):
-                yield consider(plan, size)
+            for plan in (plans.Filter(p, predicates.Compare(predicates.Var(f), op, predicates.Var(v))) for p in smallerPlans for f in self.fieldNames for v in self.varNames if (f, v) in comps for op in predicates.operators):
+                yield consider(plan)
+            for plan in (ty(p1, p2) for ty in [plans.Intersect, plans.Union] for p1 in smallerPlans if not p1.isTrivial() for p2 in smallerPlans if not p2.isTrivial()):
+                yield consider(plan)
             if not productive[0]:
                 print "last round was not productive; stopping"
                 yield "stop", None
-
 
     def generateJava(self, p, queryVarTypes, public=True, queryType=None,
                      recordType="Record", className="DataStructure"):
@@ -748,19 +379,3 @@ public """ if public else '',
                                                .replace('\n', '\n\t') + "\n"
 
         return (skeleton % formatStrs).replace('\t', '    ')
-
-if __name__ == "__main__":
-
-    sc = SolverContext(varNames = ['x', 'y'], fieldNames = ['Age', 'Name'])
-    q = sc.Query.And(
-        sc.Query.Cmp(sc.Field.Age, sc.Comparison.Gt, sc.QueryVar.x),
-        sc.Query.Cmp(sc.Field.Name, sc.Comparison.Eq, sc.QueryVar.y)
-        )
-
-    for p in sc.synthesizePlansByEnumeration(q, 1000000):
-        print p
-        print "Cost =", sc.computeCost(p)
-        code = sc.generateJava(p, queryVarTypes=['Integer', 'String'])
-        with open("DataStructure.java", "w") as f:
-            f.write(code)
-        print "="*60

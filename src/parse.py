@@ -1,5 +1,6 @@
 import re
 import itertools
+import predicates
 
 _EOF = object()
 _TOKEN_REGEX = re.compile(r'\s*(\(|\)|\w+|>=|<=|>|<|==)')
@@ -45,11 +46,11 @@ def _parseQuery(fields, qvars, tokens, assoc=0):
             assert tokens.next() == ")"
             return q
         elif tok == "not":
-            return ["Not", _parseQuery(fields, qvars, tokens, 0)]
+            return predicates.Not(_parseQuery(fields, qvars, tokens, 0))
         elif tok == "true":
-            return ["TrueQuery"]
+            return predicates.Bool(True)
         elif tok == "false":
-            return ["FalseQuery"]
+            return predicates.Bool(False)
         else:
             f = tok
             op = tokens.next()
@@ -57,16 +58,23 @@ def _parseQuery(fields, qvars, tokens, assoc=0):
             if f in qvars and v in fields:
                 f, v = v, f
             assert f in fields
-            m = { ">=" : "Ge", "<=" : "Le", ">" : "Gt", "<" : "Lt", "==" : "Eq" }
+            m = { ">=" : predicates.Ge,
+                "<=" : predicates.Le,
+                ">" : predicates.Gt,
+                "<" : predicates.Lt,
+                "==" : predicates.Eq,
+                "!=" : predicates.Ne }
             assert op in m
             assert v in qvars
-            return ["Cmp", f, m[op], v]
+            return predicates.Compare(predicates.Var(f), m[op], predicates.Var(v))
     else:
         q1 = _parseQuery(fields, qvars, tokens, assoc + 1)
         if tokens.peek() is not _EOF and tokens.peek() == _ops[assoc]:
             op = tokens.next()
             q2 = _parseQuery(fields, qvars, tokens, assoc)
-            return [op[0].upper() + op[1:], q1, q2]
+            m = { "and": predicates.And, "or": predicates.Or }
+            assert op in m
+            return m[op](q1, q2)
         return q1
 
 def parseQuery(text):
