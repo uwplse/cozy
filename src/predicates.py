@@ -4,7 +4,7 @@ import z3
 class Predicate(object):
     def toNNF(self):
         return self
-    def toZ3(self):
+    def toZ3(self, context):
         pass
     def eval(self, env):
         pass
@@ -17,8 +17,8 @@ class Predicate(object):
 class Var(Predicate):
     def __init__(self, name):
         self.name = name
-    def toZ3(self):
-        return z3.Int(self.name)
+    def toZ3(self, context):
+        return z3.Int(self.name, context)
     def eval(self, env):
         return env.get(self.name, 0)
     def size(self):
@@ -29,8 +29,8 @@ class Var(Predicate):
 class Bool(Predicate):
     def __init__(self, val):
         self.val = bool(val)
-    def toZ3(self):
-        return z3.BoolVal(self.val)
+    def toZ3(self, context):
+        return z3.BoolVal(self.val, context)
     def eval(self, env):
         return self.val
     def size(self):
@@ -70,13 +70,13 @@ class Compare(Predicate):
         self.rhs = rhs
     def toNNF(self):
         return Compare(self.lhs.toNNF(), self.op, self.rhs.toNNF())
-    def toZ3(self):
-        if self.op is Eq: return self.lhs.toZ3() == self.rhs.toZ3()
-        if self.op is Ne: return self.lhs.toZ3() != self.rhs.toZ3()
-        if self.op is Ge: return self.lhs.toZ3() >= self.rhs.toZ3()
-        if self.op is Gt: return self.lhs.toZ3() >  self.rhs.toZ3()
-        if self.op is Le: return self.lhs.toZ3() <= self.rhs.toZ3()
-        if self.op is Lt: return self.lhs.toZ3() <  self.rhs.toZ3()
+    def toZ3(self, context):
+        if self.op is Eq: return self.lhs.toZ3(context) == self.rhs.toZ3(context)
+        if self.op is Ne: return self.lhs.toZ3(context) != self.rhs.toZ3(context)
+        if self.op is Ge: return self.lhs.toZ3(context) >= self.rhs.toZ3(context)
+        if self.op is Gt: return self.lhs.toZ3(context) >  self.rhs.toZ3(context)
+        if self.op is Le: return self.lhs.toZ3(context) <= self.rhs.toZ3(context)
+        if self.op is Lt: return self.lhs.toZ3(context) <  self.rhs.toZ3(context)
     def eval(self, env):
         if self.op is Eq: return self.lhs.eval(env) == self.rhs.eval(env)
         if self.op is Ne: return self.lhs.eval(env) != self.rhs.eval(env)
@@ -97,8 +97,8 @@ class And(Predicate):
         self.rhs = rhs
     def toNNF(self):
         return And(self.lhs.toNNF(), self.rhs.toNNF())
-    def toZ3(self):
-        return z3.And(self.lhs.toZ3(), self.rhs.toZ3())
+    def toZ3(self, context):
+        return z3.And(self.lhs.toZ3(context), self.rhs.toZ3(context), context)
     def eval(self, env):
         return self.lhs.eval(env) and self.rhs.eval(env)
     def size(self):
@@ -115,8 +115,8 @@ class Or(Predicate):
         self.rhs = rhs
     def toNNF(self):
         return Or(self.lhs.toNNF(), self.rhs.toNNF())
-    def toZ3(self):
-        return z3.Or(self.lhs.toZ3(), self.rhs.toZ3())
+    def toZ3(self, context):
+        return z3.Or(self.lhs.toZ3(context), self.rhs.toZ3(context), context)
     def eval(self, env):
         return self.lhs.eval(env) or self.rhs.eval(env)
     def size(self):
@@ -137,8 +137,8 @@ class Not(Predicate):
         if isinstance(self.p, And):     return Or(Not(self.p.lhs).toNNF(), Not(self.p.rhs).toNNF())
         if isinstance(self.p, Or):      return And(Not(self.p.lhs).toNNF(), Not(self.p.rhs).toNNF())
         if isinstance(self.p, Not):     return self.p.toNNF()
-    def toZ3(self):
-        return z3.Not(self.p)
+    def toZ3(self, context):
+        return z3.Not(self.p, context)
     def eval(self, env):
         return not self.p.eval(env)
     def size(self):

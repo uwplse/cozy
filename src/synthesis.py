@@ -19,6 +19,8 @@ class SolverContext:
     def __init__(self, varNames, fieldNames):
         self.varNames = varNames
         self.fieldNames = fieldNames
+        self.z3ctx = Context()
+        self.z3solver = SolverFor("QF_LIA", ctx=self.z3ctx)
 
     def synthesizePlansByEnumeration(self, query, maxSize=1000):
         examples = []
@@ -50,15 +52,16 @@ class SolverContext:
                 return False
 
             result = False
+            s = self.z3solver
             s.push()
-            s.add(planPred.toZ3() != query.toZ3())
+            s.add(planPred.toZ3(self.z3ctx) != query.toZ3(self.z3ctx))
             if str(s.check()) == 'unsat':
                 result = True
             else:
                 m = s.model()
                 result = (
-                    [int(str(m[Int(f)] or 0)) for f in self.fieldNames],
-                    [int(str(m[Int(v)] or 0)) for v in self.varNames])
+                    [int(str(m[Int(f, self.z3ctx)] or 0)) for f in self.fieldNames],
+                    [int(str(m[Int(v, self.z3ctx)] or 0)) for v in self.varNames])
             s.pop()
             return result
 
@@ -87,8 +90,6 @@ class SolverContext:
                 # x is new example!
                 productive[0] = True
                 return "counterexample", x
-
-        s = SolverFor("QF_LIA")
 
         queryVector = outputvector(query)
         comps = set(query.comparisons())
