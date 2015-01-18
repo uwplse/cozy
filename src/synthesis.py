@@ -106,7 +106,8 @@ class SolverContext:
         # (grumble grumble "nonlocal" keyword missing grumble)
         bestPlan = [dumbestPlan] # best plan found so far
         bestCost = [cost_model.cost(dumbestPlan)] # cost of bestPlan
-        yield "validPlan", dumbestPlan
+        if not examples:
+            yield "validPlan", dumbestPlan
         productive = [False]
 
         # print "round 1"
