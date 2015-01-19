@@ -1,4 +1,5 @@
 
+from functools import total_ordering
 import z3
 
 class Predicate(object):
@@ -14,6 +15,7 @@ class Predicate(object):
         """returns a stream of var, field tuples"""
         return ()
 
+@total_ordering
 class Var(Predicate):
     def __init__(self, name):
         self.name = name
@@ -25,7 +27,14 @@ class Var(Predicate):
         return 1
     def __str__(self):
         return str(self.name)
+    def __hash__(self):
+        return hash(self.name)
+    def __eq__(self, other):
+        return isinstance(other, Var) and other.name == self.name
+    def __lt__(self, other):
+        return self.name < other.name if isinstance(other, Var) else type(self) < type(other)
 
+@total_ordering
 class Bool(Predicate):
     def __init__(self, val):
         self.val = bool(val)
@@ -37,6 +46,12 @@ class Bool(Predicate):
         return 1
     def __str__(self):
         return str(self.val)
+    def __hash__(self):
+        return hash(self.val)
+    def __eq__(self, other):
+        return isinstance(other, Bool) and other.val == self.val
+    def __lt__(self, other):
+        return self.val < other.val if isinstance(other, Bool) else type(self) < type(other)
 
 # operators
 Eq = object()
@@ -63,6 +78,7 @@ def opToStr(op):
     if op is Gt: return ">"
     if op is Ge: return ">="
 
+@total_ordering
 class Compare(Predicate):
     def __init__(self, lhs, op, rhs):
         self.lhs = lhs
@@ -90,7 +106,14 @@ class Compare(Predicate):
         return [(self.lhs.name, self.rhs.name)]
     def __str__(self):
         return "{} {} {}".format(self.lhs, opToStr(self.op), self.rhs)
+    def __hash__(self):
+        return hash((self.lhs, self.op, self.rhs))
+    def __eq__(self, other):
+        return isinstance(other, Compare) and other.lhs == self.lhs and other.op == self.op and other.rhs == self.rhs
+    def __lt__(self, other):
+        return (self.lhs, self.op, self.rhs) < (other.lhs, other.op, other.rhs) if isinstance(other, Compare) else type(self) < type(other)
 
+@total_ordering
 class And(Predicate):
     def __init__(self, lhs, rhs):
         self.lhs = lhs
@@ -108,7 +131,14 @@ class And(Predicate):
         for c in self.rhs.comparisons(): yield c
     def __str__(self):
         return "({} and {})".format(self.lhs, self.rhs)
+    def __hash__(self):
+        return hash((self.lhs, self.rhs))
+    def __eq__(self, other):
+        return isinstance(other, And) and other.lhs == self.lhs and other.rhs == self.rhs
+    def __lt__(self, other):
+        return (self.lhs, self.rhs) < (other.lhs, other.rhs) if isinstance(other, And) else type(self) < type(other)
 
+@total_ordering
 class Or(Predicate):
     def __init__(self, lhs, rhs):
         self.lhs = lhs
@@ -126,7 +156,14 @@ class Or(Predicate):
         for c in self.rhs.comparisons(): yield c
     def __str__(self):
         return "({} or {})".format(self.lhs, self.rhs)
+    def __hash__(self):
+        return hash((self.lhs, self.rhs))
+    def __eq__(self, other):
+        return isinstance(other, Or     ) and other.lhs == self.lhs and other.rhs == self.rhs
+    def __lt__(self, other):
+        return (self.lhs, self.rhs) < (other.lhs, other.rhs) if isinstance(other, Or) else type(self) < type(other)
 
+@total_ordering
 class Not(Predicate):
     def __init__(self, p):
         self.p = p
@@ -147,3 +184,9 @@ class Not(Predicate):
         return self.p.comparisons()
     def __str__(self):
         return "not {}".format(self.p)
+    def __hash__(self):
+        return hash(self.p) + 1
+    def __eq__(self, other):
+        return isinstance(other, Not) and other.p == self.p
+    def __lt__(self, other):
+        return self.p < other.p if isinstance(other, Not) else type(self) < type(other)
