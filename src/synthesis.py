@@ -115,6 +115,9 @@ class SolverContext:
         for plan in [plans.All(), plans.Empty()]:
             yield consider(plan, 1)
 
+        roundsWithoutProgress = 0
+        maxRoundsWithoutProgress = 3
+
         for size in xrange(2, maxSize + 1):
             assert len(plansOfSize) == size
             plansOfSize.append([])
@@ -130,8 +133,10 @@ class SolverContext:
             for plan in (ty(p1, p2) for ty in [plans.Intersect, plans.Union] for split in xrange(1, size-1) for p1 in plansOfSize[split] if not p1.isTrivial() for p2 in plansOfSize[size-split-1] if not p2.isTrivial()):
                 yield consider(plan, size)
             if not productive[0]:
-                print "last round was not productive; stopping"
-                yield "stop", None
+                roundsWithoutProgress += 1
+                if roundsWithoutProgress >= maxRoundsWithoutProgress:
+                    print "last {} rounds were not productive; stopping".format(roundsWithoutProgress)
+                    yield "stop", None
 
     def generateJava(self, p, queryVarTypes, public=True, queryType=None,
                      recordType="Record", className="DataStructure"):
