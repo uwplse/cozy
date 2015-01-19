@@ -78,6 +78,12 @@ class SolverContext:
                     productive[0] = True
                     bestPlan[0] = plan
                     bestCost[0] = cost
+                    # evict big cached items
+                    for val, p in cache.items():
+                        if cost_model.cost(p) >= cost:
+                            del cache[val]
+                    for i in xrange(size + 1):
+                        plansOfSize[i] = [p for p in plansOfSize[i] if cost_model.cost(p) < cost]
                 return "validPlan", plan
             elif x is False:
                 vec = outputvector(plan.toPredicate())
