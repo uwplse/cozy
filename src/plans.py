@@ -115,7 +115,7 @@ class Filter(Plan):
     def wellFormed(self):
         return self.plan.wellFormed()
     def size(self):
-        return 1 + self.plan.size() + self.predicate.size()
+        return 1 + self.plan.size()
     def __str__(self):
         return "Filter({}, {})".format(self.plan, self.predicate)
     def __hash__(self):

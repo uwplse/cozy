@@ -87,10 +87,13 @@ class SolverContext:
                 return "validPlan", plan
             elif x is False:
                 vec = outputvector(plan.toPredicate())
-                if vec not in cache or cost_model.cost(cache[vec]) > cost:
+                old_plan = cache.get(vec)
+                if old_plan is None or cost_model.cost(old_plan) > cost:
                     productive[0] = True
                     cache[vec] = plan
                     plansOfSize[size].append(plan)
+                    if old_plan is not None:
+                        plansOfSize[old_plan.size()].remove(old_plan)
                 return None, None
             else:
                 # x is new example!
