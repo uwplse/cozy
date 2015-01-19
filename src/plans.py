@@ -1,4 +1,5 @@
 
+from functools import total_ordering
 from predicates import *
 
 class Plan(object):
@@ -13,6 +14,7 @@ class Plan(object):
     def size(self):
         pass
 
+@total_ordering
 class All(Plan):
     def toPredicate(self):
         return Bool(True)
@@ -26,7 +28,14 @@ class All(Plan):
         return 1
     def __str__(self):
         return "All"
+    def __hash__(self):
+        return 0
+    def __eq__(self, other):
+        return isinstance(other, All)
+    def __lt__(self, other):
+        return type(self) < type(other)
 
+@total_ordering
 class Empty(Plan):
     def toPredicate(self):
         return Bool(False)
@@ -40,7 +49,14 @@ class Empty(Plan):
         return 1
     def __str__(self):
         return "None"
+    def __hash__(self):
+        return 1
+    def __eq__(self, other):
+        return isinstance(other, Empty)
+    def __lt__(self, other):
+        return type(self) < type(other)
 
+@total_ordering
 class HashLookup(Plan):
     def __init__(self, plan, fieldName, varName):
         self.plan = plan
@@ -56,7 +72,14 @@ class HashLookup(Plan):
         return 1 + self.plan.size()
     def __str__(self):
         return "HashLookup({}, {} == {})".format(self.plan, self.fieldName, self.varName)
+    def __hash__(self):
+        return hash((self.plan, self.fieldName, self.varName))
+    def __eq__(self, other):
+        return isinstance(other, HashLookup) and self.plan == other.plan and self.fieldName == other.fieldName and self.varName == other.varName
+    def __lt__(self, other):
+        return (self.plan, self.fieldName, self.varName) < (other.plan, other.fieldName, other.varName) if isinstance(other, HashLookup) else type(self) < type(other)
 
+@total_ordering
 class BinarySearch(Plan):
     def __init__(self, plan, fieldName, op, varName):
         self.plan = plan
@@ -73,7 +96,14 @@ class BinarySearch(Plan):
         return 1 + self.plan.size()
     def __str__(self):
         return "BinarySearch({}, {} {} {})".format(self.plan, self.fieldName, opToStr(self.op), self.varName)
+    def __hash__(self):
+        return hash((self.plan, self.fieldName, self.op, self.varName))
+    def __eq__(self, other):
+        return isinstance(other, BinarySearch) and self.plan == other.plan and self.fieldName == other.fieldName and self.op == other.op and self.varName == other.varName
+    def __lt__(self, other):
+        return (self.plan, self.fieldName, self.op, self.varName) < (other.plan, other.fieldName, other.op, other.varName) if isinstance(other, BinarySearch) else type(self) < type(other)
 
+@total_ordering
 class Filter(Plan):
     def __init__(self, plan, predicate):
         self.plan = plan
@@ -88,7 +118,14 @@ class Filter(Plan):
         return 1 + self.plan.size() + self.predicate.size()
     def __str__(self):
         return "Filter({}, {})".format(self.plan, self.predicate)
+    def __hash__(self):
+        return hash((self.plan, self.predicate))
+    def __eq__(self, other):
+        return isinstance(other, Filter) and self.plan == other.plan and self.predicate == other.predicate
+    def __lt__(self, other):
+        return (self.plan, self.predicate) < (other.plan, other.predicate) if isinstance(other, Filter) else type(self) < type(other)
 
+@total_ordering
 class Intersect(Plan):
     def __init__(self, plan1, plan2):
         self.plan1 = plan1
@@ -103,7 +140,14 @@ class Intersect(Plan):
         return 1 + self.plan1.size() + self.plan2.size()
     def __str__(self):
         return "Intersect({}, {})".format(self.plan1, self.plan2)
+    def __hash__(self):
+        return hash((self.plan1, self.plan2))
+    def __eq__(self, other):
+        return isinstance(other, Intersect) and self.plan1 == other.plan1 and self.plan2 == other.plan2
+    def __lt__(self, other):
+        return (self.plan1, self.plan2) < (other.plan1, other.plan2) if isinstance(other, Intersect) else type(self) < type(other)
 
+@total_ordering
 class Union(Plan):
     def __init__(self, plan1, plan2):
         self.plan1 = plan1
@@ -118,3 +162,9 @@ class Union(Plan):
         return 1 + self.plan1.size() + self.plan2.size()
     def __str__(self):
         return "Union({}, {})".format(self.plan1, self.plan2)
+    def __hash__(self):
+        return hash((self.plan1, self.plan2))
+    def __eq__(self, other):
+        return isinstance(other, Union) and self.plan1 == other.plan1 and self.plan2 == other.plan2
+    def __lt__(self, other):
+        return (self.plan1, self.plan2) < (other.plan1, other.plan2) if isinstance(other, Union) else type(self) < type(other)
