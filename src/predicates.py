@@ -159,7 +159,7 @@ class Or(Predicate):
     def __hash__(self):
         return hash((self.lhs, self.rhs))
     def __eq__(self, other):
-        return isinstance(other, Or     ) and other.lhs == self.lhs and other.rhs == self.rhs
+        return isinstance(other, Or) and other.lhs == self.lhs and other.rhs == self.rhs
     def __lt__(self, other):
         return (self.lhs, self.rhs) < (other.lhs, other.rhs) if isinstance(other, Or) else type(self) < type(other)
 
