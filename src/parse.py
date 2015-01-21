@@ -57,6 +57,7 @@ def _parseQuery(fields, qvars, tokens, assoc=0):
             v = tokens.next()
             if f in qvars and v in fields:
                 f, v = v, f
+                op = { ">": "<", ">=": "<=", "<": ">", "<=": ">=" }.get(op, op)
             assert f in fields
             m = { ">=" : predicates.Ge,
                 "<=" : predicates.Le,
