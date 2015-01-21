@@ -5,6 +5,8 @@ Reads a query from stdin, writes nice output to stdout.
 """
 
 import sys
+import traceback
+
 from synthesis import SolverContext
 from parse import parseQuery
 import cost_model
@@ -30,8 +32,9 @@ if __name__ == '__main__':
             if bestCost is None or cost < bestCost:
                 bestPlan = p
                 bestCost = cost
-    except KeyboardInterrupt as e:
-        print "stopping due to keyboard interrupt"
+    except:
+        print "stopping due to exception"
+        traceback.print_exc()
 
     print "="*60
     print "Best plan found: ", bestPlan
