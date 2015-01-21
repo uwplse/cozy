@@ -31,10 +31,11 @@ class SolverContext:
             # print "starting synthesis using", len(examples), "examples"
             for responseType, response in self._synthesizePlansByEnumeration(query, maxSize, examples):
                 if responseType == "counterexample":
-                    # print "found counterexample", response
-                    if response in examples:
+                    example, plan = response
+                    print "found counterexample", example, "\n\tfor", plan
+                    if example in examples:
                         raise Exception("error: already saw counterexample!")
-                    examples.append(response)
+                    examples.append(example)
                     break
                 elif responseType == "validPlan":
                     yield response
@@ -68,6 +69,7 @@ class SolverContext:
             return result
 
         def consider(plan, size):
+            assert plan.size() == size
             if not plan.wellFormed():
                 return None, None
             cost = cost_model.cost(plan)
@@ -100,7 +102,7 @@ class SolverContext:
             else:
                 # x is new example!
                 productive[0] = True
-                return "counterexample", x
+                return "counterexample", (x, plan)
 
         queryVector = outputvector(query)
         comps = set(query.comparisons())
@@ -122,7 +124,7 @@ class SolverContext:
             yield "validPlan", dumbestPlan
         productive = [False]
 
-        # print "round 1"
+        print "round 1"
         for plan in [plans.All(), plans.Empty()]:
             yield consider(plan, 1)
 
@@ -133,7 +135,7 @@ class SolverContext:
             assert len(plansOfSize) == size
             plansOfSize.append([])
             productive[0] = False
-            # print "round", size
+            print "round", size, "cache size {}/{}".format(len(cache), 2**len(examples))
             for plan in (plans.HashLookup(p, f, v) for p in plansOfSize[size-1] for f in self.fieldNames for v in self.varNames if (f, v) in comps):
                 yield consider(plan, size)
             for plan in (plans.BinarySearch(p, f, op, v) for p in plansOfSize[size-1] for f in self.fieldNames for v in self.varNames if (f, v) in comps for op in predicates.operators):
