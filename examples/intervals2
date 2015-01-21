@@ -1,5 +1,7 @@
 fields start end id
 vars rangeMin rangeMax
+assume start <= end
+assume rangeMin <= rangeMax
 query
     (start >= rangeMin and start <= rangeMax) or
     (end >= rangeMin and end <= rangeMax) or

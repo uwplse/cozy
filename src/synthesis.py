@@ -16,11 +16,13 @@ COST_ITEM_COUNT = float(1000)
 
 class SolverContext:
 
-    def __init__(self, varNames, fieldNames):
+    def __init__(self, varNames, fieldNames, assumptions=()):
         self.varNames = varNames
         self.fieldNames = fieldNames
         self.z3ctx = Context()
         self.z3solver = SolverFor("QF_LIA", ctx=self.z3ctx)
+        for a in assumptions:
+            self.z3solver.add(a.toZ3(self.z3ctx))
 
     def synthesizePlansByEnumeration(self, query, maxSize=1000):
         examples = []

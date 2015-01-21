@@ -4,6 +4,8 @@ import predicates
 
 _EOF = object()
 _TOKEN_REGEX = re.compile(r'\s*(\(|\)|\w+|>=|<=|>|<|==)')
+_KEYWORDS = ("fields", "vars", "query", "assume")
+
 def _tokenize(text):
     while True:
         match = _TOKEN_REGEX.match(text)
@@ -29,11 +31,11 @@ class peekable(object):
         return e
 
 def _parseFields(tokens):
-    while tokens.peek() is not _EOF and tokens.peek() != "vars" and tokens.peek() != "query":
+    while tokens.peek() is not _EOF and tokens.peek() not in _KEYWORDS:
         yield tokens.next()
 
 def _parseVars(tokens):
-    while tokens.peek() is not _EOF and tokens.peek() != "query":
+    while tokens.peek() is not _EOF and tokens.peek() not in _KEYWORDS:
         yield tokens.next()
 
 _ops = ["or", "and"] # ordered by associativity
@@ -55,10 +57,7 @@ def _parseQuery(fields, qvars, tokens, assoc=0):
             f = tok
             op = tokens.next()
             v = tokens.next()
-            if f in qvars and v in fields:
-                f, v = v, f
-                op = { ">": "<", ">=": "<=", "<": ">", "<=": ">=" }.get(op, op)
-            assert f in fields
+            assert f in fields or f in qvars
             m = { ">=" : predicates.Ge,
                 "<=" : predicates.Le,
                 ">" : predicates.Gt,
@@ -66,11 +65,11 @@ def _parseQuery(fields, qvars, tokens, assoc=0):
                 "==" : predicates.Eq,
                 "!=" : predicates.Ne }
             assert op in m
-            assert v in qvars
+            assert v in fields or v in qvars
             return predicates.Compare(predicates.Var(f), m[op], predicates.Var(v))
     else:
         q1 = _parseQuery(fields, qvars, tokens, assoc + 1)
-        if tokens.peek() is not _EOF and tokens.peek() == _ops[assoc]:
+        if tokens.peek() == _ops[assoc]:
             op = tokens.next()
             q2 = _parseQuery(fields, qvars, tokens, assoc)
             m = { "and": predicates.And, "or": predicates.Or }
@@ -84,7 +83,15 @@ def parseQuery(text):
     fields = list(_parseFields(tokens))
     assert tokens.next() == "vars"
     qvars = list(_parseVars(tokens))
-    assert tokens.next() == "query"
+
+    assumptions = []
+    tok = tokens.next()
+    while tok == "assume":
+        assumptions.append(_parseQuery(fields, qvars, tokens))
+        tok = tokens.next()
+
+    assert tok == "query"
     q = _parseQuery(fields, qvars, tokens)
+
     assert tokens.peek() is _EOF
-    return fields, qvars, q
+    return fields, qvars, assumptions, q

@@ -10,9 +10,14 @@ from parse import parseQuery
 import cost_model
 
 if __name__ == '__main__':
-    fields, qvars, q = parseQuery(sys.stdin.read())
+    fields, qvars, assumptions, q = parseQuery(sys.stdin.read())
 
-    sc = SolverContext(varNames = qvars, fieldNames = fields)
+    sc = SolverContext(
+        varNames=qvars,
+        fieldNames=fields,
+        assumptions=assumptions)
+    for a in assumptions:
+        print "Assuming:", a
     print "Query:", q
 
     bestCost = None

@@ -1,4 +1,5 @@
 fields start end id
 vars val
+assume start <= end
 query
     start <= val and val <= end
