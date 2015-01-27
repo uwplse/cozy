@@ -12,8 +12,6 @@ import predicates
 import plans
 import cost_model
 
-COST_ITEM_COUNT = float(1000)
-
 class SolverContext:
 
     def __init__(self, varNames, fieldNames, assumptions=()):
