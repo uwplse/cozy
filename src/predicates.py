@@ -78,6 +78,14 @@ def opToStr(op):
     if op is Gt: return ">"
     if op is Ge: return ">="
 
+def opToName(op):
+    if op is Eq: return "Eq"
+    if op is Ne: return "Ne"
+    if op is Lt: return "Lt"
+    if op is Le: return "Le"
+    if op is Gt: return "Gt"
+    if op is Ge: return "Ge"
+
 @total_ordering
 class Compare(Predicate):
     def __init__(self, lhs, op, rhs):

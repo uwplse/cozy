@@ -6,12 +6,18 @@ Reads a query from stdin, writes nice output to stdout.
 
 import sys
 import traceback
+import argparse
 
 from synthesis import SolverContext
 from parse import parseQuery
 import cost_model
+from codegen_java import write_java
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Data structure synthesizer.')
+    parser.add_argument("--java", metavar="FILE.java", default="-", help="Output file for java classes, use '-' for stdout")
+    args = parser.parse_args()
+
     fields, qvars, assumptions, q = parseQuery(sys.stdin.read())
 
     sc = SolverContext(
@@ -40,3 +46,9 @@ if __name__ == '__main__':
     print "Best plan found: ", bestPlan
     print "Best plan size: ", bestPlan.size()
     print "Cost: ", bestCost
+
+    if args.java == "-":
+        write_java(fields, qvars, bestPlan, sys.stdout.write)
+    else:
+        with open(args.java, "w") as f:
+            write_java(fields, qvars, bestPlan, f.write)
