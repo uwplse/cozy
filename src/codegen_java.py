@@ -35,7 +35,7 @@ class SortedSet(Ty):
 
 class UnsortedSet(Ty):
     def to_java(self, record_type):
-        return "java.util.Iterable<{}>".format(record_type)
+        return "java.util.List<{}>".format(record_type)
     def unify(self, other):
         if type(other) is UnsortedSet or type(other) is SortedSet:
             return other
@@ -133,7 +133,9 @@ def write_java(fields, qvars, plan, writer):
     }
     private static <T> Iterable<T> union(Iterable<T> left, Iterable<T> right) {
         java.util.Set<T> s = mkset(left);
-        s.addAll(mkset(right));
+        for (T x : right) {
+            s.add(x);
+        }
         return s;
     }\n""")
 
@@ -142,7 +144,7 @@ def write_java(fields, qvars, plan, writer):
     for name, ty in members:
         writer("    private {} {} = {};\n".format(ty.to_java(record_type_name), name, new(ty, record_type_name)))
 
-    writer("    public Iterable<{}> query({}) {{\n".format(record_type_name, ", ".join("{} {}".format(_TY, v) for v in qvars)))
+    writer("    public Iterable<{}> query({}) {{\n".format(record_type_name, ", ".join("final {} {}".format(_TY, v) for v in qvars)))
     writer(proc)
     writer("        return {};\n".format(result))
     writer("    }\n")
@@ -252,11 +254,13 @@ def _traverse(fields, qvars, plan, record_type_name, resultTy, onMember):
         end = _fresh_name()
         proc = "        int {}, {};\n".format(start, end)
 
-        def bisect(op, dst):
+        def bisect(op, dst, start=None, end=None):
             """Generates code to set `dst` such that tmp[0:dst] `op` varName and not (tmp[dst:] `op` varName)."""
+            if start is None: start = "0"
+            if end is None: end = "{}.size()".format(r)
             return """
-        int {lo} = 0;
-        int {hi} = {tmp}.size();
+        int {lo} = {start};
+        int {hi} = {end};
         while ({lo} < {hi}) {{
             int {mid} = ({lo} >> 1) + ({hi} >> 1) + ({lo} & {hi} & 1); // overflow-free average
             if ({tmp}.get({mid}).{fieldName} {op} {varName}) {{
@@ -273,13 +277,15 @@ def _traverse(fields, qvars, plan, record_type_name, resultTy, onMember):
                 op=op,
                 tmp=r,
                 fieldName=plan.fieldName,
-                varName=plan.varName)
+                varName=plan.varName,
+                start=start,
+                end=end)
 
         if plan.op is plans.Eq:
             proc += bisect("<", start)
-            proc += bisect("<=", end)
+            proc += bisect("<=", end, start=start)
         elif plan.op is plans.Lt:
-            proc += "        {} = 0;\n".format(end)
+            proc += "        {} = 0;\n".format(start)
             proc += bisect("<", end)
         elif plan.op is plans.Le:
             proc += "        {} = 0;\n".format(start)
