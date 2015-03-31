@@ -2,8 +2,6 @@
 import predicates
 import plans
 
-_TY = "Double" # eh... we'll do something else later!
-
 class Ty(object):
     def to_java(self, record_type):
         pass
@@ -11,18 +9,20 @@ class Ty(object):
         pass
 
 class HashMap(Ty):
-    def __init__(self, fieldName, ty):
+    def __init__(self, fieldTy, fieldName, ty):
+        self.fieldTy = fieldTy
         self.fieldName = fieldName
         self.ty = ty
     def to_java(self, record_type):
-        return "java.util.Map<{},{}>".format(_TY, self.ty.to_java(record_type))
+        return "java.util.Map<{},{}>".format(_box(self.fieldTy), self.ty.to_java(record_type))
     def unify(self, other):
         if type(other) is HashMap and other.fieldName == self.fieldName:
             return HashMap(self.fieldName, self.ty.unify(other.ty))
         raise Exception("failed to unify {} and {}".format(self, other))
 
 class SortedSet(Ty):
-    def __init__(self, fieldName):
+    def __init__(self, fieldTy, fieldName):
+        self.fieldTy = fieldTy
         self.fieldName = fieldName
     def to_java(self, record_type):
         return "java.util.List<{}>".format(record_type)
@@ -45,10 +45,10 @@ def write_java(fields, qvars, plan, writer):
     """
     Writes a Java data structure implementation to the given writer.
     Arguments:
-     - fields (a list of field names)
-     - qvars (a list of query var names)
-     - plan (an execution plan)
-     - writer (a function that consumes strings)
+     - fields  - a list of (field_name, type)
+     - qvars   - a list of (query_var, type)
+     - plan    - an execution plan
+     - writer  - a function that consumes strings
     """
 
     record_type_name = "Record"
@@ -144,7 +144,7 @@ def write_java(fields, qvars, plan, writer):
     for name, ty in members:
         writer("    private {} {} = {};\n".format(ty.to_java(record_type_name), name, new(ty, record_type_name)))
 
-    writer("    public Iterable<{}> query({}) {{\n".format(record_type_name, ", ".join("final {} {}".format(_TY, v) for v in qvars)))
+    writer("    public Iterable<{}> query({}) {{\n".format(record_type_name, ", ".join("final {} {}".format(ty, v) for v,ty in qvars)))
     writer(proc)
     writer("        return {};\n".format(result))
     writer("    }\n")
@@ -171,29 +171,34 @@ def _gen_insert(e, ty, x, record_type_name, writer):
         writer("        }\n")
         _gen_insert(tmp, ty.ty, x, record_type_name, writer)
     elif type(ty) is SortedSet:
-        writer("        insert_sorted({}, {}, new java.util.Comparator<{record_type}>() {{ public int compare({record_type} a, {record_type} b) {{ return a.{field}.compareTo(b.{field}); }} }});\n".format(e, x, record_type=record_type_name, field=ty.fieldName))
+        writer("        insert_sorted({}, {}, new java.util.Comparator<{record_type}>() {{ public int compare({record_type} a, {record_type} b) {{ return {pred}; }} }});\n".format(e, x, record_type=record_type_name, pred=_compare("a.{}".format(ty.fieldName), "b.{}".format(ty.fieldName), ty.fieldTy)))
     elif type(ty) is UnsortedSet:
         writer("        {}.add({});\n".format(e, x))
 
+def _compare(x, y, ty):
+    if _is_primitive(ty):
+        return "{}.compare({}, {})".format(_box(ty), x, y)
+    return "({}).compareTo({})".format(x, y)
+
 def new(ty, record_type_name):
     if type(ty) is HashMap:
-        return "new java.util.HashMap<{}, {}>()".format(_TY, ty.ty.to_java(record_type_name))
+        return "new java.util.HashMap<{}, {}>()".format(_box(ty.fieldTy), ty.ty.to_java(record_type_name))
     elif type(ty) is SortedSet or type(ty) is UnsortedSet:
         return "new java.util.ArrayList<{}>()".format(record_type_name)
 
 def _gen_record_type(name, fields, writer):
     writer("    public static class {} {{\n".format(name))
-    for f in fields:
-        writer("        public final {} {};\n".format(_TY, f))
-    writer("        public {}({}) {{\n".format(name, ", ".join("{} {}".format(_TY, f) for f in fields)))
-    for f in fields:
+    for f,ty in fields:
+        writer("        public final {} {};\n".format(ty, f))
+    writer("        public {}({}) {{\n".format(name, ", ".join("{} {}".format(ty, f) for f,ty in fields)))
+    for f,ty in fields:
         writer("            this.{f} = {f};\n".format(f=f))
     writer("        }\n")
     writer("        @Override\n");
     writer("        public String toString() {\n")
     writer('            return new StringBuilder().append("{}(")'.format(name))
     first = True
-    for f in fields:
+    for f,ty in fields:
         if not first:
             writer(".append(',')")
         writer('.append("{}=")'.format(f))
@@ -209,16 +214,32 @@ def _fresh_name():
     _i += 1
     return "name{}".format(_i)
 
+def _box(ty):
+    if ty == "int":
+        return "Integer"
+    if ty == "char":
+        return "Character"
+    return ty[0].upper() + ty[1:]
+
+def _is_primitive(ty):
+    return ty[0] != ty[0].upper()
+
 def _predicate_to_exp(fields, qvars, pred, target):
     if type(pred) is predicates.Var:
-        return pred.name if pred.name in qvars else "{}.{}".format(target, pred.name)
+        return pred.name if pred.name in {v for v,ty in qvars} else "{}.{}".format(target, pred.name)
     elif type(pred) is predicates.Bool:
         return "true" if pred.val else "false"
     elif type(pred) is predicates.Compare:
-        return "({}) {} ({})".format(
-            _predicate_to_exp(fields, qvars, pred.lhs, target),
-            predicates.opToStr(pred.op),
-            _predicate_to_exp(fields, qvars, pred.rhs, target))
+        if _is_primitive(dict(fields + qvars)[pred.lhs.name]):
+            return "({}) {} ({})".format(
+                _predicate_to_exp(fields, qvars, pred.lhs, target),
+                predicates.opToStr(pred.op),
+                _predicate_to_exp(fields, qvars, pred.rhs, target))
+        else:
+            return "({}).compareTo({}) {} 0".format(
+                _predicate_to_exp(fields, qvars, pred.lhs, target),
+                _predicate_to_exp(fields, qvars, pred.rhs, target),
+                predicates.opToStr(pred.op))
     elif type(pred) is predicates.And:
         return "({}) && ({})".format(
             _predicate_to_exp(fields, qvars, pred.lhs, target),
@@ -232,7 +253,7 @@ def _predicate_to_exp(fields, qvars, pred, target):
 
 def empty(ty, record_type_name):
     if type(ty) is HashMap:
-        return "java.util.Collections.<{}, {}>emptyMap()".format(_TY, ty.ty.to_java(record_type_name))
+        return "java.util.Collections.<{}, {}>emptyMap()".format(_box(ty.fieldTy), ty.ty.to_java(record_type_name))
     return "java.util.Collections.<{}>emptyList()".format(record_type_name)
 
 def _traverse(fields, qvars, plan, record_type_name, resultTy, onMember):
@@ -242,13 +263,13 @@ def _traverse(fields, qvars, plan, record_type_name, resultTy, onMember):
     elif type(plan) is plans.Empty:
         return ("", empty(resultTy, record_type_name))
     elif type(plan) is plans.HashLookup:
-        p, r = _traverse(fields, qvars, plan.plan, record_type_name, HashMap(plan.fieldName, resultTy), onMember)
+        p, r = _traverse(fields, qvars, plan.plan, record_type_name, HashMap(dict(fields)[plan.fieldName], plan.fieldName, resultTy), onMember)
         n = _fresh_name()
         proc  = "        {} {} = {}.get({});\n".format(resultTy.to_java(record_type_name), n, r, plan.varName)
         proc += "        if ({n} == null) {{ {n} = {empty}; }}\n".format(n=n, empty=empty(resultTy, record_type_name))
         return (p + proc, n)
     elif type(plan) is plans.BinarySearch:
-        resultTy = resultTy.unify(SortedSet(plan.fieldName))
+        resultTy = resultTy.unify(SortedSet(dict(fields)[plan.fieldName], plan.fieldName))
         p, r = _traverse(fields, qvars, plan.plan, record_type_name, resultTy, onMember)
         start = _fresh_name()
         end = _fresh_name()

@@ -21,8 +21,8 @@ if __name__ == '__main__':
     fields, qvars, assumptions, q = parseQuery(sys.stdin.read())
 
     sc = SolverContext(
-        varNames=qvars,
-        fieldNames=fields,
+        varNames=[v for v,ty in qvars],
+        fieldNames=[f for f,ty in fields],
         assumptions=assumptions)
     for a in assumptions:
         print "Assuming:", a

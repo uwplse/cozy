@@ -1,5 +1,5 @@
-fields locale currency price quality
-vars expectedLocale expectedCurrency minPrice maxPrice qualityCutoff
+fields locale : String, currency : String, price : int, quality : double
+vars expectedLocale : String, expectedCurrency : String, minPrice : int, maxPrice : int, qualityCutoff : double
 query
     locale == expectedLocale and
     currency == expectedCurrency and
