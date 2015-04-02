@@ -63,7 +63,9 @@ def write_java(fields, qvars, plan, writer):
 
     proc, result = _traverse(fields, qvars, plan, record_type_name, UnsortedSet(), onMember)
 
-    writer("public class {} {{\n".format(structure_name))
+    writer("public class {} implements java.io.Serializable {{\n".format(structure_name))
+
+    writer("    private static final long serialVersionUID = 1L;\n")
 
     writer("""
     private static <T> void insert_sorted(java.util.List<T> l, T x, java.util.Comparator<T> cmp) {
@@ -187,7 +189,8 @@ def new(ty, record_type_name):
         return "new java.util.ArrayList<{}>()".format(record_type_name)
 
 def _gen_record_type(name, fields, writer):
-    writer("    public static class {} {{\n".format(name))
+    writer("    public static class {} implements java.io.Serializable {{\n".format(name))
+    writer("        private static final long serialVersionUID = 1L;\n")
     for f,ty in fields:
         writer("        public final {} {};\n".format(ty, f))
     writer("        public {}({}) {{\n".format(name, ", ".join("{} {}".format(ty, f) for f,ty in fields)))
