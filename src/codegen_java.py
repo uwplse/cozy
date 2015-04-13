@@ -41,7 +41,7 @@ class UnsortedSet(Ty):
             return other
         raise Exception("failed to unify {} and {}".format(self, other))
 
-def write_java(fields, qvars, plan, writer):
+def write_java(fields, qvars, plan, writer, package=None):
     """
     Writes a Java data structure implementation to the given writer.
     Arguments:
@@ -49,6 +49,7 @@ def write_java(fields, qvars, plan, writer):
      - qvars   - a list of (query_var, type)
      - plan    - an execution plan
      - writer  - a function that consumes strings
+     - package - what Java package to put the generated class in
     """
 
     record_type_name = "Record"
@@ -63,6 +64,8 @@ def write_java(fields, qvars, plan, writer):
 
     proc, result = _traverse(fields, qvars, plan, record_type_name, UnsortedSet(), onMember)
 
+    if package is not None:
+        writer("package {};\n\n".format(package))
     writer("public class {} implements java.io.Serializable {{\n".format(structure_name))
 
     writer("    private static final long serialVersionUID = 1L;\n")

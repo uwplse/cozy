@@ -16,6 +16,7 @@ from codegen_java import write_java
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Data structure synthesizer.')
     parser.add_argument("--java", metavar="FILE.java", default="-", help="Output file for java classes, use '-' for stdout")
+    parser.add_argument("--java-package", metavar="com.java.pkg", default=None, help="Java package for generated structure")
     args = parser.parse_args()
 
     fields, qvars, assumptions, q = parseQuery(sys.stdin.read())
@@ -51,4 +52,4 @@ if __name__ == '__main__':
         write_java(fields, qvars, bestPlan, sys.stdout.write)
     else:
         with open(args.java, "w") as f:
-            write_java(fields, qvars, bestPlan, f.write)
+            write_java(fields, qvars, bestPlan, f.write, package=args.java_package)
