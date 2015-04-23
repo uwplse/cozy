@@ -1,7 +1,7 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 
 """
-Reads a query from stdin, writes nice output to stdout.
+Main entry point for synthesis. Run with --help for options.
 """
 
 import sys
@@ -17,9 +17,16 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Data structure synthesizer.')
     parser.add_argument("--java", metavar="FILE.java", default="-", help="Output file for java classes, use '-' for stdout")
     parser.add_argument("--java-package", metavar="com.java.pkg", default=None, help="Java package for generated structure")
+    parser.add_argument("file", nargs="?", default=None, help="Input file (omit to use stdin)")
     args = parser.parse_args()
 
-    fields, qvars, assumptions, q = parseQuery(sys.stdin.read())
+    if args.file is not None:
+        with open(args.file, "r") as f:
+            inp = f.read()
+    else:
+        inp = sys.stdin.read()
+
+    fields, qvars, assumptions, q = parseQuery(inp)
 
     sc = SolverContext(
         varNames=[v for v,ty in qvars],
