@@ -105,5 +105,12 @@ def parseQuery(text):
     assert tok == "query"
     q = _parseQuery(field_names, var_names, tokens)
 
+    costmodel = None
+    if tokens.peek() == "costmodel":
+        tokens.next()
+        costmodel = ""
+        while tokens.peek() is not _EOF:
+            costmodel += tokens.next()
+
     assert tokens.peek() is _EOF
-    return fields, qvars, assumptions, q
+    return fields, qvars, assumptions, q, costmodel

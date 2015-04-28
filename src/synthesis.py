@@ -10,17 +10,26 @@ from z3 import *
 
 import predicates
 import plans
-import cost_model
 
 class SolverContext:
 
-    def __init__(self, varNames, fieldNames, assumptions=()):
+    def __init__(self, varNames, fieldNames, cost_model, assumptions=()):
         self.varNames = varNames
         self.fieldNames = fieldNames
         self.z3ctx = Context()
         self.z3solver = SolverFor("QF_LIA", ctx=self.z3ctx)
         for a in assumptions:
             self.z3solver.add(a.toZ3(self.z3ctx))
+        self.cost_model = cost_model
+        self.cost_cache = dict()
+
+    def cost(self, plan):
+        cost = self.cost_cache.get(plan)
+        if cost is None:
+            cost = self.cost_model(plan)
+            self.cost_cache[plan] = cost
+        plan.cost = cost
+        return cost
 
     def synthesizePlansByEnumeration(self, query, maxSize=1000):
         examples = []
@@ -44,7 +53,20 @@ class SolverContext:
         """note: query should be in NNF"""
 
         def outputvector(predicate):
+            if isinstance(predicate, plans.Plan):
+                predicate = predicate.toPredicate()
             return tuple([predicate.eval(dict(itertools.chain(zip(self.varNames, vs), zip(self.fieldNames, fs)))) for fs,vs in examples])
+
+        def stupid(plan):
+            if type(plan) is plans.Filter and type(plan.plan) is plans.Filter and plan.predicate < plan.plan.predicate:
+                return True
+            if type(plan) in [plans.HashLookup, plans.BinarySearch, plans.Filter]:
+                return outputvector(plan) == outputvector(plan.plan) or stupid(plan.plan)
+            if type(plan) in [plans.Intersect, plans.Union]:
+                return (outputvector(plan) == outputvector(plan.plan1) or
+                    outputvector(plan) == outputvector(plan.plan2) or
+                    outputvector(plan.plan1) == outputvector(plan.plan2) or
+                    stupid(plan.plan1) or stupid(plan.plan2))
 
         def isValid(plan):
             """returns True, False, or a new counterexample"""
@@ -68,13 +90,10 @@ class SolverContext:
 
         def consider(plan, size):
             assert plan.size() == size
-            if not plan.wellFormed():
-                return None, None
-            cost = cost_model.cost(plan)
-            if bestCost[0] is not None and cost >= bestCost[0]:
-                # oops! this can't possibly be part of a better plan
+            if not plan.wellFormed() or stupid(plan):
                 return None, None
             x = isValid(plan)
+            cost = self.cost(plan)
             if x is True:
                 if bestCost[0] is None or cost < bestCost[0]:
                     productive[0] = True
@@ -82,15 +101,15 @@ class SolverContext:
                     bestCost[0] = cost
                     # evict big cached items
                     for val, p in cache.items():
-                        if cost_model.cost(p) >= cost:
+                        if self.cost(p) >= cost:
                             del cache[val]
                     for i in xrange(size + 1):
-                        plansOfSize[i] = [p for p in plansOfSize[i] if cost_model.cost(p) < cost]
+                        plansOfSize[i] = [p for p in plansOfSize[i] if self.cost(p) < cost]
                 return "validPlan", plan
             elif x is False:
                 vec = outputvector(plan.toPredicate())
                 old_plan = cache.get(vec)
-                if old_plan is None or cost_model.cost(old_plan) > cost:
+                if old_plan is None or self.cost(old_plan) > cost:
                     productive[0] = True
                     cache[vec] = plan
                     plansOfSize[size].append(plan)
@@ -117,7 +136,7 @@ class SolverContext:
         # these are lists so that the closures can modify their values
         # (grumble grumble "nonlocal" keyword missing grumble)
         bestPlan = [dumbestPlan] # best plan found so far
-        bestCost = [cost_model.cost(dumbestPlan)] # cost of bestPlan
+        bestCost = [self.cost(dumbestPlan)] # cost of bestPlan
         if not examples:
             yield "validPlan", dumbestPlan
         productive = [False]
