@@ -1,45 +1,15 @@
 
 import predicates
 import plans
+from codegen import HashMap, SortedSet, UnsortedSet, fresh_name
 
-class Ty(object):
-    def to_java(self, record_type):
-        pass
-    def unify(self, other):
-        pass
-
-class HashMap(Ty):
-    def __init__(self, fieldTy, fieldName, ty):
-        self.fieldTy = fieldTy
-        self.fieldName = fieldName
-        self.ty = ty
-    def to_java(self, record_type):
-        return "java.util.Map<{},{}>".format(_box(self.fieldTy), self.ty.to_java(record_type))
-    def unify(self, other):
-        if type(other) is HashMap and other.fieldName == self.fieldName:
-            return HashMap(self.fieldName, self.ty.unify(other.ty))
-        raise Exception("failed to unify {} and {}".format(self, other))
-
-class SortedSet(Ty):
-    def __init__(self, fieldTy, fieldName):
-        self.fieldTy = fieldTy
-        self.fieldName = fieldName
-    def to_java(self, record_type):
+def ty_to_java(ty, record_type):
+    if type(ty) is HashMap:
+        return "java.util.Map<{},{}>".format(_box(ty.fieldTy), ty_to_java(ty.ty, record_type))
+    elif type(ty) is SortedSet or type(ty) is UnsortedSet:
         return "java.util.List<{}>".format(record_type)
-    def unify(self, other):
-        if type(other) is UnsortedSet:
-            return self
-        if type(other) is SortedSet and other.fieldName == self.fieldName:
-            return self
-        raise Exception("failed to unify {} and {}".format(self, other))
-
-class UnsortedSet(Ty):
-    def to_java(self, record_type):
-        return "java.util.List<{}>".format(record_type)
-    def unify(self, other):
-        if type(other) is UnsortedSet or type(other) is SortedSet:
-            return other
-        raise Exception("failed to unify {} and {}".format(self, other))
+    else:
+        raise Exception("unknown type {}".format(ty))
 
 def write_java(fields, qvars, plan, writer, package=None):
     """
@@ -58,7 +28,7 @@ def write_java(fields, qvars, plan, writer, package=None):
     members = [] # will be filled with (name,ty) tuples
 
     def onMember(ty):
-        name = _fresh_name()
+        name = fresh_name()
         members.append((name, ty))
         return name
 
@@ -147,7 +117,7 @@ def write_java(fields, qvars, plan, writer, package=None):
     _gen_record_type(record_type_name, fields, writer)
 
     for name, ty in members:
-        writer("    private {} {} = {};\n".format(ty.to_java(record_type_name), name, new(ty, record_type_name)))
+        writer("    private {} {} = {};\n".format(ty_to_java(ty, record_type_name), name, new(ty, record_type_name)))
 
     writer("    public Iterable<{}> query({}) {{\n".format(record_type_name, ", ".join("final {} {}".format(ty, v) for v,ty in qvars)))
     writer(proc)
@@ -168,8 +138,8 @@ def write_java(fields, qvars, plan, writer, package=None):
 def _gen_insert(e, ty, x, record_type_name, writer):
     if type(ty) is HashMap:
         k = "{}.{}".format(x, ty.fieldName)
-        tmp = _fresh_name()
-        writer("        {} {} = {}.get({});\n".format(ty.ty.to_java(record_type_name), tmp, e, k))
+        tmp = fresh_name()
+        writer("        {} {} = {}.get({});\n".format(ty_to_java(ty.ty, record_type_name), tmp, e, k))
         writer("        if ({} == null) {{\n".format(tmp))
         writer("            {} = {};\n".format(tmp, new(ty.ty, record_type_name)))
         writer("            {}.put({}, {});\n".format(e, k, tmp))
@@ -187,7 +157,7 @@ def _compare(x, y, ty):
 
 def new(ty, record_type_name):
     if type(ty) is HashMap:
-        return "new java.util.HashMap<{}, {}>()".format(_box(ty.fieldTy), ty.ty.to_java(record_type_name))
+        return "new java.util.HashMap<{}, {}>()".format(_box(ty.fieldTy), ty_to_java(ty.ty, record_type_name))
     elif type(ty) is SortedSet or type(ty) is UnsortedSet:
         return "new java.util.ArrayList<{}>()".format(record_type_name)
 
@@ -213,12 +183,6 @@ def _gen_record_type(name, fields, writer):
     writer(".append(')').toString();\n")
     writer("        }\n")
     writer("    }\n")
-
-_i = 0
-def _fresh_name():
-    global _i
-    _i += 1
-    return "name{}".format(_i)
 
 def _box(ty):
     if ty == "int":
@@ -259,7 +223,7 @@ def _predicate_to_exp(fields, qvars, pred, target):
 
 def empty(ty, record_type_name):
     if type(ty) is HashMap:
-        return "java.util.Collections.<{}, {}>emptyMap()".format(_box(ty.fieldTy), ty.ty.to_java(record_type_name))
+        return "java.util.Collections.<{}, {}>emptyMap()".format(_box(ty.fieldTy), ty_to_java(ty.ty, record_type_name))
     return "java.util.Collections.<{}>emptyList()".format(record_type_name)
 
 def _traverse(fields, qvars, plan, record_type_name, resultTy, onMember):
@@ -270,15 +234,15 @@ def _traverse(fields, qvars, plan, record_type_name, resultTy, onMember):
         return ("", empty(resultTy, record_type_name))
     elif type(plan) is plans.HashLookup:
         p, r = _traverse(fields, qvars, plan.plan, record_type_name, HashMap(dict(fields)[plan.fieldName], plan.fieldName, resultTy), onMember)
-        n = _fresh_name()
-        proc  = "        {} {} = {}.get({});\n".format(resultTy.to_java(record_type_name), n, r, plan.varName)
+        n = fresh_name()
+        proc  = "        {} {} = {}.get({});\n".format(ty_to_java(resultTy, record_type_name), n, r, plan.varName)
         proc += "        if ({n} == null) {{ {n} = {empty}; }}\n".format(n=n, empty=empty(resultTy, record_type_name))
         return (p + proc, n)
     elif type(plan) is plans.BinarySearch:
         resultTy = resultTy.unify(SortedSet(dict(fields)[plan.fieldName], plan.fieldName))
         p, r = _traverse(fields, qvars, plan.plan, record_type_name, resultTy, onMember)
-        start = _fresh_name()
-        end = _fresh_name()
+        start = fresh_name()
+        end = fresh_name()
         proc = "        int {}, {};\n".format(start, end)
 
         def bisect(op, dst, start=None, end=None):
@@ -297,9 +261,9 @@ def _traverse(fields, qvars, plan, record_type_name, resultTy, onMember):
             }}
         }}
         {dst} = {lo};\n""".format(
-                lo=_fresh_name(),
-                hi=_fresh_name(),
-                mid=_fresh_name(),
+                lo=fresh_name(),
+                hi=fresh_name(),
+                mid=fresh_name(),
                 dst=dst,
                 op=op,
                 tmp=r,
@@ -326,7 +290,7 @@ def _traverse(fields, qvars, plan, record_type_name, resultTy, onMember):
         return (p + proc, "{}.subList({}, {})".format(r, start, end))
     elif type(plan) is plans.Filter:
         p, r = _traverse(fields, qvars, plan.plan, record_type_name, resultTy, onMember)
-        n = _fresh_name()
+        n = fresh_name()
         proc = """
         Iterable<{ty}> {n} = new FilteredIterable<{ty}>({r}) {{
             @Override
