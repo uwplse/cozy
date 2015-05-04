@@ -1,8 +1,9 @@
 
 from functools import total_ordering
 from predicates import *
+from common import ADT
 
-class Plan(object):
+class Plan(ADT):
     def toPredicate(self):
         pass
     def isSortedBy(self, fieldName):
@@ -10,8 +11,6 @@ class Plan(object):
     def isTrivial(self):
         return False
     def wellFormed(self):
-        pass
-    def size(self):
         pass
 
 @total_ordering
@@ -24,16 +23,6 @@ class All(Plan):
         return True
     def wellFormed(self):
         return True
-    def size(self):
-        return 1
-    def __str__(self):
-        return "All"
-    def __hash__(self):
-        return 0
-    def __eq__(self, other):
-        return isinstance(other, All)
-    def __lt__(self, other):
-        return type(self) < type(other)
 
 @total_ordering
 class Empty(Plan):
@@ -45,16 +34,6 @@ class Empty(Plan):
         return True
     def wellFormed(self):
         return True
-    def size(self):
-        return 1
-    def __str__(self):
-        return "None"
-    def __hash__(self):
-        return 1
-    def __eq__(self, other):
-        return isinstance(other, Empty)
-    def __lt__(self, other):
-        return type(self) < type(other)
 
 @total_ordering
 class HashLookup(Plan):
@@ -68,16 +47,8 @@ class HashLookup(Plan):
         return self.plan.isSortedBy(fieldName)
     def wellFormed(self):
         return (isinstance(self.plan, HashLookup) or isinstance(self.plan, All)) and self.plan.wellFormed()
-    def size(self):
-        return 1 + self.plan.size()
-    def __str__(self):
-        return "HashLookup({}, {} == {})".format(self.plan, self.fieldName, self.varName)
-    def __hash__(self):
-        return hash((self.plan, self.fieldName, self.varName))
-    def __eq__(self, other):
-        return isinstance(other, HashLookup) and self.plan == other.plan and self.fieldName == other.fieldName and self.varName == other.varName
-    def __lt__(self, other):
-        return (self.plan, self.fieldName, self.varName) < (other.plan, other.fieldName, other.varName) if isinstance(other, HashLookup) else type(self) < type(other)
+    def children(self):
+        return (self.plan, self.fieldName, self.varName)
 
 @total_ordering
 class BinarySearch(Plan):
@@ -92,16 +63,8 @@ class BinarySearch(Plan):
         return fieldName == self.fieldName
     def wellFormed(self):
         return self.plan.wellFormed() and self.plan.isSortedBy(self.fieldName)
-    def size(self):
-        return 1 + self.plan.size()
-    def __str__(self):
-        return "BinarySearch({}, {} {} {})".format(self.plan, self.fieldName, opToStr(self.op), self.varName)
-    def __hash__(self):
-        return hash((self.plan, self.fieldName, self.op, self.varName))
-    def __eq__(self, other):
-        return isinstance(other, BinarySearch) and self.plan == other.plan and self.fieldName == other.fieldName and self.op == other.op and self.varName == other.varName
-    def __lt__(self, other):
-        return (self.plan, self.fieldName, self.op, self.varName) < (other.plan, other.fieldName, other.op, other.varName) if isinstance(other, BinarySearch) else type(self) < type(other)
+    def children(self):
+        return (self.plan, self.fieldName, self.op, self.varName)
 
 @total_ordering
 class Filter(Plan):
@@ -114,16 +77,8 @@ class Filter(Plan):
         return False
     def wellFormed(self):
         return self.plan.wellFormed()
-    def size(self):
-        return 1 + self.plan.size()
-    def __str__(self):
-        return "Filter({}, {})".format(self.plan, self.predicate)
-    def __hash__(self):
-        return hash((self.plan, self.predicate))
-    def __eq__(self, other):
-        return isinstance(other, Filter) and self.plan == other.plan and self.predicate == other.predicate
-    def __lt__(self, other):
-        return (self.plan, self.predicate) < (other.plan, other.predicate) if isinstance(other, Filter) else type(self) < type(other)
+    def children(self):
+        return (self.plan, self.predicate)
 
 @total_ordering
 class Intersect(Plan):
@@ -136,16 +91,8 @@ class Intersect(Plan):
         return False
     def wellFormed(self):
         return self.plan1.wellFormed() and self.plan2.wellFormed()
-    def size(self):
-        return 1 + self.plan1.size() + self.plan2.size()
-    def __str__(self):
-        return "Intersect({}, {})".format(self.plan1, self.plan2)
-    def __hash__(self):
-        return hash((self.plan1, self.plan2))
-    def __eq__(self, other):
-        return isinstance(other, Intersect) and self.plan1 == other.plan1 and self.plan2 == other.plan2
-    def __lt__(self, other):
-        return (self.plan1, self.plan2) < (other.plan1, other.plan2) if isinstance(other, Intersect) else type(self) < type(other)
+    def children(self):
+        return (self.plan1, self.plan2)
 
 @total_ordering
 class Union(Plan):
@@ -158,13 +105,5 @@ class Union(Plan):
         return False
     def wellFormed(self):
         return self.plan1.wellFormed() and self.plan2.wellFormed()
-    def size(self):
-        return 1 + self.plan1.size() + self.plan2.size()
-    def __str__(self):
-        return "Union({}, {})".format(self.plan1, self.plan2)
-    def __hash__(self):
-        return hash((self.plan1, self.plan2))
-    def __eq__(self, other):
-        return isinstance(other, Union) and self.plan1 == other.plan1 and self.plan2 == other.plan2
-    def __lt__(self, other):
-        return (self.plan1, self.plan2) < (other.plan1, other.plan2) if isinstance(other, Union) else type(self) < type(other)
+    def children(self):
+        return (self.plan1, self.plan2)
