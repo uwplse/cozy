@@ -21,19 +21,21 @@ class SolverContext:
         for a in assumptions:
             self.z3solver.add(a.toZ3(self.z3ctx))
         self.cost_model = cost_model
-        self.cost_cache = dict()
 
     def cost(self, plan):
-        cost = self.cost_cache.get(plan)
-        if cost is None:
-            cost = self.cost_model(plan)
-            self.cost_cache[plan] = cost
-        plan.cost = cost
-        return cost
+        if not hasattr(plan, "_cost"):
+            plan._cost = self.cost_model(plan)
+        return plan._cost
 
     def synthesizePlansByEnumeration(self, query, maxSize=1000):
         examples = []
         query = query.toNNF()
+
+        dumbestPlan = plans.Filter(plans.All(), query)
+        self.bestCost = self.cost(dumbestPlan) # cost of best valid plan found so far
+        self.productive = False # was progress made this iteration
+        yield dumbestPlan
+
         while True:
             # print "starting synthesis using", len(examples), "examples"
             for responseType, response in self._synthesizePlansByEnumeration(query, maxSize, examples):
@@ -55,7 +57,9 @@ class SolverContext:
         def outputvector(predicate):
             if isinstance(predicate, plans.Plan):
                 predicate = predicate.toPredicate()
-            return tuple([predicate.eval(dict(itertools.chain(zip(self.varNames, vs), zip(self.fieldNames, fs)))) for fs,vs in examples])
+            if not hasattr(predicate, "_outputvector") or len(predicate._outputvector) != len(examples):
+                predicate._outputvector = tuple([predicate.eval(dict(itertools.chain(zip(self.varNames, vs), zip(self.fieldNames, fs)))) for fs,vs in examples])
+            return predicate._outputvector
 
         def stupid(plan):
             if type(plan) is plans.Filter and type(plan.plan) is plans.Filter and plan.predicate < plan.plan.predicate:
@@ -94,31 +98,48 @@ class SolverContext:
                 return None, None
             x = isValid(plan)
             cost = self.cost(plan)
+
+            # too expensive? it can't possibly be part of a great plan!
+            if self.bestCost is not None and cost > self.bestCost:
+                return None, None
+
             if x is True:
-                if bestCost[0] is None or cost < bestCost[0]:
-                    productive[0] = True
-                    bestPlan[0] = plan
-                    bestCost[0] = cost
-                    # evict big cached items
-                    for val, p in cache.items():
-                        if self.cost(p) >= cost:
-                            del cache[val]
-                    for i in xrange(size + 1):
-                        plansOfSize[i] = [p for p in plansOfSize[i] if self.cost(p) < cost]
+                self.productive = True
+                self.bestCost = cost
+                # evict big cached items
+                for val, p in cache.items():
+                    if self.cost(p) > cost:
+                        del cache[val]
+                for i in xrange(size + 1):
+                    plansOfSize[i] = [p for p in plansOfSize[i] if self.cost(p) <= cost]
                 return "validPlan", plan
             elif x is False:
                 vec = outputvector(plan.toPredicate())
                 old_plan = cache.get(vec)
-                if old_plan is None or self.cost(old_plan) > cost:
-                    productive[0] = True
+
+                # new possibility
+                if old_plan is None:
                     cache[vec] = plan
                     plansOfSize[size].append(plan)
-                    if old_plan is not None:
-                        plansOfSize[old_plan.size()].remove(old_plan)
+                    self.productive = True
+
+                # better than previous options
+                elif cost < self.cost(old_plan):
+                    cache[vec] = plan
+                    for i in xrange(size + 1):
+                        plansOfSize[i] = [p for p in plansOfSize[i] if outputvector(p) != vec]
+                    plansOfSize[size].append(plan)
+                    self.productive = True
+
+                # as good as previous options
+                elif cost == self.cost(old_plan):
+                    plansOfSize[size].append(plan)
+                    self.productive = True
+
                 return None, None
             else:
                 # x is new example!
-                productive[0] = True
+                self.productive = True
                 return "counterexample", (x, plan)
 
         queryVector = outputvector(query)
@@ -130,17 +151,6 @@ class SolverContext:
         # plansOfSize[s] contains all interesting plans of size s
         plansOfSize = [[], []]
 
-        # the stupidest possible plan: linear search
-        dumbestPlan = plans.Filter(plans.All(), query)
-
-        # these are lists so that the closures can modify their values
-        # (grumble grumble "nonlocal" keyword missing grumble)
-        bestPlan = [dumbestPlan] # best plan found so far
-        bestCost = [self.cost(dumbestPlan)] # cost of bestPlan
-        if not examples:
-            yield "validPlan", dumbestPlan
-        productive = [False]
-
         print "round 1"
         for plan in [plans.All(), plans.Empty()]:
             yield consider(plan, 1)
@@ -151,7 +161,7 @@ class SolverContext:
         for size in xrange(2, maxSize + 1):
             assert len(plansOfSize) == size
             plansOfSize.append([])
-            productive[0] = False
+            self.productive = False
             print "round", size, "cache size {}/{}".format(len(cache), 2**len(examples))
             for plan in (plans.HashLookup(p, f, v) for p in plansOfSize[size-1] for f in self.fieldNames for v in self.varNames if (f, v) in comps):
                 yield consider(plan, size)
@@ -162,7 +172,7 @@ class SolverContext:
                 yield consider(plan, size)
             for plan in (ty(p1, p2) for ty in [plans.Intersect, plans.Union] for split in xrange(1, size-1) for p1 in plansOfSize[split] if not p1.isTrivial() for p2 in plansOfSize[size-split-1] if not p2.isTrivial() and p1 < p2):
                 yield consider(plan, size)
-            if not productive[0]:
+            if not self.productive:
                 roundsWithoutProgress += 1
                 if roundsWithoutProgress >= maxRoundsWithoutProgress:
                     print "last {} rounds were not productive; stopping".format(roundsWithoutProgress)

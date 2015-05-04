@@ -45,6 +45,8 @@ if __name__ == '__main__':
             os.path.dirname(args.file),
             cost_model_file))
 
+    cost_model_file = None
+
     sc = SolverContext(
         varNames=[v for v,ty in qvars],
         fieldNames=[f for f,ty in fields],
@@ -55,8 +57,7 @@ if __name__ == '__main__':
     print "Query:", q
 
     bestCost = None
-    bestPlan = None
-
+    bestPlans = set()
     seen = set()
 
     try:
@@ -64,18 +65,23 @@ if __name__ == '__main__':
             if p in seen:
                 continue
             seen.add(p)
-            cost = p.cost
+            cost = sc.cost(p)
             improvement = False
             if bestCost is None or cost < bestCost:
                 improvement = True
-                bestPlan = p
+                bestPlans = set([p])
                 bestCost = cost
+            else:
+                bestPlans.add(p)
             print "FOUND PLAN: ", p, "; cost = ", cost, (" *** IMPROVEMENT" if improvement else "")
     except:
         print "stopping due to exception"
         traceback.print_exc()
 
-    if bestPlan is not None:
+    print "found {} great plans".format(len(bestPlans))
+    if bestPlans:
+        bestPlan = list(bestPlans)[0]
+
         print "="*60
         print "Best plan found: ", bestPlan
         print "Best plan size: ", bestPlan.size()
