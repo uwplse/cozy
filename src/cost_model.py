@@ -1,4 +1,4 @@
-
+from __future__ import print_function
 import math
 import tempfile
 import os
@@ -42,7 +42,7 @@ def _dynamic_cost(fields, qvars, plan, benchmark_file):
         with open(benchmark_file, "r") as b:
             f.write(b.read())
         f.write("\n}\n")
-    print("benchmarking {}[size={}] in {}".format(id(plan), plan.size(), tmp))
+    print("benchmarking {}[size={}] in {}... ".format(id(plan), plan.size(), tmp), end="")
 
     orig = os.getcwd()
     os.chdir(tmp)
@@ -56,9 +56,11 @@ def _dynamic_cost(fields, qvars, plan, benchmark_file):
 
     os.chdir(orig)
 
+    print("cost = {}".format(score))
+
     return score
 
-def cost(fields, qvars, plan, cost_model_file):
+def cost(fields, qvars, plan, cost_model_file=None):
     if cost_model_file is None:
         return _cost(plan)[0]
     else:

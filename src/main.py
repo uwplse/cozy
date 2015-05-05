@@ -45,12 +45,10 @@ if __name__ == '__main__':
             os.path.dirname(args.file),
             cost_model_file))
 
-    cost_model_file = None
-
     sc = SolverContext(
         varNames=[v for v,ty in qvars],
         fieldNames=[f for f,ty in fields],
-        cost_model=lambda plan: cost_model.cost(fields, qvars, plan, cost_model_file),
+        cost_model=lambda plan: cost_model.cost(fields, qvars, plan),
         assumptions=assumptions)
     for a in assumptions:
         print "Assuming:", a
@@ -79,9 +77,11 @@ if __name__ == '__main__':
         traceback.print_exc()
 
     print "found {} great plans".format(len(bestPlans))
+    bestPlan = None
     if bestPlans:
-        bestPlan = list(bestPlans)[0]
+        bestPlan = min(bestPlans, key=lambda plan: cost_model.cost(fields, qvars, plan, cost_model_file))
 
+    if bestPlan is not None:
         print "="*60
         print "Best plan found: ", bestPlan
         print "Best plan size: ", bestPlan.size()
