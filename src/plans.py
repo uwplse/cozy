@@ -64,7 +64,7 @@ class BinarySearch(Plan):
     def wellFormed(self):
         return self.plan.wellFormed() and self.plan.isSortedBy(self.fieldName)
     def children(self):
-        return (self.plan, self.fieldName, self.op, self.varName)
+        return (self.plan, Compare(Var(self.fieldName), self.op, Var(self.varName)))
 
 @total_ordering
 class Filter(Plan):
