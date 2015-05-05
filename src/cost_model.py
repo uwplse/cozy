@@ -13,7 +13,7 @@ def _cost(plan, n=float(1000)):
     if isinstance(plan, plans.Empty): return 1, 0
     if isinstance(plan, plans.HashLookup):
         cost1, size1 = _cost(plan.plan)
-        return cost1 + 1, size1 / 2
+        return cost1 + 1, size1 / 3
     if isinstance(plan, plans.BinarySearch):
         cost1, size1 = _cost(plan.plan)
         return cost1 + (math.log(size1) if size1 >= 1 else 1), size1 / 2
