@@ -32,7 +32,10 @@ class peekable(object):
 
 def _parseType(tokens):
     t = tokens.next()
-    while tokens.peek() is not _EOF and tokens.peek() != "," and tokens.peek() not in _KEYWORDS:
+    while (tokens.peek() is not _EOF and
+            tokens.peek() != "," and
+            tokens.peek() != ")" and
+            tokens.peek() not in _KEYWORDS):
         t += tokens.next()
     return t
 
