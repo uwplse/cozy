@@ -55,10 +55,16 @@ class SolverContext:
         """note: query should be in NNF"""
 
         def outputvector(predicate):
+            correct_sorting = True
             if isinstance(predicate, plans.Plan):
+                if sort_field is not None:
+                    correct_sorting = predicate.isSortedBy(sort_field)
                 predicate = predicate.toPredicate()
-            if not hasattr(predicate, "_outputvector") or len(predicate._outputvector) != len(examples):
-                predicate._outputvector = tuple([predicate.eval(dict(itertools.chain(zip(self.varNames, vs), zip(self.fieldNames, fs)))) for fs,vs in examples])
+            if not hasattr(predicate, "_outputvector") or len(predicate._outputvector) != len(examples) + 1:
+                vec = [predicate.eval(dict(itertools.chain(zip(self.varNames, vs), zip(self.fieldNames, fs)))) for fs,vs,_ in examples]
+                if sort_field is not None:
+                    vec.append(correct_sorting)
+                predicate._outputvector = tuple(vec)
             return predicate._outputvector
 
         def stupid(plan):
@@ -74,25 +80,23 @@ class SolverContext:
 
         def isValid(plan):
             """returns True, False, or a new counterexample"""
-            planPred = plan.toPredicate()
-            if outputvector(planPred) != queryVector:
+            assert len(outputvector(plan)) == len(queryVector)
+            if outputvector(plan) != queryVector:
                 return False
 
             result = False
             s = self.z3solver
             s.push()
-            s.add(planPred.toZ3(self.z3ctx) != query.toZ3(self.z3ctx))
+            s.add(plan.toPredicate().toZ3(self.z3ctx) != query.toZ3(self.z3ctx))
             if str(s.check()) == 'unsat':
                 result = True
             else:
                 m = s.model()
                 result = (
                     [int(str(m[Int(f, self.z3ctx)] or 0)) for f in self.fieldNames],
-                    [int(str(m[Int(v, self.z3ctx)] or 0)) for v in self.varNames])
+                    [int(str(m[Int(v, self.z3ctx)] or 0)) for v in self.varNames],
+                    plan.isSortedBy(sort_field) if sort_field is not None else True)
             s.pop()
-
-            if result and sort_field is not None and not plan.isSortedBy(sort_field):
-                result = False
 
             return result
 
@@ -118,7 +122,7 @@ class SolverContext:
                     plansOfSize[i] = [p for p in plansOfSize[i] if self.cost(p) <= cost]
                 return "validPlan", plan
             elif x is False:
-                vec = outputvector(plan.toPredicate())
+                vec = outputvector(plan)
                 old_plan = cache.get(vec)
 
                 # new possibility

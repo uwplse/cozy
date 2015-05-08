@@ -56,7 +56,7 @@ if __name__ == '__main__':
             assumptions=local_assumptions)
         for a in local_assumptions:
             print "Assuming:", a
-        print "Query:", query.pred
+        print "Query {}: {}".format(query.name, query.pred)
 
         bestCost = None
         bestPlans = set()
@@ -83,7 +83,6 @@ if __name__ == '__main__':
         print "found {} great plans".format(len(bestPlans))
 
         query.plans = bestPlans
-
 
     # bestPlan = None
     # if bestPlans:
