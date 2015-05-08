@@ -1,10 +1,11 @@
 import re
 import itertools
 import predicates
+from queries import Query
 
 _EOF = object()
 _TOKEN_REGEX = re.compile(r'\s*(\w+|>=|<=|>|<|==|.)')
-_KEYWORDS = ("fields", "vars", "query", "assume")
+_KEYWORDS = ("fields", "vars", "query", "assume", "sort", "costmodel")
 
 def _tokenize(text):
     while True:
@@ -40,7 +41,7 @@ def _parseType(tokens):
     return t
 
 def _parseVars(tokens):
-    while tokens.peek() is not _EOF and tokens.peek() not in _KEYWORDS:
+    while tokens.peek() is not _EOF and tokens.peek() not in _KEYWORDS and tokens.peek() != ")":
         field_name = tokens.next()
         ty = "double"
         if tokens.peek() == ":":
@@ -69,15 +70,15 @@ def _parseQuery(fields, qvars, tokens, assoc=0):
             f = tok
             op = tokens.next()
             v = tokens.next()
-            assert f in fields or f in qvars, "unkown var '{}'".format(f)
             m = { ">=" : predicates.Ge,
                 "<=" : predicates.Le,
                 ">" : predicates.Gt,
                 "<" : predicates.Lt,
                 "==" : predicates.Eq,
                 "!=" : predicates.Ne }
+            assert f in fields or f in qvars, "unkown var '{}'".format(f)
             assert op in m
-            assert v in fields or v in qvars
+            assert v in fields or v in qvars, "unkown var '{}'".format(v)
             return predicates.Compare(predicates.Var(f), m[op], predicates.Var(v))
     else:
         q1 = _parseQuery(fields, qvars, tokens, assoc + 1)
@@ -93,20 +94,48 @@ def parseQuery(text):
     tokens = peekable(_tokenize(text))
     assert tokens.next() == "fields"
     fields = list(_parseVars(tokens))
-    assert tokens.next() == "vars"
-    qvars = list(_parseVars(tokens))
 
     field_names = set(f for f,t in fields)
-    var_names = set(v for v,t in qvars)
 
     assumptions = []
-    tok = tokens.next()
-    while tok == "assume":
-        assumptions.append(_parseQuery(field_names, var_names, tokens))
-        tok = tokens.next()
+    while tokens.peek() == "assume":
+        tokens.next()
+        assumptions.append(_parseQuery(field_names, [], tokens))
 
-    assert tok == "query"
-    q = _parseQuery(field_names, var_names, tokens)
+    queries = []
+    while tokens.peek() == "query":
+        tokens.next()
+
+        # name
+        name = tokens.next()
+
+        # vars
+        assert tokens.next() == "("
+        qvars = list(_parseVars(tokens))
+        var_names = set(v for v,t in qvars)
+        assert tokens.next() == ")"
+
+        # assumptions
+        query_assumptions = []
+        while tokens.peek() == "assume":
+            tokens.next()
+            query_assumptions.append(_parseQuery((), var_names, tokens))
+
+        # body
+        pred = _parseQuery(field_names, var_names, tokens)
+
+        # sort?
+        sort_field = None
+        if tokens.peek() == "sort":
+            tokens.next()
+            sort_field = tokens.next()
+
+        queries.append(Query(
+            name=name,
+            vars=qvars,
+            pred=pred,
+            assumptions=query_assumptions,
+            sort_field=sort_field))
 
     costmodel = None
     if tokens.peek() == "costmodel":
@@ -116,4 +145,4 @@ def parseQuery(text):
             costmodel += tokens.next()
 
     assert tokens.peek() is _EOF
-    return fields, qvars, assumptions, q, costmodel
+    return fields, qvars, assumptions, queries, costmodel
