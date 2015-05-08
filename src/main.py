@@ -8,6 +8,7 @@ import sys
 import traceback
 import argparse
 import os.path
+import itertools
 
 from synthesis import SolverContext
 from parse import parseQuery
@@ -34,7 +35,7 @@ if __name__ == '__main__':
     else:
         inp = sys.stdin.read()
 
-    fields, qvars, assumptions, q, cost_model_file = parseQuery(inp)
+    fields, qvars, assumptions, queries, cost_model_file = parseQuery(inp)
 
     if cost_model_file is not None and args.file is None:
         raise Exception("cannot locate {}".format(cost_model_file))
@@ -45,60 +46,68 @@ if __name__ == '__main__':
             os.path.dirname(args.file),
             cost_model_file))
 
-    sc = SolverContext(
-        varNames=[v for v,ty in qvars],
-        fieldNames=[f for f,ty in fields],
-        cost_model=lambda plan: cost_model.cost(fields, qvars, plan),
-        assumptions=assumptions)
-    for a in assumptions:
-        print "Assuming:", a
-    print "Query:", q
+    for query in queries:
 
-    bestCost = None
-    bestPlans = set()
-    seen = set()
+        local_assumptions = list(itertools.chain(assumptions, query.assumptions))
+        sc = SolverContext(
+            varNames=[v for v,ty in query.vars],
+            fieldNames=[f for f,ty in fields],
+            cost_model=lambda plan: cost_model.cost(fields, query.vars, plan),
+            assumptions=local_assumptions)
+        for a in local_assumptions:
+            print "Assuming:", a
+        print "Query:", query.pred
 
-    try:
-        for p in sc.synthesizePlansByEnumeration(q):
-            if p in seen:
-                continue
-            seen.add(p)
-            cost = sc.cost(p)
-            improvement = False
-            if bestCost is None or cost < bestCost:
-                improvement = True
-                bestPlans = set([p])
-                bestCost = cost
-            else:
-                bestPlans.add(p)
-            print "FOUND PLAN: ", p, "; cost = ", cost, (" *** IMPROVEMENT" if improvement else "")
-    except:
-        print "stopping due to exception"
-        traceback.print_exc()
+        bestCost = None
+        bestPlans = set()
+        seen = set()
 
-    print "found {} great plans".format(len(bestPlans))
-    bestPlan = None
-    if bestPlans:
-        bestPlan = min(bestPlans, key=lambda plan: cost_model.cost(fields, qvars, plan, cost_model_file))
+        try:
+            for p in sc.synthesizePlansByEnumeration(query.pred, sort_field=query.sort_field):
+                if p in seen:
+                    continue
+                seen.add(p)
+                cost = sc.cost(p)
+                improvement = False
+                if bestCost is None or cost < bestCost:
+                    improvement = True
+                    bestPlans = set([p])
+                    bestCost = cost
+                else:
+                    bestPlans.add(p)
+                print "FOUND PLAN: ", p, "; cost = ", cost, (" *** IMPROVEMENT" if improvement else "")
+        except:
+            print "stopping due to exception"
+            traceback.print_exc()
 
-    if bestPlan is not None:
-        print "="*60
-        print "Best plan found: ", bestPlan
-        print "Best plan size: ", bestPlan.size()
-        print "Cost: ", bestCost
+        print "found {} great plans".format(len(bestPlans))
 
-        java_writer = lambda x: None
-        if args.java is not None:
-            java_writer = sys.stdout.write if args.java == "-" else open(args.java, "w").write
+        query.plans = bestPlans
 
-        write_java(fields, qvars, bestPlan, java_writer, package=args.java_package)
 
-        cpp_writer = lambda x: None
-        if args.cpp is not None:
-            cpp_writer = sys.stdout.write if args.cpp == "-" else open(args.cpp, "w").write
+    # bestPlan = None
+    # if bestPlans:
+    #     bestPlan = min(bestPlans, key=lambda plan: cost_model.cost(fields, qvars, plan, cost_model_file))
 
-        cpp_header_writer = lambda x: None
-        if args.cpp_header is not None:
-            cpp_header_writer = sys.stdout.write if args.cpp_header == "-" else open(args.cpp_header, "w").write
 
-        write_cpp(fields, qvars, bestPlan, cpp_writer, cpp_header_writer, namespace=args.cpp_namespace)
+    # if bestPlan is not None:
+    #     print "="*60
+    #     print "Best plan found: ", bestPlan
+    #     print "Best plan size: ", bestPlan.size()
+    #     print "Cost: ", bestCost
+
+    #     java_writer = lambda x: None
+    #     if args.java is not None:
+    #         java_writer = sys.stdout.write if args.java == "-" else open(args.java, "w").write
+
+    #     write_java(fields, qvars, bestPlan, java_writer, package=args.java_package)
+
+    #     cpp_writer = lambda x: None
+    #     if args.cpp is not None:
+    #         cpp_writer = sys.stdout.write if args.cpp == "-" else open(args.cpp, "w").write
+
+    #     cpp_header_writer = lambda x: None
+    #     if args.cpp_header is not None:
+    #         cpp_header_writer = sys.stdout.write if args.cpp_header == "-" else open(args.cpp_header, "w").write
+
+    #     write_cpp(fields, qvars, bestPlan, cpp_writer, cpp_header_writer, namespace=args.cpp_namespace)

@@ -27,7 +27,7 @@ class SolverContext:
             plan._cost = self.cost_model(plan)
         return plan._cost
 
-    def synthesizePlansByEnumeration(self, query, maxSize=1000):
+    def synthesizePlansByEnumeration(self, query, sort_field=None, maxSize=1000):
         examples = []
         query = query.toNNF()
 
@@ -38,7 +38,7 @@ class SolverContext:
 
         while True:
             # print "starting synthesis using", len(examples), "examples"
-            for responseType, response in self._synthesizePlansByEnumeration(query, maxSize, examples):
+            for responseType, response in self._synthesizePlansByEnumeration(query, sort_field, maxSize, examples):
                 if responseType == "counterexample":
                     example, plan = response
                     print "found counterexample", example, "\n\tfor", plan
@@ -51,7 +51,7 @@ class SolverContext:
                 elif responseType == "stop":
                     return
 
-    def _synthesizePlansByEnumeration(self, query, maxSize, examples):
+    def _synthesizePlansByEnumeration(self, query, sort_field, maxSize, examples):
         """note: query should be in NNF"""
 
         def outputvector(predicate):
@@ -90,6 +90,10 @@ class SolverContext:
                     [int(str(m[Int(f, self.z3ctx)] or 0)) for f in self.fieldNames],
                     [int(str(m[Int(v, self.z3ctx)] or 0)) for v in self.varNames])
             s.pop()
+
+            if result and sort_field is not None and not plan.isSortedBy(sort_field):
+                result = False
+
             return result
 
         def consider(plan, size):
@@ -124,6 +128,7 @@ class SolverContext:
                     self.productive = True
 
                 # better than previous options
+                # TODO: this eviction doesn't handle sort_field properly...
                 elif cost < self.cost(old_plan):
                     cache[vec] = plan
                     for i in xrange(size + 1):
