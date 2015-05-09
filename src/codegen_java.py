@@ -11,13 +11,12 @@ def ty_to_java(ty, record_type):
     else:
         raise Exception("unknown type {}".format(ty))
 
-def write_java(fields, qvars, plan, writer, package=None):
+def write_java(fields, queries, writer, package=None):
     """
     Writes a Java data structure implementation to the given writer.
     Arguments:
      - fields  - a list of (field_name, type)
-     - qvars   - a list of (query_var, type)
-     - plan    - an execution plan
+     - queries - a dict of query objects with .bestPlan set
      - writer  - a function that consumes strings
      - package - what Java package to put the generated class in
     """
@@ -32,7 +31,13 @@ def write_java(fields, qvars, plan, writer, package=None):
         members.append((name, ty))
         return name
 
-    proc, result = _traverse(fields, qvars, plan, record_type_name, UnsortedSet(), onMember)
+    qfuncs = []
+    print(queries)
+    field_dict = dict(fields)
+    for q in queries:
+        ty = UnsortedSet() if q.sort_field is None else SortedSet(field_dict[q.sort_field], q.sort_field)
+        proc, result = _traverse(fields, q.vars, q.bestPlan, record_type_name, ty, onMember)
+        qfuncs.append((q.name, q.vars, proc, result))
 
     if package is not None:
         writer("package {};\n\n".format(package))
@@ -116,13 +121,20 @@ def write_java(fields, qvars, plan, writer, package=None):
 
     _gen_record_type(record_type_name, fields, writer)
 
+    # generate comparators
+    for f, ty in fields:
+        writer("    public static final java.util.Comparator<{record_type}> = new java.util.Comparator<{record_type}>() {{ public int compare({record_type} a, {record_type} b) {{ return {pred}; }} }};\n".format(
+            record_type=record_type_name,
+            pred=_compare("a.{}".format(f), "b.{}".format(f), ty)))
+
     for name, ty in members:
         writer("    private {} {} = {};\n".format(ty_to_java(ty, record_type_name), name, new(ty, record_type_name)))
 
-    writer("    public Iterable<{}> query({}) {{\n".format(record_type_name, ", ".join("final {} {}".format(ty, v) for v,ty in qvars)))
-    writer(proc)
-    writer("        return {};\n".format(result))
-    writer("    }\n")
+    for name, qvars, proc, result in qfuncs:
+        writer("    public Iterable<{}> {}({}) {{\n".format(record_type_name, name, ", ".join("final {} {}".format(ty, v) for v,ty in qvars)))
+        writer(proc)
+        writer("        return {};\n".format(result))
+        writer("    }\n")
 
     writer("    public void add({record_type} x) {{\n".format(record_type=record_type_name))
     for name, ty in members:
@@ -146,7 +158,7 @@ def _gen_insert(e, ty, x, record_type_name, writer):
         writer("        }\n")
         _gen_insert(tmp, ty.ty, x, record_type_name, writer)
     elif type(ty) is SortedSet:
-        writer("        insert_sorted({}, {}, new java.util.Comparator<{record_type}>() {{ public int compare({record_type} a, {record_type} b) {{ return {pred}; }} }});\n".format(e, x, record_type=record_type_name, pred=_compare("a.{}".format(ty.fieldName), "b.{}".format(ty.fieldName), ty.fieldTy)))
+        writer("        insert_sorted({}, {}, COMPARE_{});\n".format(e, x, ty.fieldName))
     elif type(ty) is UnsortedSet:
         writer("        {}.add({});\n".format(e, x))
 

@@ -16,6 +16,22 @@ import cost_model
 from codegen_java import write_java
 from codegen_cpp import write_cpp
 
+def pickBestPlans(queries, cost_model_file=None, accum=()):
+    """Sets q.bestPlan for each q in all_queries, returns min cost"""
+    if queries:
+        q, queries = queries[0], queries[1:]
+        bestScore = None
+        bestPlan = None
+        for plan in q.bestPlans:
+            q.bestPlan = plan
+            cost = pickBestPlans(queries, cost_model_file, list(accum) + q)
+            if bestScore is None or cost < bestScore:
+                bestScore = cost
+                bestPlan = plan
+        q.bestPlan = bestPlan
+    else:
+        return cost_model.dynamic_cost(fields, queries, cost_model_file)
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Data structure synthesizer.')
 
@@ -82,12 +98,17 @@ if __name__ == '__main__':
 
         print "found {} great plans".format(len(bestPlans))
 
-        query.plans = bestPlans
+        query.bestPlans = bestPlans
+
+    if cost_model_file is not None:
+        pickBestPlans(list(queries))
+    else:
+        for q in queries:
+            q.bestPlan = list(q.bestPlans)[0]
 
     # bestPlan = None
     # if bestPlans:
     #     bestPlan = min(bestPlans, key=lambda plan: cost_model.cost(fields, qvars, plan, cost_model_file))
-
 
     # if bestPlan is not None:
     #     print "="*60
@@ -95,11 +116,9 @@ if __name__ == '__main__':
     #     print "Best plan size: ", bestPlan.size()
     #     print "Cost: ", bestCost
 
-    #     java_writer = lambda x: None
-    #     if args.java is not None:
-    #         java_writer = sys.stdout.write if args.java == "-" else open(args.java, "w").write
-
-    #     write_java(fields, qvars, bestPlan, java_writer, package=args.java_package)
+    if args.java is not None:
+        java_writer = sys.stdout.write if args.java == "-" else open(args.java, "w").write
+        write_java(fields, queries, java_writer, package=args.java_package)
 
     #     cpp_writer = lambda x: None
     #     if args.cpp is not None:
