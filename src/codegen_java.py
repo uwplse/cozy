@@ -32,7 +32,6 @@ def write_java(fields, queries, writer, package=None):
         return name
 
     qfuncs = []
-    print(queries)
     field_dict = dict(fields)
     for q in queries:
         ty = UnsortedSet() if q.sort_field is None else SortedSet(field_dict[q.sort_field], q.sort_field)

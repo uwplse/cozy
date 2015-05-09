@@ -40,6 +40,7 @@ if __name__ == '__main__':
 
     parser.add_argument("--cpp", metavar="FILE.cpp", default=None, help="Output file for C++ code, use '-' for stdout")
     parser.add_argument("--cpp-header", metavar="FILE.hpp", default=None, help="Output file for C++ header, use '-' for stdout")
+    parser.add_argument("--cpp-extra", metavar="cpp-code", default=None, help="Extra text to include at top of C++ header file")
     parser.add_argument("--cpp-namespace", metavar="ns", default=None, help="C++ namespace")
 
     parser.add_argument("file", nargs="?", default=None, help="Input file (omit to use stdin)")
@@ -106,26 +107,16 @@ if __name__ == '__main__':
         for q in queries:
             q.bestPlan = list(q.bestPlans)[0]
 
-    # bestPlan = None
-    # if bestPlans:
-    #     bestPlan = min(bestPlans, key=lambda plan: cost_model.cost(fields, qvars, plan, cost_model_file))
-
-    # if bestPlan is not None:
-    #     print "="*60
-    #     print "Best plan found: ", bestPlan
-    #     print "Best plan size: ", bestPlan.size()
-    #     print "Cost: ", bestCost
-
     if args.java is not None:
         java_writer = sys.stdout.write if args.java == "-" else open(args.java, "w").write
         write_java(fields, queries, java_writer, package=args.java_package)
 
-    #     cpp_writer = lambda x: None
-    #     if args.cpp is not None:
-    #         cpp_writer = sys.stdout.write if args.cpp == "-" else open(args.cpp, "w").write
+    cpp_writer = lambda x: None
+    if args.cpp is not None:
+        cpp_writer = sys.stdout.write if args.cpp == "-" else open(args.cpp, "w").write
 
-    #     cpp_header_writer = lambda x: None
-    #     if args.cpp_header is not None:
-    #         cpp_header_writer = sys.stdout.write if args.cpp_header == "-" else open(args.cpp_header, "w").write
+    cpp_header_writer = lambda x: None
+    if args.cpp_header is not None:
+        cpp_header_writer = sys.stdout.write if args.cpp_header == "-" else open(args.cpp_header, "w").write
 
-    #     write_cpp(fields, qvars, bestPlan, cpp_writer, cpp_header_writer, namespace=args.cpp_namespace)
+    write_cpp(fields, queries, cpp_writer, cpp_header_writer, extra=(args.cpp_extra or ""), namespace=args.cpp_namespace)
