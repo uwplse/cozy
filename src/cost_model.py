@@ -45,7 +45,7 @@ def dynamic_cost(fields, queries, cost_model_file):
         with open(cost_model_file, "r") as b:
             f.write(b.read())
         f.write("\n}\n")
-    print("benchmarking {}[size={}] in {}... ".format(id(plan), plan.size(), tmp), end="")
+    print("benchmarking {} in {}... ".format([q.name for q in queries], tmp), end="")
 
     orig = os.getcwd()
     os.chdir(tmp)

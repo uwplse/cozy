@@ -122,8 +122,9 @@ def write_java(fields, queries, writer, package=None):
 
     # generate comparators
     for f, ty in fields:
-        writer("    public static final java.util.Comparator<{record_type}> = new java.util.Comparator<{record_type}>() {{ public int compare({record_type} a, {record_type} b) {{ return {pred}; }} }};\n".format(
+        writer("    public static final java.util.Comparator<{record_type}> COMPARE_{field} = new java.util.Comparator<{record_type}>() {{ public int compare({record_type} a, {record_type} b) {{ return {pred}; }} }};\n".format(
             record_type=record_type_name,
+            field=f,
             pred=_compare("a.{}".format(f), "b.{}".format(f), ty)))
 
     for name, ty in members:

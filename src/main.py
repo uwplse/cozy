@@ -16,15 +16,15 @@ import cost_model
 from codegen_java import write_java
 from codegen_cpp import write_cpp
 
-def pickBestPlans(queries, cost_model_file=None, accum=()):
+def pickBestPlans(queries, cost_model_file, i=0):
     """Sets q.bestPlan for each q in all_queries, returns min cost"""
-    if queries:
-        q, queries = queries[0], queries[1:]
+    if i < len(queries):
+        q = queries[i]
         bestScore = None
         bestPlan = None
         for plan in q.bestPlans:
             q.bestPlan = plan
-            cost = pickBestPlans(queries, cost_model_file, list(accum) + q)
+            cost = pickBestPlans(queries, cost_model_file, i+1)
             if bestScore is None or cost < bestScore:
                 bestScore = cost
                 bestPlan = plan
@@ -102,7 +102,7 @@ if __name__ == '__main__':
         query.bestPlans = bestPlans
 
     if cost_model_file is not None:
-        pickBestPlans(list(queries))
+        pickBestPlans(list(queries), cost_model_file)
     else:
         for q in queries:
             q.bestPlan = list(q.bestPlans)[0]
