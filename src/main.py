@@ -111,12 +111,15 @@ if __name__ == '__main__':
         java_writer = sys.stdout.write if args.java == "-" else open(args.java, "w").write
         write_java(fields, queries, java_writer, package=args.java_package)
 
-    cpp_writer = lambda x: None
+    cpp_writer = None
     if args.cpp is not None:
         cpp_writer = sys.stdout.write if args.cpp == "-" else open(args.cpp, "w").write
 
-    cpp_header_writer = lambda x: None
+    cpp_header_writer = None
     if args.cpp_header is not None:
         cpp_header_writer = sys.stdout.write if args.cpp_header == "-" else open(args.cpp_header, "w").write
 
-    write_cpp(fields, queries, cpp_writer, cpp_header_writer, extra=(args.cpp_extra or ""), namespace=args.cpp_namespace)
+    if cpp_writer is not None or cpp_header_writer is not None:
+        cpp_writer |= lambda x: None
+        cpp_header_writer |= lambda x: None
+        write_cpp(fields, queries, cpp_writer, cpp_header_writer, extra=(args.cpp_extra or ""), namespace=args.cpp_namespace)
