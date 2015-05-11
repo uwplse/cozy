@@ -120,6 +120,6 @@ if __name__ == '__main__':
         cpp_header_writer = sys.stdout.write if args.cpp_header == "-" else open(args.cpp_header, "w").write
 
     if cpp_writer is not None or cpp_header_writer is not None:
-        cpp_writer |= lambda x: None
-        cpp_header_writer |= lambda x: None
+        cpp_writer = cpp_writer or (lambda x: None)
+        cpp_header_writer = cpp_header_writer or (lambda x: None)
         write_cpp(fields, queries, cpp_writer, cpp_header_writer, extra=(args.cpp_extra or ""), namespace=args.cpp_namespace)
