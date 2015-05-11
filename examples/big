@@ -1,6 +1,5 @@
 fields locale : String, currency : String, price : int, quality : double
-vars expectedLocale : String, expectedCurrency : String, minPrice : int, maxPrice : int, qualityCutoff : double
-query
+query q(expectedLocale : String, expectedCurrency : String, minPrice : int, maxPrice : int, qualityCutoff : double)
     locale == expectedLocale and
     currency == expectedCurrency and
     price >= minPrice and
