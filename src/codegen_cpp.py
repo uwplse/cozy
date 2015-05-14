@@ -45,9 +45,8 @@ class Iterator(object):
         it.hasNext = "{} != {}".format(begin, end)
 
         it.fields = [
-            (ptr, "{}*".format(ptr_ty)),
-            (it_ty, begin),
-            (it_ty, end)]
+            (begin, it_ty),
+            (end, it_ty)]
 
         return it
 
@@ -72,6 +71,12 @@ def write_cpp(fields, queries, writer, header_writer, extra="", namespace=None):
     members = [] # will be filled with (name,ty) tuples
 
     def onMember(ty):
+        for name, ty2 in members:
+            u = ty.unify(ty2)
+            if u is not None:
+                members.remove((name, ty2))
+                members.append((name, u))
+                return name
         name = fresh_name()
         members.append((name, ty))
         return name
@@ -105,7 +110,6 @@ def write_cpp(fields, queries, writer, header_writer, extra="", namespace=None):
 
     header_writer("class {} {{\n".format(structure_name))
     header_writer("public:\n")
-    # header_writer("    ~{}();\n".format(structure_name))
     header_writer("    void add({} *);\n".format(record_type_name))
     header_writer("    void remove({} *);\n".format(record_type_name))
 
@@ -120,9 +124,14 @@ def write_cpp(fields, queries, writer, header_writer, extra="", namespace=None):
         header_writer("    class {} {{\n".format(it_name))
         header_writer("    friend class {};\n".format(structure_name))
         header_writer("    public:\n")
+        header_writer("        ~{}();\n".format(it_name))
         header_writer("        Record* next();\n")
         header_writer("        bool hasNext();\n")
         header_writer("    private:\n")
+        header_writer("        {it_name}({args});\n".format(it_name=it_name,
+            args=", ".join("{} _{}".format(ty, f) for f, ty in it.fields)))
+        for f, ty in it.fields:
+            header_writer("        {} {};\n".format(ty, f))
         header_writer("    };\n")
         header_writer("    {name}_iterator {name}({args});\n\n".format(
             name=q.name,
@@ -142,19 +151,11 @@ def write_cpp(fields, queries, writer, header_writer, extra="", namespace=None):
     writer('#include "{}.hpp"\n'.format(structure_name))
     writer("#include <algorithm>\n")
 
-    # writer("static const std::vector< {} > EMPTY_VECTOR;\n".format(record_type_name))
-    # writer("template<class T>\nstruct Range {\n")
-    # writer("    T& begin() { return _begin; }\n")
-    # writer("    T& end() { return _end; }\n")
-    # writer("    T _begin;\n")
-    # writer("    T _end;\n")
-    # writer("};\n")
-
     for f, ty in fields:
         comp = "lt_{}".format(f)
         writer("struct {name} {{\n".format(name=comp))
-        writer("    bool operator()(const {rty}& r, {fty} f) {{ return r.{f} < f; }}\n".format(rty=record_type_name, f=f, fty=ty))
-        writer("    bool operator()({fty} f, const {rty}& r) {{ return f < r.{f}; }}\n".format(rty=record_type_name, f=f, fty=ty))
+        writer("    bool operator()(const {rty}* r, {fty} f) {{ return r->{f} < f; }}\n".format(rty=record_type_name, f=f, fty=ty))
+        writer("    bool operator()({fty} f, const {rty}* r) {{ return f < r->{f}; }}\n".format(rty=record_type_name, f=f, fty=ty))
         writer("};\n")
 
     namespace = "{}::".format(namespace) if namespace else ""
@@ -163,58 +164,85 @@ def write_cpp(fields, queries, writer, header_writer, extra="", namespace=None):
         ty=record_type_name,
         ns=namespace,
         sn=structure_name))
-    # writer("    {} x({});\n".format(record_type_name, ", ".join(f for f, ty in fields)))
     for name, ty in members:
         _gen_insert(name, ty, "x", record_type_name, writer)
     writer("\n}\n")
 
-    # for q, it in its:
-    #     ns = "{}{}".format(namespace, structure_name)
+    writer("void {ns}{sn}::remove({ty} * x) {{\n".format(
+        ty=record_type_name,
+        ns=namespace,
+        sn=structure_name))
+    for name, ty in members:
+        _gen_remove(name, ty, "x", record_type_name, writer)
+    writer("\n}\n")
 
-    #     writer("{ns}{sn}::{name}_iterator {ns}{sn}::{name}({args}) {{\n".format(
-    #         name=q.name, ns=namespace, sn=structure_name,
-    #         args=", ".join("{} {}".format(ty, v) for v,ty in q.vars)))
+    ns = "{}{}".format(namespace, structure_name)
+    for q, it in its:
+        it_name = "{}_iterator".format(q.name)
 
-    #     writer(it.init)
+        writer("\n")
 
-    #     (n,ty), = it.initResults
-    #     writer("    return {}_iterator({x}->begin(), {x}->end(){vars});\n".format(q.name,
-    #         x=n, vars="".join(", {}".format(v) for v in it.vars)))
+        writer("{ns}::{it_name}::{it_name}({args}) : {inits} {{ }}\n".format(
+            ns=ns, it_name=it_name,
+            args=", ".join("{} _{}".format(ty, f) for f, ty in it.fields),
+            inits=", ".join("{f}(_{f})".format(f=f) for f, ty in it.fields)))
 
-    #     writer("}\n")
+        writer("{ns}::{it_name}::~{it_name}() {{\n{destruct}}}\n".format(
+            ns=ns, it_name=it_name, destruct=it.destruct))
 
-    #     it_name = "{}_iterator".format(q.name)
-    #     it_args = sorted(it.vars) + sorted(it.memberVars)
-    #     # it.write_impl(ns, it_name, it_args, dict(q.vars + members), record_type_name, writer)
+        writer("{rn}* {ns}::{it_name}::next() {{\n{advance}    return {val};\n}}\n".format(
+            rn=record_type_name, ns=ns, it_name=it_name,
+            advance=it.advance, val=it.advanceResults))
 
-    # writer("{sn}::Iterator {ns}{sn}::query({}) const {{\n".format(
-    #     ", ".join("{} {}".format(ty, v) for v,ty in qvars),
-    #     ns="{}::".format(namespace) if namespace else "",
-    #     sn=structure_name))
-    # writer(proc)
-    # writer("    return ({v} == NULL) ? Iterator(EMPTY_VECTOR.end(), EMPTY_VECTOR.end(), {vars}) : Iterator(({v})->begin(), ({v})->end(), {vars});\n".format(
-    #     v=result,
-    #     vars=", ".join(v for v, ty in qvars)))
-    # writer("}\n")
+        writer("bool {ns}::{it_name}::hasNext() {{\n    return {val};\n}}\n".format(
+            ns=ns, it_name=it_name,
+            val=it.hasNext))
 
-    # writer("void {ns}{sn}::Iterator::advance() {{\n".format(ns="{}::".format(namespace) if namespace else "", sn=structure_name))
-    # writer("    do {{ ++cursor; }} while (hasNext() && !({}));\n".format(pred("*cursor")))
-    # writer("}\n")
+        writer("{ns}::{it_name} {ns}::{query_name}({args}) {{\n{proc}    return {it_name}({it_args});\n}}\n".format(
+            query_name=q.name,
+            ns=ns, it_name=it_name,
+            proc=it.init,
+            args=", ".join("{} {}".format(ty, v) for v, ty in q.vars),
+            it_args=", ".join(f for f, ty in it.fields)))
+
+    for f, ty in fields:
+        # TODO: these update routines could be way better...
+        writer("void {ns}::update{F}(Record* r, {ty} val) {{\n".format(ns=ns, F=capitalize(f), f=f, ty=ty))
+        writer("    remove(r);\n")
+        writer("    r->{f} = val;\n".format(f=f))
+        writer("    add(r);\n")
+        writer("}\n")
 
 def _gen_insert(e, ty, x, record_type_name, writer):
     if type(ty) is HashMap:
-        _gen_insert("{e}[{}]".format(ty.fieldName, e=e), ty.ty, x, record_type_name, writer)
+        _gen_insert("{e}[{x}->{f}]".format(f=ty.fieldName, e=e, x=x), ty.ty, x, record_type_name, writer)
     elif type(ty) is SortedSet:
-        # TODO: use std::binary_search
         v = fresh_name()
         writer("    {}& {} = {};\n".format(ty_to_cpp(ty, record_type_name), v, e))
-        writer("    {v}.insert(std::upper_bound({v}.begin(), {v}.end(), {field}, {comp}()), {x});".format(
+        writer("    {v}.insert(std::upper_bound({v}.begin(), {v}.end(), {x}->{field}, {comp}()), {x});\n".format(
             x=x,
             v=v,
             field=ty.fieldName,
             comp="lt_{}".format(ty.fieldName)))
     elif type(ty) is UnsortedSet:
         writer("    {}.push_back({});\n".format(e, x))
+
+def _gen_remove(e, ty, x, record_type_name, writer):
+    if type(ty) is HashMap:
+        _gen_remove("{e}[{x}->{f}]".format(f=ty.fieldName, e=e, x=x), ty.ty, x, record_type_name, writer)
+    else:
+        v = fresh_name()
+        writer("    {ty}& {v} = {e};\n".format(ty=ty_to_cpp(ty, record_type_name), v=v, e=e))
+        e = v
+        # TODO: we can use binary search when the set is sorted
+        pos = fresh_name()
+        end = fresh_name()
+        it_ty = "{}::iterator".format(ty_to_cpp(ty, record_type_name))
+        writer("    {ty} {end} = {e}.end();\n".format(ty=it_ty, end=end, e=e))
+        writer("    {ty} {pos} = std::find({e}.begin(), {end}, {x});\n".format(ty=it_ty, pos=pos, e=e, end=end, x=x))
+        writer("    if ({pos} != {end}) {{\n".format(pos=pos, end=end))
+        writer("        {e}.erase({pos});\n".format(e=e, pos=pos))
+        writer("    }\n")
 
 def new(ty, record_type_name):
     if type(ty) is HashMap:
@@ -343,6 +371,7 @@ def _traverse(fields, qvars, plan, record_type_name, resultTy, onMember):
 
         it = Iterator.ofIterablePtr(proc, s_name, s_ty);
         it.fields += it2.fields
+        it.fields.append((s_name, "{}*".format(s_ty)))
 
         old_advance = it.advance
         old_advance_result = it.advanceResults

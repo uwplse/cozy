@@ -10,8 +10,10 @@ class HashMap(Ty):
         self.ty = ty
     def unify(self, other):
         if type(other) is HashMap and other.fieldName == self.fieldName:
-            return HashMap(self.fieldName, self.ty.unify(other.ty))
-        raise Exception("failed to unify {} and {}".format(self, other))
+            unif = self.ty.unify(other.ty)
+            if unif is not None:
+                return HashMap(self.fieldTy, self.fieldName, unif)
+        return None
 
 class SortedSet(Ty):
     def __init__(self, fieldTy, fieldName):
@@ -22,13 +24,13 @@ class SortedSet(Ty):
             return self
         if type(other) is SortedSet and other.fieldName == self.fieldName:
             return self
-        raise Exception("failed to unify {} and {}".format(self, other))
+        return None
 
 class UnsortedSet(Ty):
     def unify(self, other):
         if type(other) is UnsortedSet or type(other) is SortedSet:
             return other
-        raise Exception("failed to unify {} and {}".format(self, other))
+        return None
 
 _i = 0
 def fresh_name():
