@@ -145,4 +145,4 @@ def parseQuery(text):
             costmodel += tokens.next()
 
     assert tokens.peek() is _EOF
-    return fields, qvars, assumptions, queries, costmodel
+    return fields, assumptions, queries, costmodel

@@ -9,6 +9,7 @@ import traceback
 import argparse
 import os.path
 import itertools
+import pickle
 
 from synthesis import SolverContext
 from parse import parseQuery
@@ -32,6 +33,62 @@ def pickBestPlans(queries, cost_model_file, i=0):
     else:
         return cost_model.dynamic_cost(fields, queries, cost_model_file)
 
+def highlevel_synthesis(all_input, fields, assumptions, query):
+    """sets .bestPlans on the query object"""
+
+    key = hash((all_input, query.name))
+    cache_file = "/tmp/{}.pickle".format(key)
+    try:
+        with open(cache_file, "rb") as f:
+            bestPlans = pickle.load(f)
+        print "loaded cache file {} for query {}".format(cache_file, query.name)
+        query.bestPlans = bestPlans
+        return
+    except Exception as e:
+        print "failed to load cache file {}: {}".format(cache_file, e)
+
+    local_assumptions = list(itertools.chain(assumptions, query.assumptions))
+    sc = SolverContext(
+        varNames=[v for v,ty in query.vars],
+        fieldNames=[f for f,ty in fields],
+        cost_model=lambda plan: cost_model.cost(fields, query.vars, plan),
+        assumptions=local_assumptions)
+    for a in local_assumptions:
+        print "Assuming:", a
+    print "Query {}: {}".format(query.name, query.pred)
+
+    bestCost = None
+    bestPlans = set()
+    seen = set()
+
+    try:
+        for p in sc.synthesizePlansByEnumeration(query.pred, sort_field=query.sort_field):
+            if p in seen:
+                continue
+            seen.add(p)
+            cost = sc.cost(p)
+            improvement = False
+            if bestCost is None or cost < bestCost:
+                improvement = True
+                bestPlans = set([p])
+                bestCost = cost
+            else:
+                bestPlans.add(p)
+            print "FOUND PLAN: ", p, "; cost = ", cost, (" *** IMPROVEMENT" if improvement else "")
+    except:
+        print "stopping due to exception"
+        traceback.print_exc()
+
+    print "found {} great plans".format(len(bestPlans))
+
+    query.bestPlans = bestPlans
+
+    try:
+        with open(cache_file, "wb") as f:
+            pickle.dump(bestPlans, f)
+    except Exception as e:
+        print "failed to save cache file {}: {}".format(cache_file, e)
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Data structure synthesizer.')
 
@@ -52,7 +109,7 @@ if __name__ == '__main__':
     else:
         inp = sys.stdin.read()
 
-    fields, qvars, assumptions, queries, cost_model_file = parseQuery(inp)
+    fields, assumptions, queries, cost_model_file = parseQuery(inp)
 
     if cost_model_file is not None and args.file is None:
         raise Exception("cannot locate {}".format(cost_model_file))
@@ -64,42 +121,7 @@ if __name__ == '__main__':
             cost_model_file))
 
     for query in queries:
-
-        local_assumptions = list(itertools.chain(assumptions, query.assumptions))
-        sc = SolverContext(
-            varNames=[v for v,ty in query.vars],
-            fieldNames=[f for f,ty in fields],
-            cost_model=lambda plan: cost_model.cost(fields, query.vars, plan),
-            assumptions=local_assumptions)
-        for a in local_assumptions:
-            print "Assuming:", a
-        print "Query {}: {}".format(query.name, query.pred)
-
-        bestCost = None
-        bestPlans = set()
-        seen = set()
-
-        try:
-            for p in sc.synthesizePlansByEnumeration(query.pred, sort_field=query.sort_field):
-                if p in seen:
-                    continue
-                seen.add(p)
-                cost = sc.cost(p)
-                improvement = False
-                if bestCost is None or cost < bestCost:
-                    improvement = True
-                    bestPlans = set([p])
-                    bestCost = cost
-                else:
-                    bestPlans.add(p)
-                print "FOUND PLAN: ", p, "; cost = ", cost, (" *** IMPROVEMENT" if improvement else "")
-        except:
-            print "stopping due to exception"
-            traceback.print_exc()
-
-        print "found {} great plans".format(len(bestPlans))
-
-        query.bestPlans = bestPlans
+        highlevel_synthesis(inp, fields, assumptions, query)
 
     if cost_model_file is not None:
         pickBestPlans(list(queries), cost_model_file)
