@@ -7,19 +7,20 @@ def ty_to_cpp(ty, record_type):
     if type(ty) is HashMap:
         return "std::map< {}, {} >".format(ty.fieldTy, ty_to_cpp(ty.ty, record_type))
     elif type(ty) is SortedSet or type(ty) is UnsortedSet:
-        return "std::vector< {} >".format(record_type)
+        return "std::vector< {}* >".format(record_type)
     else:
         raise Exception("unknown type {}".format(ty))
 
 class Iterator(object):
     def __init__(self):
-        self.fields = []
-        self.vars = set()
-        self.memberVars = set()
+        self.init = ""            # run before iterator construction
+        self.fields = []          # (name, cpp_type) members the iterator needs
 
-        self.init = ""
-        self.initResults = []
-        self.pred = None
+        self.advance = ""         # routine for advancing the iterator
+        self.advanceResults = []  # dependent on the plan type
+
+        self.hasNext = ""         # cpp expression indicating whether exhausted
+        self.destruct = ""        # destructor code
 
     def write_impl(self, namespace, name, args, argTypes, record_type_name, writer):
         writer("{}::{name}::{name}({args}) {{\n".format(namespace, name=name, args=", ".join("{} {}".format(ty_to_cpp(argTypes[a], record_type_name) if a in self.memberVars else argTypes[a], a) for a in args)))
@@ -27,6 +28,31 @@ class Iterator(object):
         for ty, r in self.initResults:
             writer("    this->{x} = {x};\n".format(x=r))
         writer("}\n")
+
+    @staticmethod
+    def ofIterablePtr(init, ptr, ptr_ty):
+        it = Iterator()
+        it.init = init
+
+        it_ty = "{}::iterator".format(ptr_ty)
+        begin = fresh_name()
+        end = fresh_name()
+
+        it.init += "    {} {}({}->begin());\n".format(it_ty, begin, ptr)
+        it.init += "    {} {}({}->end());\n".format(it_ty, end, ptr)
+
+        it.advanceResults = "*({}++)".format(begin)
+        it.hasNext = "{} != {}".format(begin, end)
+
+        it.fields = [
+            (ptr, "{}*".format(ptr_ty)),
+            (it_ty, begin),
+            (it_ty, end)]
+
+        return it
+
+def capitalize(s):
+    return s[0].upper() + s[1:]
 
 def write_cpp(fields, queries, writer, header_writer, extra="", namespace=None):
     """
@@ -57,8 +83,11 @@ def write_cpp(fields, queries, writer, header_writer, extra="", namespace=None):
         it = _traverse(fields, q.vars, q.bestPlan, record_type_name, ty, onMember)
         its.append((q, it))
 
+    header_writer("#ifndef {}_H\n".format(structure_name))
+    header_writer("#define {}_H 1\n".format(structure_name))
     header_writer("#include <vector>\n")
     header_writer("#include <map>\n")
+    header_writer("#include <set>\n")
     header_writer(extra)
     header_writer("\n")
 
@@ -77,27 +106,23 @@ def write_cpp(fields, queries, writer, header_writer, extra="", namespace=None):
     header_writer("class {} {{\n".format(structure_name))
     header_writer("public:\n")
     # header_writer("    ~{}();\n".format(structure_name))
-    header_writer("    void add({});\n".format(", ".join("{} {}".format(ty, f) for f,ty in fields)))
+    header_writer("    void add({} *);\n".format(record_type_name))
+    header_writer("    void remove({} *);\n".format(record_type_name))
+
+    for f, ty in fields:
+        header_writer("    void update{}({} *, {});\n".format(capitalize(f), record_type_name, ty))
+
     header_writer("\n")
     for q, it in its:
+        # TODO
         vars_dict = dict(q.vars)
         it_name = "{}_iterator".format(q.name)
         header_writer("    class {} {{\n".format(it_name))
         header_writer("    friend class {};\n".format(structure_name))
         header_writer("    public:\n")
-        header_writer("        inline Record* next() {{ Record* r = &(*cursor); advance(); return r; }};\n".format(record_type_name))
-        header_writer("        inline bool hasNext() { return cursor != end; };\n")
+        header_writer("        Record* next();\n")
+        header_writer("        bool hasNext();\n")
         header_writer("    private:\n")
-        header_writer("        {}(std::vector< {ty} >::iterator _cursor, std::vector< {ty} >::iterator _end{var_args}) : cursor(_cursor), end(_end){var_inits} {{ }}\n".format(
-            it_name,
-            ty=record_type_name,
-            var_args="".join(", {} _{}".format(vars_dict[v], v) for v in it.vars),
-            var_inits="".join(", {v}(_{v})".format(v=v) for v in it.vars)))
-        header_writer("        void advance();\n")
-        header_writer("        std::vector< {} >::iterator cursor;\n".format(record_type_name))
-        header_writer("        std::vector< {} >::iterator end;\n".format(record_type_name))
-        for v in it.vars:
-            header_writer("        {} {};\n".format(vars_dict[v], v))
         header_writer("    };\n")
         header_writer("    {name}_iterator {name}({args});\n\n".format(
             name=q.name,
@@ -110,12 +135,14 @@ def write_cpp(fields, queries, writer, header_writer, extra="", namespace=None):
     header_writer("};\n")
 
     if namespace:
-        header_writer("}")
+        header_writer("}\n")
+
+    header_writer("#endif\n")
 
     writer('#include "{}.hpp"\n'.format(structure_name))
     writer("#include <algorithm>\n")
 
-    writer("static const std::vector< {} > EMPTY_VECTOR;\n".format(record_type_name))
+    # writer("static const std::vector< {} > EMPTY_VECTOR;\n".format(record_type_name))
     # writer("template<class T>\nstruct Range {\n")
     # writer("    T& begin() { return _begin; }\n")
     # writer("    T& end() { return _end; }\n")
@@ -132,34 +159,33 @@ def write_cpp(fields, queries, writer, header_writer, extra="", namespace=None):
 
     namespace = "{}::".format(namespace) if namespace else ""
 
-    writer("void {ns}{sn}::add({}) {{\n".format(
-        ", ".join("{} {}".format(ty, f) for f,ty in fields),
+    writer("void {ns}{sn}::add({ty} * x) {{\n".format(
+        ty=record_type_name,
         ns=namespace,
         sn=structure_name))
-    writer("    {} x({});\n".format(record_type_name, ", ".join(f for f, ty in fields)))
+    # writer("    {} x({});\n".format(record_type_name, ", ".join(f for f, ty in fields)))
     for name, ty in members:
         _gen_insert(name, ty, "x", record_type_name, writer)
     writer("\n}\n")
 
-    for q, it in its:
-        ns = "{}{}".format(namespace, structure_name)
+    # for q, it in its:
+    #     ns = "{}{}".format(namespace, structure_name)
 
-        writer("{ns}{sn}::{name}_iterator {ns}{sn}::{name}({args}) {{\n".format(
-            name=q.name, ns=namespace, sn=structure_name,
-            args=", ".join("{} {}".format(ty, v) for v,ty in q.vars)))
+    #     writer("{ns}{sn}::{name}_iterator {ns}{sn}::{name}({args}) {{\n".format(
+    #         name=q.name, ns=namespace, sn=structure_name,
+    #         args=", ".join("{} {}".format(ty, v) for v,ty in q.vars)))
 
-        writer(it.init)
+    #     writer(it.init)
 
-        (n,ty), = it.initResults
-        writer("    return {}_iterator({x}->begin(), {x}->end(){vars});\n".format(q.name,
-            x=n, vars="".join(", {}".format(v) for v in it.vars)))
+    #     (n,ty), = it.initResults
+    #     writer("    return {}_iterator({x}->begin(), {x}->end(){vars});\n".format(q.name,
+    #         x=n, vars="".join(", {}".format(v) for v in it.vars)))
 
-        writer("}\n")
+    #     writer("}\n")
 
-        it_name = "{}_iterator".format(q.name)
-        it_args = sorted(it.vars) + sorted(it.memberVars)
-        # it.write_impl(ns, it_name, it_args, dict(q.vars + members), record_type_name, writer)
-
+    #     it_name = "{}_iterator".format(q.name)
+    #     it_args = sorted(it.vars) + sorted(it.memberVars)
+    #     # it.write_impl(ns, it_name, it_args, dict(q.vars + members), record_type_name, writer)
 
     # writer("{sn}::Iterator {ns}{sn}::query({}) const {{\n".format(
     #     ", ".join("{} {}".format(ty, v) for v,ty in qvars),
@@ -218,36 +244,51 @@ def _predicate_to_exp(fields, qvars, pred, target):
         return "!({})".format(_predicate_to_exp(fields, qvars, pred.p, target))
 
 def _traverse(fields, qvars, plan, record_type_name, resultTy, onMember):
-    """returns proc, result_ptr, predicate"""
+    """returns an Iterator"""
     if type(plan) is plans.All:
         name = onMember(resultTy)
-        it = Iterator()
-        it.memberVars.add(name)
-        it.initResults = [("&{}".format(name), ty_to_cpp(resultTy, record_type_name))]
-        return it
-        # return ("", "&{}".format(name), lambda x: "true")
-    # elif type(plan) is plans.Empty:
-    #     return ("", "NULL", lambda x: "false")
+        if type(resultTy) is HashMap:
+            return ("", "&{}".format(name))
+        else:
+            it = Iterator()
+
+            begin_name = fresh_name()
+            end_name   = fresh_name()
+
+            it_ty = "{}::iterator".format(ty_to_cpp(resultTy, record_type_name))
+
+            it.init += "    {} {}({}.begin());".format(it_ty, begin_name, name)
+            it.init += "    {} {}({}.end());".format(it_ty, begin_name, name)
+
+            it.fields = [(begin_name, it_ty), (end_name, it_ty)]
+
+            it.advanceResults = "*({}++)".format(begin_name)
+            it.hasNext = "{} == {}".format(begin_name, end_name)
+            return it
+    elif type(plan) is plans.Empty:
+        if type(resultTy) is HashMap:
+            return ("", "NULL")
+        else:
+            raise Exception("implement empty iterator")
     elif type(plan) is plans.HashLookup:
         t = HashMap(dict(fields)[plan.fieldName], plan.fieldName, resultTy)
-        it = _traverse(fields, qvars, plan.plan, record_type_name, t, onMember)
+        proc, r = _traverse(fields, qvars, plan.plan, record_type_name, t, onMember)
+
         rn = fresh_name()
+        it_name = fresh_name()
+        proc += "    {ty}* {rn};\n".format(ty=ty_to_cpp(resultTy, record_type_name), rn=rn)
+        proc += "    if (({}) != NULL) {{\n".format(r)
+        proc += "        {}::iterator {it_name} = ({})->find({});\n".format(ty_to_cpp(t, record_type_name), r, plan.varName, it_name=it_name)
+        proc += "        {rn} = ({it_name} == ({map})->end()) ? NULL : (&(({it_name})->second));\n".format(ty=ty_to_cpp(resultTy, record_type_name), it_name=it_name, rn=rn, map=r)
+        proc += "    } else {\n"
+        proc += "        {rn} = NULL;\n".format(rn=rn)
+        proc += "    }\n"
 
-        (r, ty), = it.initResults
-        it.init += "    {ty}* {rn};\n".format(ty=ty_to_cpp(resultTy, record_type_name), rn=rn)
+        if type(resultTy) is HashMap:
+            return (proc, rn)
+        else:
+            return Iterator.ofIterablePtr(proc, rn, ty_to_cpp(resultTy, record_type_name))
 
-        it.init += "    if (({}) != NULL) {{\n".format(r)
-        n1 = fresh_name()
-        it.init += "        {}::iterator {} = ({})->find({});\n".format(ty_to_cpp(t, record_type_name), n1, r, plan.varName)
-        it.init += "        {rn} = ({n1} == ({map})->end()) ? NULL : (&(({n1})->second));\n".format(ty=ty_to_cpp(resultTy, record_type_name), n1=n1, rn=rn, map=r)
-        it.init += "    } else {\n"
-        it.init += "        {rn} = NULL;\n".format(rn=rn)
-        it.init += "    }\n"
-        it.initResults = [(rn, ty_to_cpp(resultTy, record_type_name))]
-
-        return it
-
-    #     return (p, rn, pred)
     # elif type(plan) is plans.BinarySearch:
     #     resultTy = resultTy.unify(SortedSet(dict(fields)[plan.fieldName], plan.fieldName))
     #     p, r, pred = _traverse(fields, qvars, plan.plan, record_type_name, resultTy, onMember)
@@ -285,7 +326,43 @@ def _traverse(fields, qvars, plan, record_type_name, resultTy, onMember):
     #     return (p, r, lambda x: "({}) && ({})".format(pred(x), _predicate_to_exp(fields, qvars, plan.predicate, x)))
     # elif type(plan) is plans.Intersect:
     #     raise Exception("intersect codegen not implemented")
-    # elif type(plan) is plans.Union:
-    #     raise Exception("union codegen not implemented")
+    elif type(plan) is plans.Union:
+        it1 = _traverse(fields, qvars, plan.plan1, record_type_name, resultTy, onMember)
+        it2 = _traverse(fields, qvars, plan.plan2, record_type_name, resultTy, onMember)
+
+        s_ty = "std::set< {}* >".format(record_type_name)
+        s_name = fresh_name()
+        proc = it1.init
+        proc += "    {ty}* {s} = new {ty}();\n".format(ty=s_ty, s=s_name)
+        proc += "    while ({}) {{\n".format(it1.hasNext)
+        proc += it1.advance
+        proc += "        {}->insert({});\n".format(s_name, it1.advanceResults)
+        proc += "    }\n"
+        proc += it1.destruct
+        proc += it2.init
+
+        it = Iterator.ofIterablePtr(proc, s_name, s_ty);
+        it.fields += it2.fields
+
+        old_advance = it.advance
+        old_advance_result = it.advanceResults
+        old_has_next = it.hasNext
+
+        adv_name = fresh_name()
+        it.advance  = "    {}* {} = NULL;\n".format(record_type_name, adv_name)
+        it.advance += "    if ({}) {{\n".format(old_has_next)
+        it.advance += old_advance
+        it.advance += "        {} = {};\n".format(adv_name, old_advance_result)
+        it.advance += "    } else {\n"
+        it.advance += it2.advance
+        it.advance += "        {} = {};\n".format(adv_name, it2.advanceResults)
+        it.advance += "    }\n"
+        it.advanceResults = adv_name
+
+        it.hasNext = "({}) || ({})".format(old_has_next, it2.hasNext)
+
+        it.destruct = it2.destruct + "    delete {};\n".format(s_name)
+
+        return it
     else:
         raise Exception("codegen not implemented for {}".format(type(plan)))
