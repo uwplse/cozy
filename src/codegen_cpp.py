@@ -38,8 +38,14 @@ class Iterator(object):
         begin = fresh_name()
         end = fresh_name()
 
-        it.init += "    {} {}({}->begin());\n".format(it_ty, begin, ptr)
-        it.init += "    {} {}({}->end());\n".format(it_ty, end, ptr)
+        it.init += "    {} {};\n".format(it_ty, begin)
+        it.init += "    {} {};\n".format(it_ty, end)
+        it.init += "    if ({} != NULL) {{\n".format(ptr)
+        it.init += "        {} = {}->begin();\n".format(begin, ptr)
+        it.init += "        {} = {}->end();\n".format(end, ptr)
+        it.init += "    } else {\n"
+        it.init += "        {} = {};\n".format(begin, end)
+        it.init += "    }\n"
 
         it.advanceResults = "*({}++)".format(begin)
         it.hasNext = "{} != {}".format(begin, end)
@@ -286,7 +292,7 @@ def _traverse(fields, qvars, plan, record_type_name, resultTy, onMember):
             it_ty = "{}::iterator".format(ty_to_cpp(resultTy, record_type_name))
 
             it.init += "    {} {}({}.begin());".format(it_ty, begin_name, name)
-            it.init += "    {} {}({}.end());".format(it_ty, begin_name, name)
+            it.init += "    {} {}({}.end());".format(it_ty, end_name, name)
 
             it.fields = [(begin_name, it_ty), (end_name, it_ty)]
 
