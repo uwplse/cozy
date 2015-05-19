@@ -4,7 +4,7 @@ import predicates
 from queries import Query
 
 _EOF = object()
-_TOKEN_REGEX = re.compile(r'\s*(\w+|>=|<=|>|<|==|.)')
+_TOKEN_REGEX = re.compile(r'\s*(\w+|>=|<=|>|<|==|!=|.)')
 _KEYWORDS = ("fields", "vars", "query", "assume", "sort", "costmodel")
 
 def _tokenize(text):
