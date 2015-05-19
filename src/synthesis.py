@@ -183,7 +183,9 @@ class SolverContext:
                 yield consider(plan, size)
             for plan in (ty(p1, p2) for ty in [plans.Intersect, plans.Union] for split in xrange(1, size-1) for p1 in plansOfSize[split] if not p1.isTrivial() for p2 in plansOfSize[size-split-1] if not p2.isTrivial() and p1 < p2):
                 yield consider(plan, size)
-            if not self.productive:
+            if self.productive:
+                roundsWithoutProgress = 0
+            else:
                 roundsWithoutProgress += 1
                 if roundsWithoutProgress >= maxRoundsWithoutProgress:
                     print "last {} rounds were not productive; stopping".format(roundsWithoutProgress)
