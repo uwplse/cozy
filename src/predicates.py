@@ -54,37 +54,37 @@ class Bool(Predicate):
         return self.val < other.val if isinstance(other, Bool) else type(self) < type(other)
 
 # operators
-Eq = object()
-Ne = object()
-Gt = object()
-Ge = object()
-Lt = object()
-Le = object()
+Eq = "Eq"
+Ne = "Ne"
+Gt = "Gt"
+Ge = "Ge"
+Lt = "Lt"
+Le = "Le"
 operators = (Eq, Ne, Gt, Ge, Lt, Le)
 
 def invertOp(op):
-    if op is Eq: return Ne
-    if op is Ne: return Eq
-    if op is Lt: return Ge
-    if op is Le: return Gt
-    if op is Gt: return Le
-    if op is Ge: return Lt
+    if op == Eq: return Ne
+    if op == Ne: return Eq
+    if op == Lt: return Ge
+    if op == Le: return Gt
+    if op == Gt: return Le
+    if op == Ge: return Lt
 
 def opToStr(op):
-    if op is Eq: return "=="
-    if op is Ne: return "!="
-    if op is Lt: return "<"
-    if op is Le: return "<="
-    if op is Gt: return ">"
-    if op is Ge: return ">="
+    if op == Eq: return "=="
+    if op == Ne: return "!="
+    if op == Lt: return "<"
+    if op == Le: return "<="
+    if op == Gt: return ">"
+    if op == Ge: return ">="
 
 def opToName(op):
-    if op is Eq: return "Eq"
-    if op is Ne: return "Ne"
-    if op is Lt: return "Lt"
-    if op is Le: return "Le"
-    if op is Gt: return "Gt"
-    if op is Ge: return "Ge"
+    if op == Eq: return "Eq"
+    if op == Ne: return "Ne"
+    if op == Lt: return "Lt"
+    if op == Le: return "Le"
+    if op == Gt: return "Gt"
+    if op == Ge: return "Ge"
 
 @total_ordering
 class Compare(Predicate):
@@ -95,19 +95,19 @@ class Compare(Predicate):
     def toNNF(self):
         return Compare(self.lhs.toNNF(), self.op, self.rhs.toNNF())
     def toZ3(self, context):
-        if self.op is Eq: return self.lhs.toZ3(context) == self.rhs.toZ3(context)
-        if self.op is Ne: return self.lhs.toZ3(context) != self.rhs.toZ3(context)
-        if self.op is Ge: return self.lhs.toZ3(context) >= self.rhs.toZ3(context)
-        if self.op is Gt: return self.lhs.toZ3(context) >  self.rhs.toZ3(context)
-        if self.op is Le: return self.lhs.toZ3(context) <= self.rhs.toZ3(context)
-        if self.op is Lt: return self.lhs.toZ3(context) <  self.rhs.toZ3(context)
+        if self.op == Eq: return self.lhs.toZ3(context) == self.rhs.toZ3(context)
+        if self.op == Ne: return self.lhs.toZ3(context) != self.rhs.toZ3(context)
+        if self.op == Ge: return self.lhs.toZ3(context) >= self.rhs.toZ3(context)
+        if self.op == Gt: return self.lhs.toZ3(context) >  self.rhs.toZ3(context)
+        if self.op == Le: return self.lhs.toZ3(context) <= self.rhs.toZ3(context)
+        if self.op == Lt: return self.lhs.toZ3(context) <  self.rhs.toZ3(context)
     def eval(self, env):
-        if self.op is Eq: return self.lhs.eval(env) == self.rhs.eval(env)
-        if self.op is Ne: return self.lhs.eval(env) != self.rhs.eval(env)
-        if self.op is Ge: return self.lhs.eval(env) >= self.rhs.eval(env)
-        if self.op is Gt: return self.lhs.eval(env) >  self.rhs.eval(env)
-        if self.op is Le: return self.lhs.eval(env) <= self.rhs.eval(env)
-        if self.op is Lt: return self.lhs.eval(env) <  self.rhs.eval(env)
+        if self.op == Eq: return self.lhs.eval(env) == self.rhs.eval(env)
+        if self.op == Ne: return self.lhs.eval(env) != self.rhs.eval(env)
+        if self.op == Ge: return self.lhs.eval(env) >= self.rhs.eval(env)
+        if self.op == Gt: return self.lhs.eval(env) >  self.rhs.eval(env)
+        if self.op == Le: return self.lhs.eval(env) <= self.rhs.eval(env)
+        if self.op == Lt: return self.lhs.eval(env) <  self.rhs.eval(env)
     def size(self):
         return 1 + self.lhs.size() + self.rhs.size()
     def comparisons(self):
