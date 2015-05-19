@@ -1,5 +1,4 @@
 fields start end id
-vars val
 assume start <= end
-query
+query q(val)
     start <= val and val <= end

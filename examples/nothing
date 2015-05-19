@@ -1,3 +1,2 @@
 fields x
-vars y
-query false
+query q(y) false

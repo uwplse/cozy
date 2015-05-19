@@ -1,6 +1,5 @@
 fields locale currency price quality
-vars expectedLocale expectedCurrency minPrice maxPrice qualityCutoff
-query
+query q(expectedLocale, expectedCurrency, minPrice, maxPrice, qualityCutoff)
     locale == expectedLocale and
     currency == expectedCurrency and
     price >= minPrice and
