@@ -153,6 +153,8 @@ class SolverContext:
 
         queryVector = outputvector(query)
         comps = set(query.comparisons())
+        for a, b in list(comps):
+            comps.add((b, a))
 
         # cache maps output vectors to the best known plan implementing them
         cache = {}
