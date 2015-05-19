@@ -79,8 +79,6 @@ def highlevel_synthesis(all_input, fields, assumptions, query):
         print "stopping due to exception"
         traceback.print_exc()
 
-    print "found {} great plans".format(len(bestPlans))
-
     query.bestPlans = bestPlans
 
     try:
@@ -122,6 +120,9 @@ if __name__ == '__main__':
 
     for query in queries:
         highlevel_synthesis(inp, fields, assumptions, query)
+        print "found {} great plans:".format(len(query.bestPlans))
+        for plan in query.bestPlans:
+            print "    {}".format(plan)
 
     if cost_model_file is not None:
         pickBestPlans(list(queries), cost_model_file)
