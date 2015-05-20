@@ -132,7 +132,6 @@ class SolverContext:
                     self.productive = True
 
                 # better than previous options
-                # TODO: this eviction doesn't handle sort_field properly...
                 elif cost < self.cost(old_plan):
                     cache[vec] = plan
                     for i in xrange(size + 1):
@@ -143,7 +142,6 @@ class SolverContext:
                 # as good as previous options
                 elif cost == self.cost(old_plan):
                     plansOfSize[size].append(plan)
-                    self.productive = True
 
                 return None, None
             else:
