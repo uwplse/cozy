@@ -10,6 +10,12 @@ class ADT(object):
             if isinstance(child, ADT):
                 s += child.size()
         return s
+    def contains_subtree(self, tree):
+        if self == tree:
+            return True
+        for child in self.children():
+            if isinstance(child, ADT) and child.contains_subtree(tree):
+                return True
     def __str__(self):
         return "{}({})".format(type(self).__name__, ", ".join(str(child) for child in self.children()))
     def __hash__(self):

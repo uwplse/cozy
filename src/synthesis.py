@@ -33,6 +33,7 @@ class SolverContext:
 
         dumbestPlan = plans.Filter(plans.All(), query)
         self.bestCost = self.cost(dumbestPlan) # cost of best valid plan found so far
+        self.bestPlans = set() # set of valid plans with cost == self.bestCost
         self.productive = False # was progress made this iteration
         yield dumbestPlan
 
@@ -117,8 +118,11 @@ class SolverContext:
                 return None, None
 
             if x is True:
-                self.productive = True
-                self.bestCost = cost
+                self.productive = "new valid plan"
+                if cost < self.bestCost:
+                    self.bestCost = cost
+                    self.bestPlans = set()
+                self.bestPlans.add(plan)
                 # evict big cached items
                 for val, p in cache.items():
                     if self.cost(p) > cost:
@@ -134,7 +138,7 @@ class SolverContext:
                 if old_plan is None:
                     cache[vec] = plan
                     plansOfSize[size].append(plan)
-                    self.productive = True
+                    self.productive = "new possibility: {}".format(vec)
 
                 # better than previous options
                 elif cost < self.cost(old_plan):
@@ -142,7 +146,8 @@ class SolverContext:
                     for i in xrange(size + 1):
                         plansOfSize[i] = [p for p in plansOfSize[i] if outputvector(p) != vec]
                     plansOfSize[size].append(plan)
-                    self.productive = True
+                    if any(p.contains_subtree(plan) for p in self.bestPlans):
+                        self.productive = "better option for {}".format(vec)
 
                 # as good as previous options
                 elif cost == self.cost(old_plan):
@@ -151,7 +156,7 @@ class SolverContext:
                 return None, None
             else:
                 # x is new example!
-                self.productive = True
+                self.productive = "new counterexample"
                 return "counterexample", (x, plan)
 
         def registerExp(e):
@@ -220,6 +225,7 @@ class SolverContext:
                 yield consider(plan, size)
             if self.productive:
                 roundsWithoutProgress = 0
+                print "  productive: {}".format(self.productive)
             else:
                 roundsWithoutProgress += 1
                 if roundsWithoutProgress >= maxRoundsWithoutProgress:
