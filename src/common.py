@@ -1,4 +1,6 @@
+from functools import total_ordering
 
+@total_ordering
 class ADT(object):
     def children(self):
         return ()

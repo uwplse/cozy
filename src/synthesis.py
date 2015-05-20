@@ -76,6 +76,7 @@ class SolverContext:
                 return (outputvector(plan) == outputvector(plan.plan1) or
                     outputvector(plan) == outputvector(plan.plan2) or
                     outputvector(plan.plan1) == outputvector(plan.plan2) or
+                    plan.plan1 <= plan.plan2 or
                     stupid(plan.plan1) or stupid(plan.plan2))
 
         def isValid(plan):
@@ -87,7 +88,11 @@ class SolverContext:
             result = False
             s = self.z3solver
             s.push()
-            s.add(plan.toPredicate().toZ3(self.z3ctx) != query.toZ3(self.z3ctx))
+            try:
+                s.add(plan.toPredicate().toZ3(self.z3ctx) != query.toZ3(self.z3ctx))
+            except Exception as e:
+                print plan, e, plan.toPredicate()
+                raise e
             if str(s.check()) == 'unsat':
                 result = True
             else:
@@ -149,6 +154,16 @@ class SolverContext:
                 self.productive = True
                 return "counterexample", (x, plan)
 
+        def registerExp(e):
+            vec = outputvector(e)
+            if vec in ecache:
+                return
+            ecache[vec] = e
+            exprsOfSize[e.size()].append(e)
+
+        def pickToSum(groupedBySize1, groupedBySize2, sum):
+            return ((x1, x2) for split in xrange(1, sum-1) for x1 in groupedBySize1[split] for x2 in groupedBySize2[sum-split-1])
+
         queryVector = outputvector(query)
         comps = set(query.comparisons())
         for a, b in list(comps):
@@ -157,29 +172,51 @@ class SolverContext:
         # cache maps output vectors to the best known plan implementing them
         cache = {}
 
-        # plansOfSize[s] contains all interesting plans of size s
+        # ecache maps output vectors to ONE known predicate implementing them
+        ecache = {}
+
+        # _OfSize[s] contains all interesting plans of size s
+        exprsOfSize = [[], [], [], []]
         plansOfSize = [[], []]
 
         print "round 1"
         for plan in [plans.All(), plans.Empty()]:
             yield consider(plan, 1)
 
+        for v in self.varNames:
+            for f in self.fieldNames:
+                if (v, f) in comps:
+                    for op in predicates.operators:
+                        registerExp(predicates.Compare(
+                            predicates.Var(v), op, predicates.Var(f)))
+        for b in (True, False):
+            registerExp(predicates.Bool(b))
+
         roundsWithoutProgress = 0
         maxRoundsWithoutProgress = 3
 
         for size in xrange(2, maxSize + 1):
-            assert len(plansOfSize) == size
-            plansOfSize.append([])
+            # exprs
+            while len(exprsOfSize) <= size:
+                exprsOfSize.append([])
+            for e in exprsOfSize[size-1]:
+                registerExp(predicates.Not(e))
+            for e1, e2 in pickToSum(exprsOfSize, exprsOfSize, size):
+                registerExp(predicates.And(e1, e2))
+                registerExp(predicates.Or(e1, e2))
+
+            # plans
+            while len(plansOfSize) <= size:
+                plansOfSize.append([])
             self.productive = False
             print "round", size, "cache size {}/{}".format(len(cache), 2**len(examples))
             for plan in (plans.HashLookup(p, f, v) for p in plansOfSize[size-1] for f in self.fieldNames for v in self.varNames if (f, v) in comps):
                 yield consider(plan, size)
             for plan in (plans.BinarySearch(p, f, op, v) for p in plansOfSize[size-1] for f in self.fieldNames for v in self.varNames if (f, v) in comps for op in predicates.operators if op is not predicates.Ne):
                 yield consider(plan, size)
-            # TODO: more elaborate filters
-            for plan in (plans.Filter(p, predicates.Compare(predicates.Var(f), op, predicates.Var(v))) for p in plansOfSize[size-1] for f in self.fieldNames for v in self.varNames if (f, v) in comps for op in predicates.operators):
+            for plan in (plans.Filter(p, e) for p, e in pickToSum(plansOfSize, exprsOfSize, size)):
                 yield consider(plan, size)
-            for plan in (ty(p1, p2) for ty in [plans.Intersect, plans.Union] for split in xrange(1, size-1) for p1 in plansOfSize[split] if not p1.isTrivial() for p2 in plansOfSize[size-split-1] if not p2.isTrivial() and p1 < p2):
+            for plan in (ty(p1, p2) for ty in [plans.Intersect, plans.Union] for p1, p2 in pickToSum(plansOfSize, plansOfSize, size)):
                 yield consider(plan, size)
             if self.productive:
                 roundsWithoutProgress = 0
