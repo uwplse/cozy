@@ -243,7 +243,7 @@ class SolverContext:
             print "round", size, "; cache={}/{max}; ecache={}/{max}".format(len(cache), len(ecache), max=2**len(examples))
             for plan in (plans.HashLookup(p, e) for p, e in pickToSum(plansOfSize, exprsOfSize, size)):
                 yield consider(plan, size)
-            for plan in (plans.BinarySearch(p, e) for p, e in pickToSum(plansOfSize, exprsOfSize, size)):
+            for plan in (plans.BinarySearch(p, f, e) for f in self.fieldNames for p, e in pickToSum(plansOfSize, exprsOfSize, size)):
                 yield consider(plan, size)
             for plan in (plans.Filter(p, e) for p, e in pickToSum(plansOfSize, exprsOfSize, size)):
                 yield consider(plan, size)

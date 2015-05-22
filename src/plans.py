@@ -47,20 +47,23 @@ class HashLookup(Plan):
         return (self.plan, self.predicate)
 
 class BinarySearch(Plan):
-    def __init__(self, plan, predicate):
+    def __init__(self, plan, sortField, predicate):
         self.plan = plan
+        self.sortField = sortField
         self.predicate = predicate
     def toPredicate(self):
         return And(self.plan.toPredicate(), self.predicate)
+    def isSortedBy(self, fieldName):
+        return self.sortField == fieldName
     def wellFormed(self, *args):
         ops = set(self.predicate.ops())
         if (ops & {Eq, Ne}) or not ops:
             return False
         if self.predicate.contains_disjunction():
             return False
-        return self.plan.wellFormed(*args) and self.plan.isSortedBy("TODO")
+        return self.sortField in (v.name for v in self.predicate.vars()) and self.plan.wellFormed(*args) and self.plan.isSortedBy(self.sortField)
     def children(self):
-        return (self.plan, self.predicate)
+        return (self.plan, self.sortField, self.predicate)
 
 class Filter(Plan):
     def __init__(self, plan, predicate):
