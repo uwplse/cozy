@@ -108,12 +108,34 @@ class SolverContext:
 
             return result
 
-        def consider(plan, size):
-            assert plan.size() == size
+        def implies(vec1, vec2):
+            """Every element of vec1 implies corresponding element in vec2"""
+            return all(v2 if v1 else True for (v1, v2) in zip(vec1, vec2))
+
+        def expand(l, size):
+            while len(l) <= size:
+                l.append([])
+
+        def on_valid_plan(plan, cost):
+            if cost > self.bestCost:
+                return
+            if cost < self.bestCost:
+                self.bestCost = cost
+                self.bestPlans = set()
+            self.bestPlans.add(plan)
+            for val, p in cache.items():
+                if self.cost(p) > cost:
+                    del cache[val]
+            for i in xrange(len(plansOfSize)):
+                plansOfSize[i] = [p for p in plansOfSize[i] if self.cost(p) <= cost]
+
+        def consider(plan):
+            size = plan.size()
             if not plan.wellFormed(self.z3ctx, self.z3solver, self.fieldNames, self.varNames) or stupid(plan):
                 return None, None
             x = isValid(plan)
             cost = self.cost(plan)
+            expand(plansOfSize, size)
 
             # too expensive? it can't possibly be part of a great plan!
             if self.bestCost is not None and cost > self.bestCost:
@@ -121,19 +143,17 @@ class SolverContext:
 
             if x is True:
                 self.productive = "new valid plan"
-                if cost < self.bestCost:
-                    self.bestCost = cost
-                    self.bestPlans = set()
-                self.bestPlans.add(plan)
-                # evict big cached items
-                for val, p in cache.items():
-                    if self.cost(p) > cost:
-                        del cache[val]
-                for i in xrange(size + 1):
-                    plansOfSize[i] = [p for p in plansOfSize[i] if self.cost(p) <= cost]
+                on_valid_plan(plan, cost)
                 return "validPlan", plan
             elif x is False:
                 vec = outputvector(plan)
+
+                # fastforward
+                if implies(queryVector, vec):
+                    plan2 = plans.Filter(plan, query)
+                    # assert isValid(plan2) is True
+                    on_valid_plan(plan2, self.cost(plan2))
+
                 old_plan = cache.get(vec)
 
                 # new possibility
@@ -166,9 +186,14 @@ class SolverContext:
             if vec in ecache:
                 return
             ecache[vec] = e
-            exprsOfSize[e.size()].append(e)
+            self.productive = "new expression {}".format(e)
+            size = e.size()
+            expand(exprsOfSize, size)
+            exprsOfSize[size].append(e)
 
         def pickToSum(groupedBySize1, groupedBySize2, sum):
+            expand(groupedBySize1, size)
+            expand(groupedBySize2, size)
             return ((x1, x2) for split in xrange(1, sum-1) for x1 in groupedBySize1[split] for x2 in groupedBySize2[sum-split-1])
 
         queryVector = outputvector(query)
@@ -196,9 +221,9 @@ class SolverContext:
         # ecache maps output vectors to ONE known predicate implementing them
         ecache = {}
 
-        # _OfSize[s] contains all interesting plans of size s
-        exprsOfSize = [[], [], [], []]
-        plansOfSize = [[], [], [], [], []]
+        # _OfSize[s] contains all interesting things of size s
+        exprsOfSize = []
+        plansOfSize = []
 
         print "round 1"
         for f1 in self.fieldNames:
@@ -207,10 +232,15 @@ class SolverContext:
                     for op in predicates.operators:
                         plan = plans.AllWhere(predicates.Compare(
                             predicates.Var(f1), op, predicates.Var(f2)))
-                        yield consider(plan, plan.size())
+                        yield consider(plan)
         for b in (True, False):
             plan = plans.AllWhere(predicates.Bool(b))
-            yield consider(plan, plan.size())
+            yield consider(plan)
+
+        for f in self.fieldNames:
+            yield consider(plans.BinarySearch(plans.AllWhere(predicates.Bool(True)), f, query))
+
+        yield consider(plans.HashLookup(plans.AllWhere(predicates.Bool(True)), query))
 
         for v in self.varNames:
             for f in self.fieldNames:
@@ -226,8 +256,6 @@ class SolverContext:
 
         for size in xrange(2, maxSize + 1):
             # exprs
-            while len(exprsOfSize) <= size:
-                exprsOfSize.append([])
             # Since we have all operators and their negations, we will never
             # generate anything interesting involving Not.
             # for e in exprsOfSize[size-1]:
@@ -237,18 +265,16 @@ class SolverContext:
                 registerExp(predicates.Or(e1, e2))
 
             # plans
-            while len(plansOfSize) <= size:
-                plansOfSize.append([])
             self.productive = False
-            print "round", size, "; cache={}/{max}; ecache={}/{max}".format(len(cache), len(ecache), max=2**len(examples))
+            print "round", size, "; cache={}/{max}; ecache={}/{max}; bestCost={}".format(len(cache), len(ecache), self.bestCost, max=2**len(examples))
             for plan in (plans.HashLookup(p, e) for p, e in pickToSum(plansOfSize, exprsOfSize, size)):
-                yield consider(plan, size)
+                yield consider(plan)
             for plan in (plans.BinarySearch(p, f, e) for f in self.fieldNames for p, e in pickToSum(plansOfSize, exprsOfSize, size)):
-                yield consider(plan, size)
+                yield consider(plan)
             for plan in (plans.Filter(p, e) for p, e in pickToSum(plansOfSize, exprsOfSize, size)):
-                yield consider(plan, size)
+                yield consider(plan)
             for plan in (ty(p1, p2) for ty in [plans.Intersect, plans.Union, plans.Concat] for p1, p2 in pickToSum(plansOfSize, plansOfSize, size)):
-                yield consider(plan, size)
+                yield consider(plan)
             if self.productive:
                 roundsWithoutProgress = 0
                 print "  productive: {}".format(self.productive)
