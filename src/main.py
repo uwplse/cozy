@@ -33,19 +33,20 @@ def pickBestPlans(queries, cost_model_file, i=0):
     else:
         return cost_model.dynamic_cost(fields, queries, cost_model_file)
 
-def highlevel_synthesis(all_input, fields, assumptions, query):
+def highlevel_synthesis(all_input, fields, assumptions, query, enable_cache):
     """sets .bestPlans on the query object"""
 
     key = hash((all_input, query.name))
     cache_file = "/tmp/{}.pickle".format(key)
-    try:
-        with open(cache_file, "rb") as f:
-            bestPlans = pickle.load(f)
-        print "loaded cache file {} for query {}".format(cache_file, query.name)
-        query.bestPlans = bestPlans
-        return
-    except Exception as e:
-        print "failed to load cache file {}: {}".format(cache_file, e)
+    if enable_cache:
+        try:
+            with open(cache_file, "rb") as f:
+                bestPlans = pickle.load(f)
+            print "loaded cache file {} for query {}".format(cache_file, query.name)
+            query.bestPlans = bestPlans
+            return
+        except Exception as e:
+            print "failed to load cache file {}: {}".format(cache_file, e)
 
     local_assumptions = list(itertools.chain(assumptions, query.assumptions))
     sc = SolverContext(
@@ -90,6 +91,8 @@ def highlevel_synthesis(all_input, fields, assumptions, query):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Data structure synthesizer.')
 
+    parser.add_argument("-d", "--disable-cache", action="store_true", help="Disable caching synthesis results")
+
     parser.add_argument("--java", metavar="FILE.java", default=None, help="Output file for java classes, use '-' for stdout")
     parser.add_argument("--java-package", metavar="com.java.pkg", default=None, help="Java package for generated structure")
 
@@ -119,7 +122,7 @@ if __name__ == '__main__':
             cost_model_file))
 
     for query in queries:
-        highlevel_synthesis(inp, fields, assumptions, query)
+        highlevel_synthesis(inp, fields, assumptions, query, enable_cache=(not args.disable_cache))
         print "found {} great plans:".format(len(query.bestPlans))
         for plan in query.bestPlans:
             print "    {}".format(plan)
