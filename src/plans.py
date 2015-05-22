@@ -11,25 +11,19 @@ class Plan(ADT):
     def wellFormed(self, z3ctx, z3solver):
         pass
 
-class All(Plan):
+class AllWhere(Plan):
+    def __init__(self, predicate):
+        self.predicate = predicate
     def toPredicate(self):
-        return Bool(True)
+        return self.predicate
     def isSortedBy(self, fieldName):
         return True
     def isTrivial(self):
         return True
     def wellFormed(self, *args):
         return True
-
-class Empty(Plan):
-    def toPredicate(self):
-        return Bool(False)
-    def isSortedBy(self, fieldName):
-        return True
-    def isTrivial(self):
-        return True
-    def wellFormed(self, *args):
-        return True
+    def children(self):
+        return (self.predicate,)
 
 class HashLookup(Plan):
     def __init__(self, plan, fieldName, varName):
@@ -41,7 +35,7 @@ class HashLookup(Plan):
     def isSortedBy(self, fieldName):
         return self.plan.isSortedBy(fieldName)
     def wellFormed(self, *args):
-        return (isinstance(self.plan, HashLookup) or isinstance(self.plan, All)) and self.plan.wellFormed(*args)
+        return (isinstance(self.plan, HashLookup) or isinstance(self.plan, AllWhere)) and self.plan.wellFormed(*args)
     def children(self):
         return (self.plan, self.fieldName, self.varName)
 

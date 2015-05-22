@@ -33,7 +33,7 @@ class SolverContext:
         examples = []
         query = query.toNNF()
 
-        dumbestPlan = plans.Filter(plans.All(), query)
+        dumbestPlan = plans.Filter(plans.AllWhere(predicates.Bool(True)), query)
         self.bestCost = self.cost(dumbestPlan) # cost of best valid plan found so far
         self.bestPlans = set() # set of valid plans with cost == self.bestCost
         self.productive = False # was progress made this iteration
@@ -176,6 +176,20 @@ class SolverContext:
         for a, b in list(comps):
             comps.add((b, a))
 
+        def transitively_related(x1, x2, comps, visited=None):
+            if x1 == x2:
+                return True
+            if visited is None:
+                visited = set()
+            elif x1 in visited:
+                return False
+            visited.add(x1)
+            for a, b in comps:
+                if a == x1:
+                    if transitively_related(b, x2, comps, visited):
+                        return True
+            return False
+
         # cache maps output vectors to the best known plan implementing them
         cache = {}
 
@@ -184,11 +198,19 @@ class SolverContext:
 
         # _OfSize[s] contains all interesting plans of size s
         exprsOfSize = [[], [], [], []]
-        plansOfSize = [[], []]
+        plansOfSize = [[], [], [], [], []]
 
         print "round 1"
-        for plan in [plans.All(), plans.Empty()]:
-            yield consider(plan, 1)
+        for f1 in self.fieldNames:
+            for f2 in self.fieldNames:
+                if f1 < f2 and transitively_related(f1, f2, comps):
+                    for op in predicates.operators:
+                        plan = plans.AllWhere(predicates.Compare(
+                            predicates.Var(f1), op, predicates.Var(f2)))
+                        yield consider(plan, plan.size())
+        for b in (True, False):
+            plan = plans.AllWhere(predicates.Bool(b))
+            yield consider(plan, plan.size())
 
         for v in self.varNames:
             for f in self.fieldNames:
