@@ -110,7 +110,7 @@ class SolverContext:
 
         def consider(plan, size):
             assert plan.size() == size
-            if not plan.wellFormed(self.z3ctx, self.z3solver) or stupid(plan):
+            if not plan.wellFormed(self.z3ctx, self.z3solver, self.fieldNames, self.varNames) or stupid(plan):
                 return None, None
             x = isValid(plan)
             cost = self.cost(plan)
@@ -222,7 +222,7 @@ class SolverContext:
             registerExp(predicates.Bool(b))
 
         roundsWithoutProgress = 0
-        maxRoundsWithoutProgress = 3
+        maxRoundsWithoutProgress = 4
 
         for size in xrange(2, maxSize + 1):
             # exprs
@@ -241,7 +241,7 @@ class SolverContext:
                 plansOfSize.append([])
             self.productive = False
             print "round", size, "; cache={}/{max}; ecache={}/{max}".format(len(cache), len(ecache), max=2**len(examples))
-            for plan in (plans.HashLookup(p, f, v) for p in plansOfSize[size-1] for f in self.fieldNames for v in self.varNames if (f, v) in comps):
+            for plan in (plans.HashLookup(p, e) for p, e in pickToSum(plansOfSize, exprsOfSize, size)):
                 yield consider(plan, size)
             for plan in (plans.BinarySearch(p, e) for p, e in pickToSum(plansOfSize, exprsOfSize, size)):
                 yield consider(plan, size)
@@ -254,6 +254,6 @@ class SolverContext:
                 print "  productive: {}".format(self.productive)
             else:
                 roundsWithoutProgress += 1
-                if roundsWithoutProgress >= maxRoundsWithoutProgress:
+                if roundsWithoutProgress >= maxRoundsWithoutProgress and size > 6:
                     print "last {} rounds were not productive; stopping".format(roundsWithoutProgress)
                     yield "stop", None

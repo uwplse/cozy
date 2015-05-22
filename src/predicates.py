@@ -18,6 +18,8 @@ class Predicate(ADT):
         return any(p.contains_conjunction() for p in self.children() if isinstance(p, Predicate))
     def ops(self):
         return itertools.chain(*(p.ops() for p in self.children() if isinstance(p, Predicate)))
+    def vars(self):
+        return itertools.chain(*(p.vars() for p in self.children() if isinstance(p, Predicate)))
 
 class Var(Predicate):
     def __init__(self, name):
@@ -28,6 +30,8 @@ class Var(Predicate):
         return z3.Int(self.name, context)
     def eval(self, env):
         return env.get(self.name, 0)
+    def vars(self):
+        return (self,)
     def __str__(self):
         return self.name
 

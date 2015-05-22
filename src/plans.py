@@ -8,7 +8,7 @@ class Plan(ADT):
         return False
     def isTrivial(self):
         return False
-    def wellFormed(self, z3ctx, z3solver):
+    def wellFormed(self, z3ctx, z3solver, fields, vars):
         pass
 
 class AllWhere(Plan):
@@ -26,18 +26,25 @@ class AllWhere(Plan):
         return (self.predicate,)
 
 class HashLookup(Plan):
-    def __init__(self, plan, fieldName, varName):
+    def __init__(self, plan, predicate):
         self.plan = plan
-        self.fieldName = fieldName
-        self.varName = varName
+        self.predicate = predicate
     def toPredicate(self):
-        return And(self.plan.toPredicate(), Compare(Var(self.fieldName), Eq, Var(self.varName)))
+        return And(self.plan.toPredicate(), self.predicate)
     def isSortedBy(self, fieldName):
         return self.plan.isSortedBy(fieldName)
-    def wellFormed(self, *args):
-        return (isinstance(self.plan, HashLookup) or isinstance(self.plan, AllWhere)) and self.plan.wellFormed(*args)
+    def wellFormed(self, z3ctx, z3solver, fields, vars):
+        if set(self.predicate.ops()) != {Eq}:
+            return False
+        disj = self.predicate.contains_disjunction()
+        conj = self.predicate.contains_conjunction()
+        if disj and conj:
+            return False
+        if disj and len(set(v.name for v in self.predicate.vars()) & set(vars)) != 1:
+            return False
+        return (isinstance(self.plan, HashLookup) or isinstance(self.plan, AllWhere)) and self.plan.wellFormed(z3ctx, z3solver, fields, vars)
     def children(self):
-        return (self.plan, self.fieldName, self.varName)
+        return (self.plan, self.predicate)
 
 class BinarySearch(Plan):
     def __init__(self, plan, predicate):
@@ -94,8 +101,11 @@ class Concat(Plan):
         self.plan2 = plan2
     def toPredicate(self):
         return Or(self.plan1.toPredicate(), self.plan2.toPredicate())
-    def wellFormed(self, z3ctx, z3solver):
-        return self.plan1.wellFormed(z3ctx, z3solver) and self.plan2.wellFormed(z3ctx, z3solver) and predicates_disjoint(z3ctx, z3solver, self.plan1.toPredicate(), self.plan2.toPredicate())
+    def wellFormed(self, z3ctx, z3solver, fields, vars):
+        return (
+            self.plan1.wellFormed(z3ctx, z3solver, fields, vars) and
+            self.plan2.wellFormed(z3ctx, z3solver, fields, vars) and
+            predicates_disjoint(z3ctx, z3solver, self.plan1.toPredicate(), self.plan2.toPredicate()))
     def children(self):
         return (self.plan1, self.plan2)
 
