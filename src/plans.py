@@ -5,7 +5,7 @@ class Plan(ADT):
     def toPredicate(self):
         pass
     def isSortedBy(self, fieldName):
-        pass
+        return False
     def isTrivial(self):
         return False
     def wellFormed(self, z3ctx, z3solver):
@@ -40,19 +40,20 @@ class HashLookup(Plan):
         return (self.plan, self.fieldName, self.varName)
 
 class BinarySearch(Plan):
-    def __init__(self, plan, fieldName, op, varName):
+    def __init__(self, plan, predicate):
         self.plan = plan
-        self.fieldName = fieldName
-        self.op = op
-        self.varName = varName
+        self.predicate = predicate
     def toPredicate(self):
-        return And(self.plan.toPredicate(), Compare(Var(self.fieldName), self.op, Var(self.varName)))
-    def isSortedBy(self, fieldName):
-        return fieldName == self.fieldName
+        return And(self.plan.toPredicate(), self.predicate)
     def wellFormed(self, *args):
-        return self.plan.wellFormed(*args) and self.plan.isSortedBy(self.fieldName)
+        ops = set(self.predicate.ops())
+        if (ops & {Eq, Ne}) or not ops:
+            return False
+        if self.predicate.contains_disjunction():
+            return False
+        return self.plan.wellFormed(*args) and self.plan.isSortedBy("TODO")
     def children(self):
-        return (self.plan, self.fieldName, self.op, self.varName)
+        return (self.plan, self.predicate)
 
 class Filter(Plan):
     def __init__(self, plan, predicate):
@@ -60,8 +61,6 @@ class Filter(Plan):
         self.predicate = predicate
     def toPredicate(self):
         return And(self.plan.toPredicate(), self.predicate)
-    def isSortedBy(self, fieldName):
-        return False
     def wellFormed(self, *args):
         return self.plan.wellFormed(*args)
     def children(self):
@@ -73,8 +72,6 @@ class Intersect(Plan):
         self.plan2 = plan2
     def toPredicate(self):
         return And(self.plan1.toPredicate(), self.plan2.toPredicate())
-    def isSortedBy(self, fieldName):
-        return False
     def wellFormed(self, *args):
         return self.plan1.wellFormed(*args) and self.plan2.wellFormed(*args)
     def children(self):
@@ -86,8 +83,6 @@ class Union(Plan):
         self.plan2 = plan2
     def toPredicate(self):
         return Or(self.plan1.toPredicate(), self.plan2.toPredicate())
-    def isSortedBy(self, fieldName):
-        return False
     def wellFormed(self, *args):
         return self.plan1.wellFormed(*args) and self.plan2.wellFormed(*args)
     def children(self):
@@ -99,8 +94,6 @@ class Concat(Plan):
         self.plan2 = plan2
     def toPredicate(self):
         return Or(self.plan1.toPredicate(), self.plan2.toPredicate())
-    def isSortedBy(self, fieldName):
-        return False
     def wellFormed(self, z3ctx, z3solver):
         return self.plan1.wellFormed(z3ctx, z3solver) and self.plan2.wellFormed(z3ctx, z3solver) and predicates_disjoint(z3ctx, z3solver, self.plan1.toPredicate(), self.plan2.toPredicate())
     def children(self):

@@ -1,3 +1,4 @@
+import itertools
 import z3
 from common import ADT
 
@@ -11,6 +12,12 @@ class Predicate(ADT):
     def comparisons(self):
         """returns a stream of var, field tuples"""
         return ()
+    def contains_disjunction(self):
+        return any(p.contains_disjunction() for p in self.children() if isinstance(p, Predicate))
+    def contains_conjunction(self):
+        return any(p.contains_conjunction() for p in self.children() if isinstance(p, Predicate))
+    def ops(self):
+        return itertools.chain(*(p.ops() for p in self.children() if isinstance(p, Predicate)))
 
 class Var(Predicate):
     def __init__(self, name):
@@ -94,6 +101,8 @@ class Compare(Predicate):
         if self.op == Lt: return self.lhs.eval(env) <  self.rhs.eval(env)
     def comparisons(self):
         return [(self.lhs.name, self.rhs.name)]
+    def ops(self):
+        return (self.op,)
     def __str__(self):
         return "{} {} {}".format(self.lhs, opToStr(self.op), self.rhs)
 
@@ -112,6 +121,8 @@ class And(Predicate):
     def comparisons(self):
         for c in self.lhs.comparisons(): yield c
         for c in self.rhs.comparisons(): yield c
+    def contains_conjunction(self):
+        return True
     def __str__(self):
         return "({} and {})".format(self.lhs, self.rhs)
 
@@ -130,6 +141,8 @@ class Or(Predicate):
     def comparisons(self):
         for c in self.lhs.comparisons(): yield c
         for c in self.rhs.comparisons(): yield c
+    def contains_disjunction(self):
+        return True
     def __str__(self):
         return "({} or {})".format(self.lhs, self.rhs)
 
