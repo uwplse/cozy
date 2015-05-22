@@ -75,7 +75,7 @@ class SolverContext:
                 return True
             if type(plan) in [plans.HashLookup, plans.BinarySearch, plans.Filter]:
                 return outputvector(plan) == outputvector(plan.plan) or stupid(plan.plan)
-            if type(plan) in [plans.Intersect, plans.Union]:
+            if type(plan) in [plans.Intersect, plans.Union, plans.Concat]:
                 return (outputvector(plan) == outputvector(plan.plan1) or
                     outputvector(plan) == outputvector(plan.plan2) or
                     outputvector(plan.plan1) == outputvector(plan.plan2) or
@@ -110,7 +110,7 @@ class SolverContext:
 
         def consider(plan, size):
             assert plan.size() == size
-            if not plan.wellFormed() or stupid(plan):
+            if not plan.wellFormed(self.z3ctx, self.z3solver) or stupid(plan):
                 return None, None
             x = isValid(plan)
             cost = self.cost(plan)
@@ -225,7 +225,7 @@ class SolverContext:
                 yield consider(plan, size)
             for plan in (plans.Filter(p, e) for p, e in pickToSum(plansOfSize, exprsOfSize, size)):
                 yield consider(plan, size)
-            for plan in (ty(p1, p2) for ty in [plans.Intersect, plans.Union] for p1, p2 in pickToSum(plansOfSize, plansOfSize, size)):
+            for plan in (ty(p1, p2) for ty in [plans.Intersect, plans.Union, plans.Concat] for p1, p2 in pickToSum(plansOfSize, plansOfSize, size)):
                 yield consider(plan, size)
             if self.productive:
                 roundsWithoutProgress = 0

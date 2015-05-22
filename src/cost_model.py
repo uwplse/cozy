@@ -28,6 +28,10 @@ def _cost(plan, n=float(1000)):
         cost1, size1 = _cost(plan.plan1)
         cost2, size2 = _cost(plan.plan2)
         return cost1 + cost2 + size1 + size2, size1 + size2
+    if isinstance(plan, plans.Concat):
+        cost1, size1 = _cost(plan.plan1)
+        cost2, size2 = _cost(plan.plan2)
+        return 1 + cost1 + cost2, size1 + size2
     raise Exception("Couldn't parse plan: {}".format(plan))
 
 def cost(fields, qvars, plan):
