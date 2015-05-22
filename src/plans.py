@@ -1,5 +1,3 @@
-
-from functools import total_ordering
 from predicates import *
 from common import ADT
 
@@ -13,7 +11,6 @@ class Plan(ADT):
     def wellFormed(self):
         pass
 
-@total_ordering
 class All(Plan):
     def toPredicate(self):
         return Bool(True)
@@ -24,7 +21,6 @@ class All(Plan):
     def wellFormed(self):
         return True
 
-@total_ordering
 class Empty(Plan):
     def toPredicate(self):
         return Bool(False)
@@ -35,7 +31,6 @@ class Empty(Plan):
     def wellFormed(self):
         return True
 
-@total_ordering
 class HashLookup(Plan):
     def __init__(self, plan, fieldName, varName):
         self.plan = plan
@@ -50,7 +45,6 @@ class HashLookup(Plan):
     def children(self):
         return (self.plan, self.fieldName, self.varName)
 
-@total_ordering
 class BinarySearch(Plan):
     def __init__(self, plan, fieldName, op, varName):
         self.plan = plan
@@ -66,7 +60,6 @@ class BinarySearch(Plan):
     def children(self):
         return (self.plan, self.fieldName, self.op, self.varName)
 
-@total_ordering
 class Filter(Plan):
     def __init__(self, plan, predicate):
         self.plan = plan
@@ -80,7 +73,6 @@ class Filter(Plan):
     def children(self):
         return (self.plan, self.predicate)
 
-@total_ordering
 class Intersect(Plan):
     def __init__(self, plan1, plan2):
         self.plan1 = plan1
@@ -94,7 +86,6 @@ class Intersect(Plan):
     def children(self):
         return (self.plan1, self.plan2)
 
-@total_ordering
 class Union(Plan):
     def __init__(self, plan1, plan2):
         self.plan1 = plan1
