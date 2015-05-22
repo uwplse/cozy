@@ -33,7 +33,7 @@ def pickBestPlans(queries, cost_model_file, i=0):
     else:
         return cost_model.dynamic_cost(fields, queries, cost_model_file)
 
-def highlevel_synthesis(all_input, fields, assumptions, query, enable_cache):
+def highlevel_synthesis(all_input, fields, assumptions, query, enable_cache, timeout):
     """sets .bestPlans on the query object"""
 
     key = hash((all_input, query.name))
@@ -63,7 +63,7 @@ def highlevel_synthesis(all_input, fields, assumptions, query, enable_cache):
     seen = set()
 
     try:
-        for p in sc.synthesizePlansByEnumeration(query.pred, sort_field=query.sort_field):
+        for p in sc.synthesizePlansByEnumeration(query.pred, sort_field=query.sort_field, timeout=timeout):
             if p in seen:
                 continue
             seen.add(p)
@@ -92,6 +92,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Data structure synthesizer.')
 
     parser.add_argument("-d", "--disable-cache", action="store_true", help="Disable caching synthesis results")
+    parser.add_argument("-t", "--timeout", metavar="N", default=None, help="Per-query synthesis timeout (in seconds)")
 
     parser.add_argument("--java", metavar="FILE.java", default=None, help="Output file for java classes, use '-' for stdout")
     parser.add_argument("--java-package", metavar="com.java.pkg", default=None, help="Java package for generated structure")
@@ -122,7 +123,7 @@ if __name__ == '__main__':
             cost_model_file))
 
     for query in queries:
-        highlevel_synthesis(inp, fields, assumptions, query, enable_cache=(not args.disable_cache))
+        highlevel_synthesis(inp, fields, assumptions, query, enable_cache=(not args.disable_cache), timeout=float(args.timeout) if args.timeout else None)
         print "found {} great plans:".format(len(query.bestPlans))
         for plan in query.bestPlans:
             print "    {}".format(plan)

@@ -5,13 +5,17 @@ import itertools
 import math
 import random
 import sys
+import time
 from collections import defaultdict
 from z3 import *
 
 import predicates
 import plans
 
-class SolverContext:
+class Timeout(Exception):
+    pass
+
+class SolverContext(object):
 
     def __init__(self, varNames, fieldNames, cost_model, assumptions=()):
         self.varNames = varNames
@@ -29,7 +33,11 @@ class SolverContext:
             plan._cost += plan.size() / 10000.0
         return plan._cost
 
-    def synthesizePlansByEnumeration(self, query, sort_field=None, maxSize=1000):
+    def _check_timeout(self):
+        if self.timeout is not None and (time.time() - self.startTime) > self.timeout:
+            raise Timeout()
+
+    def synthesizePlansByEnumeration(self, query, sort_field=None, maxSize=1000, timeout=None):
         examples = []
         query = query.toNNF()
 
@@ -37,6 +45,8 @@ class SolverContext:
         self.bestCost = self.cost(dumbestPlan) # cost of best valid plan found so far
         self.bestPlans = set() # set of valid plans with cost == self.bestCost
         self.productive = False # was progress made this iteration
+        self.startTime = time.time()
+        self.timeout = timeout
         yield dumbestPlan
 
         while True:
@@ -72,6 +82,10 @@ class SolverContext:
 
         def stupid(plan):
             if type(plan) is plans.Filter and type(plan.plan) is plans.Filter:
+                return True
+            if type(plan) is plans.HashLookup and type(plan.plan) is plans.HashLookup:
+                return True
+            if type(plan) is plans.BinarySearch and type(plan.plan) is plans.BinarySearch:
                 return True
             if type(plan) in [plans.HashLookup, plans.BinarySearch, plans.Filter]:
                 return outputvector(plan) == outputvector(plan.plan) or stupid(plan.plan)
@@ -130,6 +144,7 @@ class SolverContext:
                 plansOfSize[i] = [p for p in plansOfSize[i] if self.cost(p) <= cost]
 
         def consider(plan):
+            self._check_timeout()
             size = plan.size()
             if not plan.wellFormed(self.z3ctx, self.z3solver, self.fieldNames, self.varNames) or stupid(plan):
                 return None, None
@@ -182,6 +197,7 @@ class SolverContext:
                 return "counterexample", (x, plan)
 
         def registerExp(e):
+            self._check_timeout()
             vec = outputvector(e)
             if vec in ecache:
                 return
