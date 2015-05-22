@@ -25,6 +25,8 @@ class SolverContext:
     def cost(self, plan):
         if not hasattr(plan, "_cost"):
             plan._cost = self.cost_model(plan)
+            # This small bump is to ensure we favor simpler plans
+            plan._cost += plan.size() / 10000.0
         return plan._cost
 
     def synthesizePlansByEnumeration(self, query, sort_field=None, maxSize=1000):
@@ -69,7 +71,7 @@ class SolverContext:
             return predicate._outputvector
 
         def stupid(plan):
-            if type(plan) is plans.Filter and type(plan.plan) is plans.Filter and plan.predicate < plan.plan.predicate:
+            if type(plan) is plans.Filter and type(plan.plan) is plans.Filter:
                 return True
             if type(plan) in [plans.HashLookup, plans.BinarySearch, plans.Filter]:
                 return outputvector(plan) == outputvector(plan.plan) or stupid(plan.plan)
@@ -138,7 +140,7 @@ class SolverContext:
                 if old_plan is None:
                     cache[vec] = plan
                     plansOfSize[size].append(plan)
-                    self.productive = "new possibility: {}".format(vec)
+                    self.productive = "new possibility: {}".format("".join(str(int(v)) for v in vec))
 
                 # better than previous options
                 elif cost < self.cost(old_plan):
@@ -147,7 +149,7 @@ class SolverContext:
                         plansOfSize[i] = [p for p in plansOfSize[i] if outputvector(p) != vec]
                     plansOfSize[size].append(plan)
                     if any(p.contains_subtree(plan) for p in self.bestPlans):
-                        self.productive = "better option for {}".format(vec)
+                        self.productive = "better option for {}".format("".join(str(int(v)) for v in vec))
 
                 # as good as previous options
                 elif cost == self.cost(old_plan):
@@ -204,8 +206,10 @@ class SolverContext:
             # exprs
             while len(exprsOfSize) <= size:
                 exprsOfSize.append([])
-            for e in exprsOfSize[size-1]:
-                registerExp(predicates.Not(e))
+            # Since we have all operators and their negations, we will never
+            # generate anything interesting involving Not.
+            # for e in exprsOfSize[size-1]:
+            #     registerExp(predicates.Not(e))
             for e1, e2 in pickToSum(exprsOfSize, exprsOfSize, size):
                 registerExp(predicates.And(e1, e2))
                 registerExp(predicates.Or(e1, e2))
@@ -214,7 +218,7 @@ class SolverContext:
             while len(plansOfSize) <= size:
                 plansOfSize.append([])
             self.productive = False
-            print "round", size, "cache size {}/{}".format(len(cache), 2**len(examples))
+            print "round", size, "; cache={}/{max}; ecache={}/{max}".format(len(cache), len(ecache), max=2**len(examples))
             for plan in (plans.HashLookup(p, f, v) for p in plansOfSize[size-1] for f in self.fieldNames for v in self.varNames if (f, v) in comps):
                 yield consider(plan, size)
             for plan in (plans.BinarySearch(p, f, op, v) for p in plansOfSize[size-1] for f in self.fieldNames for v in self.varNames if (f, v) in comps for op in predicates.operators if op is not predicates.Ne):
