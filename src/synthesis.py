@@ -133,6 +133,7 @@ class SolverContext(object):
         def on_valid_plan(plan, cost):
             if cost > self.bestCost:
                 return
+            self.productive = "new valid plan"
             if cost < self.bestCost:
                 self.bestCost = cost
                 self.bestPlans = set()
@@ -157,7 +158,6 @@ class SolverContext(object):
                 return None, None
 
             if x is True:
-                self.productive = "new valid plan"
                 on_valid_plan(plan, cost)
                 return "validPlan", plan
             elif x is False:
@@ -166,8 +166,14 @@ class SolverContext(object):
                 # fastforward
                 if implies(queryVector, vec):
                     plan2 = plans.Filter(plan, query)
-                    # assert isValid(plan2) is True
-                    on_valid_plan(plan2, self.cost(plan2))
+                    x2 = isValid(plan2)
+                    if x2 is True:
+                        on_valid_plan(plan2, self.cost(plan2))
+                    elif x2 is False:
+                        assert False, "plan {} is wrong!".format(plan)
+                    else:
+                        self.productive = "new counterexample"
+                        return "counterexample", (x2, plan)
 
                 old_plan = cache.get(vec)
 
