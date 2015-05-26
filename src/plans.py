@@ -40,7 +40,9 @@ class HashLookup(Plan):
         conj = self.predicate.contains_conjunction()
         if disj and conj:
             return False
-        if disj and len(set(v.name for v in self.predicate.vars()) & set(vars)) != 1:
+        # if disj and len(set(v.name for v in self.predicate.vars()) & set(vars)) != 1:
+        #     return False
+        if disj:
             return False
         return (isinstance(self.plan, HashLookup) or isinstance(self.plan, AllWhere)) and self.plan.wellFormed(z3ctx, z3solver, fields, vars)
     def children(self):

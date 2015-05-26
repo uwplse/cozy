@@ -14,8 +14,10 @@ import pickle
 from synthesis import SolverContext
 from parse import parseQuery
 import cost_model
-from codegen_java import write_java
-from codegen_cpp import write_cpp
+from codegen import codegen
+from codegen_java import JavaCodeGenerator
+# from codegen_java import write_java
+# from codegen_cpp import write_cpp
 
 def pickBestPlans(queries, cost_model_file, i=0):
     """Sets q.bestPlan for each q in all_queries, returns min cost"""
@@ -134,19 +136,23 @@ if __name__ == '__main__':
         for q in queries:
             q.bestPlan = list(q.bestPlans)[0]
 
+    # if args.java is not None:
+    #     java_writer = sys.stdout.write if args.java == "-" else open(args.java, "w").write
+    #     write_java(fields, queries, java_writer, package=args.java_package)
+
+    # cpp_writer = None
+    # if args.cpp is not None:
+    #     cpp_writer = sys.stdout.write if args.cpp == "-" else open(args.cpp, "w").write
+
+    # cpp_header_writer = None
+    # if args.cpp_header is not None:
+    #     cpp_header_writer = sys.stdout.write if args.cpp_header == "-" else open(args.cpp_header, "w").write
+
+    # if cpp_writer is not None or cpp_header_writer is not None:
+    #     cpp_writer = cpp_writer or (lambda x: None)
+    #     cpp_header_writer = cpp_header_writer or (lambda x: None)
+    #     write_cpp(fields, queries, cpp_writer, cpp_header_writer, extra=(args.cpp_extra or ""), namespace=args.cpp_namespace)
+
     if args.java is not None:
         java_writer = sys.stdout.write if args.java == "-" else open(args.java, "w").write
-        write_java(fields, queries, java_writer, package=args.java_package)
-
-    cpp_writer = None
-    if args.cpp is not None:
-        cpp_writer = sys.stdout.write if args.cpp == "-" else open(args.cpp, "w").write
-
-    cpp_header_writer = None
-    if args.cpp_header is not None:
-        cpp_header_writer = sys.stdout.write if args.cpp_header == "-" else open(args.cpp_header, "w").write
-
-    if cpp_writer is not None or cpp_header_writer is not None:
-        cpp_writer = cpp_writer or (lambda x: None)
-        cpp_header_writer = cpp_header_writer or (lambda x: None)
-        write_cpp(fields, queries, cpp_writer, cpp_header_writer, extra=(args.cpp_extra or ""), namespace=args.cpp_namespace)
+        codegen(fields, queries, JavaCodeGenerator(java_writer))

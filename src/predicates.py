@@ -64,6 +64,13 @@ def invertOp(op):
     if op == Gt: return Le
     if op == Ge: return Lt
 
+def flipOp(op):
+    if op == Lt: return Gt
+    if op == Le: return Ge
+    if op == Gt: return Lt
+    if op == Ge: return Le
+    return op
+
 def opToStr(op):
     if op == Eq: return "=="
     if op == Ne: return "!="
@@ -107,6 +114,8 @@ class Compare(Predicate):
         return [(self.lhs.name, self.rhs.name)]
     def ops(self):
         return (self.op,)
+    def flip(self):
+        return Compare(self.rhs, flipOp(self.op), self.lhs)
     def __str__(self):
         return "{} {} {}".format(self.lhs, opToStr(self.op), self.rhs)
 

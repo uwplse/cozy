@@ -56,9 +56,6 @@ class Iterator(object):
 
         return it
 
-def capitalize(s):
-    return s[0].upper() + s[1:]
-
 def write_cpp(fields, queries, writer, header_writer, extra="", namespace=None):
     """
     Writes a C++ data structure implementation to the given writers.

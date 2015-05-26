@@ -5,7 +5,7 @@ import os
 import subprocess
 
 import plans
-from codegen_java import write_java
+# from codegen_java import write_java
 
 def _cost(plan, n=float(1000)):
     """Returns (cost,size) tuples"""
