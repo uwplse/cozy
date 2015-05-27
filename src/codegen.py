@@ -4,10 +4,71 @@ import plans
 import predicates
 
 class Ty(object):
-    def copy(self):
-        raise Exception("not implemented for type: {}".format(type(self)))
     def unify(self, other):
         raise Exception("not implemented for type: {}".format(type(self)))
+    def gen_type(self, gen):
+        raise Exception("not implemented for type: {}".format(type(self)))
+
+class NativeTy(Ty):
+    def __init__(self, ty):
+        self.ty = ty
+    # def unify(self, other):
+    #     if type(other) is NativeTy and self.ty == other.ty:
+    #         return self
+    #     return None
+    def gen_type(self, gen):
+        return gen.native_type(self.ty)
+
+class RecordType(Ty):
+    # def unify(self, other):
+    #     if type(other) is RecordType:
+    #         return self
+    #     return None
+    def gen_type(self, gen):
+        return gen.record_type()
+
+class Tuple(Ty):
+    def __init__(self, fields):
+        self.type_name = fresh_name()
+        self._fields = fields
+    # def unify(self, other):
+    #     raise Exception("Tuple.unify is not implemented")
+    #     # if type(other) is Tuple:
+    #     #     if len(self.fields) != len(other.fields):
+    #     #         return None
+    #     #     ts = { f : (t.unify(other.fields[f]) if f in other.fields else None) for (f, t) in self.fields.items() }
+    #     #     if not any(t is None for t in ts.values()):
+    #     #         return Tuple(ts)
+    #     # return None
+    def gen_type(self, gen):
+        if len(self._fields) == 1:
+            return list(self._fields.values())[0].gen_type(gen)
+        return NativeTy(self.type_name).gen_type(gen)
+
+class Map(Ty):
+    def __init__(self, keyTy, valueTy):
+        self.keyTy = keyTy
+        self.valueTy = valueTy
+    # def unify(self, other):
+    #     raise Exception("Map.unify is not implemented")
+    def gen_type(self, gen):
+        return gen.map_type(self.keyTy, self.valueTy)
+
+class Array(Ty):
+    def __init__(self, ty):
+        self.ty = ty
+    # def unify(self, other):
+    #     raise Exception("Array.unify is not implemented")
+    def gen_type(self, gen):
+        return gen.array_type(self.ty)
+
+class Impl(object):
+    def copy(self):
+        raise Exception("not implemented for type: {}".format(type(self)))
+    def is_sorted_by(self, field):
+        raise Exception("not implemented for type: {}".format(type(self)))
+    # def unify(self, other):
+    #     raise Exception("not implemented for type: {}".format(type(self)))
     def fields(self):
         """returns list of (name, ty)"""
         raise Exception("not implemented for type: {}".format(type(self)))
@@ -22,8 +83,6 @@ class Ty(object):
         raise Exception("not implemented for type: {}".format(type(self)))
     def private_members(self, gen):
         """returns list of (name, ty, init)"""
-        raise Exception("not implemented for type: {}".format(type(self)))
-    def gen_type(self, gen):
         raise Exception("not implemented for type: {}".format(type(self)))
     def gen_query(self, gen, qvars):
         """returns (proc, stateExps)"""
@@ -54,74 +113,32 @@ class Ty(object):
         """returns proc"""
         raise Exception("not implemented for type: {}".format(type(self)))
 
-class NativeTy(Ty):
-    def __init__(self, ty):
-        self.ty = ty
-    def copy(self):
-        return self
-    def unify(self, other):
-        if type(other) is NativeTy and self.ty == other.ty:
-            return self
-        return None
-    def gen_type(self, gen):
-        return gen.native_type(self.ty)
-
-class RecordType(Ty):
-    def copy(self):
-        return self
-    def unify(self, other):
-        if type(other) is RecordType:
-            return self
-        return None
-    def gen_type(self, gen):
-        return gen.record_type()
-
-class Tuple(Ty):
-    def __init__(self, fields):
-        self.type_name = fresh_name()
-        self._fields = fields
-    def copy(self):
-        return Tuple({ k : v.copy() for k, v in self._fields.items() })
-    def unify(self, other):
-        raise Exception("Tuple.unify is not implemented")
-        # if type(other) is Tuple:
-        #     if len(self.fields) != len(other.fields):
-        #         return None
-        #     ts = { f : (t.unify(other.fields[f]) if f in other.fields else None) for (f, t) in self.fields.items() }
-        #     if not any(t is None for t in ts.values()):
-        #         return Tuple(ts)
-        # return None
-    def gen_type(self, gen):
-        if len(self._fields) == 1:
-            return list(self._fields.values())[0].gen_type(gen)
-        return NativeTy(self.type_name).gen_type(gen)
-
 class HashMap(Ty):
-    def __init__(self, keyTy, keyArgs, valueTy):
+    def __init__(self, keyTy, keyArgs, valueImpl):
         self.name = fresh_name()
         self.keyTy = keyTy
         self.keyArgs = keyArgs
-        self.valueTy = valueTy
+        self.valueImpl = valueImpl
     def copy(self):
-        return HashMap(self.keyTy.copy(), self.keyArgs, self.valueTy.copy())
-    def unify(self, other):
-        if type(other) is HashMap and other.keyTy == self.keyTy:
-            unif = self.valueTy.unify(other.valueTy)
-            if unif is not None:
-                return HashMap(self.keyTy, unif)
-        return None
+        return HashMap(self.keyTy, self.keyArgs, self.valueImpl.copy())
+    # def unify(self, other):
+    #     if type(other) is HashMap and other.keyTy == self.keyTy:
+    #         unif = self.valueImpl.unify(other.valueImpl)
+    #         if unif is not None:
+    #             return HashMap(self.keyTy, unif)
+    #     return None
     def fields(self):
-        return ((self.name, self),)
+        return ((self.name, Map(self.keyTy, _make_value_type(self.valueImpl))),)
     def construct(self, gen):
-        return gen.set(self.name, gen.new_map(self.keyTy, self.valueTy))
+        return gen.set(self.name, gen.new_map(self.keyTy, self.valueImpl))
     def needs_var(self, v):
-        return self.valueTy.needs_var(v)
+        return self.valueImpl.needs_var(v)
     def state(self):
-        return self.valueTy.state()
+        return self.valueImpl.state()
     def private_members(self, gen):
-        return self.valueTy.private_members(gen)
-    def gen_type(self, gen):
-        return gen.map_type(self.keyTy, self.valueTy)
+        return self.valueImpl.private_members(gen)
+    # def gen_type(self, gen):
+    #     return gen.map_type(self.keyTy, self.valueImpl)
     def make_key(self, gen):
         if len(self.keyTy._fields) == 1:
             return self.keyArgs[list(self.keyTy._fields.keys())[0]]
@@ -133,31 +150,31 @@ class HashMap(Ty):
     def gen_query(self, gen, qvars):
         k = fresh_name()
         proc  = gen.decl(k, self.keyTy, self.make_key(gen))
-        proc += gen.decl(self.valueTy.name, self.valueTy, gen.map_lookup(self.name, k))
-        p, r = self.valueTy.gen_query(gen, qvars)
+        proc += gen.decl(self.valueImpl.name, self.valueImpl, gen.map_lookup(self.name, k))
+        p, r = self.valueImpl.gen_query(gen, qvars)
         return (proc + p, r)
     def gen_current(self, gen):
-        return self.valueTy.gen_current(gen)
+        return self.valueImpl.gen_current(gen)
     def gen_next(self, gen):
-        return self.valueTy.gen_next(gen)
+        return self.valueImpl.gen_next(gen)
     def gen_has_next(self, gen):
-        return self.valueTy.gen_has_next(gen)
+        return self.valueImpl.gen_has_next(gen)
     def gen_insert(self, gen, x):
         k = fresh_name()
         proc  = gen.decl(k, self.keyTy, self.make_key_of_record(gen, x))
-        proc += gen.decl(self.valueTy.name, self.valueTy, gen.map_lookup(self.name, k))
-        return proc + self.valueTy.gen_insert(gen, x) + gen.map_put(self.name, k, self.valueTy.name)
+        proc += gen.decl(self.valueImpl.name, self.valueImpl, gen.map_lookup(self.name, k))
+        return proc + self.valueImpl.gen_insert(gen, x) + gen.map_put(self.name, k, self.valueImpl.name)
     def gen_remove(self, gen, x):
         k = fresh_name()
         proc  = gen.decl(k, self.keyTy, self.make_key_of_record(gen, x))
-        proc += gen.decl(self.valueTy.name, self.valueTy, gen.map_lookup(self.name, k))
-        return proc + self.valueTy.gen_remove(gen, x) + gen.map_put(self.name, k, self.valueTy.name)
+        proc += gen.decl(self.valueImpl.name, self.valueImpl, gen.map_lookup(self.name, k))
+        return proc + self.valueImpl.gen_remove(gen, x) + gen.map_put(self.name, k, self.valueImpl.name)
     def gen_remove_in_place(self, gen, parent_structure):
         k = fresh_name()
-        px, x = self.valueTy.gen_current(gen)
+        px, x = self.valueImpl.gen_current(gen)
         proc  = gen.decl(k, self.keyTy, self.make_key_of_record(gen, x))
-        proc += gen.decl(self.valueTy.name, self.valueTy, gen.map_lookup(gen.get_field(parent_structure, self.name), k))
-        return px + proc + self.valueTy.gen_remove_in_place(gen, None) + gen.map_put(gen.get_field(parent_structure, self.name), k, self.valueTy.name)
+        proc += gen.decl(self.valueImpl.name, self.valueImpl, gen.map_lookup(gen.get_field(parent_structure, self.name), k))
+        return px + proc + self.valueImpl.gen_remove_in_place(gen, None) + gen.map_put(gen.get_field(parent_structure, self.name), k, self.valueTy.name)
 
 AUG_MIN = "min"
 AUG_MAX = "max"
@@ -624,12 +641,12 @@ def _make_key_args(fields, predicate):
 def _make_key_type(fields, key_fields):
     return Tuple({ k : NativeTy(fields[k]) for k in key_fields })
 
-def _implement(plan, fields, qvars, resultTy):
+def _implement(plan, fields, qvars, attrs):
     """
     plan           - plans.Plan to implement
     fields         - dict { field_name : type }
     qvars          - dict { var_name   : type }
-    resultTy       - expected result Ty
+    attrs          - required attributes for solution
     """
 
     if type(plan) is plans.AllWhere:
@@ -676,8 +693,8 @@ def codegen(fields, queries, gen):
 
     fields = dict(fields)
     for q in queries:
-        desired_ty = UnsortedSet() if q.sort_field is None else SortedSet(fields[q.sort_field], q.sort_field)
-        q.impl = _implement(q.bestPlan, fields, dict(q.vars), desired_ty)
+        attrs = () if q.sort_field is None else (SortedBy(q.sort_field))
+        q.impl = _implement(q.bestPlan, fields, dict(q.vars), attrs)
 
     gen.write(fields, queries)
 
