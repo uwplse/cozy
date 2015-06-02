@@ -62,6 +62,14 @@ class Array(Ty):
     def gen_type(self, gen):
         return gen.array_type(self.ty)
 
+class BinaryTree(Ty):
+    def __init__(self, ty):
+        self.ty = ty
+    # def unify(self, other):
+    #     raise Exception("Array.unify is not implemented")
+    def gen_type(self, gen):
+        return gen.array_type(self.ty)
+
 class Impl(object):
     def copy(self):
         raise Exception("not implemented for type: {}".format(type(self)))
@@ -117,6 +125,7 @@ class HashMap(Ty):
     def __init__(self, keyTy, keyArgs, valueImpl):
         self.name = fresh_name()
         self.keyTy = keyTy
+        self.valueTy = self._make_value_type(valueImpl)
         self.keyArgs = keyArgs
         self.valueImpl = valueImpl
     def copy(self):
@@ -127,8 +136,10 @@ class HashMap(Ty):
     #         if unif is not None:
     #             return HashMap(self.keyTy, unif)
     #     return None
+    def _make_value_type(self, valueImpl):
+        return Tuple(dict(valueImpl.fields()))
     def fields(self):
-        return ((self.name, Map(self.keyTy, _make_value_type(self.valueImpl))),)
+        return ((self.name, Map(self.keyTy, self.valueTy)),)
     def construct(self, gen):
         return gen.set(self.name, gen.new_map(self.keyTy, self.valueImpl))
     def needs_var(self, v):
@@ -174,7 +185,7 @@ class HashMap(Ty):
         px, x = self.valueImpl.gen_current(gen)
         proc  = gen.decl(k, self.keyTy, self.make_key_of_record(gen, x))
         proc += gen.decl(self.valueImpl.name, self.valueImpl, gen.map_lookup(gen.get_field(parent_structure, self.name), k))
-        return px + proc + self.valueImpl.gen_remove_in_place(gen, None) + gen.map_put(gen.get_field(parent_structure, self.name), k, self.valueTy.name)
+        return px + proc + self.valueImpl.gen_remove_in_place(gen, None) + gen.map_put(gen.get_field(parent_structure, self.name), k, self.valueImpl.name)
 
 AUG_MIN = "min"
 AUG_MAX = "max"
@@ -641,19 +652,19 @@ def _make_key_args(fields, predicate):
 def _make_key_type(fields, key_fields):
     return Tuple({ k : NativeTy(fields[k]) for k in key_fields })
 
-def _implement(plan, fields, qvars, attrs):
+def _implement(plan, fields, qvars, resultTy=UnsortedSet()):
     """
     plan           - plans.Plan to implement
     fields         - dict { field_name : type }
     qvars          - dict { var_name   : type }
-    attrs          - required attributes for solution
+    resultTy       - what this plan should return
     """
 
     if type(plan) is plans.AllWhere:
         if plan.predicate == predicates.Bool(True):
             return resultTy.copy()
         else:
-            return Filtered(resultTy, list(fields.items()), list(qvars.items()), plan.predicate)
+            return Filtered(resultTy.copy(), list(fields.items()), list(qvars.items()), plan.predicate)
     elif type(plan) is plans.HashLookup:
         key_fields = list(_key_fields(fields, plan.predicate))
         keyTy = _make_key_type(fields, key_fields)
@@ -664,14 +675,17 @@ def _implement(plan, fields, qvars, attrs):
         t = resultTy.unify(AugTree(NativeTy(fields[plan.sortField]), plan.sortField, plan.predicate, fields))
         return _implement(plan.plan, fields, qvars, t)
     elif type(plan) is plans.Intersect:
+        assert type(resultTy) is UnsortedSet
         impl1 = _implement(plan.plan1, fields, qvars, resultTy)
         impl2 = _implement(plan.plan2, fields, qvars, resultTy)
         return Mix(impl1, impl2, INTERSECT_OP)
     elif type(plan) is plans.Union:
+        assert type(resultTy) is UnsortedSet
         impl1 = _implement(plan.plan1, fields, qvars, resultTy)
         impl2 = _implement(plan.plan2, fields, qvars, resultTy)
         return Mix(impl1, impl2, UNION_OP)
     elif type(plan) is plans.Concat:
+        assert type(resultTy) is UnsortedSet
         impl1 = _implement(plan.plan1, fields, qvars, resultTy)
         impl2 = _implement(plan.plan2, fields, qvars, resultTy)
         return Mix(impl1, impl2, CONCAT_OP)
@@ -693,8 +707,9 @@ def codegen(fields, queries, gen):
 
     fields = dict(fields)
     for q in queries:
-        attrs = () if q.sort_field is None else (SortedBy(q.sort_field))
-        q.impl = _implement(q.bestPlan, fields, dict(q.vars), attrs)
+        resultTy = UnsortedSet() if q.sort_field is None else SortedSet(q.sort_field)
+        # attrs = () if q.sort_field is None else (SortedBy(q.sort_field))
+        q.impl = _implement(q.bestPlan, fields, dict(q.vars), resultTy)
 
     gen.write(fields, queries)
 
