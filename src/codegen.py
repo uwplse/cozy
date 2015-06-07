@@ -228,7 +228,7 @@ class AugTree(Ty):
         self.right_ptr = fresh_name()
         self.parent_ptr = fresh_name()
     def copy(self):
-        return AugTree(self.fieldTy.copy(), self.fieldName, self.predicate, self._fields)
+        return AugTree(self.fieldTy, self.fieldName, self.predicate, self._fields)
     def unify(self, other):
         raise Exception("not implemented")
 
@@ -247,14 +247,26 @@ class AugTree(Ty):
             (self.parent_ptr, RecordType(), gen.null_value())]
     def gen_type(self, gen):
         return self.ty.gen_type(gen)
-    def _find_min(self, gen, root, clip=True):
-        # TODO: if clip, then use mins/maxes
+    def _subtree_ok(self, root):
+        """could ANY node in the subtree be valid?"""
+        return gen.true_value()
+    def _find_min(self, gen, root):
         x = fresh_name()
         proc  = gen.decl(x, self.ty, root)
-        proc += gen.while_true(gen.not_true(gen.is_null(gen.get_field(x, self.left_ptr))))
+        proc += gen.while_true(gen.both(
+            gen.not_true(gen.is_null(gen.get_field(x, self.left_ptr))),
+            self._subtree_ok(gen.get_field(x, self.left_ptr))))
         proc += gen.set(x, gen.get_field(x, self.left_ptr))
         proc += gen.endwhile()
         return proc, x
+    def _has_left(self, gen, node):
+        return gen.both(
+            gen.not_true(gen.is_null(gen.get_field(node, self.left_ptr))),
+            self._subtree_ok(gen.get_field(node, self.left_ptr)))
+    def _has_right(self, gen, node):
+        return gen.both(
+            gen.not_true(gen.is_null(gen.get_field(node, self.right_ptr))),
+            self._subtree_ok(gen.get_field(node, self.right_ptr)))
     def gen_query(self, gen, qvars):
         p, m = self._find_min(gen, self.name)
         return p, [m]
@@ -263,25 +275,42 @@ class AugTree(Ty):
     def gen_advance(self, gen, target=None):
         if target is None:
             target = self.cursor_name
+        else:
+            gen.set(target, self.cursor_name)
+
+        proc  = gen.do_while()
 
         # successor of any node with a right child is the min node to the right
-        proc  = gen.if_true(gen.not_true(gen.is_null(gen.get_field(self.cursor_name, self.right_ptr))))
-        p, m = self._find_min(gen, gen.get_field(self.cursor_name, self.right_ptr))
+        proc += gen.if_true(self._has_right(gen, target))
+        p, m = self._find_min(gen, gen.get_field(target, self.right_ptr))
+
+        # if there is no matching node to the right...
+        proc += gen.if_true(gen.is_null())
+
+        proc += gen.else_true()
         proc += p
         proc += gen.set(target, m)
+        proc += gen.endif()
 
         # successor of a node which is a left child with no right node is its parent
         proc += gen.else_if(gen.both(
-            gen.not_true(gen.is_null(gen.get_field(self.cursor_name, self.parent_ptr))),
-            gen.lt(self.fieldTy, gen.get_field(self.cursor_name, self.fieldName), gen.get_field(gen.get_field(self.cursor_name, self.parent_ptr), self.fieldName))))
-        proc += gen.set(target, gen.get_field(self.cursor_name, self.parent_ptr))
+            gen.not_true(gen.is_null(gen.get_field(target, self.parent_ptr))),
+            gen.lt(self.fieldTy, gen.get_field(target, self.fieldName), gen.get_field(gen.get_field(target, self.parent_ptr), self.fieldName))))
+        proc += gen.set(target, gen.get_field(target, self.parent_ptr))
 
         # there is no successor of a right child node (or root) with no right child
         proc += gen.else_true()
         proc += gen.set(target, gen.null_value())
         proc += gen.endif()
 
+        proc += gen.end_do_while(gen.both(gen.not_true(gen.is_null(target)), gen.not_true(self._node_ok(target))))
+
         return proc
+    def gen_next(self, gen):
+        oldcursor = fresh_name()
+        proc  = gen.decl(oldcursor, RecordType(), self.cursor_name)
+        proc += self.gen_advance(gen)
+        return proc, oldcursor
     def gen_has_next(self, gen):
         return "", gen.not_true(gen.is_null(self.cursor_name))
     def gen_insert(self, gen, x):
@@ -394,7 +423,7 @@ class AugTree(Ty):
 
         # case4: two children
         proc += gen.else_true()
-        p, m = self._find_min(gen, gen.get_field(x, self.right_ptr), clip=False)
+        p, m = self._find_min(gen, gen.get_field(x, self.right_ptr))
         proc += p
         # TODO: remove m, which has a parent and no left child
         # TODO: put m in place!
@@ -707,9 +736,14 @@ def codegen(fields, queries, gen):
 
     fields = dict(fields)
     for q in queries:
-        resultTy = UnsortedSet() if q.sort_field is None else SortedSet(q.sort_field)
+        vars = dict(q.vars)
+        resultTy = UnsortedSet() if q.sort_field is None else AugTree(
+            NativeTy(fields[q.sort_field]),
+            q.sort_field,
+            predicates.Bool(True),
+            fields)
         # attrs = () if q.sort_field is None else (SortedBy(q.sort_field))
-        q.impl = _implement(q.bestPlan, fields, dict(q.vars), resultTy)
+        q.impl = _implement(q.bestPlan, fields, vars, resultTy)
 
     gen.write(fields, queries)
 
