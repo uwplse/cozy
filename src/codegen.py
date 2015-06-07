@@ -211,6 +211,9 @@ def _make_augdata(field_name, predicate, fields):
         if c.op == predicates.Gt:   yield (f, v, AUG_MIN, False)
         if c.op == predicates.Ge:   yield (f, v, AUG_MIN, True)
 
+INCLUSIVE = "inclusive"
+EXCLUSIVE = "exclusive"
+
 class AugTree(Ty):
     def __init__(self, fieldTy, fieldName, predicate, fields):
         self.name = fresh_name()
@@ -219,14 +222,30 @@ class AugTree(Ty):
         self.ty = RecordType()
         self.predicate = predicate
         self._fields = fields
+        clauses = list(_break_conj(predicate))
+
+        # put field names on LHS of clauses
+        for i in xrange(len(clauses)):
+            if clauses[i].rhs.name in fields:
+                clauses[i] = clauses[i].flip()
+
+        self.mins = []
+        self.maxes = []
+        for c in clauses:
+            if c.lhs.name == fieldName:
+                if   c.op == predicates.Gt: self.mins.append((EXCLUSIVE, c.rhs))
+                elif c.op == predicates.Ge: self.mins.append((INCLUSIVE, c.rhs))
+                elif c.op == predicates.Lt: self.maxes.append((EXCLUSIVE, c.rhs))
+                elif c.op == predicates.Le: self.maxes.append((INCLUSIVE, c.rhs))
+
         self.augData = list(_make_augdata(fieldName, predicate, fields)) if predicate else ()
         if self.augData:
             raise Exception("cannot handle augdata yet")
 
-        self.cursor_name = fresh_name()
-        self.left_ptr = fresh_name()
-        self.right_ptr = fresh_name()
-        self.parent_ptr = fresh_name()
+        self.cursor_name = fresh_name("cursor")
+        self.left_ptr = fresh_name("left")
+        self.right_ptr = fresh_name("right")
+        self.parent_ptr = fresh_name("parent")
     def copy(self):
         return AugTree(self.fieldTy, self.fieldName, self.predicate, self._fields)
     def unify(self, other):
@@ -247,63 +266,234 @@ class AugTree(Ty):
             (self.parent_ptr, RecordType(), gen.null_value())]
     def gen_type(self, gen):
         return self.ty.gen_type(gen)
-    def _subtree_ok(self, root):
-        """could ANY node in the subtree be valid?"""
+    def _too_small(self, gen, node, clip=True):
+        if not clip:
+            return gen.false_value()
+        e = None
+        for (mode, bound) in self.mins:
+            compare = gen.lt if mode == EXCLUSIVE else gen.le
+            ee = compare(self.fieldTy, gen.get_field(node, self.fieldName), bound.name)
+            e = gen.either(e, ee) if e is not None else ee
+        return e
+    def _too_large(self, gen, node, clip=True):
+        if not clip:
+            return gen.false_value()
+        e = None
+        for (mode, bound) in self.maxes:
+            compare = gen.lt if mode == EXCLUSIVE else gen.le
+            ee = compare(self.fieldTy, bound.name, gen.get_field(node, self.fieldName))
+            e = gen.either(e, ee) if e is not None else ee
+        return e
+    def _subtree_ok(self, gen, root, clip=True):
+        """could ANY node in the subtree be valid? only checks augdata."""
+        if not clip:
+            return gen.true_value()
         return gen.true_value()
-    def _find_min(self, gen, root):
-        x = fresh_name()
-        proc  = gen.decl(x, self.ty, root)
-        proc += gen.while_true(gen.both(
-            gen.not_true(gen.is_null(gen.get_field(x, self.left_ptr))),
-            self._subtree_ok(gen.get_field(x, self.left_ptr))))
-        proc += gen.set(x, gen.get_field(x, self.left_ptr))
+    def _has_parent(self, gen, node):
+        return gen.not_true(gen.is_null(gen.get_field(node, self.parent_ptr)))
+    def _is_left_child(self, gen, node):
+        return gen.both(self._has_parent(gen, node), gen.same(node, gen.get_field(gen.get_field(node, self.parent_ptr), self.left_ptr)))
+    def _is_right_child(self, gen, node):
+        return gen.both(self._has_parent(gen, node), gen.same(node, gen.get_field(gen.get_field(node, self.parent_ptr), self.right_ptr)))
+    def _find_min(self, gen, root, clip=True):
+        """precond: _subtree_ok(root)"""
+        root2 = fresh_name("root")
+        proc  = gen.decl(root2, self.ty, root)
+        root = root2
+
+        x = fresh_name("x")
+        proc += gen.decl(x, self.ty, root)
+
+        # recursive alg:
+        # if x is too small
+        #     if x has right child: return _find_min(right)
+        #     else return NULL
+        # else if has left child
+        #     n <- _find_min(left)
+        #     if n is not NULL: return n
+        #     else return x too large ? NULL : x
+        # else if x is too large, return NULL
+        # else return x
+
+        # linearization:
+        # mode = DESCEND
+        # while True
+        # if mode == DESCEND
+        #     if x is too small:
+        #         if x has right child:
+        #             if x is root: root = right
+        #             x = right
+        #         else if x is not root: x = parent; mode = ASCEND // too small, no right child, not the root... back out!
+        #         else: return NULL // x too small, no right child... no answer!
+        #     else if x has left child:
+        #         x = left
+        #     else if x is too large:
+        #         if x is not root: x = parent; mode = ASCEND // no left child, x too big: back out!
+        #         else: return NULL; // x is root, is too large, and has no left
+        #     else if _node_ok(x): return x; // x is not too small or large, and has no left child
+        #     else if x is root: x = root = right; // if there is an answer, it lies to the right
+        #     else: x = parent; mode = ASCEND
+        # else if mode == ASCEND_FROM_LEFT
+        #     // x is not too small, or we would be in ASCEND_FROM_RIGHT
+        #     // there is no answer in X.left
+        #     if x is too large:
+        #         return NULL; // if our parent was smaller and ok, it would have returned itself!
+        #     else:
+        #         // x is not too large but there is no answer in left tree
+        #         if _node_ok(x): return x // got it!
+        #         else if x has right child:
+        #             if x is root: root = right
+        #             x = right; mode = DESCEND
+        #         else if x is root: return NULL // it isn't X, it isn't in X.left, it isn't in X.right
+        #         else: x = x.parent; mode = ASCEND // it isn't X, it isn't in X.left, it isn't in X.right
+        # else if mode == ASCEND_FROM_RIGHT:
+        #     // no answer is left subtree, x is not answer, no answer in right subtree
+        #     if x is root: return NULL // x is not ok, or we would have returned it
+        #     else: x = x.parent; mode = ASCEND // no answer in this subtree
+
+        descend = fresh_name("descend")
+        from_left = fresh_name("from_left")
+        bool_type = NativeTy(gen.bool_type())
+        proc += gen.decl(descend, bool_type, gen.true_value())
+        proc += gen.decl(from_left, bool_type, gen.true_value())
+
+        parent = gen.get_field(x, self.parent_ptr)
+        right  = gen.get_field(x, self.right_ptr)
+        left   = gen.get_field(x, self.left_ptr)
+        null   = gen.null_value()
+
+        ascend = (
+            gen.set(descend, gen.false_value()) +
+            gen.set(from_left, self._is_left_child(gen, x)) +
+            gen.set(x, parent))
+
+        return_null = (
+            gen.set(x, null) +
+            gen.break_loop())
+
+        return_x = gen.break_loop()
+
+        descend_right = (
+            gen.if_true(gen.same(x, root)) +
+            gen.set(root, right) +
+            gen.endif() +
+            gen.set(x, right))
+
+        proc += gen.while_true(gen.true_value())
+
+        proc += gen.if_true(descend) # descending
+
+        proc += gen.if_true(self._too_small(gen, x, clip))
+        proc += gen.if_true(self._has_right(gen, x, clip))
+        proc += descend_right
+        proc += gen.else_if(gen.same(x, root))
+        proc += return_null
+        proc += gen.else_true()
+        proc += ascend
+        proc += gen.endif()
+        proc += gen.else_if(self._has_left(gen, x, clip))
+        proc += gen.set(x, left)
+        proc += gen.else_if(self._too_large(gen, x, clip))
+        proc += gen.if_true(gen.same(x, root))
+        proc += return_null
+        proc += gen.else_true()
+        proc += ascend
+        proc += gen.endif()
+        proc += gen.else_if(self._node_ok(gen, x))
+        proc += return_x
+        proc += gen.else_if(gen.same(x, root))
+        proc += gen.set(root, right) + gen.set(x, right) # descend_right
+        proc += gen.else_true()
+        proc += ascend
+        proc += gen.endif()
+
+        proc += gen.else_if(from_left) # ascending from left
+
+        proc += gen.if_true(self._too_large(gen, x, clip))
+        proc += return_null
+        proc += gen.else_if(self._node_ok(gen, x, clip))
+        proc += return_x
+        proc += gen.else_if(self._has_right(gen, x, clip))
+        proc += gen.set(descend, gen.true_value())
+        proc += descend_right
+        proc += gen.else_if(gen.same(x, root))
+        proc += return_null
+        proc += gen.else_true()
+        proc += ascend
+        proc += gen.endif()
+
+        proc += gen.else_true() # ascending from right
+
+        proc += gen.if_true(gen.same(x, root))
+        proc += return_null
+        proc += gen.else_true()
+        proc += ascend
+        proc += gen.endif()
+
+        proc += gen.endif()
+
         proc += gen.endwhile()
         return proc, x
-    def _has_left(self, gen, node):
+
+    def _has_left(self, gen, node, clip=True):
         return gen.both(
             gen.not_true(gen.is_null(gen.get_field(node, self.left_ptr))),
-            self._subtree_ok(gen.get_field(node, self.left_ptr)))
-    def _has_right(self, gen, node):
+            self._subtree_ok(gen, gen.get_field(node, self.left_ptr), clip))
+    def _has_right(self, gen, node, clip=True):
         return gen.both(
             gen.not_true(gen.is_null(gen.get_field(node, self.right_ptr))),
-            self._subtree_ok(gen.get_field(node, self.right_ptr)))
+            self._subtree_ok(gen, gen.get_field(node, self.right_ptr), clip))
+    def _node_ok(self, gen, node, clip=True):
+        if not clip:
+            return gen.true_value()
+        return gen.true_value() # TODO
     def gen_query(self, gen, qvars):
         p, m = self._find_min(gen, self.name)
         return p, [m]
     def gen_current(self, gen):
         return "", self.cursor_name
     def gen_advance(self, gen, target=None):
+        proc = gen.comment("ADVANCE")
         if target is None:
             target = self.cursor_name
         else:
-            gen.set(target, self.cursor_name)
+            proc += gen.set(target, self.cursor_name)
 
-        proc  = gen.do_while()
+        descend = fresh_name("descend") # are we allowed to descend?
+        right_min = fresh_name("right_min")
+
+        proc += gen.decl(descend, NativeTy(gen.bool_type()), gen.true_value())
+        proc += gen.do_while()
 
         # successor of any node with a right child is the min node to the right
-        proc += gen.if_true(self._has_right(gen, target))
+        proc += gen.decl(right_min, self.ty, gen.null_value())
+        proc += gen.if_true(gen.both(descend, self._has_right(gen, target)))
         p, m = self._find_min(gen, gen.get_field(target, self.right_ptr))
-
-        # if there is no matching node to the right...
-        proc += gen.if_true(gen.is_null())
-
-        proc += gen.else_true()
         proc += p
-        proc += gen.set(target, m)
+        proc += gen.set(right_min, m)
         proc += gen.endif()
 
-        # successor of a node which is a left child with no right node is its parent
-        proc += gen.else_if(gen.both(
-            gen.not_true(gen.is_null(gen.get_field(target, self.parent_ptr))),
-            gen.lt(self.fieldTy, gen.get_field(target, self.fieldName), gen.get_field(gen.get_field(target, self.parent_ptr), self.fieldName))))
+        proc += gen.if_true(gen.not_true(gen.is_null(right_min)))
+        proc += gen.set(target, right_min)
+        proc += gen.break_loop()
+
+        # If there is no matching node to the right, then successor is
+        # elsewhere in the tree.
+        proc += gen.else_true()
+
+        # Ascend until we get to a left child (or root)
+        proc += gen.while_true(self._is_right_child(gen, target))
+        proc += gen.set(target, gen.get_field(target, self.parent_ptr))
+        proc += gen.endwhile()
+
+        # Parent of this node *might* be successor, if all the augdata matches.
         proc += gen.set(target, gen.get_field(target, self.parent_ptr))
 
-        # there is no successor of a right child node (or root) with no right child
-        proc += gen.else_true()
-        proc += gen.set(target, gen.null_value())
         proc += gen.endif()
 
-        proc += gen.end_do_while(gen.both(gen.not_true(gen.is_null(target)), gen.not_true(self._node_ok(target))))
+        proc += gen.end_do_while(gen.both(
+            gen.not_true(gen.is_null(target)),
+            gen.not_true(self._node_ok(gen, target))))
 
         return proc
     def gen_next(self, gen):
@@ -314,19 +504,23 @@ class AugTree(Ty):
     def gen_has_next(self, gen):
         return "", gen.not_true(gen.is_null(self.cursor_name))
     def gen_insert(self, gen, x):
-        prev = fresh_name()
-        curr = fresh_name()
+        prev = fresh_name("previous")
+        curr = fresh_name("current")
+        is_left = fresh_name("is_left")
 
         proc  = gen.decl(prev, self.ty, gen.null_value())
         proc += gen.decl(curr, self.ty, self.name)
+        proc += gen.decl(is_left, NativeTy(gen.bool_type()), gen.false_value())
 
         # find insertion point
         proc += gen.while_true(gen.not_true(gen.is_null(curr)))
         proc += gen.set(prev, curr)
         proc += gen.if_true(gen.lt(self.fieldTy, gen.get_field(x, self.fieldName), gen.get_field(curr, self.fieldName)))
         proc += gen.set(curr, gen.get_field(curr, self.left_ptr))
+        proc += gen.set(is_left, gen.true_value())
         proc += gen.else_true()
         proc += gen.set(curr, gen.get_field(curr, self.right_ptr))
+        proc += gen.set(is_left, gen.false_value())
         proc += gen.endif()
         proc += gen.endwhile()
 
@@ -335,7 +529,7 @@ class AugTree(Ty):
         proc += gen.set(self.name, x)
         proc += gen.else_true()
         proc += gen.set(gen.get_field(x, self.parent_ptr), prev)
-        proc += gen.if_true(gen.lt(self.fieldTy, gen.get_field(x, self.fieldName), gen.get_field(prev, self.fieldName)))
+        proc += gen.if_true(is_left)
         proc += gen.set(gen.get_field(prev, self.left_ptr), x)
         proc += gen.else_true()
         proc += gen.set(gen.get_field(prev, self.right_ptr), x)
@@ -423,7 +617,7 @@ class AugTree(Ty):
 
         # case4: two children
         proc += gen.else_true()
-        p, m = self._find_min(gen, gen.get_field(x, self.right_ptr))
+        p, m = self._find_min(gen, gen.get_field(x, self.right_ptr), clip=False)
         proc += p
         # TODO: remove m, which has a parent and no left child
         # TODO: put m in place!
@@ -431,7 +625,7 @@ class AugTree(Ty):
 
         return proc
     def gen_remove_in_place(self, gen, parent_structure):
-        next_record = fresh_name()
+        next_record = fresh_name("next_record")
         proc  = gen.decl(next_record, RecordType())
         proc += self.gen_advance(gen, target=next_record)
         proc += self.gen_remove(gen, self.cursor_name, parent_structure=parent_structure)
@@ -511,13 +705,13 @@ class UnsortedSet(Ty):
 
         proc += gen.if_true(gen.not_true(gen.is_null(gen.get_field(x, self.next_ptr))))
         proc += gen.set(
-            gen.get_field(gen.get_field(x, self.next_ptr), self.prev_ptr), 
+            gen.get_field(gen.get_field(x, self.next_ptr), self.prev_ptr),
             gen.get_field(x, self.prev_ptr))
         proc += gen.endif()
 
         proc += gen.if_true(gen.not_true(gen.is_null(gen.get_field(x, self.prev_ptr))))
         proc += gen.set(
-            gen.get_field(gen.get_field(x, self.prev_ptr), self.next_ptr), 
+            gen.get_field(gen.get_field(x, self.prev_ptr), self.next_ptr),
             gen.get_field(x, self.next_ptr))
         proc += gen.endif()
 
@@ -662,10 +856,10 @@ class Mix(Ty):
             return proc
 
 _i = 0
-def fresh_name():
+def fresh_name(hint="name"):
     global _i
     _i += 1
-    return "name{}".format(_i)
+    return "_{}{}".format(hint, _i)
 
 def _key_fields(fields, predicate):
     return (v.name for v in predicate.vars() if v.name in fields)

@@ -55,11 +55,17 @@ class JavaCodeGenerator(object):
     def lt(self, ty, e1, e2):
         return ("({}) < ({})" if _is_primitive(ty.gen_type(self)) else "({}).compareTo({}) < 0").format(e1, e2)
 
+    def le(self, ty, e1, e2):
+        return ("({}) <= ({})" if _is_primitive(ty.gen_type(self)) else "({}).compareTo({}) <= 0").format(e1, e2)
+
     def null_value(self):
         return "null"
 
     def true_value(self):
         return "true";
+
+    def false_value(self):
+        return "false";
 
     def get_field(self, e, m):
         if e is None:
@@ -68,6 +74,9 @@ class JavaCodeGenerator(object):
 
     def both(self, e1, e2):
         return "({}) && ({})".format(e1, e2)
+
+    def either(self, e1, e2):
+        return "({}) || ({})".format(e1, e2)
 
     def decl(self, v, ty, e=None):
         if e is not None:
@@ -94,6 +103,18 @@ class JavaCodeGenerator(object):
 
     def endwhile(self):
         return "}\n"
+
+    def do_while(self):
+        return "do {\n"
+
+    def end_do_while(self, e):
+        return "}} while ({});\n".format(e)
+
+    def break_loop(self):
+        return "break;\n"
+
+    def comment(self, text):
+        return " /* {} */ ".format(text)
 
     def write(self, fields, queries):
         self.writer("public class DataStructure {\n")
@@ -126,7 +147,7 @@ class JavaCodeGenerator(object):
         for q in queries:
 
             for f, ty in q.impl.fields():
-                self.writer("  private {} {};\n".format(ty.gen_type(self), f))
+                self.writer("  /*private*/ {} {};\n".format(ty.gen_type(self), f))
 
             it_name = "{}_iterator".format(q.name)
             self.writer("  static final class {} implements java.util.Iterator<{}> {{\n".format(it_name, self.record_type()))
@@ -355,10 +376,10 @@ def _gen_record_type(name, fields, private_fields, writer):
     writer("    public static class {} implements java.io.Serializable {{\n".format(name))
     writer("        private static final long serialVersionUID = 1L;\n")
     for f,ty in fields:
-        writer("        private {} {};\n".format(ty, f))
+        writer("        /*private*/ {} {};\n".format(ty, f))
         writer("        public {t} get{F}() {{ return {f}; }}\n".format(t=ty, f=f, F=capitalize(f)))
     for f,ty,init in private_fields:
-        writer("        private {} {} = {};\n".format(ty, f, init))
+        writer("        /*private*/ {} {} = {};\n".format(ty, f, init))
     writer("        public {}({}) {{\n".format(name, ", ".join("{} {}".format(ty, f) for f,ty in fields)))
     for f,ty in fields:
         writer("            this.{f} = {f};\n".format(f=f))
