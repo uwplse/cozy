@@ -70,56 +70,56 @@ class BinaryTree(Ty):
     def gen_type(self, gen):
         return gen.array_type(self.ty)
 
-class Impl(object):
-    def copy(self):
-        raise Exception("not implemented for type: {}".format(type(self)))
-    def is_sorted_by(self, field):
-        raise Exception("not implemented for type: {}".format(type(self)))
-    # def unify(self, other):
-    #     raise Exception("not implemented for type: {}".format(type(self)))
-    def fields(self):
-        """returns list of (name, ty)"""
-        raise Exception("not implemented for type: {}".format(type(self)))
-    def construct(self, gen):
-        """returns proc"""
-        raise Exception("not implemented for type: {}".format(type(self)))
-    def needs_var(self, var):
-        """returns True or False"""
-        raise Exception("not implemented for type: {}".format(type(self)))
-    def state(self):
-        """returns list of (name, ty)"""
-        raise Exception("not implemented for type: {}".format(type(self)))
-    def private_members(self, gen):
-        """returns list of (name, ty, init)"""
-        raise Exception("not implemented for type: {}".format(type(self)))
-    def gen_query(self, gen, qvars):
-        """returns (proc, stateExps)"""
-        raise Exception("not implemented for type: {}".format(type(self)))
-    def gen_current(self, gen):
-        """returns (proc, result)"""
-        raise Exception("not implemented for type: {}".format(type(self)))
-    def gen_advance(self, gen):
-        """returns proc"""
-        raise Exception("not implemented for type: {}".format(type(self)))
-    def gen_next(self, gen):
-        """returns (proc, result)"""
-        result = fresh_name()
-        proc, x = self.gen_current(gen)
-        proc += gen.decl(result, RecordType(), x)
-        proc += self.gen_advance(gen)
-        return proc, result
-    def gen_has_next(self, gen):
-        """returns (proc, result)"""
-        raise Exception("not implemented for type: {}".format(type(self)))
-    def gen_insert(self, gen, x):
-        """returns proc"""
-        raise Exception("not implemented for type: {}".format(type(self)))
-    def gen_remove(self, gen, x):
-        """returns proc"""
-        raise Exception("not implemented for type: {}".format(type(self)))
-    def gen_remove_in_place(self, gen, parent_structure):
-        """returns proc"""
-        raise Exception("not implemented for type: {}".format(type(self)))
+# class Impl(object):
+#     def copy(self):
+#         raise Exception("not implemented for type: {}".format(type(self)))
+#     def is_sorted_by(self, field):
+#         raise Exception("not implemented for type: {}".format(type(self)))
+#     # def unify(self, other):
+#     #     raise Exception("not implemented for type: {}".format(type(self)))
+#     def fields(self):
+#         """returns list of (name, ty)"""
+#         raise Exception("not implemented for type: {}".format(type(self)))
+#     def construct(self, gen):
+#         """returns proc"""
+#         raise Exception("not implemented for type: {}".format(type(self)))
+#     def needs_var(self, var):
+#         """returns True or False"""
+#         raise Exception("not implemented for type: {}".format(type(self)))
+#     def state(self):
+#         """returns list of (name, ty)"""
+#         raise Exception("not implemented for type: {}".format(type(self)))
+#     def private_members(self, gen):
+#         """returns list of (name, ty, init)"""
+#         raise Exception("not implemented for type: {}".format(type(self)))
+#     def gen_query(self, gen, qvars):
+#         """returns (proc, stateExps)"""
+#         raise Exception("not implemented for type: {}".format(type(self)))
+#     def gen_current(self, gen):
+#         """returns (proc, result)"""
+#         raise Exception("not implemented for type: {}".format(type(self)))
+#     def gen_advance(self, gen):
+#         """returns proc"""
+#         raise Exception("not implemented for type: {}".format(type(self)))
+#     def gen_next(self, gen):
+#         """returns (proc, result)"""
+#         result = fresh_name()
+#         proc, x = self.gen_current(gen)
+#         proc += gen.decl(result, RecordType(), x)
+#         proc += self.gen_advance(gen)
+#         return proc, result
+#     def gen_has_next(self, gen):
+#         """returns (proc, result)"""
+#         raise Exception("not implemented for type: {}".format(type(self)))
+#     def gen_insert(self, gen, x):
+#         """returns proc"""
+#         raise Exception("not implemented for type: {}".format(type(self)))
+#     def gen_remove(self, gen, x):
+#         """returns proc"""
+#         raise Exception("not implemented for type: {}".format(type(self)))
+#     def gen_remove_in_place(self, gen, parent_structure):
+#         """returns proc"""
+#         raise Exception("not implemented for type: {}".format(type(self)))
 
 class HashMap(Ty):
     def __init__(self, keyTy, keyArgs, valueImpl):
@@ -875,6 +875,29 @@ def _make_key_args(fields, predicate):
 def _make_key_type(fields, key_fields):
     return Tuple({ k : NativeTy(fields[k]) for k in key_fields })
 
+def _concretize(t):
+    if type(t) is Iterator:
+        yield Array()
+        yield LinkedList()
+    elif type(t) is SortedIterator:
+        yield SortedArray.on_field(t.fieldTy, t.fieldName)
+        yield BinaryTree.on_field(t.fieldTy, t.fieldName)
+    elif type(t) is HashMap:
+        for val_ty in _concretize(t.valueImpl):
+            yield HashMap(t.keyTy, t.keyArgs, val_ty)
+    elif type(t) is Tuple:
+        for t1 in _concretize(t.t1):
+            for t2 in _concretize(t.t2):
+                yield Tuple(t1, t2, t.op)
+    elif type(t) is Guarded:
+        for tt in _concretize(t.impl):
+            yield Guarded(tt, t.predicate)
+    elif type(t) is Filtered:
+        for tt in _concretize(t.impl):
+            yield Filtered(tt, t.predicate)
+    else:
+        yield t
+
 def _implement(plan, fields, qvars, resultTy=UnsortedSet()):
     """
     plan           - plans.Plan to implement
@@ -883,35 +906,54 @@ def _implement(plan, fields, qvars, resultTy=UnsortedSet()):
     resultTy       - what this plan should return
     """
 
+    # if type(plan) is plans.AllWhere:
+    #     if plan.predicate == predicates.Bool(True):
+    #         return resultTy.copy()
+    #     else:
+    #         return Filtered(resultTy.copy(), list(fields.items()), list(qvars.items()), plan.predicate)
+    # elif type(plan) is plans.HashLookup:
+    #     key_fields = list(_key_fields(fields, plan.predicate))
+    #     keyTy = _make_key_type(fields, key_fields)
+    #     keyArgs = _make_key_args(fields, plan.predicate)
+    #     t = HashMap(keyTy, keyArgs, resultTy)
+    #     return _implement(plan.plan, fields, qvars, t)
+    # elif type(plan) is plans.BinarySearch:
+    #     t = resultTy.unify(AugTree(NativeTy(fields[plan.sortField]), plan.sortField, plan.predicate, fields))
+    #     return _implement(plan.plan, fields, qvars, t)
+    # elif type(plan) is plans.Intersect:
+    #     assert type(resultTy) is UnsortedSet
+    #     impl1 = _implement(plan.plan1, fields, qvars, resultTy)
+    #     impl2 = _implement(plan.plan2, fields, qvars, resultTy)
+    #     return Mix(impl1, impl2, INTERSECT_OP)
+    # elif type(plan) is plans.Union:
+    #     assert type(resultTy) is UnsortedSet
+    #     impl1 = _implement(plan.plan1, fields, qvars, resultTy)
+    #     impl2 = _implement(plan.plan2, fields, qvars, resultTy)
+    #     return Mix(impl1, impl2, UNION_OP)
+    # elif type(plan) is plans.Concat:
+    #     assert type(resultTy) is UnsortedSet
+    #     impl1 = _implement(plan.plan1, fields, qvars, resultTy)
+    #     impl2 = _implement(plan.plan2, fields, qvars, resultTy)
+    #     return Mix(impl1, impl2, CONCAT_OP)
+    # else:
+    #     raise Exception("codegen not implemented for {}".format(type(plan)))
+
     if type(plan) is plans.AllWhere:
         if plan.predicate == predicates.Bool(True):
             return resultTy.copy()
         else:
-            return Filtered(resultTy.copy(), list(fields.items()), list(qvars.items()), plan.predicate)
+            return Guarded(resultTy.copy(), list(fields.items()), list(qvars.items()), plan.predicate)
     elif type(plan) is plans.HashLookup:
         key_fields = list(_key_fields(fields, plan.predicate))
         keyTy = _make_key_type(fields, key_fields)
         keyArgs = _make_key_args(fields, plan.predicate)
         t = HashMap(keyTy, keyArgs, resultTy)
         return _implement(plan.plan, fields, qvars, t)
-    elif type(plan) is plans.BinarySearch:
-        t = resultTy.unify(AugTree(NativeTy(fields[plan.sortField]), plan.sortField, plan.predicate, fields))
-        return _implement(plan.plan, fields, qvars, t)
-    elif type(plan) is plans.Intersect:
-        assert type(resultTy) is UnsortedSet
-        impl1 = _implement(plan.plan1, fields, qvars, resultTy)
-        impl2 = _implement(plan.plan2, fields, qvars, resultTy)
-        return Mix(impl1, impl2, INTERSECT_OP)
-    elif type(plan) is plans.Union:
-        assert type(resultTy) is UnsortedSet
-        impl1 = _implement(plan.plan1, fields, qvars, resultTy)
-        impl2 = _implement(plan.plan2, fields, qvars, resultTy)
-        return Mix(impl1, impl2, UNION_OP)
-    elif type(plan) is plans.Concat:
-        assert type(resultTy) is UnsortedSet
-        impl1 = _implement(plan.plan1, fields, qvars, resultTy)
-        impl2 = _implement(plan.plan2, fields, qvars, resultTy)
-        return Mix(impl1, impl2, CONCAT_OP)
+    # elif type(plan) is plans.BinarySearch:
+    # elif type(plan) is plans.Intersect:
+    # elif type(plan) is plans.Union:
+    # elif type(plan) is plans.Concat:
+    # elif type(plan) is plans.Filter:
     else:
         raise Exception("codegen not implemented for {}".format(type(plan)))
 
@@ -931,13 +973,18 @@ def codegen(fields, queries, gen):
     fields = dict(fields)
     for q in queries:
         vars = dict(q.vars)
-        resultTy = UnsortedSet() if q.sort_field is None else AugTree(
-            NativeTy(fields[q.sort_field]),
-            q.sort_field,
-            predicates.Bool(True),
-            fields)
+        # resultTy = UnsortedSet() if q.sort_field is None else AugTree(
+        #     NativeTy(fields[q.sort_field]),
+        #     q.sort_field,
+        #     predicates.Bool(True),
+        #     fields)
         # attrs = () if q.sort_field is None else (SortedBy(q.sort_field))
-        q.impl = _implement(q.bestPlan, fields, vars, resultTy)
+        resultTy = Iterator()
+        for raw_impl in _implement(q.bestPlan, fields, vars, resultTy):
+            for impl in _concretize(raw_impl):
+                print impl
+                q.impl = impl
+        # q.impl = _implement(q.bestPlan, fields, vars, resultTy)
 
     gen.write(fields, queries)
 
