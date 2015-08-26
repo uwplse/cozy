@@ -9,6 +9,9 @@ Dependencies:
     Python 2.7
     Z3 Python bindings
 
+To check for the necessary dependencies, you can run:
+    $ ./check.sh
+
 To run the tool:
     $ python src/main.py < FILE
 
