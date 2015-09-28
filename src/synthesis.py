@@ -80,6 +80,11 @@ class SolverContext(object):
                 predicate._outputvector = tuple(vec)
             return predicate._outputvector
 
+        def pred_stupid(predicate):
+            if type(predicate) is predicates.Compare:
+                return predicate.lhs >= predicate.rhs
+            return any(pred_stupid(p) for p in predicate.children() if type(p) is predicates.Predicate)
+
         def stupid(plan):
             if type(plan) is plans.Filter and type(plan.plan) is plans.Filter:
                 return True
@@ -88,7 +93,7 @@ class SolverContext(object):
             if type(plan) is plans.BinarySearch and type(plan.plan) is plans.BinarySearch:
                 return True
             if type(plan) in [plans.HashLookup, plans.BinarySearch, plans.Filter]:
-                return outputvector(plan) == outputvector(plan.plan) or stupid(plan.plan)
+                return outputvector(plan) == outputvector(plan.plan) or pred_stupid(plan.predicate) or stupid(plan.plan)
             if type(plan) in [plans.Intersect, plans.Union, plans.Concat]:
                 return (outputvector(plan) == outputvector(plan.plan1) or
                     outputvector(plan) == outputvector(plan.plan2) or
