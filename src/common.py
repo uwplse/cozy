@@ -24,3 +24,9 @@ class ADT(object):
         return type(self) is type(other) and self.children() == other.children()
     def __lt__(self, other):
         return (self.children() < other.children()) if (type(self) is type(other)) else (type(self) < type(other))
+
+_i = 0
+def fresh_name(hint="name"):
+    global _i
+    _i += 1
+    return "_{}{}".format(hint, _i)

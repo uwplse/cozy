@@ -2,14 +2,79 @@ import itertools
 
 import plans
 import predicates
+from common import fresh_name
 
-class Ty(object):
-    def unify(self, other):
+class AbstractImpl(object):
+    def concretize(self):
         raise Exception("not implemented for type: {}".format(type(self)))
-    def gen_type(self, gen):
+    def copy(self):
         raise Exception("not implemented for type: {}".format(type(self)))
 
-class NativeTy(Ty):
+class Iterator(AbstractImpl):
+    def concretize(self):
+        yield LinkedList()
+        # yield Array() # TODO
+    def copy(self):
+        return self
+
+class SortedIterator(AbstractImpl):
+    def __init__(self, field_type, field_name):
+        self.field_type = field_type
+        self.field_name = field_name
+    def concretize(self):
+        yield AugTree(self.field_type, self.field_name, predicates.Bool(True), dict())
+        # yield SortedArray(self.field_type, self.field_name) # TODO
+    def copy(self):
+        return self
+
+class ConcreteImpl(AbstractImpl):
+    def is_sorted_by(self, field):
+        raise Exception("not implemented for type: {}".format(type(self)))
+    def fields(self):
+        """returns list of (name, ty)"""
+        raise Exception("not implemented for type: {}".format(type(self)))
+    def construct(self, gen):
+        """returns proc"""
+        raise Exception("not implemented for type: {}".format(type(self)))
+    def needs_var(self, var):
+        """returns True or False"""
+        raise Exception("not implemented for type: {}".format(type(self)))
+    def state(self):
+        """returns list of (name, ty)"""
+        raise Exception("not implemented for type: {}".format(type(self)))
+    def private_members(self, gen):
+        """returns list of (name, ty, init)"""
+        raise Exception("not implemented for type: {}".format(type(self)))
+    def gen_query(self, gen, qvars):
+        """returns (proc, stateExps)"""
+        raise Exception("not implemented for type: {}".format(type(self)))
+    def gen_current(self, gen):
+        """returns (proc, result)"""
+        raise Exception("not implemented for type: {}".format(type(self)))
+    def gen_advance(self, gen):
+        """returns proc"""
+        raise Exception("not implemented for type: {}".format(type(self)))
+    def gen_next(self, gen):
+        """returns (proc, result)"""
+        result = fresh_name()
+        proc, x = self.gen_current(gen)
+        proc += gen.decl(result, RecordType(), x)
+        proc += self.gen_advance(gen)
+        return proc, result
+    def gen_has_next(self, gen):
+        """returns (proc, result)"""
+        raise Exception("not implemented for type: {}".format(type(self)))
+    def gen_insert(self, gen, x):
+        """returns proc"""
+        raise Exception("not implemented for type: {}".format(type(self)))
+    def gen_remove(self, gen, x):
+        """returns proc"""
+        raise Exception("not implemented for type: {}".format(type(self)))
+    def gen_remove_in_place(self, gen, parent_structure):
+        """returns proc"""
+        raise Exception("not implemented for type: {}".format(type(self)))
+
+class NativeTy(object):
     def __init__(self, ty):
         self.ty = ty
     # def unify(self, other):
@@ -19,7 +84,18 @@ class NativeTy(Ty):
     def gen_type(self, gen):
         return gen.native_type(self.ty)
 
-class RecordType(Ty):
+class BoolTy(object):
+    def gen_type(self, gen):
+        return gen.bool_type()
+
+class MapTy(object):
+    def __init__(self, k, v):
+        self.keyTy = k
+        self.valTy = v
+    def gen_type(self, gen):
+        return gen.map_type(k, v)
+
+class RecordType(object):
     # def unify(self, other):
     #     if type(other) is RecordType:
     #         return self
@@ -27,101 +103,50 @@ class RecordType(Ty):
     def gen_type(self, gen):
         return gen.record_type()
 
-class Tuple(Ty):
-    def __init__(self, fields):
-        self.type_name = fresh_name()
-        self._fields = fields
-    # def unify(self, other):
-    #     raise Exception("Tuple.unify is not implemented")
-    #     # if type(other) is Tuple:
-    #     #     if len(self.fields) != len(other.fields):
-    #     #         return None
-    #     #     ts = { f : (t.unify(other.fields[f]) if f in other.fields else None) for (f, t) in self.fields.items() }
-    #     #     if not any(t is None for t in ts.values()):
-    #     #         return Tuple(ts)
-    #     # return None
-    def gen_type(self, gen):
-        if len(self._fields) == 1:
-            return list(self._fields.values())[0].gen_type(gen)
-        return NativeTy(self.type_name).gen_type(gen)
-
-class Map(Ty):
-    def __init__(self, keyTy, valueTy):
-        self.keyTy = keyTy
-        self.valueTy = valueTy
-    # def unify(self, other):
-    #     raise Exception("Map.unify is not implemented")
-    def gen_type(self, gen):
-        return gen.map_type(self.keyTy, self.valueTy)
-
-class Array(Ty):
-    def __init__(self, ty):
-        self.ty = ty
-    # def unify(self, other):
-    #     raise Exception("Array.unify is not implemented")
-    def gen_type(self, gen):
-        return gen.array_type(self.ty)
-
-class BinaryTree(Ty):
-    def __init__(self, ty):
-        self.ty = ty
-    # def unify(self, other):
-    #     raise Exception("Array.unify is not implemented")
-    def gen_type(self, gen):
-        return gen.array_type(self.ty)
-
-# class Impl(object):
-#     def copy(self):
-#         raise Exception("not implemented for type: {}".format(type(self)))
-#     def is_sorted_by(self, field):
-#         raise Exception("not implemented for type: {}".format(type(self)))
+# class Tuple(Ty):
+#     def __init__(self, fields):
+#         self.type_name = fresh_name()
+#         self._fields = fields
 #     # def unify(self, other):
-#     #     raise Exception("not implemented for type: {}".format(type(self)))
-#     def fields(self):
-#         """returns list of (name, ty)"""
-#         raise Exception("not implemented for type: {}".format(type(self)))
-#     def construct(self, gen):
-#         """returns proc"""
-#         raise Exception("not implemented for type: {}".format(type(self)))
-#     def needs_var(self, var):
-#         """returns True or False"""
-#         raise Exception("not implemented for type: {}".format(type(self)))
-#     def state(self):
-#         """returns list of (name, ty)"""
-#         raise Exception("not implemented for type: {}".format(type(self)))
-#     def private_members(self, gen):
-#         """returns list of (name, ty, init)"""
-#         raise Exception("not implemented for type: {}".format(type(self)))
-#     def gen_query(self, gen, qvars):
-#         """returns (proc, stateExps)"""
-#         raise Exception("not implemented for type: {}".format(type(self)))
-#     def gen_current(self, gen):
-#         """returns (proc, result)"""
-#         raise Exception("not implemented for type: {}".format(type(self)))
-#     def gen_advance(self, gen):
-#         """returns proc"""
-#         raise Exception("not implemented for type: {}".format(type(self)))
-#     def gen_next(self, gen):
-#         """returns (proc, result)"""
-#         result = fresh_name()
-#         proc, x = self.gen_current(gen)
-#         proc += gen.decl(result, RecordType(), x)
-#         proc += self.gen_advance(gen)
-#         return proc, result
-#     def gen_has_next(self, gen):
-#         """returns (proc, result)"""
-#         raise Exception("not implemented for type: {}".format(type(self)))
-#     def gen_insert(self, gen, x):
-#         """returns proc"""
-#         raise Exception("not implemented for type: {}".format(type(self)))
-#     def gen_remove(self, gen, x):
-#         """returns proc"""
-#         raise Exception("not implemented for type: {}".format(type(self)))
-#     def gen_remove_in_place(self, gen, parent_structure):
-#         """returns proc"""
-#         raise Exception("not implemented for type: {}".format(type(self)))
+#     #     raise Exception("Tuple.unify is not implemented")
+#     #     # if type(other) is Tuple:
+#     #     #     if len(self.fields) != len(other.fields):
+#     #     #         return None
+#     #     #     ts = { f : (t.unify(other.fields[f]) if f in other.fields else None) for (f, t) in self.fields.items() }
+#     #     #     if not any(t is None for t in ts.values()):
+#     #     #         return Tuple(ts)
+#     #     # return None
+#     def gen_type(self, gen):
+#         if len(self._fields) == 1:
+#             return list(self._fields.values())[0].gen_type(gen)
+#         return NativeTy(self.type_name).gen_type(gen)
 
-class HashMap(Ty):
+# class Map(Ty):
+#     def __init__(self, keyTy, valueTy):
+#         self.keyTy = keyTy
+#         self.valueTy = valueTy
+#     # def unify(self, other):
+#     #     raise Exception("Map.unify is not implemented")
+#     def gen_type(self, gen):
+#         return gen.map_type(self.keyTy, self.valueTy)
+
+# class Array(Ty):
+#     def __init__(self, ty):
+#         self.ty = ty
+#     # def unify(self, other):
+#     #     raise Exception("Array.unify is not implemented")
+#     def gen_type(self, gen):
+#         return gen.array_type(self.ty)
+
+# class BinaryTree(Ty):
+#     def __init__(self, ty):
+#         self.ty = ty
+#     # def unify(self, other):
+#     #     raise Exception("Array.unify is not implemented")
+#     def gen_type(self, gen):
+#         return gen.array_type(self.ty)
+
+class HashMap(ConcreteImpl):
     def __init__(self, keyTy, keyArgs, valueImpl):
         self.name = fresh_name()
         self.keyTy = keyTy
@@ -130,16 +155,10 @@ class HashMap(Ty):
         self.valueImpl = valueImpl
     def copy(self):
         return HashMap(self.keyTy, self.keyArgs, self.valueImpl.copy())
-    # def unify(self, other):
-    #     if type(other) is HashMap and other.keyTy == self.keyTy:
-    #         unif = self.valueImpl.unify(other.valueImpl)
-    #         if unif is not None:
-    #             return HashMap(self.keyTy, unif)
-    #     return None
     def _make_value_type(self, valueImpl):
         return Tuple(dict(valueImpl.fields()))
     def fields(self):
-        return ((self.name, Map(self.keyTy, self.valueTy)),)
+        return ((self.name, MapTy(self.keyTy, self.valueTy)),)
     def construct(self, gen):
         return gen.set(self.name, gen.new_map(self.keyTy, self.valueImpl))
     def needs_var(self, v):
@@ -214,7 +233,7 @@ def _make_augdata(field_name, predicate, fields):
 INCLUSIVE = "inclusive"
 EXCLUSIVE = "exclusive"
 
-class AugTree(Ty):
+class AugTree(ConcreteImpl):
     def __init__(self, fieldTy, fieldName, predicate, fields):
         self.name = fresh_name()
         self.fieldTy = fieldTy
@@ -264,8 +283,8 @@ class AugTree(Ty):
             (self.left_ptr,   RecordType(), gen.null_value()),
             (self.right_ptr,  RecordType(), gen.null_value()),
             (self.parent_ptr, RecordType(), gen.null_value())]
-    def gen_type(self, gen):
-        return self.ty.gen_type(gen)
+    # def gen_type(self, gen):
+    #     return self.ty.gen_type(gen)
     def _too_small(self, gen, node, clip=True):
         if not clip:
             return gen.false_value()
@@ -632,72 +651,69 @@ class AugTree(Ty):
         proc += gen.set(self.cursor_name, next_record)
         return proc
 
-class SortedSet(Ty):
-    def __init__(self, fieldTy, fieldName):
-        self.name = fresh_name()
-        self.fieldTy = fieldTy
-        self.fieldName = fieldName
-        self.ty = RecordType()
-    def copy(self):
-        return SortedSet(self.fieldTy.copy(), self.fieldName)
-    def unify(self, other):
-        if type(other) is UnsortedSet:
-            return self
-        if (type(other) is SortedSet or type(other) is AugTree) and other.fieldName == self.fieldName:
-            return other
-        raise Exception("not unifying {} and {}".format(self, other))
-        return None
+# class SortedSet(Ty):
+#     def __init__(self, fieldTy, fieldName):
+#         self.name = fresh_name()
+#         self.fieldTy = fieldTy
+#         self.fieldName = fieldName
+#         self.ty = RecordType()
+#     def copy(self):
+#         return SortedSet(self.fieldTy.copy(), self.fieldName)
+#     def unify(self, other):
+#         if type(other) is UnsortedSet:
+#             return self
+#         if (type(other) is SortedSet or type(other) is AugTree) and other.fieldName == self.fieldName:
+#             return other
+#         raise Exception("not unifying {} and {}".format(self, other))
+#         return None
 
-class UnsortedSet(Ty):
+class LinkedList(ConcreteImpl):
     def __init__(self):
-        self.name = fresh_name()
+        self.head_ptr = fresh_name()
         self.ty = RecordType()
         self.next_ptr = fresh_name()
         self.prev_ptr = fresh_name()
+        self.prev_cursor_name = fresh_name()
         self.cursor_name = fresh_name()
     def copy(self):
-        return UnsortedSet()
-    def unify(self, other):
-        if type(other) is UnsortedSet or type(other) is SortedSet or type(other) is AugTree:
-            return other
-        return None
+        return LinkedList()
     def fields(self):
-        return ((self.name, self.ty),)
+        return ((self.head_ptr, self.ty),)
     def construct(self, gen):
-        return gen.set(self.name, gen.null_value())
+        return gen.set(self.head_ptr, gen.null_value())
     def needs_var(self, v):
         return False
     def state(self):
-        return [(self.cursor_name, RecordType())]
+        return [
+            (self.prev_cursor_name, RecordType()),
+            (self.cursor_name, RecordType())]
     def private_members(self, gen):
         return [
             (self.next_ptr, RecordType(), gen.null_value()),
             (self.prev_ptr, RecordType(), gen.null_value())]
-    def gen_type(self, gen):
-        return gen.record_type()
-    def gen_query(self, gen, qvars):
-        return "", [self.name]
+    # def gen_type(self, gen):
+    #     return gen.record_type()
+    # def gen_query(self, gen, qvars):
+    #     return "", [gen.null_value(), self.head_ptr]
+    def gen_advance(self):
+        proc  = gen.set(self.prev_cursor_name, self.cursor_name)
+        proc += gen.set(self.cursor_name, gen.get_field(self.cursor_name, self.next_ptr))
     def gen_current(self, gen):
         return "", self.cursor_name
-    def gen_next(self, gen):
-        oldcursor = fresh_name()
-        proc  = gen.decl(oldcursor, RecordType(), self.cursor_name)
-        proc += gen.set(self.cursor_name, gen.get_field(self.cursor_name, self.next_ptr))
-        return proc, oldcursor
     def gen_has_next(self, gen):
         return "", gen.not_true(gen.is_null(self.cursor_name))
     def gen_insert(self, gen, x):
         proc  = gen.set(gen.get_field(x, self.prev_ptr), gen.null_value())
-        proc += gen.set(gen.get_field(x, self.next_ptr), self.name)
+        proc += gen.set(gen.get_field(x, self.next_ptr), self.head_ptr)
 
-        proc += gen.if_true(gen.not_true(gen.is_null(self.name)))
-        proc += gen.set(gen.get_field(self.name, self.prev_ptr), x)
+        proc += gen.if_true(gen.not_true(gen.is_null(self.head_ptr)))
+        proc += gen.set(gen.get_field(self.head_ptr, self.prev_ptr), x)
         proc += gen.endif()
 
-        proc += gen.set(self.name, x)
+        proc += gen.set(self.head_ptr, x)
         return proc
     def gen_remove(self, gen, x, parent_structure=None):
-        name = self.name if parent_structure is None else gen.get_field(parent_structure, self.name)
+        name = self.head_ptr if parent_structure is None else gen.get_field(parent_structure, self.head_ptr)
 
         proc  = gen.if_true(gen.same(x, name))
         proc += gen.set(name, gen.get_field(x, self.next_ptr))
@@ -725,7 +741,7 @@ class UnsortedSet(Ty):
         proc += gen.set(self.cursor_name, next_record)
         return proc
 
-class Filtered(Ty):
+class Guarded(ConcreteImpl):
     def __init__(self, ty, fields, qvars, predicate):
         self.ty = ty
         self._fields = fields
@@ -745,8 +761,8 @@ class Filtered(Ty):
         return self.ty.state()
     def private_members(self, gen):
         return self.ty.private_members(gen)
-    def gen_type(self, gen):
-        return self.ty.gen_type()
+    # def gen_type(self, gen):
+    #     return self.ty.gen_type()
     def gen_query(self, gen, qvars):
         return self.ty.gen_query(gen, qvars)
     def gen_current(self, gen):
@@ -768,7 +784,7 @@ INTERSECT_OP = "intersect"
 UNION_OP     = "union"
 CONCAT_OP    = "concat"
 
-class Mix(Ty):
+class Tuple(ConcreteImpl):
     def __init__(self, ty1, ty2, op):
         self.ty1 = ty1
         self.ty2 = ty2
@@ -855,12 +871,6 @@ class Mix(Ty):
             proc += gen.endif()
             return proc
 
-_i = 0
-def fresh_name(hint="name"):
-    global _i
-    _i += 1
-    return "_{}{}".format(hint, _i)
-
 def _key_fields(fields, predicate):
     return (v.name for v in predicate.vars() if v.name in fields)
 
@@ -875,35 +885,15 @@ def _make_key_args(fields, predicate):
 def _make_key_type(fields, key_fields):
     return Tuple({ k : NativeTy(fields[k]) for k in key_fields })
 
-def _concretize(t):
-    if type(t) is Iterator:
-        yield Array()
-        yield LinkedList()
-    elif type(t) is SortedIterator:
-        yield SortedArray.on_field(t.fieldTy, t.fieldName)
-        yield BinaryTree.on_field(t.fieldTy, t.fieldName)
-    elif type(t) is HashMap:
-        for val_ty in _concretize(t.valueImpl):
-            yield HashMap(t.keyTy, t.keyArgs, val_ty)
-    elif type(t) is Tuple:
-        for t1 in _concretize(t.t1):
-            for t2 in _concretize(t.t2):
-                yield Tuple(t1, t2, t.op)
-    elif type(t) is Guarded:
-        for tt in _concretize(t.impl):
-            yield Guarded(tt, t.predicate)
-    elif type(t) is Filtered:
-        for tt in _concretize(t.impl):
-            yield Filtered(tt, t.predicate)
-    else:
-        yield t
-
-def _implement(plan, fields, qvars, resultTy=UnsortedSet()):
+def implement(plan, fields, qvars, resultTy):
     """
-    plan           - plans.Plan to implement
-    fields         - dict { field_name : type }
-    qvars          - dict { var_name   : type }
-    resultTy       - what this plan should return
+    Args:
+        plan           - plans.Plan to implement
+        fields         - dict { field_name : type }
+        qvars          - dict { var_name   : type }
+        resultTy       - what this plan should return
+    Returns:
+        a ConcreteImpl object
     """
 
     # if type(plan) is plans.AllWhere:
@@ -916,24 +906,24 @@ def _implement(plan, fields, qvars, resultTy=UnsortedSet()):
     #     keyTy = _make_key_type(fields, key_fields)
     #     keyArgs = _make_key_args(fields, plan.predicate)
     #     t = HashMap(keyTy, keyArgs, resultTy)
-    #     return _implement(plan.plan, fields, qvars, t)
+    #     return implement(plan.plan, fields, qvars, t)
     # elif type(plan) is plans.BinarySearch:
     #     t = resultTy.unify(AugTree(NativeTy(fields[plan.sortField]), plan.sortField, plan.predicate, fields))
-    #     return _implement(plan.plan, fields, qvars, t)
+    #     return implement(plan.plan, fields, qvars, t)
     # elif type(plan) is plans.Intersect:
     #     assert type(resultTy) is UnsortedSet
-    #     impl1 = _implement(plan.plan1, fields, qvars, resultTy)
-    #     impl2 = _implement(plan.plan2, fields, qvars, resultTy)
+    #     impl1 = implement(plan.plan1, fields, qvars, resultTy)
+    #     impl2 = implement(plan.plan2, fields, qvars, resultTy)
     #     return Mix(impl1, impl2, INTERSECT_OP)
     # elif type(plan) is plans.Union:
     #     assert type(resultTy) is UnsortedSet
-    #     impl1 = _implement(plan.plan1, fields, qvars, resultTy)
-    #     impl2 = _implement(plan.plan2, fields, qvars, resultTy)
+    #     impl1 = implement(plan.plan1, fields, qvars, resultTy)
+    #     impl2 = implement(plan.plan2, fields, qvars, resultTy)
     #     return Mix(impl1, impl2, UNION_OP)
     # elif type(plan) is plans.Concat:
     #     assert type(resultTy) is UnsortedSet
-    #     impl1 = _implement(plan.plan1, fields, qvars, resultTy)
-    #     impl2 = _implement(plan.plan2, fields, qvars, resultTy)
+    #     impl1 = implement(plan.plan1, fields, qvars, resultTy)
+    #     impl2 = implement(plan.plan2, fields, qvars, resultTy)
     #     return Mix(impl1, impl2, CONCAT_OP)
     # else:
     #     raise Exception("codegen not implemented for {}".format(type(plan)))
@@ -948,7 +938,7 @@ def _implement(plan, fields, qvars, resultTy=UnsortedSet()):
         keyTy = _make_key_type(fields, key_fields)
         keyArgs = _make_key_args(fields, plan.predicate)
         t = HashMap(keyTy, keyArgs, resultTy)
-        return _implement(plan.plan, fields, qvars, t)
+        return implement(plan.plan, fields, qvars, t)
     # elif type(plan) is plans.BinarySearch:
     # elif type(plan) is plans.Intersect:
     # elif type(plan) is plans.Union:
@@ -980,11 +970,11 @@ def codegen(fields, queries, gen):
         #     fields)
         # attrs = () if q.sort_field is None else (SortedBy(q.sort_field))
         resultTy = Iterator()
-        for raw_impl in _implement(q.bestPlan, fields, vars, resultTy):
-            for impl in _concretize(raw_impl):
-                print impl
-                q.impl = impl
-        # q.impl = _implement(q.bestPlan, fields, vars, resultTy)
+        raw_impl = implement(q.bestPlan, fields, vars, resultTy)
+        for impl in raw_impl.concretize():
+            print impl
+            q.impl = impl
+        # q.impl = implement(q.bestPlan, fields, vars, resultTy)
 
     gen.write(fields, queries)
 
