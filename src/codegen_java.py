@@ -1,11 +1,12 @@
 import predicates
 import plans
-# from codegen import HashMap, SortedSet, UnsortedSet, fresh_name
-from codegen import capitalize
+from common import capitalize, fresh_name
 
 class JavaCodeGenerator(object):
-    def __init__(self, writer):
+    def __init__(self, writer, package_name=None):
+        self.package_name = package_name
         self.writer = writer
+        self.types = dict()
 
     def begin(self):
         pass
@@ -117,13 +118,17 @@ class JavaCodeGenerator(object):
         return " /* {} */ ".format(text)
 
     def write(self, fields, queries):
+        if self.package_name:
+            self.writer("package {};\n\n".format(self.package_name))
+
         self.writer("public class DataStructure {\n")
 
         # record type
         private_members = []
+        RECORD_NAME = self.record_type()
         for q in queries:
             private_members += list((f, ty.gen_type(self), init) for f, ty, init in q.impl.private_members(self))
-        _gen_record_type(self.record_type(), list(fields.items()), private_members, self.writer)
+        _gen_record_type(RECORD_NAME, list(fields.items()), private_members, self.writer)
 
         # constructor
         self.writer("  public DataStructure() {\n")
@@ -132,13 +137,13 @@ class JavaCodeGenerator(object):
         self.writer("  }\n")
 
         # add routine
-        self.writer("  public void add({} x) {{\n".format(self.record_type()))
+        self.writer("  public void add({} x) {{\n".format(RECORD_NAME))
         for q in queries:
             self.writer("    {}".format(q.impl.gen_insert(self, "x")))
         self.writer("  }\n")
 
         # remove routine
-        self.writer("  public void remove({} x) {{\n".format(self.record_type()))
+        self.writer("  public void remove({} x) {{\n".format(RECORD_NAME))
         for q in queries:
             self.writer("    {}".format(q.impl.gen_remove(self, "x")))
         self.writer("  }\n")
@@ -150,7 +155,7 @@ class JavaCodeGenerator(object):
                 self.writer("  /*private*/ {} {};\n".format(ty.gen_type(self), f))
 
             it_name = "{}_iterator".format(q.name)
-            self.writer("  static final class {} implements java.util.Iterator<{}> {{\n".format(it_name, self.record_type()))
+            self.writer("  /*private*/ static final class {} implements java.util.Iterator<{}> {{\n".format(it_name, RECORD_NAME))
             state = q.impl.state()
             self.writer("    DataStructure parent;\n")
             vars_needed = [(v, ty) for v, ty in q.vars if q.impl.needs_var(v)]
@@ -170,7 +175,7 @@ class JavaCodeGenerator(object):
             self.writer("      {}\n".format(proc))
             self.writer("      return {};\n".format(ret))
             self.writer("    }\n")
-            self.writer("    @Override public {} next() {{\n".format(self.record_type()))
+            self.writer("    @Override public {} next() {{\n".format(RECORD_NAME))
             proc, ret = q.impl.gen_next(self)
             self.writer("      {}\n".format(proc))
             self.writer("      return {};\n".format(ret))
@@ -181,7 +186,7 @@ class JavaCodeGenerator(object):
             self.writer("    }\n")
             self.writer("  }\n")
 
-            self.writer("  public java.util.Iterator<{}> {}({}) {{\n".format(self.record_type(), q.name, ", ".join("{} {}".format(ty, v) for v,ty in q.vars)))
+            self.writer("  public java.util.Iterator<{}> {}({}) {{\n".format(RECORD_NAME, q.name, ", ".join("{} {}".format(ty, v) for v,ty in q.vars)))
             proc, stateExps = q.impl.gen_query(self, q.vars)
             self.writer(proc)
             self.writer("    return new {}(this{}{});".format(it_name, "".join(", {}".format(v) for v, ty in vars_needed), "".join(", {}".format(e) for e in stateExps)))

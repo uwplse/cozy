@@ -4,30 +4,167 @@ import plans
 import predicates
 from common import fresh_name
 
+################################################################################
+# Part 1: Type inference
+
+class Ty(object):
+    def gen_type(self, gen):
+        raise Exception("not implemented for type: {}".format(type(self)))
+
+class NativeTy(Ty):
+    def __init__(self, ty):
+        self.ty = ty
+    def gen_type(self, gen):
+        return gen.native_type(self.ty)
+
+class BoolTy(Ty):
+    def gen_type(self, gen):
+        return gen.bool_type()
+
+class MapTy(Ty):
+    def __init__(self, k, v):
+        self.keyTy = k
+        self.valTy = v
+    def gen_type(self, gen):
+        return gen.map_type(self.keyTy, self.valTy)
+
+class RecordType(Ty):
+    def gen_type(self, gen):
+        return gen.record_type()
+
+class TupleTy(Ty):
+    def __init__(self, fields):
+        self.fields = fields
+    def gen_type(self, gen):
+        if len(self.fields) == 1:
+            ty, = self.fields.values()
+            return ty.gen_type(gen)
+        return gen.record_type()
+    def instance(self, e):
+        class I(object):
+            def field(_, gen, f):
+                assert f in self.fields
+                return e if len(self.fields) is 1 else gen.get_field(e, f)
+        return I()
+
+class Extended(Ty):
+    def __init__(self, base_ty, *fields):
+        self.base_ty = base_ty
+        self.base_name = fresh_name()
+        self.fields = fields
+    def gen_type(self, gen):
+        fs = dict(self.fields)
+        fs[self.base_name] = self.base_ty
+        return RecordType(fs).gen_type(gen)
+
 class AbstractImpl(object):
     def concretize(self):
-        raise Exception("not implemented for type: {}".format(type(self)))
-    def copy(self):
+        """Generator for ConcreteImpl objects"""
         raise Exception("not implemented for type: {}".format(type(self)))
 
-class Iterator(AbstractImpl):
+class Iterable(AbstractImpl):
+    def __init__(self, ty):
+        self.ty = ty
     def concretize(self):
-        yield LinkedList()
+        yield LinkedList(self.ty)
         # yield Array() # TODO
-    def copy(self):
-        return self
 
-class SortedIterator(AbstractImpl):
-    def __init__(self, field_type, field_name):
-        self.field_type = field_type
-        self.field_name = field_name
+class SortedIterable(AbstractImpl):
+    def __init__(self, fields, sortField, predicate):
+        self.fields = fields
+        self.sortField = sortField
+        self.predicate = predicate
+        # self.field_type = field_type
+        # self.field_name = field_name
     def concretize(self):
-        yield AugTree(self.field_type, self.field_name, predicates.Bool(True), dict())
+        yield AugTree(NativeTy(self.fields[self.sortField]), self.sortField, self.predicate, self.fields)
         # yield SortedArray(self.field_type, self.field_name) # TODO
-    def copy(self):
-        return self
 
-class ConcreteImpl(AbstractImpl):
+class MapImpl(AbstractImpl):
+    def __init__(self, fields, predicate, value_impl):
+        self.fields = fields
+        self.predicate = predicate
+        self.value_impl = value_impl
+    def concretize(self):
+        for impl in self.value_impl.concretize():
+            yield HashMap(self.fields, self.predicate, impl)
+
+class GuardedImpl(AbstractImpl):
+    def __init__(self, predicate, impl):
+        self.predicate = predicate
+        self.impl = impl
+    def concretize(self):
+        for impl in self.impl.concretize():
+            yield Guarded(self.predicate, impl)
+
+def implement(plan, fields, qvars, resultTy):
+    """
+    Args:
+        plan           - plans.Plan to implement
+        fields         - dict { field_name : type }
+        qvars          - dict { var_name   : type }
+        resultTy       - an AbstractImpl
+    Returns:
+        an AbstractImpl
+    """
+
+    # if type(plan) is plans.AllWhere:
+    #     if plan.predicate == predicates.Bool(True):
+    #         return resultTy.copy()
+    #     else:
+    #         return Filtered(resultTy.copy(), list(fields.items()), list(qvars.items()), plan.predicate)
+    # elif type(plan) is plans.HashLookup:
+    #     key_fields = list(_key_fields(fields, plan.predicate))
+    #     keyTy = _make_key_type(fields, key_fields)
+    #     keyArgs = _make_key_args(fields, plan.predicate)
+    #     t = HashMap(keyTy, keyArgs, resultTy)
+    #     return implement(plan.plan, fields, qvars, t)
+    # elif type(plan) is plans.BinarySearch:
+    #     t = resultTy.unify(AugTree(NativeTy(fields[plan.sortField]), plan.sortField, plan.predicate, fields))
+    #     return implement(plan.plan, fields, qvars, t)
+    # elif type(plan) is plans.Intersect:
+    #     assert type(resultTy) is UnsortedSet
+    #     impl1 = implement(plan.plan1, fields, qvars, resultTy)
+    #     impl2 = implement(plan.plan2, fields, qvars, resultTy)
+    #     return Mix(impl1, impl2, INTERSECT_OP)
+    # elif type(plan) is plans.Union:
+    #     assert type(resultTy) is UnsortedSet
+    #     impl1 = implement(plan.plan1, fields, qvars, resultTy)
+    #     impl2 = implement(plan.plan2, fields, qvars, resultTy)
+    #     return Mix(impl1, impl2, UNION_OP)
+    # elif type(plan) is plans.Concat:
+    #     assert type(resultTy) is UnsortedSet
+    #     impl1 = implement(plan.plan1, fields, qvars, resultTy)
+    #     impl2 = implement(plan.plan2, fields, qvars, resultTy)
+    #     return Mix(impl1, impl2, CONCAT_OP)
+    # else:
+    #     raise Exception("codegen not implemented for {}".format(type(plan)))
+
+    if type(plan) is plans.AllWhere:
+        if plan.predicate == predicates.Bool(True):
+            return resultTy
+        else:
+            return GuardedImpl(plan.predicate, resultTy)
+    elif type(plan) is plans.HashLookup:
+        # key_fields = list(_key_fields(fields, plan.predicate))
+        # keyTy = _make_key_type(fields, key_fields)
+        # keyArgs = _make_key_args(fields, plan.predicate)
+        t = MapImpl(fields, plan.predicate, resultTy)
+        return implement(plan.plan, fields, qvars, t)
+    elif type(plan) is plans.BinarySearch:
+        assert type(resultTy) in [Iterable, SortedIterable]
+        return implement(plan.plan, fields, qvars, SortedIterable(fields, plan.sortField, plan.predicate))
+    # elif type(plan) is plans.Intersect:
+    # elif type(plan) is plans.Union:
+    # elif type(plan) is plans.Concat:
+    # elif type(plan) is plans.Filter:
+    else:
+        raise Exception("codegen not implemented for {}".format(type(plan)))
+
+################################################################################
+# Part 2: Implementation
+
+class ConcreteImpl(object):
     def is_sorted_by(self, field):
         raise Exception("not implemented for type: {}".format(type(self)))
     def fields(self):
@@ -56,11 +193,7 @@ class ConcreteImpl(AbstractImpl):
         raise Exception("not implemented for type: {}".format(type(self)))
     def gen_next(self, gen):
         """returns (proc, result)"""
-        result = fresh_name()
-        proc, x = self.gen_current(gen)
-        proc += gen.decl(result, RecordType(), x)
-        proc += self.gen_advance(gen)
-        return proc, result
+        raise Exception("not implemented for type: {}".format(type(self)))
     def gen_has_next(self, gen):
         """returns (proc, result)"""
         raise Exception("not implemented for type: {}".format(type(self)))
@@ -73,35 +206,6 @@ class ConcreteImpl(AbstractImpl):
     def gen_remove_in_place(self, gen, parent_structure):
         """returns proc"""
         raise Exception("not implemented for type: {}".format(type(self)))
-
-class NativeTy(object):
-    def __init__(self, ty):
-        self.ty = ty
-    # def unify(self, other):
-    #     if type(other) is NativeTy and self.ty == other.ty:
-    #         return self
-    #     return None
-    def gen_type(self, gen):
-        return gen.native_type(self.ty)
-
-class BoolTy(object):
-    def gen_type(self, gen):
-        return gen.bool_type()
-
-class MapTy(object):
-    def __init__(self, k, v):
-        self.keyTy = k
-        self.valTy = v
-    def gen_type(self, gen):
-        return gen.map_type(k, v)
-
-class RecordType(object):
-    # def unify(self, other):
-    #     if type(other) is RecordType:
-    #         return self
-    #     return None
-    def gen_type(self, gen):
-        return gen.record_type()
 
 # class Tuple(Ty):
 #     def __init__(self, fields):
@@ -147,16 +251,14 @@ class RecordType(object):
 #         return gen.array_type(self.ty)
 
 class HashMap(ConcreteImpl):
-    def __init__(self, keyTy, keyArgs, valueImpl):
+    def __init__(self, fields, predicate, valueImpl):
         self.name = fresh_name()
-        self.keyTy = keyTy
         self.valueTy = self._make_value_type(valueImpl)
-        self.keyArgs = keyArgs
+        self.keyArgs = _make_key_args(fields, predicate)
+        self.keyTy = _make_key_type(fields, self.keyArgs)
         self.valueImpl = valueImpl
-    def copy(self):
-        return HashMap(self.keyTy, self.keyArgs, self.valueImpl.copy())
     def _make_value_type(self, valueImpl):
-        return Tuple(dict(valueImpl.fields()))
+        return TupleTy(dict(valueImpl.fields()))
     def fields(self):
         return ((self.name, MapTy(self.keyTy, self.valueTy)),)
     def construct(self, gen):
@@ -167,21 +269,19 @@ class HashMap(ConcreteImpl):
         return self.valueImpl.state()
     def private_members(self, gen):
         return self.valueImpl.private_members(gen)
-    # def gen_type(self, gen):
-    #     return gen.map_type(self.keyTy, self.valueImpl)
     def make_key(self, gen):
-        if len(self.keyTy._fields) == 1:
-            return self.keyArgs[list(self.keyTy._fields.keys())[0]]
+        if len(self.keyTy.fields) == 1:
+            return self.keyArgs[list(self.keyTy.fields.keys())[0]]
         raise Exception("implement make_key")
     def make_key_of_record(self, gen, x):
-        if len(self.keyTy._fields) == 1:
-            return gen.get_field(x, list(self.keyTy._fields.keys())[0])
-        raise Exception("implement make_key")
+        if len(self.keyTy.fields) == 1:
+            return gen.get_field(x, list(self.keyTy.fields.keys())[0])
+        raise Exception("implement make_key_of_record")
     def gen_query(self, gen, qvars):
         k = fresh_name()
         proc  = gen.decl(k, self.keyTy, self.make_key(gen))
         proc += gen.decl(self.valueImpl.name, self.valueImpl, gen.map_lookup(self.name, k))
-        p, r = self.valueImpl.gen_query(gen, qvars)
+        p, r = self.valueImpl.gen_query(gen, qvars, self.valueTy.instance(self.valueImpl.name))
         return (proc + p, r)
     def gen_current(self, gen):
         return self.valueImpl.gen_current(gen)
@@ -193,18 +293,18 @@ class HashMap(ConcreteImpl):
         k = fresh_name()
         proc  = gen.decl(k, self.keyTy, self.make_key_of_record(gen, x))
         proc += gen.decl(self.valueImpl.name, self.valueImpl, gen.map_lookup(self.name, k))
-        return proc + self.valueImpl.gen_insert(gen, x) + gen.map_put(self.name, k, self.valueImpl.name)
+        return proc + self.valueImpl.gen_insert(gen, x, self.valueTy.instance(self.valueImpl.name)) + gen.map_put(self.name, k, self.valueImpl.name)
     def gen_remove(self, gen, x):
         k = fresh_name()
         proc  = gen.decl(k, self.keyTy, self.make_key_of_record(gen, x))
         proc += gen.decl(self.valueImpl.name, self.valueImpl, gen.map_lookup(self.name, k))
-        return proc + self.valueImpl.gen_remove(gen, x) + gen.map_put(self.name, k, self.valueImpl.name)
+        return proc + self.valueImpl.gen_remove(gen, x, self.valueTy.instance(self.valueImpl.name)) + gen.map_put(self.name, k, self.valueImpl.name)
     def gen_remove_in_place(self, gen, parent_structure):
         k = fresh_name()
         px, x = self.valueImpl.gen_current(gen)
         proc  = gen.decl(k, self.keyTy, self.make_key_of_record(gen, x))
         proc += gen.decl(self.valueImpl.name, self.valueImpl, gen.map_lookup(gen.get_field(parent_structure, self.name), k))
-        return px + proc + self.valueImpl.gen_remove_in_place(gen, None) + gen.map_put(gen.get_field(parent_structure, self.name), k, self.valueImpl.name)
+        return px + proc + self.valueImpl.gen_remove_in_place(gen, self.valueTy.instance(self.valueImpl.name)) + gen.map_put(gen.get_field(parent_structure, self.name), k, self.valueImpl.name)
 
 AUG_MIN = "min"
 AUG_MAX = "max"
@@ -265,8 +365,6 @@ class AugTree(ConcreteImpl):
         self.left_ptr = fresh_name("left")
         self.right_ptr = fresh_name("right")
         self.parent_ptr = fresh_name("parent")
-    def copy(self):
-        return AugTree(self.fieldTy, self.fieldName, self.predicate, self._fields)
     def unify(self, other):
         raise Exception("not implemented")
 
@@ -667,16 +765,19 @@ class AugTree(ConcreteImpl):
 #         raise Exception("not unifying {} and {}".format(self, other))
 #         return None
 
+class This():
+    def field(self, gen, f):
+        return f
+
 class LinkedList(ConcreteImpl):
-    def __init__(self):
-        self.head_ptr = fresh_name()
+    def __init__(self, ty):
+        self.name = fresh_name()
+        self.head_ptr = fresh_name("head")
+        self.next_ptr = fresh_name("next")
+        self.prev_ptr = fresh_name("prev")
+        self.prev_cursor_name = fresh_name("prev_cursor")
+        self.cursor_name = fresh_name("cursor")
         self.ty = RecordType()
-        self.next_ptr = fresh_name()
-        self.prev_ptr = fresh_name()
-        self.prev_cursor_name = fresh_name()
-        self.cursor_name = fresh_name()
-    def copy(self):
-        return LinkedList()
     def fields(self):
         return ((self.head_ptr, self.ty),)
     def construct(self, gen):
@@ -685,35 +786,45 @@ class LinkedList(ConcreteImpl):
         return False
     def state(self):
         return [
-            (self.prev_cursor_name, RecordType()),
-            (self.cursor_name, RecordType())]
+            (self.prev_cursor_name, self.ty),
+            (self.cursor_name, self.ty)]
     def private_members(self, gen):
         return [
-            (self.next_ptr, RecordType(), gen.null_value()),
-            (self.prev_ptr, RecordType(), gen.null_value())]
-    # def gen_type(self, gen):
-    #     return gen.record_type()
-    # def gen_query(self, gen, qvars):
-    #     return "", [gen.null_value(), self.head_ptr]
-    def gen_advance(self):
+            (self.next_ptr, self.ty, gen.null_value()),
+            (self.prev_ptr, self.ty, gen.null_value())]
+    def gen_type(self, gen):
+        return gen.record_type()
+    def gen_query(self, gen, qvars):
+        return "", [gen.null_value(), self.head_ptr]
+    def gen_advance(self, gen):
         proc  = gen.set(self.prev_cursor_name, self.cursor_name)
         proc += gen.set(self.cursor_name, gen.get_field(self.cursor_name, self.next_ptr))
+        return proc
     def gen_current(self, gen):
         return "", self.cursor_name
     def gen_has_next(self, gen):
         return "", gen.not_true(gen.is_null(self.cursor_name))
-    def gen_insert(self, gen, x):
+    def gen_next(self, gen):
+        result = fresh_name()
+        proc, x = self.gen_current(gen)
+        proc += gen.decl(result, self.ty, x)
+        proc += self.gen_advance(gen)
+        return proc, result
+    def gen_query(self, gen, qvars, this=This()):
+        return "", [gen.null_value(), this.field(gen, self.head_ptr)]
+    def gen_insert(self, gen, x, parent_structure=This()):
+        name = parent_structure.field(gen, self.head_ptr)
         proc  = gen.set(gen.get_field(x, self.prev_ptr), gen.null_value())
-        proc += gen.set(gen.get_field(x, self.next_ptr), self.head_ptr)
+        proc += gen.set(gen.get_field(x, self.next_ptr), name)
 
-        proc += gen.if_true(gen.not_true(gen.is_null(self.head_ptr)))
-        proc += gen.set(gen.get_field(self.head_ptr, self.prev_ptr), x)
+        proc += gen.if_true(gen.not_true(gen.is_null(name)))
+        proc += gen.set(gen.get_field(name, self.prev_ptr), x)
         proc += gen.endif()
 
-        proc += gen.set(self.head_ptr, x)
+        proc += gen.set(name, x)
         return proc
-    def gen_remove(self, gen, x, parent_structure=None):
-        name = self.head_ptr if parent_structure is None else gen.get_field(parent_structure, self.head_ptr)
+    def gen_remove(self, gen, x, parent_structure=This()):
+        name = parent_structure.field(gen, self.head_ptr)
 
         proc  = gen.if_true(gen.same(x, name))
         proc += gen.set(name, gen.get_field(x, self.next_ptr))
@@ -736,7 +847,7 @@ class LinkedList(ConcreteImpl):
         return proc
     def gen_remove_in_place(self, gen, parent_structure):
         next_record = fresh_name()
-        proc  = gen.decl(next_record, RecordType(), gen.get_field(self.cursor_name, self.next_ptr))
+        proc  = gen.decl(next_record, self.ty, gen.get_field(self.cursor_name, self.next_ptr))
         proc += self.gen_remove(gen, self.cursor_name, parent_structure=parent_structure)
         proc += gen.set(self.cursor_name, next_record)
         return proc
@@ -774,7 +885,7 @@ class Guarded(ConcreteImpl):
     def gen_insert(self, gen, x):
         proc = self.ty.gen_insert(gen, x)
         return gen.if_true(gen.predicate(self._fields, self.qvars, self.predicate, x)) + proc + gen.endif()
-    def gen_remove(self, gen, x, parent_structure=None):
+    def gen_remove(self, gen, x, parent_structure=This()):
         proc = self.ty.gen_remove(gen, x)
         return gen.if_true(gen.predicate(self._fields, self.qvars, self.predicate, x)) + proc + gen.endif()
     def gen_remove_in_place(self, gen, parent_structure):
@@ -883,72 +994,7 @@ def _make_key_args(fields, predicate):
     return d
 
 def _make_key_type(fields, key_fields):
-    return Tuple({ k : NativeTy(fields[k]) for k in key_fields })
-
-def implement(plan, fields, qvars, resultTy):
-    """
-    Args:
-        plan           - plans.Plan to implement
-        fields         - dict { field_name : type }
-        qvars          - dict { var_name   : type }
-        resultTy       - what this plan should return
-    Returns:
-        a ConcreteImpl object
-    """
-
-    # if type(plan) is plans.AllWhere:
-    #     if plan.predicate == predicates.Bool(True):
-    #         return resultTy.copy()
-    #     else:
-    #         return Filtered(resultTy.copy(), list(fields.items()), list(qvars.items()), plan.predicate)
-    # elif type(plan) is plans.HashLookup:
-    #     key_fields = list(_key_fields(fields, plan.predicate))
-    #     keyTy = _make_key_type(fields, key_fields)
-    #     keyArgs = _make_key_args(fields, plan.predicate)
-    #     t = HashMap(keyTy, keyArgs, resultTy)
-    #     return implement(plan.plan, fields, qvars, t)
-    # elif type(plan) is plans.BinarySearch:
-    #     t = resultTy.unify(AugTree(NativeTy(fields[plan.sortField]), plan.sortField, plan.predicate, fields))
-    #     return implement(plan.plan, fields, qvars, t)
-    # elif type(plan) is plans.Intersect:
-    #     assert type(resultTy) is UnsortedSet
-    #     impl1 = implement(plan.plan1, fields, qvars, resultTy)
-    #     impl2 = implement(plan.plan2, fields, qvars, resultTy)
-    #     return Mix(impl1, impl2, INTERSECT_OP)
-    # elif type(plan) is plans.Union:
-    #     assert type(resultTy) is UnsortedSet
-    #     impl1 = implement(plan.plan1, fields, qvars, resultTy)
-    #     impl2 = implement(plan.plan2, fields, qvars, resultTy)
-    #     return Mix(impl1, impl2, UNION_OP)
-    # elif type(plan) is plans.Concat:
-    #     assert type(resultTy) is UnsortedSet
-    #     impl1 = implement(plan.plan1, fields, qvars, resultTy)
-    #     impl2 = implement(plan.plan2, fields, qvars, resultTy)
-    #     return Mix(impl1, impl2, CONCAT_OP)
-    # else:
-    #     raise Exception("codegen not implemented for {}".format(type(plan)))
-
-    if type(plan) is plans.AllWhere:
-        if plan.predicate == predicates.Bool(True):
-            return resultTy.copy()
-        else:
-            return Guarded(resultTy.copy(), list(fields.items()), list(qvars.items()), plan.predicate)
-    elif type(plan) is plans.HashLookup:
-        key_fields = list(_key_fields(fields, plan.predicate))
-        keyTy = _make_key_type(fields, key_fields)
-        keyArgs = _make_key_args(fields, plan.predicate)
-        t = HashMap(keyTy, keyArgs, resultTy)
-        return implement(plan.plan, fields, qvars, t)
-    # elif type(plan) is plans.BinarySearch:
-    # elif type(plan) is plans.Intersect:
-    # elif type(plan) is plans.Union:
-    # elif type(plan) is plans.Concat:
-    # elif type(plan) is plans.Filter:
-    else:
-        raise Exception("codegen not implemented for {}".format(type(plan)))
-
-def capitalize(s):
-    return s[0].upper() + s[1:]
+    return TupleTy({ k : NativeTy(fields[k]) for k in key_fields })
 
 def codegen(fields, queries, gen):
     """
@@ -969,10 +1015,9 @@ def codegen(fields, queries, gen):
         #     predicates.Bool(True),
         #     fields)
         # attrs = () if q.sort_field is None else (SortedBy(q.sort_field))
-        resultTy = Iterator()
+        resultTy = Iterable(RecordType())
         raw_impl = implement(q.bestPlan, fields, vars, resultTy)
         for impl in raw_impl.concretize():
-            print impl
             q.impl = impl
         # q.impl = implement(q.bestPlan, fields, vars, resultTy)
 

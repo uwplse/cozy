@@ -81,6 +81,7 @@ class SolverContext(object):
             return predicate._outputvector
 
         def pred_stupid(predicate):
+            return False
             if type(predicate) is predicates.Compare:
                 return predicate.lhs >= predicate.rhs
             return any(pred_stupid(p) for p in predicate.children() if type(p) is predicates.Predicate)

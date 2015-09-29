@@ -155,4 +155,4 @@ if __name__ == '__main__':
 
     if args.java is not None:
         java_writer = sys.stdout.write if args.java == "-" else open(args.java, "w").write
-        codegen(fields, queries, JavaCodeGenerator(java_writer))
+        codegen(fields, queries, JavaCodeGenerator(java_writer, args.java_package))

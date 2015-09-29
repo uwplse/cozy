@@ -30,3 +30,6 @@ def fresh_name(hint="name"):
     global _i
     _i += 1
     return "_{}{}".format(hint, _i)
+
+def capitalize(s):
+    return (s[0].upper() + s[1:]) if s else s
