@@ -1,4 +1,5 @@
 import itertools
+import collections
 
 import plans
 import predicates
@@ -309,11 +310,17 @@ class HashMap(ConcreteImpl):
 AUG_MIN = "min"
 AUG_MAX = "max"
 
+INCLUSIVE = "inclusive"
+EXCLUSIVE = "exclusive"
+
 def _break_conj(p):
     if type(p) is predicates.And:
         return itertools.chain(_break_conj(p.lhs), _break_conj(p.rhs))
     else:
         return (p,)
+
+AugData = collections.namedtuple("AugData", [
+    "type", "real_field", "orig_field", "qvar", "mode", "inclusive"])
 
 def _make_augdata(field_name, predicate, fields):
     """returns a generator of (field_name, var_name, min/max, inclusive)"""
@@ -323,15 +330,13 @@ def _make_augdata(field_name, predicate, fields):
             c = c.flip()
         f = c.lhs.name
         v = c.rhs.name
+        t = NativeTy(fields[f])
         if f == field_name:
             continue
-        if c.op == predicates.Lt:   yield (f, v, AUG_MAX, False)
-        if c.op == predicates.Le:   yield (f, v, AUG_MAX, True)
-        if c.op == predicates.Gt:   yield (f, v, AUG_MIN, False)
-        if c.op == predicates.Ge:   yield (f, v, AUG_MIN, True)
-
-INCLUSIVE = "inclusive"
-EXCLUSIVE = "exclusive"
+        if   c.op == predicates.Lt: yield AugData(t, fresh_name(), f, v, AUG_MAX, False)
+        elif c.op == predicates.Le: yield AugData(t, fresh_name(), f, v, AUG_MAX, True)
+        elif c.op == predicates.Gt: yield AugData(t, fresh_name(), f, v, AUG_MIN, False)
+        elif c.op == predicates.Ge: yield AugData(t, fresh_name(), f, v, AUG_MIN, True)
 
 class AugTree(ConcreteImpl):
     def __init__(self, fieldTy, fieldName, predicate, fields):
@@ -358,16 +363,14 @@ class AugTree(ConcreteImpl):
                 elif c.op == predicates.Le: self.maxes.append((INCLUSIVE, c.rhs))
 
         self.augData = list(_make_augdata(fieldName, predicate, fields)) if predicate else ()
-        if self.augData:
-            raise Exception("cannot handle augdata yet")
+        print(self.augData)
+        # if self.augData:
+        #     raise Exception("cannot handle augdata yet; {}".format(self.augData))
 
         self.cursor_name = fresh_name("cursor")
         self.left_ptr = fresh_name("left")
         self.right_ptr = fresh_name("right")
         self.parent_ptr = fresh_name("parent")
-    def unify(self, other):
-        raise Exception("not implemented")
-
     def fields(self):
         return [(self.name, self.ty)]
     def construct(self, gen):
@@ -380,7 +383,8 @@ class AugTree(ConcreteImpl):
         return [
             (self.left_ptr,   RecordType(), gen.null_value()),
             (self.right_ptr,  RecordType(), gen.null_value()),
-            (self.parent_ptr, RecordType(), gen.null_value())]
+            (self.parent_ptr, RecordType(), gen.null_value())] + [
+                (ad.real_field, ad.type, ad.qvar) for ad in self.augData]
     # def gen_type(self, gen):
     #     return self.ty.gen_type(gen)
     def _too_small(self, gen, node, clip=True):
