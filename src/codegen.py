@@ -408,6 +408,19 @@ class AugTree(ConcreteImpl):
         if not clip:
             return gen.true_value()
         return gen.true_value()
+    def _node_ok(self, gen, node, clip=True):
+        """Does this subnode agree with the augdata?"""
+        if not clip:
+            return gen.true_value()
+        e = gen.true_value()
+        for aug in self.augData:
+            if aug.mode == AUG_MIN and     aug.inclusive: op = gen.ge
+            if aug.mode == AUG_MIN and not aug.inclusive: op = gen.gt
+            if aug.mode == AUG_MAX and     aug.inclusive: op = gen.le
+            if aug.mode == AUG_MAX and not aug.inclusive: op = gen.lt
+            e = gen.both(e,
+                op(aug.type, gen.get_field(node, aug.real_field), aug.qvar))
+        return e
     def _has_parent(self, gen, node):
         return gen.not_true(gen.is_null(gen.get_field(node, self.parent_ptr)))
     def _is_left_child(self, gen, node):
@@ -569,19 +582,6 @@ class AugTree(ConcreteImpl):
         return gen.both(
             gen.not_true(gen.is_null(gen.get_field(node, self.right_ptr))),
             self._subtree_ok(gen, gen.get_field(node, self.right_ptr), clip))
-    def _node_ok(self, gen, node, clip=True):
-        """Does this subnode agree with the augdata?"""
-        if not clip:
-            return gen.true_value()
-        e = gen.true_value()
-        for aug in self.augData:
-            if aug.mode == AUG_MIN and     aug.inclusive: op = gen.ge
-            if aug.mode == AUG_MIN and not aug.inclusive: op = gen.gt
-            if aug.mode == AUG_MAX and     aug.inclusive: op = gen.le
-            if aug.mode == AUG_MAX and not aug.inclusive: op = gen.lt
-            e = gen.both(e,
-                op(aug.type, gen.get_field(node, aug.real_field), aug.qvar))
-        return e
     def gen_query(self, gen, qvars):
         p, m = self._find_min(gen, self.name)
         return p, [m]
