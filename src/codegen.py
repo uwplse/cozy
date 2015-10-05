@@ -364,8 +364,6 @@ class AugTree(ConcreteImpl):
 
         self.augData = list(_make_augdata(fieldName, predicate, fields)) if predicate else ()
         print(self.augData)
-        # if self.augData:
-        #     raise Exception("cannot handle augdata yet; {}".format(self.augData))
 
         self.cursor_name = fresh_name("cursor")
         self.left_ptr = fresh_name("left")
@@ -384,26 +382,26 @@ class AugTree(ConcreteImpl):
             (self.left_ptr,   RecordType(), gen.null_value()),
             (self.right_ptr,  RecordType(), gen.null_value()),
             (self.parent_ptr, RecordType(), gen.null_value())] + [
-                (ad.real_field, ad.type, ad.qvar) for ad in self.augData]
+                (ad.real_field, ad.type, ad.orig_field) for ad in self.augData]
     # def gen_type(self, gen):
     #     return self.ty.gen_type(gen)
     def _too_small(self, gen, node, clip=True):
         if not clip:
             return gen.false_value()
-        e = None
+        e = gen.false_value()
         for (mode, bound) in self.mins:
-            compare = gen.lt if mode == EXCLUSIVE else gen.le
+            compare = gen.le if mode == EXCLUSIVE else gen.lt
             ee = compare(self.fieldTy, gen.get_field(node, self.fieldName), bound.name)
-            e = gen.either(e, ee) if e is not None else ee
+            e = gen.either(e, ee)
         return e
     def _too_large(self, gen, node, clip=True):
         if not clip:
             return gen.false_value()
-        e = None
+        e = gen.false_value()
         for (mode, bound) in self.maxes:
-            compare = gen.lt if mode == EXCLUSIVE else gen.le
+            compare = gen.le if mode == EXCLUSIVE else gen.lt
             ee = compare(self.fieldTy, bound.name, gen.get_field(node, self.fieldName))
-            e = gen.either(e, ee) if e is not None else ee
+            e = gen.either(e, ee)
         return e
     def _subtree_ok(self, gen, root, clip=True):
         """could ANY node in the subtree be valid? only checks augdata."""
@@ -502,8 +500,13 @@ class AugTree(ConcreteImpl):
 
         proc += gen.while_true(gen.true_value())
 
+        proc += gen.if_true(gen.is_null(x))
+        proc += return_null
+        proc += gen.endif()
+
         proc += gen.if_true(descend) # descending
 
+        proc += gen.comment("too small?")
         proc += gen.if_true(self._too_small(gen, x, clip))
         proc += gen.if_true(self._has_right(gen, x, clip))
         proc += descend_right
@@ -514,13 +517,15 @@ class AugTree(ConcreteImpl):
         proc += gen.endif()
         proc += gen.else_if(self._has_left(gen, x, clip))
         proc += gen.set(x, left)
+        proc += gen.comment("too large?")
         proc += gen.else_if(self._too_large(gen, x, clip))
         proc += gen.if_true(gen.same(x, root))
         proc += return_null
         proc += gen.else_true()
         proc += ascend
         proc += gen.endif()
-        proc += gen.else_if(self._node_ok(gen, x))
+        proc += gen.comment("node ok?")
+        proc += gen.else_if(self._node_ok(gen, x, clip))
         proc += return_x
         proc += gen.else_if(gen.same(x, root))
         proc += gen.set(root, right) + gen.set(x, right) # descend_right
@@ -565,9 +570,18 @@ class AugTree(ConcreteImpl):
             gen.not_true(gen.is_null(gen.get_field(node, self.right_ptr))),
             self._subtree_ok(gen, gen.get_field(node, self.right_ptr), clip))
     def _node_ok(self, gen, node, clip=True):
+        """Does this subnode agree with the augdata?"""
         if not clip:
             return gen.true_value()
-        return gen.true_value() # TODO
+        e = gen.true_value()
+        for aug in self.augData:
+            if aug.mode == AUG_MIN and     aug.inclusive: op = gen.ge
+            if aug.mode == AUG_MIN and not aug.inclusive: op = gen.gt
+            if aug.mode == AUG_MAX and     aug.inclusive: op = gen.le
+            if aug.mode == AUG_MAX and not aug.inclusive: op = gen.lt
+            e = gen.both(e,
+                op(aug.type, gen.get_field(node, aug.real_field), aug.qvar))
+        return e
     def gen_query(self, gen, qvars):
         p, m = self._find_min(gen, self.name)
         return p, [m]

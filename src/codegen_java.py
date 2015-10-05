@@ -384,10 +384,12 @@ def _gen_record_type(name, fields, private_fields, writer):
         writer("        /*private*/ {} {};\n".format(ty, f))
         writer("        public {t} get{F}() {{ return {f}; }}\n".format(t=ty, f=f, F=capitalize(f)))
     for f,ty,init in private_fields:
-        writer("        /*private*/ {} {} = {};\n".format(ty, f, init))
+        writer("        /*private*/ {} {};\n".format(ty, f))
     writer("        public {}({}) {{\n".format(name, ", ".join("{} {}".format(ty, f) for f,ty in fields)))
     for f,ty in fields:
         writer("            this.{f} = {f};\n".format(f=f))
+    for f,ty,init in private_fields:
+        writer("            this.{f} = {init};\n".format(f=f, init=init))
     writer("        }\n")
     writer("        @Override\n");
     writer("        public String toString() {\n")
