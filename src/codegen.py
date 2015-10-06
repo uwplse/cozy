@@ -63,7 +63,7 @@ class Extended(Ty):
         self.base_name = fresh_name()
         self.fields = fields
     def gen_type(self, gen):
-        fs = dict(self.fields)
+        fs = collections.OrderedDict(self.fields)
         fs[self.base_name] = self.base_ty
         return RecordType(fs).gen_type(gen)
 
@@ -200,7 +200,7 @@ class HashMap(ConcreteImpl):
     def _make_value_type(self, valueImpl):
         if len(valueImpl.fields()) == 1:
             return list(valueImpl.fields())[0][1]
-        return TupleTy(dict(valueImpl.fields()))
+        return TupleTy(collections.OrderedDict(valueImpl.fields()))
     def fields(self):
         return ((self.name, MapTy(self.keyTy, self.valueTy)),)
     def construct(self, gen):
@@ -944,7 +944,7 @@ def _key_fields(fields, predicate):
     return (v.name for v in predicate.vars() if v.name in fields)
 
 def _make_key_args(fields, predicate):
-    d = dict()
+    d = collections.OrderedDict()
     for f, v in predicate.comparisons():
         if f not in fields:
             f, v = v, f
@@ -964,9 +964,9 @@ def codegen(fields, queries, gen):
 
     # gen.begin()
 
-    fields = dict(fields)
+    fields = collections.OrderedDict(fields)
     for q in queries:
-        vars = dict(q.vars)
+        vars = collections.OrderedDict(q.vars)
         # resultTy = UnsortedSet() if q.sort_field is None else AugTree(
         #     NativeTy(fields[q.sort_field]),
         #     q.sort_field,
