@@ -98,12 +98,24 @@ class MapImpl(AbstractImpl):
             yield HashMap(self.fields, self.predicate, impl)
 
 class GuardedImpl(AbstractImpl):
-    def __init__(self, predicate, impl):
+    def __init__(self, predicate, fields, qvars, impl):
         self.predicate = predicate
+        self.fields = fields
+        self.qvars = qvars
         self.impl = impl
     def concretize(self):
         for impl in self.impl.concretize():
-            yield Guarded(self.predicate, impl)
+            yield Guarded(impl, self.fields, self.qvars, self.predicate)
+
+class Combine(AbstractImpl):
+    def __init__(self, l, r, op):
+        self.l = l
+        self.r = r
+        self.op = op
+    def concretize(self):
+        for impl1 in self.l.concretize():
+            for impl2 in self.r.concretize():
+                yield Tuple(impl1, impl2, self.op)
 
 def implement(plan, fields, qvars, resultTy):
     """
@@ -120,7 +132,7 @@ def implement(plan, fields, qvars, resultTy):
         if plan.predicate == predicates.Bool(True):
             return resultTy
         else:
-            return GuardedImpl(plan.predicate, resultTy)
+            return GuardedImpl(plan.predicate, fields, qvars, resultTy)
     elif type(plan) is plans.HashLookup:
         # key_fields = list(_key_fields(fields, plan.predicate))
         # keyTy = _make_key_type(fields, key_fields)
@@ -130,9 +142,18 @@ def implement(plan, fields, qvars, resultTy):
     elif type(plan) is plans.BinarySearch:
         assert type(resultTy) in [Iterable, SortedIterable]
         return implement(plan.plan, fields, qvars, SortedIterable(fields, plan.sortField, plan.predicate))
-    # elif type(plan) is plans.Intersect:
-    # elif type(plan) is plans.Union:
-    # elif type(plan) is plans.Concat:
+    elif type(plan) is plans.Intersect:
+        t1 = implement(plan.plan1, fields, qvars, resultTy)
+        t2 = implement(plan.plan1, fields, qvars, resultTy)
+        return Combine(t1, t2, INTERSECT_OP)
+    elif type(plan) is plans.Union:
+        t1 = implement(plan.plan1, fields, qvars, resultTy)
+        t2 = implement(plan.plan1, fields, qvars, resultTy)
+        return Combine(t1, t2, UNION_OP)
+    elif type(plan) is plans.Concat:
+        t1 = implement(plan.plan1, fields, qvars, resultTy)
+        t2 = implement(plan.plan1, fields, qvars, resultTy)
+        return Combine(t1, t2, CONCAT_OP)
     # elif type(plan) is plans.Filter:
     else:
         raise Exception("codegen not implemented for {}".format(type(plan)))
@@ -842,12 +863,14 @@ class Guarded(ConcreteImpl):
         return self.ty.gen_has_next(gen)
     def gen_insert(self, gen, x):
         proc = self.ty.gen_insert(gen, x)
-        return gen.if_true(gen.predicate(self._fields, self.qvars, self.predicate, x)) + proc + gen.endif()
+        return gen.if_true(gen.predicate(list(self._fields.items()), list(self.qvars.items()), self.predicate, x)) + proc + gen.endif()
     def gen_remove(self, gen, x, parent_structure=This()):
         proc = self.ty.gen_remove(gen, x)
-        return gen.if_true(gen.predicate(self._fields, self.qvars, self.predicate, x)) + proc + gen.endif()
+        return gen.if_true(gen.predicate(list(self._fields.items()), list(self.qvars.items()), self.predicate, x)) + proc + gen.endif()
     def gen_remove_in_place(self, gen, parent_structure):
         return self.ty.gen_remove_in_place(gen, parent_structure)
+    def auxtypes(self):
+        return self.ty.auxtypes()
 
 INTERSECT_OP = "intersect"
 UNION_OP     = "union"
@@ -858,10 +881,6 @@ class Tuple(ConcreteImpl):
         self.ty1 = ty1
         self.ty2 = ty2
         self.op = op
-    # def unify(self, other):
-    #     if type(other) is UnsortedSet or type(other) is SortedSet:
-    #         return other
-    #     return None
     def fields(self):
         return self.ty1.fields() + self.ty2.fields()
     def construct(self, gen):
@@ -872,13 +891,13 @@ class Tuple(ConcreteImpl):
         return self.ty1.state() + self.ty2.state()
     def private_members(self, gen):
         return self.ty1.private_members(gen) + self.ty2.private_members(gen)
-    # def gen_type(self, gen):
-    #     return self.ty.gen_type()
     def gen_query(self, gen, qvars):
         if self.op == CONCAT_OP:
             proc1, es1 = self.ty1.gen_query(gen, qvars)
             proc2, es2 = self.ty2.gen_query(gen, qvars)
             return (proc1 + proc2, es1 + es2)
+        else:
+            raise Exception("unknown op {}".format(self.op))
     def gen_current(self, gen):
         if self.op == CONCAT_OP:
             proc1, r1 = self.ty1.gen_has_next(gen)
@@ -895,6 +914,8 @@ class Tuple(ConcreteImpl):
             proc += gen.set(r, r2)
             proc += gen.endif()
             return proc, r
+        else:
+            raise Exception("unknown op {}".format(self.op))
     def gen_next(self, gen):
         if self.op == CONCAT_OP:
             proc1, r1 = self.ty1.gen_has_next(gen)
@@ -911,6 +932,8 @@ class Tuple(ConcreteImpl):
             proc += gen.set(r, r2)
             proc += gen.endif()
             return proc, r
+        else:
+            raise Exception("unknown op {}".format(self.op))
     def gen_has_next(self, gen):
         if self.op == CONCAT_OP:
             proc1, r1 = self.ty1.gen_has_next(gen)
@@ -923,12 +946,18 @@ class Tuple(ConcreteImpl):
             proc += gen.set(r, r2)
             proc += gen.endif()
             return proc, r
+        else:
+            raise Exception("unknown op {}".format(self.op))
     def gen_insert(self, gen, x):
         if self.op == CONCAT_OP:
             return self.ty1.gen_insert(gen, x) + self.ty2.gen_insert(gen, x)
+        else:
+            raise Exception("unknown op {}".format(self.op))
     def gen_remove(self, gen, x):
         if self.op == CONCAT_OP:
             return self.ty1.gen_remove(gen, x) + self.ty2.gen_remove(gen, x)
+        else:
+            raise Exception("unknown op {}".format(self.op))
     def gen_remove_in_place(self, gen, parent_structure):
         if self.op == CONCAT_OP:
             proc1, r1 = self.ty1.gen_has_next(gen)
@@ -939,6 +968,11 @@ class Tuple(ConcreteImpl):
             proc += self.ty2.gen_remove_in_place(gen, parent_structure)
             proc += gen.endif()
             return proc
+        else:
+            raise Exception("unknown op {}".format(self.op))
+    def auxtypes(self):
+        for t in self.ty1.auxtypes(): yield t
+        for t in self.ty2.auxtypes(): yield t
 
 def _key_fields(fields, predicate):
     return (v.name for v in predicate.vars() if v.name in fields)
