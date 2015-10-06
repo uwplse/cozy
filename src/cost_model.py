@@ -40,7 +40,7 @@ def cost(fields, qvars, plan):
 def dynamic_cost(fields, queries, cost_model_file):
     tmp = tempfile.mkdtemp()
     with open(os.path.join(tmp, "DataStructure.java"), "w") as f:
-        codegen(fields, queries, JavaCodeGenerator(f.write))
+        codegen(fields, queries, JavaCodeGenerator(f.write, class_name="DataStructure"))
 
     with open(os.path.join(tmp, "Main.java"), "w") as f:
         f.write("import java.util.*;")

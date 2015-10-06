@@ -4,7 +4,8 @@ import plans
 from common import capitalize, fresh_name
 
 class JavaCodeGenerator(object):
-    def __init__(self, writer, package_name=None):
+    def __init__(self, writer, class_name, package_name=None):
+        self.class_name = class_name
         self.package_name = package_name
         self.writer = writer
         self.types = dict()
@@ -131,7 +132,7 @@ class JavaCodeGenerator(object):
         if self.package_name:
             self.writer("package {};\n\n".format(self.package_name))
 
-        self.writer("public class DataStructure {\n")
+        self.writer("public class {} {{\n".format(self.class_name))
 
         # record type
         private_members = []
@@ -147,7 +148,7 @@ class JavaCodeGenerator(object):
                 _gen_aux_type(t, self, self.writer, seen)
 
         # constructor
-        self.writer("  public DataStructure() {\n")
+        self.writer("  public {}() {{\n".format(self.class_name))
         for q in queries:
             self.writer("    {}".format(q.impl.construct(self)))
         self.writer("  }\n")
@@ -173,13 +174,13 @@ class JavaCodeGenerator(object):
             it_name = "{}_iterator".format(q.name)
             self.writer("  /*private*/ static final class {} implements java.util.Iterator<{}> {{\n".format(it_name, RECORD_NAME))
             state = q.impl.state()
-            self.writer("    DataStructure parent;\n")
+            self.writer("    {} parent;\n".format(self.class_name))
             vars_needed = [(v, ty) for v, ty in q.vars if q.impl.needs_var(v)]
             for v, ty in vars_needed:
                 self.writer("    final {} {};\n".format(ty, v))
             for f, ty in state:
                 self.writer("    {} {};\n".format(ty.gen_type(self), f))
-            self.writer("    {}(DataStructure parent{}{}) {{\n".format(it_name, "".join(", {} {}".format(ty, v) for v, ty in vars_needed), "".join(", {} {}".format(ty.gen_type(self), f) for f, ty in state)))
+            self.writer("    {}({} parent{}{}) {{\n".format(it_name, self.class_name, "".join(", {} {}".format(ty, v) for v, ty in vars_needed), "".join(", {} {}".format(ty.gen_type(self), f) for f, ty in state)))
             self.writer("      this.parent = parent;\n")
             for v, ty in vars_needed:
                 self.writer("      this.{v} = {v};\n".format(v=v))

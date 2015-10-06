@@ -98,6 +98,7 @@ if __name__ == '__main__':
 
     parser.add_argument("--java", metavar="FILE.java", default=None, help="Output file for java classes, use '-' for stdout")
     parser.add_argument("--java-package", metavar="com.java.pkg", default=None, help="Java package for generated structure")
+    parser.add_argument("--java-class", metavar="Name", default="DataStructure", help="Java class name for generated structure")
 
     parser.add_argument("--cpp", metavar="FILE.cpp", default=None, help="Output file for C++ code, use '-' for stdout")
     parser.add_argument("--cpp-header", metavar="FILE.hpp", default=None, help="Output file for C++ header, use '-' for stdout")
@@ -155,4 +156,4 @@ if __name__ == '__main__':
 
     if args.java is not None:
         java_writer = sys.stdout.write if args.java == "-" else open(args.java, "w").write
-        codegen(fields, queries, JavaCodeGenerator(java_writer, args.java_package))
+        codegen(fields, queries, JavaCodeGenerator(java_writer, package_name=args.java_package, class_name=args.java_class))
