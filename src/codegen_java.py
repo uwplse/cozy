@@ -1,3 +1,4 @@
+import codegen
 import predicates
 import plans
 from common import capitalize, fresh_name
@@ -58,6 +59,15 @@ class JavaCodeGenerator(object):
 
     def le(self, ty, e1, e2):
         return ("({}) <= ({})" if _is_primitive(ty.gen_type(self)) else "({}).compareTo({}) <= 0").format(e1, e2)
+
+    def gt(self, ty, e1, e2):
+        return ("({}) > ({})" if _is_primitive(ty.gen_type(self)) else "({}).compareTo({}) > 0").format(e1, e2)
+
+    def ge(self, ty, e1, e2):
+        return ("({}) >= ({})" if _is_primitive(ty.gen_type(self)) else "({}).compareTo({}) >= 0").format(e1, e2)
+
+    def init_new(self, target, ty):
+        return self.set(target, "new {}()".format(ty.gen_type(self)))
 
     def null_value(self):
         return "null"
@@ -130,6 +140,12 @@ class JavaCodeGenerator(object):
             private_members += list((f, ty.gen_type(self), init) for f, ty, init in q.impl.private_members(self))
         _gen_record_type(RECORD_NAME, list(fields.items()), private_members, self.writer)
 
+        # auxiliary type definitions
+        seen = set()
+        for q in queries:
+            for t in q.impl.auxtypes():
+                _gen_aux_type(t, self, self.writer, seen)
+
         # constructor
         self.writer("  public DataStructure() {\n")
         for q in queries:
@@ -181,7 +197,7 @@ class JavaCodeGenerator(object):
             self.writer("      return {};\n".format(ret))
             self.writer("    }\n")
             self.writer("    @Override public void remove() {\n")
-            proc = q.impl.gen_remove_in_place(self, "parent")
+            proc = q.impl.gen_remove_in_place(self, codegen.TupleInstance("parent"))
             self.writer("      {}\n".format(proc))
             self.writer("    }\n")
             self.writer("  }\n")
@@ -376,6 +392,18 @@ class JavaCodeGenerator(object):
 #         return "new java.util.HashMap<{}, {}>()".format(_box(ty.fieldTy), ty_to_java(ty.ty, record_type_name))
 #     elif type(ty) is SortedSet or type(ty) is UnsortedSet:
 #         return "new java.util.ArrayList<{}>()".format(record_type_name)
+
+def _gen_aux_type(ty, gen, writer, seen):
+    if ty in seen:
+        return
+    seen.add(ty)
+    if type(ty) is codegen.TupleTy:
+        for _, t in ty.fields.items():
+            _gen_aux_type(t, gen, writer, seen)
+        writer("    /*private*/ static class {} implements java.io.Serializable {{\n".format(ty.name))
+        for f, t in ty.fields.items():
+            writer("        {} {};".format(t.gen_type(gen), f))
+        writer("    }\n")
 
 def _gen_record_type(name, fields, private_fields, writer):
     writer("    public static class {} implements java.io.Serializable {{\n".format(name))

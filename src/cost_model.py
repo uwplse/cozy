@@ -5,7 +5,8 @@ import os
 import subprocess
 
 import plans
-# from codegen_java import write_java
+from codegen import codegen
+from codegen_java import JavaCodeGenerator
 
 def _cost(plan, n=float(1000)):
     """Returns (cost,size) tuples"""
@@ -39,7 +40,7 @@ def cost(fields, qvars, plan):
 def dynamic_cost(fields, queries, cost_model_file):
     tmp = tempfile.mkdtemp()
     with open(os.path.join(tmp, "DataStructure.java"), "w") as f:
-        write_java(fields, queries, f.write)
+        codegen(fields, queries, JavaCodeGenerator(f.write))
 
     with open(os.path.join(tmp, "Main.java"), "w") as f:
         f.write("import java.util.*;")
