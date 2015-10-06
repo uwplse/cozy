@@ -84,8 +84,6 @@ class SortedIterable(AbstractImpl):
         self.fields = fields
         self.sortField = sortField
         self.predicate = predicate
-        # self.field_type = field_type
-        # self.field_name = field_name
     def concretize(self):
         yield AugTree(NativeTy(self.fields[self.sortField]), self.sortField, self.predicate, self.fields)
         # yield SortedArray(self.field_type, self.field_name) # TODO
@@ -117,38 +115,6 @@ def implement(plan, fields, qvars, resultTy):
     Returns:
         an AbstractImpl
     """
-
-    # if type(plan) is plans.AllWhere:
-    #     if plan.predicate == predicates.Bool(True):
-    #         return resultTy.copy()
-    #     else:
-    #         return Filtered(resultTy.copy(), list(fields.items()), list(qvars.items()), plan.predicate)
-    # elif type(plan) is plans.HashLookup:
-    #     key_fields = list(_key_fields(fields, plan.predicate))
-    #     keyTy = _make_key_type(fields, key_fields)
-    #     keyArgs = _make_key_args(fields, plan.predicate)
-    #     t = HashMap(keyTy, keyArgs, resultTy)
-    #     return implement(plan.plan, fields, qvars, t)
-    # elif type(plan) is plans.BinarySearch:
-    #     t = resultTy.unify(AugTree(NativeTy(fields[plan.sortField]), plan.sortField, plan.predicate, fields))
-    #     return implement(plan.plan, fields, qvars, t)
-    # elif type(plan) is plans.Intersect:
-    #     assert type(resultTy) is UnsortedSet
-    #     impl1 = implement(plan.plan1, fields, qvars, resultTy)
-    #     impl2 = implement(plan.plan2, fields, qvars, resultTy)
-    #     return Mix(impl1, impl2, INTERSECT_OP)
-    # elif type(plan) is plans.Union:
-    #     assert type(resultTy) is UnsortedSet
-    #     impl1 = implement(plan.plan1, fields, qvars, resultTy)
-    #     impl2 = implement(plan.plan2, fields, qvars, resultTy)
-    #     return Mix(impl1, impl2, UNION_OP)
-    # elif type(plan) is plans.Concat:
-    #     assert type(resultTy) is UnsortedSet
-    #     impl1 = implement(plan.plan1, fields, qvars, resultTy)
-    #     impl2 = implement(plan.plan2, fields, qvars, resultTy)
-    #     return Mix(impl1, impl2, CONCAT_OP)
-    # else:
-    #     raise Exception("codegen not implemented for {}".format(type(plan)))
 
     if type(plan) is plans.AllWhere:
         if plan.predicate == predicates.Bool(True):
@@ -223,49 +189,6 @@ class ConcreteImpl(object):
 class This():
     def field(self, gen, f):
         return f
-
-# class Tuple(Ty):
-#     def __init__(self, fields):
-#         self.type_name = fresh_name()
-#         self._fields = fields
-#     # def unify(self, other):
-#     #     raise Exception("Tuple.unify is not implemented")
-#     #     # if type(other) is Tuple:
-#     #     #     if len(self.fields) != len(other.fields):
-#     #     #         return None
-#     #     #     ts = { f : (t.unify(other.fields[f]) if f in other.fields else None) for (f, t) in self.fields.items() }
-#     #     #     if not any(t is None for t in ts.values()):
-#     #     #         return Tuple(ts)
-#     #     # return None
-#     def gen_type(self, gen):
-#         if len(self._fields) == 1:
-#             return list(self._fields.values())[0].gen_type(gen)
-#         return NativeTy(self.type_name).gen_type(gen)
-
-# class Map(Ty):
-#     def __init__(self, keyTy, valueTy):
-#         self.keyTy = keyTy
-#         self.valueTy = valueTy
-#     # def unify(self, other):
-#     #     raise Exception("Map.unify is not implemented")
-#     def gen_type(self, gen):
-#         return gen.map_type(self.keyTy, self.valueTy)
-
-# class Array(Ty):
-#     def __init__(self, ty):
-#         self.ty = ty
-#     # def unify(self, other):
-#     #     raise Exception("Array.unify is not implemented")
-#     def gen_type(self, gen):
-#         return gen.array_type(self.ty)
-
-# class BinaryTree(Ty):
-#     def __init__(self, ty):
-#         self.ty = ty
-#     # def unify(self, other):
-#     #     raise Exception("Array.unify is not implemented")
-#     def gen_type(self, gen):
-#         return gen.array_type(self.ty)
 
 class HashMap(ConcreteImpl):
     def __init__(self, fields, predicate, valueImpl):
@@ -802,22 +725,6 @@ class AugTree(ConcreteImpl):
         return proc
     def auxtypes(self):
         return ()
-
-# class SortedSet(Ty):
-#     def __init__(self, fieldTy, fieldName):
-#         self.name = fresh_name()
-#         self.fieldTy = fieldTy
-#         self.fieldName = fieldName
-#         self.ty = RecordType()
-#     def copy(self):
-#         return SortedSet(self.fieldTy.copy(), self.fieldName)
-#     def unify(self, other):
-#         if type(other) is UnsortedSet:
-#             return self
-#         if (type(other) is SortedSet or type(other) is AugTree) and other.fieldName == self.fieldName:
-#             return other
-#         raise Exception("not unifying {} and {}".format(self, other))
-#         return None
 
 class LinkedList(ConcreteImpl):
     def __init__(self, ty):
