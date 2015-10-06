@@ -16,8 +16,6 @@ from parse import parseQuery
 import cost_model
 from codegen import codegen
 from codegen_java import JavaCodeGenerator
-# from codegen_java import write_java
-# from codegen_cpp import write_cpp
 
 def pickBestPlans(queries, cost_model_file, i=0):
     """Sets q.bestPlan for each q in all_queries, returns min cost"""
