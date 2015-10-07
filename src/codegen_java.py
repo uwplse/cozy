@@ -1,3 +1,5 @@
+import re
+
 import codegen
 import predicates
 import plans
@@ -126,7 +128,7 @@ class JavaCodeGenerator(object):
         if self.package_name:
             self.writer("package {};\n\n".format(self.package_name))
 
-        self.writer("public class {} {{\n".format(self.class_name))
+        self.writer("public class {} implements java.io.Serializable {{\n".format(self.class_name))
 
         # record type
         private_members = []
@@ -144,19 +146,19 @@ class JavaCodeGenerator(object):
         # constructor
         self.writer("  public {}() {{\n".format(self.class_name))
         for q in queries:
-            self.writer("    {}".format(q.impl.construct(self)))
+            self.writer(_indent("    ", q.impl.construct(self)))
         self.writer("  }\n")
 
         # add routine
         self.writer("  public void add({} x) {{\n".format(RECORD_NAME))
         for q in queries:
-            self.writer("    {}".format(q.impl.gen_insert(self, "x")))
+            self.writer(_indent("    ", q.impl.gen_insert(self, "x")))
         self.writer("  }\n")
 
         # remove routine
         self.writer("  public void remove({} x) {{\n".format(RECORD_NAME))
         for q in queries:
-            self.writer("    {}".format(q.impl.gen_remove(self, "x")))
+            self.writer(_indent("    ", q.impl.gen_remove(self, "x")))
         self.writer("  }\n")
 
         # query routines
@@ -183,23 +185,23 @@ class JavaCodeGenerator(object):
             self.writer("    }\n")
             self.writer("    @Override public boolean hasNext() {\n")
             proc, ret = q.impl.gen_has_next(self)
-            self.writer("      {}\n".format(proc))
+            self.writer(_indent("      ", proc))
             self.writer("      return {};\n".format(ret))
             self.writer("    }\n")
             self.writer("    @Override public {} next() {{\n".format(RECORD_NAME))
             proc, ret = q.impl.gen_next(self)
-            self.writer("      {}\n".format(proc))
+            self.writer(_indent("      ", proc))
             self.writer("      return {};\n".format(ret))
             self.writer("    }\n")
             self.writer("    @Override public void remove() {\n")
             proc = q.impl.gen_remove_in_place(self, codegen.TupleInstance("parent"))
-            self.writer("      {}\n".format(proc))
+            self.writer(_indent("      ", proc))
             self.writer("    }\n")
             self.writer("  }\n")
 
             self.writer("  public java.util.Iterator<{}> {}({}) {{\n".format(RECORD_NAME, q.name, ", ".join("{} {}".format(ty, v) for v,ty in q.vars)))
             proc, stateExps = q.impl.gen_query(self, q.vars)
-            self.writer(proc)
+            self.writer(_indent("    ", proc))
             self.writer("    return new {}(this{}{});".format(it_name, "".join(", {}".format(v) for v, ty in vars_needed), "".join(", {}".format(e) for e in stateExps)))
             self.writer("  }\n")
 
@@ -244,6 +246,10 @@ def _gen_record_type(name, fields, private_fields, writer):
     writer(".append(')').toString();\n")
     writer("        }\n")
     writer("    }\n")
+
+_START_OF_LINE = re.compile(r"^", re.MULTILINE)
+def _indent(i, s):
+    return _START_OF_LINE.sub(i, s)
 
 def _box(ty):
     if ty == "int":

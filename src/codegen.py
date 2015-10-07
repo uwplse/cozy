@@ -144,9 +144,6 @@ def implement(plan, fields, qvars, resultTy):
         else:
             return GuardedImpl(plan.predicate, fields, qvars, resultTy)
     elif type(plan) is plans.HashLookup:
-        # key_fields = list(_key_fields(fields, plan.predicate))
-        # keyTy = _make_key_type(fields, key_fields)
-        # keyArgs = _make_key_args(fields, plan.predicate)
         t = MapImpl(fields, plan.predicate, resultTy)
         return implement(plan.plan, fields, qvars, t)
     elif type(plan) is plans.BinarySearch:
@@ -295,10 +292,22 @@ class HashMap(ConcreteImpl):
         proc += gen.decl(self.valueImpl.name, self.valueTy, gen.map_lookup(parent_structure.field(gen, self.name), k))
         return px + proc + self.valueImpl.gen_remove_in_place(gen, self.valueTy.instance(self.valueImpl.name)) + gen.map_put(parent_structure.field(gen, self.name), k, self.valueImpl.name)
     def auxtypes(self):
-        yield self.keyTy
+        if len(self.keyTy.fields) != 1:
+            yield self.keyTy
         yield self.valueTy
         for t in self.valueImpl.auxtypes():
             yield t
+
+def _make_key_args(fields, predicate):
+    d = collections.OrderedDict()
+    for f, v in predicate.comparisons():
+        if f not in fields:
+            f, v = v, f
+        d[f] = v
+    return d
+
+def _make_key_type(fields, key_fields):
+    return TupleTy({ k : NativeTy(fields[k]) for k in key_fields })
 
 AUG_MIN = "min"
 AUG_MAX = "max"
@@ -1045,20 +1054,6 @@ class Tuple(ConcreteImpl):
     def auxtypes(self):
         for t in self.ty1.auxtypes(): yield t
         for t in self.ty2.auxtypes(): yield t
-
-def _key_fields(fields, predicate):
-    return (v.name for v in predicate.vars() if v.name in fields)
-
-def _make_key_args(fields, predicate):
-    d = collections.OrderedDict()
-    for f, v in predicate.comparisons():
-        if f not in fields:
-            f, v = v, f
-        d[f] = v
-    return d
-
-def _make_key_type(fields, key_fields):
-    return TupleTy({ k : NativeTy(fields[k]) for k in key_fields })
 
 def codegen(fields, queries, gen):
     """
