@@ -1,0 +1,7 @@
+fields
+    state : String,
+    birthday : int
+
+query findOldestInState(v_state : String)
+    state == v_state
+    sort birthday

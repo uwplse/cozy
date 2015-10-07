@@ -117,6 +117,16 @@ class Combine(AbstractImpl):
             for impl2 in self.r.concretize():
                 yield Tuple(impl1, impl2, self.op)
 
+class AbstractFilter(AbstractImpl):
+    def __init__(self, t, fields, qvars, predicate):
+        self.t = t
+        self.fields = fields
+        self.qvars = qvars
+        self.predicate = predicate
+    def concretize(self):
+        for impl in self.t.concretize():
+            yield Filtered(impl, self.fields, self.qvars, self.predicate)
+
 def implement(plan, fields, qvars, resultTy):
     """
     Args:
@@ -154,7 +164,9 @@ def implement(plan, fields, qvars, resultTy):
         t1 = implement(plan.plan1, fields, qvars, resultTy)
         t2 = implement(plan.plan1, fields, qvars, resultTy)
         return Combine(t1, t2, CONCAT_OP)
-    # elif type(plan) is plans.Filter:
+    elif type(plan) is plans.Filter:
+        t = implement(plan.plan, fields, qvars, resultTy)
+        return AbstractFilter(t, fields, qvars, plan.predicate)
     else:
         raise Exception("codegen not implemented for {}".format(type(plan)))
 
@@ -190,7 +202,11 @@ class ConcreteImpl(object):
         raise Exception("not implemented for type: {}".format(type(self)))
     def gen_next(self, gen):
         """returns (proc, result)"""
-        raise Exception("not implemented for type: {}".format(type(self)))
+        proc, cur = self.gen_current(gen)
+        oldcursor = fresh_name()
+        proc += gen.decl(oldcursor, RecordType(), cur)
+        proc += self.gen_advance(gen)
+        return proc, oldcursor
     def gen_has_next(self, gen):
         """returns (proc, result)"""
         raise Exception("not implemented for type: {}".format(type(self)))
@@ -293,6 +309,8 @@ EXCLUSIVE = "exclusive"
 def _break_conj(p):
     if type(p) is predicates.And:
         return itertools.chain(_break_conj(p.lhs), _break_conj(p.rhs))
+    elif type(p) is predicates.Bool and p.val:
+        return ()
     else:
         return (p,)
 
@@ -782,11 +800,8 @@ class LinkedList(ConcreteImpl):
     def gen_has_next(self, gen):
         return "", gen.not_true(gen.is_null(self.cursor_name))
     def gen_next(self, gen):
-        result = fresh_name()
-        proc, x = self.gen_current(gen)
-        proc += gen.decl(result, self.ty, x)
-        proc += self.gen_advance(gen)
-        return proc, result
+        proc = self.gen_advance(gen)
+        return proc, self.prev_cursor_name
     def gen_query(self, gen, qvars, this=This()):
         return "", [gen.null_value(), this.field(gen, self.head_ptr)]
     def gen_insert(self, gen, x, parent_structure=This()):
@@ -837,10 +852,6 @@ class Guarded(ConcreteImpl):
         self._fields = fields
         self.qvars = qvars
         self.predicate = predicate
-    # def unify(self, other):
-    #     if type(other) is UnsortedSet or type(other) is SortedSet:
-    #         return other
-    #     return None
     def fields(self):
         return self.ty.fields()
     def construct(self, gen):
@@ -851,8 +862,6 @@ class Guarded(ConcreteImpl):
         return self.ty.state()
     def private_members(self, gen):
         return self.ty.private_members(gen)
-    # def gen_type(self, gen):
-    #     return self.ty.gen_type()
     def gen_query(self, gen, qvars):
         return self.ty.gen_query(gen, qvars)
     def gen_current(self, gen):
@@ -867,6 +876,69 @@ class Guarded(ConcreteImpl):
     def gen_remove(self, gen, x, parent_structure=This()):
         proc = self.ty.gen_remove(gen, x)
         return gen.if_true(gen.predicate(list(self._fields.items()), list(self.qvars.items()), self.predicate, x)) + proc + gen.endif()
+    def gen_remove_in_place(self, gen, parent_structure):
+        return self.ty.gen_remove_in_place(gen, parent_structure)
+    def auxtypes(self):
+        return self.ty.auxtypes()
+
+class Filtered(ConcreteImpl):
+    def __init__(self, ty, fields, qvars, predicate):
+        self.ty = ty
+        self._fields = fields
+        self.qvars = qvars
+        self.predicate = predicate
+    def fields(self):
+        return self.ty.fields()
+    def construct(self, gen):
+        return self.ty.construct(gen)
+    def needs_var(self, v):
+        return self.ty.needs_var(v) or any(vv.name == v for vv in self.predicate.vars() if vv.name in self.qvars)
+    def state(self):
+        return self.ty.state()
+    def private_members(self, gen):
+        return self.ty.private_members(gen)
+    def gen_query(self, gen, qvars):
+        proc, es = self.ty.gen_query(gen, qvars)
+        for (v, t), e in itertools.izip(self.ty.state(), es):
+            proc += gen.decl(v, t, e)
+        proc += gen.while_true(gen.true_value())
+        p1, hn = self.ty.gen_has_next(gen)
+        proc += p1
+        proc += gen.if_true(gen.not_true(hn))
+        proc += gen.break_loop()
+        proc += gen.endif()
+        p2, cur = self.ty.gen_current(gen)
+        proc += p2
+        curN = fresh_name("current")
+        proc += gen.decl(curN, RecordType(), cur)
+        proc += gen.if_true(gen.predicate(list(self._fields.items()), list(self.qvars.items()), self.predicate, curN))
+        proc += gen.break_loop()
+        proc += gen.endif()
+        proc += self.ty.gen_advance(gen)
+        proc += gen.endwhile()
+        return proc, [v for (v, t) in self.ty.state()]
+    def gen_current(self, gen):
+        return self.ty.gen_current(gen)
+    def gen_advance(self, gen):
+        proc  = gen.do_while()
+        p1, hn = self.ty.gen_has_next(gen)
+        proc += p1
+        proc += gen.if_true(gen.not_true(hn))
+        proc += gen.break_loop()
+        proc += gen.endif()
+        p2, n = self.ty.gen_next(gen)
+        proc += p2
+        proc += gen.if_true(gen.predicate(list(self._fields.items()), list(self.qvars.items()), self.predicate, n))
+        proc += gen.break_loop()
+        proc += gen.endif()
+        proc += gen.end_do_while(gen.true_value())
+        return proc
+    def gen_has_next(self, gen):
+        return self.ty.gen_has_next(gen)
+    def gen_insert(self, gen, x):
+        return self.ty.gen_insert(gen, x)
+    def gen_remove(self, gen, x, parent_structure=This()):
+        return self.ty.gen_remove(gen, x)
     def gen_remove_in_place(self, gen, parent_structure):
         return self.ty.gen_remove_in_place(gen, parent_structure)
     def auxtypes(self):
@@ -1007,7 +1079,7 @@ def codegen(fields, queries, gen):
         #     predicates.Bool(True),
         #     fields)
         # attrs = () if q.sort_field is None else (SortedBy(q.sort_field))
-        resultTy = Iterable(RecordType())
+        resultTy = Iterable(RecordType()) if q.sort_field is None else SortedIterable(fields, q.sort_field, predicates.Bool(True))
         raw_impl = implement(q.bestPlan, fields, vars, resultTy)
         for impl in raw_impl.concretize():
             q.impl = impl
