@@ -53,11 +53,12 @@ def highlevel_synthesis(all_input, fields, assumptions, query, enable_cache, tim
         fieldNames=[f for f,ty in fields],
         cost_model=lambda plan: cost_model.cost(fields, query.vars, plan),
         assumptions=local_assumptions)
-    for a in local_assumptions:
-        print "Assuming:", a
     print "Query {}: {}".format(query.name, query.pred)
+    for a in local_assumptions:
+        print "  --> assuming:", a
 
     query.bestPlans = set(sc.synthesizePlansByEnumeration(query.pred, sort_field=query.sort_field, timeout=timeout))
+    print query.bestPlans
 
     try:
         with open(cache_file, "wb") as f:
@@ -111,23 +112,6 @@ if __name__ == '__main__':
     else:
         for q in queries:
             q.bestPlan = list(q.bestPlans)[0]
-
-    # if args.java is not None:
-    #     java_writer = sys.stdout.write if args.java == "-" else open(args.java, "w").write
-    #     write_java(fields, queries, java_writer, package=args.java_package)
-
-    # cpp_writer = None
-    # if args.cpp is not None:
-    #     cpp_writer = sys.stdout.write if args.cpp == "-" else open(args.cpp, "w").write
-
-    # cpp_header_writer = None
-    # if args.cpp_header is not None:
-    #     cpp_header_writer = sys.stdout.write if args.cpp_header == "-" else open(args.cpp_header, "w").write
-
-    # if cpp_writer is not None or cpp_header_writer is not None:
-    #     cpp_writer = cpp_writer or (lambda x: None)
-    #     cpp_header_writer = cpp_header_writer or (lambda x: None)
-    #     write_cpp(fields, queries, cpp_writer, cpp_header_writer, extra=(args.cpp_extra or ""), namespace=args.cpp_namespace)
 
     if args.java is not None:
         java_writer = sys.stdout.write if args.java == "-" else open(args.java, "w").write

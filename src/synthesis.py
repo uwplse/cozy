@@ -44,13 +44,14 @@ class SolverContext(object):
 
         dumbestPlan = plans.Filter(plans.AllWhere(predicates.Bool(True)), query)
         self.bestCost = self.cost(dumbestPlan) # cost of best valid plan found so far
-        self.bestPlans = set() # set of valid plans with cost == self.bestCost
+        self.bestPlans = set([dumbestPlan]) # set of valid plans with cost == self.bestCost
         self.productive = False # was progress made this iteration
         self.startTime = time.time()
         self.timeout = timeout
+        proceed = True
 
         try:
-            while True:
+            while proceed:
                 # print "starting synthesis using", len(examples), "examples"
                 for responseType, response in self._synthesizePlansByEnumeration(query, sort_field, maxSize, examples):
                     if responseType == "counterexample":
@@ -63,7 +64,8 @@ class SolverContext(object):
                     elif responseType == "validPlan":
                         pass
                     elif responseType == "stop":
-                        return
+                        proceed = False
+                        break
         except:
             print "stopping due to exception"
             traceback.print_exc()
