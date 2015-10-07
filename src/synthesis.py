@@ -176,10 +176,14 @@ class SolverContext(object):
                     if x2 is True:
                         on_valid_plan(plan2, self.cost(plan2))
                     elif x2 is False:
-                        assert False, "plan {} is wrong!".format(plan)
+                        # This case can happen if plan2 is correct BUT not
+                        # not sorted correctly. It can also happen if we
+                        # already have a counterexample that proves the plan
+                        # incorrect.
+                        pass
                     else:
                         self.productive = "new counterexample"
-                        return "counterexample", (x2, plan)
+                        return "counterexample", (x2, plan2)
 
                 old_plan = cache.get(vec)
 

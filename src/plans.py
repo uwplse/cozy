@@ -77,6 +77,8 @@ class Filter(Plan):
         return self.plan.wellFormed(*args)
     def children(self):
         return (self.plan, self.predicate)
+    def isSortedBy(self, fieldName):
+        return self.plan.isSortedBy(fieldName)
 
 class Intersect(Plan):
     def __init__(self, plan1, plan2):
