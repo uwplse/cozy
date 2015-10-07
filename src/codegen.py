@@ -268,6 +268,8 @@ class HashMap(ConcreteImpl):
         return (proc + p, r)
     def gen_current(self, gen):
         return self.valueImpl.gen_current(gen)
+    def gen_advance(self, gen):
+        return self.valueImpl.gen_advance(gen)
     def gen_next(self, gen):
         return self.valueImpl.gen_next(gen)
     def gen_has_next(self, gen):

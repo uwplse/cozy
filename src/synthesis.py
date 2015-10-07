@@ -7,6 +7,7 @@ import random
 import sys
 import time
 from collections import defaultdict
+import traceback
 from z3 import *
 
 import predicates
@@ -47,22 +48,28 @@ class SolverContext(object):
         self.productive = False # was progress made this iteration
         self.startTime = time.time()
         self.timeout = timeout
-        yield dumbestPlan
 
-        while True:
-            # print "starting synthesis using", len(examples), "examples"
-            for responseType, response in self._synthesizePlansByEnumeration(query, sort_field, maxSize, examples):
-                if responseType == "counterexample":
-                    example, plan = response
-                    print "found counterexample", example, "\n\tfor", plan
-                    if example in examples:
-                        raise Exception("error: already saw counterexample!")
-                    examples.append(example)
-                    break
-                elif responseType == "validPlan":
-                    yield response
-                elif responseType == "stop":
-                    return
+        try:
+            while True:
+                # print "starting synthesis using", len(examples), "examples"
+                for responseType, response in self._synthesizePlansByEnumeration(query, sort_field, maxSize, examples):
+                    if responseType == "counterexample":
+                        example, plan = response
+                        print "found counterexample", example, "\n\tfor", plan
+                        if example in examples:
+                            raise Exception("error: already saw counterexample!")
+                        examples.append(example)
+                        break
+                    elif responseType == "validPlan":
+                        pass
+                    elif responseType == "stop":
+                        return
+        except:
+            print "stopping due to exception"
+            traceback.print_exc()
+
+        for plan in self.bestPlans:
+            yield plan
 
     def _synthesizePlansByEnumeration(self, query, sort_field, maxSize, examples):
         """note: query should be in NNF"""
@@ -139,6 +146,7 @@ class SolverContext(object):
         def on_valid_plan(plan, cost):
             if cost > self.bestCost:
                 return
+            print("found good valid plan: {}, cost={}".format(plan, cost))
             self.productive = "new valid plan"
             if cost < self.bestCost:
                 self.bestCost = cost
@@ -177,9 +185,7 @@ class SolverContext(object):
                         on_valid_plan(plan2, self.cost(plan2))
                     elif x2 is False:
                         # This case can happen if plan2 is correct BUT not
-                        # not sorted correctly. It can also happen if we
-                        # already have a counterexample that proves the plan
-                        # incorrect.
+                        # not sorted correctly.
                         pass
                     else:
                         self.productive = "new counterexample"

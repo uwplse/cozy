@@ -5,7 +5,6 @@ Main entry point for synthesis. Run with --help for options.
 """
 
 import sys
-import traceback
 import argparse
 import os.path
 import itertools
@@ -58,33 +57,11 @@ def highlevel_synthesis(all_input, fields, assumptions, query, enable_cache, tim
         print "Assuming:", a
     print "Query {}: {}".format(query.name, query.pred)
 
-    bestCost = None
-    bestPlans = set()
-    seen = set()
-
-    try:
-        for p in sc.synthesizePlansByEnumeration(query.pred, sort_field=query.sort_field, timeout=timeout):
-            if p in seen:
-                continue
-            seen.add(p)
-            cost = sc.cost(p)
-            improvement = False
-            if bestCost is None or cost < bestCost:
-                improvement = True
-                bestPlans = set([p])
-                bestCost = cost
-            else:
-                bestPlans.add(p)
-            print "FOUND PLAN: ", p, "; cost = ", cost, (" *** IMPROVEMENT" if improvement else "")
-    except:
-        print "stopping due to exception"
-        traceback.print_exc()
-
-    query.bestPlans = bestPlans
+    query.bestPlans = set(sc.synthesizePlansByEnumeration(query.pred, sort_field=query.sort_field, timeout=timeout))
 
     try:
         with open(cache_file, "wb") as f:
-            pickle.dump(bestPlans, f)
+            pickle.dump(query.bestPlans, f)
     except Exception as e:
         print "failed to save cache file {}: {}".format(cache_file, e)
 
