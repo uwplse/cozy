@@ -212,10 +212,10 @@ class SolverContext(object):
                 self.productive = "new counterexample"
                 return "counterexample", (x, plan)
 
-        def registerExp(e):
+        def registerExp(e, cull=True):
             self._check_timeout()
             vec = outputvector(e)
-            if vec in ecache:
+            if cull and vec in ecache:
                 return
             ecache[vec] = e
             self.productive = "new expression {}".format(e)
@@ -278,13 +278,14 @@ class SolverContext(object):
             for f in self.fieldNames:
                 if (v, f) in comps:
                     for op in predicates.operators:
-                        registerExp(predicates.Compare(
-                            predicates.Var(v), op, predicates.Var(f)))
+                        registerExp(
+                            predicates.Compare(predicates.Var(v), op, predicates.Var(f)),
+                            cull=False)
         for b in (True, False):
-            registerExp(predicates.Bool(b))
+            registerExp(predicates.Bool(b), cull=False)
 
         roundsWithoutProgress = 0
-        maxRoundsWithoutProgress = 4
+        maxRoundsWithoutProgress = 10
 
         for size in xrange(2, maxSize + 1):
             # exprs
