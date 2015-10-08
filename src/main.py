@@ -58,7 +58,6 @@ def highlevel_synthesis(all_input, fields, assumptions, query, enable_cache, tim
         print "  --> assuming:", a
 
     query.bestPlans = set(sc.synthesizePlansByEnumeration(query.pred, sort_field=query.sort_field, timeout=timeout))
-    print query.bestPlans
 
     try:
         with open(cache_file, "wb") as f:
