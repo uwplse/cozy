@@ -1,3 +1,3 @@
-fields src : int, dst : int, weight : double
-query q(node : int)
+fields src : int, dst : int
+query findEdges(node : int)
     src == node or dst == node
