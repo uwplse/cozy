@@ -10,7 +10,7 @@ public class BinarySearch {
         return l;
     }
 
-    public static void viz(DataStructure.Record r, String indent, Set<DataStructure.Record> seen) {
+    public static void viz(DataStructureBinarySearch.Record r, String indent, Set<DataStructureBinarySearch.Record> seen) {
         if (r == null) { System.out.println((Object)null); return; }
         if (seen.contains(r)) { System.out.println("<<recursive>>"); return; }
         seen.add(r);
@@ -24,19 +24,19 @@ public class BinarySearch {
 
     public static void main(String[] args) {
 
-        DataStructure ds = new DataStructure();
+        DataStructureBinarySearch ds = new DataStructureBinarySearch();
 
-        DataStructure.Record r1 = new DataStructure.Record(1.0);
-        DataStructure.Record r2 = new DataStructure.Record(2.0);
-        DataStructure.Record r3 = new DataStructure.Record(3.0);
-        DataStructure.Record r4 = new DataStructure.Record(3.1);
+        DataStructureBinarySearch.Record r1 = new DataStructureBinarySearch.Record(1.0);
+        DataStructureBinarySearch.Record r2 = new DataStructureBinarySearch.Record(2.0);
+        DataStructureBinarySearch.Record r3 = new DataStructureBinarySearch.Record(3.0);
+        DataStructureBinarySearch.Record r4 = new DataStructureBinarySearch.Record(3.1);
 
         ds.add(r1);
         ds.add(r2);
         ds.add(r3);
         ds.add(r4);
 
-        Iterator<DataStructure.Record> i;
+        Iterator<DataStructureBinarySearch.Record> i;
 
         i = ds.q(1.5, 2.5);
         System.out.print("Test 1: [ ");

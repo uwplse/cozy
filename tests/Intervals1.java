@@ -16,13 +16,13 @@ public class Intervals1 {
         return l;
     }
 
-    private static String dumpstate(DataStructure.q_iterator it) {
+    private static String dumpstate(DataStructureIntervals1.q_iterator it) {
         return "cursor = " + it._cursor3;
     }
 
-    private static void debugq(DataStructure s, double v) {
+    private static void debugq(DataStructureIntervals1 s, double v) {
 
-        DataStructure.q_iterator it = (DataStructure.q_iterator)s.q(v);
+        DataStructureIntervals1.q_iterator it = (DataStructureIntervals1.q_iterator)s.q(v);
 
         System.out.println("debugging " + v + "...");
         while (true) {
@@ -33,7 +33,7 @@ public class Intervals1 {
             if (!hn) {
                 break;
             }
-            DataStructure.Record r = it.next();
+            DataStructureIntervals1.Record r = it.next();
             System.out.println("    yielded " + r);
 
         }
@@ -42,12 +42,12 @@ public class Intervals1 {
 
     public static void main(String[] args) {
 
-        DataStructure ds = new DataStructure();
+        DataStructureIntervals1 ds = new DataStructureIntervals1();
 
-        DataStructure.Record r1 = new DataStructure.Record(1, 2, "r1");
-        DataStructure.Record r2 = new DataStructure.Record(1, 4, "r2");
-        DataStructure.Record r3 = new DataStructure.Record(2, 3, "r3");
-        DataStructure.Record r4 = new DataStructure.Record(3, 5, "r4");
+        DataStructureIntervals1.Record r1 = new DataStructureIntervals1.Record(1, 2, "r1");
+        DataStructureIntervals1.Record r2 = new DataStructureIntervals1.Record(1, 4, "r2");
+        DataStructureIntervals1.Record r3 = new DataStructureIntervals1.Record(2, 3, "r3");
+        DataStructureIntervals1.Record r4 = new DataStructureIntervals1.Record(3, 5, "r4");
 
         ds.add(r1);
         ds.add(r2);

@@ -12,12 +12,12 @@ public class HashLookup {
 
     public static void main(String[] args) {
 
-        DataStructure ds = new DataStructure();
+        DataStructureHashLookup ds = new DataStructureHashLookup();
 
-        DataStructure.Record r1 = new DataStructure.Record("Ed");
-        DataStructure.Record r2 = new DataStructure.Record("Alice");
-        DataStructure.Record r3 = new DataStructure.Record("Ed");
-        DataStructure.Record r4 = new DataStructure.Record("Kat");
+        DataStructureHashLookup.Record r1 = new DataStructureHashLookup.Record("Ed");
+        DataStructureHashLookup.Record r2 = new DataStructureHashLookup.Record("Alice");
+        DataStructureHashLookup.Record r3 = new DataStructureHashLookup.Record("Ed");
+        DataStructureHashLookup.Record r4 = new DataStructureHashLookup.Record("Kat");
 
         ds.add(r1);
         ds.add(r2);
