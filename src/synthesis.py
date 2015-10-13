@@ -314,7 +314,7 @@ class SolverContext(object):
                 yield consider(plan)
             for plan in (plans.Filter(p, e) for p, e in pickToSum(plansOfSize, exprsOfSize, size)):
                 yield consider(plan)
-            for plan in (ty(p1, p2) for ty in [plans.Intersect, plans.Union, plans.Concat] for p1, p2 in pickToSum(plansOfSize, plansOfSize, size)):
+            for plan in (plans.Concat(p1, p2) for p1, p2 in pickToSum(plansOfSize, plansOfSize, size)):
                 yield consider(plan)
             if self.productive:
                 roundsWithoutProgress = 0
