@@ -131,6 +131,9 @@ class CppCodeGenerator(object):
         self.header_writer("#define {} 1\n".format(guard))
         self.header_writer("\n")
 
+        if self.header_extra:
+            self.header_writer("{}\n".format(self.header_extra))
+
         self.header_writer("#include <map>\n")
         self.header_writer("\n")
         if self.namespace is not None:
@@ -142,11 +145,10 @@ class CppCodeGenerator(object):
         self.header_writer("\n")
 
         # auxiliary type definitions
-        # TODO
-        # seen = set()
-        # for q in queries:
-        #     for t in q.impl.auxtypes():
-        #         _gen_aux_type(t, self, self.header_writer, seen)
+        seen = set()
+        for q in queries:
+            for t in q.impl.auxtypes():
+                _gen_aux_type_header(t, self, self.header_writer, seen)
 
         # record type
         private_members = []
@@ -212,14 +214,7 @@ class CppCodeGenerator(object):
 
         name = self.class_name if self.namespace is None else "{}::{}".format(self.namespace, self.class_name)
 
-        self.writer("#include \"test.hpp\"\n")
-
-        # auxiliary type definitions
-        # TODO
-        # seen = set()
-        # for q in queries:
-        #     for t in q.impl.auxtypes():
-        #         _gen_aux_type(t, self, self.writer, seen)
+        self.writer("#include \"DataStructure.hpp\"\n")
 
         self.writer("template <class K, class V>\n")
         self.writer("inline V* mapget(const std::map<K, V*>& m, const K& k) {\n")
@@ -247,6 +242,8 @@ class CppCodeGenerator(object):
 
         # query routines
         for q in queries:
+            vars_needed = [(v, ty) for v, ty in q.vars if q.impl.needs_var(v)]
+            state = q.impl.state()
 
             # query call
             self.writer("{prefix}::{q}_iterator {prefix}::{q}({}) {{\n".format(", ".join("{} {}".format(ty, v) for v,ty in q.vars), prefix=name, q=q.name))
@@ -274,17 +271,26 @@ class CppCodeGenerator(object):
             self.writer("    return {};\n".format(ret))
             self.writer("}\n")
 
-def _gen_aux_type(ty, gen, writer, seen):
+def _gen_aux_type_header(ty, gen, writer, seen):
     if ty in seen:
         return
     seen.add(ty)
     if type(ty) is codegen.TupleTy:
         for _, t in ty.fields.items():
-            _gen_aux_type(t, gen, writer, seen)
-        writer("    /*private*/ static class {} implements java.io.Serializable {{\n".format(ty.name))
+            _gen_aux_type_header(t, gen, writer, seen)
+        writer("class {} {{\n".format(ty.name))
+        writer("friend class {};\n".format(gen.class_name))
         for f, t in ty.fields.items():
-            writer("        {} {};".format(t.gen_type(gen), f))
+            writer("    {} {};\n".format(t.gen_type(gen), f))
+        writer("    inline {}* operator->() {{ return this; }}\n".format(ty.name))
+        writer("public:\n")
+        writer("    bool operator<(const {t}& y) const {{\n".format(t=ty.name))
+        for f, t in ty.fields.items():
+            writer("        if ({f} <  y.{f}) return true;\n".format(f=f))
+            writer("        if ({f} != y.{f}) return false;\n".format(f=f))
+        writer("        return false;\n")
         writer("    }\n")
+        writer("};\n")
 
 def _gen_record_type(name, fields, private_fields, writer):
     all_fields = [(f, ty, "_{}".format(f)) for f, ty in fields] + list(private_fields)
