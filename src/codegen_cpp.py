@@ -169,6 +169,10 @@ class CppCodeGenerator(object):
         # remove routine
         self.header_writer("    void remove({} x);\n".format(self.record_type()))
 
+        # update routines
+        for f, ty in fields.items():
+            self.header_writer("    void update{}({} x, {} val);".format(capitalize(f), self.record_type(), ty))
+
         # query routines
         for q in queries:
             it_name = "{}_iterator".format(q.name)
@@ -239,6 +243,15 @@ class CppCodeGenerator(object):
         for q in queries:
             self.writer(indent("    ", q.impl.gen_remove(self, "x")))
         self.writer("}\n")
+
+        # update routines
+        # TODO: make this implementation efficient
+        for f, ty in fields.items():
+            self.writer("void {}::update{}({} x, {} val) {{\n".format(name, capitalize(f), self.record_type(), ty))
+            self.writer("    remove(x);\n")
+            self.writer("    x->{} = val;\n".format(f))
+            self.writer("    add(x);\n")
+            self.writer("}\n")
 
         # query routines
         for q in queries:
