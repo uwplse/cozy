@@ -151,15 +151,15 @@ def implement(plan, fields, qvars, resultTy):
         return implement(plan.plan, fields, qvars, SortedIterable(fields, plan.sortField, plan.predicate))
     elif type(plan) is plans.Intersect:
         t1 = implement(plan.plan1, fields, qvars, resultTy)
-        t2 = implement(plan.plan1, fields, qvars, resultTy)
+        t2 = implement(plan.plan2, fields, qvars, resultTy)
         return Combine(t1, t2, INTERSECT_OP)
     elif type(plan) is plans.Union:
         t1 = implement(plan.plan1, fields, qvars, resultTy)
-        t2 = implement(plan.plan1, fields, qvars, resultTy)
+        t2 = implement(plan.plan2, fields, qvars, resultTy)
         return Combine(t1, t2, UNION_OP)
     elif type(plan) is plans.Concat:
         t1 = implement(plan.plan1, fields, qvars, resultTy)
-        t2 = implement(plan.plan1, fields, qvars, resultTy)
+        t2 = implement(plan.plan2, fields, qvars, resultTy)
         return Combine(t1, t2, CONCAT_OP)
     elif type(plan) is plans.Filter:
         t = implement(plan.plan, fields, qvars, resultTy)
@@ -275,19 +275,19 @@ class HashMap(ConcreteImpl):
     def gen_has_next(self, gen):
         return self.valueImpl.gen_has_next(gen)
     def gen_insert(self, gen, x):
-        k = fresh_name()
+        k = fresh_name("key")
         proc  = gen.decl(k, self.keyTy)
         proc += self.make_key_of_record(gen, x, k)
         proc += gen.decl(self.valueImpl.name, self.valueTy, gen.map_lookup(self.name, k))
         return proc + self.valueImpl.gen_insert(gen, x, self.valueTy.instance(self.valueImpl.name)) + gen.map_put(self.name, k, self.valueImpl.name)
     def gen_remove(self, gen, x):
-        k = fresh_name()
+        k = fresh_name("key")
         proc  = gen.decl(k, self.keyTy)
         proc += self.make_key_of_record(gen, x, k)
         proc += gen.decl(self.valueImpl.name, self.valueTy, gen.map_lookup(self.name, k))
         return proc + self.valueImpl.gen_remove(gen, x, self.valueTy.instance(self.valueImpl.name)) + gen.map_put(self.name, k, self.valueImpl.name)
     def gen_remove_in_place(self, gen, parent_structure):
-        k = fresh_name()
+        k = fresh_name("key")
         px, x = self.valueImpl.gen_current(gen)
         proc  = gen.decl(k, self.keyTy)
         proc += self.make_key_of_record(gen, x, k)
