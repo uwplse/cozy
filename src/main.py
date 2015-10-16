@@ -15,6 +15,7 @@ from parse import parseQuery
 import cost_model
 from codegen import codegen
 from codegen_java import JavaCodeGenerator
+from codegen_cpp import CppCodeGenerator
 
 def pickBestPlans(queries, cost_model_file, i=0):
     """Sets q.bestPlan for each q in all_queries, returns min cost"""
@@ -77,6 +78,7 @@ if __name__ == '__main__':
 
     parser.add_argument("--cpp", metavar="FILE.cpp", default=None, help="Output file for C++ code, use '-' for stdout")
     parser.add_argument("--cpp-header", metavar="FILE.hpp", default=None, help="Output file for C++ header, use '-' for stdout")
+    parser.add_argument("--cpp-class", metavar="Name", default="DataStructure", help="C++ class name for generated structure")
     parser.add_argument("--cpp-extra", metavar="cpp-code", default=None, help="Extra text to include at top of C++ header file")
     parser.add_argument("--cpp-namespace", metavar="ns", default=None, help="C++ namespace")
 
@@ -111,6 +113,16 @@ if __name__ == '__main__':
     else:
         for q in queries:
             q.bestPlan = list(q.bestPlans)[0]
+
+    if args.cpp_header is not None or args.cpp is not None:
+        cpp_header_writer = (sys.stdout.write if args.cpp_header == "-" else open(args.cpp_header, "w").write) if args.cpp_header else (lambda x: None)
+        cpp_writer = (sys.stdout.write if args.cpp == "-" else open(args.cpp, "w").write) if args.cpp else (lambda x: None)
+        codegen(fields, queries, CppCodeGenerator(
+            header_writer=cpp_header_writer,
+            code_writer=cpp_writer,
+            class_name=args.cpp_class,
+            namespace=args.cpp_namespace,
+            header_extra=args.cpp_extra))
 
     if args.java is not None:
         java_writer = sys.stdout.write if args.java == "-" else open(args.java, "w").write

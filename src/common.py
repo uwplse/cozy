@@ -1,4 +1,5 @@
 from functools import total_ordering
+import re
 
 @total_ordering
 class ADT(object):
@@ -33,3 +34,7 @@ def fresh_name(hint="name"):
 
 def capitalize(s):
     return (s[0].upper() + s[1:]) if s else s
+
+_START_OF_LINE = re.compile(r"^", re.MULTILINE)
+def indent(i, s):
+    return _START_OF_LINE.sub(i, s)

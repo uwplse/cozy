@@ -1,261 +1,311 @@
+import re
 
+import codegen
 import predicates
 import plans
-from codegen import HashMap, SortedSet, UnsortedSet, fresh_name
+from common import capitalize, fresh_name, indent
 
-def ty_to_cpp(ty, record_type):
-    if type(ty) is HashMap:
-        return "std::map< {}, {} >".format(ty.fieldTy, ty_to_cpp(ty.ty, record_type))
-    elif type(ty) is SortedSet or type(ty) is UnsortedSet:
-        return "std::vector< {}* >".format(record_type)
-    else:
-        raise Exception("unknown type {}".format(ty))
+RECORD_NAME = "Record"
 
-class Iterator(object):
-    def __init__(self):
-        self.init = ""            # run before iterator construction
-        self.fields = []          # (name, cpp_type) members the iterator needs
+class CppCodeGenerator(object):
+    def __init__(self, header_writer, code_writer, class_name="DataStructure", namespace=None, header_extra=None):
+        self.header_writer = header_writer
+        self.writer = code_writer
+        self.class_name = class_name
+        self.namespace = namespace
+        self.header_extra = header_extra
 
-        self.advance = ""         # routine for advancing the iterator
-        self.advanceResults = []  # dependent on the plan type
+    def map_type(self, kt, vt):
+        return "std::map < {}, {} >".format(kt.gen_type(self), vt.gen_type(self))
 
-        self.hasNext = ""         # cpp expression indicating whether exhausted
-        self.destruct = ""        # destructor code
+    def bool_type(self):
+        return "bool";
 
-    def write_impl(self, namespace, name, args, argTypes, record_type_name, writer):
-        writer("{}::{name}::{name}({args}) {{\n".format(namespace, name=name, args=", ".join("{} {}".format(ty_to_cpp(argTypes[a], record_type_name) if a in self.memberVars else argTypes[a], a) for a in args)))
-        writer(self.init)
-        for ty, r in self.initResults:
-            writer("    this->{x} = {x};\n".format(x=r))
-        writer("}\n")
+    def new_map(self, kt, vt):
+        return "std::map < {}, {} > ()".format(kt.gen_type(self), vt.gen_type(self))
 
-    @staticmethod
-    def ofIterablePtr(init, ptr, ptr_ty):
-        it = Iterator()
-        it.init = init
+    def map_lookup(self, m, k):
+        return "mapget({}, {})".format(m, k)
 
-        it_ty = "{}::iterator".format(ptr_ty)
-        begin = fresh_name()
-        end = fresh_name()
+    def map_put(self, m, k, v):
+        return "{}[{}] = {};\n".format(m, k, v)
 
-        it.init += "    {} {};\n".format(it_ty, begin)
-        it.init += "    {} {};\n".format(it_ty, end)
-        it.init += "    if ({} != NULL) {{\n".format(ptr)
-        it.init += "        {} = {}->begin();\n".format(begin, ptr)
-        it.init += "        {} = {}->end();\n".format(end, ptr)
-        it.init += "    } else {\n"
-        it.init += "        {} = {};\n".format(begin, end)
-        it.init += "    }\n"
+    def native_type(self, t):
+        return t
 
-        it.advanceResults = "*({}++)".format(begin)
-        it.hasNext = "{} != {}".format(begin, end)
+    def record_type(self):
+        return "{}*".format(RECORD_NAME)
 
-        it.fields = [
-            (begin, it_ty),
-            (end, it_ty)]
+    def predicate(self, fields, qvars, pred, target):
+        return _predicate_to_exp(fields, qvars, pred, target)
 
-        return it
+    def not_true(self, e):
+        return "!({})".format(e)
 
-def write_cpp(fields, queries, writer, header_writer, extra="", namespace=None):
-    """
-    Writes a C++ data structure implementation to the given writers.
-    Arguments:
-     - fields  - a list of (field_name, type)
-     - queries - a dict of query objects with .bestPlan set
-     - writer  - a function that consumes strings
-     - header_writer  - a function that consumes strings
-     - namespace - what C++ namespace to put the generated classes in
-    """
+    def is_null(self, e):
+        return "!({})".format(e)
 
-    record_type_name = "Record"
-    structure_name = "DataStructure"
-    namespace = namespace or ""
+    def same(self, e1, e2):
+        return "({}) == ({})".format(e1, e2)
 
-    members = [] # will be filled with (name,ty) tuples
+    def lt(self, ty, e1, e2):
+        return "({}) < ({})".format(e1, e2)
 
-    def onMember(ty):
-        for name, ty2 in members:
-            u = ty.unify(ty2)
-            if u is not None:
-                members.remove((name, ty2))
-                members.append((name, u))
-                return name
-        name = fresh_name()
-        members.append((name, ty))
-        return name
+    def le(self, ty, e1, e2):
+        return "({}) <= ({})".format(e1, e2)
 
-    its = [] # iterators
-    field_dict = dict(fields)
-    for q in queries:
-        ty = UnsortedSet() if q.sort_field is None else SortedSet(field_dict[q.sort_field], q.sort_field)
-        it = _traverse(fields, q.vars, q.bestPlan, record_type_name, ty, onMember)
-        its.append((q, it))
+    def gt(self, ty, e1, e2):
+        return "({}) > ({})".format(e1, e2)
 
-    header_writer("#ifndef {}_H\n".format(structure_name))
-    header_writer("#define {}_H 1\n".format(structure_name))
-    header_writer("#include <vector>\n")
-    header_writer("#include <map>\n")
-    header_writer("#include <set>\n")
-    header_writer(extra)
-    header_writer("\n")
+    def ge(self, ty, e1, e2):
+        return "({}) >= ({})".format(e1, e2)
 
-    if namespace:
-        header_writer("namespace {} {{".format(namespace))
+    def init_new(self, target, ty):
+        return self.set(target, "{}()".format(ty.gen_type(self)))
 
-    header_writer("struct {} {{\n".format(record_type_name))
-    for f, ty in fields:
-        header_writer("    {} {};\n".format(ty, f))
-    header_writer("    inline {}({}) : {} {{ }};\n".format(
-        record_type_name,
-        ", ".join("{} _{}".format(ty, f) for f, ty in fields),
-        ", ".join("{f}(_{f})".format(f=f) for f, ty in fields)))
-    header_writer("};\n")
+    def null_value(self):
+        return "NULL"
 
-    header_writer("class {} {{\n".format(structure_name))
-    header_writer("public:\n")
-    header_writer("    void add({} *);\n".format(record_type_name))
-    header_writer("    void remove({} *);\n".format(record_type_name))
+    def true_value(self):
+        return "true";
 
-    for f, ty in fields:
-        header_writer("    void update{}({} *, {});\n".format(capitalize(f), record_type_name, ty))
+    def false_value(self):
+        return "false";
 
-    header_writer("\n")
-    for q, it in its:
+    def get_field(self, e, m):
+        if e is None:
+            return m
+        return "({})->{}".format(e, m)
+
+    def both(self, e1, e2):
+        return "({}) && ({})".format(e1, e2)
+
+    def either(self, e1, e2):
+        return "({}) || ({})".format(e1, e2)
+
+    def decl(self, v, ty, e=None):
+        if e is not None:
+            return "{} {} = {};\n".format(ty.gen_type(self), v, e)
+        return "{} {};\n".format(ty.gen_type(self), v)
+
+    def set(self, lval, e):
+        return "{} = {};\n".format(lval, e)
+
+    def if_true(self, e):
+        return "if ({}) {{\n".format(e)
+
+    def else_if(self, e):
+        return "}} else if ({}) {{\n".format(e)
+
+    def else_true(self):
+        return "} else {\n"
+
+    def endif(self):
+        return "}\n"
+
+    def while_true(self, e):
+        return "while ({}) {{\n".format(e)
+
+    def endwhile(self):
+        return "}\n"
+
+    def do_while(self):
+        return "do {\n"
+
+    def end_do_while(self, e):
+        return "}} while ({});\n".format(e)
+
+    def break_loop(self):
+        return "break;\n"
+
+    def comment(self, text):
+        return " /* {} */ ".format(text)
+
+    def write(self, fields, queries):
+
+        # ---------------------------------------------------------------------
+        # HEADER
+
+        guard = "HEADER_{}".format(fresh_name())
+        self.header_writer("#ifndef {}\n".format(guard))
+        self.header_writer("#define {} 1\n".format(guard))
+        self.header_writer("\n")
+
+        self.header_writer("#include <map>\n")
+        self.header_writer("\n")
+        if self.namespace is not None:
+            self.header_writer("namespace {} {{\n".format(self.namespace))
+
+        # forward decls
+        self.header_writer("class Record;\n")
+        self.header_writer("class {};\n".format(self.class_name))
+        self.header_writer("\n")
+
+        # auxiliary type definitions
         # TODO
-        vars_dict = dict(q.vars)
-        it_name = "{}_iterator".format(q.name)
-        header_writer("    class {} {{\n".format(it_name))
-        header_writer("    friend class {};\n".format(structure_name))
-        header_writer("    public:\n")
-        header_writer("        ~{}();\n".format(it_name))
-        header_writer("        Record* next();\n")
-        header_writer("        bool hasNext();\n")
-        header_writer("    private:\n")
-        header_writer("        {it_name}({args});\n".format(it_name=it_name,
-            args=", ".join("{} _{}".format(ty, f) for f, ty in it.fields)))
-        for f, ty in it.fields:
-            header_writer("        {} {};\n".format(ty, f))
-        header_writer("    };\n")
-        header_writer("    {name}_iterator {name}({args});\n\n".format(
-            name=q.name,
-            args=", ".join("{} {}".format(ty, v) for v,ty in q.vars)))
-    header_writer("private:\n")
+        # seen = set()
+        # for q in queries:
+        #     for t in q.impl.auxtypes():
+        #         _gen_aux_type(t, self, self.header_writer, seen)
 
-    for name, ty in members:
-        header_writer("    {} {};\n".format(ty_to_cpp(ty, record_type_name), name))
+        # record type
+        private_members = []
+        for q in queries:
+            private_members += list((f, ty.gen_type(self), init) for f, ty, init in q.impl.private_members(self))
+        _gen_record_type(RECORD_NAME, list(fields.items()), private_members, self.header_writer)
+        self.header_writer("\n")
 
-    header_writer("};\n")
+        self.header_writer("class {} {{\n".format(self.class_name))
+        self.header_writer("public:\n")
 
-    if namespace:
-        header_writer("}\n")
+        # constructor
+        self.header_writer("    {}();\n".format(self.class_name))
 
-    header_writer("#endif\n")
+        # add routine
+        self.header_writer("    void add({} x);\n".format(self.record_type()))
 
-    writer('#include "{}.hpp"\n'.format(structure_name))
-    writer("#include <algorithm>\n")
+        # remove routine
+        self.header_writer("    void remove({} x);\n".format(self.record_type()))
 
-    for f, ty in fields:
-        comp = "lt_{}".format(f)
-        writer("struct {name} {{\n".format(name=comp))
-        writer("    bool operator()(const {rty}* r, {fty} f) {{ return r->{f} < f; }}\n".format(rty=record_type_name, f=f, fty=ty))
-        writer("    bool operator()({fty} f, const {rty}* r) {{ return f < r->{f}; }}\n".format(rty=record_type_name, f=f, fty=ty))
-        writer("};\n")
+        # query routines
+        for q in queries:
+            it_name = "{}_iterator".format(q.name)
+            vars_needed = [(v, ty) for v, ty in q.vars if q.impl.needs_var(v)]
 
-    namespace = "{}::".format(namespace) if namespace else ""
+            # iterator class
+            self.header_writer("    class {} {{\n".format(it_name, RECORD_NAME))
+            self.header_writer("    friend class DataStructure;\n")
+            self.header_writer("    public:\n")
+            self.header_writer("        bool hasNext();\n")
+            self.header_writer("        Record* next();\n")
+            self.header_writer("        void remove();\n")
+            self.header_writer("    private:\n")
+            state = q.impl.state()
+            self.header_writer("        {}* parent;\n".format(self.class_name))
+            vars_needed = [(v, ty) for v, ty in q.vars if q.impl.needs_var(v)]
+            for v, ty in vars_needed:
+                self.header_writer("        {} {};\n".format(ty, v))
+            for f, ty in state:
+                self.header_writer("        {} {};\n".format(ty.gen_type(self), f))
+            self.header_writer("        {}({}* parent{}{});\n".format(it_name, self.class_name, "".join(", {} {}".format(ty, v) for v, ty in vars_needed), "".join(", {} {}".format(ty.gen_type(self), f) for f, ty in state)))
+            self.header_writer("    };\n")
 
-    writer("void {ns}{sn}::add({ty} * x) {{\n".format(
-        ty=record_type_name,
-        ns=namespace,
-        sn=structure_name))
-    for name, ty in members:
-        _gen_insert(name, ty, "x", record_type_name, writer)
-    writer("\n}\n")
+            # query method
+            self.header_writer("    {} {}({});\n".format(it_name, q.name, ", ".join("{} {}".format(ty, v) for v,ty in q.vars)))
 
-    writer("void {ns}{sn}::remove({ty} * x) {{\n".format(
-        ty=record_type_name,
-        ns=namespace,
-        sn=structure_name))
-    for name, ty in members:
-        _gen_remove(name, ty, "x", record_type_name, writer)
-    writer("\n}\n")
+        # private members
+        self.header_writer("private:\n")
+        for q in queries:
+            for f, ty in q.impl.fields():
+                self.header_writer("    {} {};\n".format(ty.gen_type(self), f))
 
-    ns = "{}{}".format(namespace, structure_name)
-    for q, it in its:
-        it_name = "{}_iterator".format(q.name)
+        self.header_writer("};\n")
 
-        writer("\n")
+        if self.namespace is not None:
+            self.header_writer("}\n")
 
-        writer("{ns}::{it_name}::{it_name}({args}) : {inits} {{ }}\n".format(
-            ns=ns, it_name=it_name,
-            args=", ".join("{} _{}".format(ty, f) for f, ty in it.fields),
-            inits=", ".join("{f}(_{f})".format(f=f) for f, ty in it.fields)))
+        self.header_writer("\n")
+        self.header_writer("#endif\n")
 
-        writer("{ns}::{it_name}::~{it_name}() {{\n{destruct}}}\n".format(
-            ns=ns, it_name=it_name, destruct=it.destruct))
+        # ---------------------------------------------------------------------
+        # CODE
 
-        writer("{rn}* {ns}::{it_name}::next() {{\n{advance}    return {val};\n}}\n".format(
-            rn=record_type_name, ns=ns, it_name=it_name,
-            advance=it.advance, val=it.advanceResults))
+        name = self.class_name if self.namespace is None else "{}::{}".format(self.namespace, self.class_name)
 
-        writer("bool {ns}::{it_name}::hasNext() {{\n    return {val};\n}}\n".format(
-            ns=ns, it_name=it_name,
-            val=it.hasNext))
+        self.writer("#include \"test.hpp\"\n")
 
-        writer("{ns}::{it_name} {ns}::{query_name}({args}) {{\n{proc}    return {it_name}({it_args});\n}}\n".format(
-            query_name=q.name,
-            ns=ns, it_name=it_name,
-            proc=it.init,
-            args=", ".join("{} {}".format(ty, v) for v, ty in q.vars),
-            it_args=", ".join(f for f, ty in it.fields)))
+        # auxiliary type definitions
+        # TODO
+        # seen = set()
+        # for q in queries:
+        #     for t in q.impl.auxtypes():
+        #         _gen_aux_type(t, self, self.writer, seen)
 
-    for f, ty in fields:
-        # TODO: these update routines could be way better...
-        writer("void {ns}::update{F}(Record* r, {ty} val) {{\n".format(ns=ns, F=capitalize(f), f=f, ty=ty))
-        writer("    remove(r);\n")
-        writer("    r->{f} = val;\n".format(f=f))
-        writer("    add(r);\n")
-        writer("}\n")
+        self.writer("template <class K, class V>\n")
+        self.writer("inline V* mapget(const std::map<K, V*>& m, const K& k) {\n")
+        self.writer("    typename std::map<K, V*>::const_iterator it(m.find(k));\n")
+        self.writer("    return it == m.end() ? NULL : it->second;\n")
+        self.writer("}\n")
 
-def _gen_insert(e, ty, x, record_type_name, writer):
-    if type(ty) is HashMap:
-        _gen_insert("{e}[{x}->{f}]".format(f=ty.fieldName, e=e, x=x), ty.ty, x, record_type_name, writer)
-    elif type(ty) is SortedSet:
-        v = fresh_name()
-        writer("    {}& {} = {};\n".format(ty_to_cpp(ty, record_type_name), v, e))
-        writer("    {v}.insert(std::upper_bound({v}.begin(), {v}.end(), {x}->{field}, {comp}()), {x});\n".format(
-            x=x,
-            v=v,
-            field=ty.fieldName,
-            comp="lt_{}".format(ty.fieldName)))
-    elif type(ty) is UnsortedSet:
-        writer("    {}.push_back({});\n".format(e, x))
+        # constructor
+        self.writer("{}::{}() {{\n".format(name, self.class_name))
+        for q in queries:
+            self.writer(indent("    ", q.impl.construct(self)))
+        self.writer("}\n")
 
-def _gen_remove(e, ty, x, record_type_name, writer):
-    if type(ty) is HashMap:
-        _gen_remove("{e}[{x}->{f}]".format(f=ty.fieldName, e=e, x=x), ty.ty, x, record_type_name, writer)
-    else:
-        v = fresh_name()
-        writer("    {ty}& {v} = {e};\n".format(ty=ty_to_cpp(ty, record_type_name), v=v, e=e))
-        e = v
-        # TODO: we can use binary search when the set is sorted
-        pos = fresh_name()
-        end = fresh_name()
-        it_ty = "{}::iterator".format(ty_to_cpp(ty, record_type_name))
-        writer("    {ty} {end} = {e}.end();\n".format(ty=it_ty, end=end, e=e))
-        writer("    {ty} {pos} = std::find({e}.begin(), {end}, {x});\n".format(ty=it_ty, pos=pos, e=e, end=end, x=x))
-        writer("    if ({pos} != {end}) {{\n".format(pos=pos, end=end))
-        writer("        {e}.erase({pos});\n".format(e=e, pos=pos))
+        # add routine
+        self.writer("void {}::add({} x) {{\n".format(name, self.record_type()))
+        for q in queries:
+            self.writer(indent("    ", q.impl.gen_insert(self, "x")))
+        self.writer("}\n")
+
+        # remove routine
+        self.writer("void {}::remove({} x) {{\n".format(name, self.record_type()))
+        for q in queries:
+            self.writer(indent("    ", q.impl.gen_remove(self, "x")))
+        self.writer("}\n")
+
+        # query routines
+        for q in queries:
+
+            # query call
+            self.writer("{prefix}::{q}_iterator {prefix}::{q}({}) {{\n".format(", ".join("{} {}".format(ty, v) for v,ty in q.vars), prefix=name, q=q.name))
+            proc, stateExps = q.impl.gen_query(self, q.vars)
+            self.writer(indent("    ", proc))
+            self.writer("    return {}_iterator(this{}{});".format(q.name, "".join(", {}".format(v) for v, ty in vars_needed), "".join(", {}".format(e) for e in stateExps)))
+            self.writer("  }\n")
+
+            # iterator constructor
+            self.writer("{prefix}::{q}_iterator::{q}_iterator({}* _parent{}{}) :\n".format(self.class_name, "".join(", {} {}".format(ty, v) for v, ty in vars_needed), "".join(", {} _{}".format(ty.gen_type(self), f) for f, ty in state), prefix=name, q=q.name))
+            self.writer("  parent(_parent){}{}\n".format("".join(", {f}(_{f})".format(f=v) for v, ty in vars_needed), "".join(", {f}(_{f})".format(f=v) for v, ty in state)))
+            self.writer("{ }\n")
+
+            # hasNext
+            self.writer("bool {prefix}::{q}_iterator::hasNext() {{\n".format(self.class_name, "".join(", {} {}".format(ty, v) for v, ty in vars_needed), "".join(", {} _{}".format(ty.gen_type(self), f) for f, ty in state), prefix=name, q=q.name))
+            proc, ret = q.impl.gen_has_next(self)
+            self.writer(indent("    ", proc))
+            self.writer("    return {};\n".format(ret))
+            self.writer("}\n")
+
+            # next
+            self.writer("{} {prefix}::{q}_iterator::next() {{\n".format(self.record_type(), self.class_name, "".join(", {} {}".format(ty, v) for v, ty in vars_needed), "".join(", {} _{}".format(ty.gen_type(self), f) for f, ty in state), prefix=name, q=q.name))
+            proc, ret = q.impl.gen_next(self)
+            self.writer(indent("    ", proc))
+            self.writer("    return {};\n".format(ret))
+            self.writer("}\n")
+
+def _gen_aux_type(ty, gen, writer, seen):
+    if ty in seen:
+        return
+    seen.add(ty)
+    if type(ty) is codegen.TupleTy:
+        for _, t in ty.fields.items():
+            _gen_aux_type(t, gen, writer, seen)
+        writer("    /*private*/ static class {} implements java.io.Serializable {{\n".format(ty.name))
+        for f, t in ty.fields.items():
+            writer("        {} {};".format(t.gen_type(gen), f))
         writer("    }\n")
 
-def new(ty, record_type_name):
-    if type(ty) is HashMap:
-        return "std::map< {}, {} >()".format(ty.fieldTy, ty_to_cpp(ty.ty, record_type_name))
-    elif type(ty) is SortedSet or type(ty) is UnsortedSet:
-        return "std::vector< {} >()".format(record_type_name)
+def _gen_record_type(name, fields, private_fields, writer):
+    all_fields = [(f, ty, "_{}".format(f)) for f, ty in fields] + list(private_fields)
+    writer("class {} {{\n".format(name))
+    writer("friend class DataStructure;\n")
+    writer("public:\n")
+    for f,ty in fields:
+        writer("    {} {};\n".format(ty, f))
+    writer("private:\n")
+    for f,ty,_ in private_fields:
+        writer("    {} {};\n".format(ty, f))
+    writer("public:\n")
+    writer("    {name}({args}) : {init} {{ }}\n".format(
+        name=name,
+        args=", ".join("{ty} _{f}".format(f=f, ty=ty) for f, ty in fields),
+        init=", ".join("{f}({init})".format(f=f, init=init) for f, _, init in all_fields)))
+    writer("};\n")
 
 def _predicate_to_exp(fields, qvars, pred, target):
     if type(pred) is predicates.Var:
-        return pred.name if pred.name in {v for v,ty in qvars} else "({}).{}".format(target, pred.name)
+        return pred.name if pred.name in {v for v,ty in qvars} else "{}->{}".format(target, pred.name)
     elif type(pred) is predicates.Bool:
         return "true" if pred.val else "false"
     elif type(pred) is predicates.Compare:
@@ -273,128 +323,3 @@ def _predicate_to_exp(fields, qvars, pred, target):
             _predicate_to_exp(fields, qvars, pred.rhs, target))
     elif type(pred) is predicates.Not:
         return "!({})".format(_predicate_to_exp(fields, qvars, pred.p, target))
-
-def _traverse(fields, qvars, plan, record_type_name, resultTy, onMember):
-    """returns an Iterator"""
-    if type(plan) is plans.All:
-        name = onMember(resultTy)
-        if type(resultTy) is HashMap:
-            return ("", "&{}".format(name))
-        else:
-            it = Iterator()
-
-            begin_name = fresh_name()
-            end_name   = fresh_name()
-
-            it_ty = "{}::iterator".format(ty_to_cpp(resultTy, record_type_name))
-
-            it.init += "    {} {}({}.begin());".format(it_ty, begin_name, name)
-            it.init += "    {} {}({}.end());".format(it_ty, end_name, name)
-
-            it.fields = [(begin_name, it_ty), (end_name, it_ty)]
-
-            it.advanceResults = "*({}++)".format(begin_name)
-            it.hasNext = "{} == {}".format(begin_name, end_name)
-            return it
-    elif type(plan) is plans.Empty:
-        if type(resultTy) is HashMap:
-            return ("", "NULL")
-        else:
-            raise Exception("implement empty iterator")
-    elif type(plan) is plans.HashLookup:
-        t = HashMap(dict(fields)[plan.fieldName], plan.fieldName, resultTy)
-        proc, r = _traverse(fields, qvars, plan.plan, record_type_name, t, onMember)
-
-        rn = fresh_name()
-        it_name = fresh_name()
-        proc += "    {ty}* {rn};\n".format(ty=ty_to_cpp(resultTy, record_type_name), rn=rn)
-        proc += "    if (({}) != NULL) {{\n".format(r)
-        proc += "        {}::iterator {it_name} = ({})->find({});\n".format(ty_to_cpp(t, record_type_name), r, plan.varName, it_name=it_name)
-        proc += "        {rn} = ({it_name} == ({map})->end()) ? NULL : (&(({it_name})->second));\n".format(ty=ty_to_cpp(resultTy, record_type_name), it_name=it_name, rn=rn, map=r)
-        proc += "    } else {\n"
-        proc += "        {rn} = NULL;\n".format(rn=rn)
-        proc += "    }\n"
-
-        if type(resultTy) is HashMap:
-            return (proc, rn)
-        else:
-            return Iterator.ofIterablePtr(proc, rn, ty_to_cpp(resultTy, record_type_name))
-
-    # elif type(plan) is plans.BinarySearch:
-    #     resultTy = resultTy.unify(SortedSet(dict(fields)[plan.fieldName], plan.fieldName))
-    #     p, r, pred = _traverse(fields, qvars, plan.plan, record_type_name, resultTy, onMember)
-
-    #     rn = fresh_name()
-    #     rng = fresh_name()
-    #     ty = ty_to_cpp(resultTy, record_type_name)
-    #     p += "    Range<{ty}::iterator>* {rn};\n".format(ty=ty, rn=rn)
-    #     p += "    Range<{ty}::iterator> {rng};\n".format(ty=ty, rng=rng)
-    #     p += "    if (({r}) != NULL) {{\n".format(r=r)
-
-    #     if plan.op is plans.Eq:
-    #         p += "        {rng}._begin = std::lower_bound(({r})->begin(), ({r})->end(), {var}, lt_{field}());\n".format(ty=ty, rng=rng, r=r, var=plan.varName, field=plan.fieldName)
-    #         p += "        {rng}._end   = std::upper_bound(({rng})->begin(), ({r})->end(), {var}, lt_{field}());\n".format(ty=ty, rng=rng, r=r, var=plan.varName, field=plan.fieldName)
-    #     elif plan.op is plans.Lt:
-    #         p += "        {rng}._begin = ({r})->begin();\n".format(ty=ty, rng=rng, r=r)
-    #         p += "        {rng}._end   = std::lower_bound(({r})->begin(), ({r})->end(), {var}, lt_{field}());\n".format(ty=ty, rng=rng, r=r, var=plan.varName, field=plan.fieldName)
-    #     elif plan.op is plans.Le:
-    #         p += "        {rng}._begin = ({r})->begin();\n".format(ty=ty, rng=rng, r=r)
-    #         p += "        {rng}._end   = std::upper_bound(({r})->begin(), ({r})->end(), {var}, lt_{field}());\n".format(ty=ty, rng=rng, r=r, var=plan.varName, field=plan.fieldName)
-    #     elif plan.op is plans.Gt:
-    #         p += "        {rng}._begin = std::upper_bound(({r})->begin(), ({r})->end(), {var}, lt_{field}());\n".format(ty=ty, rng=rng, r=r, var=plan.varName, field=plan.fieldName)
-    #         p += "        {rng}._end   = ({r})->end();\n".format(ty=ty, rng=rng, r=r)
-    #     elif plan.op is plans.Ge:
-    #         p += "        {rng}._begin = std::lower_bound(({r})->begin(), ({r})->end(), {var}, lt_{field}());\n".format(ty=ty, rng=rng, r=r, var=plan.varName, field=plan.fieldName)
-    #         p += "        {rng}._end   = ({r})->end();\n".format(ty=ty, rng=rng, r=r)
-
-    #     p += "        {rn} = &{rng};\n".format(rn=rn, rng=rng)
-    #     p += "    } else {\n"
-    #     p += "        {rn} = NULL;\n".format(rn=rn)
-    #     p += "    }\n"
-    #     return (p, rn, pred)
-    # elif type(plan) is plans.Filter:
-    #     p, r, pred = _traverse(fields, qvars, plan.plan, record_type_name, resultTy, onMember)
-    #     return (p, r, lambda x: "({}) && ({})".format(pred(x), _predicate_to_exp(fields, qvars, plan.predicate, x)))
-    # elif type(plan) is plans.Intersect:
-    #     raise Exception("intersect codegen not implemented")
-    elif type(plan) is plans.Union:
-        it1 = _traverse(fields, qvars, plan.plan1, record_type_name, resultTy, onMember)
-        it2 = _traverse(fields, qvars, plan.plan2, record_type_name, resultTy, onMember)
-
-        s_ty = "std::set< {}* >".format(record_type_name)
-        s_name = fresh_name()
-        proc = it1.init
-        proc += "    {ty}* {s} = new {ty}();\n".format(ty=s_ty, s=s_name)
-        proc += "    while ({}) {{\n".format(it1.hasNext)
-        proc += it1.advance
-        proc += "        {}->insert({});\n".format(s_name, it1.advanceResults)
-        proc += "    }\n"
-        proc += it1.destruct
-        proc += it2.init
-
-        it = Iterator.ofIterablePtr(proc, s_name, s_ty);
-        it.fields += it2.fields
-        it.fields.append((s_name, "{}*".format(s_ty)))
-
-        old_advance = it.advance
-        old_advance_result = it.advanceResults
-        old_has_next = it.hasNext
-
-        adv_name = fresh_name()
-        it.advance  = "    {}* {} = NULL;\n".format(record_type_name, adv_name)
-        it.advance += "    if ({}) {{\n".format(old_has_next)
-        it.advance += old_advance
-        it.advance += "        {} = {};\n".format(adv_name, old_advance_result)
-        it.advance += "    } else {\n"
-        it.advance += it2.advance
-        it.advance += "        {} = {};\n".format(adv_name, it2.advanceResults)
-        it.advance += "    }\n"
-        it.advanceResults = adv_name
-
-        it.hasNext = "({}) || ({})".format(old_has_next, it2.hasNext)
-
-        it.destruct = it2.destruct + "    delete {};\n".format(s_name)
-
-        return it
-    else:
-        raise Exception("codegen not implemented for {}".format(type(plan)))
