@@ -16,7 +16,7 @@ class CppCodeGenerator(object):
         self.header_extra = header_extra
 
     def map_type(self, kt, vt):
-        return "std::map < {}, {} >".format(kt.gen_type(self), vt.gen_type(self))
+        return "std::unordered_map < {}, {} >".format(kt.gen_type(self), vt.gen_type(self))
 
     def map_handle_type(self, kt, vt):
         return "{}::iterator".format(self.map_type(kt, vt))
@@ -34,7 +34,7 @@ class CppCodeGenerator(object):
         return "{}*".format(ty.gen_type(self));
 
     def new_map(self, kt, vt):
-        return "std::map < {}, {} > ()".format(kt.gen_type(self), vt.gen_type(self))
+        return "std::unordered_map < {}, {} > ()".format(kt.gen_type(self), vt.gen_type(self))
 
     def map_find_handle(self, m, k, dst):
         return "{} = {}.find({});\n".format(dst, m, k)
@@ -173,7 +173,7 @@ class CppCodeGenerator(object):
         if self.header_extra:
             self.header_writer("{}\n".format(self.header_extra))
 
-        self.header_writer("#include <map>\n")
+        self.header_writer("#include <unordered_map>\n")
         self.header_writer("\n")
         if self.namespace is not None:
             self.header_writer("namespace {} {{\n".format(self.namespace))
@@ -260,8 +260,8 @@ class CppCodeGenerator(object):
         self.writer("#include \"DataStructure.hpp\"\n")
 
         self.writer("template <class K, class V>\n")
-        self.writer("inline V* mapget(const std::map<K, V*>& m, const K& k) {\n")
-        self.writer("    typename std::map<K, V*>::const_iterator it(m.find(k));\n")
+        self.writer("inline V* mapget(const std::unordered_map<K, V*>& m, const K& k) {\n")
+        self.writer("    typename std::unordered_map<K, V*>::const_iterator it(m.find(k));\n")
         self.writer("    return it == m.end() ? NULL : it->second;\n")
         self.writer("}\n")
 
