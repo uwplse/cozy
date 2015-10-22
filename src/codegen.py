@@ -88,7 +88,7 @@ class SortedIterable(AbstractImpl):
         yield AugTree(NativeTy(self.fields[self.sortField]), self.sortField, self.predicate, self.fields)
         # yield SortedArray(self.field_type, self.field_name) # TODO
 
-class MapImpl(AbstractImpl):
+class Bucketed(AbstractImpl):
     def __init__(self, fields, predicate, value_impl):
         self.fields = fields
         self.predicate = predicate
@@ -144,7 +144,7 @@ def implement(plan, fields, qvars, resultTy):
         else:
             return GuardedImpl(plan.predicate, fields, qvars, resultTy)
     elif type(plan) is plans.HashLookup:
-        t = MapImpl(fields, plan.predicate, resultTy)
+        t = Bucketed(fields, plan.predicate, resultTy)
         return implement(plan.plan, fields, qvars, t)
     elif type(plan) is plans.BinarySearch:
         assert type(resultTy) in [Iterable, SortedIterable]
