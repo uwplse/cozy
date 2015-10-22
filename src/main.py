@@ -4,6 +4,7 @@
 Main entry point for synthesis. Run with --help for options.
 """
 
+import collections
 import sys
 import argparse
 import os.path
@@ -13,25 +14,21 @@ import pickle
 from synthesis import SolverContext
 from parse import parseQuery
 import cost_model
-from codegen import codegen
+from codegen import enumerate_impls
 from codegen_java import JavaCodeGenerator
 from codegen_cpp import CppCodeGenerator
 
-def pickBestPlans(queries, cost_model_file, i=0):
-    """Sets q.bestPlan for each q in all_queries, returns min cost"""
-    if i < len(queries):
-        q = queries[i]
-        bestScore = None
-        bestPlan = None
-        for plan in q.bestPlans:
-            q.bestPlan = plan
-            cost = pickBestPlans(queries, cost_model_file, i+1)
-            if bestScore is None or cost < bestScore:
-                bestScore = cost
-                bestPlan = plan
-        q.bestPlan = bestPlan
-    else:
-        return cost_model.dynamic_cost(fields, queries, cost_model_file)
+def pickBestImpls(fields, queries, cost_model_file):
+    bestImpls = None
+    bestScore = None
+    for impls in enumerate_impls(fields, queries):
+        if cost_model_file is None:
+            return impls
+        score = cost_model.dynamic_cost(fields, queries, impls, cost_model_file)
+        if bestImpls is None or score > bestScore:
+            bestImpls = impls
+            bestScore = score
+    return bestImpls
 
 def highlevel_synthesis(all_input, fields, assumptions, query, enable_cache, timeout):
     """sets .bestPlans on the query object"""
@@ -108,22 +105,21 @@ if __name__ == '__main__':
         for plan in query.bestPlans:
             print "    {}".format(plan)
 
-    if cost_model_file is not None:
-        pickBestPlans(list(queries), cost_model_file)
-    else:
-        for q in queries:
-            q.bestPlan = list(q.bestPlans)[0]
+    fields = collections.OrderedDict(fields)
+    impls = pickBestImpls(fields, queries, cost_model_file)
+    for q, i in zip(queries, impls):
+        q.impl = i
 
     if args.cpp_header is not None or args.cpp is not None:
         cpp_header_writer = (sys.stdout.write if args.cpp_header == "-" else open(args.cpp_header, "w").write) if args.cpp_header else (lambda x: None)
         cpp_writer = (sys.stdout.write if args.cpp == "-" else open(args.cpp, "w").write) if args.cpp else (lambda x: None)
-        codegen(fields, queries, CppCodeGenerator(
+        CppCodeGenerator(
             header_writer=cpp_header_writer,
             code_writer=cpp_writer,
             class_name=args.cpp_class,
             namespace=args.cpp_namespace,
-            header_extra=args.cpp_extra))
+            header_extra=args.cpp_extra).write(fields, queries)
 
     if args.java is not None:
         java_writer = sys.stdout.write if args.java == "-" else open(args.java, "w").write
-        codegen(fields, queries, JavaCodeGenerator(java_writer, package_name=args.java_package, class_name=args.java_class))
+        JavaCodeGenerator(java_writer, package_name=args.java_package, class_name=args.java_class).write(fields, queries)

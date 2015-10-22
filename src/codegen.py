@@ -1114,37 +1114,28 @@ class Tuple(ConcreteImpl):
         for t in self.ty1.auxtypes(): yield t
         for t in self.ty2.auxtypes(): yield t
 
-def codegen(fields, queries, gen):
+def enumerate_impls(fields, queries):
     """
     Code generation entry point.
-    fields    - list of (field_name, type)
-    queries   - list of queries.Query objects with .bestPlan set
-    gen       - code generator object
+      fields    - list of (field_name, type)
+      queries   - list of queries.Query objects with .bestPlans set
+    Sets q.all_impls for each q in queries
+    Returns an iterator of [ConcreteImpl] (one entry per query)
     """
-
-    # gen.begin()
-
-    fields = collections.OrderedDict(fields)
     for q in queries:
         vars = collections.OrderedDict(q.vars)
-        # resultTy = UnsortedSet() if q.sort_field is None else AugTree(
-        #     NativeTy(fields[q.sort_field]),
-        #     q.sort_field,
-        #     predicates.Bool(True),
-        #     fields)
-        # attrs = () if q.sort_field is None else (SortedBy(q.sort_field))
         resultTy = Iterable(RecordType()) if q.sort_field is None else SortedIterable(fields, q.sort_field, predicates.Bool(True))
-        raw_impl = implement(q.bestPlan, fields, vars, resultTy)
-        for impl in raw_impl.concretize():
-            q.impl = impl
-        # q.impl = implement(q.bestPlan, fields, vars, resultTy)
+        all_impls = []
+        for plan in q.bestPlans:
+            all_impls += list(implement(plan, fields, vars, resultTy).concretize())
+        q.all_impls = all_impls
+    return _enumerate_impls(fields, queries, 0, [None]*len(queries))
 
-    gen.write(fields, queries)
-
-    # gen.declare_record_type(fields, privateFields)
-    # gen.declare_datastructure(queries)
-
-    # gen.implement_record_type(fields, privateFields)
-    # gen.implement_datastructure(queries)
-
-    # gen.end()
+def _enumerate_impls(fields, queries, i, impls):
+    if i >= len(queries):
+        yield list(impls)
+    else:
+        for impl in queries[i].all_impls:
+            impls[i] = impl
+            for result in _enumerate_impls(fields, queries, i+1, impls):
+                yield result
