@@ -315,7 +315,7 @@ def _make_key_args(fields, predicate):
     return d
 
 def _make_key_type(fields, key_fields):
-    return TupleTy({ k : NativeTy(fields[k]) for k in key_fields })
+    return TupleTy(collections.OrderedDict((k, NativeTy(fields[k])) for k in key_fields))
 
 AUG_MIN = "min"
 AUG_MAX = "max"
