@@ -18,17 +18,47 @@ class CppCodeGenerator(object):
     def map_type(self, kt, vt):
         return "std::map < {}, {} >".format(kt.gen_type(self), vt.gen_type(self))
 
+    def map_handle_type(self, kt, vt):
+        return "{}::iterator".format(self.map_type(kt, vt))
+
     def bool_type(self):
         return "bool";
+
+    def int_type(self):
+        return "int";
+
+    def ref_type(self, ty):
+        return "{}&".format(ty.gen_type(self));
+
+    def vector_type(self, ty, n):
+        return "{}*".format(ty.gen_type(self));
 
     def new_map(self, kt, vt):
         return "std::map < {}, {} > ()".format(kt.gen_type(self), vt.gen_type(self))
 
-    def map_lookup(self, m, k):
-        return "mapget({}, {})".format(m, k)
+    def map_find_handle(self, m, k, dst):
+        return "{} = {}.find({});\n".format(dst, m, k)
+
+    def map_handle_exists(self, m, handle):
+        return "{} != {}.end()".format(handle, m)
+
+    def map_read_handle(self, handle):
+        return "{}->second".format(handle)
+
+    def map_write_handle(self, m, handle, k, v):
+        return "{}->second = {};\n".format(handle, v)
 
     def map_put(self, m, k, v):
         return "{}[{}] = {};\n".format(m, k, v)
+
+    def new_vector(self, ty, n):
+        return "new {}[{}]".format(ty.gen_type(self), n)
+
+    def vector_get(self, v, i):
+        return "{}[{}]".format(v, i)
+
+    def vector_set(self, v, i, x):
+        return "{}[{}] = {};\n".format(v, i, x)
 
     def native_type(self, t):
         return t
@@ -45,6 +75,9 @@ class CppCodeGenerator(object):
     def is_null(self, e):
         return "!({})".format(e)
 
+    def ternary(self, cond, v1, v2):
+        return "({}) ? ({}) : ({})".format(cond, v1, v2)
+
     def same(self, e1, e2):
         return "({}) == ({})".format(e1, e2)
 
@@ -59,6 +92,12 @@ class CppCodeGenerator(object):
 
     def ge(self, ty, e1, e2):
         return "({}) >= ({})".format(e1, e2)
+
+    def add(self, e1, e2):
+        return "({}) + ({})".format(e1, e2)
+
+    def mul(self, e1, e2):
+        return "({}) * ({})".format(e1, e2)
 
     def init_new(self, target, ty):
         return self.set(target, "{}()".format(ty.gen_type(self)))
@@ -248,9 +287,11 @@ class CppCodeGenerator(object):
         # TODO: make this implementation efficient
         for f, ty in fields.items():
             self.writer("void {}::update{}({} x, {} val) {{\n".format(name, capitalize(f), self.record_type(), ty))
+            self.writer("    if (x->{} != val) {{\n".format(f))
             for q in queries:
-                self.writer(indent("    ", q.impl.gen_update(self, fields, f, "x", "val")))
-            self.writer("    x->{} = val;\n".format(f))
+                self.writer(indent("        ", q.impl.gen_update(self, fields, f, "x", "val")))
+            self.writer("        x->{} = val;\n".format(f))
+            self.writer("    }")
             self.writer("}\n")
 
         # query routines

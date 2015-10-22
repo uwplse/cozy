@@ -15,17 +15,47 @@ class JavaCodeGenerator(object):
     def map_type(self, kt, vt):
         return "java.util.Map<{}, {}>".format(_box(kt.gen_type(self)), vt.gen_type(self))
 
+    def map_handle_type(self, kt, vt):
+        return vt.gen_type(self)
+
+    def ref_type(self, ty):
+        return ty.gen_type(self)
+
     def bool_type(self):
         return "boolean";
+
+    def int_type(self):
+        return "int";
+
+    def vector_type(self, ty, n):
+        return "{}[]".format(ty.gen_type(self));
 
     def new_map(self, kt, vt):
         return "new java.util.HashMap<{}, {}>()".format(_box(kt.gen_type(self)), vt.gen_type(self))
 
-    def map_lookup(self, m, k):
-        return "{}.get({})".format(m, k)
+    def map_find_handle(self, m, k, dst):
+        return "{} = {}.get({});\n".format(dst, m, k)
+
+    def map_handle_exists(self, m, handle):
+        return "{} != null".format(handle, m)
+
+    def map_read_handle(self, handle):
+        return handle
+
+    def map_write_handle(self, m, handle, k, v):
+        return self.map_put(m, k, v)
 
     def map_put(self, m, k, v):
         return "{}.put({}, {});\n".format(m, k, v)
+
+    def new_vector(self, ty, n):
+        return "({}[])(new Object[{}])".format(ty.gen_type(self), n)
+
+    def vector_get(self, v, i):
+        return "{}[{}]".format(v, i)
+
+    def vector_set(self, v, i, x):
+        return "{}[{}] = {};\n".format(v, i, x)
 
     def native_type(self, t):
         return t
@@ -42,6 +72,9 @@ class JavaCodeGenerator(object):
     def is_null(self, e):
         return "({}) == null".format(e)
 
+    def ternary(self, cond, v1, v2):
+        return "({}) ? ({}) : ({})".format(cond, v1, v2)
+
     def same(self, e1, e2):
         return "({}) == ({})".format(e1, e2)
 
@@ -56,6 +89,12 @@ class JavaCodeGenerator(object):
 
     def ge(self, ty, e1, e2):
         return ("({}) >= ({})" if _is_primitive(ty.gen_type(self)) else "({}).compareTo({}) >= 0").format(e1, e2)
+
+    def add(self, e1, e2):
+        return "({}) + ({})".format(e1, e2)
+
+    def mul(self, e1, e2):
+        return "({}) * ({})".format(e1, e2)
 
     def init_new(self, target, ty):
         return self.set(target, "new {}()".format(ty.gen_type(self)))

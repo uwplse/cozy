@@ -18,9 +18,26 @@ class NativeTy(Ty):
     def gen_type(self, gen):
         return gen.native_type(self.ty)
 
+class IntTy(Ty):
+    def gen_type(self, gen):
+        return gen.int_type()
+
+class RefTy(Ty):
+    def __init__(self, ty):
+        self.ty = ty
+    def gen_type(self, gen):
+        return gen.ref_type(self.ty)
+
 class BoolTy(Ty):
     def gen_type(self, gen):
         return gen.bool_type()
+
+class VecTy(Ty):
+    def __init__(self, ty, count):
+        self.ty = ty
+        self.count = count
+    def gen_type(self, gen):
+        return gen.vector_type(self.ty, self.count)
 
 class MapTy(Ty):
     def __init__(self, k, v):
@@ -57,16 +74,6 @@ class TupleTy(Ty):
                 return e if len(self.fields) is 1 else gen.get_field(e, f)
         return I()
 
-class Extended(Ty):
-    def __init__(self, base_ty, *fields):
-        self.base_ty = base_ty
-        self.base_name = fresh_name()
-        self.fields = fields
-    def gen_type(self, gen):
-        fs = collections.OrderedDict(self.fields)
-        fs[self.base_name] = self.base_ty
-        return RecordType(fs).gen_type(gen)
-
 class AbstractImpl(object):
     def concretize(self):
         """Generator for ConcreteImpl objects"""
@@ -88,14 +95,40 @@ class SortedIterable(AbstractImpl):
         yield AugTree(NativeTy(self.fields[self.sortField]), self.sortField, self.predicate, self.fields)
         # yield SortedArray(self.field_type, self.field_name) # TODO
 
+def is_enumerable(ty):
+    return count_cases(ty) >= 1
+
+def count_cases(ty):
+    if ty.lower() in ["bool", "boolean"]:
+        return 2
+    if ty == "State": # TODO: HACK
+        return 8
+    return -1
+
 class Bucketed(AbstractImpl):
     def __init__(self, fields, predicate, value_impl):
         self.fields = fields
-        self.predicate = predicate
         self.value_impl = value_impl
+
+        key_fields = list(_make_key_args(fields, predicate).keys())
+        self.enum_p = []
+        self.rest_p = []
+        for cmp in _break_conj(predicate):
+            f = cmp.lhs if cmp.lhs.name in fields else cmp.rhs
+            if is_enumerable(fields[f.name]):
+                self.enum_p.append(cmp)
+            else:
+                self.rest_p.append(cmp)
+
     def concretize(self):
         for impl in self.value_impl.concretize():
-            yield HashMap(self.fields, self.predicate, impl)
+            if self.enum_p and self.rest_p:
+                m = HashMap(self.fields, and_from_list(self.rest_p), impl)
+                yield VectorMap(self.fields, and_from_list(self.enum_p), m)
+            elif self.enum_p:
+                yield VectorMap(self.fields, and_from_list(self.enum_p), impl)
+            else: # self.rest_p
+                yield HashMap(self.fields, and_from_list(self.rest_p), impl)
 
 class GuardedImpl(AbstractImpl):
     def __init__(self, predicate, fields, qvars, impl):
@@ -191,6 +224,9 @@ class ConcreteImpl(object):
     def gen_query(self, gen, qvars):
         """returns (proc, stateExps)"""
         raise Exception("not implemented for type: {}".format(type(self)))
+    def gen_empty(self, gen, qvars):
+        """returns stateExps"""
+        raise Exception("not implemented for type: {}".format(type(self)))
     def gen_current(self, gen):
         """returns (proc, result)"""
         raise Exception("not implemented for type: {}".format(type(self)))
@@ -235,13 +271,12 @@ class HashMap(ConcreteImpl):
         self.keyTy = _make_key_type(fields, self.keyArgs)
         self.valueImpl = valueImpl
     def _make_value_type(self, valueImpl):
-        if len(valueImpl.fields()) == 1:
-            return list(valueImpl.fields())[0][1]
         return TupleTy(collections.OrderedDict(valueImpl.fields()))
     def fields(self):
         return ((self.name, MapTy(self.keyTy, self.valueTy)),)
-    def construct(self, gen):
-        return gen.set(self.name, gen.new_map(self.keyTy, self.valueTy))
+    def construct(self, gen, parent_structure=This()):
+        name = parent_structure.field(gen, self.name)
+        return gen.set(name, gen.new_map(self.keyTy, self.valueTy))
     def needs_var(self, v):
         return self.valueImpl.needs_var(v)
     def state(self):
@@ -250,13 +285,27 @@ class HashMap(ConcreteImpl):
         return self.valueImpl.private_members(gen)
     def make_key(self, gen, target):
         for f in self.keyArgs:
-            assert len(self.keyArgs[f]) == 1, "cannot (yet) handle multiple values in lookup"
+            assert len(self.keyArgs[f]) == 1, "cannot (yet) handle multiple values in lookup ({})".format(self.keyArgs)
         if len(self.keyTy.fields) == 1:
             return gen.set(target, self.keyArgs[list(self.keyTy.fields.keys())[0]][0])
         s = gen.init_new(target, self.keyTy)
         for f, v in self.keyTy.fields.items():
             s += gen.set(gen.get_field(target, f), self.keyArgs[f][0])
         return s
+    def lookup(self, gen, m, k):
+        """returns proc, handle"""
+        handle = fresh_name("maphandle")
+        proc  = gen.decl(handle, NativeTy(gen.map_handle_type(self.keyTy, self.valueTy)))
+        proc += gen.map_find_handle(m, k, handle)
+        return proc, handle
+    def handle_exists(self, gen, m, handle):
+        return gen.map_handle_exists(m, handle)
+    def read_handle(self, gen, m, handle):
+        return gen.map_read_handle(handle)
+    def write_handle(self, gen, m, handle, k, v):
+        return gen.map_write_handle(m, handle, k, v)
+    def put(self, gen, m, k, v):
+        return gen.map_put(m, k, v)
     def make_key_of_record(self, gen, x, target, remap=None):
         if remap is None:
             remap = dict()
@@ -268,13 +317,34 @@ class HashMap(ConcreteImpl):
         for f, v in self.keyTy.fields.items():
             s += gen.set(gen.get_field(target, f), fv(f))
         return s
-    def gen_query(self, gen, qvars):
+    def gen_query(self, gen, qvars, parent_structure=This()):
+        name = parent_structure.field(gen, self.name)
+        vs = collections.OrderedDict()
+        proc = ""
+        for f,t in self.state():
+            n = fresh_name(f)
+            vs[f] = n
+            proc += gen.decl(n, t)
         k = fresh_name()
-        proc  = gen.decl(k, self.keyTy)
+        proc += gen.decl(k, self.keyTy)
         proc += self.make_key(gen, k)
-        proc += gen.decl(self.valueImpl.name, self.valueTy, gen.map_lookup(self.name, k))
-        p, r = self.valueImpl.gen_query(gen, qvars, self.valueTy.instance(self.valueImpl.name))
-        return (proc + p, r)
+        p, handle = self.lookup(gen, name, k)
+        proc += p
+        proc += gen.if_true(self.handle_exists(gen, name, handle))
+        sub = fresh_name("substructure")
+        proc += gen.decl(sub, RefTy(self.valueTy), self.read_handle(gen, name, handle))
+        p, r = self.valueImpl.gen_query(gen, qvars, self.valueTy.instance(sub))
+        proc += p
+        for lhs, rhs in zip(vs.values(), r):
+            proc += gen.set(lhs, rhs)
+        proc += gen.else_true()
+        r = self.valueImpl.gen_empty(gen, self.valueTy.instance(sub))
+        for lhs, rhs in zip(vs.values(), r):
+            proc += gen.set(lhs, rhs)
+        proc += gen.endif()
+        return (proc, list(vs.values()))
+    def gen_empty(self, gen, qvars):
+        return self.valueImpl.gen_empty(gen, qvars)
     def gen_current(self, gen):
         return self.valueImpl.gen_current(gen)
     def gen_advance(self, gen):
@@ -283,57 +353,147 @@ class HashMap(ConcreteImpl):
         return self.valueImpl.gen_next(gen)
     def gen_has_next(self, gen):
         return self.valueImpl.gen_has_next(gen)
-    def gen_insert(self, gen, x):
+    def create_substructure_at_key(self, gen, m, k):
+        name = fresh_name()
+        proc  = gen.decl(name, self.valueTy)
+        proc += self.valueImpl.construct(gen, parent_structure=self.valueTy.instance(name))
+        proc += gen.map_put(m, k, name)
+        return proc
+    def gen_insert(self, gen, x, parent_structure=This(), k=None):
+        name = parent_structure.field(gen, self.name)
+        proc = ""
+        if k is None:
+            k = fresh_name("key")
+            proc += gen.decl(k, self.keyTy)
+            proc += self.make_key_of_record(gen, x, k)
+        p, handle = self.lookup(gen, name, k)
+        proc += p
+        proc += gen.if_true(gen.not_true(self.handle_exists(gen, name, handle)))
+        proc += self.create_substructure_at_key(gen, name, k)
+        p, handle2 = self.lookup(gen, name, k)
+        proc += p
+        proc += gen.set(handle, handle2)
+        proc += gen.endif()
+
+        sub = fresh_name("substructure")
+        proc += gen.decl(sub, RefTy(self.valueTy), self.read_handle(gen, name, handle))
+        proc += self.valueImpl.gen_insert(gen, x, self.valueTy.instance(sub))
+        proc += self.write_handle(gen, name, handle, k, sub)
+        return proc
+    def gen_remove(self, gen, x, parent_structure=This(), k=None):
+        name = parent_structure.field(gen, self.name)
+        proc = ""
+        if k is None:
+            k = fresh_name("key")
+            proc += gen.decl(k, self.keyTy)
+            proc += self.make_key_of_record(gen, x, k)
+
+        p, handle = self.lookup(gen, name, k)
+        proc += p
+        proc += gen.if_true(self.handle_exists(gen, name, handle))
+        sub = fresh_name("substructure")
+        proc += gen.decl(sub, RefTy(self.valueTy), self.read_handle(gen, name, handle))
+        proc += self.valueImpl.gen_remove(gen, x, self.valueTy.instance(sub))
+        proc += self.write_handle(gen, name, handle, k, sub)
+        proc += gen.endif()
+        return proc
+    def gen_remove_in_place(self, gen, parent_structure=This()):
+        name = parent_structure.field(gen, self.name)
         k = fresh_name("key")
-        proc  = gen.decl(k, self.keyTy)
+        proc, x = self.valueImpl.gen_current(gen)
+        proc += gen.decl(k, self.keyTy)
         proc += self.make_key_of_record(gen, x, k)
-        proc += gen.decl(self.valueImpl.name, self.valueTy, gen.map_lookup(self.name, k))
-        return proc + self.valueImpl.gen_insert(gen, x, self.valueTy.instance(self.valueImpl.name)) + gen.map_put(self.name, k, self.valueImpl.name)
-    def gen_remove(self, gen, x):
-        k = fresh_name("key")
-        proc  = gen.decl(k, self.keyTy)
-        proc += self.make_key_of_record(gen, x, k)
-        proc += gen.decl(self.valueImpl.name, self.valueTy, gen.map_lookup(self.name, k))
-        return proc + self.valueImpl.gen_remove(gen, x, self.valueTy.instance(self.valueImpl.name)) + gen.map_put(self.name, k, self.valueImpl.name)
-    def gen_remove_in_place(self, gen, parent_structure):
-        k = fresh_name("key")
-        px, x = self.valueImpl.gen_current(gen)
-        proc  = gen.decl(k, self.keyTy)
-        proc += self.make_key_of_record(gen, x, k)
-        proc += gen.decl(self.valueImpl.name, self.valueTy, gen.map_lookup(parent_structure.field(gen, self.name), k))
-        return px + proc + self.valueImpl.gen_remove_in_place(gen, self.valueTy.instance(self.valueImpl.name)) + gen.map_put(parent_structure.field(gen, self.name), k, self.valueImpl.name)
-    def gen_update(self, gen, fields, f, x, v):
+        p, handle = self.lookup(gen, name, k)
+        proc += p
+        sub = fresh_name("substructure")
+        proc += gen.decl(sub, RefTy(self.valueTy), self.read_handle(gen, name, handle))
+        proc += self.valueImpl.gen_remove_in_place(gen, parent_structure=self.valueTy.instance(sub))
+        proc += self.write_handle(gen, name, handle, k, sub)
+        return proc
+    def gen_update(self, gen, fields, f, x, v, parent_structure=This()):
+        name = parent_structure.field(gen, self.name)
         affects_key = f in self.keyArgs
         k1 = fresh_name("oldkey")
         proc  = gen.decl(k1, self.keyTy)
         proc += self.make_key_of_record(gen, x, k1)
-        proc += gen.decl(self.valueImpl.name, self.valueTy, gen.map_lookup(self.name, k1))
         if affects_key:
             # remove from old loc
-            proc += self.valueImpl.gen_remove(gen, x, self.valueTy.instance(self.valueImpl.name))
-            proc += gen.map_put(self.name, k1, self.valueImpl.name)
+            proc += self.gen_remove(gen, x, parent_structure=parent_structure, k=k1)
 
             # add to new loc
             k2 = fresh_name("newkey")
             proc += gen.decl(k2, self.keyTy)
             proc += self.make_key_of_record(gen, x, k2, remap={f:v})
-            proc += gen.set(self.valueImpl.name, gen.map_lookup(self.name, k2))
-            proc += self.valueImpl.gen_insert(gen, x, self.valueTy.instance(self.valueImpl.name))
-            proc += gen.map_put(self.name, k2, self.valueImpl.name)
+            proc += self.gen_insert(gen, x, parent_structure=parent_structure, k=k2)
         else:
-            subproc = self.valueImpl.gen_update(gen, fields, f, x, v)
+            p, handle = self.lookup(gen, name, k1)
+            proc += p
+            sub = fresh_name("substructure")
+            proc += gen.decl(sub, RefTy(self.valueTy), self.read_handle(gen, name, handle))
+            subproc = self.valueImpl.gen_update(gen, fields, f, x, v, parent_structure=self.valueTy.instance(sub))
             if subproc:
                 proc += subproc
-                proc += gen.map_put(self.name, k1, self.valueImpl.name)
+                proc += self.write_handle(gen, name, handle, k1, sub)
             else:
                 proc = ""
         return proc
     def auxtypes(self):
-        if len(self.keyTy.fields) != 1:
-            yield self.keyTy
+        yield self.keyTy
         yield self.valueTy
         for t in self.valueImpl.auxtypes():
             yield t
+
+class VectorMap(HashMap):
+    def __init__(self, fields, predicate, valueImpl):
+        super(VectorMap, self).__init__(fields, predicate, valueImpl)
+        self.field_types = fields
+        self.key_fields = list(self.keyArgs.keys())
+        self.enum_counts = { f:count_cases(fields[f]) for f in self.key_fields }
+        self.count = 1
+        for f in self.key_fields:
+            self.count *= self.enum_counts[f]
+        self.keyTy = IntTy()
+    def construct(self, gen, parent_structure=This()):
+        name = parent_structure.field(gen, self.name)
+        proc = gen.set(name, gen.new_vector(self.valueTy, self.count))
+        for i in xrange(self.count):
+            proc += self.valueImpl.construct(gen, self.valueTy.instance(gen.vector_get(name, i)))
+        return proc
+    def lookup(self, gen, m, k):
+        """returns proc, handle"""
+        return "", k
+    def put(self, gen, m, k, v):
+        return gen.vector_set(m, k, v)
+    def handle_exists(self, gen, m, handle):
+        return gen.true_value()
+    def read_handle(self, gen, m, handle):
+        return gen.vector_get(m, handle)
+    def write_handle(self, gen, m, handle, k, v):
+        return gen.vector_set(m, handle, v)
+    def fields(self):
+        return ((self.name, VecTy(self.valueTy, self.count)),)
+    def enum_to_int(self, gen, v, t):
+        return gen.ternary(v, "1", "0") if t.lower() in ["bool", "boolean"] else "(int){}".format(v) # TODO: HACK
+    def create_substructure_at_key(self, gen, m, k):
+        return ""
+    def make_key(self, gen, target):
+        for f in self.keyArgs:
+            assert len(self.keyArgs[f]) == 1, "cannot (yet) handle multiple values in lookup ({})".format(self.keyArgs)
+        proc = gen.set(target, "0")
+        for f in self.key_fields:
+            proc += gen.set(target, gen.mul(target, self.enum_counts[f]))
+            proc += gen.set(target, gen.add(target, self.enum_to_int(gen, self.keyArgs[f][0], self.field_types[f])))
+        return proc
+    def make_key_of_record(self, gen, x, target, remap=None):
+        if remap is None:
+            remap = dict()
+        def fv(f):
+            return remap.get(f) or gen.get_field(x, f)
+        proc = gen.set(target, "0")
+        for f in self.key_fields:
+            proc += gen.set(target, gen.mul(target, self.enum_counts[f]))
+            proc += gen.set(target, gen.add(target, self.enum_to_int(gen, fv(f), self.field_types[f])))
+        return proc
 
 def _make_key_args(fields, predicate):
     """returns an OrderedDict mapping field->[var]"""
@@ -363,6 +523,14 @@ def _break_conj(p):
         return ()
     else:
         return (p,)
+
+def and_from_list(ps):
+    p = ps[0]
+    i = 1
+    while i < len(ps):
+        p = predicates.And(p, ps[i])
+        i += 1
+    return p
 
 AugData = collections.namedtuple("AugData", [
     "type", "real_field", "orig_field", "qvar", "mode", "inclusive"])
@@ -427,8 +595,6 @@ class AugTree(ConcreteImpl):
             (self.right_ptr,  RecordType(), gen.null_value()),
             (self.parent_ptr, RecordType(), gen.null_value())] + [
                 (ad.real_field, ad.type, ad.orig_field) for ad in self.augData]
-    # def gen_type(self, gen):
-    #     return self.ty.gen_type(gen)
     def _too_small(self, gen, node, clip=True):
         if not clip:
             return gen.false_value()
@@ -837,8 +1003,8 @@ class LinkedList(ConcreteImpl):
         self.ty = RecordType()
     def fields(self):
         return ((self.head_ptr, self.ty),)
-    def construct(self, gen):
-        return gen.set(self.head_ptr, gen.null_value())
+    def construct(self, gen, parent_structure=This()):
+        return gen.set(parent_structure.field(gen, self.head_ptr), gen.null_value())
     def needs_var(self, v):
         return False
     def state(self):
@@ -849,10 +1015,10 @@ class LinkedList(ConcreteImpl):
         return [
             (self.next_ptr, self.ty, gen.null_value()),
             (self.prev_ptr, self.ty, gen.null_value())]
-    def gen_type(self, gen):
-        return gen.record_type()
     def gen_query(self, gen, qvars):
         return "", [gen.null_value(), self.head_ptr]
+    def gen_empty(self, gen, qvars):
+        return [gen.null_value(), gen.null_value()]
     def gen_advance(self, gen):
         proc  = gen.set(self.prev_cursor_name, self.cursor_name)
         proc += gen.set(self.cursor_name, gen.get_field(self.cursor_name, self.next_ptr))
