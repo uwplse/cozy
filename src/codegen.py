@@ -352,7 +352,7 @@ def _make_augdata(field_name, predicate, fields):
 
 class AugTree(ConcreteImpl):
     def __init__(self, fieldTy, fieldName, predicate, fields):
-        self.name = fresh_name()
+        self.name = fresh_name("root")
         self.fieldTy = fieldTy
         self.fieldName = fieldName
         self.ty = RecordType()
@@ -688,9 +688,9 @@ class AugTree(ConcreteImpl):
     def gen_remove(self, gen, x, parent_structure=This()):
         name = parent_structure.field(gen, self.name)
 
-        p = fresh_name()
-        l = fresh_name()
-        r = fresh_name()
+        p = fresh_name("parent")
+        l = fresh_name("left")
+        r = fresh_name("right")
         proc  = gen.decl(p, self.ty, gen.get_field(x, self.parent_ptr))
         proc += gen.decl(l, self.ty, gen.get_field(x, self.left_ptr))
         proc += gen.decl(r, self.ty, gen.get_field(x, self.right_ptr))
