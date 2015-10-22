@@ -583,12 +583,15 @@ class AugTree(ConcreteImpl):
         self.parent_ptr = fresh_name("parent")
     def fields(self):
         return [(self.name, self.ty)]
-    def construct(self, gen):
-        return gen.set(self.name, gen.null_value())
+    def construct(self, gen, parent_structure=This()):
+        name = parent_structure.field(gen, self.name)
+        return gen.set(name, gen.null_value())
     def needs_var(self, v):
         return v in (x.name for x in self.predicate.vars())
     def state(self):
-        return [(self.cursor_name, self.ty)] # TODO: vars...?
+        return [(self.cursor_name, self.ty)]
+    def gen_empty(self, gen, qvars):
+        return [gen.null_value()]
     def private_members(self, gen):
         return [
             (self.left_ptr,   RecordType(), gen.null_value()),
