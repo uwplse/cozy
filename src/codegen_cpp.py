@@ -248,9 +248,9 @@ class CppCodeGenerator(object):
         # TODO: make this implementation efficient
         for f, ty in fields.items():
             self.writer("void {}::update{}({} x, {} val) {{\n".format(name, capitalize(f), self.record_type(), ty))
-            self.writer("    remove(x);\n")
+            for q in queries:
+                self.writer(indent("    ", q.impl.gen_update(self, fields, f, "x", "val")))
             self.writer("    x->{} = val;\n".format(f))
-            self.writer("    add(x);\n")
             self.writer("}\n")
 
         # query routines

@@ -216,6 +216,9 @@ class ConcreteImpl(object):
     def gen_remove_in_place(self, gen, parent_structure):
         """returns proc"""
         raise Exception("not implemented for type: {}".format(type(self)))
+    def gen_update(self, gen, fields, f, x, v):
+        """returns proc"""
+        raise Exception("not implemented for type: {}".format(type(self)))
     def auxtypes(self):
         """generator of auxiliary types which need to be generated"""
         raise Exception("not implemented for type: {}".format(type(self)))
@@ -254,12 +257,16 @@ class HashMap(ConcreteImpl):
         for f, v in self.keyTy.fields.items():
             s += gen.set(gen.get_field(target, f), self.keyArgs[f][0])
         return s
-    def make_key_of_record(self, gen, x, target):
+    def make_key_of_record(self, gen, x, target, remap=None):
+        if remap is None:
+            remap = dict()
+        def fv(f):
+            return remap.get(f) or gen.get_field(x, f)
         if len(self.keyTy.fields) == 1:
-            return gen.set(target, gen.get_field(x, list(self.keyTy.fields.keys())[0]))
+            return gen.set(target, fv(list(self.keyTy.fields.keys())[0]))
         s = gen.init_new(target, self.keyTy)
         for f, v in self.keyTy.fields.items():
-            s += gen.set(gen.get_field(target, f), gen.get_field(x, f))
+            s += gen.set(gen.get_field(target, f), fv(f))
         return s
     def gen_query(self, gen, qvars):
         k = fresh_name()
@@ -295,6 +302,32 @@ class HashMap(ConcreteImpl):
         proc += self.make_key_of_record(gen, x, k)
         proc += gen.decl(self.valueImpl.name, self.valueTy, gen.map_lookup(parent_structure.field(gen, self.name), k))
         return px + proc + self.valueImpl.gen_remove_in_place(gen, self.valueTy.instance(self.valueImpl.name)) + gen.map_put(parent_structure.field(gen, self.name), k, self.valueImpl.name)
+    def gen_update(self, gen, fields, f, x, v):
+        affects_key = f in self.keyArgs
+        k1 = fresh_name("oldkey")
+        proc  = gen.decl(k1, self.keyTy)
+        proc += self.make_key_of_record(gen, x, k1)
+        proc += gen.decl(self.valueImpl.name, self.valueTy, gen.map_lookup(self.name, k1))
+        if affects_key:
+            # remove from old loc
+            proc += self.valueImpl.gen_remove(gen, x, self.valueTy.instance(self.valueImpl.name))
+            proc += gen.map_put(self.name, k1, self.valueImpl.name)
+
+            # add to new loc
+            k2 = fresh_name("newkey")
+            proc += gen.decl(k2, self.keyTy)
+            proc += self.make_key_of_record(gen, x, k2, remap={f:v})
+            proc += gen.set(self.valueImpl.name, gen.map_lookup(self.name, k2))
+            proc += self.valueImpl.gen_insert(gen, x, self.valueTy.instance(self.valueImpl.name))
+            proc += gen.map_put(self.name, k2, self.valueImpl.name)
+        else:
+            subproc = self.valueImpl.gen_update(gen, fields, f, x, v)
+            if subproc:
+                proc += subproc
+                proc += gen.map_put(self.name, k1, self.valueImpl.name)
+            else:
+                proc = ""
+        return proc
     def auxtypes(self):
         if len(self.keyTy.fields) != 1:
             yield self.keyTy
@@ -649,7 +682,10 @@ class AugTree(ConcreteImpl):
         return proc, oldcursor
     def gen_has_next(self, gen):
         return "", gen.not_true(gen.is_null(self.cursor_name))
-    def gen_insert(self, gen, x, parent_structure=This()):
+    def gen_insert(self, gen, x, parent_structure=This(), indexval=None):
+        if indexval is None:
+            indexval = gen.get_field(x, self.fieldName)
+
         name = parent_structure.field(gen, self.name)
 
         prev = fresh_name("previous")
@@ -663,7 +699,7 @@ class AugTree(ConcreteImpl):
         # find insertion point
         proc += gen.while_true(gen.not_true(gen.is_null(curr)))
         proc += gen.set(prev, curr)
-        proc += gen.if_true(gen.lt(self.fieldTy, gen.get_field(x, self.fieldName), gen.get_field(curr, self.fieldName)))
+        proc += gen.if_true(gen.lt(self.fieldTy, indexval, gen.get_field(curr, self.fieldName)))
         proc += gen.set(curr, gen.get_field(curr, self.left_ptr))
         proc += gen.set(is_left, gen.true_value())
         proc += gen.else_true()
@@ -779,6 +815,15 @@ class AugTree(ConcreteImpl):
         proc += self.gen_remove(gen, self.cursor_name, parent_structure=parent_structure)
         proc += gen.set(self.cursor_name, next_record)
         return proc
+    def gen_update(self, gen, fields, f, x, v, parent_structure=This()):
+        if f == self.fieldName:
+            proc  = self.gen_remove(gen, x, parent_structure=parent_structure)
+            proc += self.gen_insert(gen, x, parent_structure=parent_structure, indexval=v)
+        elif any(aug.orig_field == f for aug in self.augData):
+            proc = gen.comment("TODO: AugTree aug update\n")
+        else:
+            proc = ""
+        return proc
     def auxtypes(self):
         return ()
 
@@ -860,6 +905,8 @@ class LinkedList(ConcreteImpl):
         proc += self.gen_remove(gen, self.cursor_name, parent_structure=parent_structure)
         proc += gen.set(self.cursor_name, next_record)
         return proc
+    def gen_update(self, gen, fields, f, x, v, parent_structure=This()):
+        return ""
     def auxtypes(self):
         return ()
 
@@ -1059,6 +1106,10 @@ class Tuple(ConcreteImpl):
             return proc
         else:
             raise Exception("unknown op {}".format(self.op))
+    def gen_update(self, gen, fields, f, x, v):
+        proc  = self.ty1.gen_update(gen, fields, f, x, v)
+        proc += self.ty2.gen_update(gen, fields, f, x, v)
+        return proc
     def auxtypes(self):
         for t in self.ty1.auxtypes(): yield t
         for t in self.ty2.auxtypes(): yield t
