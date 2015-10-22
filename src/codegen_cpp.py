@@ -259,12 +259,6 @@ class CppCodeGenerator(object):
 
         self.writer("#include \"DataStructure.hpp\"\n")
 
-        self.writer("template <class K, class V>\n")
-        self.writer("inline V* mapget(const std::unordered_map<K, V*>& m, const K& k) {\n")
-        self.writer("    typename std::unordered_map<K, V*>::const_iterator it(m.find(k));\n")
-        self.writer("    return it == m.end() ? NULL : it->second;\n")
-        self.writer("}\n")
-
         # constructor
         self.writer("{}::{}() {{\n".format(name, self.class_name))
         for q in queries:
