@@ -246,11 +246,13 @@ class HashMap(ConcreteImpl):
     def private_members(self, gen):
         return self.valueImpl.private_members(gen)
     def make_key(self, gen, target):
+        for f in self.keyArgs:
+            assert len(self.keyArgs[f]) == 1, "cannot (yet) handle multiple values in lookup"
         if len(self.keyTy.fields) == 1:
-            return gen.set(target, self.keyArgs[list(self.keyTy.fields.keys())[0]])
+            return gen.set(target, self.keyArgs[list(self.keyTy.fields.keys())[0]][0])
         s = gen.init_new(target, self.keyTy)
         for f, v in self.keyTy.fields.items():
-            s += gen.set(gen.get_field(target, f), self.keyArgs[f])
+            s += gen.set(gen.get_field(target, f), self.keyArgs[f][0])
         return s
     def make_key_of_record(self, gen, x, target):
         if len(self.keyTy.fields) == 1:
@@ -301,11 +303,15 @@ class HashMap(ConcreteImpl):
             yield t
 
 def _make_key_args(fields, predicate):
+    """returns an OrderedDict mapping field->[var]"""
     d = collections.OrderedDict()
     for f, v in predicate.comparisons():
         if f not in fields:
             f, v = v, f
-        d[f] = v
+        if f in d:
+            d[f].append(v)
+        else:
+            d[f] = [v]
     return d
 
 def _make_key_type(fields, key_fields):
