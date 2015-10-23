@@ -28,7 +28,7 @@ class CppCodeGenerator(object):
         return "int";
 
     def ref_type(self, ty):
-        return "{}&".format(ty.gen_type(self));
+        return ty.gen_type(self) if type(ty) is codegen.RecordType else "{}&".format(ty.gen_type(self));
 
     def vector_type(self, ty, n):
         return "{}*".format(ty.gen_type(self));
