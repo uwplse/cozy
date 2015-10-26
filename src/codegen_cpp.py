@@ -200,17 +200,17 @@ class CppCodeGenerator(object):
         self.header_writer("public:\n")
 
         # constructor
-        self.header_writer("    {}();\n".format(self.class_name))
+        self.header_writer("    inline {}();\n".format(self.class_name))
 
         # add routine
-        self.header_writer("    void add({} x);\n".format(self.record_type()))
+        self.header_writer("    inline void add({} x);\n".format(self.record_type()))
 
         # remove routine
-        self.header_writer("    void remove({} x);\n".format(self.record_type()))
+        self.header_writer("    inline void remove({} x);\n".format(self.record_type()))
 
         # update routines
         for f, ty in fields.items():
-            self.header_writer("    void update{}({} x, {} val);".format(capitalize(f), self.record_type(), ty))
+            self.header_writer("    inline void update{}({} x, {} val);".format(capitalize(f), self.record_type(), ty))
 
         # query routines
         for q in queries:
@@ -221,9 +221,9 @@ class CppCodeGenerator(object):
             self.header_writer("    class {} {{\n".format(it_name, RECORD_NAME))
             self.header_writer("    friend class DataStructure;\n")
             self.header_writer("    public:\n")
-            self.header_writer("        bool hasNext();\n")
-            self.header_writer("        Record* next();\n")
-            self.header_writer("        void remove();\n")
+            self.header_writer("        inline bool hasNext();\n")
+            self.header_writer("        inline Record* next();\n")
+            self.header_writer("        inline void remove();\n")
             self.header_writer("    private:\n")
             state = q.impl.state()
             self.header_writer("        {}* parent;\n".format(self.class_name))
@@ -232,11 +232,11 @@ class CppCodeGenerator(object):
                 self.header_writer("        {} {};\n".format(ty, v))
             for f, ty in state:
                 self.header_writer("        {} {};\n".format(ty.gen_type(self), f))
-            self.header_writer("        {}({}* parent{}{});\n".format(it_name, self.class_name, "".join(", {} {}".format(ty, v) for v, ty in vars_needed), "".join(", {} {}".format(ty.gen_type(self), f) for f, ty in state)))
+            self.header_writer("        inline {}({}* parent{}{});\n".format(it_name, self.class_name, "".join(", {} {}".format(ty, v) for v, ty in vars_needed), "".join(", {} {}".format(ty.gen_type(self), f) for f, ty in state)))
             self.header_writer("    };\n")
 
             # query method
-            self.header_writer("    {} {}({});\n".format(it_name, q.name, ", ".join("{} {}".format(ty, v) for v,ty in q.vars)))
+            self.header_writer("    inline {} {}({});\n".format(it_name, q.name, ", ".join("{} {}".format(ty, v) for v,ty in q.vars)))
 
         # private members
         self.header_writer("private:\n")
@@ -250,14 +250,15 @@ class CppCodeGenerator(object):
             self.header_writer("}\n")
 
         self.header_writer("\n")
-        self.header_writer("#endif\n")
 
         # ---------------------------------------------------------------------
         # CODE
 
         name = self.class_name if self.namespace is None else "{}::{}".format(self.namespace, self.class_name)
 
-        self.writer("#include \"DataStructure.hpp\"\n")
+        # self.writer("#include \"DataStructure.hpp\"\n")
+
+        self.writer = self.header_writer
 
         # constructor
         self.writer("{}::{}() {{\n".format(name, self.class_name))
@@ -318,6 +319,8 @@ class CppCodeGenerator(object):
             self.writer(indent("    ", proc))
             self.writer("    return {};\n".format(ret))
             self.writer("}\n")
+
+        self.header_writer("#endif\n")
 
 def _gen_aux_type_header(ty, gen, writer, seen):
     if ty in seen:
