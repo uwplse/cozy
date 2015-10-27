@@ -1,5 +1,8 @@
 from functools import total_ordering
 import re
+import sys
+import os
+import io
 
 @total_ordering
 class ADT(object):
@@ -38,3 +41,10 @@ def capitalize(s):
 _START_OF_LINE = re.compile(r"^", re.MULTILINE)
 def indent(i, s):
     return _START_OF_LINE.sub(i, s)
+
+def open_maybe_stdout(f):
+    if f is None:
+        return io.StringIO()
+    if f == "-":
+        return os.fdopen(os.dup(sys.stdout.fileno()), "w")
+    return open(f, "w")

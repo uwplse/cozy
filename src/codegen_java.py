@@ -1,16 +1,14 @@
 import re
+import tempfile
+import os
+import subprocess
 
 import codegen
 import predicates
 import plans
-from common import capitalize, fresh_name, indent
+from common import capitalize, fresh_name, indent, open_maybe_stdout
 
 class JavaCodeGenerator(object):
-    def __init__(self, writer, class_name, package_name=None):
-        self.class_name = class_name
-        self.package_name = package_name
-        self.writer = writer
-        self.types = dict()
 
     def map_type(self, kt, vt):
         return "java.util.Map<{}, {}>".format(_box(kt.gen_type(self)), vt.gen_type(self))
@@ -157,88 +155,125 @@ class JavaCodeGenerator(object):
     def comment(self, text):
         return " /* {} */ ".format(text)
 
-    def write(self, fields, queries):
-        if self.package_name:
-            self.writer("package {};\n\n".format(self.package_name))
+    def write(self, fields, queries, java_package=None, java_class="DataStructure", java="-", **kwargs):
+        with open_maybe_stdout(java) as f:
+            writer = f.write
 
-        self.writer("public class {} implements java.io.Serializable {{\n".format(self.class_name))
+            if java_package:
+                writer("package {};\n\n".format(java_package))
 
-        # record type
-        private_members = []
-        RECORD_NAME = self.record_type()
-        for q in queries:
-            private_members += list((f, ty.gen_type(self), init) for f, ty, init in q.impl.private_members(self))
-        _gen_record_type(RECORD_NAME, list(fields.items()), private_members, self.writer)
+            writer("public class {} implements java.io.Serializable {{\n".format(java_class))
 
-        # auxiliary type definitions
-        seen = set()
-        for q in queries:
-            for t in q.impl.auxtypes():
-                _gen_aux_type(t, self, self.writer, seen)
+            # record type
+            private_members = []
+            RECORD_NAME = self.record_type()
+            for q in queries:
+                private_members += list((f, ty.gen_type(self), init) for f, ty, init in q.impl.private_members(self))
+            _gen_record_type(RECORD_NAME, list(fields.items()), private_members, writer)
 
-        # constructor
-        self.writer("  public {}() {{\n".format(self.class_name))
-        for q in queries:
-            self.writer(indent("    ", q.impl.construct(self)))
-        self.writer("  }\n")
+            # auxiliary type definitions
+            seen = set()
+            for q in queries:
+                for t in q.impl.auxtypes():
+                    _gen_aux_type(t, self, writer, seen)
 
-        # add routine
-        self.writer("  public void add({} x) {{\n".format(RECORD_NAME))
-        for q in queries:
-            self.writer(indent("    ", q.impl.gen_insert(self, "x")))
-        self.writer("  }\n")
+            # constructor
+            writer("  public {}() {{\n".format(java_class))
+            for q in queries:
+                writer(indent("    ", q.impl.construct(self)))
+            writer("  }\n")
 
-        # remove routine
-        self.writer("  public void remove({} x) {{\n".format(RECORD_NAME))
-        for q in queries:
-            self.writer(indent("    ", q.impl.gen_remove(self, "x")))
-        self.writer("  }\n")
+            # add routine
+            writer("  public void add({} x) {{\n".format(RECORD_NAME))
+            for q in queries:
+                writer(indent("    ", q.impl.gen_insert(self, "x")))
+            writer("  }\n")
 
-        # query routines
-        for q in queries:
+            # remove routine
+            writer("  public void remove({} x) {{\n".format(RECORD_NAME))
+            for q in queries:
+                writer(indent("    ", q.impl.gen_remove(self, "x")))
+            writer("  }\n")
 
-            for f, ty in q.impl.fields():
-                self.writer("  /*private*/ {} {};\n".format(ty.gen_type(self), f))
+            # query routines
+            for q in queries:
 
-            it_name = "{}_iterator".format(q.name)
-            self.writer("  /*private*/ static final class {} implements java.util.Iterator<{}> {{\n".format(it_name, RECORD_NAME))
-            state = q.impl.state()
-            self.writer("    {} parent;\n".format(self.class_name))
-            vars_needed = [(v, ty) for v, ty in q.vars if q.impl.needs_var(v)]
-            for v, ty in vars_needed:
-                self.writer("    final {} {};\n".format(ty, v))
-            for f, ty in state:
-                self.writer("    {} {};\n".format(ty.gen_type(self), f))
-            self.writer("    {}({} parent{}{}) {{\n".format(it_name, self.class_name, "".join(", {} {}".format(ty, v) for v, ty in vars_needed), "".join(", {} {}".format(ty.gen_type(self), f) for f, ty in state)))
-            self.writer("      this.parent = parent;\n")
-            for v, ty in vars_needed:
-                self.writer("      this.{v} = {v};\n".format(v=v))
-            for f, ty in state:
-                self.writer("      this.{f} = {f};\n".format(f=f))
-            self.writer("    }\n")
-            self.writer("    @Override public boolean hasNext() {\n")
-            proc, ret = q.impl.gen_has_next(self)
-            self.writer(indent("      ", proc))
-            self.writer("      return {};\n".format(ret))
-            self.writer("    }\n")
-            self.writer("    @Override public {} next() {{\n".format(RECORD_NAME))
-            proc, ret = q.impl.gen_next(self)
-            self.writer(indent("      ", proc))
-            self.writer("      return {};\n".format(ret))
-            self.writer("    }\n")
-            self.writer("    @Override public void remove() {\n")
-            proc = q.impl.gen_remove_in_place(self, codegen.TupleInstance("parent"))
-            self.writer(indent("      ", proc))
-            self.writer("    }\n")
-            self.writer("  }\n")
+                for f, ty in q.impl.fields():
+                    writer("  /*private*/ {} {};\n".format(ty.gen_type(self), f))
 
-            self.writer("  public java.util.Iterator<{}> {}({}) {{\n".format(RECORD_NAME, q.name, ", ".join("{} {}".format(ty, v) for v,ty in q.vars)))
-            proc, stateExps = q.impl.gen_query(self, q.vars)
-            self.writer(indent("    ", proc))
-            self.writer("    return new {}(this{}{});".format(it_name, "".join(", {}".format(v) for v, ty in vars_needed), "".join(", {}".format(e) for e in stateExps)))
-            self.writer("  }\n")
+                it_name = "{}_iterator".format(q.name)
+                writer("  /*private*/ static final class {} implements java.util.Iterator<{}> {{\n".format(it_name, RECORD_NAME))
+                state = q.impl.state()
+                writer("    {} parent;\n".format(java_class))
+                vars_needed = [(v, ty) for v, ty in q.vars if q.impl.needs_var(v)]
+                for v, ty in vars_needed:
+                    writer("    final {} {};\n".format(ty, v))
+                for f, ty in state:
+                    writer("    {} {};\n".format(ty.gen_type(self), f))
+                writer("    {}({} parent{}{}) {{\n".format(it_name, java_class, "".join(", {} {}".format(ty, v) for v, ty in vars_needed), "".join(", {} {}".format(ty.gen_type(self), f) for f, ty in state)))
+                writer("      this.parent = parent;\n")
+                for v, ty in vars_needed:
+                    writer("      this.{v} = {v};\n".format(v=v))
+                for f, ty in state:
+                    writer("      this.{f} = {f};\n".format(f=f))
+                writer("    }\n")
+                writer("    @Override public boolean hasNext() {\n")
+                proc, ret = q.impl.gen_has_next(self)
+                writer(indent("      ", proc))
+                writer("      return {};\n".format(ret))
+                writer("    }\n")
+                writer("    @Override public {} next() {{\n".format(RECORD_NAME))
+                proc, ret = q.impl.gen_next(self)
+                writer(indent("      ", proc))
+                writer("      return {};\n".format(ret))
+                writer("    }\n")
+                writer("    @Override public void remove() {\n")
+                proc = q.impl.gen_remove_in_place(self, codegen.TupleInstance("parent"))
+                writer(indent("      ", proc))
+                writer("    }\n")
+                writer("  }\n")
 
-        self.writer("}\n")
+                writer("  public java.util.Iterator<{}> {}({}) {{\n".format(RECORD_NAME, q.name, ", ".join("{} {}".format(ty, v) for v,ty in q.vars)))
+                proc, stateExps = q.impl.gen_query(self, q.vars)
+                writer(indent("    ", proc))
+                writer("    return new {}(this{}{});".format(it_name, "".join(", {}".format(v) for v, ty in vars_needed), "".join(", {}".format(e) for e in stateExps)))
+                writer("  }\n")
+
+            writer("}\n")
+
+    def supports_cost_model_file(self, f):
+        return f.endswith(".java")
+
+    def dynamic_cost(self, fields, queries, impls, cost_model_file):
+        for q, i in zip(queries, impls):
+            q.impl = i
+
+        tmp = tempfile.mkdtemp()
+
+        self.write(fields, queries, java_class="DataStructure", java=os.path.join(tmp, "DataStructure.java"))
+
+        with open(os.path.join(tmp, "Main.java"), "w") as f:
+            f.write("import java.util.*;")
+            f.write("\npublic class Main {\n")
+            f.write("public static void main(String[] args) { new Main().run(); }\n")
+            with open(cost_model_file, "r") as b:
+                f.write(b.read())
+            f.write("\n}\n")
+
+        orig = os.getcwd()
+        os.chdir(tmp)
+        ret = subprocess.call(["javac", "Main.java"])
+        assert ret == 0
+
+        java = subprocess.Popen(["java", "Main"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        stdout, stdin = java.communicate()
+        assert java.returncode == 0
+
+        score = long(stdout.strip())
+
+        os.chdir(orig)
+
+        return score
 
 def _gen_aux_type(ty, gen, writer, seen):
     if ty in seen:

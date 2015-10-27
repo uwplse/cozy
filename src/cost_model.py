@@ -1,9 +1,7 @@
-from __future__ import print_function
 import math
 import tempfile
 import os
 import subprocess
-import sys
 
 import plans
 from codegen_java import JavaCodeGenerator
@@ -37,49 +35,3 @@ def _cost(plan, n=float(1000)):
 
 def cost(fields, qvars, plan):
     return _cost(plan)[0]
-
-def dynamic_cost(fields, queries, impls, cost_model_file):
-    for q, i in zip(queries, impls):
-        q.impl = i
-
-    tmp = tempfile.mkdtemp()
-    print("benchmarking {} in {}... ".format([q.name for q in queries], tmp), end="")
-    sys.stdout.flush()
-
-    if cost_model_file.endswith(".java"):
-
-        with open(os.path.join(tmp, "DataStructure.java"), "w") as f:
-            JavaCodeGenerator(f.write, class_name="DataStructure").write(fields, queries)
-
-        with open(os.path.join(tmp, "Main.java"), "w") as f:
-            f.write("import java.util.*;")
-            f.write("\npublic class Main {\n")
-            f.write("public static void main(String[] args) { new Main().run(); }\n")
-            with open(cost_model_file, "r") as b:
-                f.write(b.read())
-            f.write("\n}\n")
-
-        orig = os.getcwd()
-        os.chdir(tmp)
-        ret = subprocess.call(["javac", "Main.java"])
-        assert ret == 0
-
-        java = subprocess.Popen(["java", "Main"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        stdout, stdin = java.communicate()
-        assert java.returncode == 0
-
-    elif cost_model_file.endswith(".cpp") or cost_model_file.endswith(".cxx"):
-
-        raise Exception("cpp dynamic cost not implemented")
-
-    else:
-
-        raise Exception("no code generator available for file {}".format(cost_model_file))
-
-    score = long(stdout.strip())
-
-    os.chdir(orig)
-
-    print("cost = {}".format(score))
-
-    return score
