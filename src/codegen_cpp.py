@@ -1,4 +1,5 @@
 import re
+import subprocess
 
 import codegen
 import predicates
@@ -171,7 +172,7 @@ class CppCodeGenerator(object):
     def comment(self, text):
         return " /* {} */ ".format(text)
 
-    def write(self, fields, queries, cpp, cpp_header, cpp_class, cpp_extra, cpp_namespace, **kwargs):
+    def write(self, fields, queries, cpp=None, cpp_header=None, cpp_class="DataStructure", cpp_extra=None, cpp_namespace=None, **kwargs):
 
         with open_maybe_stdout(cpp) as outfile:
             with open_maybe_stdout(cpp_header) as header_outfile:
@@ -342,6 +343,30 @@ class CppCodeGenerator(object):
                     writer("}\n")
 
                 header_writer("#endif\n")
+
+    def supports_cost_model_file(self, f):
+        return f.endswith(".cpp") or f.endswith(".cxx")
+
+    def dynamic_cost(self, fields, queries, impls, cost_model_file):
+        for q, i in zip(queries, impls):
+            q.impl = i
+
+        self.write(fields, queries,
+            cpp_class="DataStructure",
+            cpp="/tmp/DataStructure.cpp",
+            cpp_header="/tmp/DataStructure.hpp")
+
+        flags = ["-DQT_SHARED", "-I/usr/local/Cellar/qt/4.8.7_1/include", "-I/usr/local/Cellar/qt/4.8.7_1/include/QtGui", "-I/usr/local/Cellar/qt/4.8.7_1/include", "-I/usr/local/Cellar/qt/4.8.7_1/include/QtCore", "-F/usr/local/Cellar/qt/4.8.7_1/lib", "-framework", "QtGui", "-F/usr/local/Cellar/qt/4.8.7_1/lib", "-framework", "QtCore"]
+        ret = subprocess.call(["c++", "-O2", "-I/tmp", "/tmp/DataStructure.cpp", cost_model_file, "-o", "/tmp/a.out"] + flags)
+        assert ret == 0
+
+        proc = subprocess.Popen(["/tmp/a.out"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        stdout, stdin = proc.communicate()
+        assert proc.returncode == 0
+
+        score = long(stdout.strip())
+        return score
+
 
 def _gen_aux_type_header(ty, gen, writer, class_name, seen):
     if ty in seen:
