@@ -233,7 +233,7 @@ class CppCodeGenerator(object):
 
                 # update routines
                 for f, ty in fields.items():
-                    header_writer("    inline void update{}({} x, {} val);".format(capitalize(f), self.record_type(), ty))
+                    header_writer("    inline void update{}({} x, {} val);\n".format(capitalize(f), self.record_type(), ty))
 
                 # query routines
                 for q in queries:
