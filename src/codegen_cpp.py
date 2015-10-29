@@ -324,7 +324,7 @@ class CppCodeGenerator(object):
                     writer("  }\n")
 
                     # iterator constructor
-                    writer("{prefix}::{q}_iterator::{q}_iterator({}* _parent{}{}) :\n".format(cpp_class, "".join(", {} {}".format(ty, v) for v, ty in vars_needed), "".join(", {} _{}".format(ty.gen_type(self), f) for f, ty in state), prefix=name, q=q.name))
+                    writer("{prefix}::{q}_iterator::{q}_iterator({}* _parent{}{}) :\n".format(cpp_class, "".join(", {} _{}".format(ty, v) for v, ty in vars_needed), "".join(", {} _{}".format(ty.gen_type(self), f) for f, ty in state), prefix=name, q=q.name))
                     writer("  parent(_parent){}{}\n".format("".join(", {f}(_{f})".format(f=v) for v, ty in vars_needed), "".join(", {f}(_{f})".format(f=v) for v, ty in state)))
                     writer("{ }\n")
 
