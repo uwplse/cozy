@@ -102,6 +102,7 @@ if __name__ == '__main__':
     cpp_opts.add_argument("--cpp", metavar="FILE.cpp", default=None, help="Output file for C++ code, use '-' for stdout")
     cpp_opts.add_argument("--cpp-header", metavar="FILE.hpp", default=None, help="Output file for C++ header, use '-' for stdout")
     cpp_opts.add_argument("--cpp-class", metavar="Name", default="DataStructure", help="C++ class name for generated structure")
+    cpp_opts.add_argument("--cpp-record-class", metavar="Name", default="Record", help="C++ class name for record type")
     cpp_opts.add_argument("--cpp-extra", metavar="cpp-code", default=None, help="Extra text to include at top of C++ header file")
     cpp_opts.add_argument("--cpp-namespace", metavar="ns", default=None, help="C++ namespace")
 

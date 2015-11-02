@@ -6,8 +6,6 @@ import predicates
 import plans
 from common import capitalize, fresh_name, indent, open_maybe_stdout
 
-RECORD_NAME = "Record"
-
 class CppCodeGenerator(object):
     def __init__(self, maptype="hash"):
         self.maptype = maptype
@@ -76,7 +74,7 @@ class CppCodeGenerator(object):
         return t
 
     def record_type(self):
-        return "{}*".format(RECORD_NAME)
+        return "{}*".format(self.cpp_record_class)
 
     def predicate(self, fields, qvars, pred, target):
         return _predicate_to_exp(fields, qvars, pred, target)
@@ -172,7 +170,8 @@ class CppCodeGenerator(object):
     def comment(self, text):
         return " /* {} */ ".format(text)
 
-    def write(self, fields, queries, cpp=None, cpp_header=None, cpp_class="DataStructure", cpp_extra=None, cpp_namespace=None, **kwargs):
+    def write(self, fields, queries, cpp=None, cpp_header=None, cpp_class="DataStructure", cpp_record_class="Record", cpp_extra=None, cpp_namespace=None, **kwargs):
+        self.cpp_record_class = cpp_record_class
 
         with open_maybe_stdout(cpp) as outfile:
             with open_maybe_stdout(cpp_header) as header_outfile:
@@ -202,7 +201,7 @@ class CppCodeGenerator(object):
                     header_writer("namespace {} {{\n".format(cpp_namespace))
 
                 # forward decls
-                header_writer("class Record;\n")
+                header_writer("class {};\n".format(cpp_record_class))
                 header_writer("class {};\n".format(cpp_class))
                 header_writer("\n")
 
@@ -216,7 +215,7 @@ class CppCodeGenerator(object):
                 private_members = []
                 for q in queries:
                     private_members += list((f, ty.gen_type(self), init) for f, ty, init in q.impl.private_members(self))
-                _gen_record_type(RECORD_NAME, list(fields.items()), private_members, header_writer)
+                _gen_record_type(cpp_record_class, list(fields.items()), private_members, header_writer)
                 header_writer("\n")
 
                 header_writer("class {} {{\n".format(cpp_class))
@@ -244,11 +243,11 @@ class CppCodeGenerator(object):
                     vars_needed = [(v, ty) for v, ty in q.vars if q.impl.needs_var(v)]
 
                     # iterator class
-                    header_writer("    class {} {{\n".format(it_name, RECORD_NAME))
-                    header_writer("    friend class DataStructure;\n")
+                    header_writer("    class {} {{\n".format(it_name))
+                    header_writer("    friend class {};\n".format(cpp_class))
                     header_writer("    public:\n")
                     header_writer("        inline bool hasNext();\n")
-                    header_writer("        inline Record* next();\n")
+                    header_writer("        inline {}* next();\n".format(cpp_record_class))
                     header_writer("        inline void remove();\n")
                     header_writer("    private:\n")
                     state = q.impl.state()
