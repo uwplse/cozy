@@ -320,7 +320,6 @@ class CppCodeGenerator(object):
                 writer("}\n")
 
                 # update routines
-                # TODO: make this implementation efficient
                 for f, ty in fields.items():
                     writer("void {}::update{}({} x, {} val) {{\n".format(name, capitalize(f), self.record_type(), ty))
                     writer("    if ({} != val) {{\n".format(self.get_field("x", f)))
