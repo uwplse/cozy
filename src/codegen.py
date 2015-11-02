@@ -58,6 +58,10 @@ class TupleInstance(object):
     def field(self, gen, f):
         return gen.get_field(self.this, f)
 
+class This():
+    def field(self, gen, f):
+        return f
+
 class TupleTy(Ty):
     def __init__(self, fields):
         self.name = fresh_name("Tuple")
@@ -218,7 +222,7 @@ class ConcreteImpl(object):
     def state(self):
         """returns list of (name, ty)"""
         raise Exception("not implemented for type: {}".format(type(self)))
-    def private_members(self, gen):
+    def private_members(self, gen, parent_structure=This()):
         """returns list of (name, ty, init)"""
         raise Exception("not implemented for type: {}".format(type(self)))
     def gen_query(self, gen, qvars):
@@ -259,10 +263,6 @@ class ConcreteImpl(object):
         """generator of auxiliary types which need to be generated"""
         raise Exception("not implemented for type: {}".format(type(self)))
 
-class This():
-    def field(self, gen, f):
-        return f
-
 class HashMap(ConcreteImpl):
     def __init__(self, fields, predicate, valueImpl):
         self.name = fresh_name("map")
@@ -281,8 +281,8 @@ class HashMap(ConcreteImpl):
         return self.valueImpl.needs_var(v)
     def state(self):
         return self.valueImpl.state()
-    def private_members(self, gen):
-        return self.valueImpl.private_members(gen)
+    def private_members(self, gen, parent_structure=This()):
+        return self.valueImpl.private_members(gen, parent_structure)
     def make_key(self, gen, target):
         for f in self.keyArgs:
             assert len(self.keyArgs[f]) == 1, "cannot (yet) handle multiple values in lookup ({})".format(self.keyArgs)
@@ -592,12 +592,12 @@ class AugTree(ConcreteImpl):
         return [(self.cursor_name, self.ty)]
     def gen_empty(self, gen, qvars):
         return [gen.null_value()]
-    def private_members(self, gen):
+    def private_members(self, gen, parent_structure=This()):
         return [
             (self.left_ptr,   RecordType(), gen.null_value()),
             (self.right_ptr,  RecordType(), gen.null_value()),
             (self.parent_ptr, RecordType(), gen.null_value())] + [
-                (ad.real_field, ad.type, ad.orig_field) for ad in self.augData]
+                (ad.real_field, ad.type, parent_structure.field(gen, ad.orig_field)) for ad in self.augData]
     def _too_small(self, gen, node, clip=True):
         if not clip:
             return gen.false_value()
@@ -1014,7 +1014,7 @@ class LinkedList(ConcreteImpl):
         return [
             (self.prev_cursor_name, self.ty),
             (self.cursor_name, self.ty)]
-    def private_members(self, gen):
+    def private_members(self, gen, parent_structure=This()):
         return [
             (self.next_ptr, self.ty, gen.null_value()),
             (self.prev_ptr, self.ty, gen.null_value())]
@@ -1093,8 +1093,8 @@ class Guarded(ConcreteImpl):
         return self.ty.needs_var(v)
     def state(self):
         return self.ty.state()
-    def private_members(self, gen):
-        return self.ty.private_members(gen)
+    def private_members(self, gen, parent_structure=This()):
+        return self.ty.private_members(gen, parent_structure)
     def gen_query(self, gen, qvars):
         return self.ty.gen_query(gen, qvars)
     def gen_current(self, gen):
@@ -1128,8 +1128,8 @@ class Filtered(ConcreteImpl):
         return self.ty.needs_var(v) or any(vv.name == v for vv in self.predicate.vars() if vv.name in self.qvars)
     def state(self):
         return self.ty.state()
-    def private_members(self, gen):
-        return self.ty.private_members(gen)
+    def private_members(self, gen, parent_structure=This()):
+        return self.ty.private_members(gen, parent_structure)
     def gen_query(self, gen, qvars):
         proc, es = self.ty.gen_query(gen, qvars)
         for (v, t), e in itertools.izip(self.ty.state(), es):
@@ -1194,8 +1194,8 @@ class Tuple(ConcreteImpl):
         return self.ty1.needs_var(v) or self.ty2.needs_var(v)
     def state(self):
         return self.ty1.state() + self.ty2.state()
-    def private_members(self, gen):
-        return self.ty1.private_members(gen) + self.ty2.private_members(gen)
+    def private_members(self, gen, parent_structure=This()):
+        return self.ty1.private_members(gen, parent_structure) + self.ty2.private_members(gen, parent_structure)
     def gen_query(self, gen, qvars):
         if self.op == CONCAT_OP:
             proc1, es1 = self.ty1.gen_query(gen, qvars)

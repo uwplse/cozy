@@ -124,6 +124,8 @@ class CppCodeGenerator(object):
     def get_field(self, e, m):
         if e is None:
             return m
+        if self.cpp_abstract_record and (m in self.fields or any(name == m for name, _, _ in self.private_members)):
+            return "read_{}({})".format(m, e)
         return "({})->{}".format(e, m)
 
     def both(self, e1, e2):
@@ -170,8 +172,10 @@ class CppCodeGenerator(object):
     def comment(self, text):
         return " /* {} */ ".format(text)
 
-    def write(self, fields, queries, cpp=None, cpp_header=None, cpp_class="DataStructure", cpp_record_class="Record", cpp_extra=None, cpp_namespace=None, **kwargs):
+    def write(self, fields, queries, cpp=None, cpp_header=None, cpp_class="DataStructure", cpp_record_class="Record", cpp_abstract_record=False, cpp_extra=None, cpp_namespace=None, **kwargs):
         self.cpp_record_class = cpp_record_class
+        self.cpp_abstract_record = cpp_abstract_record
+        self.fields = fields
 
         with open_maybe_stdout(cpp) as outfile:
             with open_maybe_stdout(cpp_header) as header_outfile:
@@ -214,8 +218,15 @@ class CppCodeGenerator(object):
                 # record type
                 private_members = []
                 for q in queries:
-                    private_members += list((f, ty.gen_type(self), init) for f, ty, init in q.impl.private_members(self))
-                _gen_record_type(cpp_record_class, list(fields.items()), private_members, header_writer)
+                    private_members += list((f, ty.gen_type(self), init) for f, ty, init in q.impl.private_members(self, parent_structure=(codegen.TupleInstance("x") if cpp_abstract_record else codegen.This())))
+                self.private_members = private_members
+                if cpp_abstract_record:
+                    for name, ty in list(fields.items()) + [(name, ty) for name, ty, _ in private_members]:
+                        header_writer("inline {}& read_{}({}); /* MUST BE IMPLEMENTED BY CLIENT */\n".format(ty, name, self.record_type()))
+                    for name, ty, init in private_members:
+                        header_writer("inline {} init_{}({} x) {{ return {}; }}\n".format(ty, name, self.record_type(), init))
+                else:
+                    _gen_record_type(cpp_record_class, list(fields.items()), private_members, header_writer)
                 header_writer("\n")
 
                 header_writer("class {} {{\n".format(cpp_class))
@@ -312,10 +323,10 @@ class CppCodeGenerator(object):
                 # TODO: make this implementation efficient
                 for f, ty in fields.items():
                     writer("void {}::update{}({} x, {} val) {{\n".format(name, capitalize(f), self.record_type(), ty))
-                    writer("    if (x->{} != val) {{\n".format(f))
+                    writer("    if ({} != val) {{\n".format(self.get_field("x", f)))
                     for q in queries:
                         writer(indent("        ", q.impl.gen_update(self, fields, f, "x", "val")))
-                    writer("        x->{} = val;\n".format(f))
+                    writer("        {} = val;\n".format(self.get_field("x", f)))
                     writer("    }")
                     writer("}\n")
 
