@@ -254,7 +254,7 @@ class ConcreteImpl(object):
         """returns proc"""
         raise Exception("not implemented for type: {}".format(type(self)))
     def gen_remove_in_place(self, gen, parent_structure):
-        """returns proc"""
+        """returns proc, removed element"""
         raise Exception("not implemented for type: {}".format(type(self)))
     def gen_update(self, gen, fields, f, x, v):
         """returns proc"""
@@ -407,9 +407,10 @@ class HashMap(ConcreteImpl):
         proc += p
         sub = fresh_name("substructure")
         proc += gen.decl(sub, RefTy(self.valueTy), self.read_handle(gen, name, handle))
-        proc += self.valueImpl.gen_remove_in_place(gen, parent_structure=self.valueTy.instance(sub))
+        p, removed = self.valueImpl.gen_remove_in_place(gen, parent_structure=self.valueTy.instance(sub))
+        proc += p
         proc += self.write_handle(gen, name, handle, k, sub)
-        return proc
+        return removed
     def gen_update(self, gen, fields, f, x, v, parent_structure=This()):
         name = parent_structure.field(gen, self.name)
         affects_key = f in self.keyArgs
@@ -577,6 +578,7 @@ class AugTree(ConcreteImpl):
 
         self.augData = list(_make_augdata(fieldName, predicate, fields)) if predicate else ()
 
+        self.prev_cursor_name = fresh_name("prev_cursor")
         self.cursor_name = fresh_name("cursor")
         self.left_ptr = fresh_name("left")
         self.right_ptr = fresh_name("right")
@@ -589,7 +591,7 @@ class AugTree(ConcreteImpl):
     def needs_var(self, v):
         return v in (x.name for x in self.predicate.vars())
     def state(self):
-        return [(self.cursor_name, self.ty)]
+        return [(self.prev_cursor_name, self.ty), (self.cursor_name, self.ty)]
     def gen_empty(self, gen, qvars):
         return [gen.null_value()]
     def private_members(self, gen, parent_structure=This()):
@@ -797,7 +799,7 @@ class AugTree(ConcreteImpl):
             self._subtree_ok(gen, gen.get_field(node, self.right_ptr), clip))
     def gen_query(self, gen, qvars, this=This()):
         p, m = self._find_min(gen, this.field(gen, self.name))
-        return p, [m]
+        return p, [gen.null_value(), m]
     def gen_current(self, gen):
         return "", self.cursor_name
     def gen_advance(self, gen, target=None):
@@ -848,6 +850,7 @@ class AugTree(ConcreteImpl):
         oldcursor = fresh_name()
         proc  = gen.decl(oldcursor, RecordType(), self.cursor_name)
         proc += self.gen_advance(gen)
+        proc += gen.set(self.prev_cursor_name, oldcursor)
         return proc, oldcursor
     def gen_has_next(self, gen):
         return "", gen.not_true(gen.is_null(self.cursor_name))
@@ -978,12 +981,11 @@ class AugTree(ConcreteImpl):
 
         return proc
     def gen_remove_in_place(self, gen, parent_structure):
-        next_record = fresh_name("next_record")
-        proc  = gen.decl(next_record, RecordType())
-        proc += self.gen_advance(gen, target=next_record)
-        proc += self.gen_remove(gen, self.cursor_name, parent_structure=parent_structure)
-        proc += gen.set(self.cursor_name, next_record)
-        return proc
+        old_prev = fresh_name("old_prev")
+        proc  = gen.decl(old_prev, self.ty, self.prev_cursor_name)
+        proc += self.gen_remove(gen, self.prev_cursor_name, parent_structure=parent_structure)
+        proc += gen.set(self.prev_cursor_name, gen.null_value())
+        return proc, old_prev
     def gen_update(self, gen, fields, f, x, v, parent_structure=This()):
         if f == self.fieldName:
             proc  = self.gen_remove(gen, x, parent_structure=parent_structure)
@@ -1069,11 +1071,11 @@ class LinkedList(ConcreteImpl):
         proc += gen.set(gen.get_field(x, self.next_ptr), gen.null_value())
         return proc
     def gen_remove_in_place(self, gen, parent_structure):
-        new_prev = fresh_name()
-        proc  = gen.decl(new_prev, self.ty, gen.get_field(self.prev_cursor_name, self.prev_ptr))
+        old_prev = fresh_name("old_prev")
+        proc  = gen.decl(old_prev, self.ty, self.prev_cursor_name)
         proc += self.gen_remove(gen, self.prev_cursor_name, parent_structure=parent_structure)
-        proc += gen.set(self.prev_cursor_name, new_prev)
-        return proc
+        proc += gen.set(self.prev_cursor_name, gen.null_value())
+        return proc, old_prev
     def gen_update(self, gen, fields, f, x, v, parent_structure=This()):
         return ""
     def auxtypes(self):
@@ -1261,18 +1263,6 @@ class Tuple(ConcreteImpl):
     def gen_remove(self, gen, x):
         if self.op == CONCAT_OP:
             return self.ty1.gen_remove(gen, x) + self.ty2.gen_remove(gen, x)
-        else:
-            raise Exception("unknown op {}".format(self.op))
-    def gen_remove_in_place(self, gen, parent_structure):
-        if self.op == CONCAT_OP:
-            proc1, r1 = self.ty1.gen_has_next(gen)
-            proc  = proc1
-            proc += gen.if_true(r1)
-            proc += self.ty1.gen_remove_in_place(gen, parent_structure)
-            proc += gen.else_true()
-            proc += self.ty2.gen_remove_in_place(gen, parent_structure)
-            proc += gen.endif()
-            return proc
         else:
             raise Exception("unknown op {}".format(self.op))
     def gen_update(self, gen, fields, f, x, v):

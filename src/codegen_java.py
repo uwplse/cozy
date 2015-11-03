@@ -228,8 +228,11 @@ class JavaCodeGenerator(object):
                 writer("      return {};\n".format(ret))
                 writer("    }\n")
                 writer("    @Override public void remove() {\n")
-                proc = q.impl.gen_remove_in_place(self, codegen.TupleInstance("parent"))
+                proc, removed = q.impl.gen_remove_in_place(self, codegen.TupleInstance("parent"))
                 writer(indent("      ", proc))
+                for q2 in queries:
+                    if q2 != q:
+                        writer(indent("        ", q2.impl.gen_remove(self, removed, parent_structure=codegen.TupleInstance("parent"))))
                 writer("    }\n")
                 writer("  }\n")
 

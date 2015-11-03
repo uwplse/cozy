@@ -363,8 +363,11 @@ class CppCodeGenerator(object):
                     # remove
                     writer("void {prefix}::{q}_iterator::remove() {{\n".format(cpp_class, "".join(", {} {}".format(ty, v) for v, ty in vars_needed), "".join(", {} _{}".format(ty.gen_type(self), f) for f, ty in state), prefix=name, q=q.name))
                     writer("    --(parent->my_size);\n")
-                    proc = q.impl.gen_remove_in_place(self, codegen.TupleInstance("parent"))
+                    proc, removed = q.impl.gen_remove_in_place(self, codegen.TupleInstance("parent"))
                     writer(indent("    ", proc))
+                    for q2 in queries:
+                        if q2 != q:
+                            writer(indent("    ", q2.impl.gen_remove(self, removed, parent_structure=codegen.TupleInstance("parent"))))
                     writer("}\n")
 
                 header_writer("#endif\n")
