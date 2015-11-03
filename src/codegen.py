@@ -1069,10 +1069,10 @@ class LinkedList(ConcreteImpl):
         proc += gen.set(gen.get_field(x, self.next_ptr), gen.null_value())
         return proc
     def gen_remove_in_place(self, gen, parent_structure):
-        next_record = fresh_name()
-        proc  = gen.decl(next_record, self.ty, gen.get_field(self.cursor_name, self.next_ptr))
-        proc += self.gen_remove(gen, self.cursor_name, parent_structure=parent_structure)
-        proc += gen.set(self.cursor_name, next_record)
+        new_prev = fresh_name()
+        proc  = gen.decl(new_prev, self.ty, gen.get_field(self.prev_cursor_name, self.prev_ptr))
+        proc += self.gen_remove(gen, self.prev_cursor_name, parent_structure=parent_structure)
+        proc += gen.set(self.prev_cursor_name, new_prev)
         return proc
     def gen_update(self, gen, fields, f, x, v, parent_structure=This()):
         return ""
