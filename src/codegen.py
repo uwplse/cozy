@@ -1047,10 +1047,10 @@ class LinkedList(ConcreteImpl):
         proc += gen.set(name, x)
         return proc
     def gen_remove(self, gen, x, parent_structure=This()):
-        name = parent_structure.field(gen, self.head_ptr)
+        head = parent_structure.field(gen, self.head_ptr)
 
-        proc  = gen.if_true(gen.same(x, name))
-        proc += gen.set(name, gen.get_field(x, self.next_ptr))
+        proc  = gen.if_true(gen.same(x, head))
+        proc += gen.set(head, gen.get_field(x, self.next_ptr))
         proc += gen.endif()
 
         proc += gen.if_true(gen.not_true(gen.is_null(gen.get_field(x, self.next_ptr))))
