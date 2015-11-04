@@ -866,7 +866,7 @@ class AugTree(ConcreteImpl):
 
         proc  = gen.decl(prev, self.ty, gen.null_value())
         proc += gen.decl(curr, self.ty, name)
-        proc += gen.decl(is_left, NativeTy(gen.bool_type()), gen.false_value())
+        proc += gen.decl(is_left, BoolTy(), gen.false_value())
 
         # find insertion point
         proc += gen.while_true(gen.not_true(gen.is_null(curr)))
@@ -892,6 +892,38 @@ class AugTree(ConcreteImpl):
         proc += gen.endif()
         proc += gen.endif()
 
+        # walk back up, updating augdata
+        # TODO: we can be a bit more efficient if we do this on the way down instead
+        proc += gen.set(curr, x)
+        proc += gen.do_while()
+        proc += self.recompute_all_augdata(gen, curr)
+        proc += gen.set(curr, gen.get_field(curr, self.parent_ptr))
+        proc += gen.end_do_while(gen.not_true(gen.is_null(curr)))
+
+        return proc
+    def recompute_augdata(self, gen, node, aug):
+        v = fresh_name("augval")
+        proc  = gen.comment("{} is {} of {}".format(aug.real_field, aug.mode, aug.orig_field))
+        proc += gen.decl(v, aug.type, gen.get_field(node, aug.orig_field))
+
+        for child in [gen.get_field(node, self.left_ptr), gen.get_field(node, self.right_ptr)]:
+            n = fresh_name("child")
+            proc += gen.decl(n, self.ty, child)
+            proc += gen.if_true(gen.not_true(gen.is_null(n)))
+            nv = fresh_name("val")
+            proc += gen.decl(nv, aug.type, gen.get_field(n, aug.real_field))
+            if aug.mode == AUG_MIN:
+                proc += gen.set(v, gen.ternary(gen.lt(aug.type, v, nv), v, nv))
+            else:
+                proc += gen.set(v, gen.ternary(gen.lt(aug.type, v, nv), nv, v))
+            proc += gen.endif()
+
+        proc += gen.set(gen.get_field(node, aug.real_field), v)
+        return proc
+    def recompute_all_augdata(self, gen, node):
+        proc = ""
+        for aug in self.augData:
+            proc += self.recompute_augdata(gen, node, aug)
         return proc
     def replace_node_in_parent(self, gen, parent, old_node, new_node):
         # parent.[L|R] = new_node
@@ -902,6 +934,7 @@ class AugTree(ConcreteImpl):
         proc += gen.else_true()
         proc += gen.set(gen.get_field(parent, self.right_ptr), new_node)
         proc += gen.endif()
+        proc += self.recompute_all_augdata(gen, parent)
         proc += gen.endif()
         # new_node.parent = parent
         proc += gen.if_true(gen.not_true(gen.is_null(new_node)))
@@ -973,8 +1006,6 @@ class AugTree(ConcreteImpl):
         proc += gen.if_true(gen.same(root, x))
         proc += gen.set(root, new_x)
         proc += gen.endif()
-
-        # TODO: recompute augdata. :(
 
         return proc
     def gen_remove_in_place(self, gen, parent_structure):
