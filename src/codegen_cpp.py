@@ -124,8 +124,10 @@ class CppCodeGenerator(object):
     def get_field(self, e, m):
         if e is None:
             return m
-        if self.cpp_abstract_record and (m in self.fields or any(name == m for name, _, _ in self.private_members)):
+        if self.cpp_abstract_record and m in self.fields:
             return "read_{}({})".format(m, e)
+        if self.cpp_abstract_record and any(name == m for name, _, _ in self.private_members):
+            return "read_private_data({}).{}".format(e, m)
         return "({})->{}".format(e, m)
 
     def both(self, e1, e2):
@@ -221,10 +223,13 @@ class CppCodeGenerator(object):
                     private_members += list((f, ty.gen_type(self), init) for f, ty, init in q.impl.private_members(self, parent_structure=(codegen.TupleInstance("x") if cpp_abstract_record else codegen.This())))
                 self.private_members = private_members
                 if cpp_abstract_record:
-                    for name, ty in list(fields.items()) + [(name, ty) for name, ty, _ in private_members]:
+                    header_writer("struct PrivateData {\n")
+                    for name, ty, _ in private_members:
+                        header_writer("    {} {};\n".format(ty, name))
+                    header_writer("};\n")
+                    for name, ty in list(fields.items()):
                         header_writer("inline {}& read_{}({}); /* MUST BE IMPLEMENTED BY CLIENT */\n".format(ty, name, self.record_type()))
-                    for name, ty, init in private_members:
-                        header_writer("inline {} init_{}({} x) {{ return {}; }}\n".format(ty, name, self.record_type(), init))
+                    header_writer("inline PrivateData& read_private_data({}); /* MUST BE IMPLEMENTED BY CLIENT */\n".format(self.record_type()))
                 else:
                     _gen_record_type(cpp_record_class, list(fields.items()), private_members, header_writer)
                 header_writer("\n")
