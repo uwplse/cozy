@@ -893,8 +893,23 @@ class AugTree(ConcreteImpl):
         proc += gen.endif()
 
         return proc
+    def replace_node_in_parent(self, gen, parent, old_node, new_node):
+        # parent.[L|R] = new_node
+        proc  = gen.comment("replace {} with {} in {}".format(old_node, new_node, parent))
+        proc += gen.if_true(gen.not_true(gen.is_null(parent)))
+        proc += gen.if_true(gen.same(gen.get_field(parent, self.left_ptr), old_node))
+        proc += gen.set(gen.get_field(parent, self.left_ptr), new_node)
+        proc += gen.else_true()
+        proc += gen.set(gen.get_field(parent, self.right_ptr), new_node)
+        proc += gen.endif()
+        proc += gen.endif()
+        # new_node.parent = parent
+        proc += gen.if_true(gen.not_true(gen.is_null(new_node)))
+        proc += gen.set(gen.get_field(new_node, self.parent_ptr), parent)
+        proc += gen.endif()
+        return proc
     def gen_remove(self, gen, x, parent_structure=This()):
-        name = parent_structure.field(gen, self.name)
+        root = parent_structure.field(gen, self.name)
 
         p = fresh_name("parent")
         l = fresh_name("left")
@@ -903,89 +918,76 @@ class AugTree(ConcreteImpl):
         proc += gen.decl(l, self.ty, gen.get_field(x, self.left_ptr))
         proc += gen.decl(r, self.ty, gen.get_field(x, self.right_ptr))
 
+        new_x = fresh_name("new_x")
+        proc += gen.decl(new_x, self.ty)
+
         # case1: no children
         proc += gen.if_true(gen.both(
             gen.is_null(l),
             gen.is_null(r)))
 
-        # case 1a: no parent
-        proc += gen.if_true(gen.is_null(p))
-        proc += gen.set(name, gen.null_value())
-
-        # case 1b: is left child
-        proc += gen.else_if(gen.lt(self.fieldTy, gen.get_field(x, self.fieldName), gen.get_field(gen.get_field(x, self.parent_ptr), self.fieldName)))
-        proc += gen.set(gen.get_field(gen.get_field(x, self.parent_ptr), self.left_ptr), gen.null_value())
-        proc += gen.set(gen.get_field(x, self.parent_ptr), gen.null_value())
-
-        # case 1c: is right child
-        proc += gen.else_true()
-        proc += gen.set(gen.get_field(gen.get_field(x, self.parent_ptr), self.right_ptr), gen.null_value())
-        proc += gen.set(gen.get_field(x, self.parent_ptr), gen.null_value())
-        proc += gen.endif()
+        proc += gen.set(new_x, gen.null_value())
+        proc += self.replace_node_in_parent(gen, p, x, new_x)
 
         # case2: only has left child
         proc += gen.else_if(gen.both(
             gen.not_true(gen.is_null(l)),
             gen.is_null(r)))
 
-        proc += gen.set(gen.get_field(l, self.parent_ptr), gen.get_field(x, self.parent_ptr))
-
-        # case 2a: no parent
-        proc += gen.if_true(gen.is_null(p))
-        proc += gen.set(name, l)
-
-        # case 2b: is left child
-        proc += gen.else_if(gen.lt(self.fieldTy, gen.get_field(x, self.fieldName), gen.get_field(p, self.fieldName)))
-        proc += gen.set(gen.get_field(p, self.left_ptr), l)
-        proc += gen.set(gen.get_field(x, self.parent_ptr), gen.null_value())
-
-        # case 2c: is right child
-        proc += gen.else_true()
-        proc += gen.set(gen.get_field(p, self.right_ptr), l)
-        proc += gen.set(gen.get_field(x, self.parent_ptr), gen.null_value())
-        proc += gen.endif()
-
-        proc += gen.set(gen.get_field(x, self.left_ptr), gen.null_value())
+        proc += gen.set(new_x, l)
+        proc += self.replace_node_in_parent(gen, p, x, new_x)
 
         # case3: only has right child
         proc += gen.else_if(gen.both(
             gen.is_null(l),
             gen.not_true(gen.is_null(r))))
 
-        proc += gen.set(gen.get_field(r, self.parent_ptr), p)
-
-        # case 2a: no parent
-        proc += gen.if_true(gen.is_null(p))
-        proc += gen.set(name, r)
-
-        # case 2b: is left child
-        proc += gen.else_if(gen.lt(self.fieldTy, gen.get_field(x, self.fieldName), gen.get_field(p, self.fieldName)))
-        proc += gen.set(gen.get_field(p, self.left_ptr), r)
-        proc += gen.set(gen.get_field(x, self.parent_ptr), gen.null_value())
-
-        # case 2c: is right child
-        proc += gen.else_true()
-        proc += gen.set(gen.get_field(p, self.right_ptr), r)
-        proc += gen.set(gen.get_field(x, self.parent_ptr), gen.null_value())
-        proc += gen.endif()
-
-        proc += gen.set(gen.get_field(x, self.right_ptr), gen.null_value())
+        proc += gen.set(new_x, r)
+        proc += self.replace_node_in_parent(gen, p, x, new_x)
 
         # case4: two children
         proc += gen.else_true()
-        p, m = self._find_min(gen, gen.get_field(x, self.right_ptr), clip=False)
-        proc += p
-        # TODO: remove m, which has a parent and no left child
-        # TODO: put m in place!
+        find_min, m = self._find_min(gen, gen.get_field(x, self.right_ptr), clip=False) # m = smallest node greater than x
+        proc += find_min
+        proc += gen.set(new_x, m)
+
+        # capture m's pointers
+        mp = fresh_name("mp")
+        proc += gen.decl(mp, self.ty, gen.get_field(m, self.parent_ptr))
+        ml = gen.null_value() # NOTE: m.L is always null!
+        mr = fresh_name("mr")
+        proc += gen.decl(mr, self.ty, gen.get_field(m, self.right_ptr))
+
+        # remove m
+        # NOTE: if x.R == m, this modifies x.R! Be careful not to mention "r" below here.
+        proc += self.replace_node_in_parent(gen, mp, m, mr)
+
+        # put m in x's place
+        proc += self.replace_node_in_parent(gen, p, x, m)
+        proc += self.replace_node_in_parent(gen, m, ml, l)
+        proc += self.replace_node_in_parent(gen, m, mr, gen.get_field(x, self.right_ptr))
+
+        # x is root?
+        proc += gen.if_true(gen.same(root, x))
+        proc += gen.set(root, m)
         proc += gen.endif()
+
+        proc += gen.endif()
+
+        # x is root?
+        proc += gen.if_true(gen.same(root, x))
+        proc += gen.set(root, new_x)
+        proc += gen.endif()
+
+        # TODO: recompute augdata. :(
 
         return proc
     def gen_remove_in_place(self, gen, parent_structure):
-        old_prev = fresh_name("old_prev")
-        proc  = gen.decl(old_prev, self.ty, self.prev_cursor_name)
-        proc += self.gen_remove(gen, self.prev_cursor_name, parent_structure=parent_structure)
+        to_remove = fresh_name("to_remove")
+        proc  = gen.decl(to_remove, self.ty, self.prev_cursor_name)
+        proc += self.gen_remove(gen, to_remove, parent_structure=parent_structure)
         proc += gen.set(self.prev_cursor_name, gen.null_value())
-        return proc, old_prev
+        return proc, to_remove
     def gen_update(self, gen, fields, f, x, v, parent_structure=This()):
         if f == self.fieldName:
             proc  = self.gen_remove(gen, x, parent_structure=parent_structure)
