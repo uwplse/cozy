@@ -225,6 +225,9 @@ class CppCodeGenerator(object):
                 # constructor
                 header_writer("    inline {}();\n".format(cpp_class))
 
+                # get current size
+                header_writer("    inline size_t size() const;\n")
+
                 # add routine
                 header_writer("    inline void add({} x);\n".format(self.record_type()))
 
@@ -263,6 +266,7 @@ class CppCodeGenerator(object):
 
                 # private members
                 header_writer("private:\n")
+                header_writer("    size_t my_size;\n")
                 for q in queries:
                     for f, ty in q.impl.fields():
                         header_writer("    {} {};\n".format(ty.gen_type(self), f))
@@ -288,14 +292,19 @@ class CppCodeGenerator(object):
                     writer(indent("    ", q.impl.construct(self)))
                 writer("}\n")
 
+                # size
+                writer("size_t {}::size() const {{ return my_size; }}\n".format(name, cpp_class))
+
                 # add routine
                 writer("void {}::add({} x) {{\n".format(name, self.record_type()))
+                writer("    ++my_size;")
                 for q in queries:
                     writer(indent("    ", q.impl.gen_insert(self, "x")))
                 writer("}\n")
 
                 # remove routine
                 writer("void {}::remove({} x) {{\n".format(name, self.record_type()))
+                writer("    --my_size;")
                 for q in queries:
                     writer(indent("    ", q.impl.gen_remove(self, "x")))
                 writer("}\n")
