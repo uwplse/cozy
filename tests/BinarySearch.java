@@ -10,18 +10,6 @@ public class BinarySearch {
         return l;
     }
 
-    public static void viz(DataStructureBinarySearch.Record r, String indent, Set<DataStructureBinarySearch.Record> seen) {
-        if (r == null) { System.out.println((Object)null); return; }
-        if (seen.contains(r)) { System.out.println("<<recursive>>"); return; }
-        seen.add(r);
-        System.out.println(r);
-        indent += "  ";
-        System.out.println(indent + "P: " + r._parent5);
-        System.out.print(indent + "L: "); viz(r._left3, indent, seen);
-        System.out.print(indent + "R: "); viz(r._right4, indent, seen);
-        seen.remove(r);
-    }
-
     public static void main(String[] args) {
 
         DataStructureBinarySearch ds = new DataStructureBinarySearch();
