@@ -83,7 +83,7 @@ class CppCodeGenerator(object):
         return "!({})".format(e)
 
     def is_null(self, e):
-        return "!({})".format(e)
+        return "({}) == NULL".format(e)
 
     def ternary(self, cond, v1, v2):
         return "({}) ? ({}) : ({})".format(cond, v1, v2)
