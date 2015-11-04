@@ -547,10 +547,10 @@ def _make_augdata(field_name, predicate, fields):
         t = NativeTy(fields[f])
         if f == field_name:
             continue
-        if   c.op == predicates.Lt: yield AugData(t, fresh_name(), f, v, AUG_MAX, False)
-        elif c.op == predicates.Le: yield AugData(t, fresh_name(), f, v, AUG_MAX, True)
-        elif c.op == predicates.Gt: yield AugData(t, fresh_name(), f, v, AUG_MIN, False)
-        elif c.op == predicates.Ge: yield AugData(t, fresh_name(), f, v, AUG_MIN, True)
+        if   c.op == predicates.Lt: yield AugData(t, fresh_name("max_{}".format(f)), f, v, AUG_MAX, False)
+        elif c.op == predicates.Le: yield AugData(t, fresh_name("max_{}".format(f)), f, v, AUG_MAX, True)
+        elif c.op == predicates.Gt: yield AugData(t, fresh_name("min_{}".format(f)), f, v, AUG_MIN, False)
+        elif c.op == predicates.Ge: yield AugData(t, fresh_name("min_{}".format(f)), f, v, AUG_MIN, True)
 
 class AugTree(ConcreteImpl):
     def __init__(self, fieldTy, fieldName, predicate, fields):
@@ -624,7 +624,7 @@ class AugTree(ConcreteImpl):
             return gen.true_value()
         return gen.true_value()
     def _node_ok(self, gen, node, clip=True):
-        """Does this subnode agree with the augdata?"""
+        """Does this subnode agree with the query? only checks augdata."""
         if not clip:
             return gen.true_value()
         e = gen.true_value()
@@ -634,7 +634,7 @@ class AugTree(ConcreteImpl):
             if aug.mode == AUG_MAX and     aug.inclusive: op = gen.le
             if aug.mode == AUG_MAX and not aug.inclusive: op = gen.lt
             e = gen.both(e,
-                op(aug.type, gen.get_field(node, aug.real_field), aug.qvar))
+                op(aug.type, gen.get_field(node, aug.orig_field), aug.qvar))
         return e
     def _has_parent(self, gen, node):
         return gen.not_true(gen.is_null(gen.get_field(node, self.parent_ptr)))
@@ -901,10 +901,10 @@ class AugTree(ConcreteImpl):
         proc += gen.end_do_while(gen.not_true(gen.is_null(curr)))
 
         return proc
-    def recompute_augdata(self, gen, node, aug):
+    def recompute_augdata(self, gen, node, aug, remap=None):
         v = fresh_name("augval")
         proc  = gen.comment("{} is {} of {}".format(aug.real_field, aug.mode, aug.orig_field))
-        proc += gen.decl(v, aug.type, gen.get_field(node, aug.orig_field))
+        proc += gen.decl(v, aug.type, remap or gen.get_field(node, aug.orig_field))
 
         for child in [gen.get_field(node, self.left_ptr), gen.get_field(node, self.right_ptr)]:
             n = fresh_name("child")
@@ -993,6 +993,7 @@ class AugTree(ConcreteImpl):
 
         # remove m
         # NOTE: if x.R == m, this modifies x.R! Be careful not to mention "r" below here.
+        # TODO: augdata might be more optimistic now! not updating it is conservative though...
         proc += self.replace_node_in_parent(gen, mp, m, mr)
 
         # put m in x's place
@@ -1019,7 +1020,17 @@ class AugTree(ConcreteImpl):
             proc  = self.gen_remove(gen, x, parent_structure=parent_structure)
             proc += self.gen_insert(gen, x, parent_structure=parent_structure, indexval=v)
         elif any(aug.orig_field == f for aug in self.augData):
-            proc = gen.comment("TODO: AugTree aug update\n")
+            needs_update = [aug for aug in self.augData if aug.orig_field == f]
+            cursor = fresh_name("cursor")
+            proc  = gen.decl(cursor, self.ty, x)
+            for aug in needs_update:
+                proc += self.recompute_augdata(gen, cursor, aug, remap=v)
+            proc += gen.set(cursor, gen.get_field(cursor, self.parent_ptr))
+            proc += gen.while_true(gen.not_true(gen.is_null(cursor)))
+            for aug in needs_update:
+                proc += self.recompute_augdata(gen, cursor, aug)
+            proc += gen.set(cursor, gen.get_field(cursor, self.parent_ptr))
+            proc += gen.endwhile()
         else:
             proc = ""
         return proc
