@@ -967,11 +967,6 @@ class AugTree(ConcreteImpl):
         proc += self.replace_node_in_parent(gen, m, ml, l)
         proc += self.replace_node_in_parent(gen, m, mr, gen.get_field(x, self.right_ptr))
 
-        # x is root?
-        proc += gen.if_true(gen.same(root, x))
-        proc += gen.set(root, m)
-        proc += gen.endif()
-
         proc += gen.endif()
 
         # x is root?
