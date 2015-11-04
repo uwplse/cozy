@@ -1021,11 +1021,11 @@ class AugTree(ConcreteImpl):
             proc += self.gen_insert(gen, x, parent_structure=parent_structure, indexval=v)
         elif any(aug.orig_field == f for aug in self.augData):
             needs_update = [aug for aug in self.augData if aug.orig_field == f]
-            cursor = fresh_name("cursor")
-            proc  = gen.decl(cursor, self.ty, x)
+            proc = ""
             for aug in needs_update:
-                proc += self.recompute_augdata(gen, cursor, aug, remap=v)
-            proc += gen.set(cursor, gen.get_field(cursor, self.parent_ptr))
+                proc += self.recompute_augdata(gen, x, aug, remap=v)
+            cursor = fresh_name("cursor")
+            proc += gen.decl(cursor, self.ty, gen.get_field(x, self.parent_ptr))
             proc += gen.while_true(gen.not_true(gen.is_null(cursor)))
             for aug in needs_update:
                 proc += self.recompute_augdata(gen, cursor, aug)
