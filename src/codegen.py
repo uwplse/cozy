@@ -410,7 +410,7 @@ class HashMap(ConcreteImpl):
         p, removed = self.valueImpl.gen_remove_in_place(gen, parent_structure=self.valueTy.instance(sub))
         proc += p
         proc += self.write_handle(gen, name, handle, k, sub)
-        return removed
+        return proc, removed
     def gen_update(self, gen, fields, f, x, v, parent_structure=This()):
         name = parent_structure.field(gen, self.name)
         affects_key = f in self.keyArgs
