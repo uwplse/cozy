@@ -644,9 +644,10 @@ class AugTree(ConcreteImpl):
         return gen.both(self._has_parent(gen, node), gen.same(node, gen.get_field(gen.get_field(node, self.parent_ptr), self.right_ptr)))
     def _find_min(self, gen, root, clip=True):
         """precond: _subtree_ok(root)"""
+        # capture the root in a fresh variable to avoid writing to it
         root2 = fresh_name("root")
         proc  = gen.decl(root2, self.ty, root)
-        root = root2
+        root  = root2
 
         x = fresh_name("x")
         proc += gen.decl(x, self.ty, root)
@@ -700,7 +701,7 @@ class AugTree(ConcreteImpl):
 
         descend = fresh_name("descend")
         from_left = fresh_name("from_left")
-        bool_type = NativeTy(gen.bool_type())
+        bool_type = BoolTy()
         proc += gen.decl(descend, bool_type, gen.true_value())
         proc += gen.decl(from_left, bool_type, gen.true_value())
 
@@ -733,54 +734,57 @@ class AugTree(ConcreteImpl):
         proc += gen.endif()
 
         proc += gen.if_true(descend) # descending
+        # The min might be x, one of x's children, or anywhere above x
 
         proc += gen.comment("too small?")
-        proc += gen.if_true(self._too_small(gen, x, clip))
-        proc += gen.if_true(self._has_right(gen, x, clip))
+        proc += gen.if_true(self._too_small(gen, x, clip))  # x too small
+        proc += gen.if_true(self._has_right(gen, x, clip))  # x too small, has right
         proc += descend_right
-        proc += gen.else_if(gen.same(x, root))
+        proc += gen.else_if(gen.same(x, root))              # x too small, has no right, is root
         proc += return_null
-        proc += gen.else_true()
+        proc += gen.else_true()                             # x too small, has no right, has parent
         proc += ascend
         proc += gen.endif()
-        proc += gen.else_if(self._has_left(gen, x, clip))
+        proc += gen.else_if(self._has_left(gen, x, clip))   # x not too small, has left
         proc += gen.set(x, left)
         proc += gen.comment("too large?")
-        proc += gen.else_if(self._too_large(gen, x, clip))
-        proc += gen.if_true(gen.same(x, root))
+        proc += gen.else_if(self._too_large(gen, x, clip))  # x not too small, has no left, x too large
+        proc += gen.if_true(gen.same(x, root))              # x not too small, has no left, x too large, is root
         proc += return_null
-        proc += gen.else_true()
+        proc += gen.else_true()                             # x not too small, has no left, x too large, is not root
         proc += ascend
         proc += gen.endif()
         proc += gen.comment("node ok?")
-        proc += gen.else_if(self._node_ok(gen, x, clip))
+        proc += gen.else_if(self._node_ok(gen, x, clip))    # x not too small, has no left, x not too large, other conditions check out
         proc += return_x
-        proc += gen.else_if(gen.same(x, root))
-        proc += gen.set(root, right) + gen.set(x, right) # descend_right
-        proc += gen.else_true()
+        proc += gen.else_if(gen.same(x, root))              # x not too small, has no left, x not too large, other conditions don't check out, x is root
+        proc += gen.set(root, right) + gen.set(x, right)    # descend_right
+        proc += gen.else_true()                             # x not too small, has no left, x not too large, other conditions don't check out, x is not root
         proc += ascend
         proc += gen.endif()
 
         proc += gen.else_if(from_left) # ascending from left
+        # The min might be x, one of x's right children, or anywhere above x
 
-        proc += gen.if_true(self._too_large(gen, x, clip))
+        proc += gen.if_true(self._too_large(gen, x, clip))  # x too large
         proc += return_null
-        proc += gen.else_if(self._node_ok(gen, x, clip))
+        proc += gen.else_if(self._node_ok(gen, x, clip))    # x not too large, other conditions check out
         proc += return_x
-        proc += gen.else_if(self._has_right(gen, x, clip))
+        proc += gen.else_if(self._has_right(gen, x, clip))  # x not too large, other conditions don't check out, has right
         proc += gen.set(descend, gen.true_value())
         proc += descend_right
-        proc += gen.else_if(gen.same(x, root))
+        proc += gen.else_if(gen.same(x, root))              # x not too large, other conditions don't check out, has no right, is root
         proc += return_null
-        proc += gen.else_true()
+        proc += gen.else_true()                             # x not too large, other conditions don't check out, has no right, is not root
         proc += ascend
         proc += gen.endif()
 
         proc += gen.else_true() # ascending from right
+        # The min must be above x
 
-        proc += gen.if_true(gen.same(x, root))
+        proc += gen.if_true(gen.same(x, root))              # x is root
         proc += return_null
-        proc += gen.else_true()
+        proc += gen.else_true()                             # x is not root
         proc += ascend
         proc += gen.endif()
 
@@ -812,7 +816,7 @@ class AugTree(ConcreteImpl):
         descend = fresh_name("descend") # are we allowed to descend?
         right_min = fresh_name("right_min")
 
-        proc += gen.decl(descend, NativeTy(gen.bool_type()), gen.true_value())
+        proc += gen.decl(descend, BoolTy(), gen.true_value())
         proc += gen.do_while()
 
         # successor of any node with a right child is the min node to the right
@@ -1291,7 +1295,7 @@ class Tuple(ConcreteImpl):
             proc2, r2 = self.ty2.gen_has_next(gen)
             r = fresh_name()
             proc  = proc1
-            proc += gen.decl(r, NativeTy(gen.bool_type()), r1)
+            proc += gen.decl(r, BoolTy(), r1)
             proc += gen.if_true(gen.not_true(r))
             proc += proc2
             proc += gen.set(r, r2)
