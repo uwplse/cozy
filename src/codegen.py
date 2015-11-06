@@ -839,6 +839,11 @@ class AugTree(ConcreteImpl):
         # Parent of this node *might* be successor, if all the augdata matches.
         proc += gen.set(target, gen.get_field(target, self.parent_ptr))
 
+        # If the parent is too large, stop!
+        proc += gen.if_true(gen.both(gen.not_true(gen.is_null(target)), self._too_large(gen, target)))
+        proc += gen.set(target, gen.null_value())
+        proc += gen.endif()
+
         proc += gen.endif()
 
         proc += gen.end_do_while(gen.both(
