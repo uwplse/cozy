@@ -760,7 +760,11 @@ class AugTree(ConcreteImpl):
         proc += gen.else_if(gen.same(x, root))              # x not too small, has no left, x not too large, other conditions don't check out, x is root
         proc += gen.set(root, right) + gen.set(x, right)    # descend_right
         proc += gen.else_true()                             # x not too small, has no left, x not too large, other conditions don't check out, x is not root
+        proc += gen.if_true(self._has_right(gen, x, clip))  # x not too small, has no left, x not too large, other conditions don't check out, x is not root, x has right
+        proc += descend_right
+        proc += gen.else_true()                             # x not too small, has no left, x not too large, other conditions don't check out, x is not root, x has no right
         proc += ascend
+        proc += gen.endif()
         proc += gen.endif()
 
         proc += gen.else_if(from_left) # ascending from left
