@@ -912,6 +912,7 @@ class AugTree(ConcreteImpl):
 
         # walk back up, updating augdata
         # TODO: we can be a bit more efficient if we do this on the way down instead
+        # TODO: abort if the augdata doesn't change
         proc += gen.set(curr, x)
         proc += gen.do_while()
         proc += self.recompute_all_augdata(gen, curr)
