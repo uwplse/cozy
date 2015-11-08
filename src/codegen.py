@@ -877,7 +877,12 @@ class AugTree(ConcreteImpl):
         curr = fresh_name("current")
         is_left = fresh_name("is_left")
 
-        proc  = gen.decl(prev, self.ty, gen.null_value())
+        proc  = gen.set(gen.get_field(x, self.left_ptr), gen.null_value())
+        proc += gen.set(gen.get_field(x, self.right_ptr), gen.null_value())
+        for aug in self.augData:
+            proc += gen.set(gen.get_field(x, aug.real_field), gen.get_field(x, aug.orig_field))
+
+        proc += gen.decl(prev, self.ty, gen.null_value())
         proc += gen.decl(curr, self.ty, name)
         proc += gen.decl(is_left, BoolTy(), gen.false_value())
 
