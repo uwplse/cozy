@@ -537,7 +537,7 @@ AugData = collections.namedtuple("AugData", [
     "type", "real_field", "orig_field", "qvar", "mode", "inclusive"])
 
 def _make_augdata(field_name, predicate, fields):
-    """returns a generator of (field_name, var_name, min/max, inclusive)"""
+    """yields AugData"""
     comparisons = list(_break_conj(predicate))
     for c in comparisons:
         if c.rhs.name in fields:
@@ -547,10 +547,10 @@ def _make_augdata(field_name, predicate, fields):
         t = NativeTy(fields[f])
         if f == field_name:
             continue
-        if   c.op == predicates.Lt: yield AugData(t, fresh_name("max_{}".format(f)), f, v, AUG_MAX, False)
-        elif c.op == predicates.Le: yield AugData(t, fresh_name("max_{}".format(f)), f, v, AUG_MAX, True)
-        elif c.op == predicates.Gt: yield AugData(t, fresh_name("min_{}".format(f)), f, v, AUG_MIN, False)
-        elif c.op == predicates.Ge: yield AugData(t, fresh_name("min_{}".format(f)), f, v, AUG_MIN, True)
+        if   c.op == predicates.Lt: yield AugData(t, fresh_name("min_{}".format(f)), f, v, AUG_MIN, False)
+        elif c.op == predicates.Le: yield AugData(t, fresh_name("min_{}".format(f)), f, v, AUG_MIN, True)
+        elif c.op == predicates.Gt: yield AugData(t, fresh_name("max_{}".format(f)), f, v, AUG_MAX, False)
+        elif c.op == predicates.Ge: yield AugData(t, fresh_name("max_{}".format(f)), f, v, AUG_MAX, True)
 
 class AugTree(ConcreteImpl):
     def __init__(self, fieldTy, fieldName, predicate, fields):
@@ -622,17 +622,25 @@ class AugTree(ConcreteImpl):
         """could ANY node in the subtree be valid? only checks augdata."""
         if not clip:
             return gen.true_value()
-        return gen.true_value()
+        e = gen.true_value()
+        for aug in self.augData:
+            if aug.mode == AUG_MAX and     aug.inclusive: op = gen.ge
+            if aug.mode == AUG_MAX and not aug.inclusive: op = gen.gt
+            if aug.mode == AUG_MIN and     aug.inclusive: op = gen.le
+            if aug.mode == AUG_MIN and not aug.inclusive: op = gen.lt
+            e = gen.both(e,
+                op(aug.type, gen.get_field(root, aug.real_field), aug.qvar))
+        return e
     def _node_ok(self, gen, node, clip=True):
         """Does this subnode agree with the query? only checks augdata."""
         if not clip:
             return gen.true_value()
         e = gen.true_value()
         for aug in self.augData:
-            if aug.mode == AUG_MIN and     aug.inclusive: op = gen.ge
-            if aug.mode == AUG_MIN and not aug.inclusive: op = gen.gt
-            if aug.mode == AUG_MAX and     aug.inclusive: op = gen.le
-            if aug.mode == AUG_MAX and not aug.inclusive: op = gen.lt
+            if aug.mode == AUG_MAX and     aug.inclusive: op = gen.ge
+            if aug.mode == AUG_MAX and not aug.inclusive: op = gen.gt
+            if aug.mode == AUG_MIN and     aug.inclusive: op = gen.le
+            if aug.mode == AUG_MIN and not aug.inclusive: op = gen.lt
             e = gen.both(e,
                 op(aug.type, gen.get_field(node, aug.orig_field), aug.qvar))
         return e
@@ -944,7 +952,7 @@ class AugTree(ConcreteImpl):
         for aug in self.augData:
             proc += self.recompute_augdata(gen, node, aug)
         return proc
-    def replace_node_in_parent(self, gen, parent, old_node, new_node):
+    def replace_node_in_parent(self, gen, parent, old_node, new_node, update_augdata=True):
         # parent.[L|R] = new_node
         proc  = gen.comment("replace {} with {} in {}".format(old_node, new_node, parent))
         proc += gen.if_true(gen.not_true(gen.is_null(parent)))
@@ -953,7 +961,8 @@ class AugTree(ConcreteImpl):
         proc += gen.else_true()
         proc += gen.set(gen.get_field(parent, self.right_ptr), new_node)
         proc += gen.endif()
-        proc += self.recompute_all_augdata(gen, parent)
+        if update_augdata:
+            proc += self.recompute_all_augdata(gen, parent)
         proc += gen.endif()
         # new_node.parent = parent
         proc += gen.if_true(gen.not_true(gen.is_null(new_node)))
@@ -1012,13 +1021,20 @@ class AugTree(ConcreteImpl):
 
         # remove m
         # NOTE: if x.R == m, this modifies x.R! Be careful not to mention "r" below here.
+        # NOTE: m.{L,R} still point to tree nodes!
         # TODO: augdata might be more optimistic now! not updating it is conservative though...
         proc += self.replace_node_in_parent(gen, mp, m, mr)
 
         # put m in x's place
-        proc += self.replace_node_in_parent(gen, p, x, m)
-        proc += self.replace_node_in_parent(gen, m, ml, l)
-        proc += self.replace_node_in_parent(gen, m, mr, gen.get_field(x, self.right_ptr))
+        proc += self.replace_node_in_parent(gen, p, x, m, update_augdata=False)
+        proc += self.replace_node_in_parent(gen, m, ml, l, update_augdata=False)
+        proc += self.replace_node_in_parent(gen, m, mr, gen.get_field(x, self.right_ptr), update_augdata=False)
+
+        # update augdata in correct order
+        proc += self.recompute_all_augdata(gen, m)
+        proc += gen.if_true(gen.not_true(gen.is_null(p)))
+        proc += self.recompute_all_augdata(gen, p)
+        proc += gen.endif()
 
         proc += gen.endif()
 
