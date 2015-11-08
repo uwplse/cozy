@@ -126,7 +126,7 @@ class CppCodeGenerator(object):
             return m
         if self.cpp_abstract_record and m in self.fields:
             return "read_{}({})".format(m, e)
-        if self.cpp_abstract_record and any(name == m for name, _, _ in self.private_members):
+        if self.cpp_abstract_record and any(name == m for name, _ in self.private_members):
             return "read_private_data({}).{}".format(e, m)
         return "({})->{}".format(e, m)
 
@@ -220,11 +220,11 @@ class CppCodeGenerator(object):
                 # record type
                 private_members = []
                 for q in queries:
-                    private_members += list((f, ty.gen_type(self), init) for f, ty, init in q.impl.private_members(self, parent_structure=(codegen.TupleInstance("x") if cpp_abstract_record else codegen.This())))
+                    private_members += list((f, ty.gen_type(self)) for f, ty in q.impl.private_members())
                 self.private_members = private_members
                 if cpp_abstract_record:
                     header_writer("struct PrivateData {\n")
-                    for name, ty, _ in private_members:
+                    for name, ty in private_members:
                         header_writer("    {} {};\n".format(ty, name))
                     header_writer("};\n")
                     for name, ty in list(fields.items()):
