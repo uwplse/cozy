@@ -52,11 +52,11 @@ class CppCodeGenerator(object):
 
     def map_write_handle(self, m, handle, k, v):
         if self.maptype == "hash":
-            return "{}->second = {};".format(handle, v)
+            return "{}->second = {};\n".format(handle, v)
         if self.maptype == "tree":
-            return "{}->second = {};".format(handle, v)
+            return "{}->second = {};\n".format(handle, v)
         if self.maptype == "qhash":
-            return "{}.value() = {};".format(handle, v)
+            return "{}.value() = {};\n".format(handle, v)
 
     def map_put(self, m, k, v):
         return "{}[{}] = {};\n".format(m, k, v)
@@ -312,14 +312,14 @@ class CppCodeGenerator(object):
 
                 # add routine
                 writer("void {}::add({} x) {{\n".format(name, self.record_type()))
-                writer("    ++my_size;")
+                writer("    ++my_size;\n")
                 for q in queries:
                     writer(indent("    ", q.impl.gen_insert(self, "x")))
                 writer("}\n")
 
                 # remove routine
                 writer("void {}::remove({} x) {{\n".format(name, self.record_type()))
-                writer("    --my_size;")
+                writer("    --my_size;\n")
                 for q in queries:
                     writer(indent("    ", q.impl.gen_remove(self, "x")))
                 writer("}\n")
@@ -343,7 +343,7 @@ class CppCodeGenerator(object):
                     writer("{prefix}::{q}_iterator {prefix}::{q}({}) {{\n".format(", ".join("{} {}".format(ty, v) for v,ty in q.vars), prefix=name, q=q.name))
                     proc, stateExps = q.impl.gen_query(self, q.vars)
                     writer(indent("    ", proc))
-                    writer("    return {}_iterator(this{}{});".format(q.name, "".join(", {}".format(v) for v, ty in vars_needed), "".join(", {}".format(e) for e in stateExps)))
+                    writer("    return {}_iterator(this{}{});\n".format(q.name, "".join(", {}".format(v) for v, ty in vars_needed), "".join(", {}".format(e) for e in stateExps)))
                     writer("  }\n")
 
                     # iterator constructor
