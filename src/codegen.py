@@ -825,15 +825,13 @@ class AugTree(ConcreteImpl):
         else:
             proc += gen.set(target, self.cursor_name)
 
-        descend = fresh_name("descend") # are we allowed to descend?
         right_min = fresh_name("right_min")
 
-        proc += gen.decl(descend, BoolTy(), gen.true_value())
         proc += gen.do_while()
 
         # successor of any node with a right child is the min node to the right
         proc += gen.decl(right_min, self.ty, gen.null_value())
-        proc += gen.if_true(gen.both(descend, self._has_right(gen, target)))
+        proc += gen.if_true(self._has_right(gen, target))
         p, m = self._find_min(gen, gen.get_field(target, self.right_ptr))
         proc += p
         proc += gen.set(right_min, m)
