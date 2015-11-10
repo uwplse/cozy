@@ -1185,6 +1185,8 @@ class Guarded(ConcreteImpl):
         return self.ty.gen_query(gen, qvars)
     def gen_current(self, gen):
         return self.ty.gen_current(gen)
+    def gen_advance(self, gen):
+        return self.ty.gen_advance(gen)
     def gen_next(self, gen):
         return self.ty.gen_next(gen)
     def gen_has_next(self, gen):
