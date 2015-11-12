@@ -302,7 +302,7 @@ class CppCodeGenerator(object):
                 writer = header_writer
 
                 # constructor
-                writer("{}::{}() {{\n".format(name, cpp_class))
+                writer("{}::{}() : my_size(0) {{\n".format(name, cpp_class))
                 for q in queries:
                     writer(indent("    ", q.impl.construct(self)))
                 writer("}\n")
