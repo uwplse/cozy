@@ -918,12 +918,7 @@ class AugTree(ConcreteImpl):
 
         # walk back up, updating augdata
         # TODO: we can be a bit more efficient if we do this on the way down instead
-        # TODO: abort if the augdata doesn't change
-        proc += gen.set(curr, x)
-        proc += gen.do_while()
-        proc += self.recompute_all_augdata(gen, curr)
-        proc += gen.set(curr, gen.get_field(curr, self.parent_ptr))
-        proc += gen.end_do_while(gen.not_true(gen.is_null(curr)))
+        proc += self.recompute_all_augdata_recursively(gen, gen.get_field(x, self.parent_ptr), gen.null_value())
 
         return proc
     def recompute_augdata(self, gen, node, aug, remap=None):
@@ -950,7 +945,28 @@ class AugTree(ConcreteImpl):
         for aug in self.augData:
             proc += self.recompute_augdata(gen, node, aug)
         return proc
-    def replace_node_in_parent(self, gen, parent, old_node, new_node, update_augdata=True):
+    def recompute_all_augdata_recursively(self, gen, node, stop, augData=None):
+        """recomputes augdata for [node, node.parent, node.parent.parent, ... stop)"""
+        if augData is None:
+            augData = self.augData
+        proc = ""
+        cursor = fresh_name("cursor")
+        changed = fresh_name("changed")
+        proc += gen.decl(cursor, self.ty, node)
+        proc += gen.decl(changed, BoolTy(), gen.true_value())
+        proc += gen.while_true(gen.both(changed, gen.not_true(gen.same(cursor, stop))))
+        oldies = [(fresh_name("old_{}".format(a.real_field)), a) for a in augData]
+        for (o, a) in oldies:
+            proc += gen.decl(o, a.type, gen.get_field(cursor, a.real_field))
+        for a in augData:
+            proc += self.recompute_augdata(gen, cursor, a)
+        proc += gen.set(changed, gen.false_value())
+        for (o, a) in oldies:
+            proc += gen.set(changed, gen.either(changed, gen.not_true(gen.same(o, gen.get_field(cursor, a.real_field)))))
+        proc += gen.set(cursor, gen.get_field(cursor, self.parent_ptr))
+        proc += gen.endwhile()
+        return proc
+    def replace_node_in_parent(self, gen, parent, old_node, new_node):
         # parent.[L|R] = new_node
         proc  = gen.comment("replace {} with {} in {}".format(old_node, new_node, parent))
         proc += gen.if_true(gen.not_true(gen.is_null(parent)))
@@ -959,8 +975,6 @@ class AugTree(ConcreteImpl):
         proc += gen.else_true()
         proc += gen.set(gen.get_field(parent, self.right_ptr), new_node)
         proc += gen.endif()
-        if update_augdata:
-            proc += self.recompute_all_augdata(gen, parent)
         proc += gen.endif()
         # new_node.parent = parent
         proc += gen.if_true(gen.not_true(gen.is_null(new_node)))
@@ -986,7 +1000,7 @@ class AugTree(ConcreteImpl):
             gen.is_null(r)))
 
         proc += gen.set(new_x, gen.null_value())
-        proc += self.replace_node_in_parent(gen, p, x, new_x, update_augdata=False)
+        proc += self.replace_node_in_parent(gen, p, x, new_x)
 
         # case2: only has left child
         proc += gen.else_if(gen.both(
@@ -994,7 +1008,7 @@ class AugTree(ConcreteImpl):
             gen.is_null(r)))
 
         proc += gen.set(new_x, l)
-        proc += self.replace_node_in_parent(gen, p, x, new_x, update_augdata=False)
+        proc += self.replace_node_in_parent(gen, p, x, new_x)
 
         # case3: only has right child
         proc += gen.else_if(gen.both(
@@ -1002,7 +1016,7 @@ class AugTree(ConcreteImpl):
             gen.not_true(gen.is_null(r))))
 
         proc += gen.set(new_x, r)
-        proc += self.replace_node_in_parent(gen, p, x, new_x, update_augdata=False)
+        proc += self.replace_node_in_parent(gen, p, x, new_x)
 
         # case4: two children
         proc += gen.else_true()
@@ -1020,33 +1034,23 @@ class AugTree(ConcreteImpl):
         # remove m
         # NOTE: if x.R == m, this modifies x.R! Be careful not to mention "r" below here.
         # NOTE: m.{L,R} still point to tree nodes!
-        proc += self.replace_node_in_parent(gen, mp, m, mr, update_augdata=False)
+        proc += self.replace_node_in_parent(gen, mp, m, mr)
 
         # put m in x's place
-        proc += self.replace_node_in_parent(gen, p, x, m, update_augdata=False)
-        proc += self.replace_node_in_parent(gen, m, ml, l, update_augdata=False)
-        proc += self.replace_node_in_parent(gen, m, mr, gen.get_field(x, self.right_ptr), update_augdata=False)
+        proc += self.replace_node_in_parent(gen, p, x, m)
+        proc += self.replace_node_in_parent(gen, m, ml, l)
+        proc += self.replace_node_in_parent(gen, m, mr, gen.get_field(x, self.right_ptr))
 
         # update augdata at m
         proc += self.recompute_all_augdata(gen, m)
 
         # update augdata mp (incl) thru p (excl)
-        cursor = fresh_name("cursor")
-        proc += gen.decl(cursor, self.ty, mp);
-        proc += gen.while_true(gen.not_true(gen.same(cursor, p)))
-        proc += self.recompute_all_augdata(gen, cursor)
-        proc += gen.set(cursor, gen.get_field(cursor, self.parent_ptr))
-        proc += gen.endwhile()
+        proc += self.recompute_all_augdata_recursively(gen, mp, p)
 
         proc += gen.endif()
 
         # update augdata p (incl) thru root (incl)
-        cursor = fresh_name("cursor")
-        proc += gen.decl(cursor, self.ty, p);
-        proc += gen.while_true(gen.not_true(gen.is_null(cursor)))
-        proc += self.recompute_all_augdata(gen, cursor)
-        proc += gen.set(cursor, gen.get_field(cursor, self.parent_ptr))
-        proc += gen.endwhile()
+        proc += self.recompute_all_augdata_recursively(gen, p, gen.null_value())
 
         # x is root?
         proc += gen.if_true(gen.same(root, x))
@@ -1069,13 +1073,9 @@ class AugTree(ConcreteImpl):
             proc = ""
             for aug in needs_update:
                 proc += self.recompute_augdata(gen, x, aug, remap=v)
-            cursor = fresh_name("cursor")
-            proc += gen.decl(cursor, self.ty, gen.get_field(x, self.parent_ptr))
-            proc += gen.while_true(gen.not_true(gen.is_null(cursor)))
-            for aug in needs_update:
-                proc += self.recompute_augdata(gen, cursor, aug)
-            proc += gen.set(cursor, gen.get_field(cursor, self.parent_ptr))
-            proc += gen.endwhile()
+            proc += self.recompute_all_augdata_recursively(gen,
+                gen.get_field(x, self.parent_ptr), gen.null_value(),
+                augData=needs_update)
         else:
             proc = ""
         return proc
