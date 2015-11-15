@@ -10,6 +10,9 @@ class CppCodeGenerator(object):
     def __init__(self, maptype="hash"):
         self.maptype = maptype
 
+    def __str__(self):
+        return "C++[maptype={}]".format(self.maptype)
+
     def map_type(self, kt, vt):
         if self.maptype == "hash":
             return "std::unordered_map < {}, {} >".format(kt.gen_type(self), vt.gen_type(self))
