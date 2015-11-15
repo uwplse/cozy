@@ -250,7 +250,7 @@ class ConcreteImpl(object):
     def gen_insert(self, gen, x):
         """returns proc"""
         raise Exception("not implemented for type: {}".format(type(self)))
-    def gen_remove(self, gen, x):
+    def gen_remove(self, gen, x, parent_structure=This()):
         """returns proc"""
         raise Exception("not implemented for type: {}".format(type(self)))
     def gen_remove_in_place(self, gen, parent_structure):
@@ -1273,6 +1273,7 @@ class Tuple(ConcreteImpl):
     def __init__(self, ty1, ty2, op):
         self.ty1 = ty1
         self.ty2 = ty2
+        self.prev1 = fresh_name("prev1")
         self.op = op
     def fields(self):
         return self.ty1.fields() + self.ty2.fields()
@@ -1281,14 +1282,14 @@ class Tuple(ConcreteImpl):
     def needs_var(self, v):
         return self.ty1.needs_var(v) or self.ty2.needs_var(v)
     def state(self):
-        return self.ty1.state() + self.ty2.state()
+        return self.ty1.state() + self.ty2.state() + [(self.prev1, BoolTy())]
     def private_members(self):
         return self.ty1.private_members() + self.ty2.private_members()
     def gen_query(self, gen, qvars):
         if self.op == CONCAT_OP:
             proc1, es1 = self.ty1.gen_query(gen, qvars)
             proc2, es2 = self.ty2.gen_query(gen, qvars)
-            return (proc1 + proc2, es1 + es2)
+            return (proc1 + proc2, es1 + es2 + [gen.true_value()])
         else:
             raise Exception("unknown op {}".format(self.op))
     def gen_current(self, gen):
@@ -1323,6 +1324,7 @@ class Tuple(ConcreteImpl):
             next2, r2 = self.ty2.gen_next(gen)
             proc += next2
             proc += gen.set(r, r2)
+            proc += gen.set(self.prev1, gen.false_value())
             proc += gen.endif()
             return proc, r
         else:
@@ -1341,14 +1343,27 @@ class Tuple(ConcreteImpl):
             return proc, r
         else:
             raise Exception("unknown op {}".format(self.op))
-    def gen_insert(self, gen, x):
+    def gen_insert(self, gen, x, parent_structure=This()):
         if self.op == CONCAT_OP:
-            return self.ty1.gen_insert(gen, x) + self.ty2.gen_insert(gen, x)
+            return self.ty1.gen_insert(gen, x, parent_structure) + self.ty2.gen_insert(gen, x, parent_structure)
         else:
             raise Exception("unknown op {}".format(self.op))
-    def gen_remove(self, gen, x):
+    def gen_remove_in_place(self, gen, parent_structure):
+        removed = fresh_name("removed")
+        proc  = gen.decl(removed, RecordType())
+        proc += gen.if_true(self.prev1)
+        p, ret = self.ty1.gen_remove_in_place(gen, parent_structure)
+        proc += p
+        proc += gen.set(removed, ret)
+        proc += gen.else_true()
+        p, ret = self.ty2.gen_remove_in_place(gen, parent_structure)
+        proc += p
+        proc += gen.set(removed, ret)
+        proc += gen.endif()
+        return proc, removed
+    def gen_remove(self, gen, x, parent_structure=This()):
         if self.op == CONCAT_OP:
-            return self.ty1.gen_remove(gen, x) + self.ty2.gen_remove(gen, x)
+            return self.ty1.gen_remove(gen, x, parent_structure) + self.ty2.gen_remove(gen, x, parent_structure)
         else:
             raise Exception("unknown op {}".format(self.op))
     def gen_update(self, gen, fields, f, x, v):
