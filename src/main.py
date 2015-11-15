@@ -31,7 +31,7 @@ def enumerate_code_generators(args):
 
 def pick_best_impls(fields, queries, cost_model_file, code_generators):
     bestImpls = None
-    bestScore = None
+    bestCost  = None
     bestCG    = None
     for cg in code_generators:
         for impls in enumerate_impls(fields, queries):
@@ -40,15 +40,15 @@ def pick_best_impls(fields, queries, cost_model_file, code_generators):
 
             print("benchmarking {} using {}... ".format([q.name for q in queries], cg), end="")
             sys.stdout.flush()
-            score = cg.dynamic_cost(fields, queries, impls, cost_model_file)
-            print("cost = {}".format(score))
+            cost = cg.dynamic_cost(fields, queries, impls, cost_model_file)
+            print("cost = {}".format(cost))
 
-            if bestImpls is None or score > bestScore:
+            if bestImpls is None or cost < bestCost:
                 bestImpls = impls
-                bestScore = score
+                bestCost  = cost
                 bestCG    = cg
 
-    return bestImpls, bestCG, bestScore
+    return bestImpls, bestCG, bestCost
 
 def highlevel_synthesis(all_input, fields, assumptions, query, enable_cache, timeout):
     """sets .bestPlans on the query object"""
@@ -133,7 +133,7 @@ if __name__ == '__main__':
 
     fields = collections.OrderedDict(fields)
     code_generators = list(cg for cg in enumerate_code_generators(args) if (not cost_model_file) or cg.supports_cost_model_file(cost_model_file))
-    impls, cg, score = pick_best_impls(fields, queries, cost_model_file, code_generators)
+    impls, cg, cost = pick_best_impls(fields, queries, cost_model_file, code_generators)
 
     if impls:
         for q, i in zip(queries, impls):
