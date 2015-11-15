@@ -423,14 +423,14 @@ def _gen_aux_type_header(ty, gen, writer, class_name, seen):
         writer("};\n")
 
 def _gen_record_type(name, fields, private_fields, writer):
-    all_fields = [(f, ty, "_{}".format(f)) for f, ty in fields] + list(private_fields)
+    all_fields = [(f, ty, "_{}".format(f)) for f, ty in fields] + [(f, ty, "") for f, ty in private_fields]
     writer("class {} {{\n".format(name))
     writer("friend class DataStructure;\n")
     writer("public:\n")
     for f,ty in fields:
         writer("    {} {};\n".format(ty, f))
     writer("private:\n")
-    for f,ty,_ in private_fields:
+    for f,ty in private_fields:
         writer("    {} {};\n".format(ty, f))
     writer("public:\n")
     writer("    {name}({args}) : {init} {{ }}\n".format(

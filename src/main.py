@@ -40,11 +40,7 @@ def pick_best_impls(fields, queries, cost_model_file, code_generators):
 
             print("benchmarking {}... ".format([q.name for q in queries]), end="")
             sys.stdout.flush()
-            try:
-                score = cg.dynamic_cost(fields, queries, impls, cost_model_file)
-            except Exception as e:
-                print("FAILED ({})".format(e))
-                continue
+            score = cg.dynamic_cost(fields, queries, impls, cost_model_file)
             print("cost = {}".format(score))
 
             if bestImpls is None or score > bestScore:
