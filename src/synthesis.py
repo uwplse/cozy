@@ -283,6 +283,7 @@ class SolverContext(object):
 
         yield consider(plans.HashLookup(plans.AllWhere(predicates.Bool(True)), query))
 
+        registerExp(query)
         for v in self.varNames:
             for f in self.fieldNames:
                 if (v, f) in comps:
