@@ -265,6 +265,7 @@ class SolverContext(object):
         exprsOfSize = []
         plansOfSize = []
 
+        print "starting with {} examples".format(len(examples))
         print "round 1"
         for f1 in self.fieldNames:
             for f2 in self.fieldNames:
