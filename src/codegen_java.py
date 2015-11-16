@@ -278,6 +278,16 @@ class JavaCodeGenerator(object):
 
         return score
 
+def _hash_code(ty, exp):
+    if _is_primitive(ty):
+        if ty == "int":    return exp
+        if ty == "long":   return "(int)({e}^({e}>>>32))".format(e=exp)
+        if ty == "float":  return "Float.floatToIntBits({e})".format(e=exp)
+        if ty == "double": return _hash_code("long", "Double.doubleToLongBits({e})".format(e=exp))
+        raise Exception("I'm not sure how to take the hash code of {}".format(ty))
+    else:
+        return "{}.hashCode()".format(exp)
+
 def _gen_aux_type(ty, gen, writer, seen):
     if ty in seen:
         return
@@ -287,7 +297,23 @@ def _gen_aux_type(ty, gen, writer, seen):
             _gen_aux_type(t, gen, writer, seen)
         writer("    /*private*/ static class {} implements java.io.Serializable {{\n".format(ty.name))
         for f, t in ty.fields.items():
-            writer("        {} {};".format(t.gen_type(gen), f))
+            writer("        {} {};\n".format(t.gen_type(gen), f))
+        writer("        @Override\n")
+        writer("        public int hashCode() {\n")
+        writer("            int hc = 0;\n")
+        for f, t in ty.fields.items():
+            writer("            hc = 31 * hc + {};\n".format(_hash_code(t.gen_type(gen), f)))
+        writer("            return hc;\n")
+        writer("        }\n")
+        writer("        @Override\n")
+        writer("        public boolean equals(Object other) {\n")
+        writer("            if (other == null) return false;\n")
+        writer("            if (other.getClass() != getClass()) return false;\n")
+        writer("            {t} x = ({t})other;\n".format(t=ty.name))
+        for f in ty.fields:
+            writer("            if (!({})) return false;\n".format(gen.same("x.{}".format(f), f)))
+        writer("            return true;\n")
+        writer("        }\n")
         writer("    }\n")
 
 def _gen_record_type(name, fields, private_fields, writer):
