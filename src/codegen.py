@@ -593,7 +593,7 @@ class AugTree(ConcreteImpl):
     def state(self):
         return [(self.prev_cursor_name, self.ty), (self.cursor_name, self.ty)]
     def gen_empty(self, gen, qvars):
-        return [gen.null_value()]
+        return [gen.null_value(), gen.null_value()]
     def private_members(self):
         return ([
             (self.left_ptr,   RecordType()),
