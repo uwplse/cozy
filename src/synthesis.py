@@ -110,6 +110,7 @@ class SolverContext(object):
                     outputvector(plan.plan1) == outputvector(plan.plan2) or
                     plan.plan1 <= plan.plan2 or
                     stupid(plan.plan1) or stupid(plan.plan2))
+            return False
 
         def isValid(plan):
             """returns True, False, or a new counterexample"""
