@@ -161,10 +161,10 @@ class SolverContext(object):
             for i in xrange(len(plansOfSize)):
                 plansOfSize[i] = [p for p in plansOfSize[i] if self.cost(p) <= cost]
 
-        def consider(plan):
+        def consider(plan, check_stupid=True):
             self._check_timeout()
             size = plan.size()
-            if not plan.wellFormed(self.z3ctx, self.z3solver, self.fieldNames, self.varNames) or stupid(plan):
+            if not plan.wellFormed(self.z3ctx, self.z3solver, self.fieldNames, self.varNames) or (check_stupid and stupid(plan)):
                 return None, None
             x = isValid(plan)
             cost = self.cost(plan)
@@ -256,6 +256,14 @@ class SolverContext(object):
                         return True
             return False
 
+        def _break_conj(p):
+            if type(p) is predicates.And:
+                return itertools.chain(_break_conj(p.lhs), _break_conj(p.rhs))
+            elif type(p) is predicates.Bool and p.val:
+                return ()
+            else:
+                return (p,)
+
         # cache maps output vectors to the best known plan implementing them
         cache = {}
 
@@ -283,6 +291,23 @@ class SolverContext(object):
             yield consider(plans.BinarySearch(plans.AllWhere(predicates.Bool(True)), f, query))
 
         yield consider(plans.HashLookup(plans.AllWhere(predicates.Bool(True)), query))
+
+        if all(type(x) is predicates.Compare for x in _break_conj(query)):
+            eqs = [x for x in _break_conj(query) if x.op == plans.Eq]
+            others = [x for x in _break_conj(query) if x.op != plans.Eq]
+            if eqs and others:
+                hashcond = eqs[0]
+                for i in xrange(1, len(eqs)):
+                    hashcond = plans.And(hashcond, eqs[i])
+                bscond = others[0]
+                for i in xrange(1, len(others)):
+                    bscond = plans.And(bscond, others[i])
+                for f in self.fieldNames:
+                    plan = plans.BinarySearch(plans.HashLookup(plans.AllWhere(predicates.Bool(True)), hashcond), f, bscond)
+                    x = consider(plan, check_stupid=False)
+                    yield x
+        else:
+            raise Exception(str(query))
 
         registerExp(query)
         for v in self.varNames:
