@@ -306,8 +306,6 @@ class SolverContext(object):
                     plan = plans.BinarySearch(plans.HashLookup(plans.AllWhere(predicates.Bool(True)), hashcond), f, bscond)
                     x = consider(plan, check_stupid=False)
                     yield x
-        else:
-            raise Exception(str(query))
 
         registerExp(query)
         for v in self.varNames:
