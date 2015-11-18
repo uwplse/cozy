@@ -225,12 +225,13 @@ class SolverContext(object):
             self._check_timeout()
             vec = outputvector(e)
             if cull and vec in ecache:
-                return
+                return ecache[vec]
             ecache[vec] = e
             self.productive = "new expression {}".format(e)
             size = e.size()
             expand(exprsOfSize, size)
             exprsOfSize[size].append(e)
+            return e
 
         def pickToSum(groupedBySize1, groupedBySize2, sum):
             expand(groupedBySize1, size)
@@ -287,10 +288,23 @@ class SolverContext(object):
             plan = plans.AllWhere(predicates.Bool(b))
             yield consider(plan)
 
-        for f in self.fieldNames:
-            yield consider(plans.BinarySearch(plans.AllWhere(predicates.Bool(True)), f, query))
+        for v in self.varNames:
+            for f in self.fieldNames:
+                if transitively_related(v, f, comps):
+                    print " =====> RELATION {}, {}".format(v, f)
+                    for op in predicates.operators:
+                        registerExp(
+                            predicates.Compare(predicates.Var(v), op, predicates.Var(f)),
+                            cull=False)
+        for b in (True, False):
+            registerExp(predicates.Bool(b), cull=False)
 
-        yield consider(plans.HashLookup(plans.AllWhere(predicates.Bool(True)), query))
+        q = registerExp(query)
+
+        for f in self.fieldNames:
+            yield consider(plans.BinarySearch(plans.AllWhere(predicates.Bool(True)), f, q))
+
+        yield consider(plans.HashLookup(plans.AllWhere(predicates.Bool(True)), q))
 
         if all(type(x) is predicates.Compare for x in _break_conj(query)):
             eqs = [x for x in _break_conj(query) if x.op == plans.Eq]
@@ -306,17 +320,6 @@ class SolverContext(object):
                     plan = plans.BinarySearch(plans.HashLookup(plans.AllWhere(predicates.Bool(True)), hashcond), f, bscond)
                     x = consider(plan, check_stupid=False)
                     yield x
-
-        registerExp(query)
-        for v in self.varNames:
-            for f in self.fieldNames:
-                if (v, f) in comps:
-                    for op in predicates.operators:
-                        registerExp(
-                            predicates.Compare(predicates.Var(v), op, predicates.Var(f)),
-                            cull=False)
-        for b in (True, False):
-            registerExp(predicates.Bool(b), cull=False)
 
         roundsWithoutProgress = 0
         maxRoundsWithoutProgress = 10
