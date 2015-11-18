@@ -552,14 +552,18 @@ def _make_augdata(field_name, predicate, fields):
         elif c.op == predicates.Gt: yield AugData(t, fresh_name("max_{}".format(f)), f, v, AUG_MAX, False)
         elif c.op == predicates.Ge: yield AugData(t, fresh_name("max_{}".format(f)), f, v, AUG_MAX, True)
 
+BALANCE_NONE = None
+BALANCE_AVL  = "avl"
+
 class AugTree(ConcreteImpl):
-    def __init__(self, fieldTy, fieldName, predicate, fields):
+    def __init__(self, fieldTy, fieldName, predicate, fields, balance=BALANCE_AVL):
         self.name = fresh_name("root")
         self.fieldTy = fieldTy
         self.fieldName = fieldName
         self.ty = RecordType()
         self.predicate = predicate
         self._fields = fields
+        self.balance = balance
         clauses = list(_break_conj(predicate))
 
         # put field names on LHS of clauses
@@ -583,6 +587,8 @@ class AugTree(ConcreteImpl):
         self.left_ptr = fresh_name("left")
         self.right_ptr = fresh_name("right")
         self.parent_ptr = fresh_name("parent")
+        if self.balance == BALANCE_AVL:
+            self.height_name = fresh_name("height")
     def fields(self):
         return [(self.name, self.ty)]
     def construct(self, gen, parent_structure=This()):
@@ -595,11 +601,14 @@ class AugTree(ConcreteImpl):
     def gen_empty(self, gen, qvars):
         return [gen.null_value(), gen.null_value()]
     def private_members(self):
-        return ([
+        fields = [
             (self.left_ptr,   RecordType()),
             (self.right_ptr,  RecordType()),
-            (self.parent_ptr, RecordType())] +
-            [(ad.real_field, ad.type) for ad in self.augData])
+            (self.parent_ptr, RecordType())]
+        fields += [(ad.real_field, ad.type) for ad in self.augData]
+        if self.balance == BALANCE_AVL:
+            fields += [(self.height_name, IntTy())]
+        return fields
     def _too_small(self, gen, node, clip=True):
         if not clip:
             return gen.false_value()
@@ -873,6 +882,35 @@ class AugTree(ConcreteImpl):
         return proc, oldcursor
     def gen_has_next(self, gen):
         return "", gen.not_true(gen.is_null(self.cursor_name))
+    def _height(self, gen, x):
+        assert self.balance == BALANCE_AVL
+        return gen.ternary(gen.is_null(x), "-1", gen.get_field(x, self.height_name))
+    def _rotate(self, gen, x, child):
+        otherchild = self.left_ptr if child == self.right_ptr else self.right_ptr
+        proc =  gen.comment("rotate {}".format(gen.get_field(x, child)))
+        a = fresh_name("a")
+        b = fresh_name("b")
+        c = fresh_name("c")
+        proc += gen.decl(a, RecordType(), x) # non-null
+        proc += "assert({}); //1\n".format(gen.not_true(gen.is_null(a)))
+        proc += gen.decl(b, RecordType(), gen.get_field(a, child)) # non-null
+        proc += "assert({}); //2\n".format(gen.not_true(gen.is_null(b)))
+        proc += gen.decl(c, RecordType(), gen.get_field(b, otherchild)) # maybe null
+        proc += self.replace_node_in_parent(gen, gen.get_field(a, self.parent_ptr), a, b)
+        proc += self.replace_node_in_parent(gen, b, c, a, otherchild)
+        proc += "assert({}); //3\n".format(gen.same(a, gen.get_field(b, otherchild)))
+        proc += self.replace_node_in_parent(gen, a, b, c, child)
+        proc += "assert({}); //4\n".format(gen.same(gen.get_field(a, child), c))
+        proc += self.recompute_all_augdata(gen, a)
+        proc += self.recompute_all_augdata(gen, b)
+        proc += gen.if_true(gen.not_true(gen.is_null(gen.get_field(b, self.parent_ptr))))
+        proc += self.recompute_all_augdata(gen, gen.get_field(b, self.parent_ptr))
+        proc += gen.else_true()
+        proc += gen.set(self.name, b)
+        proc += gen.endif()
+        proc += "assert({}); //5\n".format(gen.same(a, gen.get_field(b, otherchild)))
+        proc += "assert({}); //6\n".format(gen.same(gen.get_field(a, child), c))
+        return proc
     def gen_insert(self, gen, x, parent_structure=This(), indexval=None):
         if indexval is None:
             indexval = gen.get_field(x, self.fieldName)
@@ -887,6 +925,8 @@ class AugTree(ConcreteImpl):
         proc += gen.set(gen.get_field(x, self.right_ptr), gen.null_value())
         for aug in self.augData:
             proc += gen.set(gen.get_field(x, aug.real_field), gen.get_field(x, aug.orig_field))
+        if self.balance == BALANCE_AVL:
+            proc += gen.set(gen.get_field(x, self.height_name), "0")
 
         proc += gen.decl(prev, self.ty, gen.null_value())
         proc += gen.decl(curr, self.ty, name)
@@ -917,8 +957,34 @@ class AugTree(ConcreteImpl):
         proc += gen.endif()
 
         # walk back up, updating augdata
-        # TODO: we can be a bit more efficient if we do this on the way down instead
+        # TODO: we can be a bit more efficient if we do this on the way down
         proc += self.recompute_all_augdata_recursively(gen, gen.get_field(x, self.parent_ptr), gen.null_value())
+
+        if self.balance == BALANCE_AVL:
+            proc += gen.comment("rebalance AVL tree")
+            cursor = fresh_name("cursor")
+            proc += gen.decl(cursor, RecordType(), x)
+            imbalance = fresh_name("imbalance")
+            proc += gen.decl(imbalance, IntTy())
+            proc += gen.while_true(gen.not_true(gen.is_null(gen.get_field(cursor, self.parent_ptr))))
+            proc += gen.set(cursor, gen.get_field(cursor, self.parent_ptr))
+            proc += gen.set(imbalance, gen.sub(self._height(gen, gen.get_field(cursor, self.left_ptr)), self._height(gen, gen.get_field(cursor, self.right_ptr))))
+
+            proc += gen.if_true(gen.gt(IntTy(), imbalance, "1")) # left child too heavy (left is non-null)
+            # proc += gen.if_true(gen.lt(IntTy(), self._height(gen, gen.get_field(gen.get_field(cursor, self.left_ptr), self.left_ptr)), self._height(gen, gen.get_field(gen.get_field(cursor, self.left_ptr), self.right_ptr))))
+            # proc += self._rotate(gen, gen.get_field(cursor, self.left_ptr), self.right_ptr)
+            # proc += gen.endif()
+            proc += self._rotate(gen, cursor, self.left_ptr)
+            proc += gen.set(cursor, gen.get_field(cursor, self.parent_ptr))
+
+            proc += gen.else_if(gen.lt(IntTy(), imbalance, "-1")) # right child too heavy (right is non-null)
+            # proc += gen.if_true(gen.gt(IntTy(), self._height(gen, gen.get_field(gen.get_field(cursor, self.right_ptr), self.left_ptr)), self._height(gen, gen.get_field(gen.get_field(cursor, self.right_ptr), self.right_ptr))))
+            # proc += self._rotate(gen, gen.get_field(cursor, self.right_ptr), self.left_ptr)
+            # proc += gen.endif()
+            proc += self._rotate(gen, cursor, self.right_ptr)
+            proc += gen.set(cursor, gen.get_field(cursor, self.parent_ptr))
+            proc += gen.endif()
+            proc += gen.endwhile()
 
         return proc
     def recompute_augdata(self, gen, node, aug, remap=None):
@@ -944,6 +1010,18 @@ class AugTree(ConcreteImpl):
         proc = ""
         for aug in self.augData:
             proc += self.recompute_augdata(gen, node, aug)
+        if self.balance == BALANCE_AVL:
+            h = fresh_name("height")
+            hh = fresh_name("height")
+            proc += gen.decl(h, IntTy(), "-1")
+            proc += gen.decl(hh, IntTy())
+            n = fresh_name("child")
+            proc += gen.decl(n, RecordType())
+            for child in [gen.get_field(node, self.left_ptr), gen.get_field(node, self.right_ptr)]:
+                proc += gen.set(n, child)
+                proc += gen.set(hh, self._height(gen, n))
+                proc += gen.set(h, gen.ternary(gen.lt(IntTy(), h, hh), hh, h))
+            proc += gen.set(gen.get_field(node, self.height_name), h + "+1")
         return proc
     def recompute_all_augdata_recursively(self, gen, node, stop, augData=None):
         """recomputes augdata for [node, node.parent, node.parent.parent, ... stop)"""
@@ -966,16 +1044,19 @@ class AugTree(ConcreteImpl):
         proc += gen.set(cursor, gen.get_field(cursor, self.parent_ptr))
         proc += gen.endwhile()
         return proc
-    def replace_node_in_parent(self, gen, parent, old_node, new_node):
-        # parent.[L|R] = new_node
+    def replace_node_in_parent(self, gen, parent, old_node, new_node, child=None):
         proc  = gen.comment("replace {} with {} in {}".format(old_node, new_node, parent))
-        proc += gen.if_true(gen.not_true(gen.is_null(parent)))
-        proc += gen.if_true(gen.same(gen.get_field(parent, self.left_ptr), old_node))
-        proc += gen.set(gen.get_field(parent, self.left_ptr), new_node)
-        proc += gen.else_true()
-        proc += gen.set(gen.get_field(parent, self.right_ptr), new_node)
-        proc += gen.endif()
-        proc += gen.endif()
+        if child is None:
+            # parent.[L|R] = new_node
+            proc += gen.if_true(gen.not_true(gen.is_null(parent)))
+            proc += gen.if_true(gen.same(gen.get_field(parent, self.left_ptr), old_node))
+            proc += gen.set(gen.get_field(parent, self.left_ptr), new_node)
+            proc += gen.else_true()
+            proc += gen.set(gen.get_field(parent, self.right_ptr), new_node)
+            proc += gen.endif()
+            proc += gen.endif()
+        else:
+            proc += gen.set(gen.get_field(parent, child), new_node)
         # new_node.parent = parent
         proc += gen.if_true(gen.not_true(gen.is_null(new_node)))
         proc += gen.set(gen.get_field(new_node, self.parent_ptr), parent)
@@ -1056,6 +1137,8 @@ class AugTree(ConcreteImpl):
         proc += gen.if_true(gen.same(root, x))
         proc += gen.set(root, new_x)
         proc += gen.endif()
+
+        # TODO: rebalancing
 
         return proc
     def gen_remove_in_place(self, gen, parent_structure):

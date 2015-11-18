@@ -109,8 +109,14 @@ class CppCodeGenerator(object):
     def add(self, e1, e2):
         return "({}) + ({})".format(e1, e2)
 
+    def sub(self, e1, e2):
+        return "({}) - ({})".format(e1, e2)
+
     def mul(self, e1, e2):
         return "({}) * ({})".format(e1, e2)
+
+    def abs(self, e):
+        return "abs({})".format(e)
 
     def init_new(self, target, ty):
         return self.set(target, "{}()".format(ty.gen_type(self)))
@@ -198,6 +204,7 @@ class CppCodeGenerator(object):
                 if cpp_extra:
                     header_writer("{}\n".format(cpp_extra))
 
+                header_writer("#include <cmath>\n")
                 if self.maptype == "hash":
                     header_writer("#include <unordered_map>\n")
                 if self.maptype == "tree":

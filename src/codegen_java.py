@@ -91,8 +91,14 @@ class JavaCodeGenerator(object):
     def add(self, e1, e2):
         return "({}) + ({})".format(e1, e2)
 
+    def sub(self, e1, e2):
+        return "({}) - ({})".format(e1, e2)
+
     def mul(self, e1, e2):
         return "({}) * ({})".format(e1, e2)
+
+    def abs(self, e):
+        return "Math.abs({})".format(e)
 
     def init_new(self, target, ty):
         return self.set(target, "new {}()".format(ty.gen_type(self)))
