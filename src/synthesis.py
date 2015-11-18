@@ -201,7 +201,7 @@ class SolverContext(object):
                 if old_plan is None:
                     cache[vec] = plan
                     plansOfSize[size].append(plan)
-                    self.productive = "new possibility: {}".format("".join(str(int(v)) for v in vec))
+                    # self.productive = "new possibility: {}".format("".join(str(int(v)) for v in vec))
 
                 # better than previous options
                 elif cost < self.cost(old_plan):
@@ -228,7 +228,7 @@ class SolverContext(object):
             if cull and vec in ecache:
                 return ecache[vec]
             ecache[vec] = e
-            self.productive = "new expression {}".format(e)
+            # self.productive = "new expression {}".format(e)
             size = e.size()
             expand(exprsOfSize, size)
             exprsOfSize[size].append(e)
@@ -296,7 +296,6 @@ class SolverContext(object):
         for v in self.varNames:
             for f in self.fieldNames:
                 if transitively_related(v, f, comps):
-                    print " =====> RELATION {}, {}".format(v, f)
                     for op in predicates.operators:
                         registerExp(
                             predicates.Compare(predicates.Var(v), op, predicates.Var(f)),
@@ -330,6 +329,13 @@ class SolverContext(object):
         maxRoundsWithoutProgress = 10
 
         for size in xrange(2, maxSize + 1):
+            # termination criterion: no plans can ever be formed above this point
+            if size > 2 and not plansOfSize[size-1] and all((not plansOfSize[i] or (not plansOfSize[size - i - 1] and not exprsOfSize[size - i - 1])) for i in xrange(1, size - 1)):
+                # print [(len(plansOfSize[i]), len(plansOfSize[size - i - 1]), len(exprsOfSize[size - i - 1])) for i in xrange(1, size - 1)]
+                # print plansOfSize
+                # print "I've seen it all!"
+                yield ("stop", None)
+
             # exprs
             # Since we have all operators and their negations, we will never
             # generate anything interesting involving Not.
@@ -350,11 +356,3 @@ class SolverContext(object):
                 yield consider(plan)
             for plan in (plans.Concat(p1, p2) for p1, p2 in pickToSum(plansOfSize, plansOfSize, size)):
                 yield consider(plan)
-            if self.productive:
-                roundsWithoutProgress = 0
-                print "  productive: {}".format(self.productive)
-            else:
-                roundsWithoutProgress += 1
-                if roundsWithoutProgress >= maxRoundsWithoutProgress and size > 6:
-                    print "last {} rounds were not productive; stopping".format(roundsWithoutProgress)
-                    yield "stop", None
