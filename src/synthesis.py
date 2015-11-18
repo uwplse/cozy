@@ -23,6 +23,7 @@ class SolverContext(object):
         self.fieldNames = fieldNames
         self.z3ctx = Context()
         self.z3solver = SolverFor("QF_LIA", ctx=self.z3ctx)
+        self.assumptions = assumptions
         for a in assumptions:
             self.z3solver.add(a.toZ3(self.z3ctx))
         self.cost_model = cost_model
@@ -240,6 +241,10 @@ class SolverContext(object):
 
         queryVector = outputvector(query)
         comps = set(query.comparisons())
+        for a in self.assumptions:
+            # print "A ==> {}".format(a)
+            for c in a.comparisons():
+                comps.add(c)
         for a, b in list(comps):
             comps.add((b, a))
 
