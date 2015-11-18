@@ -885,7 +885,7 @@ class AugTree(ConcreteImpl):
     def _height(self, gen, x):
         assert self.balance == BALANCE_AVL
         return gen.ternary(gen.is_null(x), "-1", gen.get_field(x, self.height_name))
-    def _rotate(self, gen, x, child):
+    def _rotate(self, gen, x, child, parent_structure=This()):
         otherchild = self.left_ptr if child == self.right_ptr else self.right_ptr
         proc =  gen.comment("rotate {}".format(gen.get_field(x, child)))
         a = fresh_name("a")
@@ -906,7 +906,7 @@ class AugTree(ConcreteImpl):
         proc += gen.if_true(gen.not_true(gen.is_null(gen.get_field(b, self.parent_ptr))))
         proc += self.recompute_all_augdata(gen, gen.get_field(b, self.parent_ptr))
         proc += gen.else_true()
-        proc += gen.set(self.name, b)
+        proc += gen.set(parent_structure.field(gen, self.name), b)
         proc += gen.endif()
         proc += "assert({}); //5\n".format(gen.same(a, gen.get_field(b, otherchild)))
         proc += "assert({}); //6\n".format(gen.same(gen.get_field(a, child), c))
@@ -977,16 +977,16 @@ class AugTree(ConcreteImpl):
 
             proc += gen.if_true(gen.gt(IntTy(), imbalance, "1")) # left child too heavy (left is non-null)
             proc += gen.if_true(gen.lt(IntTy(), self._height(gen, gen.get_field(gen.get_field(cursor, self.left_ptr), self.left_ptr)), self._height(gen, gen.get_field(gen.get_field(cursor, self.left_ptr), self.right_ptr))))
-            proc += self._rotate(gen, gen.get_field(cursor, self.left_ptr), self.right_ptr)
+            proc += self._rotate(gen, gen.get_field(cursor, self.left_ptr), self.right_ptr, parent_structure=parent_structure)
             proc += gen.endif()
-            proc += self._rotate(gen, cursor, self.left_ptr)
+            proc += self._rotate(gen, cursor, self.left_ptr, parent_structure=parent_structure)
             proc += gen.set(cursor, gen.get_field(cursor, self.parent_ptr))
 
             proc += gen.else_if(gen.lt(IntTy(), imbalance, "-1")) # right child too heavy (right is non-null)
             proc += gen.if_true(gen.gt(IntTy(), self._height(gen, gen.get_field(gen.get_field(cursor, self.right_ptr), self.left_ptr)), self._height(gen, gen.get_field(gen.get_field(cursor, self.right_ptr), self.right_ptr))))
-            proc += self._rotate(gen, gen.get_field(cursor, self.right_ptr), self.left_ptr)
+            proc += self._rotate(gen, gen.get_field(cursor, self.right_ptr), self.left_ptr, parent_structure=parent_structure)
             proc += gen.endif()
-            proc += self._rotate(gen, cursor, self.right_ptr)
+            proc += self._rotate(gen, cursor, self.right_ptr, parent_structure=parent_structure)
             proc += gen.set(cursor, gen.get_field(cursor, self.parent_ptr))
             proc += gen.endif()
             proc += gen.endwhile()
