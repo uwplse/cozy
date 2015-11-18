@@ -1119,8 +1119,8 @@ class AugTree(ConcreteImpl):
 
         # put m in x's place
         proc += self.replace_node_in_parent(gen, p, x, m)
-        proc += self.replace_node_in_parent(gen, m, ml, l)
-        proc += self.replace_node_in_parent(gen, m, mr, gen.get_field(x, self.right_ptr))
+        proc += self.replace_node_in_parent(gen, m, ml, l, child=self.left_ptr)
+        proc += self.replace_node_in_parent(gen, m, mr, gen.get_field(x, self.right_ptr), child=self.right_ptr)
 
         # update augdata at m
         proc += self.recompute_all_augdata(gen, m)
