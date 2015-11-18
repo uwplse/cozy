@@ -911,6 +911,10 @@ class AugTree(ConcreteImpl):
         proc += "assert({}); //5\n".format(gen.same(a, gen.get_field(b, otherchild)))
         proc += "assert({}); //6\n".format(gen.same(gen.get_field(a, child), c))
         return proc
+    def _recompute_height(self, gen, x):
+        h1 = self._height(gen, gen.get_field(x, self.left_ptr))
+        h2 = self._height(gen, gen.get_field(x, self.right_ptr))
+        return gen.set(gen.get_field(x, self.height_name), "1+({})".format(gen.ternary(gen.gt(IntTy(), h1, h2), h1, h2)))
     def gen_insert(self, gen, x, parent_structure=This(), indexval=None):
         if indexval is None:
             indexval = gen.get_field(x, self.fieldName)
@@ -968,6 +972,7 @@ class AugTree(ConcreteImpl):
             proc += gen.decl(imbalance, IntTy())
             proc += gen.while_true(gen.not_true(gen.is_null(gen.get_field(cursor, self.parent_ptr))))
             proc += gen.set(cursor, gen.get_field(cursor, self.parent_ptr))
+            proc += self._recompute_height(gen, cursor)
             proc += gen.set(imbalance, gen.sub(self._height(gen, gen.get_field(cursor, self.left_ptr)), self._height(gen, gen.get_field(cursor, self.right_ptr))))
 
             proc += gen.if_true(gen.gt(IntTy(), imbalance, "1")) # left child too heavy (left is non-null)
@@ -1011,17 +1016,7 @@ class AugTree(ConcreteImpl):
         for aug in self.augData:
             proc += self.recompute_augdata(gen, node, aug)
         if self.balance == BALANCE_AVL:
-            h = fresh_name("height")
-            hh = fresh_name("height")
-            proc += gen.decl(h, IntTy(), "-1")
-            proc += gen.decl(hh, IntTy())
-            n = fresh_name("child")
-            proc += gen.decl(n, RecordType())
-            for child in [gen.get_field(node, self.left_ptr), gen.get_field(node, self.right_ptr)]:
-                proc += gen.set(n, child)
-                proc += gen.set(hh, self._height(gen, n))
-                proc += gen.set(h, gen.ternary(gen.lt(IntTy(), h, hh), hh, h))
-            proc += gen.set(gen.get_field(node, self.height_name), h + "+1")
+            proc += self._recompute_height(gen, node)
         return proc
     def recompute_all_augdata_recursively(self, gen, node, stop, augData=None):
         """recomputes augdata for [node, node.parent, node.parent.parent, ... stop)"""
@@ -1033,14 +1028,17 @@ class AugTree(ConcreteImpl):
         proc += gen.decl(cursor, self.ty, node)
         proc += gen.decl(changed, BoolTy(), gen.true_value())
         proc += gen.while_true(gen.both(changed, gen.not_true(gen.same(cursor, stop))))
-        oldies = [(fresh_name("old_{}".format(a.real_field)), a) for a in augData]
-        for (o, a) in oldies:
-            proc += gen.decl(o, a.type, gen.get_field(cursor, a.real_field))
+        oldies = [(fresh_name("old_{}".format(a.real_field)), a.type, a.real_field) for a in augData]
+        if self.balance == BALANCE_AVL:
+            oldies.append((fresh_name("old_height"), IntTy(), self.height_name))
+        for (o, t, f) in oldies:
+            proc += gen.decl(o, t, gen.get_field(cursor, f))
         for a in augData:
             proc += self.recompute_augdata(gen, cursor, a)
+        proc += self._recompute_height(gen, cursor)
         proc += gen.set(changed, gen.false_value())
-        for (o, a) in oldies:
-            proc += gen.set(changed, gen.either(changed, gen.not_true(gen.same(o, gen.get_field(cursor, a.real_field)))))
+        for (o, t, f) in oldies:
+            proc += gen.set(changed, gen.either(changed, gen.not_true(gen.same(o, gen.get_field(cursor, f)))))
         proc += gen.set(cursor, gen.get_field(cursor, self.parent_ptr))
         proc += gen.endwhile()
         return proc
