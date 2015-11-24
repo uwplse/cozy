@@ -330,7 +330,8 @@ class SolverContext(object):
 
         for size in xrange(2, maxSize + 1):
             # termination criterion: no plans can ever be formed above this point
-            if size > 2 and not plansOfSize[size-1] and all((not plansOfSize[i] or (not plansOfSize[size - i - 1] and not exprsOfSize[size - i - 1])) for i in xrange(1, size - 1)):
+            halfsize = int(size/2)
+            if all((sz > 2 and not plansOfSize[sz-1] and all((not plansOfSize[i] or (not plansOfSize[sz - i - 1] and not exprsOfSize[sz - i - 1])) for i in xrange(1, sz - 1))) for sz in range(halfsize, size+1)):
                 # print [(len(plansOfSize[i]), len(plansOfSize[size - i - 1]), len(exprsOfSize[size - i - 1])) for i in xrange(1, size - 1)]
                 # print plansOfSize
                 # print "I've seen it all!"
