@@ -10,6 +10,8 @@ from collections import defaultdict
 import traceback
 from z3 import *
 
+from common import ADT
+from cache import Cache
 import predicates
 import plans
 
@@ -46,7 +48,6 @@ class SolverContext(object):
         dumbestPlan = plans.Filter(plans.AllWhere(predicates.Bool(True)), query)
         self.bestCost = self.cost(dumbestPlan) # cost of best valid plan found so far
         self.bestPlans = set([dumbestPlan]) # set of valid plans with cost == self.bestCost
-        self.productive = False # was progress made this iteration
         self.startTime = time.time()
         self.timeout = timeout
         proceed = True
@@ -143,24 +144,15 @@ class SolverContext(object):
             """Every element of vec1 implies corresponding element in vec2"""
             return all(v2 if v1 else True for (v1, v2) in zip(vec1, vec2))
 
-        def expand(l, size):
-            while len(l) <= size:
-                l.append([])
-
         def on_valid_plan(plan, cost):
             if cost > self.bestCost:
                 return
             print("found good valid plan: {}, cost={}".format(plan, cost))
-            self.productive = "new valid plan"
             if cost < self.bestCost:
                 self.bestCost = cost
                 self.bestPlans = set()
             self.bestPlans.add(plan)
-            for val, p in cache.items():
-                if self.cost(p) > cost:
-                    del cache[val]
-            for i in xrange(len(plansOfSize)):
-                plansOfSize[i] = [p for p in plansOfSize[i] if self.cost(p) <= cost]
+            plan_cache.evict_higher_cost_entries(cost)
 
         def consider(plan, check_stupid=True):
             self._check_timeout()
@@ -169,7 +161,6 @@ class SolverContext(object):
                 return None, None
             x = isValid(plan)
             cost = self.cost(plan)
-            expand(plansOfSize, size)
 
             # too expensive? it can't possibly be part of a great plan!
             if self.bestCost is not None and cost > self.bestCost:
@@ -192,52 +183,22 @@ class SolverContext(object):
                         # not sorted correctly.
                         pass
                     else:
-                        self.productive = "new counterexample"
                         return "counterexample", (x2, plan2)
 
-                old_plan = cache.get(vec)
-
-                # new possibility
-                if old_plan is None:
-                    cache[vec] = plan
-                    plansOfSize[size].append(plan)
-                    # self.productive = "new possibility: {}".format("".join(str(int(v)) for v in vec))
-
-                # better than previous options
-                elif cost < self.cost(old_plan):
-                    cache[vec] = plan
-                    for i in xrange(size + 1):
-                        plansOfSize[i] = [p for p in plansOfSize[i] if outputvector(p) != vec]
-                    plansOfSize[size].append(plan)
-                    if any(p.contains_subtree(plan) for p in self.bestPlans):
-                        self.productive = "better option for {}".format("".join(str(int(v)) for v in vec))
-
-                # as good as previous options
-                elif cost == self.cost(old_plan):
-                    plansOfSize[size].append(plan)
-
+                plan_cache.put(plan, key=vec)
                 return None, None
             else:
                 # x is new example!
-                self.productive = "new counterexample"
                 return "counterexample", (x, plan)
 
         def registerExp(e, cull=True):
             self._check_timeout()
-            vec = outputvector(e)
-            if cull and vec in ecache:
-                return ecache[vec]
-            ecache[vec] = e
-            # self.productive = "new expression {}".format(e)
-            size = e.size()
-            expand(exprsOfSize, size)
-            exprsOfSize[size].append(e)
-            return e
+            return expr_cache.put(e)
 
-        def pickToSum(groupedBySize1, groupedBySize2, sum):
-            expand(groupedBySize1, size)
-            expand(groupedBySize2, size)
-            return ((x1, x2) for split in xrange(1, sum-1) for x1 in groupedBySize1[split] for x2 in groupedBySize2[sum-split-1])
+        def pickToSum(cache1, cache2, sum):
+            return ((x1, x2) for split in xrange(1, sum-1)
+                for x1 in cache1.entries_of_size(split)
+                for x2 in cache2.entries_of_size(sum-split-1))
 
         queryVector = outputvector(query)
         comps = set(query.comparisons())
@@ -270,15 +231,8 @@ class SolverContext(object):
             else:
                 return (p,)
 
-        # cache maps output vectors to the best known plan implementing them
-        cache = {}
-
-        # ecache maps output vectors to ONE known predicate implementing them
-        ecache = {}
-
-        # _OfSize[s] contains all interesting things of size s
-        exprsOfSize = []
-        plansOfSize = []
+        plan_cache = Cache(cost_func=self.cost,   size_func=ADT.size, key_func=outputvector, allow_multi=True)
+        expr_cache = Cache(cost_func=lambda e: 1, size_func=ADT.size, key_func=outputvector, allow_multi=False)
 
         print "starting with {} examples".format(len(examples))
         print "round 1"
@@ -331,29 +285,23 @@ class SolverContext(object):
         for size in xrange(2, maxSize + 1):
             # termination criterion: no plans can ever be formed above this point
             halfsize = int(size/2)
-            if all((sz > 2 and not plansOfSize[sz-1] and all((not plansOfSize[i] or (not plansOfSize[sz - i - 1] and not exprsOfSize[sz - i - 1])) for i in xrange(1, sz - 1))) for sz in range(halfsize, size+1)):
-                # print [(len(plansOfSize[i]), len(plansOfSize[size - i - 1]), len(exprsOfSize[size - i - 1])) for i in xrange(1, size - 1)]
-                # print plansOfSize
-                # print "I've seen it all!"
+            if all((sz > 2 and not plan_cache.entries_of_size(sz-1) and all((not plan_cache.entries_of_size(i) or (not plan_cache.entries_of_size(sz - i - 1) and not plan_cache.entries_of_size(sz - i - 1))) for i in xrange(1, sz - 1))) for sz in range(halfsize, size+1)):
                 yield ("stop", None)
 
             # exprs
             # Since we have all operators and their negations, we will never
             # generate anything interesting involving Not.
-            # for e in exprsOfSize[size-1]:
-            #     registerExp(predicates.Not(e))
-            for e1, e2 in pickToSum(exprsOfSize, exprsOfSize, size):
+            for e1, e2 in pickToSum(expr_cache, expr_cache, size):
                 registerExp(predicates.And(e1, e2))
                 registerExp(predicates.Or(e1, e2))
 
             # plans
-            self.productive = False
-            print "round", size, "; cache={}/{max}; ecache={}/{max}; bestCost={}".format(len(cache), len(ecache), self.bestCost, max=2**len(examples))
-            for plan in (plans.HashLookup(p, e) for p, e in pickToSum(plansOfSize, exprsOfSize, size)):
+            print "round", size, "; cache={}/{max}; ecache={}/{max}; bestCost={}".format(len(plan_cache), len(expr_cache), self.bestCost, max=2**len(examples))
+            for plan in (plans.HashLookup(p, e) for p, e in pickToSum(plan_cache, expr_cache, size)):
                 yield consider(plan)
-            for plan in (plans.BinarySearch(p, f, e) for f in self.fieldNames for p, e in pickToSum(plansOfSize, exprsOfSize, size)):
+            for plan in (plans.BinarySearch(p, f, e) for f in self.fieldNames for p, e in pickToSum(plan_cache, expr_cache, size)):
                 yield consider(plan)
-            for plan in (plans.Filter(p, e) for p, e in pickToSum(plansOfSize, exprsOfSize, size)):
+            for plan in (plans.Filter(p, e) for p, e in pickToSum(plan_cache, expr_cache, size)):
                 yield consider(plan)
-            for plan in (plans.Concat(p1, p2) for p1, p2 in pickToSum(plansOfSize, plansOfSize, size)):
+            for plan in (plans.Concat(p1, p2) for p1, p2 in pickToSum(plan_cache, plan_cache, size)):
                 yield consider(plan)
