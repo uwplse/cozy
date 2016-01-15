@@ -14,7 +14,6 @@ class Cache(object):
         self.entries_by_key = defaultdict(list)
         self.entries_by_size = []
         self.costs_by_key = dict()
-        self.views = []
         self.size = 0
 
     def put(self, entry, key=None, size=None, cost=None):
@@ -29,9 +28,6 @@ class Cache(object):
             return self.entries_by_key[key][0]
         if old_cost > cost:
             self.evict(key)
-        for (p,v) in self.views:
-            if p(entry):
-                v.put(entry, key, size, cost)
         _expand(self.entries_by_size, size + 1)
         self.entries_by_size[size].append(entry)
         self.entries_by_key[key].append(entry)
@@ -66,15 +62,6 @@ class Cache(object):
         if size >= len(self.entries_by_size) or size < 0:
             return ()
         return self.entries_by_size[size]
-
-    def subview(self, predicate):
-        view = Cache(self.cost_func, self.size_func, self.key_func, self.allow_multi)
-        self.views.append((predicate, view))
-        for entry in self.all():
-            if predicate(entry):
-                key = self.key_func(entry)
-                view.put(entry, key=key, cost=self.costs_by_key[key])
-        return view
 
     def all(self):
         for l in self.entries_by_size:
