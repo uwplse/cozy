@@ -38,7 +38,7 @@ def pick_best_impls(fields, queries, cost_model_file, code_generators):
             if cost_model_file is None:
                 return impls, cg, 0
 
-            print("benchmarking {} using {}... ".format([q.name for q in queries], cg), end="")
+            print("benchmarking {} using {}... ".format({q.name : impl for q, impl in zip(queries, impls)}, cg), end="")
             sys.stdout.flush()
             cost = cg.dynamic_cost(fields, queries, impls, cost_model_file)
             print("cost = {}".format(cost))
