@@ -452,7 +452,7 @@ class CppCodeGenerator(object):
             cpp="/tmp/DataStructure.cpp",
             cpp_header="/tmp/DataStructure.hpp")
 
-        flags = ["-DQT_SHARED", "-I/usr/local/Cellar/qt/4.8.7_1/include", "-I/usr/local/Cellar/qt/4.8.7_1/include/QtGui", "-I/usr/local/Cellar/qt/4.8.7_1/include", "-I/usr/local/Cellar/qt/4.8.7_1/include/QtCore", "-F/usr/local/Cellar/qt/4.8.7_1/lib", "-framework", "QtGui", "-F/usr/local/Cellar/qt/4.8.7_1/lib", "-framework", "QtCore"]
+        flags = "-DQT_SHARED -I/usr/local/Cellar/qt/4.8.7_2/include -I/usr/local/Cellar/qt/4.8.7_2/include/QtCore -F/usr/local/Cellar/qt/4.8.7_2/lib -framework QtCore".split()
         ret = subprocess.call(["c++", "-O2", "-I/tmp", "/tmp/DataStructure.cpp", cost_model_file, "-o", "/tmp/a.out"] + flags)
         assert ret == 0
 
