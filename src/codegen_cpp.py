@@ -37,7 +37,7 @@ class CppCodeGenerator(object):
         return ty.gen_type(self) if type(ty) is codegen.RecordType else "{}*".format(ty.gen_type(self));
 
     def stack_type(self, ty):
-        return "std::vector < {} >".format(ty.gen_type(self))
+        return "mystk < {} >".format(ty.gen_type(self))
 
     def vector_type(self, ty, n):
         return "{}*".format(ty.gen_type(self))
@@ -245,13 +245,49 @@ class CppCodeGenerator(object):
 
                 header_writer("#include <cassert>\n")
                 header_writer("#include <ctgmath>\n")
-                header_writer("#include <vector>\n")
+                # header_writer("#include <vector>\n")
                 if self.maptype == "hash":
                     header_writer("#include <unordered_map>\n")
                 if self.maptype == "tree":
                     header_writer("#include <map>\n")
                 if self.maptype == "qhash":
                     header_writer("#include <QHash>\n")
+
+                header_writer("""
+
+                    #include <cstdint>
+
+                    template <class T>
+                    class mystk {
+                        int32_t _end;
+                        int32_t _cap;
+                        T* _data;
+                    public:
+                        mystk() : _end(-1), _cap(10), _data(new T[_cap]) { }
+                        mystk(const mystk& other) : _end(other._end), _cap(other._cap), _data(new T[other._cap]) {
+                            std::copy(other._data, other._data + _end + 1, _data);
+                        }
+                        ~mystk() { delete[] _data; }
+                        void reserve(size_t n) { }
+                        bool empty() { return _end < 0; }
+                        T& back() { return _data[_end]; }
+                        void push_back(const T& x) {
+                            ++_end;
+                            if (_end >= _cap) {
+                                _cap *= 2;
+                                T* newdata = new T[_cap];
+                                std::copy(_data, _data + _end, newdata);
+                                delete[] _data;
+                                _data = newdata;
+                            }
+                            // printf("inserting %p @ %d\\n", x, (int)_end);
+                            _data[_end] = x;
+                        }
+                        void pop_back() { --_end; }
+                    };
+
+
+                """)
 
                 header_writer("\n")
                 if cpp_namespace is not None:

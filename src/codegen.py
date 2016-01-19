@@ -1567,17 +1567,32 @@ class VolumeTree(ConcreteImpl):
 
             proc += gen.if_true(self.is_leaf(gen, node))
 
-            proc += gen.if_true(self.query_holds(gen, gen.get_field(node, self.leaf_ptr)))
+            # TODO: determine when this if-check is necessary! It isn't for
+            # Bullet, but it _is_ in general.
+            # proc += gen.if_true(self.query_holds(gen, gen.get_field(node, self.leaf_ptr)))
             proc += gen.set(self.cursor_name, gen.get_field(node, self.leaf_ptr))
             proc += gen.break_loop()
-            proc += gen.endif()
+            # proc += gen.endif()
 
             proc += gen.else_true()
 
-            proc += gen.if_true(self.intersects_query(gen, node))
-            proc += gen.stack_push(self.stack_name, gen.get_field(node, self.left_ptr))
-            proc += gen.stack_push(self.stack_name, gen.get_field(node, self.right_ptr))
-            proc += gen.endif()
+            if True:
+                l = fresh_name("left")
+                r = fresh_name("right")
+
+                proc += gen.decl(l, self.node_type, gen.get_field(node, self.left_ptr))
+                proc += gen.decl(r, self.node_type, gen.get_field(node, self.right_ptr))
+
+                for n in (l, r):
+                    proc += gen.if_true(self.intersects_query(gen, n))
+                    proc += gen.stack_push(self.stack_name, n)
+                    proc += gen.endif()
+            else:
+
+                proc += gen.if_true(self.intersects_query(gen, node))
+                proc += gen.stack_push(self.stack_name, gen.get_field(node, self.left_ptr))
+                proc += gen.stack_push(self.stack_name, gen.get_field(node, self.right_ptr))
+                proc += gen.endif()
 
             proc += gen.endif()
 
@@ -1680,6 +1695,10 @@ class LinkedList(ConcreteImpl):
         self.prev_cursor_name = fresh_name("prev_cursor")
         self.cursor_name = fresh_name("cursor")
         self.ty = RecordType()
+    def __str__(self):
+        return "LinkedList"
+    def __repr__(self):
+        return self.__str__()
     def fields(self):
         return ((self.head_ptr, self.ty),)
     def construct(self, gen, parent_structure=This()):
