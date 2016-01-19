@@ -343,6 +343,7 @@ class CppCodeGenerator(object):
                 # update routines
                 for f, ty in fields.items():
                     header_writer("    inline void update{}({} x, {} val);\n".format(capitalize(f), self.record_type(), ty))
+                header_writer("    inline void update({} x, {});\n".format(self.record_type(), ", ".join("{} {}".format(ty, f) for f, ty in fields.items())))
 
                 # query routines
                 for q in queries:
@@ -423,10 +424,17 @@ class CppCodeGenerator(object):
                     writer("void {}::update{}({} x, {} val) {{\n".format(name, capitalize(f), self.record_type(), ty))
                     writer("    if ({} != val) {{\n".format(self.get_field("x", f)))
                     for q in queries:
-                        writer(indent("        ", q.impl.gen_update(self, fields, f, "x", "val")))
+                        writer(indent("        ", q.impl.gen_update(self, fields, "x", {f: "val"})))
                     writer("        {} = val;\n".format(self.get_field("x", f)))
                     writer("    }")
                     writer("}\n")
+                writer("void {}::update({} x, {}) {{\n".format(name, self.record_type(), ", ".join("{} {}".format(ty, f) for f, ty in fields.items())))
+                for q in queries:
+                    writer(indent("        ", q.impl.gen_update(self, fields, "x", {f:f for f in fields})))
+                for f, ty in fields.items():
+                    writer("        {} = {};\n".format(self.get_field("x", f), f))
+                writer("}\n")
+
 
                 # query routines
                 for q in queries:

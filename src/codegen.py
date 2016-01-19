@@ -282,8 +282,8 @@ class ConcreteImpl(object):
     def gen_remove_in_place(self, gen, parent_structure):
         """returns proc, removed element"""
         raise Exception("not implemented for type: {}".format(type(self)))
-    def gen_update(self, gen, fields, f, x, v):
-        """returns proc"""
+    def gen_update(self, gen, fields, x, remap):
+        """remap is {fieldname:newvalue} dict; returns proc"""
         raise Exception("not implemented for type: {}".format(type(self)))
     def auxtypes(self):
         """generator of auxiliary types which need to be generated"""
@@ -1439,17 +1439,20 @@ class VolumeTree(ConcreteImpl):
     def gen_remove_in_place(self, gen, parent_structure):
         proc = self.gen_remove(gen, self.prev_name, parent_structure)
         return proc, self.prev_name
-    def gen_update(self, gen, fields, f, x, v, parent_structure=This()):
-        if f not in ([ff for ff,_ in self.spec.lts] + [ff for ff,_ in self.spec.gts]):
+    def gen_update(self, gen, fields, x, remap, parent_structure=This()):
+        if not any(f in ([ff for ff,_ in self.spec.lts] + [ff for ff,_ in self.spec.gts]) for f in remap):
             return "" # no effect!
 
         x_node = fresh_name("x_node")
         x_parent = fresh_name("x_parent")
 
-        proc  = gen.comment("update procedure for field {} (remapped to {})".format(f, self.remap[f]))
+        proc  = gen.comment("update procedure for {}".format(remap))
         proc += gen.decl(x_node,   self.node_type, gen.get_field(x, self.record_parent_ptr))
         proc += gen.decl(x_parent, self.node_type, gen.get_field(x_node, self.parent_ptr))
-        proc += gen.set(gen.get_field(x_node, self.remap[f]), v)
+
+        # copy values up into the wrapper node
+        for f, v in remap.items():
+            proc += gen.set(gen.get_field(x_node, self.remap[f]), v)
 
         # if x is the only thing in the tree, no problem!
         proc += gen.if_true(gen.not_true(gen.is_null(x_parent)))
@@ -1464,7 +1467,7 @@ class VolumeTree(ConcreteImpl):
         # Find the insertion point: the new sibling for x_node.
         # We will replace this node with x_parent, and move this as a child of
         # x_parent in the tree.
-        p, new_sibling = self.find_insertion_point(gen, x, remap={f:v}, parent_structure=parent_structure)
+        p, new_sibling = self.find_insertion_point(gen, x, remap=remap, parent_structure=parent_structure)
         proc += p
 
         new_grandparent = fresh_name("new_grandparent")
@@ -1769,7 +1772,7 @@ class LinkedList(ConcreteImpl):
         proc += self.gen_remove(gen, self.prev_cursor_name, parent_structure=parent_structure)
         proc += gen.set(self.prev_cursor_name, gen.null_value())
         return proc, old_prev
-    def gen_update(self, gen, fields, f, x, v, parent_structure=This()):
+    def gen_update(self, gen, fields, x, remap, parent_structure=This()):
         return ""
     def auxtypes(self):
         return ()
