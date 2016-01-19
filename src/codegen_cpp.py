@@ -33,8 +33,20 @@ class CppCodeGenerator(object):
     def ref_type(self, ty):
         return ty.gen_type(self) if type(ty) is codegen.RecordType else "{}&".format(ty.gen_type(self));
 
+    def ptr_type(self, ty):
+        return ty.gen_type(self) if type(ty) is codegen.RecordType else "{}*".format(ty.gen_type(self));
+
+    def stack_type(self, ty):
+        return "std::vector < {} >".format(ty.gen_type(self))
+
     def vector_type(self, ty, n):
-        return "{}*".format(ty.gen_type(self));
+        return "{}*".format(ty.gen_type(self))
+
+    def alloc(self, t, args):
+        return "new {}({})".format(t.gen_type(self), ", ".join(args))
+
+    def free(self, x):
+        return "delete {}".format(x)
 
     def new_map(self, kt, vt):
         return "{}()".format(self.map_type(kt, vt))
@@ -64,6 +76,24 @@ class CppCodeGenerator(object):
     def map_put(self, m, k, v):
         return "{}[{}] = {};\n".format(m, k, v)
 
+    def new_stack(self, t):
+        return "{}()".format(self.stack_type(t))
+
+    def stack_push(self, stk, x):
+        return "{}.push_back({});\n".format(stk, x)
+
+    def stack_peek(self, stk):
+        return "{}.back()".format(stk)
+
+    def stack_size_hint(self, stk, n):
+        return "{}.reserve({});\n".format(stk, n)
+
+    def stack_pop(self, stk):
+        return "{}.pop_back();\n".format(stk)
+
+    def stack_is_empty(self, stk):
+        return "{}.empty()".format(stk)
+
     def new_vector(self, ty, n):
         return "new {}[{}]".format(ty.gen_type(self), n)
 
@@ -80,7 +110,7 @@ class CppCodeGenerator(object):
         return "{}*".format(self.cpp_record_class)
 
     def predicate(self, fields, qvars, pred, target):
-        return _predicate_to_exp(fields, qvars, pred, target)
+        return _predicate_to_exp(self, fields, qvars, pred, target)
 
     def not_true(self, e):
         return "!({})".format(e)
@@ -116,7 +146,13 @@ class CppCodeGenerator(object):
         return "({}) * ({})".format(e1, e2)
 
     def abs(self, e):
-        return "abs({})".format(e)
+        return "std::abs({})".format(e)
+
+    def min(self, t, e1, e2):
+        return "std::min({}, {})".format(e1, e2)
+
+    def max(self, t, e1, e2):
+        return "std::max({}, {})".format(e1, e2)
 
     def init_new(self, target, ty):
         return self.set(target, "{}()".format(ty.gen_type(self)))
@@ -204,7 +240,8 @@ class CppCodeGenerator(object):
                 if cpp_extra:
                     header_writer("{}\n".format(cpp_extra))
 
-                header_writer("#include <cmath>\n")
+                header_writer("#include <ctgmath>\n")
+                header_writer("#include <vector>\n")
                 if self.maptype == "hash":
                     header_writer("#include <unordered_map>\n")
                 if self.maptype == "tree":
@@ -222,6 +259,10 @@ class CppCodeGenerator(object):
                 header_writer("\n")
 
                 # auxiliary type definitions
+                seen = set()
+                for q in queries:
+                    for t in q.impl.auxtypes():
+                        _gen_aux_type_fwd_decl(t, self, header_writer, seen)
                 seen = set()
                 for q in queries:
                     for t in q.impl.auxtypes():
@@ -410,6 +451,12 @@ class CppCodeGenerator(object):
         score = long(stdout.strip())
         return score
 
+def _gen_aux_type_fwd_decl(ty, gen, writer, seen):
+    if ty in seen:
+        return
+    seen.add(ty)
+    if type(ty) is codegen.TupleTy:
+        writer("class {};\n".format(ty.name))
 
 def _gen_aux_type_header(ty, gen, writer, class_name, seen):
     if ty in seen:
@@ -449,23 +496,23 @@ def _gen_record_type(name, fields, private_fields, writer):
         init=", ".join("{f}({init})".format(f=f, init=init) for f, _, init in all_fields)))
     writer("};\n")
 
-def _predicate_to_exp(fields, qvars, pred, target):
+def _predicate_to_exp(gen, fields, qvars, pred, target):
     if type(pred) is predicates.Var:
-        return pred.name if pred.name in {v for v,ty in qvars} else "{}->{}".format(target, pred.name)
+        return pred.name if pred.name in {v for v,ty in qvars} else gen.get_field(target, pred.name)
     elif type(pred) is predicates.Bool:
         return "true" if pred.val else "false"
     elif type(pred) is predicates.Compare:
         return "({}) {} ({})".format(
-            _predicate_to_exp(fields, qvars, pred.lhs, target),
+            _predicate_to_exp(gen, fields, qvars, pred.lhs, target),
             predicates.opToStr(pred.op),
-            _predicate_to_exp(fields, qvars, pred.rhs, target))
+            _predicate_to_exp(gen, fields, qvars, pred.rhs, target))
     elif type(pred) is predicates.And:
         return "({}) && ({})".format(
-            _predicate_to_exp(fields, qvars, pred.lhs, target),
-            _predicate_to_exp(fields, qvars, pred.rhs, target))
+            _predicate_to_exp(gen, fields, qvars, pred.lhs, target),
+            _predicate_to_exp(gen, fields, qvars, pred.rhs, target))
     elif type(pred) is predicates.Or:
         return "({}) || ({})".format(
-            _predicate_to_exp(fields, qvars, pred.lhs, target),
-            _predicate_to_exp(fields, qvars, pred.rhs, target))
+            _predicate_to_exp(gen, fields, qvars, pred.lhs, target),
+            _predicate_to_exp(gen, fields, qvars, pred.rhs, target))
     elif type(pred) is predicates.Not:
-        return "!({})".format(_predicate_to_exp(fields, qvars, pred.p, target))
+        return "!({})".format(_predicate_to_exp(gen, fields, qvars, pred.p, target))

@@ -28,6 +28,18 @@ class RefTy(Ty):
     def gen_type(self, gen):
         return gen.ref_type(self.ty)
 
+class PointerTy(Ty):
+    def __init__(self, ty):
+        self.ty = ty
+    def gen_type(self, gen):
+        return gen.ptr_type(self.ty)
+
+class StackTy(Ty):
+    def __init__(self, ty):
+        self.ty = ty
+    def gen_type(self, gen):
+        return gen.stack_type(self.ty)
+
 class BoolTy(Ty):
     def gen_type(self, gen):
         return gen.bool_type()
@@ -90,11 +102,18 @@ class Iterable(AbstractImpl):
         yield LinkedList(self.ty)
         # yield Array() # TODO
 
-class SortedIterable(AbstractImpl):
+class BinarySearchable(AbstractImpl):
     def __init__(self, fields, sortField, predicate):
         self.fields = fields
         self.sortField = sortField
         self.predicate = predicate
+    def concretize(self):
+        yield AugTree(NativeTy(self.fields[self.sortField]), self.sortField, self.predicate, self.fields)
+        # yield SortedArray(self.field_type, self.field_name) # TODO
+        for v in VolumeTree.infer_volume(self.fields, self.predicate):
+            yield VolumeTree(v, self.fields, self.predicate)
+
+class SortedIterable(BinarySearchable):
     def concretize(self):
         yield AugTree(NativeTy(self.fields[self.sortField]), self.sortField, self.predicate, self.fields)
         # yield SortedArray(self.field_type, self.field_name) # TODO
@@ -108,6 +127,9 @@ def count_cases(ty):
     if ty == "State": # TODO: HACK
         return 8
     return -1
+
+def is_numeric(ty):
+    return ty.lower() in ("int", "integer", "long", "short", "float", "double", "btscalar")
 
 class Bucketed(AbstractImpl):
     def __init__(self, fields, predicate, value_impl):
@@ -185,7 +207,10 @@ def implement(plan, fields, qvars, resultTy):
         return implement(plan.plan, fields, qvars, t)
     elif type(plan) is plans.BinarySearch:
         assert type(resultTy) in [Iterable, SortedIterable]
-        return implement(plan.plan, fields, qvars, SortedIterable(fields, plan.sortField, plan.predicate))
+        if type(resultTy) is SortedIterable:
+            return implement(plan.plan, fields, qvars, SortedIterable(fields, plan.sortField, plan.predicate))
+        else:
+            return implement(plan.plan, fields, qvars, BinarySearchable(fields, plan.sortField, plan.predicate))
     elif type(plan) is plans.Intersect:
         t1 = implement(plan.plan1, fields, qvars, resultTy)
         t2 = implement(plan.plan2, fields, qvars, resultTy)
@@ -1162,6 +1187,317 @@ class AugTree(ConcreteImpl):
         return proc
     def auxtypes(self):
         return ()
+
+class VolumeTree(ConcreteImpl):
+
+    class VolumeSpec(object):
+        def __init__(self, lts, gts):
+            self.lts = lts
+            self.gts = gts
+
+    @staticmethod
+    def infer_volume(fields, predicate):
+        clauses = list(_break_conj(predicate))
+        lts = []
+        gts = []
+        for c in clauses:
+            if not is_numeric(fields[c.lhs.name]):
+                return
+            if c.op in (predicates.Lt, predicates.Le):
+                lts.append((c.lhs.name, c.rhs.name))
+            if c.op in (predicates.Gt, predicates.Ge):
+                gts.append((c.lhs.name, c.rhs.name))
+        # print("; ".join(str(c) for c in clauses))
+        # print(lts)
+        # print(gts)
+        if len(lts) != len(gts):
+            return
+        yield VolumeTree.VolumeSpec(lts, gts) # todo: permutations?
+
+    def __init__(self, spec, fields, predicate):
+        self.stack_iteration = False
+        self.spec = spec
+        self.field_types = fields
+        self.predicate =predicate
+        self.root = fresh_name("root")
+        self.left_ptr = fresh_name("left")
+        self.right_ptr = fresh_name("right")
+        self.leaf_ptr = fresh_name("leaf")
+        self.stack_name = fresh_name("stack")
+        self.cursor_name = fresh_name("cursor")
+        self.parent_ptr = fresh_name("parent")
+        self.record_parent_ptr = fresh_name("parent")
+        self.remap = { f : fresh_name(f) for f, _ in (self.spec.lts + self.spec.gts) }
+
+        myfields = [f for f, _ in spec.lts] + [f for f, _ in spec.gts]
+        self.node_type = TupleTy(collections.OrderedDict(
+            [(self.remap[f], NativeTy(fields[f])) for f in myfields]))
+        self.node_type.fields[self.left_ptr]   = PointerTy(self.node_type)
+        self.node_type.fields[self.right_ptr]  = PointerTy(self.node_type)
+        self.node_type.fields[self.parent_ptr] = PointerTy(self.node_type)
+        self.node_type.fields[self.leaf_ptr]   = RecordType()
+        self.node_type = PointerTy(self.node_type)
+
+    def fields(self):
+        return ((self.root, self.node_type),)
+    def construct(self, gen, parent_structure=This()):
+        return gen.set(parent_structure.field(gen, self.root), gen.null_value())
+    def needs_var(self, v):
+        return v in ([v for _, v in self.spec.lts] + [v for _, v in self.spec.gts])
+    def state(self):
+        if self.stack_iteration:
+            return [
+                (self.stack_name, StackTy(self.node_type)), # TODO: someday, make this a constant-memory thing
+                (self.cursor_name, RecordType())]
+        return [(self.cursor_name, RecordType())]
+    def private_members(self):
+        return [(self.record_parent_ptr, self.node_type)]
+    def gen_query(self, gen, qvars):
+        if self.stack_iteration:
+            stk = self.stack_name
+            proc  = gen.decl(stk, StackTy(self.node_type), gen.new_stack(self.node_type))
+            proc += gen.stack_size_hint(stk, "100")
+            proc += gen.if_true(gen.not_true(gen.is_null(self.root)))
+            proc += gen.stack_push(stk, self.root)
+            proc += gen.endif()
+            proc += gen.decl(self.cursor_name, RecordType(), gen.null_value())
+            proc += self.gen_advance(gen)
+            return proc, [stk, self.cursor_name]
+        proc, cursor = self.find_first(gen, self.root)
+        return proc, [cursor]
+    def gen_empty(self, gen, qvars):
+        if self.stack_iteration:
+            return "", (gen.new_stack(self.node_type), gen.null_value(),)
+        raise Exception("implement me")
+    def auxtypes(self):
+        return (self.node_type.ty,)
+    def distance(self, gen, record, node):
+        e = "0"
+        for (f1, _), (f2, _) in zip(self.spec.lts, self.spec.gts):
+            e = gen.add(e,
+                gen.abs(gen.sub(
+                    gen.add(gen.get_field(node, self.remap[f1]), gen.get_field(node, self.remap[f2])),
+                    gen.add(gen.get_field(record, f1), gen.get_field(record, f2)))))
+        return e
+    def select_child(self, gen, parent, record):
+        # TODO: use proper type, not "double"
+        return gen.ternary(
+            gen.lt(NativeTy("double"), self.distance(gen, record, gen.get_field(parent, self.right_ptr)), self.distance(gen, record, gen.get_field(parent, self.left_ptr))),
+            gen.get_field(parent, self.right_ptr),
+            gen.get_field(parent, self.left_ptr))
+    def merge_volumes(self, gen, n1, n2, into):
+        proc = ""
+        for f, _ in self.spec.lts:
+            f = self.remap[f]
+            proc += gen.set(gen.get_field(into, f), gen.min(NativeTy("double"), gen.get_field(n1, f), gen.get_field(n2, f)))
+        for f, _ in self.spec.gts:
+            f = self.remap[f]
+            proc += gen.set(gen.get_field(into, f), gen.max(NativeTy("double"), gen.get_field(n1, f), gen.get_field(n2, f)))
+        return proc
+    def replace_child(self, gen, parent, old_child, new_child):
+        proc  = gen.if_true(gen.same(gen.get_field(parent, self.right_ptr), old_child))
+        proc += gen.set(gen.get_field(parent, self.right_ptr), new_child)
+        proc += gen.else_true()
+        proc += gen.set(gen.get_field(parent, self.left_ptr), new_child)
+        proc += gen.endif()
+        return proc
+    def volume_contains(self, gen, large, small):
+        e = gen.true_value()
+        for (f1, _), (f2, _) in zip(self.spec.lts, self.spec.gts):
+            f1 = self.remap[f1]
+            f2 = self.remap[f2]
+            e = gen.both(e, gen.le(NativeTy("double"), gen.get_field(large, f1), gen.get_field(small, f1)))
+            e = gen.both(e, gen.ge(NativeTy("double"), gen.get_field(large, f2), gen.get_field(small, f2)))
+        return e
+    def gen_insert(self, gen, x, parent_structure=This()):
+        wrapper = fresh_name("leaf")
+        proc  = gen.decl(wrapper, self.node_type, gen.alloc(self.node_type.ty, []))
+        for f,v in self.spec.lts + self.spec.gts:
+            proc += gen.set(gen.get_field(wrapper, self.remap[f]), gen.get_field(x, f))
+        proc += gen.set(gen.get_field(wrapper, self.left_ptr), gen.null_value())
+        proc += gen.set(gen.get_field(wrapper, self.right_ptr), gen.null_value())
+        proc += gen.set(gen.get_field(wrapper, self.parent_ptr), gen.null_value())
+        proc += gen.set(gen.get_field(wrapper, self.leaf_ptr), x)
+        proc += gen.set(gen.get_field(x, self.record_parent_ptr), wrapper)
+
+        # No root? Put it there.
+        proc += gen.if_true(gen.is_null(parent_structure.field(gen, self.root)))
+        proc += gen.set(parent_structure.field(gen, self.root), wrapper)
+        proc += gen.else_true()
+
+        # Descend to the right spot.
+        sibling = fresh_name("sibling")
+        proc += gen.decl(sibling, self.node_type, parent_structure.field(gen, self.root))
+        proc += gen.while_true(gen.not_true(self.is_leaf(gen, sibling)))
+        proc += gen.set(sibling, self.select_child(gen, sibling, x))
+        proc += gen.endif()
+
+        # Create a new node to contain both wrapper and sibling
+        node = fresh_name("newnode")
+        proc += gen.decl(node, self.node_type, gen.alloc(self.node_type.ty, []))
+        proc += gen.set(gen.get_field(node, self.left_ptr), wrapper)
+        proc += gen.set(gen.get_field(node, self.right_ptr), sibling)
+        proc += gen.set(gen.get_field(node, self.parent_ptr), gen.null_value())
+        proc += gen.set(gen.get_field(node, self.leaf_ptr), gen.null_value())
+        proc += gen.set(gen.get_field(wrapper, self.parent_ptr), node)
+        proc += self.merge_volumes(gen, wrapper, sibling, into=node)
+
+        parent = fresh_name("parent")
+        proc += gen.decl(parent, self.node_type, gen.get_field(sibling, self.parent_ptr))
+        proc += gen.set(gen.get_field(sibling, self.parent_ptr), node)
+
+        # Sibling is a leaf and the root
+        proc += gen.if_true(gen.is_null(parent))
+        proc += gen.set(parent_structure.field(gen, self.root), node)
+
+        # Sibling is a leaf and has a parent
+        proc += gen.else_true()
+        proc += gen.set(gen.get_field(node, self.parent_ptr), parent)
+        proc += self.replace_child(gen, parent, old_child=sibling, new_child=node)
+        proc += gen.while_true(gen.both(
+            gen.not_true(gen.is_null(parent)),
+            gen.not_true(self.volume_contains(gen, parent, node))))
+        proc += self.merge_volumes(gen, parent, node, into=parent)
+        proc += gen.set(parent, gen.get_field(parent, self.parent_ptr))
+        proc += gen.endwhile()
+
+        proc += gen.endif()
+        proc += gen.endif()
+        return proc
+    def gen_remove(self, gen, x, parent_structure=This()):
+        return "" # TODO
+    def gen_remove_in_place(self, gen, parent_structure):
+        return "", self.cursor_name # TODO
+    def gen_update(self, gen, fields, f, x, v, parent_structure=This()):
+        return "" # TODO
+    def is_leaf(self, gen, node):
+        return gen.not_true(gen.is_null(gen.get_field(node, self.leaf_ptr)))
+    def query_holds(self, gen, record):
+        qvars = [(v, self.field_types[f]) for f, v in self.spec.lts] + [(v, self.field_types[f]) for f, v in self.spec.gts]
+        return gen.predicate(self.field_types, qvars, self.predicate, record)
+    def intersects_query(self, gen, node):
+        result = gen.true_value()
+        for f, v in self.spec.lts:
+            result = gen.both(result, gen.le(self.field_types[f], gen.get_field(node, self.remap[f]), v))
+        for f, v in self.spec.gts:
+            result = gen.both(result, gen.ge(self.field_types[f], gen.get_field(node, self.remap[f]), v))
+        return result
+    def find_first(self, gen, tree_root):
+        cursor = fresh_name("cursor")
+        out = fresh_name("first")
+
+        proc  = gen.decl(cursor, self.node_type, tree_root)
+        proc += gen.decl(out, RecordType(), gen.null_value())
+
+        proc += gen.while_true(gen.true_value())
+
+        # greedy descent until you find a leaf
+        proc += gen.while_true(gen.not_true(self.is_leaf(gen, cursor)))
+        proc += gen.if_true(self.intersects_query(gen, gen.get_field(cursor, self.left_ptr)))
+        proc += gen.set(cursor, gen.get_field(cursor, self.left_ptr))
+        proc += gen.else_if(self.intersects_query(gen, gen.get_field(cursor, self.right_ptr)))
+        proc += gen.set(cursor, gen.get_field(cursor, self.right_ptr))
+        proc += gen.else_true()
+        proc += gen.break_loop()
+        proc += gen.endif()
+        proc += gen.endwhile()
+
+        # if we are at a leaf AND the leaf matches, we're done!
+        proc += gen.if_true(gen.both(
+            self.is_leaf(gen, cursor),
+            self.query_holds(gen, gen.get_field(cursor, self.leaf_ptr))))
+        proc += gen.set(out, gen.get_field(cursor, self.leaf_ptr))
+        proc += gen.break_loop()
+        proc += gen.endif()
+
+        # otherwise, ascend until we can descend to the right and then do so
+        proc += gen.while_true(gen.not_true(gen.same(cursor, tree_root)))
+        parent = fresh_name("parent")
+        proc += gen.decl(parent, self.node_type, gen.get_field(cursor, self.parent_ptr))
+        proc += gen.if_true(gen.both(
+            gen.same(cursor, gen.get_field(parent, self.left_ptr)),
+            self.intersects_query(gen, gen.get_field(parent, self.right_ptr))))
+        proc += gen.set(cursor, gen.get_field(parent, self.right_ptr))
+        proc += gen.break_loop()
+        proc += gen.endif()
+        proc += gen.set(cursor, parent)
+        proc += gen.endwhile()
+
+        # if we are stuck at the root, then we're done!
+        proc += gen.if_true(gen.same(cursor, tree_root))
+        proc += gen.break_loop()
+        proc += gen.endif()
+
+        proc += gen.endwhile()
+
+        return proc, out
+    def gen_has_next(self, gen):
+        return "", gen.not_true(gen.is_null(self.cursor_name))
+    def gen_current(self, gen):
+        return "", self.cursor_name
+    def gen_advance(self, gen):
+        if self.stack_iteration:
+            node = fresh_name("node")
+            proc  = gen.set(self.cursor_name, gen.null_value())
+            proc += gen.while_true(gen.not_true(gen.stack_is_empty(self.stack_name)))
+            proc += gen.decl(node, self.node_type, gen.stack_peek(self.stack_name))
+            proc += gen.stack_pop(self.stack_name)
+
+            proc += gen.if_true(self.is_leaf(gen, node))
+
+            proc += gen.if_true(self.query_holds(gen, gen.get_field(node, self.leaf_ptr)))
+            proc += gen.set(self.cursor_name, gen.get_field(node, self.leaf_ptr))
+            proc += gen.break_loop()
+            proc += gen.endif()
+
+            proc += gen.else_true()
+
+            proc += gen.if_true(self.intersects_query(gen, node))
+            proc += gen.stack_push(self.stack_name, gen.get_field(node, self.left_ptr))
+            proc += gen.stack_push(self.stack_name, gen.get_field(node, self.right_ptr))
+            proc += gen.endif()
+
+            proc += gen.endif()
+
+            proc += gen.endwhile()
+            return proc
+
+        proc  = gen.comment("advance")
+        cursor = fresh_name("cursor")
+        proc += gen.decl(cursor, self.node_type, gen.get_field(self.cursor_name, self.record_parent_ptr))
+        proc += gen.while_true(gen.true_value())
+
+        # ascend until we can descend to the right and then do so
+        proc += gen.while_true(gen.not_true(gen.is_null(gen.get_field(cursor, self.parent_ptr))))
+        parent = fresh_name("parent")
+        proc += gen.decl(parent, self.node_type, gen.get_field(cursor, self.parent_ptr))
+        proc += gen.if_true(gen.both(
+            gen.same(cursor, gen.get_field(parent, self.left_ptr)),
+            self.intersects_query(gen, gen.get_field(parent, self.right_ptr))))
+        proc += gen.set(cursor, gen.get_field(parent, self.right_ptr))
+        proc += gen.break_loop()
+        proc += gen.endif()
+        proc += gen.set(cursor, parent)
+        proc += gen.endwhile()
+
+        # if we are stuck at the root, then we're done!
+        proc += gen.if_true(gen.is_null(gen.get_field(cursor, self.parent_ptr)))
+        proc += gen.set(self.cursor_name, gen.null_value())
+        proc += gen.break_loop()
+        proc += gen.endif()
+
+        # find the first matching node in this subtree, if it exists
+        p, m = self.find_first(gen, cursor)
+        proc += p
+
+        # we found the min!
+        proc += gen.if_true(gen.not_true(gen.is_null(m)))
+        proc += gen.set(self.cursor_name, m)
+        proc += gen.break_loop()
+        proc += gen.endif()
+
+        proc += gen.endwhile()
+        return proc
 
 class LinkedList(ConcreteImpl):
     def __init__(self, ty):
