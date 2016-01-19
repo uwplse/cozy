@@ -46,7 +46,7 @@ class CppCodeGenerator(object):
         return "new {}({})".format(t.gen_type(self), ", ".join(args))
 
     def free(self, x):
-        return "delete {}".format(x)
+        return "delete {};\n".format(x)
 
     def new_map(self, kt, vt):
         return "{}()".format(self.map_type(kt, vt))
@@ -219,6 +219,9 @@ class CppCodeGenerator(object):
     def comment(self, text):
         return " /* {} */ ".format(text)
 
+    def assert_true(self, e):
+        return "assert({});\n".format(e)
+
     def write(self, fields, queries, cpp=None, cpp_header=None, cpp_class="DataStructure", cpp_record_class="Record", cpp_abstract_record=False, cpp_extra=None, cpp_namespace=None, **kwargs):
         self.cpp_record_class = cpp_record_class
         self.cpp_abstract_record = cpp_abstract_record
@@ -240,6 +243,7 @@ class CppCodeGenerator(object):
                 if cpp_extra:
                     header_writer("{}\n".format(cpp_extra))
 
+                header_writer("#include <cassert>\n")
                 header_writer("#include <ctgmath>\n")
                 header_writer("#include <vector>\n")
                 if self.maptype == "hash":
@@ -329,6 +333,9 @@ class CppCodeGenerator(object):
 
                     # query method
                     header_writer("    inline {} {}({});\n".format(it_name, q.name, ", ".join("{} {}".format(ty, v) for v,ty in q.vars)))
+
+                # debugging
+                header_writer("    inline void checkRep();\n")
 
                 # private members
                 header_writer("private:\n")
@@ -425,6 +432,11 @@ class CppCodeGenerator(object):
                         if q2 != q:
                             writer(indent("    ", q2.impl.gen_remove(self, removed, parent_structure=codegen.TupleInstance("parent"))))
                     writer("}\n")
+
+                writer("void {}::checkRep() {{\n".format(name))
+                for q in queries:
+                    writer(indent("    ", q.impl.check_rep(self)))
+                writer("}\n")
 
                 header_writer("#endif\n")
 
