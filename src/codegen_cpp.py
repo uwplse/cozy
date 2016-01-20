@@ -2,8 +2,10 @@ import re
 import subprocess
 
 import codegen
+import abstract_types
 import predicates
 import plans
+from structures.interface import This, TupleInstance, TupleTy, RecordType
 from common import capitalize, fresh_name, indent, open_maybe_stdout
 
 class CppCodeGenerator(object):
@@ -11,7 +13,7 @@ class CppCodeGenerator(object):
         self.maptype = maptype
 
     def __str__(self):
-        return "C++[maptype={}]".format(self.maptype)
+        return "CppCodeGenerator".format(self.maptype)
 
     def map_type(self, kt, vt):
         if self.maptype == "hash":
@@ -31,10 +33,10 @@ class CppCodeGenerator(object):
         return "int";
 
     def ref_type(self, ty):
-        return ty.gen_type(self) if type(ty) is codegen.RecordType else "{}&".format(ty.gen_type(self));
+        return ty.gen_type(self) if type(ty) is RecordType else "{}&".format(ty.gen_type(self));
 
     def ptr_type(self, ty):
-        return ty.gen_type(self) if type(ty) is codegen.RecordType else "{}*".format(ty.gen_type(self));
+        return ty.gen_type(self) if type(ty) is RecordType else "{}*".format(ty.gen_type(self));
 
     def stack_type(self, ty):
         return "mystk < {} >".format(ty.gen_type(self))
@@ -260,14 +262,10 @@ class CppCodeGenerator(object):
                     template <class T>
                     class mystk {
                         int32_t _end;
-                        int32_t _cap;
-                        T* _data;
+                        static int32_t _cap;
+                        static T* _data;
                     public:
-                        mystk() : _end(-1), _cap(10), _data(new T[_cap]) { }
-                        mystk(const mystk& other) : _end(other._end), _cap(other._cap), _data(new T[other._cap]) {
-                            std::copy(other._data, other._data + _end + 1, _data);
-                        }
-                        ~mystk() { delete[] _data; }
+                        mystk() : _end(-1) { }
                         void reserve(size_t n) { }
                         bool empty() { return _end < 0; }
                         T& back() { return _data[_end]; }
@@ -286,6 +284,8 @@ class CppCodeGenerator(object):
                         void pop_back() { --_end; }
                     };
 
+                    template<class T> int32_t mystk<T>::_cap = 10;
+                    template<class T> T*      mystk<T>::_data = new T[10];
 
                 """)
 
@@ -399,7 +399,7 @@ class CppCodeGenerator(object):
                 # constructor
                 writer("{}::{}() : my_size(0) {{\n".format(name, cpp_class))
                 for q in queries:
-                    writer(indent("    ", q.impl.construct(self)))
+                    writer(indent("    ", q.impl.construct(self, This())))
                 writer("}\n")
 
                 # size
@@ -409,14 +409,14 @@ class CppCodeGenerator(object):
                 writer("void {}::add({} x) {{\n".format(name, self.record_type()))
                 writer("    ++my_size;\n")
                 for q in queries:
-                    writer(indent("    ", q.impl.gen_insert(self, "x")))
+                    writer(indent("    ", q.impl.gen_insert(self, "x", This())))
                 writer("}\n")
 
                 # remove routine
                 writer("void {}::remove({} x) {{\n".format(name, self.record_type()))
                 writer("    --my_size;\n")
                 for q in queries:
-                    writer(indent("    ", q.impl.gen_remove(self, "x")))
+                    writer(indent("    ", q.impl.gen_remove(self, "x", This())))
                 writer("}\n")
 
                 # update routines
@@ -424,13 +424,13 @@ class CppCodeGenerator(object):
                     writer("void {}::update{}({} x, {} val) {{\n".format(name, capitalize(f), self.record_type(), ty))
                     writer("    if ({} != val) {{\n".format(self.get_field("x", f)))
                     for q in queries:
-                        writer(indent("        ", q.impl.gen_update(self, fields, "x", {f: "val"})))
+                        writer(indent("        ", q.impl.gen_update(self, fields, "x", {f: "val"}, This())))
                     writer("        {} = val;\n".format(self.get_field("x", f)))
                     writer("    }")
                     writer("}\n")
                 writer("void {}::update({} x, {}) {{\n".format(name, self.record_type(), ", ".join("{} {}".format(ty, f) for f, ty in fields.items())))
                 for q in queries:
-                    writer(indent("        ", q.impl.gen_update(self, fields, "x", {f:f for f in fields})))
+                    writer(indent("        ", q.impl.gen_update(self, fields, "x", {f:f for f in fields}, This())))
                 for f, ty in fields.items():
                     writer("        {} = {};\n".format(self.get_field("x", f), f))
                 writer("}\n")
@@ -443,7 +443,7 @@ class CppCodeGenerator(object):
 
                     # query call
                     writer("{prefix}::{q}_iterator {prefix}::{q}({}) {{\n".format(", ".join("{} {}".format(ty, v) for v,ty in q.vars), prefix=name, q=q.name))
-                    proc, stateExps = q.impl.gen_query(self, q.vars)
+                    proc, stateExps = q.impl.gen_query(self, q.vars, This())
                     writer(indent("    ", proc))
                     writer("    return {}_iterator(this{}{});\n".format(q.name, "".join(", {}".format(v) for v, ty in vars_needed), "".join(", {}".format(e) for e in stateExps)))
                     writer("  }\n")
@@ -470,16 +470,16 @@ class CppCodeGenerator(object):
                     # remove
                     writer("void {prefix}::{q}_iterator::remove() {{\n".format(cpp_class, "".join(", {} {}".format(ty, v) for v, ty in vars_needed), "".join(", {} _{}".format(ty.gen_type(self), f) for f, ty in state), prefix=name, q=q.name))
                     writer("    --(parent->my_size);\n")
-                    proc, removed = q.impl.gen_remove_in_place(self, codegen.TupleInstance("parent"))
+                    proc, removed = q.impl.gen_remove_in_place(self, TupleInstance("parent"))
                     writer(indent("    ", proc))
                     for q2 in queries:
                         if q2 != q:
-                            writer(indent("    ", q2.impl.gen_remove(self, removed, parent_structure=codegen.TupleInstance("parent"))))
+                            writer(indent("    ", q2.impl.gen_remove(self, removed, parent_structure=TupleInstance("parent"))))
                     writer("}\n")
 
                 writer("void {}::checkRep() {{\n".format(name))
                 for q in queries:
-                    writer(indent("    ", q.impl.check_rep(self)))
+                    writer(indent("    ", q.impl.check_rep(self, This())))
                 writer("}\n")
 
                 header_writer("#endif\n")
@@ -507,18 +507,26 @@ class CppCodeGenerator(object):
         score = long(stdout.strip())
         return score
 
+    def extensions(self, old):
+        def f(aimpl):
+            for x in old(aimpl):
+                yield x
+            if type(aimpl) is abstract_types.Bucketed:
+                pass # TODO: tree map, qhash
+        return f
+
 def _gen_aux_type_fwd_decl(ty, gen, writer, seen):
     if ty in seen:
         return
     seen.add(ty)
-    if type(ty) is codegen.TupleTy:
+    if type(ty) is TupleTy:
         writer("class {};\n".format(ty.name))
 
 def _gen_aux_type_header(ty, gen, writer, class_name, seen):
     if ty in seen:
         return
     seen.add(ty)
-    if type(ty) is codegen.TupleTy:
+    if type(ty) is TupleTy:
         for _, t in ty.fields.items():
             _gen_aux_type_header(t, gen, writer, class_name, seen)
         writer("class {} {{\n".format(ty.name))

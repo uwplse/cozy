@@ -260,7 +260,7 @@ class SolverContext(object):
         q = registerExp(query)
 
         for f in self.fieldNames:
-            yield consider(plans.BinarySearch(plans.AllWhere(predicates.Bool(True)), f, q))
+            yield consider(plans.BinarySearch(plans.AllWhere(predicates.Bool(True)), q))
 
         yield consider(plans.HashLookup(plans.AllWhere(predicates.Bool(True)), q))
 
@@ -299,7 +299,7 @@ class SolverContext(object):
             print "round", size, "; cache={}/{max}; ecache={}/{max}; bestCost={}".format(len(plan_cache), len(expr_cache), self.bestCost, max=2**len(examples))
             for plan in (plans.HashLookup(p, e) for p, e in pickToSum(plan_cache, expr_cache, size)):
                 yield consider(plan)
-            for plan in (plans.BinarySearch(p, f, e) for f in self.fieldNames for p, e in pickToSum(plan_cache, expr_cache, size)):
+            for plan in (plans.BinarySearch(p, e) for p, e in pickToSum(plan_cache, expr_cache, size)):
                 yield consider(plan)
             for plan in (plans.Filter(p, e) for p, e in pickToSum(plan_cache, expr_cache, size)):
                 yield consider(plan)

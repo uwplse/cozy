@@ -25,16 +25,14 @@ def enumerate_code_generators(args):
     if args.java is not None:
         yield JavaCodeGenerator()
     elif args.cpp_header is not None or args.cpp is not None:
-        yield CppCodeGenerator(maptype="hash")
-        yield CppCodeGenerator(maptype="tree")
-        yield CppCodeGenerator(maptype="qhash")
+        yield CppCodeGenerator()
 
 def pick_best_impls(fields, queries, cost_model_file, code_generators):
     bestImpls = None
     bestCost  = None
     bestCG    = None
     for cg in code_generators:
-        for impls in enumerate_impls(fields, queries):
+        for impls in enumerate_impls(fields, queries, cg.extensions):
             if cost_model_file is None:
                 return impls, cg, 0
 

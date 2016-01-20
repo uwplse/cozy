@@ -179,3 +179,19 @@ class Not(Predicate):
         return self.p.comparisons()
     def __str__(self):
         return "not {}".format(self.p)
+
+def break_conj(p):
+    if type(p) is And:
+        return itertools.chain(break_conj(p.lhs), break_conj(p.rhs))
+    elif type(p) is Bool and p.val:
+        return ()
+    else:
+        return (p,)
+
+def conjunction(ps):
+    p = ps[0]
+    i = 1
+    while i < len(ps):
+        p = And(p, ps[i])
+        i += 1
+    return p
