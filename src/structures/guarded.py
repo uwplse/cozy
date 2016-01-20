@@ -8,16 +8,16 @@ class Guarded(ConcreteImpl):
         self.predicate = predicate
     def fields(self):
         return self.ty.fields()
-    def construct(self, gen):
-        return self.ty.construct(gen)
+    def construct(self, gen, parent_structure):
+        return self.ty.construct(gen, parent_structure)
     def needs_var(self, v):
         return self.ty.needs_var(v)
     def state(self):
         return self.ty.state()
     def private_members(self):
         return self.ty.private_members()
-    def gen_query(self, gen, qvars):
-        return self.ty.gen_query(gen, qvars)
+    def gen_query(self, gen, qvars, parent_structure):
+        return self.ty.gen_query(gen, qvars, parent_structure)
     def gen_current(self, gen):
         return self.ty.gen_current(gen)
     def gen_advance(self, gen):
@@ -26,11 +26,11 @@ class Guarded(ConcreteImpl):
         return self.ty.gen_next(gen)
     def gen_has_next(self, gen):
         return self.ty.gen_has_next(gen)
-    def gen_insert(self, gen, x):
-        proc = self.ty.gen_insert(gen, x)
+    def gen_insert(self, gen, x, parent_structure):
+        proc = self.ty.gen_insert(gen, x, parent_structure)
         return gen.if_true(gen.predicate(list(self._fields.items()), list(self.qvars.items()), self.predicate, x)) + proc + gen.endif()
     def gen_remove(self, gen, x, parent_structure):
-        proc = self.ty.gen_remove(gen, x)
+        proc = self.ty.gen_remove(gen, x, parent_structure)
         return gen.if_true(gen.predicate(list(self._fields.items()), list(self.qvars.items()), self.predicate, x)) + proc + gen.endif()
     def gen_remove_in_place(self, gen, parent_structure):
         return self.ty.gen_remove_in_place(gen, parent_structure)
