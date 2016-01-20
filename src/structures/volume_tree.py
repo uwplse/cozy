@@ -149,9 +149,9 @@ class VolumeTree(ConcreteImpl):
             e = gen.both(e, gen.le(NativeTy("double"), gen.get_field(large, f1), gen.get_field(small, f1)))
             e = gen.both(e, gen.ge(NativeTy("double"), gen.get_field(large, f2), gen.get_field(small, f2)))
         return e
-    def find_insertion_point(self, gen, x, parent_structure, remap={}):
+    def find_insertion_point(self, gen, x, root, remap={}):
         ip = fresh_name("insertion_point")
-        proc  = gen.decl(ip, self.node_type, parent_structure.field(gen, self.root))
+        proc  = gen.decl(ip, self.node_type, root)
         proc += gen.while_true(gen.not_true(gen.either(
             gen.is_null(ip),
             self.is_leaf(gen, ip))))
@@ -185,7 +185,7 @@ class VolumeTree(ConcreteImpl):
         proc += gen.else_true()
 
         # Descend to the right spot.
-        p, sibling = self.find_insertion_point(gen, x, parent_structure=parent_structure)
+        p, sibling = self.find_insertion_point(gen, x, parent_structure.field(gen, self.root))
         proc += p
 
         # Create a new node to contain both wrapper and sibling
@@ -289,7 +289,7 @@ class VolumeTree(ConcreteImpl):
         # Find the insertion point: the new sibling for x_node.
         # We will replace this node with x_parent, and move this as a child of
         # x_parent in the tree.
-        p, new_sibling = self.find_insertion_point(gen, x, remap=remap, parent_structure=parent_structure)
+        p, new_sibling = self.find_insertion_point(gen, x, parent_structure.field(gen, self.root), remap=remap)
         proc += p
 
         new_grandparent = fresh_name("new_grandparent")
