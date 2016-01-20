@@ -20,6 +20,10 @@ class VolumeTree(ConcreteImpl):
         lts = []
         gts = []
         for c in clauses:
+            if (c.lhs.name in fields) == (c.rhs.name in fields):
+                return
+            if c.rhs.name in fields:
+                c = c.flip()
             if not is_numeric(fields[c.lhs.name]):
                 return
             if c.op in (predicates.Lt, predicates.Le):
