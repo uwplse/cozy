@@ -55,14 +55,14 @@ class BinarySearch(Plan):
     def toPredicate(self):
         return And(self.plan.toPredicate(), self.predicate)
     def isSortedBy(self, fieldName):
-        return fieldName in (v.name for v in self.predicate.vars())
+        return self.plan.isSortedBy(fieldName) and fieldName in (v.name for v in self.predicate.vars())
     def wellFormed(self, *args):
         ops = set(self.predicate.ops())
         if (ops & {Eq, Ne}) or not ops:
             return False
         if self.predicate.contains_disjunction():
             return False
-        return self.plan.wellFormed(*args) and type(self.plan) is AllWhere
+        return self.plan.wellFormed(*args)
     def children(self):
         return (self.plan, self.predicate)
 

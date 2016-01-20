@@ -9,8 +9,8 @@ class Filtered(ConcreteImpl):
         self.predicate = predicate
     def fields(self):
         return self.ty.fields()
-    def construct(self, gen):
-        return self.ty.construct(gen)
+    def construct(self, gen, parent_structure):
+        return self.ty.construct(gen, parent_structure)
     def needs_var(self, v):
         return self.ty.needs_var(v) or any(vv.name == v for vv in self.predicate.vars() if vv.name in self.qvars)
     def state(self):

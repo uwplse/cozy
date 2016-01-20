@@ -25,6 +25,10 @@ class HashMap(ConcreteImpl):
         self.keyArgs = make_key_args(fields, predicate)
         self.keyTy = make_key_type(fields, self.keyArgs)
         self.valueImpl = valueImpl
+    def __str__(self):
+        return "HashMap({}, {})".format(self.keyTy, self.valueImpl)
+    def __repr__(self):
+        return self.__str__()
     def handle_type(self, gen):
         return NativeTy(gen.map_handle_type(self.keyTy, self.valueTy))
     def _make_value_type(self, valueImpl):

@@ -223,14 +223,6 @@ class SolverContext(object):
                         return True
             return False
 
-        def _break_conj(p):
-            if type(p) is predicates.And:
-                return itertools.chain(_break_conj(p.lhs), _break_conj(p.rhs))
-            elif type(p) is predicates.Bool and p.val:
-                return ()
-            else:
-                return (p,)
-
         plan_cache = Cache(cost_func=self.cost,   size_func=ADT.size, key_func=outputvector, allow_multi=True)
         expr_cache = Cache(cost_func=lambda e: 1, size_func=ADT.size, key_func=outputvector, allow_multi=False)
 
@@ -259,25 +251,18 @@ class SolverContext(object):
 
         q = registerExp(query)
 
-        for f in self.fieldNames:
-            yield consider(plans.BinarySearch(plans.AllWhere(predicates.Bool(True)), q))
-
+        yield consider(plans.BinarySearch(plans.AllWhere(predicates.Bool(True)), q))
         yield consider(plans.HashLookup(plans.AllWhere(predicates.Bool(True)), q))
 
-        if all(type(x) is predicates.Compare for x in _break_conj(query)):
-            eqs = [x for x in _break_conj(query) if x.op == plans.Eq]
-            others = [x for x in _break_conj(query) if x.op != plans.Eq]
+        if all(type(x) is predicates.Compare for x in predicates.break_conj(query)):
+            eqs = [x for x in predicates.break_conj(query) if x.op == plans.Eq]
+            others = [x for x in predicates.break_conj(query) if x.op != plans.Eq]
+            print("{} & {}".format(eqs, others))
             if eqs and others:
-                hashcond = eqs[0]
-                for i in xrange(1, len(eqs)):
-                    hashcond = plans.And(hashcond, eqs[i])
-                bscond = others[0]
-                for i in xrange(1, len(others)):
-                    bscond = plans.And(bscond, others[i])
-                for f in self.fieldNames:
-                    plan = plans.BinarySearch(plans.HashLookup(plans.AllWhere(predicates.Bool(True)), hashcond), f, bscond)
-                    x = consider(plan, check_stupid=False)
-                    yield x
+                hashcond = predicates.conjunction(eqs)
+                bscond = predicates.conjunction(others)
+                plan = plans.BinarySearch(plans.HashLookup(plans.AllWhere(predicates.Bool(True)), hashcond), bscond)
+                yield consider(plan, check_stupid=False)
 
         roundsWithoutProgress = 0
         maxRoundsWithoutProgress = 10

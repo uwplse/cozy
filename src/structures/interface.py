@@ -70,6 +70,10 @@ class TupleTy(Ty):
     def __init__(self, fields):
         self.name = fresh_name("Tuple")
         self.fields = fields
+    def __str__(self):
+        return "Tuple({})".format(self.fields)
+    def __repr__(self):
+        return self.__str__()
     def gen_type(self, gen):
         if len(self.fields) == 1:
             ty, = self.fields.values()

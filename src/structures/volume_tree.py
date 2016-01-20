@@ -100,7 +100,9 @@ class VolumeTree(ConcreteImpl):
         proc += gen.endif()
         return proc, [gen.null_value(), cursor]
     def gen_empty(self, gen, qvars):
-        raise Exception("implement me")
+        if self.stack_iteration:
+            return [gen.new_stack(self.node_type), gen.null_value(), gen.null_value()]
+        return [gen.null_value(), gen.null_value()]
     def auxtypes(self):
         return (self.node_type.ty,)
     def distance(self, gen, record, node, remap={}):
@@ -314,13 +316,13 @@ class VolumeTree(ConcreteImpl):
         return gen.not_true(gen.is_null(gen.get_field(node, self.leaf_ptr)))
     def query_holds(self, gen, record):
         qvars = [(v, self.field_types[f]) for f, v in self.spec.lts] + [(v, self.field_types[f]) for f, v in self.spec.gts]
-        return gen.predicate(self.field_types, qvars, self.predicate, record)
+        return gen.predicate(list(self.field_types.items()), qvars, self.predicate, record)
     def intersects_query(self, gen, node):
         result = gen.true_value()
         for f, v in self.spec.lts:
-            result = gen.both(result, gen.le(self.field_types[f], gen.get_field(node, self.remap[f]), v))
+            result = gen.both(result, gen.le(NativeTy(self.field_types[f]), gen.get_field(node, self.remap[f]), v))
         for f, v in self.spec.gts:
-            result = gen.both(result, gen.ge(self.field_types[f], gen.get_field(node, self.remap[f]), v))
+            result = gen.both(result, gen.ge(NativeTy(self.field_types[f]), gen.get_field(node, self.remap[f]), v))
         return result
     def find_first(self, gen, tree_root):
         cursor = fresh_name("cursor")

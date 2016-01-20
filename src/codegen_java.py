@@ -6,15 +6,21 @@ import subprocess
 import codegen
 import predicates
 import plans
+from structures.interface import TupleTy, This, TupleInstance
 from common import capitalize, fresh_name, indent, open_maybe_stdout
 
 class JavaCodeGenerator(object):
+    def __str__(self):
+        return "JavaCodeGenerator"
 
     def map_type(self, kt, vt):
         return "java.util.Map<{}, {}>".format(_box(kt.gen_type(self)), vt.gen_type(self))
 
     def map_handle_type(self, kt, vt):
         return vt.gen_type(self)
+
+    def stack_type(self, t):
+        return "java.util.Deque<{}>".format(t.gen_type(self))
 
     def ref_type(self, ty):
         return ty.gen_type(self)
@@ -25,8 +31,23 @@ class JavaCodeGenerator(object):
     def int_type(self):
         return "int";
 
+    def ptr_type(self, t):
+        return t.gen_type(self);
+
     def vector_type(self, ty, n):
         return "{}[]".format(ty.gen_type(self));
+
+    def alloc(self, ty, args):
+        return "new {}({})".format(ty.gen_type(self), ", ".join(args))
+
+    def free(self, x):
+        return ""
+
+    def min(self, ty, x, y):
+        return "({x} < {y}) ? {x} : {y}".format(x=x, y=y) if _is_primitive(ty.gen_type(self)) else "({x}.compareTo({y}) < 0) ? {x} : {y}".format(x=x, y=y)
+
+    def max(self, ty, x, y):
+        return "({x} < {y}) ? {y} : {x}".format(x=x, y=y) if _is_primitive(ty.gen_type(self)) else "({x}.compareTo({y}) < 0) ? {y} : {x}".format(x=x, y=y)
 
     def new_map(self, kt, vt):
         return "new java.util.HashMap<{}, {}>()".format(_box(kt.gen_type(self)), vt.gen_type(self))
@@ -45,6 +66,24 @@ class JavaCodeGenerator(object):
 
     def map_put(self, m, k, v):
         return "{}.put({}, {});\n".format(m, k, v)
+
+    def new_stack(self, t):
+        return "new java.util.ArrayDeque<{}>()".format(t.gen_type(self))
+
+    def stack_size_hint(self, stk, n):
+        return ""
+
+    def stack_is_empty(self, stk):
+        return "{}.isEmpty()".format(stk)
+
+    def stack_push(self, stk, x):
+        return "{}.push({});\n".format(stk, x)
+
+    def stack_pop(self, stk):
+        return "{}.pop();\n".format(stk)
+
+    def stack_peek(self, stk):
+        return "{}.peek()".format(stk)
 
     def new_vector(self, ty, n):
         return "({}[])(new Object[{}])".format(ty.gen_type(self), n)
@@ -186,19 +225,19 @@ class JavaCodeGenerator(object):
             # constructor
             writer("  public {}() {{\n".format(java_class))
             for q in queries:
-                writer(indent("    ", q.impl.construct(self)))
+                writer(indent("    ", q.impl.construct(self, This())))
             writer("  }\n")
 
             # add routine
             writer("  public void add({} x) {{\n".format(RECORD_NAME))
             for q in queries:
-                writer(indent("    ", q.impl.gen_insert(self, "x")))
+                writer(indent("    ", q.impl.gen_insert(self, "x", This())))
             writer("  }\n")
 
             # remove routine
             writer("  public void remove({} x) {{\n".format(RECORD_NAME))
             for q in queries:
-                writer(indent("    ", q.impl.gen_remove(self, "x")))
+                writer(indent("    ", q.impl.gen_remove(self, "x", This())))
             writer("  }\n")
 
             # query routines
@@ -234,16 +273,16 @@ class JavaCodeGenerator(object):
                 writer("      return {};\n".format(ret))
                 writer("    }\n")
                 writer("    @Override public void remove() {\n")
-                proc, removed = q.impl.gen_remove_in_place(self, codegen.TupleInstance("parent"))
+                proc, removed = q.impl.gen_remove_in_place(self, TupleInstance("parent"))
                 writer(indent("      ", proc))
                 for q2 in queries:
                     if q2 != q:
-                        writer(indent("        ", q2.impl.gen_remove(self, removed, parent_structure=codegen.TupleInstance("parent"))))
+                        writer(indent("        ", q2.impl.gen_remove(self, removed, parent_structure=TupleInstance("parent"))))
                 writer("    }\n")
                 writer("  }\n")
 
                 writer("  public java.util.Iterator<{}> {}({}) {{\n".format(RECORD_NAME, q.name, ", ".join("{} {}".format(ty, v) for v,ty in q.vars)))
-                proc, stateExps = q.impl.gen_query(self, q.vars)
+                proc, stateExps = q.impl.gen_query(self, q.vars, This())
                 writer(indent("    ", proc))
                 writer("    return new {}(this{}{});".format(it_name, "".join(", {}".format(v) for v, ty in vars_needed), "".join(", {}".format(e) for e in stateExps)))
                 writer("  }\n")
@@ -284,6 +323,9 @@ class JavaCodeGenerator(object):
 
         return score
 
+    def extensions(self, old):
+        return old # no extensions
+
 def _hash_code(ty, exp):
     if _is_primitive(ty):
         if ty == "int":    return exp
@@ -298,7 +340,7 @@ def _gen_aux_type(ty, gen, writer, seen):
     if ty in seen:
         return
     seen.add(ty)
-    if type(ty) is codegen.TupleTy:
+    if type(ty) is TupleTy:
         for _, t in ty.fields.items():
             _gen_aux_type(t, gen, writer, seen)
         writer("    /*private*/ static class {} implements java.io.Serializable {{\n".format(ty.name))
