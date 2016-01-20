@@ -1,5 +1,16 @@
+from .interface import IntTy, VecTy
 from .hash_map import HashMap
 from common import fresh_name
+
+def is_enumerable(ty):
+    return count_cases(ty) >= 1
+
+def count_cases(ty):
+    if ty.lower() in ["bool", "boolean"]:
+        return 2
+    if ty == "State": # TODO: HACK
+        return 8
+    return -1
 
 class VectorMap(HashMap):
     def __init__(self, fields, predicate, valueImpl):

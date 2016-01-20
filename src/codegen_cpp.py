@@ -5,23 +5,44 @@ import codegen
 import abstract_types
 import predicates
 import plans
-from structures.interface import This, TupleInstance, TupleTy, RecordType
+import structures
+from structures.interface import This, TupleInstance, TupleTy, RecordType, MapTy, NativeTy
 from common import capitalize, fresh_name, indent, open_maybe_stdout
 
-class CppCodeGenerator(object):
-    def __init__(self, maptype="hash"):
-        self.maptype = maptype
+class STLMapTy(MapTy):
+    def gen_type(self, gen):
+        return "std::map < {}, {} >".format(self.keyTy.gen_type(gen), self.valTy.gen_type(gen))
 
+class QHashMapTy(MapTy):
+    def gen_type(self, gen):
+        return "QHash < {}, {} >".format(self.keyTy.gen_type(gen), self.valTy.gen_type(gen))
+
+class STLMap(structures.HashMap):
+    def fields(self):
+        return ((self.name, STLMapTy(self.keyTy, self.valueTy)),)
+    def construct(self, gen, parent_structure):
+        return "" # default initialization is fine
+    def handle_type(self, gen):
+        return NativeTy("std::map < {}, {} >::iterator".format(self.keyTy.gen_type(gen), self.valueTy.gen_type(gen)))
+
+class QHashMap(structures.HashMap):
+    def fields(self):
+        return ((self.name, QHashMapTy(self.keyTy, self.valueTy)),)
+    def construct(self, gen, parent_structure):
+        return "" # default initialization is fine
+    def handle_type(self, gen):
+        return NativeTy("QHash < {}, {} >::iterator".format(self.keyTy.gen_type(gen), self.valueTy.gen_type(gen)))
+    def read_handle(self, gen, m, handle):
+        return "{}.value()".format(handle)
+    def write_handle(self, gen, m, handle, k, v):
+        return "{}.value() = {};\n".format(handle, v)
+
+class CppCodeGenerator(object):
     def __str__(self):
-        return "CppCodeGenerator".format(self.maptype)
+        return "CppCodeGenerator"
 
     def map_type(self, kt, vt):
-        if self.maptype == "hash":
-            return "std::unordered_map < {}, {} >".format(kt.gen_type(self), vt.gen_type(self))
-        if self.maptype == "tree":
-            return "std::map < {}, {} >".format(kt.gen_type(self), vt.gen_type(self))
-        if self.maptype == "qhash":
-            return "QHash < {}, {} >".format(kt.gen_type(self), vt.gen_type(self))
+        return "std::unordered_map < {}, {} >".format(kt.gen_type(self), vt.gen_type(self))
 
     def map_handle_type(self, kt, vt):
         return "{}::iterator".format(self.map_type(kt, vt))
@@ -60,20 +81,10 @@ class CppCodeGenerator(object):
         return "{} != {}.end()".format(handle, m)
 
     def map_read_handle(self, handle):
-        if self.maptype == "hash":
-            return "{}->second".format(handle)
-        if self.maptype == "tree":
-            return "{}->second".format(handle)
-        if self.maptype == "qhash":
-            return "{}.value()".format(handle)
+        return "{}->second".format(handle)
 
     def map_write_handle(self, m, handle, k, v):
-        if self.maptype == "hash":
-            return "{}->second = {};\n".format(handle, v)
-        if self.maptype == "tree":
-            return "{}->second = {};\n".format(handle, v)
-        if self.maptype == "qhash":
-            return "{}.value() = {};\n".format(handle, v)
+        return "{}->second = {};\n".format(handle, v)
 
     def map_put(self, m, k, v):
         return "{}[{}] = {};\n".format(m, k, v)
@@ -248,12 +259,9 @@ class CppCodeGenerator(object):
                 header_writer("#include <cassert>\n")
                 header_writer("#include <ctgmath>\n")
                 # header_writer("#include <vector>\n")
-                if self.maptype == "hash":
-                    header_writer("#include <unordered_map>\n")
-                if self.maptype == "tree":
-                    header_writer("#include <map>\n")
-                if self.maptype == "qhash":
-                    header_writer("#include <QHash>\n")
+                header_writer("#include <unordered_map>\n")
+                header_writer("#include <map>\n")
+                header_writer("#include <QHash>\n")
 
                 header_writer("""
 
@@ -496,7 +504,7 @@ class CppCodeGenerator(object):
             cpp="/tmp/DataStructure.cpp",
             cpp_header="/tmp/DataStructure.hpp")
 
-        flags = "-DQT_SHARED -I/usr/local/Cellar/qt/4.8.7_2/include -I/usr/local/Cellar/qt/4.8.7_2/include/QtCore -F/usr/local/Cellar/qt/4.8.7_2/lib -framework QtCore".split()
+        flags = "-DQT_SHARED -I/usr/local/Cellar/qt/4.8.7_2/include -I/usr/local/Cellar/qt/4.8.7_2/include/QtGui -I/usr/local/Cellar/qt/4.8.7_2/include -I/usr/local/Cellar/qt/4.8.7_2/include/QtCore -F/usr/local/Cellar/qt/4.8.7_2/lib -framework QtGui -F/usr/local/Cellar/qt/4.8.7_2/lib -framework QtCore".split()
         ret = subprocess.call(["c++", "-O2", "-I/tmp", "/tmp/DataStructure.cpp", cost_model_file, "-o", "/tmp/a.out"] + flags)
         assert ret == 0
 
@@ -512,7 +520,13 @@ class CppCodeGenerator(object):
             for x in old(aimpl):
                 yield x
             if type(aimpl) is abstract_types.Bucketed:
-                pass # TODO: tree map, qhash
+                for maptype in (STLMap, QHashMap):
+                    for impl in old(aimpl.value_impl):
+                        if aimpl.enum_p and aimpl.rest_p:
+                            m = maptype(aimpl.fields, predicates.conjunction(aimpl.rest_p), impl)
+                            yield structures.VectorMap(aimpl.fields, predicates.conjunction(aimpl.enum_p), m)
+                        elif aimpl.rest_p: # aimpl.rest_p
+                            yield maptype(aimpl.fields, predicates.conjunction(aimpl.rest_p), impl)
         return f
 
 def _gen_aux_type_fwd_decl(ty, gen, writer, seen):

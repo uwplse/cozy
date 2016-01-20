@@ -1,7 +1,9 @@
-from .interface import ConcreteImpl
+import collections
+
+from .interface import ConcreteImpl, TupleTy, NativeTy, MapTy, RefTy
 from common import fresh_name
 
-def _make_key_args(fields, predicate):
+def make_key_args(fields, predicate):
     """returns an OrderedDict mapping field->[var]"""
     d = collections.OrderedDict()
     for f, v in predicate.comparisons():
@@ -13,16 +15,18 @@ def _make_key_args(fields, predicate):
             d[f] = [v]
     return d
 
-def _make_key_type(fields, key_fields):
+def make_key_type(fields, key_fields):
     return TupleTy(collections.OrderedDict((k, NativeTy(fields[k])) for k in key_fields))
 
 class HashMap(ConcreteImpl):
     def __init__(self, fields, predicate, valueImpl):
         self.name = fresh_name("map")
         self.valueTy = self._make_value_type(valueImpl)
-        self.keyArgs = _make_key_args(fields, predicate)
-        self.keyTy = _make_key_type(fields, self.keyArgs)
+        self.keyArgs = make_key_args(fields, predicate)
+        self.keyTy = make_key_type(fields, self.keyArgs)
         self.valueImpl = valueImpl
+    def handle_type(self, gen):
+        return NativeTy(gen.map_handle_type(self.keyTy, self.valueTy))
     def _make_value_type(self, valueImpl):
         return TupleTy(collections.OrderedDict(valueImpl.fields()))
     def fields(self):
@@ -48,7 +52,7 @@ class HashMap(ConcreteImpl):
     def lookup(self, gen, m, k):
         """returns proc, handle"""
         handle = fresh_name("maphandle")
-        proc  = gen.decl(handle, NativeTy(gen.map_handle_type(self.keyTy, self.valueTy)))
+        proc  = gen.decl(handle, self.handle_type(gen))
         proc += gen.map_find_handle(m, k, handle)
         return proc, handle
     def handle_exists(self, gen, m, handle):
@@ -164,9 +168,9 @@ class HashMap(ConcreteImpl):
         proc += p
         proc += self.write_handle(gen, name, handle, k, sub)
         return proc, removed
-    def gen_update(self, gen, fields, f, x, v, parent_structure):
+    def gen_update(self, gen, fields, x, remap, parent_structure):
         name = parent_structure.field(gen, self.name)
-        affects_key = f in self.keyArgs
+        affects_key = any(f in self.keyArgs for f in remap)
         k1 = fresh_name("oldkey")
         proc  = gen.decl(k1, self.keyTy)
         proc += self.make_key_of_record(gen, x, k1)
@@ -177,14 +181,14 @@ class HashMap(ConcreteImpl):
             # add to new loc
             k2 = fresh_name("newkey")
             proc += gen.decl(k2, self.keyTy)
-            proc += self.make_key_of_record(gen, x, k2, remap={f:v})
+            proc += self.make_key_of_record(gen, x, k2, remap=remap)
             proc += self.gen_insert(gen, x, parent_structure=parent_structure, k=k2)
         else:
             p, handle = self.lookup(gen, name, k1)
             proc += p
             sub = fresh_name("substructure")
             proc += gen.decl(sub, RefTy(self.valueTy), self.read_handle(gen, name, handle))
-            subproc = self.valueImpl.gen_update(gen, fields, f, x, v, parent_structure=self.valueTy.instance(sub))
+            subproc = self.valueImpl.gen_update(gen, fields, x, remap, parent_structure=self.valueTy.instance(sub))
             if subproc:
                 proc += subproc
                 proc += self.write_handle(gen, name, handle, k1, sub)

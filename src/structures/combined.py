@@ -1,4 +1,4 @@
-from .interface import ConcreteImpl
+from .interface import ConcreteImpl, BoolTy, RecordType
 from common import fresh_name
 
 INTERSECT_OP = "intersect"
@@ -11,20 +11,24 @@ class Tuple(ConcreteImpl):
         self.ty2 = ty2
         self.prev1 = fresh_name("prev1")
         self.op = op
+    def __str__(self):
+        return "({}, {})".format(self.ty1, self.ty2)
+    def __repr__(self):
+        return self.__str__()
     def fields(self):
         return self.ty1.fields() + self.ty2.fields()
-    def construct(self, gen):
-        return self.ty1.construct(gen) + self.ty2.construct(gen)
+    def construct(self, gen, parent_structure):
+        return self.ty1.construct(gen, parent_structure) + self.ty2.construct(gen, parent_structure)
     def needs_var(self, v):
         return self.ty1.needs_var(v) or self.ty2.needs_var(v)
     def state(self):
         return self.ty1.state() + self.ty2.state() + [(self.prev1, BoolTy())]
     def private_members(self):
         return self.ty1.private_members() + self.ty2.private_members()
-    def gen_query(self, gen, qvars):
+    def gen_query(self, gen, qvars, parent_structure):
         if self.op == CONCAT_OP:
-            proc1, es1 = self.ty1.gen_query(gen, qvars)
-            proc2, es2 = self.ty2.gen_query(gen, qvars)
+            proc1, es1 = self.ty1.gen_query(gen, qvars, parent_structure)
+            proc2, es2 = self.ty2.gen_query(gen, qvars, parent_structure)
             return (proc1 + proc2, es1 + es2 + [gen.true_value()])
         else:
             raise Exception("unknown op {}".format(self.op))
@@ -102,9 +106,9 @@ class Tuple(ConcreteImpl):
             return self.ty1.gen_remove(gen, x, parent_structure) + self.ty2.gen_remove(gen, x, parent_structure)
         else:
             raise Exception("unknown op {}".format(self.op))
-    def gen_update(self, gen, fields, f, x, v):
-        proc  = self.ty1.gen_update(gen, fields, f, x, v)
-        proc += self.ty2.gen_update(gen, fields, f, x, v)
+    def gen_update(self, gen, fields, x, remap, parent_structure):
+        proc  = self.ty1.gen_update(gen, fields, x, remap, parent_structure)
+        proc += self.ty2.gen_update(gen, fields, x, remap, parent_structure)
         return proc
     def auxtypes(self):
         for t in self.ty1.auxtypes(): yield t

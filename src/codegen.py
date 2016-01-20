@@ -31,7 +31,6 @@ def enumerate_impls(fields, queries, extra_structures=None):
 
     @extra_structures
     def concretize(aimpl):
-        print("concretizing {}".format(aimpl))
         if type(aimpl) is Iterable:
             yield structures.LinkedList()
             # yield structures.Array() # TODO
@@ -50,7 +49,7 @@ def enumerate_impls(fields, queries, extra_structures=None):
         elif type(aimpl) is Bucketed:
             for impl in concretize(aimpl.value_impl):
                 if aimpl.enum_p and aimpl.rest_p:
-                    m = HashMap(aimpl.fields, predicates.conjunction(aimpl.rest_p), impl)
+                    m = structures.HashMap(aimpl.fields, predicates.conjunction(aimpl.rest_p), impl)
                     yield structures.VectorMap(aimpl.fields, predicates.conjunction(aimpl.enum_p), m)
                 elif aimpl.enum_p:
                     yield structures.VectorMap(aimpl.fields, predicates.conjunction(aimpl.enum_p), impl)
