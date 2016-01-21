@@ -1,6 +1,6 @@
 import collections
 
-from .interface import ConcreteImpl, TupleTy, RecordType, NativeTy, PointerTy, StackTy
+from .interface import ConcreteImpl, TupleTy, RecordType, NativeTy, PointerTy, StackTy, BoolTy
 from common import fresh_name
 import predicates
 
@@ -126,14 +126,22 @@ class VolumeTree(ConcreteImpl):
             gen.get_field(parent, self.right_ptr),
             gen.get_field(parent, self.left_ptr))
     def merge_volumes(self, gen, n1, n2, into):
-        proc = ""
+        changed = fresh_name("changed")
+        new_value = fresh_name("new_value")
+        t = NativeTy("double") # TODO
+        proc  = gen.decl(changed, BoolTy(), gen.false_value())
+        proc += gen.decl(new_value, t)
         for f, _ in self.spec.lts:
             f = self.remap[f]
-            proc += gen.set(gen.get_field(into, f), gen.min(NativeTy("double"), gen.get_field(n1, f), gen.get_field(n2, f)))
+            proc += gen.set(new_value, gen.min(t, gen.get_field(n1, f), gen.get_field(n2, f)))
+            proc += gen.set(changed, gen.either(changed, gen.not_true(gen.same(gen.get_field(into, f), new_value))))
+            proc += gen.set(gen.get_field(into, f), new_value)
         for f, _ in self.spec.gts:
             f = self.remap[f]
-            proc += gen.set(gen.get_field(into, f), gen.max(NativeTy("double"), gen.get_field(n1, f), gen.get_field(n2, f)))
-        return proc
+            proc += gen.set(new_value, gen.max(t, gen.get_field(n1, f), gen.get_field(n2, f)))
+            proc += gen.set(changed, gen.either(changed, gen.not_true(gen.same(gen.get_field(into, f), new_value))))
+            proc += gen.set(gen.get_field(into, f), new_value)
+        return proc, changed
     def replace_child(self, gen, parent, old_child, new_child):
         proc  = gen.if_true(gen.same(gen.get_field(parent, self.right_ptr), old_child))
         proc += gen.set(gen.get_field(parent, self.right_ptr), new_child)
@@ -164,7 +172,9 @@ class VolumeTree(ConcreteImpl):
         cursor = fresh_name("cursor")
         proc  = gen.decl(cursor, self.node_type, n)
         proc += gen.while_true(gen.not_true(gen.is_null(cursor)))
-        proc += self.recompute_volume(gen, cursor)
+        p, changed = self.recompute_volume(gen, cursor)
+        proc += p
+        proc += gen.if_true(gen.not_true(changed)) + gen.break_loop() + gen.endif()
         proc += gen.set(cursor, gen.get_field(cursor, self.parent_ptr))
         proc += gen.endwhile()
         return proc
@@ -196,7 +206,8 @@ class VolumeTree(ConcreteImpl):
         proc += gen.set(gen.get_field(node, self.parent_ptr), gen.null_value())
         proc += gen.set(gen.get_field(node, self.leaf_ptr), gen.null_value())
         proc += gen.set(gen.get_field(wrapper, self.parent_ptr), node)
-        proc += self.merge_volumes(gen, wrapper, sibling, into=node)
+        p, _ = self.merge_volumes(gen, wrapper, sibling, into=node)
+        proc += p
 
         parent = fresh_name("parent")
         proc += gen.decl(parent, self.node_type, gen.get_field(sibling, self.parent_ptr))
@@ -210,10 +221,10 @@ class VolumeTree(ConcreteImpl):
         proc += gen.else_true()
         proc += gen.set(gen.get_field(node, self.parent_ptr), parent)
         proc += self.replace_child(gen, parent, old_child=sibling, new_child=node)
-        proc += gen.while_true(gen.both(
-            gen.not_true(gen.is_null(parent)),
-            gen.not_true(self.volume_contains(gen, parent, node))))
-        proc += self.merge_volumes(gen, parent, node, into=parent)
+        proc += gen.while_true(gen.not_true(gen.is_null(parent)))
+        p, changed = self.merge_volumes(gen, parent, node, into=parent)
+        proc += p
+        proc += gen.if_true(gen.not_true(changed)) + gen.break_loop() + gen.endif()
         proc += gen.set(parent, gen.get_field(parent, self.parent_ptr))
         proc += gen.endwhile()
 
@@ -276,7 +287,7 @@ class VolumeTree(ConcreteImpl):
         for f, v in remap.items():
             proc += gen.set(gen.get_field(x_node, self.remap[f]), v)
 
-        # if x is the only thing in the tree, no problem!
+        # if x is the only thing in the tree, no problem! Otherwise...
         proc += gen.if_true(gen.not_true(gen.is_null(x_parent)))
 
         # save a reference to x_node's old sibling
@@ -307,7 +318,8 @@ class VolumeTree(ConcreteImpl):
         proc += gen.set(gen.get_field(new_sibling, self.parent_ptr), x_parent)
         proc += self.replace_child(gen, x_parent, old_sibling, new_sibling)
         proc += self.recompute_volumes_recursively(gen, x_grandparent)
-        proc += self.recompute_volume(gen, x_parent)
+        p, _ = self.recompute_volume(gen, x_parent)
+        proc += p
         proc += gen.endif()
 
         # Expand x's chain to include the new value
