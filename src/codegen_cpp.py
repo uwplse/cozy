@@ -9,6 +9,8 @@ import structures
 from structures.interface import This, TupleInstance, TupleTy, RecordType, MapTy, NativeTy
 from common import capitalize, fresh_name, indent, open_maybe_stdout
 
+USE_QT = False # TODO: make this an option
+
 class STLMapTy(MapTy):
     def gen_type(self, gen):
         return "std::map < {}, {} >".format(self.keyTy.gen_type(gen), self.valTy.gen_type(gen))
@@ -261,7 +263,9 @@ class CppCodeGenerator(object):
                 # header_writer("#include <vector>\n")
                 header_writer("#include <unordered_map>\n")
                 header_writer("#include <map>\n")
-                header_writer("#include <QHash>\n")
+
+                if USE_QT:
+                    header_writer("#include <QHash>\n")
 
                 header_writer("""
 
@@ -504,7 +508,10 @@ class CppCodeGenerator(object):
             cpp="/tmp/DataStructure.cpp",
             cpp_header="/tmp/DataStructure.hpp")
 
-        flags = "-DQT_SHARED -I/usr/local/Cellar/qt/4.8.7_2/include -I/usr/local/Cellar/qt/4.8.7_2/include/QtGui -I/usr/local/Cellar/qt/4.8.7_2/include -I/usr/local/Cellar/qt/4.8.7_2/include/QtCore -F/usr/local/Cellar/qt/4.8.7_2/lib -framework QtGui -F/usr/local/Cellar/qt/4.8.7_2/lib -framework QtCore".split()
+        if USE_QT:
+            flags = "-DQT_SHARED -I/usr/local/Cellar/qt/4.8.7_2/include -I/usr/local/Cellar/qt/4.8.7_2/include/QtGui -I/usr/local/Cellar/qt/4.8.7_2/include -I/usr/local/Cellar/qt/4.8.7_2/include/QtCore -F/usr/local/Cellar/qt/4.8.7_2/lib -framework QtGui -F/usr/local/Cellar/qt/4.8.7_2/lib -framework QtCore".split()
+        else:
+            flags = []
         ret = subprocess.call(["c++", "-O2", "-I/tmp", "/tmp/DataStructure.cpp", cost_model_file, "-o", "/tmp/a.out"] + flags)
         assert ret == 0
 
@@ -516,11 +523,14 @@ class CppCodeGenerator(object):
         return score
 
     def extensions(self, old):
+        map_types = [STLMap]
+        if USE_QT:
+            map_types.append(QHashMap)
         def f(aimpl):
             for x in old(aimpl):
                 yield x
             if type(aimpl) is abstract_types.Bucketed:
-                for maptype in (STLMap, QHashMap):
+                for maptype in map_types:
                     for impl in old(aimpl.value_impl):
                         if aimpl.enum_p and aimpl.rest_p:
                             m = maptype(aimpl.fields, predicates.conjunction(aimpl.rest_p), impl)
