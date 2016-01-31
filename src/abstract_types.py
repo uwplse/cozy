@@ -7,7 +7,7 @@ import predicates
 import plans
 from structures.hash_map import make_key_args
 from structures.vector_map import is_enumerable
-from structures.combined import CONCAT_OP
+from structures.combined import CONCAT_OP, INTERSECT_OP, UNION_OP
 
 class AbstractImpl(object):
     pass
@@ -22,7 +22,7 @@ class BinarySearchable(AbstractImpl):
 
 class SortedIterable(BinarySearchable):
     def __init__(self, fields, sortField, predicate):
-        super(self, BinarySearchable).__init__(fields, predicate)
+        super(SortedIterable, self).__init__(fields, predicate)
         self.sortField = sortField
 
 class Bucketed(AbstractImpl):

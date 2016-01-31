@@ -56,7 +56,7 @@ class JavaCodeGenerator(object):
         return "{} = {}.get({});\n".format(dst, m, k)
 
     def map_handle_exists(self, m, handle):
-        return "{} != null".format(handle, m)
+        return "{} != null".format(handle)
 
     def map_read_handle(self, handle):
         return handle

@@ -1,4 +1,5 @@
-from .interface import ConcreteImpl
+import itertools
+from .interface import ConcreteImpl, RecordType
 from common import fresh_name
 
 class Filtered(ConcreteImpl):

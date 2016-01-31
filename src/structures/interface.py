@@ -80,10 +80,11 @@ class TupleTy(Ty):
             return ty.gen_type(gen)
         return gen.native_type(self.name)
     def instance(self, e):
+        fields = self.fields
         class I(object):
-            def field(_, gen, f):
-                assert f in self.fields
-                return e if len(self.fields) is 1 else gen.get_field(e, f)
+            def field(self, gen, f):
+                assert f in fields
+                return e if len(fields) is 1 else gen.get_field(e, f)
         return I()
 
 class ConcreteImpl(object):

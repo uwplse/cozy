@@ -415,7 +415,7 @@ class CppCodeGenerator(object):
                 writer("}\n")
 
                 # size
-                writer("size_t {}::size() const {{ return my_size; }}\n".format(name, cpp_class))
+                writer("size_t {}::size() const {{ return my_size; }}\n".format(name))
 
                 # add routine
                 writer("void {}::add({} x) {{\n".format(name, self.record_type()))
@@ -466,21 +466,21 @@ class CppCodeGenerator(object):
                     writer("{ }\n")
 
                     # hasNext
-                    writer("bool {prefix}::{q}_iterator::hasNext() {{\n".format(cpp_class, "".join(", {} {}".format(ty, v) for v, ty in vars_needed), "".join(", {} _{}".format(ty.gen_type(self), f) for f, ty in state), prefix=name, q=q.name))
+                    writer("bool {prefix}::{q}_iterator::hasNext() {{\n".format(prefix=name, q=q.name))
                     proc, ret = q.impl.gen_has_next(self)
                     writer(indent("    ", proc))
                     writer("    return {};\n".format(ret))
                     writer("}\n")
 
                     # next
-                    writer("{} {prefix}::{q}_iterator::next() {{\n".format(self.record_type(), cpp_class, "".join(", {} {}".format(ty, v) for v, ty in vars_needed), "".join(", {} _{}".format(ty.gen_type(self), f) for f, ty in state), prefix=name, q=q.name))
+                    writer("{} {prefix}::{q}_iterator::next() {{\n".format(self.record_type(), prefix=name, q=q.name))
                     proc, ret = q.impl.gen_next(self)
                     writer(indent("    ", proc))
                     writer("    return {};\n".format(ret))
                     writer("}\n")
 
                     # remove
-                    writer("void {prefix}::{q}_iterator::remove() {{\n".format(cpp_class, "".join(", {} {}".format(ty, v) for v, ty in vars_needed), "".join(", {} _{}".format(ty.gen_type(self), f) for f, ty in state), prefix=name, q=q.name))
+                    writer("void {prefix}::{q}_iterator::remove() {{\n".format(prefix=name, q=q.name))
                     writer("    --(parent->my_size);\n")
                     proc, removed = q.impl.gen_remove_in_place(self, TupleInstance("parent"))
                     writer(indent("    ", proc))

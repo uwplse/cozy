@@ -27,8 +27,8 @@ class LinkedList(ConcreteImpl):
         return [
             (self.next_ptr, self.ty),
             (self.prev_ptr, self.ty)]
-    def gen_query(self, gen, qvars):
-        return "", [gen.null_value(), self.head_ptr]
+    def gen_query(self, gen, qvars, this):
+        return "", [gen.null_value(), this.field(gen, self.head_ptr)]
     def gen_empty(self, gen, qvars):
         return [gen.null_value(), gen.null_value()]
     def gen_advance(self, gen):
@@ -42,8 +42,6 @@ class LinkedList(ConcreteImpl):
     def gen_next(self, gen):
         proc = self.gen_advance(gen)
         return proc, self.prev_cursor_name
-    def gen_query(self, gen, qvars, this):
-        return "", [gen.null_value(), this.field(gen, self.head_ptr)]
     def gen_insert(self, gen, x, parent_structure):
         name = parent_structure.field(gen, self.head_ptr)
         proc  = gen.set(gen.get_field(x, self.prev_ptr), gen.null_value())
