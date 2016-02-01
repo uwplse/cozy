@@ -97,7 +97,7 @@ class ConcreteImpl(object):
     def fields(self):
         """data structure members; returns list of (name, ty)"""
         raise Exception("not implemented for type: {}".format(type(self)))
-    def construct(self, gen):
+    def construct(self, gen, parent_structure):
         """returns proc"""
         raise Exception("not implemented for type: {}".format(type(self)))
     def needs_var(self, var):
@@ -109,7 +109,7 @@ class ConcreteImpl(object):
     def private_members(self):
         """record state; returns list of (name, ty)"""
         raise Exception("not implemented for type: {}".format(type(self)))
-    def gen_query(self, gen, qvars):
+    def gen_query(self, gen, qvars, parent_structure):
         """returns (proc, stateExps)"""
         raise Exception("not implemented for type: {}".format(type(self)))
     def gen_empty(self, gen, qvars):
@@ -131,7 +131,7 @@ class ConcreteImpl(object):
     def gen_has_next(self, gen):
         """returns (proc, result)"""
         raise Exception("not implemented for type: {}".format(type(self)))
-    def gen_insert(self, gen, x):
+    def gen_insert(self, gen, x, parent_structure):
         """returns proc"""
         raise Exception("not implemented for type: {}".format(type(self)))
     def gen_remove(self, gen, x, parent_structure):
@@ -140,7 +140,7 @@ class ConcreteImpl(object):
     def gen_remove_in_place(self, gen, parent_structure):
         """returns proc, removed element"""
         raise Exception("not implemented for type: {}".format(type(self)))
-    def gen_update(self, gen, fields, x, remap):
+    def gen_update(self, gen, fields, x, remap, parent_structure):
         """remap is {fieldname:newvalue} dict; returns proc"""
         raise Exception("not implemented for type: {}".format(type(self)))
     def auxtypes(self):

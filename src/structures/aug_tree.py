@@ -310,12 +310,9 @@ class AugTree(ConcreteImpl):
         return p, [gen.null_value(), m]
     def gen_current(self, gen):
         return "", self.cursor_name
-    def gen_advance(self, gen, target=None):
+    def gen_advance(self, gen):
         proc = gen.comment("ADVANCE")
-        if target is None:
-            target = self.cursor_name
-        else:
-            proc += gen.set(target, self.cursor_name)
+        target = self.cursor_name
 
         right_min = fresh_name("right_min")
 
@@ -398,10 +395,7 @@ class AugTree(ConcreteImpl):
         h1 = self._height(gen, gen.get_field(x, self.left_ptr))
         h2 = self._height(gen, gen.get_field(x, self.right_ptr))
         return gen.set(gen.get_field(x, self.height_name), "1+({})".format(gen.ternary(gen.gt(IntTy(), h1, h2), h1, h2)))
-    def gen_insert(self, gen, x, parent_structure, indexval=None):
-        if indexval is None:
-            indexval = gen.get_field(x, self.fieldName)
-
+    def gen_insert_with_index(self, gen, x, parent_structure, indexval):
         name = parent_structure.field(gen, self.name)
 
         prev = fresh_name("previous")
@@ -474,6 +468,11 @@ class AugTree(ConcreteImpl):
             proc += gen.endif()
             proc += gen.endwhile()
 
+        return proc
+    def gen_insert(self, gen, x, parent_structure):
+        idx = fresh_name("idx")
+        proc  = gen.decl(idx, self.fieldTy, gen.get_field(x, self.fieldName))
+        proc += self.gen_insert_with_index(gen, x, parent_structure, idx)
         return proc
     def recompute_augdata(self, gen, node, aug, remap=None):
         v = fresh_name("augval")
@@ -631,7 +630,7 @@ class AugTree(ConcreteImpl):
     def gen_update(self, gen, fields, x, remap, parent_structure):
         if any(f == self.fieldName for f in remap):
             proc  = self.gen_remove(gen, x, parent_structure=parent_structure)
-            proc += self.gen_insert(gen, x, parent_structure=parent_structure, indexval=remap[self.fieldName])
+            proc += self.gen_insert_with_index(gen, x, parent_structure=parent_structure, indexval=remap[self.fieldName])
         elif any(aug.orig_field == f for aug in self.augData for f in remap):
             needs_update = [aug for aug in self.augData if aug.orig_field in remap]
             proc = ""
