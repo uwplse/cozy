@@ -192,9 +192,9 @@ class SolverContext(object):
                 # x is new example!
                 return "counterexample", (x, plan)
 
-        def registerExp(e, cull=True):
+        def registerExp(e, cull=True, size=None):
             self._check_timeout()
-            return expr_cache.put(e)
+            return expr_cache.put(e, size=size)
 
         def pickToSum(cache1, cache2, sum):
             return ((x1, x2) for split in xrange(1, sum-1)
@@ -278,8 +278,8 @@ class SolverContext(object):
             # Since we have all operators and their negations, we will never
             # generate anything interesting involving Not.
             for e1, e2 in pickToSum(expr_cache, expr_cache, size):
-                registerExp(predicates.And(e1, e2))
-                registerExp(predicates.Or(e1, e2))
+                registerExp(predicates.And(e1, e2), size=size)
+                registerExp(predicates.Or(e1, e2),  size=size)
 
             # plans
             print("round {}; cache={}/{max}; ecache={}/{max}; bestCost={}".format(size, len(plan_cache), len(expr_cache), self.bestCost, max=2**len(examples)))
