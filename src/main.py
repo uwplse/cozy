@@ -25,7 +25,7 @@ def enumerate_code_generators(args):
     if args.java is not None:
         yield JavaCodeGenerator()
     elif args.cpp_header is not None or args.cpp is not None:
-        yield CppCodeGenerator()
+        yield CppCodeGenerator(with_qt=args.with_qt)
 
 def pick_best_impls(fields, queries, cost_model_file, code_generators):
     bestImpls = None
@@ -100,6 +100,7 @@ if __name__ == '__main__':
     cpp_opts.add_argument("--cpp-abstract-record", action="store_true", help="Generate abstract record type (to be filled in by client)")
     cpp_opts.add_argument("--cpp-extra", metavar="cpp-code", default=None, help="Extra text to include at top of C++ header file")
     cpp_opts.add_argument("--cpp-namespace", metavar="ns", default=None, help="C++ namespace")
+    cpp_opts.add_argument("--with-qt", action="store_true", help="Allow use of Qt collections classes")
 
     parser.add_argument("file", nargs="?", default=None, help="Input file (omit to use stdin)")
     args = parser.parse_args()

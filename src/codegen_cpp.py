@@ -9,8 +9,6 @@ import structures
 from structures.interface import This, TupleInstance, TupleTy, RecordType, MapTy, NativeTy
 from common import capitalize, fresh_name, indent, open_maybe_stdout
 
-USE_QT = False # TODO: make this an option
-
 class STLMapTy(MapTy):
     def gen_type(self, gen):
         return "std::map < {}, {} >".format(self.keyTy.gen_type(gen), self.valTy.gen_type(gen))
@@ -44,6 +42,9 @@ class QHashMap(structures.HashMap):
         return "{}.value() = {};\n".format(handle, v)
 
 class CppCodeGenerator(object):
+    def __init__(self, with_qt=False):
+        self.with_qt = with_qt
+
     def __str__(self):
         return "CppCodeGenerator"
 
@@ -268,7 +269,7 @@ class CppCodeGenerator(object):
                 header_writer("#include <unordered_map>\n")
                 header_writer("#include <map>\n")
 
-                if USE_QT:
+                if self.with_qt:
                     header_writer("#include <QHash>\n")
 
                 header_writer("""
@@ -512,7 +513,7 @@ class CppCodeGenerator(object):
             cpp="/tmp/DataStructure.cpp",
             cpp_header="/tmp/DataStructure.hpp")
 
-        if USE_QT:
+        if self.with_qt:
             flags = "-DQT_SHARED -I/usr/local/Cellar/qt/4.8.7_2/include -I/usr/local/Cellar/qt/4.8.7_2/include/QtGui -I/usr/local/Cellar/qt/4.8.7_2/include -I/usr/local/Cellar/qt/4.8.7_2/include/QtCore -F/usr/local/Cellar/qt/4.8.7_2/lib -framework QtGui -F/usr/local/Cellar/qt/4.8.7_2/lib -framework QtCore".split()
         else:
             flags = []
@@ -528,7 +529,7 @@ class CppCodeGenerator(object):
 
     def extensions(self, old):
         map_types = [STLMap]
-        if USE_QT:
+        if self.with_qt:
             map_types.append(QHashMap)
         def f(aimpl):
             for x in old(aimpl):
