@@ -20,6 +20,8 @@ class QHashMapTy(MapTy):
         return "QHash < {}, {} >".format(self.keyTy.gen_type(gen), self.valTy.gen_type(gen))
 
 class STLMap(structures.HashMap):
+    def __str__(self):
+        return "STLMap({}, {})".format(self.keyTy, self.valueImpl)
     def fields(self):
         return ((self.name, STLMapTy(self.keyTy, self.valueTy)),)
     def construct(self, gen, parent_structure):
@@ -28,6 +30,8 @@ class STLMap(structures.HashMap):
         return NativeTy("std::map < {}, {} >::iterator".format(self.keyTy.gen_type(gen), self.valueTy.gen_type(gen)))
 
 class QHashMap(structures.HashMap):
+    def __str__(self):
+        return "QHashMap({}, {})".format(self.keyTy, self.valueImpl)
     def fields(self):
         return ((self.name, QHashMapTy(self.keyTy, self.valueTy)),)
     def construct(self, gen, parent_structure):
