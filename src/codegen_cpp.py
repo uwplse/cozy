@@ -7,7 +7,7 @@ import predicates
 import plans
 import structures
 from structures.interface import This, TupleInstance, TupleTy, RecordType, MapTy, NativeTy
-from common import capitalize, fresh_name, indent, open_maybe_stdout
+from common import capitalize, fresh_name, indent, open_maybe_stdout, memoize
 
 class STLMapTy(MapTy):
     def gen_type(self, gen):
@@ -514,7 +514,7 @@ class CppCodeGenerator(object):
             cpp_header="/tmp/DataStructure.hpp")
 
         if self.with_qt:
-            flags = "-DQT_SHARED -I/usr/local/Cellar/qt/4.8.7_2/include -I/usr/local/Cellar/qt/4.8.7_2/include/QtGui -I/usr/local/Cellar/qt/4.8.7_2/include -I/usr/local/Cellar/qt/4.8.7_2/include/QtCore -F/usr/local/Cellar/qt/4.8.7_2/lib -framework QtGui -F/usr/local/Cellar/qt/4.8.7_2/lib -framework QtCore".split()
+            flags = _qt_flags()
         else:
             flags = []
         ret = subprocess.call(["c++", "-O2", "-I/tmp", "/tmp/DataStructure.cpp", cost_model_file, "-o", "/tmp/a.out"] + flags)
@@ -543,6 +543,13 @@ class CppCodeGenerator(object):
                         elif aimpl.rest_p: # aimpl.rest_p
                             yield maptype(aimpl.fields, predicates.conjunction(aimpl.rest_p), impl)
         return f
+
+@memoize
+def _qt_flags():
+    pkgconfig = subprocess.Popen(["pkg-config", "--libs", "--cflags", "QtCore", "QtGui"], stdout=subprocess.PIPE)
+    stdout, _ = pkgconfig.communicate()
+    assert pkgconfig.returncode == 0
+    return stdout.split()
 
 def _gen_aux_type_fwd_decl(ty, gen, writer, seen):
     if ty in seen:

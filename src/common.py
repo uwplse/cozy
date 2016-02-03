@@ -1,4 +1,4 @@
-from functools import total_ordering
+from functools import total_ordering, wraps
 import re
 import sys
 import os
@@ -48,3 +48,20 @@ def open_maybe_stdout(f):
     if f == "-":
         return os.fdopen(os.dup(sys.stdout.fileno()), "w")
     return open(f, "w")
+
+def memoize(f):
+    # Someday if we upgrade to Python 3 this can be replaced with
+    # functools.lru_cache(...).
+
+    cache = dict()
+
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        k = (tuple(args), tuple(kwargs.items()))
+        if k in cache:
+            return cache[k]
+        result = f(*args, **kwargs)
+        cache[k] = result
+        return result
+
+    return wrapper
