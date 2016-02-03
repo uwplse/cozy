@@ -86,6 +86,17 @@ class TupleTy(Ty):
                 return e if len(self.fields) is 1 else gen.get_field(e, f)
         return I()
 
+#------------------------------------------------------------------
+
+class NodeTy(Ty):
+    def gen_type(self, gen):
+        return gen.node_type()
+    def __str__(self):
+        return "Node"
+
+#------------------------------------------------------------------
+
+
 class ConcreteImpl(object):
     """
     Common interface for generated data structures

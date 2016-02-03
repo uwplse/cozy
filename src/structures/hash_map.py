@@ -23,8 +23,8 @@ class HashMap(ConcreteImpl):
         self.name = fresh_name("map")
         self.valueTy = self._make_value_type(valueImpl)
         self.keyArgs = make_key_args(fields, predicate)
-        self.keyTy = make_key_type(fields, self.keyArgs)
-        self.valueImpl = valueImpl
+        self.keyTy = make_key_type(fields, self.keyArgs) # value in the Tuple
+        self.valueImpl = valueImpl # LinkedList
     def __str__(self):
         return "HashMap({}, {})".format(self.keyTy, self.valueImpl)
     def __repr__(self):
@@ -41,9 +41,9 @@ class HashMap(ConcreteImpl):
     def needs_var(self, v):
         return self.valueImpl.needs_var(v)
     def state(self):
-        return self.valueImpl.state()
+        return self.valueImpl.state() # current state in Iterator class(e.g. cursor)
     def private_members(self):
-        return self.valueImpl.private_members()
+        return self.valueImpl.private_members() # private memebers in Record class(e.g. next, prev)
     def make_key(self, gen, target):
         for f in self.keyArgs:
             assert len(self.keyArgs[f]) == 1, "cannot (yet) handle multiple values in lookup ({})".format(self.keyArgs)

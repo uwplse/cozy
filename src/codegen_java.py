@@ -100,6 +100,28 @@ class JavaCodeGenerator(object):
     def record_type(self):
         return "Record"
 
+#------------------------------------------------------------------
+    
+    def node_type(self):
+        return "Node"
+
+    def node_set(self, v, a):
+        if (a):
+            return "{} = new Node(true);\n".format(v)
+        else:
+            return "{} = new Node(false);\n".format(v)
+
+    def plus_one(self, v):
+        return "{}++;\n".format(v)
+
+    def hash_code(self, Ty, v):
+        return _hash_code(Ty.__str__(), "({})".format(v))
+
+    def end_return(self):
+        return "return;\n"
+
+#------------------------------------------------------------------
+
     def predicate(self, fields, qvars, pred, target):
         return _predicate_to_exp(fields, qvars, pred, target)
 

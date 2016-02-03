@@ -11,3 +11,4 @@ from .vector_map  import VectorMap
 from .aug_tree    import AugTree
 from .volume_tree import VolumeTree
 from .combined    import Tuple
+from .hamt 		  import Hamt
