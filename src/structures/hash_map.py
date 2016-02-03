@@ -120,15 +120,9 @@ class HashMap(ConcreteImpl):
         proc += self.valueImpl.construct(gen, parent_structure=self.valueTy.instance(name))
         proc += gen.map_put(m, k, name)
         return proc
-    def gen_insert(self, gen, x, parent_structure, k=None):
+    def gen_insert_at_key(self, gen, x, parent_structure, k):
         name = parent_structure.field(gen, self.name)
-        proc = ""
-        if k is None:
-            k = fresh_name("key")
-            proc += gen.decl(k, self.keyTy)
-            proc += self.make_key_of_record(gen, x, k)
-        p, handle = self.lookup(gen, name, k)
-        proc += p
+        proc, handle = self.lookup(gen, name, k)
         proc += gen.if_true(gen.not_true(self.handle_exists(gen, name, handle)))
         proc += self.create_substructure_at_key(gen, name, k)
         p, handle2 = self.lookup(gen, name, k)
@@ -141,22 +135,31 @@ class HashMap(ConcreteImpl):
         proc += self.valueImpl.gen_insert(gen, x, self.valueTy.instance(sub))
         proc += self.write_handle(gen, name, handle, k, sub)
         return proc
-    def gen_remove(self, gen, x, parent_structure, k=None):
+    def gen_insert(self, gen, x, parent_structure):
         name = parent_structure.field(gen, self.name)
         proc = ""
-        if k is None:
-            k = fresh_name("key")
-            proc += gen.decl(k, self.keyTy)
-            proc += self.make_key_of_record(gen, x, k)
-
-        p, handle = self.lookup(gen, name, k)
-        proc += p
+        k = fresh_name("key")
+        proc += gen.decl(k, self.keyTy)
+        proc += self.make_key_of_record(gen, x, k)
+        proc += self.gen_insert_at_key(gen, x, parent_structure, k)
+        return proc
+    def gen_remove_at_key(self, gen, x, parent_structure, k=None):
+        name = parent_structure.field(gen, self.name)
+        proc, handle = self.lookup(gen, name, k)
         proc += gen.if_true(self.handle_exists(gen, name, handle))
         sub = fresh_name("substructure")
         proc += gen.decl(sub, RefTy(self.valueTy), self.read_handle(gen, name, handle))
         proc += self.valueImpl.gen_remove(gen, x, self.valueTy.instance(sub))
         proc += self.write_handle(gen, name, handle, k, sub)
         proc += gen.endif()
+        return proc
+    def gen_remove(self, gen, x, parent_structure):
+        name = parent_structure.field(gen, self.name)
+        proc = ""
+        k = fresh_name("key")
+        proc += gen.decl(k, self.keyTy)
+        proc += self.make_key_of_record(gen, x, k)
+        proc += self.gen_remove_at_key(gen, x, parent_structure, k)
         return proc
     def gen_remove_in_place(self, gen, parent_structure):
         name = parent_structure.field(gen, self.name)
@@ -180,13 +183,13 @@ class HashMap(ConcreteImpl):
         proc += self.make_key_of_record(gen, x, k1)
         if affects_key:
             # remove from old loc
-            proc += self.gen_remove(gen, x, parent_structure=parent_structure, k=k1)
+            proc += self.gen_remove_at_key(gen, x, parent_structure=parent_structure, k=k1)
 
             # add to new loc
             k2 = fresh_name("newkey")
             proc += gen.decl(k2, self.keyTy)
             proc += self.make_key_of_record(gen, x, k2, remap=remap)
-            proc += self.gen_insert(gen, x, parent_structure=parent_structure, k=k2)
+            proc += self.gen_insert_at_key(gen, x, parent_structure=parent_structure, k=k2)
         else:
             p, handle = self.lookup(gen, name, k1)
             proc += p

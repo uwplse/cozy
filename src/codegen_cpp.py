@@ -9,8 +9,6 @@ import structures
 from structures.interface import This, TupleInstance, TupleTy, RecordType, MapTy, NativeTy
 from common import capitalize, fresh_name, indent, open_maybe_stdout
 
-USE_QT = False # TODO: make this an option
-
 class STLMapTy(MapTy):
     def gen_type(self, gen):
         return "std::map < {}, {} >".format(self.keyTy.gen_type(gen), self.valTy.gen_type(gen))
@@ -20,6 +18,8 @@ class QHashMapTy(MapTy):
         return "QHash < {}, {} >".format(self.keyTy.gen_type(gen), self.valTy.gen_type(gen))
 
 class STLMap(structures.HashMap):
+    def __str__(self):
+        return "STLMap({}, {})".format(self.keyTy, self.valueImpl)
     def fields(self):
         return ((self.name, STLMapTy(self.keyTy, self.valueTy)),)
     def construct(self, gen, parent_structure):
@@ -28,6 +28,8 @@ class STLMap(structures.HashMap):
         return NativeTy("std::map < {}, {} >::iterator".format(self.keyTy.gen_type(gen), self.valueTy.gen_type(gen)))
 
 class QHashMap(structures.HashMap):
+    def __str__(self):
+        return "QHashMap({}, {})".format(self.keyTy, self.valueImpl)
     def fields(self):
         return ((self.name, QHashMapTy(self.keyTy, self.valueTy)),)
     def construct(self, gen, parent_structure):
@@ -40,6 +42,9 @@ class QHashMap(structures.HashMap):
         return "{}.value() = {};\n".format(handle, v)
 
 class CppCodeGenerator(object):
+    def __init__(self, with_qt=False):
+        self.with_qt = with_qt
+
     def __str__(self):
         return "CppCodeGenerator"
 
@@ -264,7 +269,7 @@ class CppCodeGenerator(object):
                 header_writer("#include <unordered_map>\n")
                 header_writer("#include <map>\n")
 
-                if USE_QT:
+                if self.with_qt:
                     header_writer("#include <QHash>\n")
 
                 header_writer("""
@@ -415,7 +420,7 @@ class CppCodeGenerator(object):
                 writer("}\n")
 
                 # size
-                writer("size_t {}::size() const {{ return my_size; }}\n".format(name, cpp_class))
+                writer("size_t {}::size() const {{ return my_size; }}\n".format(name))
 
                 # add routine
                 writer("void {}::add({} x) {{\n".format(name, self.record_type()))
@@ -466,21 +471,21 @@ class CppCodeGenerator(object):
                     writer("{ }\n")
 
                     # hasNext
-                    writer("bool {prefix}::{q}_iterator::hasNext() {{\n".format(cpp_class, "".join(", {} {}".format(ty, v) for v, ty in vars_needed), "".join(", {} _{}".format(ty.gen_type(self), f) for f, ty in state), prefix=name, q=q.name))
+                    writer("bool {prefix}::{q}_iterator::hasNext() {{\n".format(prefix=name, q=q.name))
                     proc, ret = q.impl.gen_has_next(self)
                     writer(indent("    ", proc))
                     writer("    return {};\n".format(ret))
                     writer("}\n")
 
                     # next
-                    writer("{} {prefix}::{q}_iterator::next() {{\n".format(self.record_type(), cpp_class, "".join(", {} {}".format(ty, v) for v, ty in vars_needed), "".join(", {} _{}".format(ty.gen_type(self), f) for f, ty in state), prefix=name, q=q.name))
+                    writer("{} {prefix}::{q}_iterator::next() {{\n".format(self.record_type(), prefix=name, q=q.name))
                     proc, ret = q.impl.gen_next(self)
                     writer(indent("    ", proc))
                     writer("    return {};\n".format(ret))
                     writer("}\n")
 
                     # remove
-                    writer("void {prefix}::{q}_iterator::remove() {{\n".format(cpp_class, "".join(", {} {}".format(ty, v) for v, ty in vars_needed), "".join(", {} _{}".format(ty.gen_type(self), f) for f, ty in state), prefix=name, q=q.name))
+                    writer("void {prefix}::{q}_iterator::remove() {{\n".format(prefix=name, q=q.name))
                     writer("    --(parent->my_size);\n")
                     proc, removed = q.impl.gen_remove_in_place(self, TupleInstance("parent"))
                     writer(indent("    ", proc))
@@ -508,7 +513,7 @@ class CppCodeGenerator(object):
             cpp="/tmp/DataStructure.cpp",
             cpp_header="/tmp/DataStructure.hpp")
 
-        if USE_QT:
+        if self.with_qt:
             flags = "-DQT_SHARED -I/usr/local/Cellar/qt/4.8.7_2/include -I/usr/local/Cellar/qt/4.8.7_2/include/QtGui -I/usr/local/Cellar/qt/4.8.7_2/include -I/usr/local/Cellar/qt/4.8.7_2/include/QtCore -F/usr/local/Cellar/qt/4.8.7_2/lib -framework QtGui -F/usr/local/Cellar/qt/4.8.7_2/lib -framework QtCore".split()
         else:
             flags = []
@@ -524,7 +529,7 @@ class CppCodeGenerator(object):
 
     def extensions(self, old):
         map_types = [STLMap]
-        if USE_QT:
+        if self.with_qt:
             map_types.append(QHashMap)
         def f(aimpl):
             for x in old(aimpl):

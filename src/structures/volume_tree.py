@@ -19,6 +19,7 @@ class VolumeTree(ConcreteImpl):
         clauses = list(predicates.break_conj(predicate))
         lts = []
         gts = []
+        types = set()
         for c in clauses:
             if (c.lhs.name in fields) == (c.rhs.name in fields):
                 return
@@ -26,6 +27,7 @@ class VolumeTree(ConcreteImpl):
                 c = c.flip()
             if not is_numeric(fields[c.lhs.name]):
                 return
+            types.add(fields[c.lhs.name])
             if c.op in (predicates.Lt, predicates.Le):
                 lts.append((c.lhs.name, c.rhs.name))
             if c.op in (predicates.Gt, predicates.Ge):
@@ -35,13 +37,16 @@ class VolumeTree(ConcreteImpl):
         # print(gts)
         if len(lts) != len(gts):
             return
+        if len(types) != 1:
+            return
         yield VolumeTree.VolumeSpec(lts, gts) # todo: permutations?
 
     def __init__(self, spec, fields, predicate, stack_iteration=False):
         self.stack_iteration = stack_iteration
         self.spec = spec
         self.field_types = fields
-        self.predicate =predicate
+        self.the_type = NativeTy(fields[spec.lts[0][0]])
+        self.predicate = predicate
         self.root = fresh_name("root")
         self.left_ptr = fresh_name("left")
         self.right_ptr = fresh_name("right")
@@ -118,9 +123,8 @@ class VolumeTree(ConcreteImpl):
                     gen.add(remap.get(f1, gen.get_field(record, f1)), remap.get(f2, gen.get_field(record, f2))))))
         return e
     def select_child(self, gen, parent, record, remap={}):
-        # TODO: use proper type, not "double"
         return gen.ternary(
-            gen.lt(NativeTy("double"),
+            gen.lt(self.the_type,
                 self.distance(gen, record, gen.get_field(parent, self.right_ptr), remap=remap),
                 self.distance(gen, record, gen.get_field(parent, self.left_ptr),  remap=remap)),
             gen.get_field(parent, self.right_ptr),
@@ -128,7 +132,7 @@ class VolumeTree(ConcreteImpl):
     def merge_volumes(self, gen, n1, n2, into):
         changed = fresh_name("changed")
         new_value = fresh_name("new_value")
-        t = NativeTy("double") # TODO
+        t = self.the_type # TODO
         proc  = gen.decl(changed, BoolTy(), gen.false_value())
         proc += gen.decl(new_value, t)
         for f, _ in self.spec.lts:
@@ -154,8 +158,8 @@ class VolumeTree(ConcreteImpl):
         for (f1, _), (f2, _) in zip(self.spec.lts, self.spec.gts):
             f1 = self.remap[f1]
             f2 = self.remap[f2]
-            e = gen.both(e, gen.le(NativeTy("double"), gen.get_field(large, f1), gen.get_field(small, f1)))
-            e = gen.both(e, gen.ge(NativeTy("double"), gen.get_field(large, f2), gen.get_field(small, f2)))
+            e = gen.both(e, gen.le(self.the_type, gen.get_field(large, f1), gen.get_field(small, f1)))
+            e = gen.both(e, gen.ge(self.the_type, gen.get_field(large, f2), gen.get_field(small, f2)))
         return e
     def find_insertion_point(self, gen, x, root, remap={}):
         ip = fresh_name("insertion_point")
@@ -504,14 +508,14 @@ class VolumeTree(ConcreteImpl):
             proc += gen.assert_true(gen.same(
                 gen.get_field(node, self.remap[f]),
                 gen.min(
-                    NativeTy("double"),
+                    self.the_type,
                     gen.get_field(gen.get_field(node, self.left_ptr), self.remap[f]),
                     gen.get_field(gen.get_field(node, self.right_ptr), self.remap[f]))))
         for f,_ in self.spec.gts:
             proc += gen.assert_true(gen.same(
                 gen.get_field(node, self.remap[f]),
                 gen.max(
-                    NativeTy("double"),
+                    self.the_type,
                     gen.get_field(gen.get_field(node, self.left_ptr), self.remap[f]),
                     gen.get_field(gen.get_field(node, self.right_ptr), self.remap[f]))))
         proc += gen.else_true()

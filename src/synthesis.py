@@ -1,5 +1,6 @@
 #!/usr/bin/env python2
 
+from __future__ import print_function
 import datetime
 import itertools
 import math
@@ -54,11 +55,11 @@ class SolverContext(object):
 
         try:
             while proceed:
-                # print "starting synthesis using", len(examples), "examples"
+                # print("starting synthesis using", len(examples), "examples")
                 for responseType, response in self._synthesizePlansByEnumeration(query, sort_field, maxSize, examples):
                     if responseType == "counterexample":
                         example, plan = response
-                        print "found counterexample", example, "\n\tfor", plan
+                        print("found counterexample", example, "\n\tfor", plan)
                         if example in examples:
                             raise Exception("error: already saw counterexample!")
                         examples.append(example)
@@ -69,7 +70,7 @@ class SolverContext(object):
                         proceed = False
                         break
         except:
-            print "stopping due to exception"
+            print("stopping due to exception")
             traceback.print_exc()
 
         for plan in self.bestPlans:
@@ -126,7 +127,7 @@ class SolverContext(object):
             try:
                 s.add(plan.toPredicate().toZ3(self.z3ctx) != query.toZ3(self.z3ctx))
             except Exception as e:
-                print plan, e, plan.toPredicate()
+                print(plan, e, plan.toPredicate())
                 raise e
             if str(s.check()) == 'unsat':
                 result = True
@@ -191,9 +192,9 @@ class SolverContext(object):
                 # x is new example!
                 return "counterexample", (x, plan)
 
-        def registerExp(e, cull=True):
+        def registerExp(e, cull=True, size=None):
             self._check_timeout()
-            return expr_cache.put(e)
+            return expr_cache.put(e, size=size)
 
         def pickToSum(cache1, cache2, sum):
             return ((x1, x2) for split in xrange(1, sum-1)
@@ -203,7 +204,7 @@ class SolverContext(object):
         queryVector = outputvector(query)
         comps = set(query.comparisons())
         for a in self.assumptions:
-            # print "A ==> {}".format(a)
+            # print("A ==> {}".format(a))
             for c in a.comparisons():
                 comps.add(c)
         for a, b in list(comps):
@@ -226,8 +227,8 @@ class SolverContext(object):
         plan_cache = Cache(cost_func=self.cost,   size_func=ADT.size, key_func=outputvector, allow_multi=True)
         expr_cache = Cache(cost_func=lambda e: 1, size_func=ADT.size, key_func=outputvector, allow_multi=False)
 
-        print "starting with {} examples".format(len(examples))
-        print "round 1"
+        print("starting with {} examples".format(len(examples)))
+        print("round 1")
         for f1 in self.fieldNames:
             for f2 in self.fieldNames:
                 if f1 < f2 and transitively_related(f1, f2, comps):
@@ -277,11 +278,11 @@ class SolverContext(object):
             # Since we have all operators and their negations, we will never
             # generate anything interesting involving Not.
             for e1, e2 in pickToSum(expr_cache, expr_cache, size):
-                registerExp(predicates.And(e1, e2))
-                registerExp(predicates.Or(e1, e2))
+                registerExp(predicates.And(e1, e2), size=size)
+                registerExp(predicates.Or(e1, e2),  size=size)
 
             # plans
-            print "round", size, "; cache={}/{max}; ecache={}/{max}; bestCost={}".format(len(plan_cache), len(expr_cache), self.bestCost, max=2**len(examples))
+            print("round {}; cache={}/{max}; ecache={}/{max}; bestCost={}".format(size, len(plan_cache), len(expr_cache), self.bestCost, max=2**len(examples)))
             for plan in (plans.HashLookup(p, e) for p, e in pickToSum(plan_cache, expr_cache, size)):
                 yield consider(plan)
             for plan in (plans.BinarySearch(p, e) for p, e in pickToSum(plan_cache, expr_cache, size)):

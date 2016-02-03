@@ -62,7 +62,7 @@ class BinarySearch(Plan):
             return False
         if self.predicate.contains_disjunction():
             return False
-        return self.plan.wellFormed(*args)
+        return self.plan.wellFormed(*args) and any(self.plan.isSortedBy(v.name) for v in self.predicate.vars())
     def children(self):
         return (self.plan, self.predicate)
 

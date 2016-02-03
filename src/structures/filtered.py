@@ -1,4 +1,5 @@
-from .interface import ConcreteImpl
+import itertools
+from .interface import ConcreteImpl, RecordType
 from common import fresh_name
 
 class Filtered(ConcreteImpl):
@@ -7,6 +8,10 @@ class Filtered(ConcreteImpl):
         self._fields = fields
         self.qvars = qvars
         self.predicate = predicate
+    def __str__(self):
+        return "Filtered({})".format(self.ty)
+    def __repr__(self):
+        return self.__str__()
     def fields(self):
         return self.ty.fields()
     def construct(self, gen, parent_structure):
@@ -17,8 +22,8 @@ class Filtered(ConcreteImpl):
         return self.ty.state()
     def private_members(self):
         return self.ty.private_members()
-    def gen_query(self, gen, qvars):
-        proc, es = self.ty.gen_query(gen, qvars)
+    def gen_query(self, gen, qvars, parent_structure):
+        proc, es = self.ty.gen_query(gen, qvars, parent_structure)
         for (v, t), e in itertools.izip(self.ty.state(), es):
             proc += gen.decl(v, t, e)
         proc += gen.while_true(gen.true_value())
@@ -55,11 +60,13 @@ class Filtered(ConcreteImpl):
         return proc
     def gen_has_next(self, gen):
         return self.ty.gen_has_next(gen)
-    def gen_insert(self, gen, x):
-        return self.ty.gen_insert(gen, x)
+    def gen_insert(self, gen, x, parent_structure):
+        return self.ty.gen_insert(gen, x, parent_structure)
     def gen_remove(self, gen, x, parent_structure):
-        return self.ty.gen_remove(gen, x)
+        return self.ty.gen_remove(gen, x, parent_structure)
     def gen_remove_in_place(self, gen, parent_structure):
         return self.ty.gen_remove_in_place(gen, parent_structure)
+    def gen_update(self, gen, fields, x, remap, parent_structure):
+        return self.ty.gen_update(gen, fields, x, remap, parent_structure)
     def auxtypes(self):
         return self.ty.auxtypes()
