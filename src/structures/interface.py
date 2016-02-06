@@ -14,6 +14,10 @@ class IntTy(Ty):
     def gen_type(self, gen):
         return gen.int_type()
 
+class FloatTy(Ty):
+    def gen_type(self, gen):
+        return "float" # TODO
+
 class RefTy(Ty):
     def __init__(self, ty):
         self.ty = ty
@@ -42,6 +46,12 @@ class VecTy(Ty):
         self.count = count
     def gen_type(self, gen):
         return gen.vector_type(self.ty, self.count)
+
+class ArrayTy(Ty):
+    def __init__(self, ty):
+        self.ty = ty
+    def gen_type(self, gen):
+        return gen.array_type(self.ty)
 
 class MapTy(Ty):
     def __init__(self, k, v):
@@ -124,6 +134,9 @@ class ConcreteImpl(object):
         raise Exception("not implemented for type: {}".format(type(self)))
     def gen_empty(self, gen, qvars):
         """returns stateExps"""
+        raise Exception("not implemented for type: {}".format(type(self)))
+    def gen_find_any(self, gen, parent_structure):
+        """returns proc, some single element"""
         raise Exception("not implemented for type: {}".format(type(self)))
     def gen_current(self, gen):
         """returns (proc, result)"""

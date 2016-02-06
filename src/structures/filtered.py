@@ -67,6 +67,8 @@ class Filtered(ConcreteImpl):
         return proc, result
     def gen_empty(self, gen, qvars):
         return self.ty.gen_empty(gen, qvars)
+    def gen_find_any(self, gen, parent_structure):
+        return self.ty.gen_find_any(gen, parent_structure)
     def gen_current(self, gen):
         return self.ty.gen_current(gen)
     def gen_advance(self, gen):

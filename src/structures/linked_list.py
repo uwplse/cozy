@@ -33,6 +33,8 @@ class LinkedList(ConcreteImpl):
         return self.gen_find_any(gen, this)
     def gen_empty(self, gen, qvars):
         return [gen.null_value(), gen.null_value()]
+    def gen_find_any(self, gen, parent_structure):
+        return "", parent_structure.field(gen, self.head_ptr)
     def gen_advance(self, gen):
         proc  = gen.set(self.prev_cursor_name, self.cursor_name)
         proc += gen.set(self.cursor_name, gen.get_field(self.cursor_name, self.next_ptr))

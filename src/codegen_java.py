@@ -6,7 +6,7 @@ import subprocess
 import codegen
 import predicates
 import plans
-from structures.interface import TupleTy, This, TupleInstance
+from structures.interface import TupleTy, This, TupleInstance, IntTy
 from common import capitalize, fresh_name, indent, open_maybe_stdout
 
 class JavaCodeGenerator(object):
@@ -35,7 +35,33 @@ class JavaCodeGenerator(object):
         return t.gen_type(self)
 
     def vector_type(self, ty, n):
+        return self.array_type(ty)
+
+    def array_type(self, ty):
         return "{}[]".format(ty.gen_type(self))
+
+    def new_array(self, ty, count):
+        return "new {}[{}]".format(ty.gen_type(self), count)
+
+    def array_get(self, a, n):
+        return "{}[{}]".format(a, n)
+
+    def array_set(self, a, n, v):
+        return "{}[{}] = {};\n".format(a, n, v)
+
+    def array_size(self, a):
+        return "{}.length".format(a)
+
+    # def array_realloc(self, ty, a, new_size):
+    #     a2 = fresh_name("a")
+    #     proc = ""
+    #     proc += self.decl(a2, self.array_type(ty), self.new_array(ty, new_size))
+    #     proc += "System.arraycopy({}, 0, {}, 0, {});\n".format(a, a2, self.min(IntTy(), self.array_size(a), new_size))
+    #     proc += self.set(a, a2)
+    #     return proc
+
+    def data_structure_size(self):
+        return "my_size" # massive hack
 
     def alloc(self, ty, args):
         return "new {}({})".format(ty.gen_type(self), ", ".join(args))
@@ -127,6 +153,9 @@ class JavaCodeGenerator(object):
     def ge(self, ty, e1, e2):
         return ("({}) >= ({})" if _is_primitive(ty.gen_type(self)) else "({}).compareTo({}) >= 0").format(e1, e2)
 
+    def to_float(self, ty, e):
+        return "(float)({})".format(e)
+
     def add(self, e1, e2):
         return "({}) + ({})".format(e1, e2)
 
@@ -135,6 +164,12 @@ class JavaCodeGenerator(object):
 
     def mul(self, e1, e2):
         return "({}) * ({})".format(e1, e2)
+
+    def div(self, e1, e2):
+        return "({}) / ({})".format(e1, e2)
+
+    def mod(self, e1, e2):
+        return "({}) % ({})".format(e1, e2)
 
     def abs(self, e):
         return "Math.abs({})".format(e)
@@ -155,6 +190,22 @@ class JavaCodeGenerator(object):
         if e is None:
             return m
         return "({}).{}".format(e, m)
+
+    def hash(self, values):
+        """values is [(type, val)]; returns proc, result"""
+        h = fresh_name("hash")
+        return (self.decl(h, IntTy(), "0") + self._hash_into(values, h), h)
+
+    def _hash_into(self, values, out):
+        proc = ""
+        first = True
+        for t, v in values:
+            if first:
+                proc += self.set(out, _hash_code(t, v))
+                first = False
+            else:
+                proc += self.set(out, self.add(self.mul(out, "31"), _hash_code(t, v)))
+        return proc
 
     def both(self, e1, e2):
         return "({}) && ({})".format(e1, e2)

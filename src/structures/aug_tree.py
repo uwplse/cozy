@@ -83,6 +83,8 @@ class AugTree(ConcreteImpl):
         return [(self.prev_cursor_name, self.ty), (self.cursor_name, self.ty)]
     def gen_empty(self, gen, qvars):
         return [gen.null_value(), gen.null_value()]
+    def gen_find_any(self, gen, parent_structure):
+        return "", parent_structure.field(gen, self.name)
     def private_members(self):
         fields = [
             (self.left_ptr,   RecordType()),
