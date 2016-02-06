@@ -1,6 +1,6 @@
 import collections
 
-from .interface import ConcreteImpl, TupleTy, NativeTy, MapTy, RefTy
+from .interface import ConcreteImpl, TupleTy, NativeTy, MapTy, MapHandleType, RefTy
 from common import fresh_name
 
 def make_key_args(fields, predicate):
@@ -24,13 +24,15 @@ class HashMap(ConcreteImpl):
         self.valueTy = self._make_value_type(valueImpl)
         self.keyArgs = make_key_args(fields, predicate)
         self.keyTy = make_key_type(fields, self.keyArgs)
+        self.iterator_key_name = fresh_name("key")
+        self.iterator_handle_name = fresh_name("handle")
         self.valueImpl = valueImpl
     def __str__(self):
         return "HashMap({}, {})".format(self.keyTy, self.valueImpl)
     def __repr__(self):
         return self.__str__()
-    def handle_type(self, gen):
-        return NativeTy(gen.map_handle_type(self.keyTy, self.valueTy))
+    def handle_type(self):
+        return MapHandleType(self.keyTy, self.valueTy)
     def _make_value_type(self, valueImpl):
         return TupleTy(collections.OrderedDict(valueImpl.fields()))
     def fields(self):
@@ -41,7 +43,9 @@ class HashMap(ConcreteImpl):
     def needs_var(self, v):
         return self.valueImpl.needs_var(v)
     def state(self):
-        return self.valueImpl.state()
+        return list(self.valueImpl.state()) + [
+            (self.iterator_key_name, self.keyTy),
+            (self.iterator_handle_name, self.handle_type())]
     def private_members(self):
         return self.valueImpl.private_members()
     def make_key(self, gen, target):
@@ -56,7 +60,7 @@ class HashMap(ConcreteImpl):
     def lookup(self, gen, m, k):
         """returns proc, handle"""
         handle = fresh_name("maphandle")
-        proc  = gen.decl(handle, self.handle_type(gen))
+        proc  = gen.decl(handle, self.handle_type())
         proc += gen.map_find_handle(m, k, handle)
         return proc, handle
     def handle_exists(self, gen, m, handle):
@@ -82,7 +86,7 @@ class HashMap(ConcreteImpl):
         name = parent_structure.field(gen, self.name)
         vs = collections.OrderedDict()
         proc = ""
-        for f,t in self.state():
+        for f,t in self.valueImpl.state():
             n = fresh_name(f)
             vs[f] = n
             proc += gen.decl(n, t)
@@ -103,7 +107,7 @@ class HashMap(ConcreteImpl):
         for lhs, rhs in zip(vs.values(), r):
             proc += gen.set(lhs, rhs)
         proc += gen.endif()
-        return (proc, list(vs.values()))
+        return (proc, list(vs.values()) + [k, handle])
     def gen_empty(self, gen, qvars):
         return self.valueImpl.gen_empty(gen, qvars)
     def gen_current(self, gen):
@@ -163,17 +167,11 @@ class HashMap(ConcreteImpl):
         return proc
     def gen_remove_in_place(self, gen, parent_structure):
         name = parent_structure.field(gen, self.name)
-        k = fresh_name("key")
-        proc, x = self.valueImpl.gen_current(gen)
-        proc += gen.decl(k, self.keyTy)
-        proc += self.make_key_of_record(gen, x, k)
-        p, handle = self.lookup(gen, name, k)
-        proc += p
         sub = fresh_name("substructure")
-        proc += gen.decl(sub, RefTy(self.valueTy), self.read_handle(gen, name, handle))
+        proc  = gen.decl(sub, RefTy(self.valueTy), self.read_handle(gen, name, self.iterator_handle_name))
         p, removed = self.valueImpl.gen_remove_in_place(gen, parent_structure=self.valueTy.instance(sub))
         proc += p
-        proc += self.write_handle(gen, name, handle, k, sub)
+        proc += self.write_handle(gen, name, self.iterator_handle_name, self.iterator_key_name, sub)
         return proc, removed
     def gen_update(self, gen, fields, x, remap, parent_structure):
         name = parent_structure.field(gen, self.name)

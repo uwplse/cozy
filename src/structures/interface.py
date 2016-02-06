@@ -50,6 +50,13 @@ class MapTy(Ty):
     def gen_type(self, gen):
         return gen.map_type(self.keyTy, self.valTy)
 
+class MapHandleType(Ty):
+    def __init__(self, k, v):
+        self.keyTy = k
+        self.valTy = v
+    def gen_type(self, gen):
+        return gen.map_handle_type(self.keyTy, self.valTy)
+
 class RecordType(Ty):
     def gen_type(self, gen):
         return gen.record_type()
