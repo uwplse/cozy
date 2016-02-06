@@ -90,16 +90,18 @@ class VolumeTree(ConcreteImpl):
     def gen_query(self, gen, qvars, parent_structure):
         field = parent_structure.field
         if self.stack_iteration:
-            stk = self.stack_name
+            stk = fresh_name("stack")
             proc  = gen.decl(stk, StackTy(self.node_type), gen.new_stack(self.node_type))
             proc += gen.stack_size_hint(stk, "100")
             proc += gen.if_true(gen.not_true(gen.is_null(field(gen, self.root))))
             proc += gen.stack_push(stk, field(gen, self.root))
             proc += gen.endif()
-            proc += gen.decl(self.cursor_name, RecordType(), gen.null_value())
-            proc += gen.decl(self.prev_name, RecordType(), gen.null_value())
-            proc += self.gen_advance(gen)
-            return proc, [stk, gen.null_value(), self.cursor_name]
+            cursor = fresh_name("cursor")
+            prev = fresh_name("prev")
+            proc += gen.decl(cursor, RecordType(), gen.null_value())
+            proc += gen.decl(prev, RecordType(), gen.null_value())
+            proc += self._gen_advance(gen, stk, cursor, prev)
+            return proc, [stk, gen.null_value(), cursor]
         cursor = fresh_name("cursor")
         proc  = gen.decl(cursor, RecordType(), gen.null_value())
         proc += gen.if_true(gen.not_true(gen.is_null(field(gen, self.root))))
@@ -404,21 +406,20 @@ class VolumeTree(ConcreteImpl):
         return "", gen.not_true(gen.is_null(self.cursor_name))
     def gen_current(self, gen):
         return "", self.cursor_name
-    def gen_advance(self, gen):
-        if self.stack_iteration:
+    def _gen_advance(self, gen, stack, cursor, prev):
             node = fresh_name("node")
-            proc  = gen.set(self.prev_name, self.cursor_name)
-            proc += gen.set(self.cursor_name, gen.null_value())
-            proc += gen.while_true(gen.not_true(gen.stack_is_empty(self.stack_name)))
-            proc += gen.decl(node, self.node_type, gen.stack_peek(self.stack_name))
-            proc += gen.stack_pop(self.stack_name)
+            proc  = gen.set(prev, cursor)
+            proc += gen.set(cursor, gen.null_value())
+            proc += gen.while_true(gen.not_true(gen.stack_is_empty(stack)))
+            proc += gen.decl(node, self.node_type, gen.stack_peek(stack))
+            proc += gen.stack_pop(stack)
 
             proc += gen.if_true(self.is_leaf(gen, node))
 
             # TODO: determine when this if-check is necessary! It isn't for
             # Bullet, but it _is_ in general.
             # proc += gen.if_true(self.query_holds(gen, gen.get_field(node, self.leaf_ptr)))
-            proc += gen.set(self.cursor_name, gen.get_field(node, self.leaf_ptr))
+            proc += gen.set(cursor, gen.get_field(node, self.leaf_ptr))
             proc += gen.break_loop()
             # proc += gen.endif()
 
@@ -433,19 +434,22 @@ class VolumeTree(ConcreteImpl):
 
                 for n in (l, r):
                     proc += gen.if_true(self.intersects_query(gen, n))
-                    proc += gen.stack_push(self.stack_name, n)
+                    proc += gen.stack_push(stack, n)
                     proc += gen.endif()
             else:
 
                 proc += gen.if_true(self.intersects_query(gen, node))
-                proc += gen.stack_push(self.stack_name, gen.get_field(node, self.left_ptr))
-                proc += gen.stack_push(self.stack_name, gen.get_field(node, self.right_ptr))
+                proc += gen.stack_push(stack, gen.get_field(node, self.left_ptr))
+                proc += gen.stack_push(stack, gen.get_field(node, self.right_ptr))
                 proc += gen.endif()
 
             proc += gen.endif()
 
             proc += gen.endwhile()
             return proc
+    def gen_advance(self, gen):
+        if self.stack_iteration:
+            return self._gen_advance(gen, self.stack_name, self.cursor_name, self.prev_name)
 
         proc  = gen.comment("advance")
         proc += gen.set(self.prev_name, self.cursor_name)
