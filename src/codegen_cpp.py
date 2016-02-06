@@ -6,7 +6,7 @@ import abstract_types
 import predicates
 import plans
 import structures
-from structures.interface import This, TupleInstance, TupleTy, RecordType, MapTy, NativeTy
+from structures.interface import This, TupleInstance, Ty, TupleTy, RecordType, MapTy, NativeTy
 from common import capitalize, fresh_name, indent, open_maybe_stdout, memoize
 
 class STLMapTy(MapTy):
@@ -24,8 +24,13 @@ class STLMap(structures.HashMap):
         return ((self.name, STLMapTy(self.keyTy, self.valueTy)),)
     def construct(self, gen, parent_structure):
         return "" # default initialization is fine
-    def handle_type(self, gen):
-        return NativeTy("std::map < {}, {} >::iterator".format(self.keyTy.gen_type(gen), self.valueTy.gen_type(gen)))
+    def handle_type(self):
+        k = self.keyTy
+        v = self.valueTy
+        class T(Ty):
+            def gen_type(self, gen):
+                return "std::map < {}, {} >::iterator".format(k.gen_type(gen), v.gen_type(gen))
+        return T()
 
 class QHashMap(structures.HashMap):
     def __str__(self):
@@ -34,8 +39,13 @@ class QHashMap(structures.HashMap):
         return ((self.name, QHashMapTy(self.keyTy, self.valueTy)),)
     def construct(self, gen, parent_structure):
         return "" # default initialization is fine
-    def handle_type(self, gen):
-        return NativeTy("QHash < {}, {} >::iterator".format(self.keyTy.gen_type(gen), self.valueTy.gen_type(gen)))
+    def handle_type(self):
+        k = self.keyTy
+        v = self.valueTy
+        class T(Ty):
+            def gen_type(self, gen):
+                return "QHash < {}, {} >::iterator".format(k.gen_type(gen), v.gen_type(gen))
+        return T()
     def read_handle(self, gen, m, handle):
         return "{}.value()".format(handle)
     def write_handle(self, gen, m, handle, k, v):

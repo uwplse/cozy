@@ -24,6 +24,8 @@ class VectorMap(HashMap):
         self.keyTy = IntTy()
     def __str__(self):
         return "VectorMap[{}]({})".format(self.count, self.valueImpl)
+    def handle_type(self):
+        return IntTy()
     def construct(self, gen, parent_structure):
         name = parent_structure.field(gen, self.name)
         proc = gen.set(name, gen.new_vector(self.valueTy, self.count))
