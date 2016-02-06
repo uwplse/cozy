@@ -139,17 +139,3 @@ if __name__ == '__main__':
         for q, i in zip(queries, impls):
             q.impl = i
         cg.write(fields, queries, **vars(args))
-
-        # if args.cpp_header is not None or args.cpp is not None:
-        #     cpp_header_writer = (sys.stdout.write if args.cpp_header == "-" else open(args.cpp_header, "w").write) if args.cpp_header else (lambda x: None)
-        #     cpp_writer = (sys.stdout.write if args.cpp == "-" else open(args.cpp, "w").write) if args.cpp else (lambda x: None)
-        #     CppCodeGenerator(
-        #         header_writer=cpp_header_writer,
-        #         code_writer=cpp_writer,
-        #         class_name=args.cpp_class,
-        #         namespace=args.cpp_namespace,
-        #         header_extra=args.cpp_extra).write(fields, queries)
-
-        # if args.java is not None:
-        #     java_writer = sys.stdout.write if args.java == "-" else open(args.java, "w").write
-        #     JavaCodeGenerator(java_writer, package_name=args.java_package, class_name=args.java_class).write(fields, queries)
