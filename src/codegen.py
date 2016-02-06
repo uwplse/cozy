@@ -49,8 +49,8 @@ def enumerate_impls(fields, queries, extra_structures=None):
         elif type(aimpl) is Bucketed:
             for impl in concretize(aimpl.value_impl):
                 if aimpl.enum_p and aimpl.rest_p:
-                    m = structures.HashMap(aimpl.fields, predicates.conjunction(aimpl.rest_p), impl)
-                    yield structures.VectorMap(aimpl.fields, predicates.conjunction(aimpl.enum_p), m)
+                    for m in concretize(aimpl.rest_p):
+                        yield structures.VectorMap(aimpl.fields, predicates.conjunction(aimpl.enum_p), m)
                 elif aimpl.enum_p:
                     yield structures.VectorMap(aimpl.fields, predicates.conjunction(aimpl.enum_p), impl)
                 else: # aimpl.rest_p
