@@ -119,6 +119,9 @@ class ConcreteImpl(object):
     def gen_query(self, gen, qvars, parent_structure):
         """returns (proc, stateExps)"""
         raise Exception("not implemented for type: {}".format(type(self)))
+    def gen_query_one(self, gen, qvars, parent_structure):
+        """returns some single element, or null if no matches"""
+        raise Exception("not implemented for type: {}".format(type(self)))
     def gen_empty(self, gen, qvars):
         """returns stateExps"""
         raise Exception("not implemented for type: {}".format(type(self)))

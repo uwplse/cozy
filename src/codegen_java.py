@@ -307,7 +307,13 @@ class JavaCodeGenerator(object):
                 writer("  public java.util.Iterator<{}> {}({}) {{\n".format(RECORD_NAME, q.name, ", ".join("{} {}".format(ty, v) for v,ty in q.vars)))
                 proc, stateExps = q.impl.gen_query(self, q.vars, This())
                 writer(indent("    ", proc))
-                writer("    return new {}(this{}{});".format(it_name, "".join(", {}".format(v) for v, ty in vars_needed), "".join(", {}".format(e) for e in stateExps)))
+                writer("    return new {}(this{}{});\n".format(it_name, "".join(", {}".format(v) for v, ty in vars_needed), "".join(", {}".format(e) for e in stateExps)))
+                writer("  }\n")
+
+                writer("  public {} {}_1({}) {{\n".format(RECORD_NAME, q.name, ", ".join("{} {}".format(ty, v) for v,ty in q.vars)))
+                proc, result = q.impl.gen_query_one(self, q.vars, This())
+                writer(indent("    ", proc))
+                writer("    return {};\n".format(result))
                 writer("  }\n")
 
             writer("}\n")

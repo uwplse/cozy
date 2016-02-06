@@ -29,6 +29,8 @@ class LinkedList(ConcreteImpl):
             (self.prev_ptr, self.ty)]
     def gen_query(self, gen, qvars, this):
         return "", [gen.null_value(), this.field(gen, self.head_ptr)]
+    def gen_query_one(self, gen, qvars, this):
+        return self.gen_find_any(gen, this)
     def gen_empty(self, gen, qvars):
         return [gen.null_value(), gen.null_value()]
     def gen_advance(self, gen):

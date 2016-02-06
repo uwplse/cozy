@@ -1,6 +1,6 @@
 import collections
 
-from .interface import ConcreteImpl, TupleTy, NativeTy, MapTy, MapHandleType, RefTy
+from .interface import ConcreteImpl, TupleTy, NativeTy, MapTy, MapHandleType, RefTy, RecordType
 from common import fresh_name
 
 def make_key_args(fields, predicate):
@@ -108,6 +108,27 @@ class HashMap(ConcreteImpl):
             proc += gen.set(lhs, rhs)
         proc += gen.endif()
         return (proc, list(vs.values()) + [k, handle])
+    def gen_query_one(self, gen, qvars, parent_structure):
+        name = parent_structure.field(gen, self.name)
+        vs = collections.OrderedDict()
+        proc = ""
+        k = fresh_name()
+        proc += gen.decl(k, self.keyTy)
+        proc += self.make_key(gen, k)
+        p, handle = self.lookup(gen, name, k)
+        proc += p
+        result = fresh_name("result")
+        proc += gen.decl(result, RecordType())
+        proc += gen.if_true(self.handle_exists(gen, name, handle))
+        sub = fresh_name("substructure")
+        proc += gen.decl(sub, RefTy(self.valueTy), self.read_handle(gen, name, handle))
+        p, r = self.valueImpl.gen_query_one(gen, qvars, self.valueTy.instance(sub))
+        proc += p
+        proc += gen.set(result, r)
+        proc += gen.else_true()
+        proc += gen.set(result, gen.null_value())
+        proc += gen.endif()
+        return (proc, result)
     def gen_empty(self, gen, qvars):
         return self.valueImpl.gen_empty(gen, qvars)
     def gen_current(self, gen):

@@ -42,6 +42,29 @@ class Filtered(ConcreteImpl):
         proc += self.ty.gen_advance(gen)
         proc += gen.endwhile()
         return proc, [v for (v, t) in self.ty.state()]
+    def gen_query_one(self, gen, qvars, parent_structure):
+        proc, es = self.ty.gen_query(gen, qvars, parent_structure)
+        for (v, t), e in itertools.izip(self.ty.state(), es):
+            proc += gen.decl(v, t, e)
+        result = fresh_name("result")
+        proc += gen.decl(result, RecordType(), gen.null_value())
+        proc += gen.while_true(gen.true_value())
+        p1, hn = self.ty.gen_has_next(gen)
+        proc += p1
+        proc += gen.if_true(gen.not_true(hn))
+        proc += gen.break_loop()
+        proc += gen.endif()
+        p2, cur = self.ty.gen_current(gen)
+        proc += p2
+        curN = fresh_name("current")
+        proc += gen.decl(curN, RecordType(), cur)
+        proc += gen.if_true(gen.predicate(list(self._fields.items()), list(self.qvars.items()), self.predicate, curN))
+        proc += gen.set(result, curN)
+        proc += gen.break_loop()
+        proc += gen.endif()
+        proc += self.ty.gen_advance(gen)
+        proc += gen.endwhile()
+        return proc, result
     def gen_empty(self, gen, qvars):
         return self.ty.gen_empty(gen, qvars)
     def gen_current(self, gen):
