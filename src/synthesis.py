@@ -258,7 +258,6 @@ class SolverContext(object):
         if all(type(x) is predicates.Compare for x in predicates.break_conj(query)):
             eqs = [x for x in predicates.break_conj(query) if x.op == plans.Eq]
             others = [x for x in predicates.break_conj(query) if x.op != plans.Eq]
-            print("{} & {}".format(eqs, others))
             if eqs and others:
                 hashcond = predicates.conjunction(eqs)
                 bscond = predicates.conjunction(others)
