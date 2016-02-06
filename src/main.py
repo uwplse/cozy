@@ -13,6 +13,7 @@ import os.path
 import itertools
 import pickle
 import sys
+import time
 
 from synthesis import SolverContext
 from parse import parseQuery
@@ -81,11 +82,15 @@ def highlevel_synthesis(all_input, fields, assumptions, query, enable_cache, tim
     except Exception as e:
         print("failed to save cache file {}: {}".format(cache_file, e))
 
+def now():
+    return time.time()
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Data structure synthesizer.')
 
     parser.add_argument("-d", "--disable-cache", action="store_true", help="Disable caching synthesis results")
     parser.add_argument("-t", "--timeout", metavar="N", default=None, help="Per-query synthesis timeout (in seconds)")
+    parser.add_argument("--write-timings", metavar="FILE", default=None, help="Write timing information to a side file")
 
     java_opts = parser.add_argument_group("Java codegen")
     java_opts.add_argument("--java", metavar="FILE.java", default=None, help="Output file for java classes, use '-' for stdout")
@@ -123,17 +128,29 @@ if __name__ == '__main__':
             os.path.dirname(args.file),
             cost_model_file))
 
+    synthesis_times = collections.OrderedDict()
     for query in queries:
+        start = now()
         highlevel_synthesis(inp, fields, assumptions, query, enable_cache=(not args.disable_cache), timeout=float(args.timeout) if args.timeout else None)
+        synthesis_times[query.name] = now() - start
 
     for query in queries:
         print("found {} great plans for query '{}':".format(len(query.bestPlans), query.name))
         for plan in query.bestPlans:
             print("    {}".format(plan))
 
+    start = now()
     fields = collections.OrderedDict(fields)
     code_generators = list(cg for cg in enumerate_code_generators(args) if (not cost_model_file) or cg.supports_cost_model_file(cost_model_file))
     impls, cg, cost = pick_best_impls(fields, queries, cost_model_file, code_generators, args)
+    autotune_time = now() - start
+
+    if args.write_timings:
+        with open(args.write_timings, "w") as f:
+            for k, v in synthesis_times.items():
+                f.write("synth-{}-time {}\n".format(k, v))
+            f.write("synth-time {}\n".format(sum(synthesis_times.values())))
+            f.write("autotune-time {}\n".format(autotune_time))
 
     if impls:
         for q, i in zip(queries, impls):
