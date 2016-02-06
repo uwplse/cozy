@@ -32,10 +32,10 @@ class JavaCodeGenerator(object):
         return "int";
 
     def ptr_type(self, t):
-        return t.gen_type(self);
+        return t.gen_type(self)
 
     def vector_type(self, ty, n):
-        return "{}[]".format(ty.gen_type(self));
+        return "{}[]".format(ty.gen_type(self))
 
     def alloc(self, ty, args):
         return "new {}({})".format(ty.gen_type(self), ", ".join(args))
