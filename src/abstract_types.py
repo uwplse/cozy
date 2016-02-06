@@ -26,8 +26,9 @@ class SortedIterable(BinarySearchable):
         self.sortField = sortField
 
 class Bucketed(AbstractImpl):
-    def __init__(self, fields, predicate, value_impl):
+    def __init__(self, fields, qvars, predicate, value_impl):
         self.fields = fields
+        self.qvars = qvars
         self.value_impl = value_impl
 
         key_fields = list(make_key_args(fields, predicate).keys())
@@ -77,7 +78,7 @@ def implement(plan, fields, qvars, resultTy):
         else:
             return GuardedImpl(plan.predicate, fields, qvars, resultTy)
     elif type(plan) is plans.HashLookup:
-        t = Bucketed(fields, plan.predicate, resultTy)
+        t = Bucketed(fields, qvars, plan.predicate, resultTy)
         return implement(plan.plan, fields, qvars, t)
     elif type(plan) is plans.BinarySearch:
         assert type(resultTy) in [Iterable, SortedIterable]
