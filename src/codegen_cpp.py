@@ -514,7 +514,7 @@ class CppCodeGenerator(object):
     def supports_cost_model_file(self, f):
         return f.endswith(".cpp") or f.endswith(".cxx")
 
-    def dynamic_cost(self, fields, queries, impls, cost_model_file):
+    def dynamic_cost(self, fields, queries, impls, cost_model_file, args):
         for q, i in zip(queries, impls):
             q.impl = i
 

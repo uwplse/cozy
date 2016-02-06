@@ -27,7 +27,7 @@ def enumerate_code_generators(args):
     elif args.cpp_header is not None or args.cpp is not None:
         yield CppCodeGenerator(with_qt=args.with_qt)
 
-def pick_best_impls(fields, queries, cost_model_file, code_generators):
+def pick_best_impls(fields, queries, cost_model_file, code_generators, args):
     bestImpls = None
     bestCost  = None
     bestCG    = None
@@ -38,7 +38,7 @@ def pick_best_impls(fields, queries, cost_model_file, code_generators):
 
             print("benchmarking {} using {}... ".format({q.name : impl for q, impl in zip(queries, impls)}, cg), end="")
             sys.stdout.flush()
-            cost = cg.dynamic_cost(fields, queries, impls, cost_model_file)
+            cost = cg.dynamic_cost(fields, queries, impls, cost_model_file, args)
             print("cost = {}".format(cost))
 
             if bestImpls is None or cost < bestCost:
@@ -91,6 +91,7 @@ if __name__ == '__main__':
     java_opts.add_argument("--java", metavar="FILE.java", default=None, help="Output file for java classes, use '-' for stdout")
     java_opts.add_argument("--java-package", metavar="com.java.pkg", default=None, help="Java package for generated structure")
     java_opts.add_argument("--java-class", metavar="Name", default="DataStructure", help="Java class name for generated structure")
+    java_opts.add_argument("--java-extra-classpath", metavar="PATH", default="", help="Path to search for auxiliary Java classes")
 
     cpp_opts = parser.add_argument_group("C++ codegen")
     cpp_opts.add_argument("--cpp", metavar="FILE.cpp", default=None, help="Output file for C++ code, use '-' for stdout")
@@ -132,7 +133,7 @@ if __name__ == '__main__':
 
     fields = collections.OrderedDict(fields)
     code_generators = list(cg for cg in enumerate_code_generators(args) if (not cost_model_file) or cg.supports_cost_model_file(cost_model_file))
-    impls, cg, cost = pick_best_impls(fields, queries, cost_model_file, code_generators)
+    impls, cg, cost = pick_best_impls(fields, queries, cost_model_file, code_generators, args)
 
     if impls:
         for q, i in zip(queries, impls):

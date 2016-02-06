@@ -315,7 +315,7 @@ class JavaCodeGenerator(object):
     def supports_cost_model_file(self, f):
         return f.endswith(".java")
 
-    def dynamic_cost(self, fields, queries, impls, cost_model_file):
+    def dynamic_cost(self, fields, queries, impls, cost_model_file, args):
         for q, i in zip(queries, impls):
             q.impl = i
 
@@ -333,7 +333,12 @@ class JavaCodeGenerator(object):
 
         orig = os.getcwd()
         os.chdir(tmp)
-        ret = subprocess.call(["javac", "Main.java"])
+        inc = args.java_extra_classpath
+        if inc:
+            cmd = ["javac", "-d", ".", "-sourcepath", ".:{}".format(inc), "Main.java"]
+        else:
+            cmd = ["javac", "-d", ".", "Main.java"]
+        ret = subprocess.call(cmd)
         assert ret == 0
 
         java = subprocess.Popen(["java", "Main"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
