@@ -42,6 +42,8 @@ class Filtered(ConcreteImpl):
         proc += self.ty.gen_advance(gen)
         proc += gen.endwhile()
         return proc, [v for (v, t) in self.ty.state()]
+    def gen_empty(self, gen, qvars):
+        return self.ty.gen_empty(gen, qvars)
     def gen_current(self, gen):
         return self.ty.gen_current(gen)
     def gen_advance(self, gen):
