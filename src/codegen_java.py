@@ -228,14 +228,20 @@ class JavaCodeGenerator(object):
                 writer(indent("    ", q.impl.construct(self, This())))
             writer("  }\n")
 
+            # get current size
+            writer("  int my_size = 0;\n")
+            writer("  int size() { return my_size; }\n")
+
             # add routine
             writer("  public void add({} x) {{\n".format(RECORD_NAME))
+            writer("    ++my_size;\n")
             for q in queries:
                 writer(indent("    ", q.impl.gen_insert(self, "x", This())))
             writer("  }\n")
 
             # remove routine
             writer("  public void remove({} x) {{\n".format(RECORD_NAME))
+            writer("    --my_size;\n")
             for q in queries:
                 writer(indent("    ", q.impl.gen_remove(self, "x", This())))
             writer("  }\n")
@@ -289,6 +295,7 @@ class JavaCodeGenerator(object):
                 writer("      return {};\n".format(ret))
                 writer("    }\n")
                 writer("    @Override public void remove() {\n")
+                writer("      --parent.my_size;\n")
                 proc, removed = q.impl.gen_remove_in_place(self, TupleInstance("parent"))
                 writer(indent("      ", proc))
                 for q2 in queries:
