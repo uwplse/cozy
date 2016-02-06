@@ -396,11 +396,15 @@ class JavaCodeGenerator(object):
         else:
             cmd = ["javac", "-d", ".", "Main.java"]
         ret = subprocess.call(cmd)
-        assert ret == 0
+        assert ret == 0, "error in {}".format(tmp)
 
         java = subprocess.Popen(["java", "Main"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        stdout, stdin = java.communicate()
-        assert java.returncode == 0
+        stdout, stderr = java.communicate()
+        if java.returncode != 0:
+            print("exit status was {} (running in {})".format(java.returncode, tmp))
+            print(stdout)
+            print(stderr)
+            raise Exception()
 
         score = long(stdout.strip())
 
