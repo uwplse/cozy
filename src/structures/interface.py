@@ -79,7 +79,7 @@ class TupleInstance(object):
     def field(self, gen, f):
         return gen.get_field(self.this, f)
 
-class This():
+class This(object):
     def field(self, gen, f):
         return f
 
