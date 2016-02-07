@@ -110,40 +110,40 @@ class ConcreteImpl(object):
     """
 
     def is_sorted_by(self, field):
-        raise Exception("not implemented for type: {}".format(type(self)))
+        raise NotImplementedError("not implemented for type: {}".format(type(self)))
     def fields(self):
         """data structure members; returns list of (name, ty)"""
-        raise Exception("not implemented for type: {}".format(type(self)))
+        raise NotImplementedError("not implemented for type: {}".format(type(self)))
     def construct(self, gen, parent_structure):
         """returns proc"""
-        raise Exception("not implemented for type: {}".format(type(self)))
+        raise NotImplementedError("not implemented for type: {}".format(type(self)))
     def needs_var(self, var):
         """iterator state; returns True or False"""
-        raise Exception("not implemented for type: {}".format(type(self)))
+        raise NotImplementedError("not implemented for type: {}".format(type(self)))
     def state(self):
         """iterator state; returns list of (name, ty)"""
-        raise Exception("not implemented for type: {}".format(type(self)))
+        raise NotImplementedError("not implemented for type: {}".format(type(self)))
     def private_members(self):
         """record state; returns list of (name, ty)"""
-        raise Exception("not implemented for type: {}".format(type(self)))
+        raise NotImplementedError("not implemented for type: {}".format(type(self)))
     def gen_query(self, gen, qvars, parent_structure):
         """returns (proc, stateExps)"""
-        raise Exception("not implemented for type: {}".format(type(self)))
+        raise NotImplementedError("not implemented for type: {}".format(type(self)))
     def gen_query_one(self, gen, qvars, parent_structure):
         """returns some single element, or null if no matches"""
-        raise Exception("not implemented for type: {}".format(type(self)))
+        raise NotImplementedError("not implemented for type: {}".format(type(self)))
     def gen_empty(self, gen, qvars):
         """returns stateExps"""
-        raise Exception("not implemented for type: {}".format(type(self)))
+        raise NotImplementedError("not implemented for type: {}".format(type(self)))
     def gen_find_any(self, gen, parent_structure):
         """returns proc, some single element"""
-        raise Exception("not implemented for type: {}".format(type(self)))
+        raise NotImplementedError("not implemented for type: {}".format(type(self)))
     def gen_current(self, gen):
         """returns (proc, result)"""
-        raise Exception("not implemented for type: {}".format(type(self)))
+        raise NotImplementedError("not implemented for type: {}".format(type(self)))
     def gen_advance(self, gen):
         """returns proc"""
-        raise Exception("not implemented for type: {}".format(type(self)))
+        raise NotImplementedError("not implemented for type: {}".format(type(self)))
     def gen_next(self, gen):
         """returns (proc, result)"""
         proc, cur = self.gen_current(gen)
@@ -153,22 +153,22 @@ class ConcreteImpl(object):
         return proc, oldcursor
     def gen_has_next(self, gen):
         """returns (proc, result)"""
-        raise Exception("not implemented for type: {}".format(type(self)))
+        raise NotImplementedError("not implemented for type: {}".format(type(self)))
     def gen_insert(self, gen, x, parent_structure):
         """returns proc"""
-        raise Exception("not implemented for type: {}".format(type(self)))
+        raise NotImplementedError("not implemented for type: {}".format(type(self)))
     def gen_remove(self, gen, x, parent_structure):
         """returns proc"""
-        raise Exception("not implemented for type: {}".format(type(self)))
+        raise NotImplementedError("not implemented for type: {}".format(type(self)))
     def gen_remove_in_place(self, gen, parent_structure):
         """returns proc, removed element"""
-        raise Exception("not implemented for type: {}".format(type(self)))
+        raise NotImplementedError("not implemented for type: {}".format(type(self)))
     def gen_update(self, gen, fields, x, remap, parent_structure):
         """remap is {fieldname:newvalue} dict; returns proc"""
-        raise Exception("not implemented for type: {}".format(type(self)))
+        raise NotImplementedError("not implemented for type: {}".format(type(self)))
     def auxtypes(self):
         """generator of auxiliary types which need to be generated"""
-        raise Exception("not implemented for type: {}".format(type(self)))
+        raise NotImplementedError("not implemented for type: {}".format(type(self)))
     def check_rep(self, gen, parent_structure):
         """procedure to check rep invariants for debugging"""
         return ""
