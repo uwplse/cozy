@@ -310,6 +310,9 @@ class AugTree(ConcreteImpl):
     def gen_query(self, gen, qvars, this):
         p, m = self._find_min(gen, this.field(gen, self.name))
         return p, [gen.null_value(), m]
+    def gen_query_one(self, gen, qvars, this):
+        # TODO: this can be faster since we don't actually need the *min* match
+        return self._find_min(gen, this.field(gen, self.name))
     def gen_current(self, gen):
         return "", self.cursor_name
     def gen_advance(self, gen):

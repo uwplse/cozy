@@ -1,3 +1,5 @@
+from __future__ import print_function
+
 import re
 import tempfile
 import os
@@ -93,6 +95,20 @@ class JavaCodeGenerator(object):
     def map_put(self, m, k, v):
         return "{}.put({}, {});\n".format(m, k, v)
 
+    def for_each_map_entry(self, m, keyType, valType, body):
+        entryname = fresh_name("entry")
+        kname = fresh_name("key")
+        vname = fresh_name("val")
+        return """for (Map.Entry<{kt}, {vt}> {e} : {m}) {{
+            {kt} {k} = e.getKey();
+            {vt} {v} = e.getValue();
+            {body}
+        }}\n""".format(
+            kt=keyType.gen_type(self), vt=valType.gen_type(self),
+            k=kname, v=vname,
+            m=m, e=entryname,
+            body=body(kname, vname, self.break_loop))
+
     def new_stack(self, t):
         return "new java.util.ArrayDeque<{}>()".format(t.gen_type(self))
 
@@ -126,8 +142,8 @@ class JavaCodeGenerator(object):
     def record_type(self):
         return "Record"
 
-    def predicate(self, fields, qvars, pred, target):
-        return _predicate_to_exp(fields, qvars, pred, target)
+    def predicate(self, fields, qvars, pred, target, remap=None):
+        return _predicate_to_exp(fields, qvars, pred, target, remap)
 
     def not_true(self, e):
         return "!({})".format(e)
@@ -489,29 +505,29 @@ def _box(ty):
 def _is_primitive(ty):
     return ty[0] != ty[0].upper()
 
-def _predicate_to_exp(fields, qvars, pred, target):
+def _predicate_to_exp(fields, qvars, pred, target, remap):
     if type(pred) is predicates.Var:
-        return pred.name if pred.name in {v for v,ty in qvars} else "{}.{}".format(target, pred.name)
+        return pred.name if pred.name in {v for v,ty in qvars} else remap.get(pred.name, "{}.{}".format(target, pred.name))
     elif type(pred) is predicates.Bool:
         return "true" if pred.val else "false"
     elif type(pred) is predicates.Compare:
         if _is_primitive(dict(fields + qvars)[pred.lhs.name]):
             return "({}) {} ({})".format(
-                _predicate_to_exp(fields, qvars, pred.lhs, target),
+                _predicate_to_exp(fields, qvars, pred.lhs, target, remap),
                 predicates.opToStr(pred.op),
-                _predicate_to_exp(fields, qvars, pred.rhs, target))
+                _predicate_to_exp(fields, qvars, pred.rhs, target, remap))
         else:
             return "({}).compareTo({}) {} 0".format(
-                _predicate_to_exp(fields, qvars, pred.lhs, target),
-                _predicate_to_exp(fields, qvars, pred.rhs, target),
+                _predicate_to_exp(fields, qvars, pred.lhs, target, remap),
+                _predicate_to_exp(fields, qvars, pred.rhs, target, remap),
                 predicates.opToStr(pred.op))
     elif type(pred) is predicates.And:
         return "({}) && ({})".format(
-            _predicate_to_exp(fields, qvars, pred.lhs, target),
-            _predicate_to_exp(fields, qvars, pred.rhs, target))
+            _predicate_to_exp(fields, qvars, pred.lhs, target, remap),
+            _predicate_to_exp(fields, qvars, pred.rhs, target, remap))
     elif type(pred) is predicates.Or:
         return "({}) || ({})".format(
-            _predicate_to_exp(fields, qvars, pred.lhs, target),
-            _predicate_to_exp(fields, qvars, pred.rhs, target))
+            _predicate_to_exp(fields, qvars, pred.lhs, target, remap),
+            _predicate_to_exp(fields, qvars, pred.rhs, target, remap))
     elif type(pred) is predicates.Not:
-        return "!({})".format(_predicate_to_exp(fields, qvars, pred.p, target))
+        return "!({})".format(_predicate_to_exp(fields, qvars, pred.p, target, remap))

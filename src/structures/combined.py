@@ -32,6 +32,37 @@ class Tuple(ConcreteImpl):
             return (proc1 + proc2, es1 + es2 + [gen.true_value()])
         else:
             raise Exception("unknown op {}".format(self.op))
+    def gen_query_one(self, gen, qvars, parent_structure):
+        if self.op == CONCAT_OP:
+            result = fresh_name("result")
+            proc  = gen.decl(result, RecordType())
+            proc1, r1 = self.ty1.gen_query_one(gen, qvars, parent_structure)
+            proc += proc1
+            proc += gen.set(result, r1)
+            proc += gen.if_true(gen.is_null(result))
+            proc2, r2 = self.ty2.gen_query_one(gen, qvars, parent_structure)
+            proc += proc2
+            proc += gen.set(result, r2)
+            proc += gen.endif()
+            return (proc, result)
+        else:
+            raise Exception("unknown op {}".format(self.op))
+    def gen_find_any(self, gen, parent_structure):
+        proc1, r1 = self.ty1.gen_find_any(gen, parent_structure)
+        proc2, r2 = self.ty2.gen_find_any(gen, parent_structure)
+        result = fresh_name("result")
+        proc  = gen.decl(result, RecordType())
+        proc += proc1
+        proc += gen.set(result, r1)
+        proc += gen.if_true(gen.is_null(result))
+        proc += proc2
+        proc += gen.set(result, r2)
+        proc += gen.endif()
+        return (proc, result)
+    def gen_empty(self, gen, parent_structure):
+        proc1, es1 = self.ty1.gen_empty(gen, parent_structure)
+        proc2, es2 = self.ty2.gen_empty(gen, parent_structure)
+        return (proc1 + proc2, es1 + es2 + [gen.false_value()])
     def gen_current(self, gen):
         if self.op == CONCAT_OP:
             proc1, r1 = self.ty1.gen_has_next(gen)
@@ -48,6 +79,17 @@ class Tuple(ConcreteImpl):
             proc += gen.set(r, r2)
             proc += gen.endif()
             return proc, r
+        else:
+            raise Exception("unknown op {}".format(self.op))
+    def gen_advance(self, gen):
+        if self.op == CONCAT_OP:
+            proc, r1 = self.ty1.gen_has_next(gen)
+            proc += gen.if_true(r1)
+            proc += self.ty1.gen_advance(gen)
+            proc += gen.else_true()
+            proc += self.ty2.gen_advance(gen)
+            proc += gen.endif()
+            return proc
         else:
             raise Exception("unknown op {}".format(self.op))
     def gen_next(self, gen):

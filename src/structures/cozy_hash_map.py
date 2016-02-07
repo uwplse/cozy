@@ -40,8 +40,6 @@ class CozyHashMap(HashMap):
         return ((self.name, ArrayTy(self.valueTy)),)
     def state(self):
         return list(self.valueImpl.state()) + [(self.iterator_handle_name, IntTy())]
-    def handle_type(self):
-        return IntTy()
     def make_key_of_record(self, gen, x, target, remap=None):
         if remap is None:
             remap = dict()

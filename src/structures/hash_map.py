@@ -129,6 +129,20 @@ class HashMap(ConcreteImpl):
         proc += gen.set(result, gen.null_value())
         proc += gen.endif()
         return (proc, result)
+    def gen_find_any(self, gen, parent_structure):
+        name = parent_structure.field(gen, self.name)
+        valueImpl = self.valueImpl
+        result = fresh_name("result")
+        proc  = gen.decl(result, RecordType(), gen.null_value())
+        def f(handle, val, break_loop):
+            p, r = valueImpl.gen_find_any(gen, val)
+            p += gen.set(result, r)
+            p += gen.if_true(gen.not_true(gen.is_null(result)))
+            p += break_loop()
+            p += gen.endif()
+            return p
+        proc += gen.for_each_map_entry(name, self.keyTy, self.valueTy, f)
+        return (proc, result)
     def gen_empty(self, gen, qvars):
         return self.valueImpl.gen_empty(gen, qvars)
     def gen_current(self, gen):

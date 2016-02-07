@@ -110,6 +110,8 @@ class VolumeTree(ConcreteImpl):
         proc += gen.set(cursor, m)
         proc += gen.endif()
         return proc, [gen.null_value(), cursor]
+    def gen_query_one(self, gen, qvars, parent_structure):
+        return self.find_first(gen, parent_structure.field(gen, self.root))
     def gen_empty(self, gen, qvars):
         if self.stack_iteration:
             return [gen.new_stack(self.node_type), gen.null_value(), gen.null_value()]

@@ -109,8 +109,6 @@ class ConcreteImpl(object):
     Common interface for generated data structures
     """
 
-    def is_sorted_by(self, field):
-        raise NotImplementedError("not implemented for type: {}".format(type(self)))
     def fields(self):
         """data structure members; returns list of (name, ty)"""
         raise NotImplementedError("not implemented for type: {}".format(type(self)))
