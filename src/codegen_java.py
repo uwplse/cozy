@@ -11,7 +11,7 @@ import plans
 from structures.interface import TupleTy, This, TupleInstance, IntTy
 from common import capitalize, fresh_name, indent, open_maybe_stdout
 
-class JavaCodeGenerator(object):
+class JavaCodeGenerator(codegen.CodeGenerator):
     def __str__(self):
         return "JavaCodeGenerator"
 
@@ -54,21 +54,13 @@ class JavaCodeGenerator(object):
     def array_size(self, a):
         return "{}.length".format(a)
 
-    # def array_realloc(self, ty, a, new_size):
-    #     a2 = fresh_name("a")
-    #     proc = ""
-    #     proc += self.decl(a2, self.array_type(ty), self.new_array(ty, new_size))
-    #     proc += "System.arraycopy({}, 0, {}, 0, {});\n".format(a, a2, self.min(IntTy(), self.array_size(a), new_size))
-    #     proc += self.set(a, a2)
-    #     return proc
-
     def data_structure_size(self):
         return "my_size" # massive hack
 
     def alloc(self, ty, args):
         return "new {}({})".format(ty.gen_type(self), ", ".join(args))
 
-    def free(self, x):
+    def free(self, ty, x):
         return ""
 
     def min(self, ty, x, y):
@@ -136,26 +128,14 @@ class JavaCodeGenerator(object):
     def vector_set(self, v, i, x):
         return "{}[{}] = {};\n".format(v, i, x)
 
-    def native_type(self, t):
-        return t
-
     def record_type(self):
         return "Record"
 
-    def predicate(self, fields, qvars, pred, target, remap=None):
-        return _predicate_to_exp(fields, qvars, pred, target, remap)
-
-    def not_true(self, e):
-        return "!({})".format(e)
-
-    def is_null(self, e):
-        return "({}) == null".format(e)
-
-    def ternary(self, cond, v1, v2):
-        return "({}) ? ({}) : ({})".format(cond, v1, v2)
-
     def same(self, e1, e2):
         return "({}) == ({})".format(e1, e2)
+
+    def eq(self, ty, e1, e2):
+        return ("({}) == ({})" if _is_primitive(ty.gen_type(self)) else "({}).equals({})").format(e1, e2)
 
     def lt(self, ty, e1, e2):
         return ("({}) < ({})" if _is_primitive(ty.gen_type(self)) else "({}).compareTo({}) < 0").format(e1, e2)
@@ -169,103 +149,14 @@ class JavaCodeGenerator(object):
     def ge(self, ty, e1, e2):
         return ("({}) >= ({})" if _is_primitive(ty.gen_type(self)) else "({}).compareTo({}) >= 0").format(e1, e2)
 
-    def to_float(self, ty, e):
-        return "(float)({})".format(e)
-
-    def add(self, e1, e2):
-        return "({}) + ({})".format(e1, e2)
-
-    def sub(self, e1, e2):
-        return "({}) - ({})".format(e1, e2)
-
-    def mul(self, e1, e2):
-        return "({}) * ({})".format(e1, e2)
-
-    def div(self, e1, e2):
-        return "({}) / ({})".format(e1, e2)
-
-    def mod(self, e1, e2):
-        return "({}) % ({})".format(e1, e2)
-
     def abs(self, e):
         return "Math.abs({})".format(e)
 
     def init_new(self, target, ty):
         return self.set(target, "new {}()".format(ty.gen_type(self)))
 
-    def null_value(self):
-        return "null"
-
-    def true_value(self):
-        return "true";
-
-    def false_value(self):
-        return "false";
-
-    def get_field(self, e, m):
-        if e is None:
-            return m
-        return "({}).{}".format(e, m)
-
-    def hash(self, values):
-        """values is [(type, val)]; returns proc, result"""
-        h = fresh_name("hash")
-        return (self.decl(h, IntTy(), "0") + self._hash_into(values, h), h)
-
-    def _hash_into(self, values, out):
-        proc = ""
-        first = True
-        for t, v in values:
-            if first:
-                proc += self.set(out, _hash_code(t, v))
-                first = False
-            else:
-                proc += self.set(out, self.add(self.mul(out, "31"), _hash_code(t, v)))
-        return proc
-
-    def both(self, e1, e2):
-        return "({}) && ({})".format(e1, e2)
-
-    def either(self, e1, e2):
-        return "({}) || ({})".format(e1, e2)
-
-    def decl(self, v, ty, e=None):
-        if e is not None:
-            return "{} {} = {};\n".format(ty.gen_type(self), v, e)
-        return "{} {};\n".format(ty.gen_type(self), v)
-
-    def set(self, lval, e):
-        return "{} = {};\n".format(lval, e)
-
-    def if_true(self, e):
-        return "if ({}) {{\n".format(e)
-
-    def else_if(self, e):
-        return "}} else if ({}) {{\n".format(e)
-
-    def else_true(self):
-        return "} else {\n"
-
-    def endif(self):
-        return "}\n"
-
-    def while_true(self, e):
-        return "while ({}) {{\n".format(e)
-
-    def endwhile(self):
-        return "}\n"
-
-    def do_while(self):
-        return "do {\n"
-
-    def end_do_while(self, e):
-        return "}} while ({});\n".format(e)
-
-    def break_loop(self):
-        return "break;\n"
-
-    def comment(self, text):
-        return " /* {} */ ".format(text)
+    def hash1(self, ty, value):
+        return _hash_code(ty, value)
 
     def write(self, fields, queries, java_package=None, java_class="DataStructure", java="-", **kwargs):
         with open_maybe_stdout(java) as f:
@@ -504,30 +395,3 @@ def _box(ty):
 
 def _is_primitive(ty):
     return ty[0] != ty[0].upper()
-
-def _predicate_to_exp(fields, qvars, pred, target, remap):
-    if type(pred) is predicates.Var:
-        return pred.name if pred.name in {v for v,ty in qvars} else remap.get(pred.name, "{}.{}".format(target, pred.name))
-    elif type(pred) is predicates.Bool:
-        return "true" if pred.val else "false"
-    elif type(pred) is predicates.Compare:
-        if _is_primitive(dict(fields + qvars)[pred.lhs.name]):
-            return "({}) {} ({})".format(
-                _predicate_to_exp(fields, qvars, pred.lhs, target, remap),
-                predicates.opToStr(pred.op),
-                _predicate_to_exp(fields, qvars, pred.rhs, target, remap))
-        else:
-            return "({}).compareTo({}) {} 0".format(
-                _predicate_to_exp(fields, qvars, pred.lhs, target, remap),
-                _predicate_to_exp(fields, qvars, pred.rhs, target, remap),
-                predicates.opToStr(pred.op))
-    elif type(pred) is predicates.And:
-        return "({}) && ({})".format(
-            _predicate_to_exp(fields, qvars, pred.lhs, target, remap),
-            _predicate_to_exp(fields, qvars, pred.rhs, target, remap))
-    elif type(pred) is predicates.Or:
-        return "({}) || ({})".format(
-            _predicate_to_exp(fields, qvars, pred.lhs, target, remap),
-            _predicate_to_exp(fields, qvars, pred.rhs, target, remap))
-    elif type(pred) is predicates.Not:
-        return "!({})".format(_predicate_to_exp(fields, qvars, pred.p, target, remap))

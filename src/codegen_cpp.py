@@ -6,7 +6,7 @@ import abstract_types
 import predicates
 import plans
 import structures
-from structures.interface import This, TupleInstance, Ty, TupleTy, RecordType, MapTy, NativeTy
+from structures.interface import This, TupleInstance, Ty, TupleTy, ArrayTy, RecordType, MapTy, NativeTy
 from common import capitalize, fresh_name, indent, open_maybe_stdout, memoize
 
 class STLMapTy(MapTy):
@@ -51,7 +51,7 @@ class QHashMap(structures.HashMap):
     def write_handle(self, gen, m, handle, k, v):
         return "{}.value() = {};\n".format(handle, v)
 
-class CppCodeGenerator(object):
+class CppCodeGenerator(codegen.CodeGenerator):
     def __init__(self, with_qt=False):
         self.with_qt = with_qt
 
@@ -85,7 +85,9 @@ class CppCodeGenerator(object):
     def alloc(self, t, args):
         return "new {}({})".format(t.gen_type(self), ", ".join(args))
 
-    def free(self, x):
+    def free(self, ty, x):
+        if type(ty) is ArrayTy:
+            return ""
         return "delete {};\n".format(x)
 
     def new_map(self, kt, vt):
@@ -102,6 +104,20 @@ class CppCodeGenerator(object):
 
     def map_write_handle(self, m, handle, k, v):
         return "{}->second = {};\n".format(handle, v)
+
+    def for_each_map_entry(self, m, keyType, valType, body):
+        entryname = fresh_name("entry")
+        kname = fresh_name("key")
+        vname = fresh_name("val")
+        return """for (auto {e} : {m}) {{
+            {kt} {k} = {e}.first;
+            {vt} {v} = {e}.second;
+            {body}
+        }}\n""".format(
+            kt=keyType.gen_type(self), vt=valType.gen_type(self),
+            k=kname, v=vname,
+            m=m, e=entryname,
+            body=body(kname, vname, self.break_loop))
 
     def map_put(self, m, k, v):
         return "{}[{}] = {};\n".format(m, k, v)
@@ -133,47 +149,26 @@ class CppCodeGenerator(object):
     def vector_set(self, v, i, x):
         return "{}[{}] = {};\n".format(v, i, x)
 
+    def array_type(self, ty):
+        return "myarr< {} >".format(ty.gen_type(self))
+
+    def new_array(self, ty, count):
+        return "myarr< {} >({})".format(ty.gen_type(self), count)
+
+    def array_get(self, a, n):
+        return "{}[{}]".format(a, n)
+
+    def array_set(self, a, n, v):
+        return "{}[{}] = {};\n".format(a, n, v)
+
+    def array_size(self, a):
+        return "{}.size()".format(a)
+
     def native_type(self, t):
         return t
 
     def record_type(self):
         return "{}*".format(self.cpp_record_class)
-
-    def predicate(self, fields, qvars, pred, target):
-        return _predicate_to_exp(self, fields, qvars, pred, target)
-
-    def not_true(self, e):
-        return "!({})".format(e)
-
-    def is_null(self, e):
-        return "({}) == NULL".format(e)
-
-    def ternary(self, cond, v1, v2):
-        return "({}) ? ({}) : ({})".format(cond, v1, v2)
-
-    def same(self, e1, e2):
-        return "({}) == ({})".format(e1, e2)
-
-    def lt(self, ty, e1, e2):
-        return "({}) < ({})".format(e1, e2)
-
-    def le(self, ty, e1, e2):
-        return "({}) <= ({})".format(e1, e2)
-
-    def gt(self, ty, e1, e2):
-        return "({}) > ({})".format(e1, e2)
-
-    def ge(self, ty, e1, e2):
-        return "({}) >= ({})".format(e1, e2)
-
-    def add(self, e1, e2):
-        return "({}) + ({})".format(e1, e2)
-
-    def sub(self, e1, e2):
-        return "({}) - ({})".format(e1, e2)
-
-    def mul(self, e1, e2):
-        return "({}) * ({})".format(e1, e2)
 
     def abs(self, e):
         return "std::abs({})".format(e)
@@ -188,13 +183,13 @@ class CppCodeGenerator(object):
         return self.set(target, "{}()".format(ty.gen_type(self)))
 
     def null_value(self):
-        return "NULL"
+        return "nullptr"
 
-    def true_value(self):
-        return "true";
+    def data_structure_size(self):
+        return "my_size" # massive hack
 
-    def false_value(self):
-        return "false";
+    def hash1(self, ty, value):
+        return "static_cast<int>(std::hash< {} >()({}))".format(ty.gen_type(self), value)
 
     def get_field(self, e, m):
         if e is None:
@@ -204,53 +199,6 @@ class CppCodeGenerator(object):
         if self.cpp_abstract_record and any(name == m for name, _ in self.private_members):
             return "read_private_data({}).{}".format(e, m)
         return "({})->{}".format(e, m)
-
-    def both(self, e1, e2):
-        return "({}) && ({})".format(e1, e2)
-
-    def either(self, e1, e2):
-        return "({}) || ({})".format(e1, e2)
-
-    def decl(self, v, ty, e=None):
-        if e is not None:
-            return "{} {} = {};\n".format(ty.gen_type(self), v, e)
-        return "{} {};\n".format(ty.gen_type(self), v)
-
-    def set(self, lval, e):
-        return "{} = {};\n".format(lval, e)
-
-    def if_true(self, e):
-        return "if ({}) {{\n".format(e)
-
-    def else_if(self, e):
-        return "}} else if ({}) {{\n".format(e)
-
-    def else_true(self):
-        return "} else {\n"
-
-    def endif(self):
-        return "}\n"
-
-    def while_true(self, e):
-        return "while ({}) {{\n".format(e)
-
-    def endwhile(self):
-        return "}\n"
-
-    def do_while(self):
-        return "do {\n"
-
-    def end_do_while(self, e):
-        return "}} while ({});\n".format(e)
-
-    def break_loop(self):
-        return "break;\n"
-
-    def comment(self, text):
-        return " /* {} */ ".format(text)
-
-    def assert_true(self, e):
-        return "assert({});\n".format(e)
 
     def write(self, fields, queries, cpp=None, cpp_header=None, cpp_class="DataStructure", cpp_record_class="Record", cpp_abstract_record=False, cpp_extra=None, cpp_namespace=None, **kwargs):
         self.cpp_record_class = cpp_record_class
@@ -278,6 +226,8 @@ class CppCodeGenerator(object):
                 # header_writer("#include <vector>\n")
                 header_writer("#include <unordered_map>\n")
                 header_writer("#include <map>\n")
+                header_writer("#include <functional>\n")
+                header_writer("#include <algorithm>\n")
 
                 if self.with_qt:
                     header_writer("#include <QHash>\n")
@@ -313,6 +263,35 @@ class CppCodeGenerator(object):
 
                     template<class T> int32_t mystk<T>::_cap = 10;
                     template<class T> T*      mystk<T>::_data = new T[10];
+
+                    template <class T>
+                    class myarr {
+                        T* data;
+                        int length;
+                    public:
+                        myarr() : length(0), data(nullptr) { }
+                        myarr(int n) : length(n), data(new T[n]) { }
+                        myarr(const myarr& other) : length(other.length), data(new T[other.length]) {
+                            std::copy(other.data, other.data + other.length, data);
+                        }
+                        myarr(myarr&& other) : length(other.length), data(other.data) {
+                            other.data = nullptr;
+                        }
+                        myarr& operator=(const myarr& other) {
+                            length = other.length;
+                            data = new T[other.length];
+                            std::copy(other.data, other.data + other.length, data);
+                            return *this;
+                        }
+                        myarr& operator=(myarr&& other) {
+                            length = other.length;
+                            std::swap(data, other.data);
+                            return *this;
+                        }
+                        ~myarr() { if (data != nullptr) delete[] data; }
+                        T& operator[](int n) { return data[n]; }
+                        int size() { return length; }
+                    };
 
                 """)
 
@@ -527,7 +506,7 @@ class CppCodeGenerator(object):
             flags = _qt_flags()
         else:
             flags = []
-        ret = subprocess.call(["c++", "-O2", "-I/tmp", "/tmp/DataStructure.cpp", cost_model_file, "-o", "/tmp/a.out"] + flags)
+        ret = subprocess.call(["c++", "-O2", "-std=c++11", "-I/tmp", "/tmp/DataStructure.cpp", cost_model_file, "-o", "/tmp/a.out"] + flags)
         assert ret == 0
 
         proc = subprocess.Popen(["/tmp/a.out"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -605,24 +584,3 @@ def _gen_record_type(name, fields, private_fields, writer):
         args=", ".join("{ty} _{f}".format(f=f, ty=ty) for f, ty in fields),
         init=", ".join("{f}({init})".format(f=f, init=init) for f, _, init in all_fields)))
     writer("};\n")
-
-def _predicate_to_exp(gen, fields, qvars, pred, target):
-    if type(pred) is predicates.Var:
-        return pred.name if pred.name in {v for v,ty in qvars} else gen.get_field(target, pred.name)
-    elif type(pred) is predicates.Bool:
-        return "true" if pred.val else "false"
-    elif type(pred) is predicates.Compare:
-        return "({}) {} ({})".format(
-            _predicate_to_exp(gen, fields, qvars, pred.lhs, target),
-            predicates.opToStr(pred.op),
-            _predicate_to_exp(gen, fields, qvars, pred.rhs, target))
-    elif type(pred) is predicates.And:
-        return "({}) && ({})".format(
-            _predicate_to_exp(gen, fields, qvars, pred.lhs, target),
-            _predicate_to_exp(gen, fields, qvars, pred.rhs, target))
-    elif type(pred) is predicates.Or:
-        return "({}) || ({})".format(
-            _predicate_to_exp(gen, fields, qvars, pred.lhs, target),
-            _predicate_to_exp(gen, fields, qvars, pred.rhs, target))
-    elif type(pred) is predicates.Not:
-        return "!({})".format(_predicate_to_exp(gen, fields, qvars, pred.p, target))
