@@ -68,4 +68,6 @@ class VectorMap(HashMap):
             proc += gen.set(target, gen.add(target, self.enum_to_int(gen, fv(f), self.field_types[f])))
         return proc
     def auxtypes(self):
-        return self.valueImpl.auxtypes()
+        yield self.valueTy
+        for t in self.valueImpl.auxtypes():
+            yield t
