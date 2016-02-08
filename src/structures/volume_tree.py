@@ -255,7 +255,7 @@ class VolumeTree(ConcreteImpl):
         # x is the root!
         proc  = gen.decl(x_node,   self.node_type, gen.get_field(x, self.record_parent_ptr))
         proc += gen.if_true(gen.same(x_node, parent_structure.field(gen, self.root)))
-        proc += gen.free(x_node)
+        proc += gen.free(self.node_type, x_node)
         proc += gen.set(parent_structure.field(gen, self.root), gen.null_value())
         proc += gen.else_true()
 
@@ -279,8 +279,8 @@ class VolumeTree(ConcreteImpl):
         proc += self.recompute_volumes_recursively(gen, x_grandparent)
         proc += gen.endif()
 
-        proc += gen.free(x_node)
-        proc += gen.free(x_parent)
+        proc += gen.free(self.node_type, x_node)
+        proc += gen.free(self.node_type, x_parent)
         proc += gen.endif()
         return proc
 

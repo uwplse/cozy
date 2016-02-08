@@ -1,4 +1,4 @@
-from .interface import IntTy, FloatTy, ArrayTy, RecordType
+from .interface import IntTy, FloatTy, ArrayTy, NativeTy, RecordType
 from .hash_map import HashMap
 from .filtered import Filtered
 from common import fresh_name
@@ -20,7 +20,7 @@ class CozyHashMap(HashMap):
         i = fresh_name("i")
         proc  = gen.set(name, gen.new_array(self.valueTy, str(INIT_SIZE)))
         proc += gen.decl(i, IntTy(), "0")
-        proc += gen.while_true(gen.lt(IntTy(), i, gen.array_size(self.name)))
+        proc += gen.while_true(gen.lt(IntTy(), i, gen.array_size(name)))
         proc += self.valueImpl.construct(gen, self.valueTy.instance(gen.array_get(name, i)))
         proc += gen.set(i, gen.add(i, 1))
         proc += gen.endwhile()
@@ -45,7 +45,7 @@ class CozyHashMap(HashMap):
             remap = dict()
         def fv(f):
             return remap.get(f) or gen.get_field(x, f)
-        proc, h = gen.hash([(self.field_types[f], fv(f)) for f in self.keyArgs])
+        proc, h = gen.hash([(NativeTy(self.field_types[f]), fv(f)) for f in self.keyArgs])
         proc += gen.set(target, h)
         return proc
     # def enum_to_int(self, gen, v, t):
@@ -55,7 +55,7 @@ class CozyHashMap(HashMap):
     def make_key(self, gen, target):
         for f in self.keyArgs:
             assert len(self.keyArgs[f]) == 1, "cannot (yet) handle multiple values in lookup ({})".format(self.keyArgs)
-        proc, h = gen.hash([(self.field_types[f], f) for f in self.keyArgs])
+        proc, h = gen.hash([(NativeTy(self.field_types[f]), f) for f in self.keyArgs])
         proc += gen.set(target, h)
         return proc
     def current_load(self, gen, parent_structure):
@@ -76,6 +76,13 @@ class CozyHashMap(HashMap):
 
         i = fresh_name("i")
         proc += gen.decl(i, IntTy(), "0")
+
+        proc += gen.while_true(gen.lt(IntTy(), i, gen.array_size(newa)))
+        proc += self.valueImpl.construct(gen, self.valueTy.instance(gen.array_get(newa, i)))
+        proc += gen.set(i, gen.add(i, 1))
+        proc += gen.endwhile()
+
+        proc += gen.set(i, "0")
         proc += gen.while_true(gen.lt(IntTy(), i, gen.array_size(name)))
         sub = fresh_name("substructure")
         proc += gen.decl(sub, self.valueTy, gen.array_get(name, i))
@@ -93,14 +100,14 @@ class CozyHashMap(HashMap):
         proc += gen.set(i, gen.add(i, 1))
         proc += gen.endwhile()
 
-        proc += gen.free(name)
+        proc += gen.free(ArrayTy(self.valueTy), name)
         proc += gen.set(name, newa)
         proc += gen.endif()
         proc += self.gen_insert_no_autobalance(gen, x, parent_structure)
         return proc
     def gen_query(self, gen, qvars, parent_structure):
         name = parent_structure.field(gen, self.name)
-        p, h = gen.hash([(self.field_types[k], v) for (k,(v,)) in self.keyArgs.items()])
+        p, h = gen.hash([(NativeTy(self.field_types[k]), v) for (k,(v,)) in self.keyArgs.items()])
         proc  = p
         sub = fresh_name("substructure")
         proc += gen.decl(sub, self.valueTy, gen.array_get(name, gen.mod(h, gen.array_size(name))))
@@ -109,7 +116,7 @@ class CozyHashMap(HashMap):
         return (proc, list(vs) + [h])
     def gen_query_one(self, gen, qvars, parent_structure):
         name = parent_structure.field(gen, self.name)
-        p, h = gen.hash([(self.field_types[k], v) for (k,(v,)) in self.keyArgs.items()])
+        p, h = gen.hash([(NativeTy(self.field_types[k]), v) for (k,(v,)) in self.keyArgs.items()])
         proc  = p
         sub = fresh_name("substructure")
         proc += gen.decl(sub, self.valueTy, gen.array_get(name, gen.mod(h, gen.array_size(name))))
