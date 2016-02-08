@@ -408,6 +408,7 @@ class CppCodeGenerator(codegen.CodeGenerator):
 
                     # query method
                     header_writer("    inline {} {}({});\n".format(it_name, q.name, ", ".join("{} {}".format(ty, v) for v,ty in q.vars)))
+                    header_writer("    inline {} {}_1({});\n".format(self.record_type(), q.name, ", ".join("{} {}".format(ty, v) for v,ty in q.vars)))
 
                 # debugging
                 header_writer("    inline void checkRep();\n")
@@ -513,6 +514,14 @@ class CppCodeGenerator(codegen.CodeGenerator):
                     for q2 in queries:
                         if q2 != q:
                             writer(indent("    ", q2.impl.gen_remove(self, removed, parent_structure=TupleInstance("parent"))))
+                    writer("}\n")
+
+                    # singular query call
+                    writer("{rt} {prefix}::{q}_1({}) {{\n".format(", ".join("{} {}".format(ty, v) for v,ty in q.vars), rt=self.record_type(), prefix=name, q=q.name))
+                    writer("    if (my_size == 0) { return nullptr; }\n")
+                    proc, result = q.impl.gen_query_one(self, q.vars, This())
+                    writer(indent("    ", proc))
+                    writer("    return {};\n".format(result))
                     writer("}\n")
 
                 writer("void {}::checkRep() {{\n".format(name))
