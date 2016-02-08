@@ -6,6 +6,7 @@ import interface
 from .filtered         import Filtered
 from .guarded          import Guarded
 from .linked_list      import LinkedList
+from .array_list       import ArrayList
 from .hash_map         import HashMap
 from .vector_map       import VectorMap
 from .cozy_hash_map    import CozyHashMap

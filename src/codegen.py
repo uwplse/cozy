@@ -30,7 +30,7 @@ def enumerate_impls(fields, queries, extra_structures=None):
     def concretize(aimpl):
         if type(aimpl) is Iterable:
             yield structures.LinkedList()
-            # yield structures.Array() # TODO
+            yield structures.ArrayList()
         elif type(aimpl) is SortedIterable:
             yield structures.AugTree(structures.interface.NativeTy(aimpl.fields[aimpl.sortField]), aimpl.sortField, aimpl.predicate, aimpl.fields)
             # yield structures.SortedArray(aimpl.field_type, aimpl.field_name) # TODO
@@ -109,6 +109,12 @@ class CodeGenerator(object):
     def ptr_type(self, t):
         return t.gen_type(self)
 
+    def addr_of(self, x):
+        return x
+
+    def deref(self, x):
+        return x
+
     def vector_type(self, ty, n):
         raise NotImplementedError()
 
@@ -125,6 +131,9 @@ class CodeGenerator(object):
         raise NotImplementedError()
 
     def array_size(self, a):
+        raise NotImplementedError()
+
+    def array_copy(self, ty, asrc, adst, src_start=0, dst_start=0, amt=None):
         raise NotImplementedError()
 
     def data_structure_size(self):

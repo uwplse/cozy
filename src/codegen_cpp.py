@@ -71,10 +71,16 @@ class CppCodeGenerator(codegen.CodeGenerator):
         return "int";
 
     def ref_type(self, ty):
-        return ty.gen_type(self) if type(ty) is RecordType else "{}&".format(ty.gen_type(self));
+        return ty.gen_type(self) if type(ty) is RecordType else "{}&".format(ty.gen_type(self))
 
     def ptr_type(self, ty):
-        return ty.gen_type(self) if type(ty) is RecordType else "{}*".format(ty.gen_type(self));
+        return ty.gen_type(self) if type(ty) is RecordType else "{}*".format(ty.gen_type(self))
+
+    def addr_of(self, x):
+        return "(&({}))".format(x)
+
+    def deref(self, x):
+        return "(*({}))".format(x)
 
     def stack_type(self, ty):
         return "mystk < {} >".format(ty.gen_type(self))
@@ -163,6 +169,12 @@ class CppCodeGenerator(codegen.CodeGenerator):
 
     def array_size(self, a):
         return "{}.size()".format(a)
+
+    def array_copy(self, ty, asrc, adst, src_start=0, dst_start=0, amt=None):
+        if amt is None:
+            amt = self.array_size(asrc)
+        return "std::copy({src}.begin() + {src_start}, {src}.begin() + {src_start} + {amt}, {dst}.begin() + {dst_start});\n".format(
+            src=asrc, dst=adst, src_start=src_start, dst_start=dst_start, amt=amt)
 
     def native_type(self, t):
         return t
