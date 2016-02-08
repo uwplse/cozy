@@ -77,13 +77,18 @@ class Filtered(ConcreteImpl):
     def gen_current(self, gen):
         return self.ty.gen_current(gen)
     def gen_advance(self, gen):
+        # while true:
+        #   ty.advance()
+        #   break if !ty.hasNext()
+        #   break if ty.current() matches filter
         proc  = gen.do_while()
+        proc += self.ty.gen_advance(gen)
         p1, hn = self.ty.gen_has_next(gen)
         proc += p1
         proc += gen.if_true(gen.not_true(hn))
         proc += gen.break_loop()
         proc += gen.endif()
-        p2, n = self.ty.gen_next(gen)
+        p2, n = self.ty.gen_current(gen)
         proc += p2
         proc += gen.if_true(self.matches(gen, n))
         proc += gen.break_loop()
