@@ -14,9 +14,6 @@ from abstract_types import (
     AbstractFilter,
     implement)
 
-################################################################################
-# Part 2: Implementation
-
 def enumerate_impls(fields, queries, extra_structures=None):
     """
     Code generation entry point.
