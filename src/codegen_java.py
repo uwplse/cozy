@@ -156,7 +156,7 @@ class JavaCodeGenerator(codegen.CodeGenerator):
         return self.set(target, "new {}()".format(ty.gen_type(self)))
 
     def hash1(self, ty, value):
-        return _hash_code(ty, value)
+        return _hash_code(ty.gen_type(self), value)
 
     def write(self, fields, queries, java_package=None, java_class="DataStructure", java="-", **kwargs):
         with open_maybe_stdout(java) as f:

@@ -1,5 +1,5 @@
 import itertools
-from .interface import ConcreteImpl, RecordType
+from .interface import ConcreteImpl, RecordType, NativeTy
 from common import fresh_name
 
 class Filtered(ConcreteImpl):
@@ -22,6 +22,11 @@ class Filtered(ConcreteImpl):
         return self.ty.state()
     def private_members(self):
         return self.ty.private_members()
+    def matches(self, gen, x):
+        return gen.predicate(
+            [(f, NativeTy(t)) for (f, t) in self._fields.items()],
+            [(v, NativeTy(t)) for (v, t) in self.qvars.items()],
+            self.predicate, x)
     def gen_query(self, gen, qvars, parent_structure):
         proc, es = self.ty.gen_query(gen, qvars, parent_structure)
         for (v, t), e in itertools.izip(self.ty.state(), es):
@@ -36,7 +41,7 @@ class Filtered(ConcreteImpl):
         proc += p2
         curN = fresh_name("current")
         proc += gen.decl(curN, RecordType(), cur)
-        proc += gen.if_true(gen.predicate(list(self._fields.items()), list(self.qvars.items()), self.predicate, curN))
+        proc += gen.if_true(self.matches(gen, curN))
         proc += gen.break_loop()
         proc += gen.endif()
         proc += self.ty.gen_advance(gen)
@@ -58,7 +63,7 @@ class Filtered(ConcreteImpl):
         proc += p2
         curN = fresh_name("current")
         proc += gen.decl(curN, RecordType(), cur)
-        proc += gen.if_true(gen.predicate(list(self._fields.items()), list(self.qvars.items()), self.predicate, curN))
+        proc += gen.if_true(self.matches(gen, curN))
         proc += gen.set(result, curN)
         proc += gen.break_loop()
         proc += gen.endif()
@@ -80,7 +85,7 @@ class Filtered(ConcreteImpl):
         proc += gen.endif()
         p2, n = self.ty.gen_next(gen)
         proc += p2
-        proc += gen.if_true(gen.predicate(list(self._fields.items()), list(self.qvars.items()), self.predicate, n))
+        proc += gen.if_true(self.matches(gen, n))
         proc += gen.break_loop()
         proc += gen.endif()
         proc += gen.end_do_while(gen.true_value())

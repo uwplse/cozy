@@ -1,10 +1,10 @@
-from .interface import ConcreteImpl, BoolTy
+from .interface import ConcreteImpl, BoolTy, NativeTy
 from common import fresh_name
 
 class Guarded(ConcreteImpl):
     def __init__(self, ty, fields, qvars, predicate):
         self.ty = ty
-        self._fields = fields
+        self._fields = { f : NativeTy(t) for f, t in fields }
         self.qvars = qvars
         self.predicate = predicate
     def fields(self):
