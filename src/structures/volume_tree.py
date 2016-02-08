@@ -118,11 +118,13 @@ class VolumeTree(ConcreteImpl):
         return [gen.null_value(), gen.null_value()]
     def gen_find_any(self, gen, parent_structure):
         cursor = fresh_name("cursor")
+        result = fresh_name("result")
         proc  = gen.decl(cursor, self.node_type, parent_structure.field(gen, self.root))
-        proc += gen.while_true(self.is_leaf(gen, cursor))
+        proc += gen.while_true(gen.both(gen.not_true(gen.is_null(cursor)), self.is_leaf(gen, cursor)))
         proc += gen.set(cursor, gen.get_field(cursor, self.left_ptr))
         proc += gen.endif()
-        return proc, gen.get_field(cursor, self.leaf_ptr)
+        proc += gen.decl(result, RecordType(), gen.ternary(gen.is_null(cursor), gen.null_value(), gen.get_field(cursor, self.leaf_ptr)))
+        return proc, result
     def auxtypes(self):
         return (self.node_type.ty,)
     def distance(self, gen, record, node, remap={}):
