@@ -124,4 +124,6 @@ class CozyHashMap(HashMap):
         proc += p
         return (proc, r)
     def auxtypes(self):
-        return self.valueImpl.auxtypes()
+        yield self.valueTy
+        for t in self.valueImpl.auxtypes():
+            yield t
