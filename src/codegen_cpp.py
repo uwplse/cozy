@@ -269,29 +269,61 @@ class CppCodeGenerator(codegen.CodeGenerator):
                         T* data;
                         int length;
                     public:
-                        myarr() : length(0), data(nullptr) { }
-                        myarr(int n) : length(n), data(new T[n]) { }
-                        myarr(const myarr& other) : length(other.length), data(new T[other.length]) {
+                        myarr() : data(nullptr), length(0) { }
+                        myarr(int n) : data(new T[n]), length(n) { }
+                        myarr(const myarr& other) : data(new T[other.length]), length(other.length) {
                             std::copy(other.data, other.data + other.length, data);
                         }
-                        myarr(myarr&& other) : length(other.length), data(other.data) {
+                        myarr(myarr&& other) : data(other.data), length(other.length) {
                             other.data = nullptr;
                         }
                         myarr& operator=(const myarr& other) {
-                            length = other.length;
-                            data = new T[other.length];
-                            std::copy(other.data, other.data + other.length, data);
+                            if (this != &other) {
+                                length = other.length;
+                                data = new T[other.length];
+                                std::copy(other.data, other.data + other.length, data);
+                            }
                             return *this;
                         }
                         myarr& operator=(myarr&& other) {
-                            length = other.length;
-                            std::swap(data, other.data);
+                            if (this != &other) {
+                                length = other.length;
+                                std::swap(data, other.data);
+                            }
                             return *this;
                         }
                         ~myarr() { if (data != nullptr) delete[] data; }
                         T& operator[](int n) { return data[n]; }
-                        int size() { return length; }
+                        const T& operator[](int n) const { return data[n]; }
+                        int size() const { return length; }
+                        T* begin() { return data; }
+                        T* end() { return data + length; }
                     };
+
+                    template <class T>
+                    bool operator==(const myarr<T>& lhs, const myarr<T>& rhs) {
+                        if (lhs.size() != rhs.size()) return false;
+                        for (int i = 0; i < lhs.size(); ++i) {
+                            if (lhs[i] != rhs[i]) return false;
+                        }
+                        return true;
+                    }
+
+                    template <class T>
+                    bool operator<(const myarr<T>& lhs, const myarr<T>& rhs) {
+                        if (lhs.size() < rhs.size()) return true;
+                        if (lhs.size() > rhs.size()) return false;
+                        for (int i = 0; i < lhs.size(); ++i) {
+                            if (lhs[i] < rhs[i]) return true;
+                            if (lhs[i] > rhs[i]) return false;
+                        }
+                        return false;
+                    }
+
+                    template <class T> bool operator!=(const myarr<T>& lhs, const myarr<T>& rhs) { return !(lhs == rhs); }
+                    template <class T> bool operator>=(const myarr<T>& lhs, const myarr<T>& rhs) { return !(lhs < rhs); }
+                    template <class T> bool operator>(const myarr<T>& lhs, const myarr<T>& rhs) { return (lhs != rhs) && (lhs >= rhs); }
+                    template <class T> bool operator<=(const myarr<T>& lhs, const myarr<T>& rhs) { return !(lhs > rhs); }
 
                 """)
 
