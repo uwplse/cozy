@@ -33,7 +33,7 @@ def pick_best_impls(fields, queries, cost_model_file, code_generators, args):
     bestCost  = None
     bestCG    = None
     for cg in code_generators:
-        for impls in enumerate_impls(fields, queries, cg.extensions):
+        for impls in enumerate_impls(fields, queries, args, cg.extensions):
             if cost_model_file is None:
                 return impls, cg, 0
 
@@ -107,6 +107,10 @@ if __name__ == '__main__':
     cpp_opts.add_argument("--cpp-extra", metavar="cpp-code", default=None, help="Extra text to include at top of C++ header file")
     cpp_opts.add_argument("--cpp-namespace", metavar="ns", default=None, help="C++ namespace")
     cpp_opts.add_argument("--with-qt", action="store_true", help="Allow use of Qt collections classes")
+
+    structure_opts = parser.add_argument_group("Library control")
+    structure_opts.add_argument("--enable-arrays", action="store_true", help="Allow the use of ArrayLists [experimental]")
+    structure_opts.add_argument("--enable-volume-trees", action="store_true", help="Allow the use of VolumeTrees [experimental]")
 
     parser.add_argument("file", nargs="?", default=None, help="Input file (omit to use stdin)")
     args = parser.parse_args()

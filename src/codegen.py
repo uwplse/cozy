@@ -14,7 +14,7 @@ from abstract_types import (
     AbstractFilter,
     implement)
 
-def enumerate_impls(fields, queries, extra_structures=None):
+def enumerate_impls(fields, queries, args, extra_structures=None):
     """
     Code generation entry point.
       fields    - dict of {field_name : type}
@@ -30,7 +30,8 @@ def enumerate_impls(fields, queries, extra_structures=None):
     def concretize(aimpl):
         if type(aimpl) is Iterable:
             yield structures.LinkedList()
-            yield structures.ArrayList()
+            if args.enable_arrays:
+                yield structures.ArrayList()
         elif type(aimpl) is SortedIterable:
             yield structures.AugTree(structures.interface.NativeTy(aimpl.fields[aimpl.sortField]), aimpl.sortField, aimpl.predicate, aimpl.fields)
             # yield structures.SortedArray(aimpl.field_type, aimpl.field_name) # TODO
@@ -40,9 +41,10 @@ def enumerate_impls(fields, queries, extra_structures=None):
                 if sortField in fields:
                     yield structures.AugTree(structures.interface.NativeTy(fields[sortField]), sortField, aimpl.predicate, aimpl.fields)
                     # yield structures.SortedArray(aimpl.field_type, sortField, aimpl.field_name) # TODO
-            for v in structures.VolumeTree.infer_volume(aimpl.fields, aimpl.predicate):
-                yield structures.VolumeTree(v, aimpl.fields, aimpl.predicate, stack_iteration=False)
-                yield structures.VolumeTree(v, aimpl.fields, aimpl.predicate, stack_iteration=True)
+            if args.enable_volume_trees:
+                for v in structures.VolumeTree.infer_volume(aimpl.fields, aimpl.predicate):
+                    yield structures.VolumeTree(v, aimpl.fields, aimpl.predicate, stack_iteration=False)
+                    yield structures.VolumeTree(v, aimpl.fields, aimpl.predicate, stack_iteration=True)
         elif type(aimpl) is Bucketed:
             for impl in concretize(aimpl.value_impl):
                 if aimpl.enum_p and aimpl.rest_p:
