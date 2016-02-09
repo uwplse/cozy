@@ -41,12 +41,27 @@ class CozyHashMap(HashMap):
         return ((self.name, ArrayTy(self.valueTy)),)
     def state(self):
         return list(self.valueImpl.state()) + [(self.iterator_handle_name, IntTy())]
+    def fixup_hash(self, gen, h):
+        """
+        This function ensures that hashCodes that differ only by constant
+        multiples at each bit position have a bounded number of collisions
+        (approximately 8 at default load factor).
+        This trick is lifted from the Java HashMap implementation:
+        http://grepcode.com/file/repository.grepcode.com/java/root/jdk/openjdk/6-b14/java/util/HashMap.java#256
+        """
+        proc  = gen.set(h, gen.bit_xor(h, gen.bit_xor(gen.bit_lshr(h, 20), gen.bit_lshr(h, 12))))
+        proc += gen.set(h, gen.bit_xor(h, gen.bit_xor(gen.bit_lshr(h, 7), gen.bit_lshr(h, 4))))
+        return proc
+    def hash(self, gen, values):
+        proc, h = gen.hash(values)
+        proc += self.fixup_hash(gen, h)
+        return proc, h
     def make_key_of_record(self, gen, x, target, remap=None):
         if remap is None:
             remap = dict()
         def fv(f):
             return remap.get(f) or gen.get_field(x, f)
-        proc, h = gen.hash([(NativeTy(self.field_types[f]), fv(f)) for f in self.keyArgs])
+        proc, h = self.hash(gen, [(NativeTy(self.field_types[f]), fv(f)) for f in self.keyArgs])
         proc += gen.set(target, h)
         return proc
     # def enum_to_int(self, gen, v, t):
@@ -56,7 +71,7 @@ class CozyHashMap(HashMap):
     def make_key(self, gen, target):
         for f in self.keyArgs:
             assert len(self.keyArgs[f]) == 1, "cannot (yet) handle multiple values in lookup ({})".format(self.keyArgs)
-        proc, h = gen.hash([(NativeTy(self.field_types[f]), f) for f in self.keyArgs])
+        proc, h = self.hash(gen, [(NativeTy(self.field_types[f]), f) for f in self.keyArgs])
         proc += gen.set(target, h)
         return proc
     def current_load(self, gen, parent_structure):
@@ -109,7 +124,7 @@ class CozyHashMap(HashMap):
         return proc
     def gen_query(self, gen, qvars, parent_structure):
         name = parent_structure.field(gen, self.name)
-        p, h = gen.hash([(NativeTy(self.field_types[k]), v) for (k,(v,)) in self.keyArgs.items()])
+        p, h = self.hash(gen, [(NativeTy(self.field_types[k]), v) for (k,(v,)) in self.keyArgs.items()])
         proc  = p
         sub = fresh_name("substructure")
         proc += gen.decl(sub, self.valueTy, gen.array_get(name, gen.mod(h, gen.array_size(name))))
@@ -118,7 +133,7 @@ class CozyHashMap(HashMap):
         return (proc, list(vs) + [h])
     def gen_query_one(self, gen, qvars, parent_structure):
         name = parent_structure.field(gen, self.name)
-        p, h = gen.hash([(NativeTy(self.field_types[k]), v) for (k,(v,)) in self.keyArgs.items()])
+        p, h = self.hash(gen, [(NativeTy(self.field_types[k]), v) for (k,(v,)) in self.keyArgs.items()])
         proc  = p
         sub = fresh_name("substructure")
         proc += gen.decl(sub, self.valueTy, gen.array_get(name, gen.mod(h, gen.array_size(name))))

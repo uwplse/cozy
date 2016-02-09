@@ -290,6 +290,17 @@ class CodeGenerator(object):
     def abs(self, e):
         raise NotImplementedError()
 
+    def bit_xor(self, e1, e2):
+        return "({}) ^ ({})".format(e1, e2)
+
+    def bit_lshr(self, e1, e2):
+        """logical right shift (zero-extend)"""
+        return "({}) >>> ({})".format(e1, e2)
+
+    def bit_ashr(self, e1, e2):
+        """arithmetic right shift (sign-extend)"""
+        return "({}) >> ({})".format(e1, e2)
+
     def init_new(self, target, ty):
         raise NotImplementedError()
 

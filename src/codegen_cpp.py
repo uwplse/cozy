@@ -182,6 +182,10 @@ class CppCodeGenerator(codegen.CodeGenerator):
     def record_type(self):
         return "{}*".format(self.cpp_record_class)
 
+    def bit_lshr(self, e1, e2):
+        # In C/C++, logical left shift is done on unsigned numbers
+        return "static_cast<int>(static_cast<unsigned int>({}) >> static_cast<unsigned int>({}))".format(e1, e2)
+
     def abs(self, e):
         return "std::abs({})".format(e)
 
