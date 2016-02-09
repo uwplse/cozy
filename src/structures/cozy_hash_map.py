@@ -21,6 +21,7 @@ class CozyHashMap(HashMap):
         proc  = gen.set(name, gen.new_array(self.valueTy, str(INIT_SIZE)))
         proc += gen.decl(i, IntTy(), "0")
         proc += gen.while_true(gen.lt(IntTy(), i, gen.array_size(name)))
+        proc += gen.initialize(self.valueTy, gen.array_get(name, i))
         proc += self.valueImpl.construct(gen, self.valueTy.instance(gen.array_get(name, i)))
         proc += gen.set(i, gen.add(i, 1))
         proc += gen.endwhile()
@@ -78,6 +79,7 @@ class CozyHashMap(HashMap):
         proc += gen.decl(i, IntTy(), "0")
 
         proc += gen.while_true(gen.lt(IntTy(), i, gen.array_size(newa)))
+        proc += gen.initialize(self.valueTy, gen.array_get(newa, i))
         proc += self.valueImpl.construct(gen, self.valueTy.instance(gen.array_get(newa, i)))
         proc += gen.set(i, gen.add(i, 1))
         proc += gen.endwhile()

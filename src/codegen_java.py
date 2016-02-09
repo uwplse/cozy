@@ -54,11 +54,23 @@ class JavaCodeGenerator(codegen.CodeGenerator):
     def array_size(self, a):
         return "{}.length".format(a)
 
+    def array_copy(self, ty, asrc, adst, src_start=0, dst_start=0, amt=None):
+        if amt is None:
+            amt = self.array_size(asrc)
+        return "System.arraycopy({src}, {src_start}, {dst}, {dst_start}, {amt});\n".format(
+            src=asrc, dst=adst, src_start=src_start, dst_start=dst_start, amt=amt)
+
     def data_structure_size(self):
         return "my_size" # massive hack
 
     def alloc(self, ty, args):
         return "new {}({})".format(ty.gen_type(self), ", ".join(args))
+
+    def initialize(self, ty, lval):
+        if type(ty) is TupleTy and len(ty.fields) > 1:
+            return "{lval} = {new};\n".format(lval=lval, new=self.alloc(ty, []))
+        else:
+            return ""
 
     def free(self, ty, x):
         return ""

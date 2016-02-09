@@ -145,6 +145,10 @@ class CodeGenerator(object):
     def free(self, ty, x):
         raise NotImplementedError()
 
+    def initialize(self, ty, lval):
+        """Make lval into a usable object"""
+        return ""
+
     def min(self, ty, x, y):
         return self.ternary(self.lt(ty, x, y), x, y)
 

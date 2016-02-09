@@ -156,6 +156,7 @@ class HashMap(ConcreteImpl):
     def create_substructure_at_key(self, gen, m, k):
         name = fresh_name()
         proc  = gen.decl(name, self.valueTy)
+        proc += gen.initialize(self.valueTy, name)
         proc += self.valueImpl.construct(gen, parent_structure=self.valueTy.instance(name))
         proc += gen.map_put(m, k, name)
         return proc
