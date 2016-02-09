@@ -28,7 +28,7 @@ class HashMap(ConcreteImpl):
         self.iterator_handle_name = fresh_name("handle")
         self.valueImpl = valueImpl
     def __str__(self):
-        return "HashMap({}, {})".format(self.keyTy, self.valueImpl)
+        return "HashMap({})".format(self.valueImpl)
     def __repr__(self):
         return self.__str__()
     def handle_type(self):

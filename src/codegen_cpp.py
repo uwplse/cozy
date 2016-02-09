@@ -19,7 +19,7 @@ class QHashMapTy(MapTy):
 
 class STLMap(structures.HashMap):
     def __str__(self):
-        return "STLMap({}, {})".format(self.keyTy, self.valueImpl)
+        return "STLMap({})".format(self.valueImpl)
     def fields(self):
         return ((self.name, STLMapTy(self.keyTy, self.valueTy)),)
     def construct(self, gen, parent_structure):
@@ -34,7 +34,7 @@ class STLMap(structures.HashMap):
 
 class QHashMap(structures.HashMap):
     def __str__(self):
-        return "QHashMap({}, {})".format(self.keyTy, self.valueImpl)
+        return "QHashMap({})".format(self.valueImpl)
     def fields(self):
         return ((self.name, QHashMapTy(self.keyTy, self.valueTy)),)
     def construct(self, gen, parent_structure):
