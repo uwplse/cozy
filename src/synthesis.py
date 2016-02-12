@@ -155,7 +155,7 @@ class SolverContext(object):
             self.bestPlans.add(plan)
             plan_cache.evict_higher_cost_entries(cost)
 
-        def consider(plan, check_stupid=True):
+        def consider(plan, check_stupid=False):
             self._check_timeout()
             size = plan.size()
             if not plan.wellFormed(self.z3ctx, self.z3solver, self.fieldNames, self.varNames) or (check_stupid and stupid(plan)):
