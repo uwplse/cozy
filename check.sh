@@ -1,10 +1,7 @@
 #!/bin/bash
 
-EXIT=0
-
 function err {
     echo -e "\033[1;31m$1\033[0;0m"
-    EXIT=1
 }
 
 function require-program {
@@ -49,8 +46,8 @@ function check-z3-version {
 
 require-program python && (check-python-version; (check-z3 && check-z3-version))
 
-if [[ $EXIT == 0 ]]; then
+if [[ $? == 0 ]]; then
     echo "SUCCESS!"
+else
+    exit 1
 fi
-
-exit $EXIT
