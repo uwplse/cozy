@@ -44,7 +44,7 @@ class HashLookup(Plan):
         #     return False
         if disj:
             return False
-        return (isinstance(self.plan, HashLookup) or isinstance(self.plan, AllWhere)) and self.plan.wellFormed(z3ctx, z3solver, fields, vars)
+        return isinstance(self.plan, AllWhere) and self.plan.wellFormed(z3ctx, z3solver, fields, vars)
     def children(self):
         return (self.plan, self.predicate)
 
