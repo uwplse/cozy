@@ -1,25 +1,88 @@
-Data Structure Synthesis
 
-This file documents how to use the data structure synthesis tool.
+                                     Cozy
+                          The Collection Synthesizer
 
-Dependencies:
-    Python 2.7
-    Z3 Python bindings
+--------------------------------------------------------------------------------
 
-To check for the necessary dependencies, you can run:
-    $ ./check.sh
+    Cozy is a tool that synthesizes collection data structure implementations
+    from very high-level specifications.
 
-To get help:
-    $ python src/main.py --help
+GETTING STARTED
 
-To run the tool:
-    $ python src/main.py FILE
+    Dependencies:
+        Python 2.7              - https://www.python.org/
+        Z3 Python bindings      - https://github.com/Z3Prover/z3
 
-Sample input files live in the "examples" folder.
+    To check for the necessary dependencies, you can run:
+        $ ./check.sh
 
-The synthesizer may run for a very long time in some cases. To stop it, press
-Ctrl+C and the tool will stop and output the best plan found so far.
-Alternatively, you can pass a timeout value to the tool.
+    To get help:
+        $ python src/main.py --help
 
-Detailed documentation lives in the "docs" folder. To build the PDFs:
-    $ make -C docs
+    To run the tool:
+        $ python src/main.py [options] [input-file]
+
+    The synthesizer may run for a very long time in some cases. To stop it,
+    press Ctrl+C and the tool will stop and output the best implementation
+    found so far. Alternatively, you can pass a timeout value to the tool.
+
+EXAMPLES
+
+    Sample input files live in the "examples" folder.
+
+    Some of the interesting examples are:
+        ztopo-tile-cache    - case study: the ZTopo data structure
+        myria-profiling-api - case study: the Myria data structure
+        bullet-aabb-tree    - case study: the Bullet data structure
+        sat4j-lits          - case study: the Sat4J data structure
+        graph               - the graph data structure from the paper
+        simple-sort         - a data structure requiring sorting on its results
+        neq                 - efficient lookup of elements NOT equal to a value
+
+INPUT FORMAT
+
+    If you want to craft your own inputs for Cozy, the input format is very
+    simple. Each input file consists of:
+      - some fields with names and types
+      - optional assumptions about those fields
+      - a set of query method specifications
+      - an optional autotuning program
+
+    Fields are declared using
+        fields name1:type1, name2:type2, ...
+
+    The types are treated as opaque strings and Cozy will blindly write
+    them into the generated source code.
+
+    Assumptions are declared using
+        assume expr
+
+    Top-level assumptions can only talk about record fields. They state
+    conditions about individual records---i.e. preconditions for the
+    generated `add()` method. The resulting data structure does not check
+    these preconditions at runtime, but the synthesizer may be able to exploit
+    them to generate faster code. (See examples/myria-profiling-api.)
+
+    Query methods are declared using
+        query query_name (arg1:type1, arg2:type2, ...)
+            assume expr1
+            assume expr2
+            condition-expr
+            sort field_name
+
+    Query assumptions are optional. They state preconditions for the generated
+    method. The resulting data structure does not check these preconditions at
+    runtime, but the synthesizer may be able to exploit them to generate faster
+    code. (See examples/myria-profiling-api.)
+
+    The condition-expr states what records should be returned by the query
+    method.
+
+    The sort declaration is optional and, if present, requires that the
+    resulting data set be sorted by some particular field. (See
+    examples/simple-sort.)
+
+    Autotuning programs are declared using
+        costmodel file.java
+
+    See the inputs in the examples folder for inspiration.
