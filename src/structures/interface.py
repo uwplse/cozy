@@ -90,10 +90,18 @@ class TupleTy(Ty):
 #------------------------------------------------------------------
 
 class NodeTy(Ty):
+    def __init__(self, node_ty):
+        self.node_ty = node_ty
     def gen_type(self, gen):
-        return gen.node_type()
+        return gen.node_type(self.node_ty)
     def __str__(self):
-        return "Node"
+        return self.node_ty
+
+class ListTy(Ty):
+    def __init__(self, Ty):
+        self.Ty = Ty
+    def gen_type(self, gen):
+        return gen.list_type(self.Ty)
 
 #------------------------------------------------------------------
 
