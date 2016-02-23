@@ -181,6 +181,9 @@ class JavaCodeGenerator(codegen.CodeGenerator):
     def end_return(self):
         return "return;\n"
 
+    def logical_and(self, lhs, rhs):
+        return "({}) && ({})".format(lhs, rhs)
+
     def left_shift(self, lhs, rhs):
         return "(({}) << ({}))".format(lhs, rhs)
 
@@ -210,6 +213,9 @@ class JavaCodeGenerator(codegen.CodeGenerator):
 
     def get_node_next(self, node):
         return "{}.next".format(node)
+
+    def not_same(self, lhs, rhs):
+        return "({}) != ({})".format(lhs, rhs)
 
 #------------------------------------------------------------------
 

@@ -99,15 +99,12 @@ class Hamt(HashMap):
         return proc, handle
 
     def find_match(self, gen, hashcode, node, level):
-        # while
         proc = gen.while_true(gen.le(IntTy(), level, 8)) # Bad style
         match = fresh_name("match")
         bits = fresh_name("bits")
         proc += gen.decl(match, NodeTy(self.node_ty.name))
         proc += gen.decl(bits, IntTy(), 0)
-
-        proc += self.get_match_node(gen, match, node, bits, hashcode, gen.mul(self.length_name, level), self.length_name)
-        
+        proc += self.get_match_node(gen, match, node, bits, hashcode, gen.mul(self.length_name, level), self.length_name)    
         # if
         proc += gen.if_true(gen.is_null(match))
         proc += gen.break_loop();
@@ -117,7 +114,6 @@ class Hamt(HashMap):
         proc += gen.plus_one(level)
         proc += gen.endwhile()
         return proc
-        # end while
 
     def gen_insert(self, gen, x, parent_structure, k=None):
     	proc = ""
@@ -132,7 +128,6 @@ class Hamt(HashMap):
         level = fresh_name("level")
         proc += gen.decl(level, IntTy(), 0)
         proc += self.find_match(gen, hashcode, node, level)
-
         # while
         proc += gen.while_true(gen.le(IntTy(), level, 8))
         new_node = fresh_name("node")
@@ -145,10 +140,8 @@ class Hamt(HashMap):
         proc += gen.else_true()
         proc += self.node_construct(gen, new_node, True)
         proc += gen.endif()
-        # end if
-        
+        # end if      
         proc += self.add_signature(gen, node, new_node, bits, hashcode, gen.mul(self.length_name, level), self.length_name)
-
         proc += gen.list_add(gen.get_node_next(node), new_node)
         proc += gen.set(node, new_node)
         proc += gen.plus_one(level)
@@ -174,28 +167,13 @@ class Hamt(HashMap):
         proc += gen.decl(node, NodeTy(self.node_ty.name), self.node_name)
         level = fresh_name("level")
         proc += gen.decl(level, IntTy(), 0)
-        # while
-        proc += gen.while_true(gen.le(IntTy(), level, 8)) # Bad style
-        match = fresh_name("match")
-        bits = fresh_name("bits")
-        proc += gen.decl(match, NodeTy(self.node_ty.name))
-        proc += gen.decl(bits, IntTy(), 0)
-
-        proc += self.get_match_node(gen, match, node, bits, hashcode, gen.mul(self.length_name, level), self.length_name)
-
-        # if
-        proc += gen.if_true(gen.is_null(match))
-        proc += gen.end_return()
-        proc += gen.endif()
-        # end if
-        proc += gen.set(node, match)
-        proc += gen.plus_one(level)
-        proc += gen.endwhile()
+        proc += self.find_match(gen, hashcode, node, level)
+        proc += gen.if_true(gen.same(level, 9))
         remove_result = fresh_name()
         proc += gen.decl(remove_result, BoolTy())
         p, handle = self.handle_lookup(gen, node, k)
         proc += p
-        # end while
+        proc += gen.endif()
         return proc
 
     def gen_query(self, gen, qvars, parent_structure):
@@ -215,27 +193,8 @@ class Hamt(HashMap):
         proc += gen.decl(node, NodeTy(self.node_ty.name), self.node_name)
         level = fresh_name("level")
         proc += gen.decl(level, IntTy(), 0)
-        # while
-        proc += gen.while_true(gen.le(IntTy(), level, 8)) # Bad style
-        match = fresh_name("match")
-        bits = fresh_name("bits")
-        proc += gen.decl(match, NodeTy(self.node_ty.name))
-        proc += gen.decl(bits, IntTy(), 0)
-
-        proc += self.get_match_node(gen, match, node, bits, hashcode, gen.mul(self.length_name, level), self.length_name)
-
-        # if
-        proc += gen.if_true(gen.is_null(match))
-        for val in vs.values():
-            proc += gen.set(val, gen.null_value())
-        proc += gen.break_loop()
-        proc += gen.endif()
-        # end if
-        proc += gen.set(node, match)
-        proc += gen.plus_one(level)
-        proc += gen.endwhile()
-        # end while
-        proc += gen.if_true(gen.not_true(gen.is_null(node)))
+        proc += self.find_match(gen, hashcode, node, level)
+        proc += gen.if_true(gen.logical_and(gen.not_true(gen.is_null(node)), gen.same(level, 9)))
         node_value = gen.get_node_values(node)
         p, handle = self.handle_lookup(gen, node, k)
         proc += p
