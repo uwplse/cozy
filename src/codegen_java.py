@@ -143,6 +143,76 @@ class JavaCodeGenerator(codegen.CodeGenerator):
     def record_type(self):
         return "Record"
 
+#------------------------------------------------------------------
+
+    def node_type(self, node_name):
+        return node_name
+
+    def list_type(self, ty):
+        return "java.util.List<{}>".format(ty)
+
+    def list_get(self, li, index):
+        return "({}).get({})".format(li, index)
+
+    def list_add(self, li, item):
+        return "({}).add({});\n".format(li, item)
+
+    def list_remove(self, li, item):
+        return "({}).remove({})".format(li, item)
+
+    def list_set(self, li, index, item):
+        return "({}).set({}, {});\n".format(li, index, item)
+
+    def list_size(self, li):
+        return "({}).size()".format(li)
+
+    def new_list(self, ty):
+        return "new java.util.LinkedList<{}>()".format(ty) # bad style. Name should be linkedlist or something
+
+    def integer_bitcount(self, arg):
+        return "Integer.bitCount({})".format(arg)
+
+    def plus_one(self, v):
+        return "{}++;\n".format(v)
+
+    def hash_code(self, Ty, v):
+        return _hash_code(Ty.__str__(), "({})".format(v))
+
+    def end_return(self):
+        return "return;\n"
+
+    def left_shift(self, lhs, rhs):
+        return "(({}) << ({}))".format(lhs, rhs)
+
+    def right_logic_shift(self, lhs, rhs):
+        return "(({}) >>> ({}))".format(lhs, rhs)
+
+    def bitwise_and(self, lhs, rhs):
+        return "(({}) & ({}))".format(lhs, rhs)
+
+    def bitwise_or(self, lhs, rhs):
+        return "(({}) | ({}))".format(lhs, rhs)
+
+    def equals(self, lhs, rhs):
+        return "({}).equals({})".format(lhs, rhs)
+
+    def record_name(self, r):
+        return "({}).name".format(r)
+
+    def get_node_values(self, node):
+        return "{}.values".format(node)
+
+    def get_node_is_leaf_value(self, node):
+        return "{}.isLeaf".format(node)
+
+    def get_node_signature(self, node):
+        return "{}.signature".format(node)
+
+    def get_node_next(self, node):
+        return "{}.next".format(node)
+
+#------------------------------------------------------------------
+
     def same(self, e1, e2):
         return "({}) == ({})".format(e1, e2)
 
@@ -234,7 +304,6 @@ class JavaCodeGenerator(codegen.CodeGenerator):
 
             # query routines
             for q in queries:
-
                 for f, ty in q.impl.fields():
                     writer("  /*private*/ {} {};\n".format(ty.gen_type(self), f))
 
@@ -336,6 +405,7 @@ class JavaCodeGenerator(codegen.CodeGenerator):
 
 def _hash_code(ty, exp):
     if _is_primitive(ty):
+        if ty == "boolean":return 1231
         if ty == "int":    return exp
         if ty == "long":   return "(int)({e}^({e}>>>32))".format(e=exp)
         if ty == "float":  return "Float.floatToIntBits({e})".format(e=exp)
@@ -406,4 +476,5 @@ def _box(ty):
     return capitalize(ty)
 
 def _is_primitive(ty):
+    ty = ty.split('.').pop()
     return ty[0] != ty[0].upper()

@@ -56,6 +56,7 @@ def enumerate_impls(fields, queries, args, extra_structures=None):
                     yield structures.HashMap(aimpl.fields, predicates.conjunction(aimpl.rest_p), impl)
                     for load_factor in [0.50, 1.00, 1.50]:
                         yield structures.CozyHashMap(aimpl.fields, aimpl.qvars, predicates.conjunction(aimpl.rest_p), impl, load_factor)
+                    yield structures.Hamt(aimpl.fields, predicates.conjunction(aimpl.rest_p), impl)
         elif type(aimpl) is GuardedImpl:
             for impl in concretize(aimpl.impl):
                 yield structures.Guarded(impl, aimpl.fields, aimpl.qvars, aimpl.predicate)
