@@ -173,6 +173,8 @@ class Hamt(HashMap):
         proc += gen.decl(remove_result, BoolTy())
         p, handle = self.handle_lookup(gen, node, k)
         proc += p
+        proc += self.valueImpl.gen_remove(gen, x, self.valueTy.instance(handle))
+        proc += gen.list_add(gen.get_node_values(node), handle)
         proc += gen.endif()
         return proc
 
@@ -205,6 +207,7 @@ class Hamt(HashMap):
         proc += p
         for lhs, rhs in zip(vs.values(), r):
             proc += gen.set(lhs, rhs)
+        proc += gen.list_add(gen.get_node_values(node), handle)
         proc += gen.else_true()
         r = self.valueImpl.gen_empty(gen, self.valueTy.instance(sub))
         for lhs, rhs in zip(vs.values(), r):
