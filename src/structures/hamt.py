@@ -216,6 +216,9 @@ class Hamt(HashMap):
         proc += gen.endif()
         return (proc, list(vs.values()))
 
+    def gen_query_one(self, gen, qvars, parent_structure):
+        return super(HashMap, self).gen_query_one(gen, qvars, parent_structure)
+
     def auxtypes(self):
         yield self.node_ty
 
