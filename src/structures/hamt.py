@@ -184,6 +184,9 @@ class Hamt(HashMap):
     def gen_remove(self, gen, x, parent_structure):
         return self.gen_remove_at_key(gen, x, parent_structure)
 
+    def gen_remove_in_place(self, gen, parent_structure):
+        return (gen.comment("not implemented yet!"), gen.null_value()) # TODO
+
     def gen_query(self, gen, qvars, parent_structure):
         proc = ""
         vs = collections.OrderedDict()
