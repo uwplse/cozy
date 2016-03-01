@@ -147,8 +147,23 @@ class ConcreteImpl(object):
         """returns (proc, stateExps)"""
         raise NotImplementedError("not implemented for type: {}".format(type(self)))
     def gen_query_one(self, gen, qvars, parent_structure):
-        """returns some single element, or null if no matches"""
-        raise NotImplementedError("not implemented for type: {}".format(type(self)))
+        """returns (proc, match), or null if no matches"""
+        result = fresh_name("x")
+        proc  = gen.decl(result, RecordType())
+        p, vs = self.gen_query(gen, qvars, parent_structure)
+        proc += p
+        for (f, t), v in zip(self.state(), vs):
+            proc += gen.decl(f, t, v)
+        p, hn = self.gen_has_next(gen)
+        proc += p
+        proc += gen.if_true(hn)
+        p, n = self.gen_next(gen)
+        proc += p
+        proc += gen.set(result, n)
+        proc += gen.else_true()
+        proc += gen.set(result, gen.null_value())
+        proc += gen.endif()
+        return proc, result
     def gen_empty(self, gen, qvars):
         """returns stateExps"""
         raise NotImplementedError("not implemented for type: {}".format(type(self)))
