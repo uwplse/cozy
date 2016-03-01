@@ -117,7 +117,7 @@ class Hamt(HashMap):
         proc += gen.endwhile()
         return proc
 
-    def gen_insert(self, gen, x, parent_structure, k=None):
+    def gen_insert_at_key(self, gen, x, parent_structure, k=None):
     	proc = ""
         if k is None:
             k = fresh_name("key")
@@ -156,7 +156,10 @@ class Hamt(HashMap):
         proc += gen.list_add(gen.get_node_values(node), x)
         return proc
 
-    def gen_remove(self, gen, x, parent_structure, k=None):
+    def gen_insert(self, gen, x, parent_structure):
+        return self.gen_insert_at_key(gen, x, parent_structure)
+
+    def gen_remove_at_key(self, gen, x, parent_structure, k=None):
         proc = ""
         hashcode = fresh_name("hashcode")
         proc += gen.decl(hashcode, IntTy())
@@ -179,6 +182,9 @@ class Hamt(HashMap):
         proc += gen.list_add(gen.get_node_values(node), handle)
         proc += gen.endif()
         return proc
+
+    def gen_remove(self, gen, x, parent_structure):
+        return self.gen_remove_at_key(gen, x, parent_structure)
 
     def gen_remove_in_place(self, gen, parent_structure):
         proc = ""
@@ -228,6 +234,9 @@ class Hamt(HashMap):
         proc += gen.set(handle_to_be_returned, handle)
         proc += gen.endif()
         return (proc, list(vs.values()) + [k, handle_to_be_returned])
+
+    def gen_query_one(self, gen, qvars, parent_structure):
+        return super(HashMap, self).gen_query_one(gen, qvars, parent_structure)
 
     def auxtypes(self):
         yield self.node_ty

@@ -4,11 +4,11 @@ import java.util.*;
 
 public class Hamt {
 
-    public static <T> List<T> list(Iterator<T> it) {
-        List<T> l = new ArrayList<>();
-        it.forEachRemaining(l::add);
-        return l;
-    }
+    // public static <T> List<T> list(Iterator<T> it) {
+    //     List<T> l = new ArrayList<>();
+    //     it.forEachRemaining(l::add);
+    //     return l;
+    // }
 
     public static void main(String[] args) {
 
@@ -24,8 +24,9 @@ public class Hamt {
         ds.add(r3);
         ds.add(r4);
 
-        assert list(ds.q("Ed")).containsAll(Arrays.asList(r1));
-        assert list(ds.q("Alice")).equals(Arrays.asList(r2));
+        
+        // assert list(ds.q("Ed")).containsAll(Arrays.asList(r1));
+        // assert list(ds.q("Alice")).equals(Arrays.asList(r2));
 
         // ds.remove(r2);
         // assert list(ds.q("Alice")).equals(Collections.emptyList());
