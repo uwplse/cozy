@@ -24,7 +24,9 @@ class Hamt(HashMap):
         return [(self.node_name, NodeTy(self.node_ty.name)), (self.length_name, IntTy())]
 
     def state(self):
-        return self.valueImpl.state()
+        return list(self.valueImpl.state()) + [
+            (self.iterator_key_name, self.keyTy),
+            (self.iterator_handle_name, self.handle_type())]
 
     def node_construct(self, gen, node, is_leaf):
         proc = gen.init_new(node, self.node_ty)
@@ -178,14 +180,24 @@ class Hamt(HashMap):
         proc += gen.endif()
         return proc
 
+    def gen_remove_in_place(self, gen, parent_structure):
+        proc = ""
+        proc += gen.set(self.iterator_handle_name, self.valueImpl.prev_cursor_name)
+        proc += gen.list_remove(parent_structure.this, self.iterator_handle_name) + ";\n" # Bad
+        p, removed = self.valueImpl.gen_remove_in_place(gen, parent_structure=self.valueTy.instance(self.iterator_handle_name))
+        proc += p
+        return proc, removed
+
     def gen_query(self, gen, qvars, parent_structure):
         proc = ""
         vs = collections.OrderedDict()
         k = fresh_name("key")
         hashcode = fresh_name("hashcode")
+        handle_to_be_returned = fresh_name("handle")
         proc += gen.decl(k, NativeTy("String"))
         proc += gen.decl(hashcode, IntTy())
-        for f,t in self.state():
+        proc += gen.decl(handle_to_be_returned, RecordType(), gen.null_value())
+        for f,t in self.valueImpl.state():
             n = fresh_name(f)
             vs[f] = n
             proc += gen.decl(n, t, gen.null_value())
@@ -213,12 +225,15 @@ class Hamt(HashMap):
         for lhs, rhs in zip(vs.values(), r):
             proc += gen.set(lhs, rhs)
         proc += gen.endif()
+        proc += gen.set(handle_to_be_returned, handle)
         proc += gen.endif()
-        return (proc, list(vs.values()))
+        return (proc, list(vs.values()) + [k, handle_to_be_returned])
 
     def auxtypes(self):
         yield self.node_ty
 
+    def gen_update(self, gen, fields, x, remap, parent_structure):
+        return ""
 
 
 
