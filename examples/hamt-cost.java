@@ -6,14 +6,15 @@ static final int DISTINCT_QUERIES = 10;
 static final int DISTINCT_FRAGMENTS = 10;
 static final long[] SIZES = new long[] {
     1L, 10L, 100L, 310L, 1000L, 3100L,
-    10000L, 31000L, 100000L/*, 310000L */ };
+    10000L, 31000L, 100000L, 310000L };
 
 // set to true to force a different kind of plan to be generated
 static final boolean START_IS_USELESS = true;
 
 void genData(Random rand, DataStructure structure, long ntuples) {
     for (long x = 0; x < ntuples; ++x) {
-        String s = buildString(rand);
+        // String s = buildString(rand);
+        int s = rand.nextInt(N_RUNS);
         structure.add(new DataStructure.Record(s));
     }
 }
@@ -35,7 +36,8 @@ long runQueries(Random rand, DataStructure structure, long ntuples, long nquerie
 
         long startTime = System.nanoTime();
         long count = 0;
-        String s = buildString(rand);
+        // String s = buildString(rand);
+        int s = rand.nextInt(N_RUNS);
         Iterator<DataStructure.Record> it = structure.q(s);
         while (it.hasNext()) {
             it.next();

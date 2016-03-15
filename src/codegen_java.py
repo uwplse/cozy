@@ -157,6 +157,9 @@ class JavaCodeGenerator(codegen.CodeGenerator):
     def list_add(self, li, item):
         return "({}).add({});\n".format(li, item)
 
+    def list_add_at_index(self, li, index, item):
+        return "({}).add({}, {});\n".format(li, index, item)
+
     def list_remove(self, li, item):
         return "({}).remove({})".format(li, item)
 
@@ -196,9 +199,6 @@ class JavaCodeGenerator(codegen.CodeGenerator):
     def bitwise_or(self, lhs, rhs):
         return "(({}) | ({}))".format(lhs, rhs)
 
-    def equals(self, lhs, rhs):
-        return "({}).equals({})".format(lhs, rhs)
-
     def record_name(self, r):
         return "({}).name".format(r)
 
@@ -214,8 +214,11 @@ class JavaCodeGenerator(codegen.CodeGenerator):
     def get_node_next(self, node):
         return "{}.next".format(node)
 
-    def not_same(self, lhs, rhs):
-        return "({}) != ({})".format(lhs, rhs)
+    def not_eq(self, ty, lhs, rhs):
+        return "(!{})".format(self.eq(ty, lhs, rhs))
+
+    def not_same(self, e1, e2):
+        return "(!({}))".format(self.same(e1, e2))
 
 #------------------------------------------------------------------
 

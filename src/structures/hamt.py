@@ -15,6 +15,9 @@ class Hamt(HashMap):
         self.node_name = fresh_name("node")
         self.length_name = fresh_name("length")
 
+    def __str__(self):
+        return "HAMT({})".format(self.valueImpl)
+
     def construct(self, gen, parent_structure):
     	proc = self.node_construct(gen, self.node_name, False)
         proc += gen.set(self.length_name, 4); # Bad style
@@ -36,12 +39,12 @@ class Hamt(HashMap):
         else:
             proc += gen.set(gen.get_node_is_leaf_value(node), gen.false_value())
             proc += gen.set(gen.get_node_next(node), gen.new_list(self.node_ty.name))
-            index = fresh_name("index")
-            proc += gen.decl(index, IntTy(), 0)
-            proc += gen.while_true(gen.lt(IntTy(), index, 16))
-            proc += gen.list_add(gen.get_node_next(node), gen.null_value())
-            proc += gen.plus_one(index)
-            proc += gen.endwhile()
+            # index = fresh_name("index")
+            # proc += gen.decl(index, IntTy(), 0)
+            # proc += gen.while_true(gen.lt(IntTy(), index, 16))
+            # proc += gen.list_add(gen.get_node_next(node), gen.null_value())
+            # proc += gen.plus_one(index)
+            # proc += gen.endwhile()
         proc += gen.set(gen.get_node_signature(node), 0)
         return proc
 
@@ -57,7 +60,13 @@ class Hamt(HashMap):
         proc += gen.end_return()
         proc += gen.endif()
         proc += gen.set(gen.get_node_signature(node), gen.bitwise_or(gen.get_node_signature(node), gen.left_shift(1, bits)))
-        proc += gen.list_set(gen.get_node_next(node), bits, new_node)
+
+        # proc += gen.list_set(gen.get_node_next(node), bits, new_node)
+
+        index = fresh_name("index")
+        arg = gen.left_shift(gen.left_shift(gen.get_node_signature(node), gen.sub(gen.sub(32, bits), 1)), 1)
+        proc += gen.decl(index, IntTy(), gen.integer_bitcount(arg))
+        proc += gen.list_add_at_index(gen.get_node_next(node), index, new_node)
         return proc
 
     def get_match_node(self, gen, match, node, bits, hashcode, startIndex, length):
@@ -67,7 +76,13 @@ class Hamt(HashMap):
         proc += gen.if_true(gen.not_true(is_match))
         proc += gen.set(match, gen.null_value())
         proc += gen.else_true()
-        proc += gen.map_find_handle(gen.get_node_next(node), bits, match)
+
+        # proc += gen.map_find_handle(gen.get_node_next(node), bits, match)
+
+        index = fresh_name("index")
+        arg = gen.left_shift(gen.left_shift(gen.get_node_signature(node), gen.sub(gen.sub(32, bits), 1)), 1)
+        proc += gen.decl(index, IntTy(), gen.integer_bitcount(arg))
+        proc += gen.map_find_handle(gen.get_node_next(node), index, match)
         proc += gen.endif()
         return proc
 
@@ -76,7 +91,7 @@ class Hamt(HashMap):
         proc += gen.set(is_match, "false")
         proc += gen.else_true()
         proc += self.get_match_bits(gen, bits, hashcode, startIndex, length)
-        proc += gen.set(is_match, gen.same(1, gen.bitwise_and(gen.right_logic_shift(gen.get_node_signature(node), bits), 1)))
+        proc += gen.set(is_match, gen.eq(IntTy(), 1, gen.bitwise_and(gen.right_logic_shift(gen.get_node_signature(node), bits), 1)))
         proc += gen.endif()
         return proc
 
@@ -91,12 +106,13 @@ class Hamt(HashMap):
         proc += gen.while_true(gen.lt(IntTy(), index, gen.list_size(gen.get_node_values(node))))
         sub = fresh_name("sub")
         proc += gen.decl(sub, RecordType(), gen.list_get(gen.get_node_values(node), index))
-        proc += gen.if_true(gen.equals(gen.record_name(sub), k))
+        proc += gen.if_true(gen.logical_and(gen.not_same(sub, gen.null_value()), gen.eq(self.keyTy, gen.record_name(sub), k)))
         proc += gen.set(handle, sub)
         is_removed = fresh_name()
         proc += gen.decl(is_removed, BoolTy(), gen.list_remove(gen.get_node_values(node), sub))
         proc += gen.break_loop()
         proc += gen.endif()
+        proc += gen.plus_one(index)
         proc += gen.endwhile()
         return proc, handle
 
@@ -124,7 +140,7 @@ class Hamt(HashMap):
             proc += gen.decl(k, self.keyTy)
             proc += self.make_key_of_record(gen, x, k)
         hashcode = fresh_name("hashcode")
-        proc += gen.decl(hashcode, IntTy(), gen.hash_code(self.keyTy, k))
+        proc += gen.decl(hashcode, IntTy(), gen.hash_code(self.keyTy.gen_type(gen), k))
         node = fresh_name("node")
         proc += gen.decl(node, NodeTy(self.node_ty.name), self.node_name)
         level = fresh_name("level")
@@ -167,13 +183,13 @@ class Hamt(HashMap):
             k = fresh_name("key")
             proc += gen.decl(k, self.keyTy)
             proc += self.make_key_of_record(gen, x, k)
-        proc += gen.set(hashcode, gen.hash_code(self.keyTy, k))
+        proc += gen.set(hashcode, gen.hash_code(self.keyTy.gen_type(gen), k))
         node = fresh_name("node")
         proc += gen.decl(node, NodeTy(self.node_ty.name), self.node_name)
         level = fresh_name("level")
         proc += gen.decl(level, IntTy(), 0)
         proc += self.find_match(gen, hashcode, node, level)
-        proc += gen.if_true(gen.same(level, 9))
+        proc += gen.if_true(gen.eq(IntTy(), level, 9))
         remove_result = fresh_name()
         proc += gen.decl(remove_result, BoolTy())
         p, handle = self.handle_lookup(gen, node, k)
@@ -200,7 +216,7 @@ class Hamt(HashMap):
         k = fresh_name("key")
         hashcode = fresh_name("hashcode")
         handle_to_be_returned = fresh_name("handle")
-        proc += gen.decl(k, NativeTy("String"))
+        proc += gen.decl(k, self.keyTy)
         proc += gen.decl(hashcode, IntTy())
         proc += gen.decl(handle_to_be_returned, RecordType(), gen.null_value())
         for f,t in self.valueImpl.state():
@@ -208,13 +224,13 @@ class Hamt(HashMap):
             vs[f] = n
             proc += gen.decl(n, t, gen.null_value())
         proc += self.make_key(gen, k)
-        proc += gen.set(hashcode, gen.hash_code(self.keyTy, k))
+        proc += gen.set(hashcode, gen.hash_code(self.keyTy.gen_type(gen), k))
         node = fresh_name("node")
         proc += gen.decl(node, NodeTy(self.node_ty.name), self.node_name)
         level = fresh_name("level")
         proc += gen.decl(level, IntTy(), 0)
         proc += self.find_match(gen, hashcode, node, level)
-        proc += gen.if_true(gen.logical_and(gen.not_true(gen.is_null(node)), gen.same(level, 9)))
+        proc += gen.if_true(gen.logical_and(gen.not_true(gen.is_null(node)), gen.eq(IntTy(), level, 9)))
         node_value = gen.get_node_values(node)
         p, handle = self.handle_lookup(gen, node, k)
         proc += p
@@ -234,9 +250,6 @@ class Hamt(HashMap):
         proc += gen.set(handle_to_be_returned, handle)
         proc += gen.endif()
         return (proc, list(vs.values()) + [k, handle_to_be_returned])
-
-    def gen_query_one(self, gen, qvars, parent_structure):
-        return super(HashMap, self).gen_query_one(gen, qvars, parent_structure)
 
     def gen_query_one(self, gen, qvars, parent_structure):
         return super(HashMap, self).gen_query_one(gen, qvars, parent_structure)
