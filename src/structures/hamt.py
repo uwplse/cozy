@@ -39,12 +39,6 @@ class Hamt(HashMap):
         else:
             proc += gen.set(gen.get_node_is_leaf_value(node), gen.false_value())
             proc += gen.set(gen.get_node_next(node), gen.new_list(self.node_ty.name))
-            # index = fresh_name("index")
-            # proc += gen.decl(index, IntTy(), 0)
-            # proc += gen.while_true(gen.lt(IntTy(), index, 16))
-            # proc += gen.list_add(gen.get_node_next(node), gen.null_value())
-            # proc += gen.plus_one(index)
-            # proc += gen.endwhile()
         proc += gen.set(gen.get_node_signature(node), 0)
         return proc
 
@@ -60,9 +54,6 @@ class Hamt(HashMap):
         proc += gen.end_return()
         proc += gen.endif()
         proc += gen.set(gen.get_node_signature(node), gen.bitwise_or(gen.get_node_signature(node), gen.left_shift(1, bits)))
-
-        # proc += gen.list_set(gen.get_node_next(node), bits, new_node)
-
         index = fresh_name("index")
         arg = gen.left_shift(gen.left_shift(gen.get_node_signature(node), gen.sub(gen.sub(32, bits), 1)), 1)
         proc += gen.decl(index, IntTy(), gen.integer_bitcount(arg))
@@ -76,9 +67,6 @@ class Hamt(HashMap):
         proc += gen.if_true(gen.not_true(is_match))
         proc += gen.set(match, gen.null_value())
         proc += gen.else_true()
-
-        # proc += gen.map_find_handle(gen.get_node_next(node), bits, match)
-
         index = fresh_name("index")
         arg = gen.left_shift(gen.left_shift(gen.get_node_signature(node), gen.sub(gen.sub(32, bits), 1)), 1)
         proc += gen.decl(index, IntTy(), gen.integer_bitcount(arg))
