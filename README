@@ -31,11 +31,7 @@ EXAMPLES
     Sample input files live in the "examples" folder.
 
     Some of the interesting examples are:
-        ztopo-tile-cache    - case study: the ZTopo data structure
-        myria-profiling-api - case study: the Myria data structure
-        bullet-aabb-tree    - case study: the Bullet data structure
-        sat4j-lits          - case study: the Sat4J data structure
-        graph               - the graph data structure from the paper
+        graph               - a multigraph data structure
         simple-sort         - a data structure requiring sorting on its results
         neq                 - efficient lookup of elements NOT equal to a value
 
