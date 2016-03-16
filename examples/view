@@ -1,0 +1,3 @@
+fields a b c d
+query q()
+    a < b and c == d

@@ -1,0 +1,3 @@
+fields name : String, age : long
+query q(expectedName : String, expectedAge : long)
+    (name == expectedName and age == expectedAge) or false

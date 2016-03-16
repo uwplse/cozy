@@ -1,0 +1,3 @@
+fields x
+query q(y)
+    x != y

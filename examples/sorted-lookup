@@ -1,0 +1,7 @@
+fields
+    name:String,
+    age:int
+
+query lookupByName(n:String)
+    n == name
+    sort age
