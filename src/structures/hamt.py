@@ -44,8 +44,7 @@ class Hamt(HashMap):
 
     def add_signature(self, gen, node, new_node, bits, hashcode, startIndex, length):
         is_match = fresh_name("isMatch")
-        proc = ""
-        proc += gen.if_true(gen.get_node_is_leaf_value(node))
+        proc = gen.if_true(gen.get_node_is_leaf_value(node))
         proc += gen.end_return()
         proc += gen.endif()
         proc += gen.decl(is_match, BoolTy())
