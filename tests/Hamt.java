@@ -1,4 +1,4 @@
-
+package tests;
 
 import java.util.*;
 
