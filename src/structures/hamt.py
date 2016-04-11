@@ -19,7 +19,7 @@ class Hamt(HashMap):
         return "HAMT({})".format(self.valueImpl)
 
     def construct(self, gen, parent_structure):
-    	proc = self.node_construct(gen, self.node_name, False)
+        proc = self.node_construct(gen, self.node_name, False)
         proc += gen.set(self.length_name, 4); # Bad style
         return proc;
 
@@ -109,7 +109,7 @@ class Hamt(HashMap):
         bits = fresh_name("bits")
         proc += gen.decl(match, NodeTy(self.node_ty.name))
         proc += gen.decl(bits, IntTy(), 0)
-        proc += self.get_match_node(gen, match, node, bits, hashcode, gen.mul(self.length_name, level), self.length_name)    
+        proc += self.get_match_node(gen, match, node, bits, hashcode, gen.mul(self.length_name, level), self.length_name)
         # if
         proc += gen.if_true(gen.is_null(match))
         proc += gen.break_loop();
@@ -121,7 +121,7 @@ class Hamt(HashMap):
         return proc
 
     def gen_insert_at_key(self, gen, x, parent_structure, k=None):
-    	proc = ""
+        proc = ""
         if k is None:
             k = fresh_name("key")
             proc += gen.decl(k, self.keyTy)
@@ -145,7 +145,7 @@ class Hamt(HashMap):
         proc += gen.else_true()
         proc += self.node_construct(gen, new_node, True)
         proc += gen.endif()
-        # end if      
+        # end if
         proc += self.add_signature(gen, node, new_node, bits, hashcode, gen.mul(self.length_name, level), self.length_name)
         proc += gen.list_add(gen.get_node_next(node), new_node)
         proc += gen.set(node, new_node)
