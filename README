@@ -82,3 +82,19 @@ INPUT FORMAT
         costmodel file.java
 
     See the inputs in the examples folder for inspiration.
+
+HACKING
+
+    Source code lives in src. It is well-organized, but poorly commented.
+
+        src/
+            main.py       -- program entry point
+            synthesis.py  -- synthesis algorithm
+            codegen.py    -- code generation
+            structures/   -- data structure library
+            ...
+
+    There are a few scripts useful for developers:
+
+        Run pylint:    ./lint.sh
+        Run tests:     ./test.sh
