@@ -2,7 +2,7 @@
 Various data structures Cozy knows how to use.
 """
 
-import interface
+from . import interface
 from .filtered         import Filtered
 from .guarded          import Guarded
 from .linked_list      import LinkedList
