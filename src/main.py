@@ -111,6 +111,7 @@ if __name__ == '__main__':
     structure_opts = parser.add_argument_group("Library control")
     structure_opts.add_argument("--enable-arrays", action="store_true", help="Allow the use of ArrayLists [experimental]")
     structure_opts.add_argument("--enable-volume-trees", action="store_true", help="Allow the use of VolumeTrees [experimental]")
+    structure_opts.add_argument("--enable-hamt", action="store_true", help="Allow the use of Hash Array-Mapped Tries [experimental]")
 
     parser.add_argument("file", nargs="?", default=None, help="Input file (omit to use stdin)")
     args = parser.parse_args()
