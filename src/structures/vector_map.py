@@ -29,7 +29,7 @@ class VectorMap(HashMap):
     def construct(self, gen, parent_structure):
         name = parent_structure.field(gen, self.name)
         proc = gen.set(name, gen.new_vector(self.valueTy, self.count))
-        for i in xrange(self.count):
+        for i in range(self.count):
             proc += self.valueImpl.construct(gen, self.valueTy.instance(gen.vector_get(name, i)))
         return proc
     def lookup(self, gen, m, k):

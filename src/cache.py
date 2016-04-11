@@ -24,10 +24,11 @@ class Cache(object):
         if size is None:
             size = self.size_func(entry)
         old_cost = self.costs_by_key.get(key)
-        if old_cost is not None and (old_cost <= cost or (old_cost == cost and not self.allow_multi)):
-            return self.entries_by_key[key][0]
-        if old_cost > cost:
-            self.evict(key)
+        if old_cost is not None:
+            if old_cost <= cost or (old_cost == cost and not self.allow_multi):
+                return self.entries_by_key[key][0]
+            if old_cost > cost:
+                self.evict(key)
         _expand(self.entries_by_size, size + 1)
         self.entries_by_size[size].append(entry)
         self.entries_by_key[key].append(entry)

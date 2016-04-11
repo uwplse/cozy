@@ -197,7 +197,7 @@ class SolverContext(object):
             return expr_cache.put(e, size=size)
 
         def pickToSum(cache1, cache2, sum):
-            return ((x1, x2) for split in xrange(1, sum-1)
+            return ((x1, x2) for split in range(1, sum-1)
                 for x1 in cache1.entries_of_size(split)
                 for x2 in cache2.entries_of_size(sum-split-1))
 
@@ -267,10 +267,10 @@ class SolverContext(object):
         roundsWithoutProgress = 0
         maxRoundsWithoutProgress = 10
 
-        for size in xrange(2, maxSize + 1):
+        for size in range(2, maxSize + 1):
             # termination criterion: no plans can ever be formed above this point
             halfsize = int(size/2)
-            if all((sz > 2 and not plan_cache.entries_of_size(sz-1) and all((not plan_cache.entries_of_size(i) or (not plan_cache.entries_of_size(sz - i - 1) and not plan_cache.entries_of_size(sz - i - 1))) for i in xrange(1, sz - 1))) for sz in range(halfsize, size+1)):
+            if all((sz > 2 and not plan_cache.entries_of_size(sz-1) and all((not plan_cache.entries_of_size(i) or (not plan_cache.entries_of_size(sz - i - 1) and not plan_cache.entries_of_size(sz - i - 1))) for i in range(1, sz - 1))) for sz in range(halfsize, size+1)):
                 yield ("stop", None)
 
             # exprs

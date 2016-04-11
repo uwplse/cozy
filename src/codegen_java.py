@@ -403,7 +403,7 @@ class JavaCodeGenerator(codegen.CodeGenerator):
             print(stderr)
             raise Exception()
 
-        score = long(stdout.strip())
+        score = int(stdout.strip())
 
         os.chdir(orig)
 

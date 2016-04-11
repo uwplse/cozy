@@ -44,7 +44,7 @@ class AugTree(ConcreteImpl):
         clauses = list(predicates.break_conj(predicate))
 
         # put field names on LHS of clauses
-        for i in xrange(len(clauses)):
+        for i in range(len(clauses)):
             if clauses[i].rhs.name in fields:
                 clauses[i] = clauses[i].flip()
 

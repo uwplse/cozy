@@ -570,7 +570,7 @@ class CppCodeGenerator(codegen.CodeGenerator):
         stdout, stdin = proc.communicate()
         assert proc.returncode == 0
 
-        score = long(stdout.strip())
+        score = int(stdout.strip())
         return score
 
     def extensions(self, old):

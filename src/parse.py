@@ -25,7 +25,7 @@ class peekable(object):
     def __next__(self):
         return self.next()
     def next(self):
-        return self.i.next()
+        return next(self.i)
     def peek(self):
         e = self.next()
         self.i = itertools.chain([e], self.i)

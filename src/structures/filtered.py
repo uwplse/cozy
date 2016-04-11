@@ -1,4 +1,3 @@
-import itertools
 from .interface import ConcreteImpl, RecordType, NativeTy
 from common import fresh_name
 
@@ -29,7 +28,7 @@ class Filtered(ConcreteImpl):
             self.predicate, x)
     def gen_query(self, gen, qvars, parent_structure):
         proc, es = self.ty.gen_query(gen, qvars, parent_structure)
-        for (v, t), e in itertools.izip(self.ty.state(), es):
+        for (v, t), e in zip(self.ty.state(), es):
             proc += gen.decl(v, t, e)
         proc += gen.while_true(gen.true_value())
         p1, hn = self.ty.gen_has_next(gen)
@@ -49,7 +48,7 @@ class Filtered(ConcreteImpl):
         return proc, [v for (v, t) in self.ty.state()]
     def gen_query_one(self, gen, qvars, parent_structure):
         proc, es = self.ty.gen_query(gen, qvars, parent_structure)
-        for (v, t), e in itertools.izip(self.ty.state(), es):
+        for (v, t), e in zip(self.ty.state(), es):
             proc += gen.decl(v, t, e)
         result = fresh_name("result")
         proc += gen.decl(result, RecordType(), gen.null_value())
