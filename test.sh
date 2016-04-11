@@ -4,7 +4,7 @@ EXIT=0
 cd "$(dirname "$0")"
 
 function synth {
-    python src/main.py --java 'tests/DataStructure'$2'.java' --java-class 'DataStructure'$2 --java-package tests $1
+    python src/main.py -d --java 'tests/DataStructure'$2'.java' --java-class 'DataStructure'$2 --java-package tests $1
 }
 
 function fail {
