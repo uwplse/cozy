@@ -1,3 +1,4 @@
+from __future__ import print_function
 from functools import total_ordering, wraps
 import re
 import sys
@@ -28,6 +29,15 @@ class ADT(object):
         return type(self) is type(other) and self.children() == other.children()
     def __lt__(self, other):
         return (self.children() < other.children()) if (type(self) is type(other)) else (type(self).__name__ < type(other).__name__)
+
+class Visitor(object):
+    def visit(self, x, *args, **kwargs):
+        t = type(x).__name__
+        visit_func = "visit_{}".format(t)
+        if not hasattr(self, visit_func):
+            print("Warning: {} does not implement {}".format(self, visit_func), file=sys.stderr)
+            return None
+        return getattr(self, visit_func)(x, *args, **kwargs)
 
 _i = 0
 def fresh_name(hint="name"):
