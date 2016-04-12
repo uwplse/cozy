@@ -24,10 +24,10 @@ def declare_case(supertype, name, attrs=()):
             return tuple(getattr(self, a) for a in attrs)
     globals()[name] = T
 
-declare_case(ADT, "Spec",   ["name", "types", "statevars", "assumptions", "methods"])
+declare_case(ADT, "Spec", ["name", "types", "statevars", "assumptions", "methods"])
 
 class Method(ADT): pass
-declare_case(Method, "Op", ["name", "args", "assumptions", "body"])
+declare_case(Method, "Op",    ["name", "args", "assumptions", "body"])
 declare_case(Method, "Query", ["name", "args", "assumptions", "ret"])
 
 class Type(ADT): pass
@@ -42,16 +42,16 @@ declare_case(Type, "TApp",    ["t", "args"])
 declare_case(Type, "TEnum",   ["cases"])
 
 class Exp(ADT): pass
-declare_case(Exp, "EVar", ["id"])
-declare_case(Exp, "EBool", ["val"])
-declare_case(Exp, "ENum", ["val"])
-declare_case(Exp, "EBinOp", ["e1", "op", "e2"])
-declare_case(Exp, "EUnaryOp", ["op", "e"])
-declare_case(Exp, "EGetField", ["e", "f"])
-declare_case(Exp, "EMakeRecord", ["fields"])
+declare_case(Exp, "EVar",               ["id"])
+declare_case(Exp, "EBool",              ["val"])
+declare_case(Exp, "ENum",               ["val"])
+declare_case(Exp, "EBinOp",             ["e1", "op", "e2"])
+declare_case(Exp, "EUnaryOp",           ["op", "e"])
+declare_case(Exp, "EGetField",          ["e", "f"])
+declare_case(Exp, "EMakeRecord",        ["fields"])
 declare_case(Exp, "EListComprehension", ["e", "clauses"])
-declare_case(Exp, "EAlloc", ["t", "args"])
-declare_case(Exp, "ECall", ["func", "args"])
+declare_case(Exp, "EAlloc",             ["t", "args"])
+declare_case(Exp, "ECall",              ["func", "args"])
 
 class ComprehensionClause(ADT): pass
 declare_case(ComprehensionClause, "CPull", ["id", "e"])
@@ -59,6 +59,6 @@ declare_case(ComprehensionClause, "CCond", ["e"])
 
 class Stm(ADT): pass
 declare_case(Stm, "SNoOp")
-declare_case(Stm, "SCall", ["target", "func", "args"])
+declare_case(Stm, "SCall",   ["target", "func", "args"])
 declare_case(Stm, "SAssign", ["target", "field", "e"])
-declare_case(Stm, "SDel", ["e"])
+declare_case(Stm, "SDel",    ["e"])
