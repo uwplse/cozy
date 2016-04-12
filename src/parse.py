@@ -93,7 +93,7 @@ def make_lexer():
         locals()["t_{}".format(op_token_name(opname))] = re.escape(op)
 
     def t_WORD(t):
-        r"\w+"
+        r"[a-zA-Z_]\w*"
         if t.value in _KEYWORDS:
             # I wish I knew why I needed this. :(
             t.type = keyword_token_name(t.value)
