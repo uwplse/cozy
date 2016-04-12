@@ -6,3 +6,5 @@ __pycache__
 *.class
 /tests/DataStructure*.java
 /tests/fuzz_fail*
+/src/parsetab.py
+/src/parser.out

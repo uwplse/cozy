@@ -1,148 +1,272 @@
+"""
+Parser for Cozy files.
+
+The key function to look at is:
+    parse(string) -> AST
+"""
+
+# buitin
+from __future__ import print_function
 import re
-import itertools
-import predicates
-from queries import Query
+import string
 
-_EOF = object()
-_TOKEN_REGEX = re.compile(r'\s*(\w+|>=|<=|>|<|==|!=|.)')
-_KEYWORDS = ("fields", "vars", "query", "assume", "sort", "costmodel")
+# 3rd party
+from ply import lex, yacc
 
-def _tokenize(text):
+# ours
+import parsetools
+
+# Each keyword becomes a KW_* token for the lexer. So, e.g. "and" becomes
+# KW_AND.
+_KEYWORDS = [
+    "type",
+    "enum",
+    "op",
+    "query",
+    "state",
+    "assume",
+    "true",
+    "false",
+    "not",
+    "and",
+    "or",
+    "in",
+    "empty",
+    "unique",
+    "min",
+    "max",
+    "sum",
+    "some",
+    "new",
+    "del"]
+
+# Each operator has a name and a raw string. Each becomes an OP_* token for the
+# lexer. So, e.g. ("ASSIGN", "=") matches "=" and the token will be named
+# OP_ASSIGN.
+_OPERATORS = [
+    ("ASSIGN", "="),
+    ("IMPLIES", "=>"),
+    ("GE", ">="),
+    ("LE", "<="),
+    ("GT", ">"),
+    ("LT", "<"),
+    ("EQ", "=="),
+    ("NE", "!="),
+    ("PLUS", "+"),
+    ("MINUS", "-"),
+    ("COLON", ":"),
+    ("SEMICOLON", ";"),
+    ("COMMA", ","),
+    ("OPEN_BRACE", "{"),
+    ("CLOSE_BRACE", "}"),
+    ("OPEN_PAREN", "("),
+    ("CLOSE_PAREN", ")"),
+    ("OPEN_BRACKET", "["),
+    ("CLOSE_BRACKET", "]"),
+    ("DOT", "."),
+    ("LEFT_ARROW", "<-"),
+    ("VBAR", "|")]
+
+################################################################################
+
+def keyword_token_name(kw):
+    return "KW_{}".format(kw.upper())
+
+def op_token_name(opname):
+    return "OP_{}".format(opname.upper())
+
+# Enumerate token names
+tokens = []
+for kw in _KEYWORDS:
+    tokens.append(keyword_token_name(kw))
+for opname, op in _OPERATORS:
+    tokens.append(op_token_name(opname))
+tokens += ["WORD", "NUM"]
+tokens = tuple(tokens) # freeze tokens
+
+def make_lexer():
+    # *sigh*... ply has such a weird interface. There might be a cleaner way to
+    # programmatically produce token productions, but I don't know what it is.
+    for kw in _KEYWORDS:
+        locals()["t_{}".format(keyword_token_name(kw))] = re.escape(kw)
+    for opname, op in _OPERATORS:
+        locals()["t_{}".format(op_token_name(opname))] = re.escape(op)
+
+    def t_WORD(t):
+        r"\w+"
+        if t.value in _KEYWORDS:
+            # I wish I knew why I needed this. :(
+            t.type = keyword_token_name(t.value)
+        return t
+
+    def t_COMMENT(t):
+        r"\/\/[^\n]*"
+        pass
+
+    def t_NUM(t):
+        r"\d+"
+        t.value = int(t.value)
+        return t
+
+    # Define a rule so we can track line numbers
+    def t_newline(t):
+        r'\n+'
+        t.lexer.lineno += len(t.value)
+
+    t_ignore = ' \t'
+
+    def t_error(t):
+        print("Illegal character {}".format(repr(t.value[0])), file=sys.stderr)
+        t.lexer.skip(1)
+
+    return lex.lex()
+
+_lexer = make_lexer()
+def tokenize(s):
+    lexer = _lexer.clone() # Because lexer objects are stateful
+    lexer.input(s)
     while True:
-        match = _TOKEN_REGEX.match(text)
-        if not match:
-            assert text.strip() == ""
-            yield _EOF
-            return
-        yield match.group(1)
-        text = text[len(match.group(0)):]
+        tok = lexer.token()
+        if not tok:
+            break
+        yield tok
 
-class peekable(object):
-    def __init__(self, i):
-        self.i = i
-    def __iter__(self):
-        return self
-    def __next__(self):
-        return self.next()
-    def next(self):
-        return next(self.i)
-    def peek(self):
-        e = self.next()
-        self.i = itertools.chain([e], self.i)
-        return e
+################################################################################
 
-def _parseType(tokens):
-    t = tokens.next()
-    while (tokens.peek() is not _EOF and
-            tokens.peek() != "," and
-            tokens.peek() != ")" and
-            tokens.peek() not in _KEYWORDS):
-        t += tokens.next()
-    return t
+def make_parser():
+    start = "spec"
 
-def _parseVars(tokens):
-    while tokens.peek() is not _EOF and tokens.peek() not in _KEYWORDS and tokens.peek() != ")":
-        field_name = tokens.next()
-        ty = "double"
-        if tokens.peek() == ":":
-            tokens.next()
-            ty = _parseType(tokens)
-        yield (field_name, ty)
-        if tokens.peek() == ",":
-            tokens.next()
+    def p_spec(p):
+        """spec : WORD OP_COLON typedecls states assumes methods"""
+        p[0] = (p[1], p[3], p[4], p[5], p[6])
 
-_ops = ["or", "and"] # ordered by associativity
-def _parseQuery(fields, qvars, tokens, assoc=0):
-    if assoc >= len(_ops):
-        tok = tokens.next()
-        assert tok is not _EOF
-        if tok == "(":
-            q = _parseQuery(fields, qvars, tokens, 0)
-            assert tokens.next() == ")"
-            return q
-        elif tok == "not":
-            return predicates.Not(_parseQuery(fields, qvars, tokens, 0))
-        elif tok == "true":
-            return predicates.Bool(True)
-        elif tok == "false":
-            return predicates.Bool(False)
+    parsetools.multi(locals(), "typedecls", "typedecl")
+
+    def p_typedecl(p):
+        """typedecl : KW_TYPE WORD OP_ASSIGN type"""
+        p[0] = (p[2], p[4])
+
+    def p_type(p):
+        """type : WORD
+                | WORD OP_LT type OP_GT
+                | OP_OPEN_BRACE typednames OP_CLOSE_BRACE
+                | KW_ENUM OP_OPEN_BRACE enum_cases OP_CLOSE_BRACE"""
+        if len(p) == 2:
+            p[0] = ("typename", p[1])
+        elif len(p) == 5:
+            if p[1] == "enum":
+                p[0] = ("enum", p[3])
+            else:
+                p[0] = ("typeapp", p[1], p[3])
+        elif len(p) == 4:
+            p[0] = ("recordtype", p[2])
+
+    parsetools.multi(locals(), "enum_cases", "WORD", sep="OP_COMMA")
+
+    def p_typedname(p):
+        """typedname : WORD OP_COLON type"""
+        p[0] = (p[1], p[3])
+
+    parsetools.multi(locals(), "typednames", "typedname", sep="OP_COMMA")
+
+    def p_statevar(p):
+        """statevar : KW_STATE WORD OP_COLON type"""
+        p[0] = (p[2], p[4])
+
+    parsetools.multi(locals(), "states", "statevar")
+
+    def p_assume(p):
+        """assume : KW_ASSUME exp OP_SEMICOLON"""
+        p[0] = p[2]
+
+    parsetools.multi(locals(), "assumes", "assume")
+
+    precedence = (
+        ("left", "OP_COMMA"),
+        ("left", "OP_IMPLIES"),
+        ("left", "KW_AND", "KW_OR"),
+        ("left", "OP_EQ", "OP_NE", "OP_LT", "OP_LE", "OP_GT", "OP_GE"),
+        ("left", "OP_PLUS", "OP_MINUS"),
+        ("left", "KW_IN"),
+        ("left", "KW_NOT", "KW_UNIQUE", "KW_EMPTY", "KW_SOME", "KW_MIN", "KW_MAX", "KW_SUM", "KW_NEW", "KW_DEL"),
+        ("left", "OP_OPEN_PAREN"),
+        ("left", "OP_DOT"))
+
+    def p_exp(p):
+        """exp : NUM
+               | WORD
+               | WORD OP_OPEN_PAREN exp_list OP_CLOSE_PAREN
+               | KW_TRUE
+               | KW_FALSE
+               | exp OP_PLUS  exp
+               | exp OP_MINUS exp
+               | exp OP_EQ exp
+               | exp OP_NE exp
+               | exp OP_LT exp
+               | exp OP_LE exp
+               | exp OP_GT exp
+               | exp OP_GE exp
+               | exp KW_AND exp
+               | exp KW_OR exp
+               | exp OP_IMPLIES exp
+               | KW_NOT exp
+               | exp KW_IN exp
+               | OP_VBAR exp OP_VBAR
+               | KW_UNIQUE exp
+               | KW_EMPTY exp
+               | KW_SOME exp
+               | KW_MIN exp
+               | KW_MAX exp
+               | KW_SUM exp
+               | exp OP_DOT WORD
+               | OP_OPEN_PAREN exp OP_CLOSE_PAREN
+               | KW_NEW WORD OP_OPEN_PAREN exp_list OP_CLOSE_PAREN
+               | OP_OPEN_BRACE record_fields OP_CLOSE_BRACE
+               | OP_OPEN_BRACKET exp OP_VBAR comprehension_body OP_CLOSE_BRACKET"""
+        p[0] = tuple(p[1:])
+
+    parsetools.multi(locals(), "exp_list", "exp", sep="OP_COMMA")
+
+    def p_record_field(p):
+        """record_field : WORD OP_COLON exp"""
+        p[0] = (p[1], p[3])
+
+    parsetools.multi(locals(), "record_fields", "record_field", sep="OP_COMMA")
+
+    def p_comprehension_clause(p):
+        """comprehension_clause : WORD OP_LEFT_ARROW exp
+                                | exp"""
+        if len(p) == 2:
+            return ("guard", p[1])
         else:
-            f = tok
-            op = tokens.next()
-            v = tokens.next()
-            m = { ">=" : predicates.Ge,
-                "<=" : predicates.Le,
-                ">" : predicates.Gt,
-                "<" : predicates.Lt,
-                "==" : predicates.Eq,
-                "!=" : predicates.Ne }
-            assert f in fields or f in qvars, "unkown var '{}'".format(f)
-            assert op in m
-            assert v in fields or v in qvars, "unkown var '{}'".format(v)
-            return predicates.Compare(predicates.Var(f), m[op], predicates.Var(v))
-    else:
-        q1 = _parseQuery(fields, qvars, tokens, assoc + 1)
-        if tokens.peek() == _ops[assoc]:
-            op = tokens.next()
-            q2 = _parseQuery(fields, qvars, tokens, assoc)
-            m = { "and": predicates.And, "or": predicates.Or }
-            assert op in m
-            return m[op](q1, q2)
-        return q1
+            return ("pull", p[1], p[3])
 
-def parseQuery(text):
-    tokens = peekable(_tokenize(text))
-    assert tokens.next() == "fields"
-    fields = list(_parseVars(tokens))
+    parsetools.multi(locals(), "comprehension_body", "comprehension_clause", sep="OP_COMMA")
 
-    field_names = set(f for f,t in fields)
+    def p_method(p):
+        """method : KW_OP    WORD OP_OPEN_PAREN typednames OP_CLOSE_PAREN assumes stm
+                  | KW_QUERY WORD OP_OPEN_PAREN typednames OP_CLOSE_PAREN assumes exp"""
+        p[0] = tuple(p[1:])
 
-    assumptions = []
-    while tokens.peek() == "assume":
-        tokens.next()
-        assumptions.append(_parseQuery(field_names, [], tokens))
+    parsetools.multi(locals(), "methods", "method")
 
-    queries = []
-    while tokens.peek() == "query":
-        tokens.next()
+    def p_stm(p):
+        """stm : OP_OPEN_PAREN OP_CLOSE_PAREN
+               | WORD OP_DOT WORD OP_OPEN_PAREN exp_list OP_CLOSE_PAREN
+               | WORD OP_DOT WORD OP_ASSIGN exp
+               | KW_DEL exp"""
+        p[0] = None # TODO
 
-        # name
-        name = tokens.next()
+    def p_empty(p):
+        'empty :'
+        pass
 
-        # vars
-        assert tokens.next() == "("
-        qvars = list(_parseVars(tokens))
-        var_names = set(v for v,t in qvars)
-        assert tokens.next() == ")"
+    def p_error(p):
+        raise Exception("Syntax error at {}:{}".format(p.lineno, p.lexpos))
 
-        # assumptions
-        query_assumptions = []
-        while tokens.peek() == "assume":
-            tokens.next()
-            query_assumptions.append(_parseQuery((), var_names, tokens))
+    return yacc.yacc()
 
-        # body
-        pred = _parseQuery(field_names, var_names, tokens)
-
-        # sort?
-        sort_field = None
-        if tokens.peek() == "sort":
-            tokens.next()
-            sort_field = tokens.next()
-
-        queries.append(Query(
-            name=name,
-            vars=qvars,
-            pred=pred,
-            assumptions=query_assumptions,
-            sort_field=sort_field))
-
-    costmodel = None
-    if tokens.peek() == "costmodel":
-        tokens.next()
-        costmodel = ""
-        while tokens.peek() is not _EOF:
-            costmodel += tokens.next()
-
-    assert tokens.peek() is _EOF
-    return fields, assumptions, queries, costmodel
+_parser = make_parser()
+def parse(s):
+    parser = _parser
+    return parser.parse(s)

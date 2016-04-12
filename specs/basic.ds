@@ -1,0 +1,13 @@
+
+Basic:
+
+    state l : List<Int>
+
+    assume true;
+
+//    op add(i : Int)
+//
+//    op remove(i : Int)
+
+    query all()
+        l
