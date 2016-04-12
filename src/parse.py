@@ -242,6 +242,8 @@ def make_parser():
                 p[0] = syntax.EMakeRecord(p[2])
             elif p[2] == ".":
                 p[0] = syntax.EGetField(p[1], p[3])
+            elif p[1] == "|":
+                p[0] = syntax.EUnaryOp("len", p[2])
             else:
                 p[0] = syntax.EBinOp(p[1], p[2], p[3])
         else:
@@ -291,7 +293,7 @@ def make_parser():
             p[0] = syntax.SNoOp()
         elif p[1] == "del":
             p[0] = syntax.SDel(p[2])
-        elif p[3] == "(":
+        elif p[4] == "(":
             p[0] = syntax.SCall(p[1], p[3], p[5])
         else:
             p[0] = syntax.SAssign(p[1], p[3], p[5])
