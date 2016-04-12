@@ -8,7 +8,7 @@ The key function to look at is:
 # buitin
 from __future__ import print_function
 import re
-import string
+import sys
 
 # 3rd party
 from ply import lex, yacc
