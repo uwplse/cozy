@@ -15,6 +15,7 @@ from ply import lex, yacc
 
 # ours
 import parsetools
+import syntax
 
 # Each keyword becomes a KW_* token for the lexer. So, e.g. "and" becomes
 # KW_AND.
@@ -138,7 +139,7 @@ def make_parser():
 
     def p_spec(p):
         """spec : WORD OP_COLON typedecls states assumes methods"""
-        p[0] = (p[1], p[3], p[4], p[5], p[6])
+        p[0] = syntax.Spec(p[1], p[3], p[4], p[5], p[6])
 
     parsetools.multi(locals(), "typedecls", "typedecl")
 
@@ -152,14 +153,14 @@ def make_parser():
                 | OP_OPEN_BRACE typednames OP_CLOSE_BRACE
                 | KW_ENUM OP_OPEN_BRACE enum_cases OP_CLOSE_BRACE"""
         if len(p) == 2:
-            p[0] = ("typename", p[1])
+            p[0] = syntax.TNamed(p[1])
         elif len(p) == 5:
             if p[1] == "enum":
-                p[0] = ("enum", p[3])
+                p[0] = syntax.TEnum(p[3])
             else:
-                p[0] = ("typeapp", p[1], p[3])
+                p[0] = syntax.TApp(p[1], p[3])
         elif len(p) == 4:
-            p[0] = ("recordtype", p[2])
+            p[0] = syntax.TRecord(p[2])
 
     parsetools.multi(locals(), "enum_cases", "WORD", sep="OP_COMMA")
 
@@ -223,7 +224,35 @@ def make_parser():
                | KW_NEW WORD OP_OPEN_PAREN exp_list OP_CLOSE_PAREN
                | OP_OPEN_BRACE record_fields OP_CLOSE_BRACE
                | OP_OPEN_BRACKET exp OP_VBAR comprehension_body OP_CLOSE_BRACKET"""
-        p[0] = tuple(p[1:])
+        if len(p) == 2:
+            if type(p[1]) is int:
+                p[0] = syntax.ENum(p[1])
+            elif p[1] == "true":
+                p[0] = syntax.EBool(True)
+            elif p[1] == "false":
+                p[0] = syntax.EBool(False)
+            else:
+                p[0] = syntax.EVar(p[1])
+        elif len(p) == 3:
+            p[0] = syntax.EUnaryOp(p[1], p[2])
+        elif len(p) == 4:
+            if p[1] == "(":
+                p[0] = p[2]
+            elif p[1] == "{":
+                p[0] = syntax.EMakeRecord(p[2])
+            elif p[2] == ".":
+                p[0] = syntax.EGetField(p[1], p[3])
+            else:
+                p[0] = syntax.EBinOp(p[1], p[2], p[3])
+        else:
+            if p[1] == "new":
+                p[0] = syntax.EAlloc(syntax.TNamed(p[2]), p[4])
+            elif p[1] == "[":
+                p[0] = syntax.EListComprehension(p[2], p[4])
+            elif p[2] == "(":
+                p[0] = syntax.ECall(p[1], p[3])
+            else:
+                assert False, "unknown case: {}".format(repr(p[1:]))
 
     parsetools.multi(locals(), "exp_list", "exp", sep="OP_COMMA")
 
@@ -237,16 +266,19 @@ def make_parser():
         """comprehension_clause : WORD OP_LEFT_ARROW exp
                                 | exp"""
         if len(p) == 2:
-            return ("guard", p[1])
+            p[0] = syntax.CCond(p[1])
         else:
-            return ("pull", p[1], p[3])
+            p[0] = syntax.CPull(p[1], p[3])
 
     parsetools.multi(locals(), "comprehension_body", "comprehension_clause", sep="OP_COMMA")
 
     def p_method(p):
         """method : KW_OP    WORD OP_OPEN_PAREN typednames OP_CLOSE_PAREN assumes stm
                   | KW_QUERY WORD OP_OPEN_PAREN typednames OP_CLOSE_PAREN assumes exp"""
-        p[0] = tuple(p[1:])
+        if p[1] == "op":
+            p[0] = syntax.Op(p[2], p[4], p[6], p[7])
+        else:
+            p[0] = syntax.Query(p[2], p[4], p[6], p[7])
 
     parsetools.multi(locals(), "methods", "method")
 
@@ -255,7 +287,14 @@ def make_parser():
                | WORD OP_DOT WORD OP_OPEN_PAREN exp_list OP_CLOSE_PAREN
                | WORD OP_DOT WORD OP_ASSIGN exp
                | KW_DEL exp"""
-        p[0] = None # TODO
+        if p[1] == "(":
+            p[0] = syntax.SNoOp()
+        elif p[1] == "del":
+            p[0] = syntax.SDel(p[2])
+        elif p[3] == "(":
+            p[0] = syntax.SCall(p[1], p[3], p[5])
+        else:
+            p[0] = syntax.SAssign(p[1], p[3], p[5])
 
     def p_empty(p):
         'empty :'
