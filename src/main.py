@@ -11,13 +11,8 @@ import parse
 
 def run():
     stdin = sys.stdin.read()
-    print(stdin)
-
-    for tok in parse.tokenize(stdin):
-        print(tok, end=" ")
-    print()
-
-    print(parse.parse(stdin))
+    ast = parse.parse(stdin)
+    print(ast)
 
 if __name__ == "__main__":
     run()
