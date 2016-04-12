@@ -22,6 +22,7 @@ def declare_case(supertype, name, attrs=()):
             return "{}({})".format(name, ", ".join("{}={}".format(attr, repr(val)) for attr, val in zip(attrs, self.children())))
         def children(self):
             return tuple(getattr(self, a) for a in attrs)
+    T.__name__ = name
     globals()[name] = T
 
 declare_case(ADT, "Spec", ["name", "types", "statevars", "assumptions", "methods"])
