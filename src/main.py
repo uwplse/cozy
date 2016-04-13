@@ -146,7 +146,11 @@ if __name__ == '__main__':
 
     start = now()
     fields = collections.OrderedDict(fields)
-    code_generators = list(cg for cg in enumerate_code_generators(args) if (not cost_model_file) or cg.supports_cost_model_file(cost_model_file))
+    code_generators = list(cg for cg in enumerate_code_generators(args))
+    if cost_model_file:
+        for cg in code_generators:
+            if not cg.supports_cost_model_file(cost_model_file):
+                print("Code generator {} does not support cost model file {}".format(cg, cost_model_file), file=sys.stderr)
     impls, cg, cost = pick_best_impls(fields, queries, cost_model_file, code_generators, args)
     autotune_time = now() - start
 

@@ -4,6 +4,7 @@ import re
 import tempfile
 import os
 import subprocess
+import sys
 
 import codegen
 import predicates
@@ -398,9 +399,9 @@ class JavaCodeGenerator(codegen.CodeGenerator):
         java = subprocess.Popen(["java", "Main"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         stdout, stderr = java.communicate()
         if java.returncode != 0:
-            print("exit status was {} (running in {})".format(java.returncode, tmp))
-            print(stdout)
-            print(stderr)
+            print("exit status was {} (running in {})".format(java.returncode, tmp), file=sys.stderr)
+            print(stdout, file=sys.stderr)
+            print(stderr, file=sys.stderr)
             raise Exception()
 
         score = int(stdout.strip())
