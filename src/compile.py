@@ -1,28 +1,20 @@
-#!/usr/bin/env python
-
-"""
-Main entry point for synthesis. Run with --help for options.
-"""
-
-from __future__ import print_function
-import sys
-import pprint
-
 import common
-import parse
-import compile
+from syntax import *
 
-class PrettyPrinter(common.Visitor):
+class JavaPrinter(common.Visitor):
     def visit_Spec(self, spec):
-        s = spec.name + ":\n"
+        s = "public class {} {{\n".format(spec.name)
         for name, t in spec.types:
-            s += "  type {} = {}\n".format(name, self.visit(t))
-        for name, t in spec.statevars:
-            s += "  state {} : {}\n".format(name, self.visit(t))
-        for e in spec.assumptions:
-            s += "  assume {};\n".format(self.visit(e))
-        for op in spec.methods:
-            s += str(self.visit(op))
+            if type(t) == TEnum:
+               s += "public static enum {} {{\n{}\n}}".format(name, ",".join(t.cases))
+            # s += "  type {} = {}\n".format(name, self.visit(t))
+        # for name, t in spec.statevars:
+        #     s += "  state {} : {}\n".format(name, self.visit(t))
+        # for e in spec.assumptions:
+        #     s += "  assume {};\n".format(self.visit(e))
+        # for op in spec.methods:
+        #     s += str(self.visit(op))
+        s += "}"
         return s
 
     def visit_TEnum(self, enum):
@@ -98,15 +90,3 @@ class PrettyPrinter(common.Visitor):
 
     def visit_SDel(self, s):
         return "del {}".format(self.visit(s.e))
-
-def run():
-    stdin = sys.stdin.read()
-    ast = parse.parse(stdin)
-    pprint.PrettyPrinter(indent=4).pprint(ast)
-    print()
-    print(compile.JavaPrinter().visit(ast))
-
-    print(PrettyPrinter().visit(ast))
-
-if __name__ == "__main__":
-    run()
