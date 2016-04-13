@@ -16,13 +16,13 @@ class Tuple(ConcreteImpl):
     def __repr__(self):
         return self.__str__()
     def fields(self):
-        return self.ty1.fields() + self.ty2.fields()
+        return list(self.ty1.fields()) + list(self.ty2.fields())
     def construct(self, gen, parent_structure):
         return self.ty1.construct(gen, parent_structure) + self.ty2.construct(gen, parent_structure)
     def needs_var(self, v):
         return self.ty1.needs_var(v) or self.ty2.needs_var(v)
     def state(self):
-        return self.ty1.state() + self.ty2.state() + [(self.prev1, BoolTy())]
+        return list(self.ty1.state()) + list(self.ty2.state()) + [(self.prev1, BoolTy())]
     def private_members(self):
         return self.ty1.private_members() + self.ty2.private_members()
     def gen_query(self, gen, qvars, parent_structure):
