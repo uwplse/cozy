@@ -416,6 +416,9 @@ class JavaCodeGenerator(codegen.CodeGenerator):
 def _hash_code(ty, exp):
     if _is_primitive(ty):
         if ty == "boolean":return 1231
+        if ty == "byte":   return "(int)({})".format(exp)
+        if ty == "char":   return "(int)({})".format(exp)
+        if ty == "short":  return "(int)({})".format(exp)
         if ty == "int":    return exp
         if ty == "long":   return "(int)({e}^({e}>>>32))".format(e=exp)
         if ty == "float":  return "Float.floatToIntBits({e})".format(e=exp)
