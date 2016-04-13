@@ -230,15 +230,19 @@ class JavaCodeGenerator(codegen.CodeGenerator):
         return ("({}) == ({})" if _is_primitive(ty.gen_type(self)) else "({}).equals({})").format(e1, e2)
 
     def lt(self, ty, e1, e2):
+        if ty.gen_type(self) == "boolean": return "Boolean.compare({}, {}) < 0".format(e1, e2)
         return ("({}) < ({})" if _is_primitive(ty.gen_type(self)) else "({}).compareTo({}) < 0").format(e1, e2)
 
     def le(self, ty, e1, e2):
+        if ty.gen_type(self) == "boolean": return "Boolean.compare({}, {}) <= 0".format(e1, e2)
         return ("({}) <= ({})" if _is_primitive(ty.gen_type(self)) else "({}).compareTo({}) <= 0").format(e1, e2)
 
     def gt(self, ty, e1, e2):
+        if ty.gen_type(self) == "boolean": return "Boolean.compare({}, {}) > 0".format(e1, e2)
         return ("({}) > ({})" if _is_primitive(ty.gen_type(self)) else "({}).compareTo({}) > 0").format(e1, e2)
 
     def ge(self, ty, e1, e2):
+        if ty.gen_type(self) == "boolean": return "Boolean.compare({}, {}) >= 0".format(e1, e2)
         return ("({}) >= ({})" if _is_primitive(ty.gen_type(self)) else "({}).compareTo({}) >= 0").format(e1, e2)
 
     def abs(self, e):
