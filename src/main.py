@@ -26,7 +26,7 @@ class PrettyPrinter(common.Visitor):
         return s
 
     def visit_TEnum(self, enum):
-        return "{{ {} }}".format(", ".join(enum.cases))
+        return "enum {{ {} }}".format(", ".join(enum.cases))
 
     def visit_TNamed(self, named):
         return named.id
