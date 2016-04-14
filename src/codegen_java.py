@@ -13,6 +13,17 @@ from structures.interface import TupleTy, This, TupleInstance, IntTy
 from common import capitalize, fresh_name, indent, open_maybe_stdout
 
 class JavaCodeGenerator(codegen.CodeGenerator):
+    def __init__(self, identity_equals_types=None):
+        super(JavaCodeGenerator, self).__init__()
+        self.identity_equals_types = set(identity_equals_types or ())
+
+    def should_use_double_equals(self, ty):
+        if not isinstance(ty, str):
+            ty = ty.gen_type(self)
+        if ty in self.identity_equals_types:
+            return True
+        return _is_primitive(ty)
+
     def __str__(self):
         return "JavaCodeGenerator"
 
@@ -83,7 +94,8 @@ class JavaCodeGenerator(codegen.CodeGenerator):
         return "({x} < {y}) ? {y} : {x}".format(x=x, y=y) if _is_primitive(ty.gen_type(self)) else "({x}.compareTo({y}) < 0) ? {y} : {x}".format(x=x, y=y)
 
     def new_map(self, kt, vt):
-        return "new java.util.HashMap<{}, {}>()".format(_box(kt.gen_type(self)), vt.gen_type(self))
+        maptype = "java.util.IdentityHashMap" if self.should_use_double_equals(kt) else "java.util.HashMap"
+        return "new {}<{}, {}>()".format(maptype, _box(kt.gen_type(self)), vt.gen_type(self))
 
     def map_find_handle(self, m, k, dst):
         return "{} = {}.get({});\n".format(dst, m, k)
@@ -227,7 +239,7 @@ class JavaCodeGenerator(codegen.CodeGenerator):
         return "({}) == ({})".format(e1, e2)
 
     def eq(self, ty, e1, e2):
-        return ("({}) == ({})" if _is_primitive(ty.gen_type(self)) else "({}).equals({})").format(e1, e2)
+        return ("({}) == ({})" if should_use_double_equals(ty) else "({}).equals({})").format(e1, e2)
 
     def lt(self, ty, e1, e2):
         if ty.gen_type(self) == "boolean": return "Boolean.compare({}, {}) < 0".format(e1, e2)

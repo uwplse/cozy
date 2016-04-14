@@ -24,7 +24,7 @@ from codegen_cpp import CppCodeGenerator
 
 def enumerate_code_generators(args):
     if args.java is not None:
-        yield JavaCodeGenerator()
+        yield JavaCodeGenerator(identity_equals_types=args.java_id_equality)
     elif args.cpp_header is not None or args.cpp is not None:
         yield CppCodeGenerator(with_qt=args.with_qt)
 
@@ -97,6 +97,7 @@ if __name__ == '__main__':
     java_opts.add_argument("--java-package", metavar="com.java.pkg", default=None, help="Java package for generated structure")
     java_opts.add_argument("--java-class", metavar="Name", default="DataStructure", help="Java class name for generated structure")
     java_opts.add_argument("--java-extra-classpath", metavar="PATH", default="", help="Path to search for auxiliary Java classes")
+    java_opts.add_argument("--java-id-equality", metavar="ClassName", action="append", help="By default, Cozy uses .equals() to compare object types. This flag makes Cozy use reference equality (==) for the given type instead. You may provide this flag multiple times.")
 
     cpp_opts = parser.add_argument_group("C++ codegen")
     cpp_opts.add_argument("--cpp", metavar="FILE.cpp", default=None, help="Output file for C++ code, use '-' for stdout")
