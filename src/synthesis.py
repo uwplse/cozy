@@ -92,29 +92,6 @@ class SolverContext(object):
                 predicate._outputvector = tuple(vec)
             return predicate._outputvector
 
-        def pred_stupid(predicate):
-            return False
-            if type(predicate) is predicates.Compare:
-                return predicate.lhs >= predicate.rhs
-            return any(pred_stupid(p) for p in predicate.children() if type(p) is predicates.Predicate)
-
-        def stupid(plan):
-            if type(plan) is plans.Filter and type(plan.plan) is plans.Filter:
-                return True
-            if type(plan) is plans.HashLookup and type(plan.plan) is plans.HashLookup:
-                return True
-            if type(plan) is plans.BinarySearch and type(plan.plan) is plans.BinarySearch:
-                return True
-            if type(plan) in [plans.HashLookup, plans.BinarySearch, plans.Filter]:
-                return outputvector(plan) == outputvector(plan.plan) or pred_stupid(plan.predicate) or stupid(plan.plan)
-            if type(plan) in [plans.Intersect, plans.Union, plans.Concat]:
-                return (outputvector(plan) == outputvector(plan.plan1) or
-                    outputvector(plan) == outputvector(plan.plan2) or
-                    outputvector(plan.plan1) == outputvector(plan.plan2) or
-                    plan.plan1 <= plan.plan2 or
-                    stupid(plan.plan1) or stupid(plan.plan2))
-            return False
-
         def isValid(plan):
             """returns True, False, or a new counterexample"""
             assert len(outputvector(plan)) == len(queryVector)
@@ -155,10 +132,10 @@ class SolverContext(object):
             self.bestPlans.add(plan)
             plan_cache.evict_higher_cost_entries(cost)
 
-        def consider(plan, check_stupid=False):
+        def consider(plan):
             self._check_timeout()
             size = plan.size()
-            if not plan.wellFormed(self.z3ctx, self.z3solver, self.fieldNames, self.varNames) or (check_stupid and stupid(plan)):
+            if not plan.wellFormed(self.z3ctx, self.z3solver, self.fieldNames, self.varNames):
                 return None, None
             x = isValid(plan)
             cost = self.cost(plan)
@@ -262,7 +239,7 @@ class SolverContext(object):
                 hashcond = predicates.conjunction(eqs)
                 bscond = predicates.conjunction(others)
                 plan = plans.BinarySearch(plans.HashLookup(plans.AllWhere(predicates.Bool(True)), hashcond), bscond)
-                yield consider(plan, check_stupid=False)
+                yield consider(plan)
 
         roundsWithoutProgress = 0
         maxRoundsWithoutProgress = 10
