@@ -83,6 +83,12 @@ class This(object):
     def field(self, gen, f):
         return f
 
+class FakeObject(object):
+    def __init__(self, remap):
+        self.remap = remap
+    def field(self, gen, f):
+        return self.remap[f]
+
 class TupleTy(Ty):
     def __init__(self, fields):
         self.name = fresh_name("Tuple")
@@ -152,12 +158,16 @@ class ConcreteImpl(object):
         proc  = gen.decl(result, RecordType())
         p, vs = self.gen_query(gen, qvars, parent_structure)
         proc += p
+        mapdict = { }
         for (f, t), v in zip(self.state(), vs):
-            proc += gen.decl(f, t, v)
-        p, hn = self.gen_has_next(gen)
+            n = fresh_name()
+            proc += gen.decl(n, t, v)
+            mapdict[f] = n
+        iterator = FakeObject(mapdict)
+        p, hn = self.gen_has_next(gen, parent_structure, iterator)
         proc += p
         proc += gen.if_true(hn)
-        p, n = self.gen_next(gen)
+        p, n = self.gen_current(gen, parent_structure, iterator)
         proc += p
         proc += gen.set(result, n)
         proc += gen.else_true()
@@ -170,20 +180,20 @@ class ConcreteImpl(object):
     def gen_find_any(self, gen, parent_structure):
         """returns proc, some single element"""
         raise NotImplementedError("not implemented for type: {}".format(type(self)))
-    def gen_current(self, gen):
+    def gen_current(self, gen, parent_structure, iterator):
         """returns (proc, result)"""
         raise NotImplementedError("not implemented for type: {}".format(type(self)))
-    def gen_advance(self, gen):
+    def gen_advance(self, gen, parent_structure, iterator):
         """returns proc"""
         raise NotImplementedError("not implemented for type: {}".format(type(self)))
-    def gen_next(self, gen):
+    def gen_next(self, gen, parent_structure, iterator):
         """returns (proc, result)"""
-        proc, cur = self.gen_current(gen)
+        proc, cur = self.gen_current(gen, parent_structure, iterator)
         oldcursor = fresh_name()
         proc += gen.decl(oldcursor, RecordType(), cur)
-        proc += self.gen_advance(gen)
+        proc += self.gen_advance(gen, parent_structure, iterator)
         return proc, oldcursor
-    def gen_has_next(self, gen):
+    def gen_has_next(self, gen, parent_structure, iterator):
         """returns (proc, result)"""
         raise NotImplementedError("not implemented for type: {}".format(type(self)))
     def gen_insert(self, gen, x, parent_structure):
@@ -192,7 +202,7 @@ class ConcreteImpl(object):
     def gen_remove(self, gen, x, parent_structure):
         """returns proc"""
         raise NotImplementedError("not implemented for type: {}".format(type(self)))
-    def gen_remove_in_place(self, gen, parent_structure):
+    def gen_remove_in_place(self, gen, parent_structure, iterator):
         """returns proc, removed element"""
         raise NotImplementedError("not implemented for type: {}".format(type(self)))
     def gen_update(self, gen, fields, x, remap, parent_structure):

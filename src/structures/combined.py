@@ -63,47 +63,48 @@ class Tuple(ConcreteImpl):
         proc1, es1 = self.ty1.gen_empty(gen, parent_structure)
         proc2, es2 = self.ty2.gen_empty(gen, parent_structure)
         return (proc1 + proc2, es1 + es2 + [gen.false_value()])
-    def gen_current(self, gen):
+    def gen_current(self, gen, parent_structure, iterator):
         if self.op == CONCAT_OP:
-            proc1, r1 = self.ty1.gen_has_next(gen)
+            # TODO: at a second glance, I think this might be wrong
+            proc1, r1 = self.ty1.gen_has_next(gen, parent_structure, iterator)
             r = fresh_name()
             proc  = gen.decl(r, RecordType())
             proc += proc1
             proc += gen.if_true(r1)
-            next1, r1 = self.ty1.gen_current(gen)
+            next1, r1 = self.ty1.gen_current(gen, parent_structure, iterator)
             proc += next1
             proc += gen.set(r, r1)
             proc += gen.else_true()
-            next2, r2 = self.ty2.gen_current(gen)
+            next2, r2 = self.ty2.gen_current(gen, parent_structure, iterator)
             proc += next2
             proc += gen.set(r, r2)
             proc += gen.endif()
             return proc, r
         else:
             raise Exception("unknown op {}".format(self.op))
-    def gen_advance(self, gen):
+    def gen_advance(self, gen, parent_structure, iterator):
         if self.op == CONCAT_OP:
-            proc, r1 = self.ty1.gen_has_next(gen)
+            proc, r1 = self.ty1.gen_has_next(gen, parent_structure, iterator)
             proc += gen.if_true(r1)
-            proc += self.ty1.gen_advance(gen)
+            proc += self.ty1.gen_advance(gen, parent_structure, iterator)
             proc += gen.else_true()
-            proc += self.ty2.gen_advance(gen)
+            proc += self.ty2.gen_advance(gen, parent_structure, iterator)
             proc += gen.endif()
             return proc
         else:
             raise Exception("unknown op {}".format(self.op))
-    def gen_next(self, gen):
+    def gen_next(self, gen, parent_structure, iterator):
         if self.op == CONCAT_OP:
-            proc1, r1 = self.ty1.gen_has_next(gen)
+            proc1, r1 = self.ty1.gen_has_next(gen, parent_structure, iterator)
             r = fresh_name()
             proc  = gen.decl(r, RecordType())
             proc += proc1
             proc += gen.if_true(r1)
-            next1, r1 = self.ty1.gen_next(gen)
+            next1, r1 = self.ty1.gen_next(gen, parent_structure, iterator)
             proc += next1
             proc += gen.set(r, r1)
             proc += gen.else_true()
-            next2, r2 = self.ty2.gen_next(gen)
+            next2, r2 = self.ty2.gen_next(gen, parent_structure, iterator)
             proc += next2
             proc += gen.set(r, r2)
             proc += gen.set(self.prev1, gen.false_value())
@@ -111,10 +112,10 @@ class Tuple(ConcreteImpl):
             return proc, r
         else:
             raise Exception("unknown op {}".format(self.op))
-    def gen_has_next(self, gen):
+    def gen_has_next(self, gen, parent_structure, iterator):
         if self.op == CONCAT_OP:
-            proc1, r1 = self.ty1.gen_has_next(gen)
-            proc2, r2 = self.ty2.gen_has_next(gen)
+            proc1, r1 = self.ty1.gen_has_next(gen, parent_structure, iterator)
+            proc2, r2 = self.ty2.gen_has_next(gen, parent_structure, iterator)
             r = fresh_name()
             proc  = proc1
             proc += gen.decl(r, BoolTy(), r1)
@@ -130,15 +131,15 @@ class Tuple(ConcreteImpl):
             return self.ty1.gen_insert(gen, x, parent_structure) + self.ty2.gen_insert(gen, x, parent_structure)
         else:
             raise Exception("unknown op {}".format(self.op))
-    def gen_remove_in_place(self, gen, parent_structure):
+    def gen_remove_in_place(self, gen, parent_structure, iterator):
         removed = fresh_name("removed")
         proc  = gen.decl(removed, RecordType())
-        proc += gen.if_true(self.prev1)
-        p, ret = self.ty1.gen_remove_in_place(gen, parent_structure)
+        proc += gen.if_true(iterator.field(gen, self.prev1))
+        p, ret = self.ty1.gen_remove_in_place(gen, parent_structure, iterator)
         proc += p
         proc += gen.set(removed, ret)
         proc += gen.else_true()
-        p, ret = self.ty2.gen_remove_in_place(gen, parent_structure)
+        p, ret = self.ty2.gen_remove_in_place(gen, parent_structure, iterator)
         proc += p
         proc += gen.set(removed, ret)
         proc += gen.endif()

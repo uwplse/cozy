@@ -286,9 +286,9 @@ class VolumeTree(ConcreteImpl):
         proc += gen.endif()
         return proc
 
-    def gen_remove_in_place(self, gen, parent_structure):
-        proc = self.gen_remove(gen, self.prev_name, parent_structure)
-        return proc, self.prev_name
+    def gen_remove_in_place(self, gen, parent_structure, iterator):
+        proc = self.gen_remove(gen, iterator.field(gen, self.prev_name), parent_structure)
+        return proc, iterator.field(gen, self.prev_name)
     def gen_update(self, gen, fields, x, remap, parent_structure):
         if not any(f in ([ff for ff,_ in self.spec.lts] + [ff for ff,_ in self.spec.gts]) for f in remap):
             return "" # no effect!
@@ -407,10 +407,10 @@ class VolumeTree(ConcreteImpl):
         proc += gen.endwhile()
 
         return proc, out
-    def gen_has_next(self, gen):
-        return "", gen.not_true(gen.is_null(self.cursor_name))
-    def gen_current(self, gen):
-        return "", self.cursor_name
+    def gen_has_next(self, gen, parent_structure, iterator):
+        return "", gen.not_true(gen.is_null(iterator.field(gen, self.cursor_name)))
+    def gen_current(self, gen, parent_structure, iterator):
+        return "", iterator.field(gen, self.cursor_name)
     def _gen_advance(self, gen, stack, cursor, prev):
             node = fresh_name("node")
             proc  = gen.set(prev, cursor)
@@ -452,14 +452,17 @@ class VolumeTree(ConcreteImpl):
 
             proc += gen.endwhile()
             return proc
-    def gen_advance(self, gen):
+    def gen_advance(self, gen, parent_structure, iterator):
+        prev = iterator.field(gen, self.prev_name)
+        cursor = iterator.field(gen, self.cursor_name)
+
         if self.stack_iteration:
-            return self._gen_advance(gen, self.stack_name, self.cursor_name, self.prev_name)
+            return self._gen_advance(gen, iterator.field(gen, self.stack_name), cursor, prev)
 
         proc  = gen.comment("advance")
-        proc += gen.set(self.prev_name, self.cursor_name)
+        proc += gen.set(prev, cursor)
         cursor = fresh_name("cursor")
-        proc += gen.decl(cursor, self.node_type, gen.get_field(self.cursor_name, self.record_parent_ptr))
+        proc += gen.decl(cursor, self.node_type, gen.get_field(cursor, self.record_parent_ptr))
         proc += gen.while_true(gen.true_value())
 
         # ascend until we can descend to the right and then do so
@@ -477,7 +480,7 @@ class VolumeTree(ConcreteImpl):
 
         # if we are stuck at the root, then we're done!
         proc += gen.if_true(gen.is_null(gen.get_field(cursor, self.parent_ptr)))
-        proc += gen.set(self.cursor_name, gen.null_value())
+        proc += gen.set(cursor, gen.null_value())
         proc += gen.break_loop()
         proc += gen.endif()
 
@@ -487,7 +490,7 @@ class VolumeTree(ConcreteImpl):
 
         # we found the min!
         proc += gen.if_true(gen.not_true(gen.is_null(m)))
-        proc += gen.set(self.cursor_name, m)
+        proc += gen.set(cursor, m)
         proc += gen.break_loop()
         proc += gen.endif()
 

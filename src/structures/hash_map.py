@@ -145,14 +145,14 @@ class HashMap(ConcreteImpl):
         return (proc, result)
     def gen_empty(self, gen, qvars):
         return self.valueImpl.gen_empty(gen, qvars)
-    def gen_current(self, gen):
-        return self.valueImpl.gen_current(gen)
-    def gen_advance(self, gen):
-        return self.valueImpl.gen_advance(gen)
-    def gen_next(self, gen):
-        return self.valueImpl.gen_next(gen)
-    def gen_has_next(self, gen):
-        return self.valueImpl.gen_has_next(gen)
+    def gen_current(self, gen, parent_structure, iterator):
+        return self.valueImpl.gen_current(gen, parent_structure, iterator)
+    def gen_advance(self, gen, parent_structure, iterator):
+        return self.valueImpl.gen_advance(gen, parent_structure, iterator)
+    def gen_next(self, gen, parent_structure, iterator):
+        return self.valueImpl.gen_next(gen, parent_structure, iterator)
+    def gen_has_next(self, gen, parent_structure, iterator):
+        return self.valueImpl.gen_has_next(gen, parent_structure, iterator)
     def create_substructure_at_key(self, gen, m, k):
         name = fresh_name()
         proc  = gen.decl(name, self.valueTy)
@@ -201,13 +201,13 @@ class HashMap(ConcreteImpl):
         proc += self.make_key_of_record(gen, x, k)
         proc += self.gen_remove_at_key(gen, x, parent_structure, k)
         return proc
-    def gen_remove_in_place(self, gen, parent_structure):
+    def gen_remove_in_place(self, gen, parent_structure, iterator):
         name = parent_structure.field(gen, self.name)
         sub = fresh_name("substructure")
-        proc  = gen.decl(sub, RefTy(self.valueTy), self.read_handle(gen, name, self.iterator_handle_name))
-        p, removed = self.valueImpl.gen_remove_in_place(gen, parent_structure=self.valueTy.instance(sub))
+        proc  = gen.decl(sub, RefTy(self.valueTy), self.read_handle(gen, name, iterator.field(gen, self.iterator_handle_name)))
+        p, removed = self.valueImpl.gen_remove_in_place(gen, parent_structure=self.valueTy.instance(sub), iterator=iterator)
         proc += p
-        proc += self.write_handle(gen, name, self.iterator_handle_name, self.iterator_key_name, sub)
+        proc += self.write_handle(gen, name, iterator.field(gen, self.iterator_handle_name), iterator.field(gen, self.iterator_key_name), sub)
         return proc, removed
     def gen_update(self, gen, fields, x, remap, parent_structure):
         name = parent_structure.field(gen, self.name)

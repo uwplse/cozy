@@ -1,4 +1,4 @@
-from .interface import ConcreteImpl, RecordType, NativeTy
+from .interface import ConcreteImpl, RecordType, NativeTy, FakeObject
 from common import fresh_name
 
 class Filtered(ConcreteImpl):
@@ -28,80 +28,61 @@ class Filtered(ConcreteImpl):
             self.predicate, x)
     def gen_query(self, gen, qvars, parent_structure):
         proc, es = self.ty.gen_query(gen, qvars, parent_structure)
-        for (v, t), e in zip(self.ty.state(), es):
-            proc += gen.decl(v, t, e)
+        names = [fresh_name() for s in self.ty.state()]
+        mapdict = { }
+        for n, (f, t), v in zip(names, self.ty.state(), es):
+            proc += gen.decl(n, t, v)
+            mapdict[f] = n
+        iterator = FakeObject(mapdict)
         proc += gen.while_true(gen.true_value())
-        p1, hn = self.ty.gen_has_next(gen)
+        p1, hn = self.ty.gen_has_next(gen, parent_structure, iterator)
         proc += p1
         proc += gen.if_true(gen.not_true(hn))
         proc += gen.break_loop()
         proc += gen.endif()
-        p2, cur = self.ty.gen_current(gen)
+        p2, cur = self.ty.gen_current(gen, parent_structure, iterator)
         proc += p2
         curN = fresh_name("current")
         proc += gen.decl(curN, RecordType(), cur)
         proc += gen.if_true(self.matches(gen, curN))
         proc += gen.break_loop()
         proc += gen.endif()
-        proc += self.ty.gen_advance(gen)
+        proc += self.ty.gen_advance(gen, parent_structure, iterator)
         proc += gen.endwhile()
-        return proc, [v for (v, t) in self.ty.state()]
-    def gen_query_one(self, gen, qvars, parent_structure):
-        proc, es = self.ty.gen_query(gen, qvars, parent_structure)
-        for (v, t), e in zip(self.ty.state(), es):
-            proc += gen.decl(v, t, e)
-        result = fresh_name("result")
-        proc += gen.decl(result, RecordType(), gen.null_value())
-        proc += gen.while_true(gen.true_value())
-        p1, hn = self.ty.gen_has_next(gen)
-        proc += p1
-        proc += gen.if_true(gen.not_true(hn))
-        proc += gen.break_loop()
-        proc += gen.endif()
-        p2, cur = self.ty.gen_current(gen)
-        proc += p2
-        curN = fresh_name("current")
-        proc += gen.decl(curN, RecordType(), cur)
-        proc += gen.if_true(self.matches(gen, curN))
-        proc += gen.set(result, curN)
-        proc += gen.break_loop()
-        proc += gen.endif()
-        proc += self.ty.gen_advance(gen)
-        proc += gen.endwhile()
-        return proc, result
+        return proc, names
     def gen_empty(self, gen, qvars):
         return self.ty.gen_empty(gen, qvars)
     def gen_find_any(self, gen, parent_structure):
         return self.ty.gen_find_any(gen, parent_structure)
-    def gen_current(self, gen):
-        return self.ty.gen_current(gen)
-    def gen_advance(self, gen):
+    def gen_current(self, gen, parent_structure, iterator):
+        return self.ty.gen_current(gen, parent_structure, iterator)
+    def gen_advance(self, gen, parent_structure, iterator):
         # while true:
         #   ty.advance()
         #   break if !ty.hasNext()
         #   break if ty.current() matches filter
         proc  = gen.do_while()
-        proc += self.ty.gen_advance(gen)
-        p1, hn = self.ty.gen_has_next(gen)
+        proc += self.ty.gen_advance(gen, parent_structure, iterator)
+        p1, hn = self.ty.gen_has_next(gen, parent_structure, iterator)
         proc += p1
         proc += gen.if_true(gen.not_true(hn))
         proc += gen.break_loop()
         proc += gen.endif()
-        p2, n = self.ty.gen_current(gen)
+        p2, n = self.ty.gen_current(gen, parent_structure, iterator)
         proc += p2
         proc += gen.if_true(self.matches(gen, n))
         proc += gen.break_loop()
         proc += gen.endif()
         proc += gen.end_do_while(gen.true_value())
         return proc
-    def gen_has_next(self, gen):
-        return self.ty.gen_has_next(gen)
+    def gen_has_next(self, gen, parent_structure, iterator):
+        return self.ty.gen_has_next(gen, parent_structure, iterator)
     def gen_insert(self, gen, x, parent_structure):
         return self.ty.gen_insert(gen, x, parent_structure)
     def gen_remove(self, gen, x, parent_structure):
         return self.ty.gen_remove(gen, x, parent_structure)
-    def gen_remove_in_place(self, gen, parent_structure):
-        return self.ty.gen_remove_in_place(gen, parent_structure)
+    def gen_remove_in_place(self, gen, parent_structure, iterator):
+        return self.ty.gen_remove_in_place(gen, parent_structure, iterator)
     def gen_update(self, gen, fields, x, remap, parent_structure):
         return self.ty.gen_update(gen, fields, x, remap, parent_structure)
     def auxtypes(self):

@@ -189,7 +189,8 @@ class Hamt(HashMap):
     def gen_remove(self, gen, x, parent_structure):
         return self.gen_remove_at_key(gen, x, parent_structure)
 
-    def gen_remove_in_place(self, gen, parent_structure):
+    def gen_remove_in_place(self, gen, parent_structure, iterator):
+        # TODO: this is pretty broken right now
         proc = ""
         proc += gen.set(self.iterator_handle_name, self.valueImpl.prev_cursor_name)
         proc += gen.list_remove(parent_structure.this, self.iterator_handle_name) + ";\n" # Bad

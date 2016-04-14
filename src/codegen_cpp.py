@@ -510,14 +510,14 @@ class CppCodeGenerator(codegen.CodeGenerator):
 
                     # hasNext
                     writer("bool {prefix}::{q}_iterator::hasNext() {{\n".format(prefix=name, q=q.name))
-                    proc, ret = q.impl.gen_has_next(self)
+                    proc, ret = q.impl.gen_has_next(self, parent_structure=TupleInstance("parent"), iterator=This())
                     writer(indent("    ", proc))
                     writer("    return {};\n".format(ret))
                     writer("}\n")
 
                     # next
                     writer("{} {prefix}::{q}_iterator::next() {{\n".format(self.record_type(), prefix=name, q=q.name))
-                    proc, ret = q.impl.gen_next(self)
+                    proc, ret = q.impl.gen_next(self, parent_structure=TupleInstance("parent"), iterator=This())
                     writer(indent("    ", proc))
                     writer("    return {};\n".format(ret))
                     writer("}\n")
@@ -525,7 +525,7 @@ class CppCodeGenerator(codegen.CodeGenerator):
                     # remove
                     writer("void {prefix}::{q}_iterator::remove() {{\n".format(prefix=name, q=q.name))
                     writer("    --(parent->my_size);\n")
-                    proc, removed = q.impl.gen_remove_in_place(self, TupleInstance("parent"))
+                    proc, removed = q.impl.gen_remove_in_place(self, parent_structure=TupleInstance("parent"), iterator=This())
                     writer(indent("    ", proc))
                     for q2 in queries:
                         if q2 != q:

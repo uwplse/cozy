@@ -29,10 +29,10 @@ class Guarded(ConcreteImpl):
         return self.ty.gen_empty(gen, qvars)
     def gen_find_any(self, gen, parent_structure):
         return self.ty.gen_find_any(gen, parent_structure)
-    def gen_current(self, gen):
-        return self.ty.gen_current(gen)
-    def gen_advance(self, gen):
-        return self.ty.gen_advance(gen)
+    def gen_current(self, gen, parent_structure, iterator):
+        return self.ty.gen_current(gen, parent_structure, iterator)
+    def gen_advance(self, gen, parent_structure, iterator):
+        return self.ty.gen_advance(gen, parent_structure, iterator)
     def belongs(self, gen, x, remap=None):
         return gen.predicate(list(self._fields.items()), [], self.predicate, x, remap=remap)
     def gen_update(self, gen, fields, x, remap, parent_structure):
@@ -48,17 +48,17 @@ class Guarded(ConcreteImpl):
         proc += self.ty.gen_insert(gen, x, parent_structure)
         proc += gen.endif()
         return proc
-    def gen_next(self, gen):
-        return self.ty.gen_next(gen)
-    def gen_has_next(self, gen):
-        return self.ty.gen_has_next(gen)
+    def gen_next(self, gen, parent_structure, iterator):
+        return self.ty.gen_next(gen, parent_structure, iterator)
+    def gen_has_next(self, gen, parent_structure, iterator):
+        return self.ty.gen_has_next(gen, parent_structure, iterator)
     def gen_insert(self, gen, x, parent_structure):
         proc = self.ty.gen_insert(gen, x, parent_structure)
         return gen.if_true(self.belongs(gen, x)) + proc + gen.endif()
     def gen_remove(self, gen, x, parent_structure):
         proc = self.ty.gen_remove(gen, x, parent_structure)
         return gen.if_true(self.belongs(gen, x)) + proc + gen.endif()
-    def gen_remove_in_place(self, gen, parent_structure):
-        return self.ty.gen_remove_in_place(gen, parent_structure)
+    def gen_remove_in_place(self, gen, parent_structure, iterator):
+        return self.ty.gen_remove_in_place(gen, parent_structure, iterator)
     def auxtypes(self):
         return self.ty.auxtypes()

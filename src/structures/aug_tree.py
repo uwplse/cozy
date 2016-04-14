@@ -313,11 +313,12 @@ class AugTree(ConcreteImpl):
     def gen_query_one(self, gen, qvars, this):
         # TODO: this can be faster since we don't actually need the *min* match
         return self._find_min(gen, this.field(gen, self.name))
-    def gen_current(self, gen):
-        return "", self.cursor_name
-    def gen_advance(self, gen):
+    def gen_current(self, gen, parent_structure, iterator):
+        return "", iterator.field(gen, self.cursor_name)
+    def gen_advance(self, gen, parent_structure, iterator):
         proc = gen.comment("ADVANCE")
-        target = self.cursor_name
+        target = iterator.field(gen, self.cursor_name)
+        proc += gen.set(iterator.field(gen, self.prev_cursor_name), target)
 
         right_min = fresh_name("right_min")
 
@@ -359,14 +360,8 @@ class AugTree(ConcreteImpl):
             gen.not_true(self._node_ok(gen, target))))
 
         return proc
-    def gen_next(self, gen):
-        oldcursor = fresh_name()
-        proc  = gen.decl(oldcursor, RecordType(), self.cursor_name)
-        proc += self.gen_advance(gen)
-        proc += gen.set(self.prev_cursor_name, oldcursor)
-        return proc, oldcursor
-    def gen_has_next(self, gen):
-        return "", gen.not_true(gen.is_null(self.cursor_name))
+    def gen_has_next(self, gen, parent_structure, iterator):
+        return "", gen.not_true(gen.is_null(iterator.field(gen, self.cursor_name)))
     def _height(self, gen, x):
         assert self.balance == BALANCE_AVL
         return gen.ternary(gen.is_null(x), "-1", gen.get_field(x, self.height_name))
@@ -626,11 +621,11 @@ class AugTree(ConcreteImpl):
         # TODO: rebalancing
 
         return proc
-    def gen_remove_in_place(self, gen, parent_structure):
+    def gen_remove_in_place(self, gen, parent_structure, iterator):
         to_remove = fresh_name("to_remove")
-        proc  = gen.decl(to_remove, self.ty, self.prev_cursor_name)
+        proc  = gen.decl(to_remove, self.ty, iterator.field(gen, self.prev_cursor_name))
         proc += self.gen_remove(gen, to_remove, parent_structure=parent_structure)
-        proc += gen.set(self.prev_cursor_name, gen.null_value())
+        proc += gen.set(iterator.field(gen, self.prev_cursor_name), gen.null_value())
         return proc, to_remove
     def gen_update(self, gen, fields, x, remap, parent_structure):
         if any(f == self.fieldName for f in remap):
