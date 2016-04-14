@@ -145,14 +145,28 @@ class HashMap(ConcreteImpl):
         return (proc, result)
     def gen_empty(self, gen, qvars):
         return self.valueImpl.gen_empty(gen, qvars)
+    def iterator_current_substructure(self, gen, parent_structure, iterator):
+        m = parent_structure.field(gen, self.name)
+        handle = iterator.field(gen, self.iterator_handle_name)
+        sub = fresh_name("substructure")
+        proc = gen.decl(sub, RefTy(self.valueTy), self.read_handle(gen, m, handle))
+        return proc, sub
     def gen_current(self, gen, parent_structure, iterator):
-        return self.valueImpl.gen_current(gen, parent_structure, iterator)
+        p1, sub = self.iterator_current_substructure(gen, parent_structure, iterator)
+        p2, n = self.valueImpl.gen_current(gen, self.valueTy.instance(sub), iterator)
+        return p1 + p2, n
     def gen_advance(self, gen, parent_structure, iterator):
-        return self.valueImpl.gen_advance(gen, parent_structure, iterator)
+        p1, sub = self.iterator_current_substructure(gen, parent_structure, iterator)
+        p2, n = self.valueImpl.gen_advance(gen, self.valueTy.instance(sub), iterator)
+        return p1 + p2, n
     def gen_next(self, gen, parent_structure, iterator):
-        return self.valueImpl.gen_next(gen, parent_structure, iterator)
+        p1, sub = self.iterator_current_substructure(gen, parent_structure, iterator)
+        p2, n = self.valueImpl.gen_next(gen, self.valueTy.instance(sub), iterator)
+        return p1 + p2, n
     def gen_has_next(self, gen, parent_structure, iterator):
-        return self.valueImpl.gen_has_next(gen, parent_structure, iterator)
+        p1, sub = self.iterator_current_substructure(gen, parent_structure, iterator)
+        p2, n = self.valueImpl.gen_has_next(gen, self.valueTy.instance(sub), iterator)
+        return p1 + p2, n
     def create_substructure_at_key(self, gen, m, k):
         name = fresh_name()
         proc  = gen.decl(name, self.valueTy)
