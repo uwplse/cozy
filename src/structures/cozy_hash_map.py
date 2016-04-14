@@ -33,10 +33,12 @@ class CozyHashMap(HashMap):
         return gen.array_set(m, k, v)
     def handle_exists(self, gen, m, handle):
         return gen.true_value()
+    def handle_to_index(self, gen, m, handle):
+        return gen.abs(gen.mod(handle, gen.array_size(m)))
     def read_handle(self, gen, m, handle):
-        return gen.array_get(m, gen.mod(handle, gen.array_size(m)))
+        return gen.array_get(m, self.handle_to_index(gen, m, handle))
     def write_handle(self, gen, m, handle, k, v):
-        return gen.array_set(m, gen.mod(handle, gen.array_size(m)), v)
+        return gen.array_set(m, self.handle_to_index(gen, m, handle), v)
     def fields(self):
         return ((self.name, ArrayTy(self.valueTy)),)
     def state(self):
@@ -127,7 +129,7 @@ class CozyHashMap(HashMap):
         p, h = self.hash(gen, [(NativeTy(self.field_types[k]), v) for (k,(v,)) in self.keyArgs.items()])
         proc  = p
         sub = fresh_name("substructure")
-        proc += gen.decl(sub, self.valueTy, gen.array_get(name, gen.mod(h, gen.array_size(name))))
+        proc += gen.decl(sub, self.valueTy, gen.array_get(name, self.handle_to_index(gen, name, h)))
         p, vs = self.valueImpl.gen_query(gen, qvars, self.valueTy.instance(sub))
         proc += p
         return (proc, list(vs) + [h])
@@ -136,7 +138,7 @@ class CozyHashMap(HashMap):
         p, h = self.hash(gen, [(NativeTy(self.field_types[k]), v) for (k,(v,)) in self.keyArgs.items()])
         proc  = p
         sub = fresh_name("substructure")
-        proc += gen.decl(sub, self.valueTy, gen.array_get(name, gen.mod(h, gen.array_size(name))))
+        proc += gen.decl(sub, self.valueTy, gen.array_get(name, self.handle_to_index(gen, name, h)))
         p, r = self.valueImpl.gen_query_one(gen, qvars, self.valueTy.instance(sub))
         proc += p
         return (proc, r)
