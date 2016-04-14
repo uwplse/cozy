@@ -163,7 +163,7 @@ class SolverContext(object):
                     else:
                         return "counterexample", (x2, plan2)
 
-                plan_cache.put(plan, key=vec)
+                plan_cache.put(plan, key=vec, size=size, cost=cost)
                 return None, None
             else:
                 # x is new example!
