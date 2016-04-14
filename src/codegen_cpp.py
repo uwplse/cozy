@@ -149,6 +149,9 @@ class CppCodeGenerator(codegen.CodeGenerator):
     def new_vector(self, ty, n):
         return "new {}[{}]".format(ty.gen_type(self), n)
 
+    def vector_init_elem(self, v, ty, i):
+        return "" # wooo
+
     def vector_get(self, v, i):
         return "{}[{}]".format(v, i)
 

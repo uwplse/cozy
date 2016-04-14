@@ -146,13 +146,18 @@ class JavaCodeGenerator(codegen.CodeGenerator):
         return "{}.peek()".format(stk)
 
     def new_vector(self, ty, n):
-        return "({}[])(new Object[{}])".format(ty.gen_type(self), n)
+        return self.new_array(ty, n)
+
+    def vector_init_elem(self, v, ty, i):
+        if isinstance(ty, TupleTy) and len(ty.fields) > 1: # a bit of a hack
+            return self.vector_set(v, i, self.alloc(ty, []))
+        return ""
 
     def vector_get(self, v, i):
-        return "{}[{}]".format(v, i)
+        return self.array_get(v, i)
 
     def vector_set(self, v, i, x):
-        return "{}[{}] = {};\n".format(v, i, x)
+        return self.array_set(v, i, x)
 
     def record_type(self):
         return "Record"

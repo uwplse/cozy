@@ -1,6 +1,6 @@
 import collections
 
-from .interface import ConcreteImpl, TupleTy, NativeTy, MapTy, MapHandleType, RefTy, RecordType
+from .interface import ConcreteImpl, TupleTy, NativeTy, MapTy, MapHandleType, RefTy, RecordType, BoolTy
 from common import fresh_name
 
 def make_key_args(fields, predicate):
@@ -165,8 +165,17 @@ class HashMap(ConcreteImpl):
         return p1 + p2, n
     def gen_has_next(self, gen, parent_structure, iterator):
         p1, sub = self.iterator_current_substructure(gen, parent_structure, iterator)
+        result = fresh_name()
+        proc  = gen.decl(result, BoolTy())
+        proc += p1
+        proc += gen.if_true(gen.is_null(sub))
+        proc += gen.set(result, gen.false_value())
+        proc += gen.else_true()
         p2, n = self.valueImpl.gen_has_next(gen, self.valueTy.instance(sub), iterator)
-        return p1 + p2, n
+        proc += p2
+        proc += gen.set(result, n)
+        proc += gen.endif()
+        return proc, result
     def create_substructure_at_key(self, gen, m, k):
         name = fresh_name()
         proc  = gen.decl(name, self.valueTy)

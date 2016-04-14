@@ -201,6 +201,9 @@ class CodeGenerator(object):
     def new_vector(self, ty, n):
         raise NotImplementedError()
 
+    def vector_init_elem(self, v, ty, i):
+        raise NotImplementedError()
+
     def vector_get(self, v, i):
         raise NotImplementedError()
 

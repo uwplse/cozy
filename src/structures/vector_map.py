@@ -28,9 +28,14 @@ class VectorMap(HashMap):
         return IntTy()
     def construct(self, gen, parent_structure):
         name = parent_structure.field(gen, self.name)
-        proc = gen.set(name, gen.new_vector(self.valueTy, self.count))
-        for i in range(self.count):
-            proc += self.valueImpl.construct(gen, self.valueTy.instance(gen.vector_get(name, i)))
+        proc  = gen.set(name, gen.new_vector(self.valueTy, self.count))
+        i = fresh_name("i")
+        proc += gen.decl(i, IntTy(), "0")
+        proc += gen.while_true(gen.lt(IntTy(), i, self.count))
+        proc += gen.vector_init_elem(name, self.valueTy, i)
+        proc += self.valueImpl.construct(gen, self.valueTy.instance(gen.vector_get(name, i)))
+        proc += gen.set(i, gen.add(i, 1))
+        proc += gen.endwhile()
         return proc
     def lookup(self, gen, m, k):
         """returns proc, handle"""
