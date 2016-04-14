@@ -7,6 +7,10 @@ class Guarded(ConcreteImpl):
         self._fields = { f : NativeTy(t) for f, t in fields.items() }
         self.qvars = qvars
         self.predicate = predicate
+    def __str__(self):
+        return "Guarded({})".format(self.ty)
+    def __repr__(self):
+        return self.__str__()
     def fields(self):
         return self.ty.fields()
     def construct(self, gen, parent_structure):
