@@ -62,7 +62,7 @@ class BinarySearch(Plan):
             return False
         if self.predicate.contains_disjunction():
             return False
-        return self.plan.wellFormed(*args) and any(self.plan.isSortedBy(v.name) for v in self.predicate.vars())
+        return self.plan.wellFormed(*args) and any(self.plan.isSortedBy(v.name) for v in self.predicate.vars()) and type(self.plan) is not BinarySearch
     def children(self):
         return (self.plan, self.predicate)
 
@@ -109,6 +109,7 @@ class Concat(Plan):
         return Or(self.plan1.toPredicate(), self.plan2.toPredicate())
     def wellFormed(self, z3ctx, z3solver, fields, vars):
         return (
+            self.plan1 < self.plan2 and
             self.plan1.wellFormed(z3ctx, z3solver, fields, vars) and
             self.plan2.wellFormed(z3ctx, z3solver, fields, vars) and
             predicates_disjoint(z3ctx, z3solver, self.plan1.toPredicate(), self.plan2.toPredicate()))
