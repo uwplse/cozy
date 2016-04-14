@@ -27,6 +27,8 @@ class ADT(object):
         return hash(self.children())
     def __eq__(self, other):
         return type(self) is type(other) and self.children() == other.children()
+    def __ne__(self, other):
+        return not self.__eq__(other)
     def __lt__(self, other):
         return (self.children() < other.children()) if (type(self) is type(other)) else (type(self).__name__ < type(other).__name__)
 
