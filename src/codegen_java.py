@@ -94,8 +94,9 @@ class JavaCodeGenerator(codegen.CodeGenerator):
         return "({x} < {y}) ? {y} : {x}".format(x=x, y=y) if _is_primitive(ty.gen_type(self)) else "({x}.compareTo({y}) < 0) ? {y} : {x}".format(x=x, y=y)
 
     def new_map(self, kt, vt):
+        kt = _box(kt.gen_type(self))
         maptype = "java.util.IdentityHashMap" if self.should_use_double_equals(kt) else "java.util.HashMap"
-        return "new {}<{}, {}>()".format(maptype, _box(kt.gen_type(self)), vt.gen_type(self))
+        return "new {}<{}, {}>()".format(maptype, kt, vt.gen_type(self))
 
     def map_find_handle(self, m, k, dst):
         return "{} = {}.get({});\n".format(dst, m, k)
