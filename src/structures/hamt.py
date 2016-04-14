@@ -194,7 +194,9 @@ class Hamt(HashMap):
         proc = ""
         proc += gen.set(self.iterator_handle_name, self.valueImpl.prev_cursor_name)
         proc += gen.list_remove(parent_structure.this, self.iterator_handle_name) + ";\n" # Bad
-        p, removed = self.valueImpl.gen_remove_in_place(gen, parent_structure=self.valueTy.instance(self.iterator_handle_name))
+        p, removed = self.valueImpl.gen_remove_in_place(gen,
+            parent_structure=self.valueTy.instance(self.iterator_handle_name),
+            iterator=iterator)
         proc += p
         return proc, removed
 
