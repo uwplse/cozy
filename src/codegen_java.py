@@ -239,7 +239,7 @@ class JavaCodeGenerator(codegen.CodeGenerator):
         return "({}) == ({})".format(e1, e2)
 
     def eq(self, ty, e1, e2):
-        return ("({}) == ({})" if should_use_double_equals(ty) else "({}).equals({})").format(e1, e2)
+        return ("({}) == ({})" if self.should_use_double_equals(ty) else "({}).equals({})").format(e1, e2)
 
     def lt(self, ty, e1, e2):
         if ty.gen_type(self) == "boolean": return "Boolean.compare({}, {}) < 0".format(e1, e2)
