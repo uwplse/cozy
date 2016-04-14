@@ -98,3 +98,4 @@ HACKING
 
         Run pylint:    ./lint.sh
         Run tests:     ./test.sh
+        Run fuzzer:    ./fuzz.sh

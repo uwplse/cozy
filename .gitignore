@@ -5,3 +5,4 @@ __pycache__
 # Generated files
 *.class
 /tests/DataStructure*.java
+/tests/fuzz_fail*
