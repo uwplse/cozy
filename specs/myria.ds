@@ -2,7 +2,7 @@ AnalyticsStorage:
 
     type LogEntry = {
         queryId    : Long,
-        subQueryId : Int,
+        subqueryId : Int,
         fragmentId : Int,
         opId       : Int,
         startTime  : Long,
