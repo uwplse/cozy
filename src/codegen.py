@@ -36,8 +36,7 @@ def enumerate_impls(fields, queries, args, extra_structures=None):
             yield structures.AugTree(structures.interface.NativeTy(aimpl.fields[aimpl.sortField]), aimpl.sortField, aimpl.predicate, aimpl.fields)
             # yield structures.SortedArray(aimpl.field_type, aimpl.field_name) # TODO
         elif type(aimpl) is BinarySearchable:
-            for sortField in aimpl.predicate.vars():
-                sortField = sortField.name
+            for sortField in set(v.name for v in aimpl.predicate.vars()):
                 if sortField in fields:
                     yield structures.AugTree(structures.interface.NativeTy(fields[sortField]), sortField, aimpl.predicate, aimpl.fields)
                     # yield structures.SortedArray(aimpl.field_type, sortField, aimpl.field_name) # TODO
