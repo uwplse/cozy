@@ -166,8 +166,8 @@ def run(args):
 
         spec = random_spec(max_fields, max_queries, max_vars_per_query, max_expr_size)
 
-        with tempfile.NamedTemporaryFile() as spec_file:
-            with tempfile.NamedTemporaryFile(suffix=".java") as benchmark_file:
+        with tempfile.NamedTemporaryFile(mode="w") as spec_file:
+            with tempfile.NamedTemporaryFile(suffix=".java", mode="w") as benchmark_file:
                 spec_file.write(format_spec(spec, benchmark_file.name))
                 spec_file.flush()
                 benchmark = make_benchmark(spec)
