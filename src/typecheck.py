@@ -1,5 +1,6 @@
 from common import Visitor
 import syntax
+from syntax_tools import pprint
 
 def typecheck(ast):
     """
@@ -57,7 +58,7 @@ class Typechecker(Visitor):
             self.visit(op)
 
     def report_err(self, source, msg):
-        self.errors.append("At {}: {}".format(source, msg))
+        self.errors.append("At {}: {}".format(pprint(source), msg))
 
     def visit_TEnum(self, t):
         for x in t.cases:
