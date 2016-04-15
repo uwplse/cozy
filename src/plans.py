@@ -38,11 +38,14 @@ class HashLookup(Plan):
             return False
         disj = self.predicate.contains_disjunction()
         conj = self.predicate.contains_conjunction()
-        if disj and conj:
-            return False
+        # if disj and conj:
+        #     return False
         # if disj and len(set(v.name for v in self.predicate.vars()) & set(vars)) != 1:
         #     return False
         if disj:
+            return False
+        fields_present = [f.name for f in self.predicate.vars() if f.name in fields]
+        if len(fields_present) != len(set(fields_present)): # if any field appears more than once
             return False
         return isinstance(self.plan, AllWhere) and self.plan.wellFormed(z3ctx, z3solver, fields, vars)
     def children(self):
