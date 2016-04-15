@@ -157,8 +157,8 @@ class HashMap(ConcreteImpl):
         return p1 + p2, n
     def gen_advance(self, gen, parent_structure, iterator):
         p1, sub = self.iterator_current_substructure(gen, parent_structure, iterator)
-        p2, n = self.valueImpl.gen_advance(gen, self.valueTy.instance(sub), iterator)
-        return p1 + p2, n
+        p2 = self.valueImpl.gen_advance(gen, self.valueTy.instance(sub), iterator)
+        return p1 + p2
     def gen_next(self, gen, parent_structure, iterator):
         p1, sub = self.iterator_current_substructure(gen, parent_structure, iterator)
         p2, n = self.valueImpl.gen_next(gen, self.valueTy.instance(sub), iterator)
