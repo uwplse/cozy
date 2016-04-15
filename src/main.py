@@ -11,6 +11,7 @@ import pprint
 import common
 import parse
 import compile
+import typecheck
 
 class PrettyPrinter(common.Visitor):
     def visit_Spec(self, spec):
@@ -94,7 +95,7 @@ class PrettyPrinter(common.Visitor):
         return "{}.{}({})".format(s.target, s.func, ", ".join(self.visit(arg) for arg in s.args))
 
     def visit_SAssign(self, s):
-        return "{}.{} = {}".format(s.target, s.field, self.visit(s.rhs))
+        return "{} = {}".format(self.visit(s.lhs), self.visit(s.rhs))
 
     def visit_SDel(self, s):
         return "del {}".format(self.visit(s.e))
@@ -102,6 +103,13 @@ class PrettyPrinter(common.Visitor):
 def run():
     stdin = sys.stdin.read()
     ast = parse.parse(stdin)
+
+    errors = typecheck.typecheck(ast)
+    if errors:
+        for e in errors:
+            print("Error: {}".format(e))
+        sys.exit(1)
+
     pprint.PrettyPrinter(indent=4).pprint(ast)
     print()
     print(compile.JavaPrinter().visit(ast))
