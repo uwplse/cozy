@@ -287,7 +287,7 @@ def make_parser():
     def p_stm(p):
         """stm : OP_OPEN_PAREN OP_CLOSE_PAREN
                | WORD OP_DOT WORD OP_OPEN_PAREN exp_list OP_CLOSE_PAREN
-               | WORD OP_DOT WORD OP_ASSIGN exp
+               | WORD OP_DOT WORD OP_DOT WORD OP_ASSIGN exp
                | KW_DEL exp"""
         if p[1] == "(":
             p[0] = syntax.SNoOp()
@@ -296,7 +296,9 @@ def make_parser():
         elif p[4] == "(":
             p[0] = syntax.SCall(p[1], p[3], p[5])
         else:
-            p[0] = syntax.SAssign(p[1], p[3], p[5])
+            p[0] = syntax.SAssign(
+                syntax.EGetField(syntax.EGetField(syntax.EVar(p[1]), p[3]), p[5]),
+                p[7])
 
     def p_empty(p):
         'empty :'

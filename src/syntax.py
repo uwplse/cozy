@@ -33,6 +33,9 @@ declare_case(Method, "Query", ["name", "args", "assumptions", "ret"])
 
 class Type(ADT): pass
 declare_case(Type, "TInt")
+declare_case(Type, "TLong")
+declare_case(Type, "TBool")
+declare_case(Type, "THandle", ["t"])
 declare_case(Type, "TBag",    ["t"])
 declare_case(Type, "TList",   ["t"])
 declare_case(Type, "TSet",    ["t"])
@@ -61,5 +64,5 @@ declare_case(ComprehensionClause, "CCond", ["e"])
 class Stm(ADT): pass
 declare_case(Stm, "SNoOp")
 declare_case(Stm, "SCall",   ["target", "func", "args"])
-declare_case(Stm, "SAssign", ["target", "field", "rhs"])
+declare_case(Stm, "SAssign", ["lhs", "rhs"])
 declare_case(Stm, "SDel",    ["e"])
