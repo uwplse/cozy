@@ -218,6 +218,10 @@ class Typechecker(Visitor):
             self.report_err(e, "no var {} in scope".format(e.id))
             e.type = DEFAULT_TYPE
 
+    def visit_ETuple(self, e):
+        ts = [self.visit(ee) for ee in e.es]
+        e.type = syntax.TTuple(ts)
+
     def visit_Op(self, op):
         with self.scope():
             for name, t in op.args:

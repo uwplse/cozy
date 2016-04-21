@@ -44,6 +44,7 @@ declare_case(Type, "TNamed",  ["id"])
 declare_case(Type, "TRecord", ["fields"])
 declare_case(Type, "TApp",    ["t", "args"])
 declare_case(Type, "TEnum",   ["cases"])
+declare_case(Type, "TTuple",  ["ts"])
 
 class Exp(ADT): pass
 declare_case(Exp, "EVar",               ["id"])
@@ -56,6 +57,7 @@ declare_case(Exp, "EMakeRecord",        ["fields"])
 declare_case(Exp, "EListComprehension", ["e", "clauses"])
 declare_case(Exp, "EAlloc",             ["t", "args"])
 declare_case(Exp, "ECall",              ["func", "args"])
+declare_case(Exp, "ETuple",             ["es"])
 
 class ComprehensionClause(ADT): pass
 declare_case(ComprehensionClause, "CPull", ["id", "e"])

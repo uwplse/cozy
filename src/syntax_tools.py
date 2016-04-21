@@ -76,6 +76,9 @@ class PrettyPrinter(common.Visitor):
     def visit_ECall(self, e):
         return "{}({})".format(e.func, ", ".join(self.visit(arg) for arg in e.args))
 
+    def visit_ETuple(self, e):
+        return "({})".format(", ".join(self.visit(e) for e in e.es))
+
     def visit_CPull(self, c):
         return "{} <- {}".format(c.id, self.visit(c.e))
 
