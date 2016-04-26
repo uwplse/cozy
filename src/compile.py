@@ -2,6 +2,9 @@ import common
 from syntax import *
 
 class JavaPrinter(common.Visitor):
+    def __init__(self):
+        self.statevar_name = ""
+
     def visit_Spec(self, spec):
         s = "public class {} {{\n".format(spec.name)
         for name, t in spec.types:
@@ -12,16 +15,20 @@ class JavaPrinter(common.Visitor):
             else:
                 s += "{} {}\n".format(self.visit(t), name)
         for name, t in spec.statevars:
+            self.statevar_name = name
             s += "  {} {};\n".format(self.visit(t), name)
         for e in spec.assumptions:
-            s += "putlic static boolean assumption {{\n {}\n }}\n\n".format(self.visit(e))
+            s += "public static boolean assumption {{\n {}\n }}\n\n".format(self.visit(e))
         for op in spec.methods:
             s += str(self.visit(op))
         s += "}"
         return s
 
-    def visit_THandle(self, handle=None):
-        return "Entry" # hack
+    def visit_THandle(self, handle=None, option=None):
+        if option == None:
+            return "{}".format(self.statevar_name) # hack
+        elif option == "initialize":
+            return "new {}()".format(self.statevar_name)
 
     def visit_TEnum(self, enum, name=None, option=None):
         if option == "create":
@@ -34,6 +41,7 @@ class JavaPrinter(common.Visitor):
 
     def visit_TApp(self, app, name=None, option=None):
         if option == "create":
+
             return "public class {} {{\n {} \n}}\n".format(name, self.visit(app.args))
         elif option == None:
             return "{}<{}>".format(app.t, self.visit(app.args))
@@ -43,19 +51,26 @@ class JavaPrinter(common.Visitor):
     def visit_TRecord(self, r):
         return "{{ {} }}".format(", ".join("{} : {}".format(f, self.visit(t)) for f, t in r.fields))
 
-    def visit_TList(self, l):
-        return "List<{}>".format(self.visit(l.t))
+    def visit_TList(self, l, option=None):
+        if option == None:
+            return "List<{}>".format(self.visit(l.t))
+        elif option == "initialize":
+            return "new ArrayList<{}>()".format(self.visit(l.t))
 
-    def visit_TInt(self, i):
-        return "Integer"
+    def visit_TInt(self, i, option=None):
+        if option == None:
+            return "Integer"
+        elif option == "initialize":
+            return "0"
 
     def visit_Query(self, q):
         ret_type = self.visit(q.ret.type)
-    	s = "public {} {} ({}) {{\n {} result;\n {} \n}}\n\n".format(
+    	s = "public {} {} ({}) {{\n {} result = {};\n {} \n}}\n\n".format(
             ret_type, 
             q.name,
             ", ".join("{} {}".format(self.visit(t), name) for name, t in q.args), 
             ret_type,
+            self.visit(q.ret.type, "initialize"),
             self.visit(q.ret))
     	return s
 
@@ -108,6 +123,8 @@ class JavaPrinter(common.Visitor):
             s += "{} = {};\n".format("result", self.visit(e.e))
         elif op == "unique":
             s += "assert unique({});\n".format(self.visit(e.e))
+        elif op == "max":
+            s += "result = Math.max(result, {});\n".format(self.visit(e.e))
         for clause in ccond_clause:
             s += "}\n"
         s += "}\n"
@@ -135,7 +152,7 @@ class JavaPrinter(common.Visitor):
         return "{}.{} = {}".format(self.visit(s.lhs), s.lhs.f, self.visit(s.rhs))
 
     def visit_SDel(self, s):
-        return "del {}".format(self.visit(s.e))
+        return "{}.remove({})".format(self.statevar_name, self.visit(s.e))
 
 
 
