@@ -41,7 +41,6 @@ class JavaPrinter(common.Visitor):
 
     def visit_TApp(self, app, name=None, option=None):
         if option == "create":
-
             return "public class {} {{\n {} \n}}\n".format(name, self.visit(app.args))
         elif option == None:
             return "{}<{}>".format(app.t, self.visit(app.args))
@@ -49,7 +48,7 @@ class JavaPrinter(common.Visitor):
             print "unknow option"
 
     def visit_TRecord(self, r):
-        return "{{ {} }}".format(", ".join("{} : {}".format(f, self.visit(t)) for f, t in r.fields))
+        return "{}".format(", ".join("{} {}".format(self.visit(t), f) for f, t in r.fields))
 
     def visit_TList(self, l, option=None):
         if option == None:
