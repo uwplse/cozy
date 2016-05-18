@@ -34,7 +34,7 @@ class JavaPrinter(common.Visitor):
         if option == "create":
             return "putlic static enum {} {{\n {} \n}} \n".format(name, ",".join(enum.cases))
         else:
-            print "unknown option"
+            print("unknown option")
 
     def visit_TNamed(self, named):
         return named.id
@@ -45,7 +45,7 @@ class JavaPrinter(common.Visitor):
         elif option == None:
             return "{}<{}>".format(app.t, self.visit(app.args))
         else:
-            print "unknow option"
+            print("unknown option")
 
     def visit_TRecord(self, r):
         return "{}".format(", ".join("{} {}".format(self.visit(t), f) for f, t in r.fields))
@@ -64,14 +64,14 @@ class JavaPrinter(common.Visitor):
 
     def visit_Query(self, q):
         ret_type = self.visit(q.ret.type)
-    	s = "public {} {} ({}) {{\n {} result = {};\n {} \n}}\n\n".format(
+        s = "public {} {} ({}) {{\n {} result = {};\n {} \n}}\n\n".format(
             ret_type, 
             q.name,
             ", ".join("{} {}".format(self.visit(t), name) for name, t in q.args), 
             ret_type,
             self.visit(q.ret.type, "initialize"),
             self.visit(q.ret))
-    	return s
+        return s
 
     def visit_Op(self, q):
         s = "public void {} ({}) {{\n {} \n}}\n\n".format(q.name, ", ".join("{} {}".format(self.visit(t), name) for name, t in q.args), 
