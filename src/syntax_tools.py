@@ -6,6 +6,7 @@ Various utilities for working with syntax trees.
 """
 
 import common
+import syntax
 
 class PrettyPrinter(common.Visitor):
     def visit_Spec(self, spec):
@@ -101,3 +102,66 @@ class PrettyPrinter(common.Visitor):
 _PRETTYPRINTER = PrettyPrinter()
 def pprint(ast):
     return _PRETTYPRINTER.visit(ast)
+
+def free_vars(exp):
+
+    class VarCollector(common.Visitor):
+        def __init__(self):
+            self.bound = []
+
+        def visit_EVar(self, e):
+            if e.id not in self.bound:
+                yield e
+
+        def visit_EBool(self, e):
+            return ()
+
+        def visit_ENum(self, e):
+            return ()
+
+        def visit_EBinOp(self, e):
+            yield from self.visit(e.e1)
+            yield from self.visit(e.e2)
+
+        def visit_EUnaryOp(self, e):
+            return self.visit(e.e)
+
+        def visit_EGetField(self, e):
+            return self.visit(e.e)
+
+        def visit_EMakeRecord(self, e):
+            for f, ee in e.fields:
+                yield from self.visit(ee)
+
+        def visit_EListComprehension(self, e):
+            return self.visit_clauses(e.clauses, 0, e.e)
+
+        def visit_clauses(self, clauses, i, e):
+            if i >= len(clauses):
+                yield from self.visit(e)
+                return
+            c = clauses[i]
+            if isinstance(c, syntax.CPull):
+                yield from self.visit(c.e)
+                self.bound.append(c.id)
+                yield from self.visit_clauses(clauses, i + 1, e)
+                del self.bound[-1]
+            elif isinstance(c, syntax.CCond):
+                yield from self.visit(c.e)
+                yield from self.visit_clauses(clauses, i + 1, e)
+            else:
+                raise Exception("uknown case: {}".format(c))
+
+        def visit_EAlloc(self, e):
+            for ee in e.args:
+                yield from self.visit(ee)
+
+        def visit_ECall(self, e):
+            for ee in e.args:
+                yield from self.visit(ee)
+
+        def visit_ETuple(self, e):
+            for ee in e.es:
+                yield from self.visit(ee)
+
+    return set(VarCollector().visit(exp))
