@@ -34,12 +34,20 @@ class ADT(object):
 
 class Visitor(object):
     def visit(self, x, *args, **kwargs):
-        t = type(x).__name__
-        visit_func = "visit_{}".format(t)
-        if not hasattr(self, visit_func):
-            print("Warning: {} does not implement {}".format(self, visit_func), file=sys.stderr)
-            return None
-        return getattr(self, visit_func)(x, *args, **kwargs)
+        t = type(x)
+        warned = False
+        while t is not None:
+            visit_func = "visit_{}".format(t.__name__)
+            if not hasattr(self, visit_func):
+                if not warned:
+                    print("Warning: {} does not implement {}".format(self, visit_func), file=sys.stderr)
+                    warned = True
+                if t is object:
+                    break
+                else:
+                    t = t.__base__
+                    continue
+            return getattr(self, visit_func)(x, *args, **kwargs)
 
 _i = 0
 def fresh_name(hint="name"):
