@@ -19,12 +19,15 @@ import plans
 class Timeout(Exception):
     pass
 
+# Z3 4.4.1 seems to segfault if this is ever deallocated. :(
+_global_z3ctx = Context()
+
 class SolverContext(object):
 
     def __init__(self, varNames, fieldNames, cost_model, assumptions=()):
         self.varNames = varNames
         self.fieldNames = fieldNames
-        self.z3ctx = Context()
+        self.z3ctx = _global_z3ctx
         self.z3solver = SolverFor("QF_LIA", ctx=self.z3ctx)
         self.assumptions = assumptions
         for a in assumptions:
