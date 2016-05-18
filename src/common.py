@@ -77,3 +77,25 @@ def memoize(f):
         return result
 
     return wrapper
+
+def declare_case(supertype, name, attrs=()):
+    """
+    Usage:
+        CaseName = declare_case(SuperType, "CaseName", ["member1", ...])
+
+    Creates a new class (CaseName) that is a subclass of SuperType and has all
+    the given members.
+    """
+    class T(supertype):
+        def __init__(self, *args):
+            assert len(args) == len(attrs), "{} expects {} args, was given {}".format(name, len(attrs), len(args))
+            for attr, val in zip(attrs, args):
+                setattr(self, attr, val)
+        def __str__(self):
+            return repr(self)
+        def __repr__(self):
+            return "{}({})".format(name, ", ".join("{}={}".format(attr, repr(val)) for attr, val in zip(attrs, self.children())))
+        def children(self):
+            return tuple(getattr(self, a) for a in attrs)
+    T.__name__ = name
+    return T
