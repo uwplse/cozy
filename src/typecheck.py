@@ -52,6 +52,7 @@ class Typechecker(Visitor):
             self.tenv[name] = self.visit(t)
         for name, t in spec.statevars:
             self.env[name] = self.visit(t)
+        spec.statevars = [(name, self.env[name]) for (name, t) in spec.statevars]
         for e in spec.assumptions:
             self.ensure_type(e, BOOL)
         for op in spec.methods:
