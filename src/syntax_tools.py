@@ -30,6 +30,15 @@ class PrettyPrinter(common.Visitor):
     def visit_TApp(self, app):
         return "{}<{}>".format(app.t, self.visit(app.args))
 
+    def visit_TSet(self, s):
+        return "Set<{}>".format(self.visit(s.t))
+
+    def visit_TList(self, l):
+        return "List<{}>".format(self.visit(l.t))
+
+    def visit_TInt(self, t):
+        return "Int"
+
     def visit_TRecord(self, r):
         return "{{ {} }}".format(", ".join("{} : {}".format(f, self.visit(t)) for f, t in r.fields))
 
