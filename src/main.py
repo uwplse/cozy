@@ -10,8 +10,11 @@ import pprint
 
 import parse
 import compile
+import incrementalization as inc
 import typecheck
+import syntax
 import syntax_tools
+import synth2
 
 def run():
     stdin = sys.stdin.read()
@@ -25,8 +28,18 @@ def run():
 
     pprint.PrettyPrinter(indent=4).pprint(ast)
     print()
-    print(compile.JavaPrinter().visit(ast))
     print(syntax_tools.pprint(ast))
+
+    # Synthesis testing
+    ds = [inc.to_delta(m) for m in ast.methods if isinstance(m, syntax.Op)]
+    # fn = [m for m in ast.methods if m.name == "unit"][0]
+    goals = [
+        synth2.Goal(name=m.name, args=m.args, e=m.ret, deltas=ds)
+        for m in ast.methods if isinstance(m, syntax.Query)]
+
+    print(synth2.synthesize(ast.statevars, goals))
+
+    print(compile.JavaPrinter().visit(ast))
 
 if __name__ == "__main__":
     run()

@@ -1,0 +1,18 @@
+Graph:
+
+    type Edge = Handle<{ src : Bound, dst : Bound }>
+
+    state nverts : Bound
+    state edges : Set<Edge>
+
+    op addEdge(src : Bound, dst : Bound)
+        edges.add(new Edge(src, dst))
+
+    op addEdge(e : Edge)
+        edges.remove(e)
+
+    query outgoing(v : Bound)
+        [ e | e <- edges, e.val.src == v ]
+
+    query incoming(v : Bound)
+        [ e | e <- edges, e.val.dst == v ]

@@ -35,19 +35,18 @@ class ADT(object):
 class Visitor(object):
     def visit(self, x, *args, **kwargs):
         t = type(x)
-        warned = False
+        first_visit_func = None
         while t is not None:
             visit_func = "visit_{}".format(t.__name__)
+            first_visit_func = first_visit_func or visit_func
             if not hasattr(self, visit_func):
-                if not warned:
-                    print("Warning: {} does not implement {}".format(self, visit_func), file=sys.stderr)
-                    warned = True
                 if t is object:
                     break
                 else:
                     t = t.__base__
                     continue
             return getattr(self, visit_func)(x, *args, **kwargs)
+        print("Warning: {} does not implement {}".format(self, first_visit_func), file=sys.stderr)
 
 _i = 0
 def fresh_name(hint="name"):
@@ -85,6 +84,16 @@ def memoize(f):
         return result
 
     return wrapper
+
+def split(iter, p):
+    t = []
+    f = []
+    for x in iter:
+        if p(x):
+            t.append(x)
+        else:
+            f.append(x)
+    return (t, f)
 
 def declare_case(supertype, name, attrs=()):
     """

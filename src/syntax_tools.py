@@ -165,3 +165,53 @@ def free_vars(exp):
                 yield from self.visit(ee)
 
     return set(VarCollector().visit(exp))
+
+def subst(exp, replacements):
+    """
+    Performs capture-avoiding substitution.
+    Input:
+        exp             - an Exp
+        replacements    - {str:Exp} replacement map for variables
+    Output:
+        exp with each var mapped to its replacement (if any) from replacements
+    """
+
+    allfvs = set()
+    for fvs in (free_vars(val) for val in replacements.values()):
+        allfvs |= {fv.id for fv in fvs}
+
+    class Subst(common.Visitor):
+        def visit_EBool(self, b):
+            return b
+        def visit_ENum(self, n):
+            return n
+        def visit_EVar(self, var):
+            return replacements.get(var.id, var)
+        def visit_EBinOp(self, op):
+            return syntax.EBinOp(self.visit(op.e1), op.op, self.visit(op.e2))
+        def visit_EUnaryOp(self, op):
+            return syntax.EUnaryOp(op.op, self.visit(op.e))
+        def visit_EListComprehension(self, lcmp):
+            return self.visit_lcmp(list(lcmp.clauses), 0, lcmp.e)
+        def visit_lcmp(self, clauses, i, e):
+            if i >= len(clauses):
+                return syntax.EListComprehension(self.visit(e), clauses)
+            c = clauses[i]
+            if isinstance(c, syntax.CPull):
+                if c.id in allfvs:
+                    name = common.fresh_name()
+                    r = { c.id : syntax.EVar(name) }
+                    e = subst(e, r)
+                    for j in range(i + 1, len(clauses)):
+                        d = clauses[j]
+                        if isinstance(d, syntax.CPull):
+                            clauses[j] = syntax.CPull(d.id, subst(d.e, r))
+                        elif isinstance(d, syntax.CCond):
+                            clauses[j] = syntax.CCond(subst(d.e, r))
+                    clauses[i] = syntax.CPull(name, self.visit(c.e))
+                return self.visit_lcmp(clauses, i + 1, e)
+            elif isinstance(c, syntax.CCond):
+                clauses[i] = syntax.CCond(self.visit(c.e))
+                return self.visit_lcmp(clauses, i + 1, e)
+
+    return Subst().visit(exp)

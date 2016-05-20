@@ -15,6 +15,7 @@ from common import ADT
 from cache import Cache
 import predicates
 import plans
+import stats
 
 class Timeout(Exception):
     pass
@@ -45,6 +46,7 @@ class SolverContext(object):
         if self.timeout is not None and (time.time() - self.startTime) > self.timeout:
             raise Timeout()
 
+    @stats.generator_task
     def synthesizePlansByEnumeration(self, query, sort_field=None, maxSize=1000, timeout=None):
         examples = []
         query = query.toNNF()
@@ -79,6 +81,7 @@ class SolverContext(object):
         for plan in self.bestPlans:
             yield plan
 
+    @stats.generator_task
     def _synthesizePlansByEnumeration(self, query, sort_field, maxSize, examples):
         """note: query should be in NNF"""
 

@@ -224,12 +224,14 @@ class Typechecker(Visitor):
         e.type = syntax.TTuple(ts)
 
     def visit_Op(self, op):
+        op.args = [(name, self.visit(t)) for (name, t) in op.args]
         with self.scope():
             for name, t in op.args:
                 self.env[name] = self.visit(t)
             self.visit(op.body)
 
     def visit_Query(self, q):
+        q.args = [(name, self.visit(t)) for (name, t) in q.args]
         with self.scope():
             for name, t in q.args:
                 self.env[name] = self.visit(t)
