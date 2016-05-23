@@ -155,6 +155,16 @@ class Typechecker(Visitor):
             self.ensure_numeric(e.e1)
             self.ensure_numeric(e.e2)
             e.type = self.numeric_lub(e.e1.type, e.e2.type)
+        elif e.op in ["union", "intersection"]:
+            e1set = isinstance(e.e1.type, syntax.TSet)
+            e2set = isinstance(e.e1.type, syntax.TSet)
+            e1set or self.report_err(e.e1, "not a set")
+            e2set or self.report_err(e.e2, "not a set")
+            if e1set and e2set:
+                self.ensure_type(e.e2, e.e1.type)
+                e.type = e.e1.type
+            else:
+                e.type = DEFAULT_TYPE
         else:
             raise NotImplementedError(e.op)
 
