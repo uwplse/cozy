@@ -2,13 +2,13 @@ from common import Visitor
 import syntax
 from syntax_tools import pprint
 
-def typecheck(ast):
+def typecheck(ast, env=None):
     """
     Typecheck the syntax tree.
     This procedure attaches a .type attribute to every expression, and returns
     a list of type errors (or an empty list if everything typechecks properly).
     """
-    typechecker = Typechecker()
+    typechecker = Typechecker(env or ())
     typechecker.visit(ast)
     return typechecker.errors
 
@@ -19,14 +19,14 @@ BOOL = syntax.TBool()
 
 class Typechecker(Visitor):
 
-    def __init__(self):
+    def __init__(self, env):
         self.tenv = {
             "Int": INT,
             "Bound": INT, # TODO?
             "Long": LONG,
             "Bool": BOOL }
 
-        self.env = {}
+        self.env = dict(env)
         self.oldenv = []
         self.errors = []
 
