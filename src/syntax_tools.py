@@ -159,7 +159,7 @@ def free_vars(exp):
                 yield from self.visit(c.e)
                 yield from self.visit_clauses(clauses, i + 1, e)
             else:
-                raise Exception("uknown case: {}".format(c))
+                raise Exception("unknown case: {}".format(c))
 
         def visit_EAlloc(self, e):
             for ee in e.args:
