@@ -224,3 +224,58 @@ def subst(exp, replacements):
                 return self.visit_lcmp(clauses, i + 1, e)
 
     return Subst().visit(exp)
+
+def alpha_equivalent(e1, e2):
+    """
+    Equality on expression ASTs is syntactic equality; even variable names are
+    compared. So,
+        [x | x <- L] != [y | y <- L].
+    However, alpha equivalence allows renaming of non-free variables, so
+        alpha_equivalent([x | x <- L], [y | y <- L]) == True.
+    """
+    class V(common.Visitor):
+        def __init__(self):
+            self.remap = { } # maps e1 varnames ---> e2 varnames
+        def visit_EVar(self, e1, e2):
+            if not isinstance(e2, syntax.EVar):
+                return False
+            e1id = self.remap.get(e1.id, e1.id)
+            return e1id == e2.id
+        def visit_ENum(self, e1, e2):
+            return isinstance(e2, syntax.ENum) and e1.val == e2.val
+        def visit_EBool(self, e1, e2):
+            return isinstance(e2, syntax.EBool) and e1.val == e2.val
+        def visit_EListComprehension(self, lcmp, other):
+            if not isinstance(other, syntax.EListComprehension):
+                return False
+            if len(lcmp.clauses) != len(other.clauses):
+                return False
+            return self.visit_clauses(0, lcmp.clauses, other.clauses, lcmp.e, other.e)
+        def visit_EBinOp(self, e1, e2):
+            if not isinstance(e2, syntax.EBinOp):
+                return False
+            return (e1.op == e2.op and
+                self.visit(e1.e1, e2.e1) and
+                self.visit(e1.e2, e2.e2))
+        def visit_EUnaryOp(self, e1, e2):
+            if not isinstance(e2, syntax.EUnaryOp):
+                return False
+            return (e1.op == e2.op and self.visit(e1.e, e2.e))
+        def visit_clauses(self, i, clauses1, clauses2, e1, e2):
+            if i >= len(clauses1):
+                return self.visit(e1, e2)
+            c1 = clauses1[i]
+            c2 = clauses2[i]
+            if isinstance(c1, syntax.CPull):
+                if not isinstance(c2, syntax.CPull):
+                    return False
+                with common.extend(self.remap, c1.id, c2.id):
+                    return self.visit_clauses(i + 1, clauses1, clauses2, e1, e2)
+            elif isinstance(c1, syntax.CCond):
+                return self.visit(c1.e, c2.e) and self.visit_clauses(i + 1, clauses1, clauses2, e1, e2)
+            else:
+                raise NotImplementedError(pprint(c1))
+        def visit_Exp(self, e1, e2):
+            raise NotImplementedError("{} alpha-equiv? {}".format(e1, e2))
+
+    return V().visit(e1, e2)

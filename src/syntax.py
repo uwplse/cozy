@@ -44,6 +44,7 @@ CCond               = declare_case(ComprehensionClause, "CCond", ["e"])
 
 class Stm(ADT): pass
 SNoOp               = declare_case(Stm, "SNoOp")
+SSeq                = declare_case(Stm, "SSeq",    ["s1", "s2"])
 SCall               = declare_case(Stm, "SCall",   ["target", "func", "args"])
 SAssign             = declare_case(Stm, "SAssign", ["lhs", "rhs"])
 SDel                = declare_case(Stm, "SDel",    ["e"])

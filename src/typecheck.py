@@ -118,6 +118,8 @@ class Typechecker(Visitor):
         elif e.op == "not":
             self.ensure_type(e.e, BOOL)
             e.type = BOOL
+        elif e.op == "singleton":
+            e.type = syntax.TSet(e.e.type)
         else:
             raise NotImplementedError(e.op)
 

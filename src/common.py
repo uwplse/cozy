@@ -116,3 +116,26 @@ def declare_case(supertype, name, attrs=()):
             return tuple(getattr(self, a) for a in attrs)
     T.__name__ = name
     return T
+
+class extend(object):
+    """
+    Temporarily extend a dictionary with a new value.
+    Usage:
+        my_dict = ...
+        with extend(my_dict, k, new_val):
+            # use my_dict
+            # ...
+    """
+    NO_VAL = object()
+    def __init__(self, d, k, v):
+        self.d = d
+        self.k = k
+        self.new_val = v
+        self.old_val = d.get(k, extend.NO_VAL)
+    def __enter__(self, *args, **kwargs):
+        self.d[self.k] = self.new_val
+    def __exit__(self, *args, **kwargs):
+        if self.old_val is extend.NO_VAL:
+            del self.d[self.k]
+        else:
+            self.d[self.k] = self.old_val

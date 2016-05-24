@@ -21,7 +21,7 @@ def to_delta(op):
 
 def delta_apply(e, args, member, delta):
     if isinstance(delta, SetAdd):
-        return subst(e, { member : syntax.EBinOp(syntax.EVar(member), "union", syntax.EVar(args[0][0])) })
+        return subst(e, { member : syntax.EBinOp(syntax.EVar(member), "union", syntax.EUnaryOp("singleton", syntax.EVar(args[0][0]))) })
     elif isinstance(delta, SetRemove):
         return subst(e, { member : syntax.EBinOp(syntax.EVar(member), "-", syntax.EUnaryOp("singleton", syntax.EVar(args[0][0]))) })
     else:
