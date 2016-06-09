@@ -36,6 +36,9 @@ class PrettyPrinter(common.Visitor):
     def visit_TList(self, l):
         return "List<{}>".format(self.visit(l.t))
 
+    def visit_TMap(self, m):
+        return "Map<{}, {}>".format(self.visit(m.k), self.visit(m.v))
+
     def visit_TInt(self, t):
         return "Int"
 
@@ -88,6 +91,9 @@ class PrettyPrinter(common.Visitor):
 
     def visit_ETuple(self, e):
         return "({})".format(", ".join(self.visit(e) for e in e.es))
+
+    def visit_ELet(self, e):
+        return "let {} = {} in {}".format(e.id, self.visit(e.e1), self.visit(e.e2))
 
     def visit_CPull(self, c):
         return "{} <- {}".format(c.id, self.visit(c.e))

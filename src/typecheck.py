@@ -16,6 +16,7 @@ INT = syntax.TInt()
 LONG = syntax.TLong()
 DEFAULT_TYPE = INT
 BOOL = syntax.TBool()
+STRING = syntax.TString()
 
 class Typechecker(Visitor):
 
@@ -24,7 +25,8 @@ class Typechecker(Visitor):
             "Int": INT,
             "Bound": INT, # TODO?
             "Long": LONG,
-            "Bool": BOOL }
+            "Bool": BOOL,
+            "String": STRING }
 
         self.env = dict(env)
         self.oldenv = []
@@ -87,6 +89,9 @@ class Typechecker(Visitor):
 
     def visit_TRecord(self, t):
         return syntax.TRecord([(f, self.visit(ft)) for f, ft in t.fields])
+
+    def visit_Type(self, t):
+        return t
 
     def ensure_type(self, e, t):
         if not hasattr(e, "type"):

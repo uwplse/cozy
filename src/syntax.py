@@ -14,6 +14,7 @@ class Type(ADT): pass
 TInt                = declare_case(Type, "TInt")
 TLong               = declare_case(Type, "TLong")
 TBool               = declare_case(Type, "TBool")
+TString             = declare_case(Type, "TString")
 THandle             = declare_case(Type, "THandle", ["t"])
 TBag                = declare_case(Type, "TBag",    ["t"])
 TList               = declare_case(Type, "TList",   ["t"])
@@ -37,6 +38,7 @@ EListComprehension  = declare_case(Exp, "EListComprehension", ["e", "clauses"])
 EAlloc              = declare_case(Exp, "EAlloc",             ["t", "args"])
 ECall               = declare_case(Exp, "ECall",              ["func", "args"])
 ETuple              = declare_case(Exp, "ETuple",             ["es"])
+ELet                = declare_case(Exp, "ELet",               ["id", "e1", "e2"])
 
 class ComprehensionClause(ADT): pass
 CPull               = declare_case(ComprehensionClause, "CPull", ["id", "e"])

@@ -148,6 +148,8 @@ def simplify(e):
                     res = syntax.EBinOp(res, "and", parts[i])
                 return res
             elif op.op == "in":
+                e1 = op.e1
+                e2 = op.e2
                 if isinstance(e2, syntax.EBinOp) and e2.op == "union":
                     lhs = syntax.EBinOp(e1, "in", e2.e1)
                     rhs = syntax.EBinOp(e1, "in", e2.e2)
@@ -179,6 +181,16 @@ def synthesize(state, goals, timeout=None):
         print("###### queue len = {}".format(len(q)))
         g = q.popleft()
         e = simplify(g.e)
+
+        for sln in solutions:
+            if alpha_equivalent(sln.goal.e, e):
+                print("####### already exists: {} as {}".format(e, sln.goal.name))
+                e = None
+                break
+
+        if e is None:
+            continue
+
         typecheck(e, list(g.args) + list(state))
         print("####### synthesizing: {}({}) = {} = {}".format(g.name, g.args, pprint(g.e), pprint(e)))
         g = g._replace(e=e)
@@ -187,6 +199,13 @@ def synthesize(state, goals, timeout=None):
         solutions.append(psoln.solution)
         for subgoal in psoln.subgoals:
             q.append(subgoal)
+
+
+    for sln in solutions:
+        print("{:10}: {}".format(sln.goal.name, pprint(sln.exp)))
+        for name,ty in sln.state:
+            print("    {} : {}".format(name, pprint(ty)))
+
 
     return solutions
 
@@ -239,7 +258,7 @@ def synth_simple(state, goal, timeout=None):
         if pull and pred and coll:
             return synthesize_1d(goal, goal.args, agg, e.e, pull.id, coll, pred, goal.deltas)
         return PartialSolution(
-            solution=None, # TODO: for-each loop??
+            solution=Solution(goal, (), syntax.ECall("not_implemented", []), [syntax.SNoOp() for d in goal.deltas]), # TODO: for-each loop??
             subgoals=[])
     raise Exception("no idea how to synthesize {}".format(pprint(goal.e)))
 
@@ -320,8 +339,50 @@ def synthesize_1d(goal, input, agg, exp, var, collection, predicate, deltas, tim
         # for sg in subgoals:
         #     print("subgoal: {}({}) = {}".format(sg.name, sg.args, pprint(sg.e)))
         # TODO: agg, plan ----> impl, exp
-        return PartialSolution(Solution(goal, agg, plan, op_impls), subgoals)
+        state, exp = plan_to_exp(agg, plan, collection[1].t)
+        return PartialSolution(Solution(goal, state, exp, op_impls), subgoals)
         # TODO: synthesize ANY of the returned plans??
+
+def plan_to_exp(agg, plan, elem_type):
+    if isinstance(plan, plans.AllWhere):
+        # I want a collection here: linkedList or ArrayList
+        name = fresh_name()
+        return ([(name, syntax.TList(elem_type))], syntax.EVar(name))
+    elif isinstance(plan, plans.BinarySearch):
+        return ([], syntax.ECall("binarysearch", []))
+    elif isinstance(plan, plans.HashLookup):
+        state, exp = plan_to_exp(agg, plan.plan, elem_type)
+        # construct a new type that holds all the state parts
+        valueType = syntax.TRecord([(fresh_name(), t) for name, t in state])
+        keyType = None
+        name = fresh_name()
+        compute_key = syntax.EVar(name) # TODO
+        lookup = fresh_name()
+        return ([(name, syntax.TMap(keyType, valueType))],
+            syntax.ELet(
+                lookup, syntax.ECall("HashLookup", [syntax.EVar(name), compute_key]),
+                subst(exp, { old_name: syntax.EGetField(syntax.EVar(lookup), new_name) for ((old_name, _), (new_name, _)) in zip(state, valueType.fields) })))
+    elif isinstance(plan, plans.Concat):
+        state1, e1 = plan_to_exp(agg, plan.plan1, elem_type)
+        state2, e2 = plan_to_exp(agg, plan.plan2, elem_type)
+        if agg == Aggregation.All:
+            return (state1 + state2, syntax.ECall("concat", [e1, e2]))
+        elif agg == Aggregation.Sum:
+            return (state1 + state2, syntax.EBinOp(e1, "+", e2))
+        else:
+            raise Exception("unhandled case: {}".format(agg))
+    elif isinstance(plan, plans.Filter):
+        state, e = plan_to_exp(Aggregation.All, plan.plan, elem_type)
+        if agg == Aggregation.All:
+            return (state, e)
+        elif agg == Aggregation.Sum:
+            return (state, syntax.ECall("sum", [e]))
+        elif agg == Aggregation.Empty:
+            return (state, syntax.ECall("is-empty", [e]))
+        else:
+            raise Exception("unhandled case: {}".format(agg))
+    else:
+        raise Exception("unhandled case: {}".format(plan))
 
 def incrementalize(plan, collection, subops, args, member, d):
     if isinstance(plan, plans.AllWhere):

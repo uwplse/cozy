@@ -39,7 +39,7 @@ def run():
 
     print(synth2.synthesize(ast.statevars, goals))
 
-    print(compile.JavaPrinter().visit(ast))
+    # print(compile.JavaPrinter().visit(ast))
 
 if __name__ == "__main__":
     run()
