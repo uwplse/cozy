@@ -148,14 +148,18 @@ def simplify(e):
                     res = syntax.EBinOp(res, "and", parts[i])
                 return res
             elif op.op == "in":
-                e1 = op.e1
-                e2 = op.e2
+                e1 = self.visit(op.e1)
+                e2 = self.visit(op.e2)
                 if isinstance(e2, syntax.EBinOp) and e2.op == "union":
                     lhs = syntax.EBinOp(e1, "in", e2.e1)
                     rhs = syntax.EBinOp(e1, "in", e2.e2)
                     return syntax.EBinOp(lhs, "or", rhs)
                 elif isinstance(e2, syntax.EUnaryOp) and e2.op == "singleton":
                     return syntax.EBinOp(e1, "==", e2.e)
+                elif isinstance(e2, syntax.EBinOp) and e2.op == "-":
+                    return syntax.EBinOp(
+                        syntax.EBinOp(e1, "in", e2.e1), "and",
+                        syntax.EUnaryOp("not", syntax.EBinOp(e1, "in", e2.e2)))
             return op
         def visit_EListComprehension(self, lcmp):
             return syntax.EListComprehension(
@@ -226,6 +230,23 @@ def find_the_only_pull(lcmp):
             nfound += 1
     return pull if nfound == 1 else None
 
+def break_and(e):
+    if isinstance(e, syntax.EBinOp) and e.op == "and":
+        yield from break_and(e.e1)
+        yield from break_and(e.e2)
+    else:
+        yield e
+
+def break_list_comprehension(lcmp):
+    pulls = []
+    conds = []
+    for clause in lcmp.clauses:
+        if isinstance(clause, syntax.CPull):
+            pulls.append(clause)
+        elif isinstance(clause, syntax.CCond):
+            conds += list(break_and(clause.e))
+    return (lcmp.e, pulls, conds)
+
 @stats.task
 def synth_simple(state, goal, timeout=None):
     statedict = dict(state)
@@ -237,10 +258,11 @@ def synth_simple(state, goal, timeout=None):
         if e.op == "len": agg = Aggregation.Count
         if agg and isinstance(e.e, syntax.EListComprehension):
             pull = find_the_only_pull(e.e)
-            pred = combined_predicate(e.e)
-            coll = (pull.e.id, statedict[pull.e.id]) if isinstance(pull.e, syntax.EVar) and pull.e.id in statedict else None
-            if pull and pred and coll:
-                return synthesize_1d(goal, goal.args, agg, e.e.e, pull.id, coll, pred, goal.deltas)
+            if pull:
+                pred = combined_predicate(e.e)
+                coll = (pull.e.id, statedict[pull.e.id]) if isinstance(pull.e, syntax.EVar) and pull.e.id in statedict else None
+                if pred and coll:
+                    return synthesize_1d(goal, goal.args, agg, e.e.e, pull.id, coll, pred, goal.deltas)
         n = fresh_name()
         fvs = [fv for fv in free_vars(e) if fv.id not in statedict]
         args = [(fv.id, fv.type) for fv in fvs]
@@ -253,14 +275,53 @@ def synth_simple(state, goal, timeout=None):
     elif isinstance(e, syntax.EListComprehension):
         agg = Aggregation.All
         pull = find_the_only_pull(e)
-        pred = combined_predicate(e)
-        coll = (pull.e.id, statedict[pull.e.id]) if isinstance(pull.e, syntax.EVar) and pull.e.id in statedict else None
-        if pull and pred and coll:
-            return synthesize_1d(goal, goal.args, agg, e.e, pull.id, coll, pred, goal.deltas)
-        return PartialSolution(
-            solution=Solution(goal, (), syntax.ECall("not_implemented", []), [syntax.SNoOp() for d in goal.deltas]), # TODO: for-each loop??
-            subgoals=[])
-    raise Exception("no idea how to synthesize {}".format(pprint(goal.e)))
+        if pull:
+            pred = combined_predicate(e)
+            coll = (pull.e.id, statedict[pull.e.id]) if isinstance(pull.e, syntax.EVar) and pull.e.id in statedict else None
+            if pred and coll:
+                return synthesize_1d(goal, goal.args, agg, e.e, pull.id, coll, pred, goal.deltas)
+
+        parts = break_list_comprehension(e)
+        print("............. ----> {}".format(parts))
+        exp, pulls, conds = parts
+
+        if len(pulls) == 0:
+            return PartialSolution(
+                solution=Solution(goal, (), syntax.ECall("empty_collection", []), [syntax.SNoOp() for d in goal.deltas]), # TODO: for-each loop??
+                subgoals=[])
+        elif len(pulls) == 1:
+            raise Exception("not sure what to do yet")
+        else:
+            bound_vars = {pull.id for pull in pulls[1:]}
+            left_conds = []
+            right_conds = []
+            for c in conds:
+                fvs = { fv.id for fv in free_vars(c) }
+                if bound_vars & fvs:
+                    right_conds.append(syntax.CCond(c))
+                else:
+                    left_conds.append(syntax.CCond(c))
+
+            g1 = Goal(
+                name=fresh_name(),
+                args=goal.args,
+                e=syntax.EListComprehension(syntax.EVar(pulls[0].id), [pulls[0]] + left_conds),
+                deltas=goal.deltas)
+
+            g2 = Goal(
+                name=fresh_name(),
+                args=[(pulls[0].id, pulls[0].e.type.t)] + goal.args,
+                e=syntax.EListComprehension(exp, pulls[1:] + right_conds),
+                deltas=goal.deltas)
+
+            return PartialSolution(
+                solution=Solution(goal, (), syntax.ECall("for_each", [syntax.EVar(pulls[0].id), syntax.ECall(g1.name, []), syntax.ECall(g2.name, [])]), [syntax.SNoOp() for d in goal.deltas]),
+                subgoals=[g1, g2])
+
+    return PartialSolution(
+        solution=Solution(goal, (), syntax.ECall("not_implemented", [e]), [syntax.SNoOp() for d in goal.deltas]), # TODO: for-each loop??
+        subgoals=[])
+    # raise Exception("no idea how to synthesize {}".format(pprint(goal.e)))
 
 @stats.task
 def synthesize_1d(goal, input, agg, exp, var, collection, predicate, deltas, timeout=None):

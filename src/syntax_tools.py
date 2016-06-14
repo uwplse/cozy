@@ -281,6 +281,10 @@ def alpha_equivalent(e1, e2):
                 return self.visit(c1.e, c2.e) and self.visit_clauses(i + 1, clauses1, clauses2, e1, e2)
             else:
                 raise NotImplementedError(pprint(c1))
+        def visit_EGetField(self, e1, e2):
+            if not isinstance(e2, syntax.EGetField):
+                return False
+            return (e1.f == e2.f and self.visit(e1.e, e2.e))
         def visit_Exp(self, e1, e2):
             raise NotImplementedError("{} alpha-equiv? {}".format(e1, e2))
 
