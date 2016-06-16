@@ -4,12 +4,13 @@ import os
 import subprocess
 
 import plans
+import predicates
 from codegen_java import JavaCodeGenerator
 from codegen_cpp import CppCodeGenerator
 
 def _cost(plan, n=float(1000)):
     """Returns (cost,size) tuples"""
-    if isinstance(plan, plans.AllWhere): return 1, n
+    if isinstance(plan, plans.AllWhere): return 1, (n if plan.predicate == predicates.Bool(True) else (n / 2))
     if isinstance(plan, plans.HashLookup):
         cost1, size1 = _cost(plan.plan)
         return cost1 + 1, size1 / 3
