@@ -2,7 +2,7 @@ from common import fresh_name
 
 class Ty(object):
     def gen_type(self, gen):
-        raise Exception("not implemented for type: {}".format(type(self)))
+        raise NotImplementedError("not implemented for type: {}".format(type(self)))
 
 class NativeTy(Ty):
     def __init__(self, ty):
