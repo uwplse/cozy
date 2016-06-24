@@ -32,12 +32,13 @@ def run():
 
     # Synthesis testing
     ds = [inc.to_delta(m) for m in ast.methods if isinstance(m, syntax.Op)]
+    ctx = synth2.Context(state=ast.statevars, deltas=ds)
     # fn = [m for m in ast.methods if m.name == "unit"][0]
     goals = [
-        synth2.Goal(name=m.name, args=m.args, e=m.ret, deltas=ds)
+        synth2.Goal(name=m.name, args=m.args, e=m.ret)
         for m in ast.methods if isinstance(m, syntax.Query)]
 
-    print(synth2.synthesize(ast.statevars, goals))
+    print(synth2.synthesize(ctx, goals))
 
     # print(compile.JavaPrinter().visit(ast))
 

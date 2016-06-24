@@ -23,7 +23,8 @@ class Aggregation(object):
     Sum      = "Sum"
     Empty    = "Empty"
 
-Goal = collections.namedtuple("Goal", ["name", "args", "e", "deltas"])
+Context = collections.namedtuple("Context", ["state", "deltas"])
+Goal = collections.namedtuple("Goal", ["name", "args", "e"])
 Solution = collections.namedtuple("Solution", ["goal", "state", "exp", "ops"])
 PartialSolution = collections.namedtuple("PartialSolution", ["solution", "subgoals"])
 
@@ -175,7 +176,9 @@ def simplify(e):
     return V().visit(e)
 
 @stats.task
-def synthesize(state, goals, timeout=None):
+def synthesize(context, goals, timeout=None):
+    state = context.state
+
     q = collections.deque()
     for g in goals:
         q.append(g)
@@ -198,7 +201,7 @@ def synthesize(state, goals, timeout=None):
         typecheck(e, list(g.args) + list(state))
         print("####### synthesizing: {}({}) = {} = {}".format(g.name, g.args, pprint(g.e), pprint(e)))
         g = g._replace(e=e)
-        psoln = synth_simple(state, g, timeout)
+        psoln = synth_simple(context, g, timeout)
         print("####### got: {}".format(psoln))
         solutions.append(psoln.solution)
         for subgoal in psoln.subgoals:
@@ -248,8 +251,9 @@ def break_list_comprehension(lcmp):
     return (lcmp.e, pulls, conds)
 
 @stats.task
-def synth_simple(state, goal, timeout=None):
-    statedict = dict(state)
+def synth_simple(context, goal, timeout=None):
+    statedict = dict(context.state)
+    deltas = context.deltas
     e = goal.e
     if isinstance(e, syntax.EUnaryOp):
         agg = None
@@ -262,16 +266,22 @@ def synth_simple(state, goal, timeout=None):
                 pred = combined_predicate(e.e)
                 coll = (pull.e.id, statedict[pull.e.id]) if isinstance(pull.e, syntax.EVar) and pull.e.id in statedict else None
                 if pred and coll:
-                    return synthesize_1d(goal, goal.args, agg, e.e.e, pull.id, coll, pred, goal.deltas)
+                    return synthesize_1d(goal, goal.args, agg, e.e.e, pull.id, coll, pred, deltas)
         n = fresh_name()
         fvs = [fv for fv in free_vars(e) if fv.id not in statedict]
         args = [(fv.id, fv.type) for fv in fvs]
         soln = syntax.EUnaryOp(e.op, syntax.ECall(n, [fv for fv in fvs]))
         return PartialSolution(
-            solution=Solution(goal, (), syntax.ECall(n, fvs), [syntax.SNoOp() for d in goal.deltas]), # TODO
-            subgoals=[Goal(name=n, args=args, e=e.e, deltas=goal.deltas)])
+            solution=Solution(goal, (), syntax.ECall(n, fvs), [syntax.SNoOp() for d in deltas]), # TODO
+            subgoals=[Goal(name=n, args=args, e=e.e)])
+    elif isinstance(e, syntax.EVar):
+        if e.id in statedict:
+            n = fresh_name()
+            return synthesize_1d(goal, (), Aggregation.All, syntax.EVar(n), n, (e.id, statedict[e.id]), syntax.EBool(True), deltas)
+        else:
+            return PartialSolution(Solution(goal, (), e, [syntax.SNoOp() for d in deltas]), [])
     elif isinstance(e, syntax.ENum):
-        return PartialSolution(Solution(goal, (), e, [syntax.SNoOp() for d in goal.deltas]), []) # TODO
+        return PartialSolution(Solution(goal, (), e, [syntax.SNoOp() for d in deltas]), []) # TODO
     elif isinstance(e, syntax.EListComprehension):
         agg = Aggregation.All
         pull = find_the_only_pull(e)
@@ -279,7 +289,7 @@ def synth_simple(state, goal, timeout=None):
             pred = combined_predicate(e)
             coll = (pull.e.id, statedict[pull.e.id]) if isinstance(pull.e, syntax.EVar) and pull.e.id in statedict else None
             if pred and coll:
-                return synthesize_1d(goal, goal.args, agg, e.e, pull.id, coll, pred, goal.deltas)
+                return synthesize_1d(goal, goal.args, agg, e.e, pull.id, coll, pred, deltas)
 
         parts = break_list_comprehension(e)
         print("............. ----> {}".format(parts))
@@ -287,7 +297,7 @@ def synth_simple(state, goal, timeout=None):
 
         if len(pulls) == 0:
             return PartialSolution(
-                solution=Solution(goal, (), syntax.ECall("empty_collection", []), [syntax.SNoOp() for d in goal.deltas]), # TODO: for-each loop??
+                solution=Solution(goal, (), syntax.ECall("empty_collection", []), [syntax.SNoOp() for d in deltas]), # TODO: for-each loop??
                 subgoals=[])
         elif len(pulls) == 1:
             raise Exception("not sure what to do yet")
@@ -305,21 +315,19 @@ def synth_simple(state, goal, timeout=None):
             g1 = Goal(
                 name=fresh_name(),
                 args=goal.args,
-                e=syntax.EListComprehension(syntax.EVar(pulls[0].id), [pulls[0]] + left_conds),
-                deltas=goal.deltas)
+                e=syntax.EListComprehension(syntax.EVar(pulls[0].id), [pulls[0]] + left_conds))
 
             g2 = Goal(
                 name=fresh_name(),
                 args=[(pulls[0].id, pulls[0].e.type.t)] + goal.args,
-                e=syntax.EListComprehension(exp, pulls[1:] + right_conds),
-                deltas=goal.deltas)
+                e=syntax.EListComprehension(exp, pulls[1:] + right_conds))
 
             return PartialSolution(
-                solution=Solution(goal, (), syntax.ECall("for_each", [syntax.EVar(pulls[0].id), syntax.ECall(g1.name, []), syntax.ECall(g2.name, [])]), [syntax.SNoOp() for d in goal.deltas]),
+                solution=Solution(goal, (), syntax.ECall("for_each", [syntax.EVar(pulls[0].id), syntax.ECall(g1.name, []), syntax.ECall(g2.name, [])]), [syntax.SNoOp() for d in deltas]),
                 subgoals=[g1, g2])
 
     return PartialSolution(
-        solution=Solution(goal, (), syntax.ECall("not_implemented", [e]), [syntax.SNoOp() for d in goal.deltas]), # TODO: for-each loop??
+        solution=Solution(goal, (), syntax.ECall("not_implemented", [e]), [syntax.SNoOp() for d in deltas]), # TODO: for-each loop??
         subgoals=[])
     # raise Exception("no idea how to synthesize {}".format(pprint(goal.e)))
 
