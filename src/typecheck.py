@@ -125,6 +125,9 @@ class Typechecker(Visitor):
             e.type = BOOL
         elif e.op == "singleton":
             e.type = syntax.TSet(e.e.type)
+        elif e.op == "iterator":
+            self.get_collection_type(e.e)
+            e.type = e.e.type
         else:
             raise NotImplementedError(e.op)
 
