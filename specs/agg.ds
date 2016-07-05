@@ -1,0 +1,21 @@
+Aggr:
+
+    state l : Bag<Int>
+
+    op add(i : Int)
+        l.add(i)
+
+    query all()
+        l
+
+    query totalSum()
+        sum l
+
+    query totalCount()
+        sum [ 1 | x <- l ]
+
+    query minimum()
+        min l
+
+    query maximum()
+        max l

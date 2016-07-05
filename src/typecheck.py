@@ -191,6 +191,9 @@ class Typechecker(Visitor):
         else:
             raise NotImplementedError(e.func)
 
+    def visit_EEmptyList(self, e):
+        e.type = syntax.TList(None)
+
     def visit_EListComprehension(self, e):
         with self.scope():
             for clause in e.clauses:

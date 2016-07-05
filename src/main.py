@@ -10,7 +10,6 @@ import pprint
 
 import parse
 import compile
-import incrementalization as inc
 import typecheck
 import syntax
 import syntax_tools
@@ -30,16 +29,8 @@ def run():
     print()
     print(syntax_tools.pprint(ast))
 
-    # Synthesis testing
-    ds = [inc.to_delta(m) for m in ast.methods if isinstance(m, syntax.Op)]
-    ctx = synth2.Context(state=ast.statevars, deltas=ds)
-    # fn = [m for m in ast.methods if m.name == "unit"][0]
-    goals = [
-        synth2.Goal(name=m.name, args=m.args, e=m.ret)
-        for m in ast.methods if isinstance(m, syntax.Query)]
-
-    print(synth2.synthesize(ctx, goals))
-
+    ast = synth2.synthesize(ast)
+    print(syntax_tools.pprint(ast))
     # print(compile.JavaPrinter().visit(ast))
 
 if __name__ == "__main__":

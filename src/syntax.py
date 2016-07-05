@@ -20,6 +20,7 @@ TBag                = declare_case(Type, "TBag",    ["t"])
 TList               = declare_case(Type, "TList",   ["t"])
 TSet                = declare_case(Type, "TSet",    ["t"])
 TMap                = declare_case(Type, "TMap",    ["k", "v"])
+THeap               = declare_case(Type, "THeap",   ["t"])
 TNamed              = declare_case(Type, "TNamed",  ["id"])
 TRecord             = declare_case(Type, "TRecord", ["fields"])
 TApp                = declare_case(Type, "TApp",    ["t", "args"])
@@ -35,6 +36,7 @@ EUnaryOp            = declare_case(Exp, "EUnaryOp",           ["op", "e"])
 EGetField           = declare_case(Exp, "EGetField",          ["e", "f"])
 EMakeRecord         = declare_case(Exp, "EMakeRecord",        ["fields"])
 EListComprehension  = declare_case(Exp, "EListComprehension", ["e", "clauses"])
+EEmptyList          = declare_case(Exp, "EEmptyList")
 EAlloc              = declare_case(Exp, "EAlloc",             ["t", "args"])
 ECall               = declare_case(Exp, "ECall",              ["func", "args"])
 ETuple              = declare_case(Exp, "ETuple",             ["es"])
@@ -46,7 +48,20 @@ CCond               = declare_case(ComprehensionClause, "CCond", ["e"])
 
 class Stm(ADT): pass
 SNoOp               = declare_case(Stm, "SNoOp")
-SSeq                = declare_case(Stm, "SSeq",    ["s1", "s2"])
-SCall               = declare_case(Stm, "SCall",   ["target", "func", "args"])
-SAssign             = declare_case(Stm, "SAssign", ["lhs", "rhs"])
-SDel                = declare_case(Stm, "SDel",    ["e"])
+SSeq                = declare_case(Stm, "SSeq",     ["s1", "s2"])
+SCall               = declare_case(Stm, "SCall",    ["target", "func", "args"])
+SAssign             = declare_case(Stm, "SAssign",  ["lhs", "rhs"])
+SDel                = declare_case(Stm, "SDel",     ["e"])
+SForEach            = declare_case(Stm, "SForEach", ["id", "iter", "body"])
+
+def seq(stms):
+    stms = [s for s in stms if not isinstance(s, SNoOp)]
+    if not stms:
+        return SNoOp()
+    elif len(stms) == 1:
+        return stms[0]
+    else:
+        result = None
+        for s in stms:
+            result = s if result is None else SSeq(result, s)
+        return result

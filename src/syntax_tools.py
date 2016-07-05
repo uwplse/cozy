@@ -39,6 +39,9 @@ class PrettyPrinter(common.Visitor):
     def visit_TMap(self, m):
         return "Map<{}, {}>".format(self.visit(m.k), self.visit(m.v))
 
+    def visit_THeap(self, h):
+        return "Heap<{}>".format(self.visit(h.t))
+
     def visit_TInt(self, t):
         return "Int"
 
@@ -56,7 +59,7 @@ class PrettyPrinter(common.Visitor):
         s = "  op {}({}):\n".format(q.name, ", ".join("{} : {}".format(name, self.visit(t)) for name, t in q.args))
         for e in q.assumptions:
             s += "    assume {};\n".format(self.visit(e))
-        s += "    {}\n".format(self.visit(q.body))
+        s += "{}\n".format(self.visit(q.body, "    "))
         return s
 
     def visit_EVar(self, e):
@@ -80,6 +83,9 @@ class PrettyPrinter(common.Visitor):
     def visit_EMakeRecord(self, e):
         return "{{ {} }}".format(", ".join("{} : {}".format(name, val) for name, val in e.fields))
 
+    def visit_EEmptyList(self, e):
+        return "[]"
+
     def visit_EListComprehension(self, e):
         return "[{} | {}]".format(self.visit(e.e), ", ".join(self.visit(clause) for clause in e.clauses))
 
@@ -101,17 +107,23 @@ class PrettyPrinter(common.Visitor):
     def visit_CCond(self, c):
         return self.visit(c.e)
 
-    def visit_SNoOp(self, s):
-        return "()"
+    def visit_SNoOp(self, s, indent=""):
+        return "{}pass".format(indent)
 
-    def visit_SCall(self, s):
-        return "{}.{}({})".format(s.target, s.func, ", ".join(self.visit(arg) for arg in s.args))
+    def visit_SCall(self, s, indent=""):
+        return "{}{}.{}({})".format(indent, s.target, s.func, ", ".join(self.visit(arg) for arg in s.args))
 
-    def visit_SAssign(self, s):
-        return "{} = {}".format(self.visit(s.lhs), self.visit(s.rhs))
+    def visit_SAssign(self, s, indent=""):
+        return "{}{} = {}".format(indent, self.visit(s.lhs), self.visit(s.rhs))
 
-    def visit_SDel(self, s):
-        return "del {}".format(self.visit(s.e))
+    def visit_SDel(self, s, indent=""):
+        return "{}del {}".format(indent, self.visit(s.e))
+
+    def visit_SSeq(self, s, indent=""):
+        return "{}\n{}".format(self.visit(s.s1, indent), self.visit(s.s2, indent))
+
+    def visit_SForEach(self, s, indent=""):
+        return "{}for {} in {}:\n{}".format(indent, s.id, self.visit(s.iter), self.visit(s.body, indent + "  "))
 
 
 _PRETTYPRINTER = PrettyPrinter()
@@ -251,6 +263,10 @@ def alpha_equivalent(e1, e2):
             return isinstance(e2, syntax.ENum) and e1.val == e2.val
         def visit_EBool(self, e1, e2):
             return isinstance(e2, syntax.EBool) and e1.val == e2.val
+        def visit_EEmptyList(self, e1, e2):
+            if isinstance(e2, syntax.EEmptyList):
+                return True
+            return False
         def visit_EListComprehension(self, lcmp, other):
             if not isinstance(other, syntax.EListComprehension):
                 return False
