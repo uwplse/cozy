@@ -71,3 +71,6 @@ class Cache(object):
 
     def __len__(self):
         return self.size
+
+    def __str__(self):
+        return "Cache[{}]".format(", ".join(str(e) for e in self.all()))
