@@ -206,26 +206,17 @@ class SolverContext(object):
 
         print("starting with {} examples".format(len(examples)))
         print("round 1")
-        for f1 in self.fieldNames:
-            for f2 in self.fieldNames:
-                if f1 < f2 and transitively_related(f1, f2, comps):
-                    for op in predicates.operators:
-                        plan = plans.AllWhere(predicates.Compare(
-                            predicates.Var(f1), op, predicates.Var(f2)))
-                        yield consider(plan)
         for b in (True, False):
-            plan = plans.AllWhere(predicates.Bool(b))
-            yield consider(plan)
+            registerExp(predicates.Bool(b), cull=False)
 
-        for v in self.varNames:
-            for f in self.fieldNames:
-                if transitively_related(v, f, comps):
+        all_names = self.varNames + self.fieldNames
+        for v in all_names:
+            for f in all_names:
+                if v < f and transitively_related(v, f, comps):
                     for op in predicates.operators:
                         registerExp(
                             predicates.Compare(predicates.Var(v), op, predicates.Var(f)),
                             cull=False)
-        for b in (True, False):
-            registerExp(predicates.Bool(b), cull=False)
 
         q = registerExp(query)
 
@@ -259,6 +250,9 @@ class SolverContext(object):
 
             # plans
             print("round {}; cache={}/{max}; ecache={}/{max}; bestCost={}".format(size, len(plan_cache), len(expr_cache), self.bestCost, max=2**len(examples)))
+            for e in expr_cache.entries_of_size(size - 1):
+                if all(v.name in self.fieldNames for v in e.vars()):
+                    yield consider(plans.AllWhere(e))
             for plan in (plans.HashLookup(p, e) for p, e in pickToSum(plan_cache, expr_cache, size)):
                 yield consider(plan)
             for plan in (plans.BinarySearch(p, e) for p, e in pickToSum(plan_cache, expr_cache, size)):
