@@ -5,8 +5,11 @@ Various utilities for working with syntax trees.
 
 """
 
+import sys
+
 import common
 import syntax
+import library
 
 class PrettyPrinter(common.Visitor):
     def visit_Spec(self, spec):
@@ -47,6 +50,13 @@ class PrettyPrinter(common.Visitor):
 
     def visit_TRecord(self, r):
         return "{{ {} }}".format(", ".join("{} : {}".format(f, self.visit(t)) for f, t in r.fields))
+
+    def visit_Type(self, t):
+        if isinstance(t, library.ConcreteType):
+            return type(t).__name__
+        else:
+            print("Warning: implement visit_{} in pprint".format(type(t).__name__), file=sys.stderr)
+            return "??"
 
     def visit_Query(self, q):
         s = "  query {}({}):\n".format(q.name, ", ".join("{} : {}".format(name, self.visit(t)) for name, t in q.args))
@@ -125,6 +135,10 @@ class PrettyPrinter(common.Visitor):
     def visit_SForEach(self, s, indent=""):
         return "{}for {} in {}:\n{}".format(indent, s.id, self.visit(s.iter), self.visit(s.body, indent + "  "))
 
+    def visit_SIf(self, s, indent=""):
+        if isinstance(s.else_branch, syntax.SNoOp):
+            return "{indent}if {}:\n{}".format(self.visit(s.cond), self.visit(s.then_branch, indent + "  "), indent=indent)
+        return "{indent}if {}:\n{}\n{indent}else:\n{}".format(self.visit(s.cond), self.visit(s.then_branch, indent + "  "), self.visit(s.else_branch, indent + "  "), indent=indent)
 
 _PRETTYPRINTER = PrettyPrinter()
 def pprint(ast):
@@ -240,6 +254,8 @@ def subst(exp, replacements):
             elif isinstance(c, syntax.CCond):
                 clauses[i] = syntax.CCond(self.visit(c.e))
                 return self.visit_lcmp(clauses, i + 1, e)
+        def visit_ECall(self, e):
+            return syntax.ECall(e.func, [self.visit(arg) for arg in e.args])
 
     return Subst().visit(exp)
 

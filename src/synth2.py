@@ -12,16 +12,8 @@ import cost_model
 import stats
 from typecheck import typecheck
 import incrementalization as inc
-
-class Aggregation(object):
-    All      = "All"
-    Distinct = "Distinct"
-    AnyElt   = "AnyElt"
-    Min      = "Min"
-    Max      = "Max"
-    Count    = "Count"
-    Sum      = "Sum"
-    Empty    = "Empty"
+import aggregations
+import library
 
 Context = collections.namedtuple("Context", ["state", "deltas"])
 Goal = collections.namedtuple("Goal", ["name", "args", "e"])
@@ -279,17 +271,16 @@ def synth_simple(context, goal, timeout=None):
     no_delta = [syntax.SNoOp() for d in deltas]
     e = goal.e
     if isinstance(e, syntax.EUnaryOp):
-        agg = None
-        if e.op == "some": agg = Aggregation.AnyElt
-        if e.op == "empty": agg = Aggregation.Empty
-        if e.op == "len": agg = Aggregation.Count
-        if e.op == "iterator": agg = Aggregation.All
-        if e.op == "sum": agg = Aggregation.Sum
-        if e.op == "min": agg = Aggregation.Min
-        if e.op == "max": agg = Aggregation.Max
-        if agg and isinstance(e.e, syntax.EListComprehension):
+        if isinstance(e.e, syntax.EListComprehension):
+
             pull = find_the_only_pull(e.e)
             if pull:
+                if e.op == "iterator": agg = aggregations.IterateOver(lambda x: subst(e.e.e, { pull.id: x }))
+                elif e.op == "sum":    agg = aggregations.Sum(lambda x: subst(e.e.e, { pull.id: x }))
+                elif e.op == "min":    agg = aggregations.Min(lambda x: x)
+                elif e.op == "max":    agg = aggregations.Max(lambda x: x)
+                else: raise NotImplementedError(e.op)
+
                 pred = combined_predicate(e.e)
                 coll = (pull.e.id, statedict[pull.e.id]) if isinstance(pull.e, syntax.EVar) and pull.e.id in statedict else None
                 if pred and coll:
@@ -339,8 +330,6 @@ def synth_simple(context, goal, timeout=None):
                     solution=Solution(goal, (), syntax.ECall("for_each", [syntax.EVar(pulls[0].id), syntax.ECall(g1.name, []), syntax.ECall(g2.name, [])]), no_delta),
                     subgoals=[g1, g2])
 
-        elif isinstance(e.e, syntax.EListComprehension):
-            raise NotImplementedError(e.op)
         elif isinstance(e.e, syntax.EVar) and e.e.id in statedict:
             n = fresh_name()
             return synth_simple(context, Goal(name=goal.name, args=goal.args, e=syntax.EUnaryOp(e.op, syntax.EListComprehension(syntax.EVar(n), [syntax.CPull(n, e.e)]))), timeout)
@@ -358,7 +347,7 @@ def synth_simple(context, goal, timeout=None):
     elif isinstance(e, syntax.EVar):
         if e.id in statedict:
             n = fresh_name()
-            return synthesize_1d(goal, (), Aggregation.All, syntax.EVar(n), n, (e.id, statedict[e.id]), syntax.EBool(True), deltas)
+            return synthesize_1d(goal, (), aggregations.IterateOver(lambda x: x), syntax.EVar(n), n, (e.id, statedict[e.id]), syntax.EBool(True), deltas)
         else:
             return PartialSolution(Solution(goal, (), e, no_delta), [])
     elif isinstance(e, syntax.ENum):
@@ -376,12 +365,6 @@ def synth_simple(context, goal, timeout=None):
     #     solution=Solution(goal, (), syntax.ECall("not_implemented", [e]), [syntax.SNoOp() for d in deltas]), # TODO: for-each loop??
     #     subgoals=[])
     raise NotImplementedError("no idea how to synthesize {}".format(pprint(goal.e)))
-
-def emptycase(agg):
-    if agg == Aggregation.All: return syntax.EEmptyList()
-    elif agg == Aggregation.Sum: return syntax.ENum(0)
-    else:
-        raise NotImplementedError(agg)
 
 @stats.task
 def synthesize_1d(goal, input, agg, exp, var, collection, predicate, deltas, timeout=None):
@@ -402,7 +385,7 @@ def synthesize_1d(goal, input, agg, exp, var, collection, predicate, deltas, tim
 
     The arguments to this function are:
         input       - [(id, Type)]
-        agg         - one of Aggregation.{All,Sum,...}
+        agg         - an Aggregation
         exp         - Exp representing e
         var         - id of v
         collection  - (L, Type of L)
@@ -445,138 +428,113 @@ def synthesize_1d(goal, input, agg, exp, var, collection, predicate, deltas, tim
         varNames=vnames,
         fieldNames=fnames,
         cost_model=lambda plan: cost_model.cost(None, None, plan))
+
+    # TODO: try all?
     for plan in ctx.synthesizePlansByEnumeration(abstraction, sort_field=None, timeout=timeout):
         subgoals = [Goal(name, args, e) for (name, args, e) in pseudofields + pseudovars + subops]
         # print(plan)
 
-        state, exp = plan_to_exp(agg, plan, collection[1].t)
+        # TODO: try all?
+        new_state_name = fresh_name()
+        for proj, get in understand_plan(agg, plan, collection, new_state_name):
+            print((proj, get))
 
-        op_impls = []
-        for (name, args, member, d) in deltas:
-            (op_impl, op_subgoals) = incrementalize(plan, agg, state, collection, pseudofields + pseudovars + subops, args, member, d)
-            op_impls.append(op_impl)
-            for sg in op_subgoals:
-                sg = Goal(sg.name, args, sg.e)
-                subgoals.append(sg)
+            op_impls = []
+            for (name, args, member, d) in deltas:
+                (op_impl, op_subgoals) = proj.incrementalize(syntax.EVar(new_state_name), collection[0], d)
+                op_impls.append(op_impl)
+                for sg in op_subgoals:
+                    sg = Goal(sg.name, args, sg.e)
+                    subgoals.append(sg)
 
-        return PartialSolution(Solution(goal, state, exp, op_impls), subgoals)
-        # TODO: synthesize ANY of the returned plans??
+            new_type = proj.result_type()
+            return PartialSolution(Solution(goal, [(new_state_name, new_type)], get, op_impls), subgoals)
+            # TODO: synthesize ANY of the returned plans??
 
-def plan_to_exp(agg, plan, elem_type):
-    if isinstance(plan, plans.AllWhere):
-        if plan.predicate == plans.Bool(False):
-            return ([], syntax.ECall("empty", []))
-        # I want a collection here: linkedList or ArrayList
-        name = fresh_name()
-        e = syntax.EVar(name)
-        if agg is Aggregation.All:
-            t = syntax.TList(elem_type)
-        elif agg is Aggregation.Sum:
-            t = elem_type
-        elif agg is Aggregation.Min:
-            t = syntax.THeap(elem_type) # TODO??
-            e = syntax.ECall("heap_peek", [e])
-        elif agg is Aggregation.Max:
-            t = syntax.THeap(elem_type) # TODO??
-            e = syntax.ECall("heap_peek", [e])
-        else:
-            raise NotImplementedError(agg)
-        return ([(name, t)], e)
-    elif isinstance(plan, plans.BinarySearch):
-        return ([], syntax.ECall("binarysearch", []))
-    elif isinstance(plan, plans.HashLookup):
-        state, exp = plan_to_exp(agg, plan.plan, elem_type)
-        # construct a new type that holds all the state parts
-        valueType = syntax.TRecord([(fresh_name(), t) for name, t in state])
-        keyType = None
-        name = fresh_name()
-        compute_key = syntax.EVar(name) # TODO
-        lookup = fresh_name()
-        return ([(name, syntax.TMap(keyType, valueType))],
-            syntax.ELet(
-                lookup, syntax.ECall("HashLookup", [syntax.EVar(name), compute_key]),
-                subst(exp, { old_name: syntax.EGetField(syntax.EVar(lookup), new_name) for ((old_name, _), (new_name, _)) in zip(state, valueType.fields) })))
-    elif isinstance(plan, plans.Concat):
-        state1, e1 = plan_to_exp(agg, plan.plan1, elem_type)
-        state2, e2 = plan_to_exp(agg, plan.plan2, elem_type)
-        if agg == Aggregation.All:
-            return (state1 + state2, syntax.ECall("concat", [e1, e2]))
-        elif agg == Aggregation.Sum:
-            return (state1 + state2, syntax.EBinOp(e1, "+", e2))
-        else:
-            raise Exception("unhandled case: {}".format(agg))
-    elif isinstance(plan, plans.Filter):
-        state, e = plan_to_exp(Aggregation.All, plan.plan, elem_type)
-        if agg == Aggregation.All:
-            return (state, e)
-        elif agg == Aggregation.Sum:
-            return (state, syntax.ECall("sum", [e]))
-        elif agg == Aggregation.Empty:
-            return (state, syntax.ECall("is-empty", [e]))
-        else:
-            raise Exception("unhandled case: {}".format(agg))
-    else:
-        raise Exception("unhandled case: {}".format(plan))
+class StateProjection(object):
+    def incrementalize(self, target, var, delta):
+        """
+        Update `target` when delta `d` is applied to `var`.
+        Returns (impl, subgoals).
+        """
+        raise NotImplementedError()
+    def result_type(self):
+        """
+        The result type of performing this projection.
+        """
+        raise NotImplementedError()
 
-def incrementalize(plan, agg, state, collection, subops, args, member, d):
-    if isinstance(plan, plans.AllWhere):
-        if plan.toPredicate() == plans.Bool(False):
+class ToLinkedList(StateProjection):
+    def __init__(self, e, elem_proj=lambda x: x):
+        self.e = e
+    def incrementalize(self, target, var, delta):
+        d = inc.change_to(self.e, var, delta)
+        if isinstance(d, inc.NoDelta):
             return (syntax.SNoOp(), ())
+        elif isinstance(d, inc.SetAdd):
+            return (syntax.SCall(target, "linkedlist-insert", [d.e]), ())
+        elif isinstance(d, inc.SetRemove):
+            return (syntax.SCall(target, "linkedlist-remove", [d.e]), ())
+        else:
+            raise NotImplementedError(d)
+    def result_type(self):
+        return library.LinkedList()
 
-        if agg == Aggregation.All:
-            n = fresh_name()
-            uop = "iterator"
-            enter = lambda res: syntax.SForEach(n, res,
-                syntax.SCall(state[0][0], "add", [syntax.EVar(n)]))
-            exit = lambda res: syntax.SForEach(n, res,
-                syntax.SCall(state[0][0], "remove", [syntax.EVar(n)]))
-        elif agg == Aggregation.Sum:
-            uop = "sum"
-            enter = lambda res: syntax.SAssign(syntax.EVar(state[0][0]), syntax.EBinOp(syntax.EVar(state[0][0]), "+", res))
-            exit = lambda res: syntax.SAssign(syntax.EVar(state[0][0]), syntax.EBinOp(syntax.EVar(state[0][0]), "-", res))
-        elif agg in [Aggregation.Min, Aggregation.Max]:
-            n = fresh_name()
-            uop = "iterator"
-            enter = lambda res: syntax.SForEach(n, res,
-                syntax.SCall(state[0][0], "heap_add", [syntax.EVar(n)]))
-            exit = lambda res: syntax.SForEach(n, res,
-                syntax.SCall(state[0][0], "heap_remove", [syntax.EVar(n)]))
+class TrackSum(StateProjection):
+    def __init__(self, e, elem_proj=lambda x: x):
+        self.e = e
+        self.elem_proj = elem_proj
+    def incrementalize(self, target, var, delta):
+        d = inc.change_to(self.e, var, delta)
+        if isinstance(d, inc.NoDelta):
+            return (syntax.SNoOp(), ())
+        elif isinstance(d, inc.SetAdd):
+            return (syntax.SAssign(target, syntax.EBinOp(target, "+", self.elem_proj(d.e))), ())
+        elif isinstance(d, inc.SetRemove):
+            return (syntax.SAssign(target, syntax.EBinOp(target, "-", self.elem_proj(d.e))), ())
+        else:
+            raise NotImplementedError(d)
+    def result_type(self):
+        return syntax.TInt() # TODO
+
+class TrackMin(StateProjection):
+    def __init__(self, e, key_func=lambda x: x):
+        self.e = e
+        self.key_func = key_func
+    def incrementalize(self, target, var, delta):
+        d = inc.change_to(self.e, var, delta)
+        if isinstance(d, inc.NoDelta):
+            return (syntax.SNoOp(), ())
+        elif isinstance(d, inc.SetAdd):
+            return (syntax.SIf(syntax.EBinOp(self.key_func(d.e), "<", self.key_func(target)),
+                syntax.SAssign(target, d.e),
+                syntax.SNoOp()), ())
+        else:
+            raise NotImplementedError(d)
+    def result_type(self):
+        return syntax.TInt() # TODO
+
+def understand_plan(agg, plan, collection, name):
+    """
+    Args:
+        agg        - an Aggregation
+        plan       - a Plan
+        collection - (name, syntax.Type)
+    Generates tuples
+        (proj, get)
+    where
+        proj - a StateProjection from abstract state to concrete state
+        get  - a program to compute the plan result for the given agg over (name, type)
+    """
+    if isinstance(plan, plans.AllWhere):
+        guard = predicate_to_exp(plan.toPredicate())
+        if isinstance(agg, aggregations.IterateOver):
+            yield (ToLinkedList(syntax.EVar(collection[0])), syntax.ECall("iterator", [syntax.EVar(name)]))
+        elif isinstance(agg, aggregations.Sum):
+            yield (TrackSum(syntax.EVar(collection[0]), agg.projection), syntax.EVar(name))
+        elif isinstance(agg, aggregations.Min):
+            yield (TrackMin(syntax.EVar(collection[0]), agg.key_func), syntax.EVar(name))
         else:
             raise NotImplementedError(agg)
-
-        # reconstruct expression
-        cond = predicate_to_exp(plan.toPredicate())
-        # cond = subst(cond, { name : syntax.ECall(name, [syntax.EVar(v) for (v, t) in args]) for (name, args, e) in pseudofields + pseudovars + subops })
-        cond = subst(cond, { name : e for (name, args, e) in subops })
-        newcond = inc.delta_apply(cond, args, member, d)
-        var = fresh_name()
-        # lcmp = syntax.EListComprehension(syntax.EVar(var), [syntax.CPull(var, syntax.EVar(collection[0])), syntax.CCond(cond)])
-        # print(pprint(lcmp))
-        # print(pprint(cond))
-
-        g1name = fresh_name()
-        goal1 = Goal(g1name, args, syntax.EUnaryOp(uop, syntax.EListComprehension(syntax.EVar(var), [syntax.CPull(var, syntax.EVar(collection[0])), syntax.CCond(syntax.EBinOp(cond, "and", syntax.EUnaryOp("not", newcond)))])))
-
-        g2name = fresh_name()
-        goal2 = Goal(g2name, args, syntax.EUnaryOp(uop, syntax.EListComprehension(syntax.EVar(var), [syntax.CPull(var, syntax.EVar(collection[0])), syntax.CCond(syntax.EBinOp(syntax.EUnaryOp("not", cond), "and", newcond))])))
-        return (syntax.SSeq(
-            enter(syntax.ECall(goal1.name, [syntax.EVar(a[0]) for a in args])),
-            exit(syntax.ECall(goal2.name, [syntax.EVar(a[0]) for a in args]))), [goal1, goal2])
-
-    elif isinstance(plan, plans.Filter):
-        return incrementalize(plan.plan, agg, state, collection, subops, args, member, d)
-
-    elif isinstance(plan, plans.BinarySearch):
-
-        return ("bsinc", []) # TODO
-
-    elif isinstance(plan, plans.HashLookup):
-
-        return ("hashinc", []) # TODO
-
-    elif isinstance(plan, plans.Concat):
-        i1, gs1 = incrementalize(plan.plan1, agg, state, collection, subops, args, member, d)
-        i2, gs2 = incrementalize(plan.plan2, agg, state, collection, subops, args, member, d)
-        return (syntax.SSeq(i1, i2), gs1 + gs2)
     else:
-        raise Exception("unhandled case: {}".format(plan))
+        raise NotImplementedError(plan)

@@ -20,7 +20,6 @@ TBag                = declare_case(Type, "TBag",    ["t"])
 TList               = declare_case(Type, "TList",   ["t"])
 TSet                = declare_case(Type, "TSet",    ["t"])
 TMap                = declare_case(Type, "TMap",    ["k", "v"])
-THeap               = declare_case(Type, "THeap",   ["t"])
 TNamed              = declare_case(Type, "TNamed",  ["id"])
 TRecord             = declare_case(Type, "TRecord", ["fields"])
 TApp                = declare_case(Type, "TApp",    ["t", "args"])
@@ -53,6 +52,7 @@ SCall               = declare_case(Stm, "SCall",    ["target", "func", "args"])
 SAssign             = declare_case(Stm, "SAssign",  ["lhs", "rhs"])
 SDel                = declare_case(Stm, "SDel",     ["e"])
 SForEach            = declare_case(Stm, "SForEach", ["id", "iter", "body"])
+SIf                 = declare_case(Stm, "SIf",      ["cond", "then_branch", "else_branch"])
 
 def seq(stms):
     stms = [s for s in stms if not isinstance(s, SNoOp)]

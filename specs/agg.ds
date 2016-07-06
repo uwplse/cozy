@@ -17,5 +17,5 @@ Aggr:
     query minimum()
         min l
 
-    query maximum()
-        max l
+//    query maximum()
+//        max l

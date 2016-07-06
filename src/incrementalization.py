@@ -3,6 +3,7 @@ import syntax
 from syntax_tools import subst
 
 class Delta(object): pass
+NoDelta   = declare_case(Delta, "NoDelta")
 SetAdd    = declare_case(Delta, "SetAdd",    ["e"])
 SetRemove = declare_case(Delta, "SetRemove", ["e"])
 
@@ -19,10 +20,19 @@ def to_delta(op):
     else: raise Exception("Unknown func: {}".format(op.body.func))
     return (name, args, member, delta)
 
-def delta_apply(e, args, member, delta):
+def delta_apply(e, member, delta):
     if isinstance(delta, SetAdd):
-        return subst(e, { member : syntax.EBinOp(syntax.EVar(member), "union", syntax.EUnaryOp("singleton", syntax.EVar(args[0][0]))) })
+        return subst(e, { member : syntax.EBinOp(syntax.EVar(member), "union", syntax.EUnaryOp("singleton", delta.e)) })
     elif isinstance(delta, SetRemove):
-        return subst(e, { member : syntax.EBinOp(syntax.EVar(member), "-", syntax.EUnaryOp("singleton", syntax.EVar(args[0][0]))) })
+        return subst(e, { member : syntax.EBinOp(syntax.EVar(member), "-", syntax.EUnaryOp("singleton", delta.e)) })
     else:
         raise NotImplementedError("unhandled case: {}".format(delta))
+
+def change_to(e, var, delta):
+    if isinstance(e, syntax.EVar):
+        if e.id == var:
+            return delta
+        else:
+            return NoDelta()
+    else:
+        raise NotImplementedError(e)
