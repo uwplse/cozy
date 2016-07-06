@@ -48,6 +48,12 @@ class PrettyPrinter(common.Visitor):
     def visit_TInt(self, t):
         return "Int"
 
+    def visit_TLong(self, t):
+        return "Long"
+
+    def visit_TBool(self, t):
+        return "Bool"
+
     def visit_TRecord(self, r):
         return "{{ {} }}".format(", ".join("{} : {}".format(f, self.visit(t)) for f, t in r.fields))
 

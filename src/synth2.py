@@ -22,36 +22,50 @@ PartialSolution = collections.namedtuple("PartialSolution", ["solution", "subgoa
 
 def abstractify(input, var, predicate):
 
+    mapping = {}
+
     class V(Visitor):
         def __init__(self):
             self.pseudofields = []
             self.pseudovars = []
             self.subops = []
 
-        def visit_EBool(self, e):
+        def visit_EBool(self, e, as_bool=True):
+            if not as_bool:
+                return self.splitoff(e)
             return predicates.Bool(e.val)
 
-        def visit_EBinOp(self, e):
+        def visit_EBinOp(self, e, as_bool=True):
+            if not as_bool:
+                return self.splitoff(e)
             if e.op == "and":
-                return predicates.And(self.visit(e.e1), self.visit(e.e2))
+                lhs = self.visit(e.e1)
+                rhs = self.visit(e.e2)
+                return predicates.And(lhs, rhs)
             if e.op == "or":
-                return predicates.Or(self.visit(e.e1), self.visit(e.e2))
+                lhs = self.visit(e.e1)
+                rhs = self.visit(e.e2)
+                return predicates.Or(lhs, rhs)
             if e.op in [">", ">=", "<", "<=", "==", "!="]:
+                lhs = self.visit(e.e1, as_bool=False)
+                rhs = self.visit(e.e2, as_bool=False)
                 if e.op == ">":  op = predicates.Gt
                 if e.op == ">=": op = predicates.Ge
                 if e.op == "<":  op = predicates.Lt
                 if e.op == "<=": op = predicates.Le
                 if e.op == "==": op = predicates.Eq
                 if e.op == "!=": op = predicates.Ne
-                return predicates.Compare(self.visit(e.e1), op, self.visit(e.e2))
+                return predicates.Compare(lhs, op, rhs)
             return self.splitoff(e)
 
-        def visit_EUnaryOp(self, e):
+        def visit_EUnaryOp(self, e, as_bool=True):
+            if not as_bool:
+                return self.splitoff(e)
             if e.op == "not":
                 return predicates.Not(self.visit(e.e))
             return self.splitoff(e)
 
-        def splitoff(self, e):
+        def splitoff(self, e, as_bool=True):
             args = [v for v in free_vars(e) if v.id == var or v.id in [i[0] for i in input]]
             fvs = {v.id for v in args}
             argtypes = [(arg.id, arg.type) for arg in args]
@@ -62,12 +76,21 @@ def abstractify(input, var, predicate):
                 self.pseudovars.append((n, argtypes, e))
             else:
                 self.subops.append((n, argtypes, e))
-            if e.type == syntax.TBool():
-                return predicates.Compare(predicates.Var(n), predicates.Eq, predicates.Bool(True))
-            else:
-                return predicates.Var(n)
+            # if e.type == syntax.TBool():
+            #     true = syntax.EBool(True)
+            #     if true in mapping:
+            #         b = mapping[true][0]
+            #     else:
+            #         b = fresh_name()
+            #         res = (b, (), syntax.EBool(True))
+            #         self.pseudovars.append(res)
+            #         mapping[true] = res
+            #     return predicates.Compare(predicates.Var(n), predicates.Eq, predicates.Var(b))
+            # else:
+            #     return predicates.Var(n)
+            return predicates.Var(n)
 
-        def visit_Exp(self, e):
+        def visit_Exp(self, e, as_bool=True):
             return self.splitoff(e)
 
     v = V()
@@ -275,10 +298,11 @@ def synth_simple(context, goal, timeout=None):
 
             pull = find_the_only_pull(e.e)
             if pull:
-                if e.op == "iterator": agg = aggregations.IterateOver(lambda x: subst(e.e.e, { pull.id: x }))
-                elif e.op == "sum":    agg = aggregations.Sum(lambda x: subst(e.e.e, { pull.id: x }))
-                elif e.op == "min":    agg = aggregations.Min(lambda x: x)
-                elif e.op == "max":    agg = aggregations.Max(lambda x: x)
+                if e.op == "iterator":   agg = aggregations.IterateOver(lambda x: subst(e.e.e, { pull.id: x }))
+                elif e.op == "sum":      agg = aggregations.Sum(lambda x: subst(e.e.e, { pull.id: x }))
+                elif e.op == "min":      agg = aggregations.Min(lambda x: x)
+                elif e.op == "max":      agg = aggregations.Max(lambda x: x)
+                elif e.op == "distinct": agg = aggregations.DistinctElements()
                 else: raise NotImplementedError(e.op)
 
                 pred = combined_predicate(e.e)
@@ -360,11 +384,23 @@ def synth_simple(context, goal, timeout=None):
         return PartialSolution(
             solution=Solution(goal, (), syntax.ECall(g.name, [syntax.EVar(v) for v,t in g.args]), no_delta),
             subgoals=[g])
+    elif isinstance(e, syntax.EGetField):
+        g = Goal(
+            name=fresh_name(),
+            args=goal.args,
+            e=e.e)
+        return PartialSolution(
+            solution=Solution(goal, (), syntax.EGetField(syntax.ECall(g.name, [syntax.EVar(a) for a,t in goal.args]), e.f), no_delta),
+            subgoals=[g])
 
     # return PartialSolution(
     #     solution=Solution(goal, (), syntax.ECall("not_implemented", [e]), [syntax.SNoOp() for d in deltas]), # TODO: for-each loop??
     #     subgoals=[])
-    raise NotImplementedError("no idea how to synthesize {}".format(pprint(goal.e)))
+    # raise NotImplementedError("no idea how to synthesize {}".format(pprint(goal.e)))
+    print("WARNING: no idea how to synthesize {}".format(pprint(goal.e)))
+    return PartialSolution(
+        solution=Solution(goal, (), goal.e, no_delta),
+        subgoals=())
 
 @stats.task
 def synthesize_1d(goal, input, agg, exp, var, collection, predicate, deltas, timeout=None):
@@ -429,6 +465,8 @@ def synthesize_1d(goal, input, agg, exp, var, collection, predicate, deltas, tim
         fieldNames=fnames,
         cost_model=lambda plan: cost_model.cost(None, None, plan))
 
+    print("Calling Cozy on {} ----> {}".format(pprint(predicate), abstraction))
+
     # TODO: try all?
     for plan in ctx.synthesizePlansByEnumeration(abstraction, sort_field=None, timeout=timeout):
         subgoals = [Goal(name, args, e) for (name, args, e) in pseudofields + pseudovars + subops]
@@ -451,6 +489,9 @@ def synthesize_1d(goal, input, agg, exp, var, collection, predicate, deltas, tim
             return PartialSolution(Solution(goal, [(new_state_name, new_type)], get, op_impls), subgoals)
             # TODO: synthesize ANY of the returned plans??
 
+        raise Exception("no understanding for {}".format(plan))
+    raise Exception("no plan for {}".format(abstraction))
+
 class StateProjection(object):
     def incrementalize(self, target, var, delta):
         """
@@ -463,6 +504,12 @@ class StateProjection(object):
         The result type of performing this projection.
         """
         raise NotImplementedError()
+    def abstract_state(self):
+        """
+        The abstract state that this projection tracks.
+        Returns (state_var_name, type)
+        """
+        raise NotImplementedError()
 
 class ToLinkedList(StateProjection):
     def __init__(self, e, elem_proj=lambda x: x):
@@ -471,14 +518,25 @@ class ToLinkedList(StateProjection):
         d = inc.change_to(self.e, var, delta)
         if isinstance(d, inc.NoDelta):
             return (syntax.SNoOp(), ())
-        elif isinstance(d, inc.SetAdd):
-            return (syntax.SCall(target, "linkedlist-insert", [d.e]), ())
+        elif isinstance(d, inc.SetAdd) or isinstance(d, inc.ListAddFront):
+            return (syntax.SCall(target, "linkedlist-insert-front", [d.e]), ())
+        elif isinstance(d, inc.ListAddBack):
+            return (syntax.SCall(target, "linkedlist-insert-back", [d.e]), ())
         elif isinstance(d, inc.SetRemove):
             return (syntax.SCall(target, "linkedlist-remove", [d.e]), ())
         else:
             raise NotImplementedError(d)
     def result_type(self):
         return library.LinkedList()
+
+class ToHashSet(StateProjection):
+    def __init__(self, e, elem_proj=lambda x: x):
+        self.e = e
+    def incrementalize(self, target, var, delta):
+        d = inc.change_to(self.e, var, delta)
+        raise NotImplementedError(d)
+    def result_type(self):
+        return library.HashSet()
 
 class TrackSum(StateProjection):
     def __init__(self, e, elem_proj=lambda x: x):
@@ -488,9 +546,9 @@ class TrackSum(StateProjection):
         d = inc.change_to(self.e, var, delta)
         if isinstance(d, inc.NoDelta):
             return (syntax.SNoOp(), ())
-        elif isinstance(d, inc.SetAdd):
+        elif isinstance(d, inc.SetAdd) or isinstance(d, inc.ListAddBack) or isinstance(d, inc.ListAddFront):
             return (syntax.SAssign(target, syntax.EBinOp(target, "+", self.elem_proj(d.e))), ())
-        elif isinstance(d, inc.SetRemove):
+        elif isinstance(d, inc.SetRemove) or isinstance(d, inc.ListRemove):
             return (syntax.SAssign(target, syntax.EBinOp(target, "-", self.elem_proj(d.e))), ())
         else:
             raise NotImplementedError(d)
@@ -514,6 +572,33 @@ class TrackMin(StateProjection):
     def result_type(self):
         return syntax.TInt() # TODO
 
+class ToHashMap(StateProjection):
+    def __init__(self, abstract_collection, key_func, sub_projection):
+        self.abstract_collection = abstract_collection
+        self.key_func = key_func
+        self.sub_projection = sub_projection
+    def incrementalize(self, target, var, delta):
+        k = fresh_name()
+        e = fresh_name()
+        # affected_keys = Goal(
+        #     name=fresh_name(),
+        #     args=(), # TODO
+        #     # e = distinct [k | k <- [key(e) | e <- elems], val(k) != val'(k)]
+        #     e=syntax.EUnaryOp("distinct",
+        #         syntax.EListComprehension(syntax.EVar(k), [
+        #             syntax.CPull(k, syntax.EListComprehension(self.key_func(syntax.EVar(e)), [syntax.CPull(e, syntax.EVar(self.abstract_collection[0]))])),
+        #             syntax.CCond(syntax.EBinOp(syntax.EBool(True), "!=", syntax.EBool(True)))]))) # TODO
+        # x = fresh_name()
+        # return (syntax.SForEach(x, syntax.ECall(affected_keys.name, []), self.sub_projection.incrementalize(syntax.ECall("hash-find", [target, syntax.EVar(x)]), var, delta)), [affected_keys])
+        affected_keys = syntax.EVar(k)
+        x = fresh_name()
+        subop, subgoals = self.sub_projection.incrementalize(syntax.ECall("hash-find", [target, syntax.EVar(x)]), var, delta)
+        return (syntax.SForEach(x, affected_keys, subop), subgoals)
+    def result_type(self):
+        return self.sub_projection.result_type()
+    def abstract_state(self):
+        return self.abstract_collection
+
 def understand_plan(agg, plan, collection, name):
     """
     Args:
@@ -528,13 +613,25 @@ def understand_plan(agg, plan, collection, name):
     """
     if isinstance(plan, plans.AllWhere):
         guard = predicate_to_exp(plan.toPredicate())
+        # TODO: handle guard
         if isinstance(agg, aggregations.IterateOver):
             yield (ToLinkedList(syntax.EVar(collection[0])), syntax.ECall("iterator", [syntax.EVar(name)]))
+        if isinstance(agg, aggregations.DistinctElements):
+            yield (ToHashSet(syntax.EVar(collection[0])), syntax.EVar(name))
         elif isinstance(agg, aggregations.Sum):
             yield (TrackSum(syntax.EVar(collection[0]), agg.projection), syntax.EVar(name))
         elif isinstance(agg, aggregations.Min):
             yield (TrackMin(syntax.EVar(collection[0]), agg.key_func), syntax.EVar(name))
+        elif isinstance(agg, aggregations.GroupBy):
+            sub_name = fresh_name()
+            v = fresh_name()
+            for (sub_proj, sub_get) in understand_plan(agg.sub_agg, plan, (sub_name, collection[1]), v):
+                yield (ToHashMap(collection, agg.key_func, sub_proj), syntax.ELet(v, syntax.ECall("hash-lookup", [syntax.EVar(name)]), sub_get))
         else:
             raise NotImplementedError(agg)
+    elif isinstance(plan, plans.HashLookup):
+        f = lambda e: e # TODO
+        agg = aggregations.GroupBy(f, agg)
+        yield from understand_plan(agg, plan.plan, collection, name)
     else:
         raise NotImplementedError(plan)

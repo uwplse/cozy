@@ -114,6 +114,9 @@ class Typechecker(Visitor):
         elif e.op in ["unique", "empty"]:
             self.get_collection_type(e.e)
             e.type = BOOL
+        elif e.op == "distinct":
+            t = self.get_collection_type(e.e)
+            e.type = syntax.TSet(t)
         elif e.op in ["some", "min", "max"]:
             t = self.get_collection_type(e.e)
             e.type = t
@@ -149,7 +152,7 @@ class Typechecker(Visitor):
     def visit_EBinOp(self, e):
         self.visit(e.e1)
         self.visit(e.e2)
-        if e.op in ["==", "<", "<=", ">", ">="]:
+        if e.op in ["==", "!=", "<", "<=", ">", ">="]:
             if not all([t in (INT, LONG) for t in [e.e1.type, e.e2.type]]):
                 self.ensure_type(e.e2, e.e1.type)
             e.type = BOOL

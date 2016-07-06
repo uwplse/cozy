@@ -26,3 +26,11 @@ class Min(Aggregation):
 class Max(Aggregation):
     def __init__(self, key_func):
         self.key_func = key_func
+
+class GroupBy(Aggregation):
+    def __init__(self, key_func, sub_agg):
+        self.key_func = key_func
+        self.sub_agg = sub_agg
+
+class DistinctElements(Aggregation):
+    pass

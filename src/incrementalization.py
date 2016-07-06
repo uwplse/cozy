@@ -3,9 +3,12 @@ import syntax
 from syntax_tools import subst
 
 class Delta(object): pass
-NoDelta   = declare_case(Delta, "NoDelta")
-SetAdd    = declare_case(Delta, "SetAdd",    ["e"])
-SetRemove = declare_case(Delta, "SetRemove", ["e"])
+NoDelta         = declare_case(Delta, "NoDelta")
+SetAdd          = declare_case(Delta, "SetAdd",          ["e"])
+SetRemove       = declare_case(Delta, "SetRemove",       ["e"])
+ListAddFront    = declare_case(Delta, "ListAddFront",    ["e"])
+ListAddBack     = declare_case(Delta, "ListAddBack",     ["e"])
+ListRemove      = declare_case(Delta, "ListRemove",      ["e"])
 
 def to_delta(op):
     """
@@ -15,8 +18,10 @@ def to_delta(op):
     name = op.name
     args = op.args
     member = op.body.target
-    if   op.body.func == "add":    delta = SetAdd(op.body.args[0])
-    elif op.body.func == "remove": delta = SetRemove(op.body.args[0])
+    if   op.body.func == "add":      delta = SetAdd(op.body.args[0])
+    elif op.body.func == "remove":   delta = SetRemove(op.body.args[0])
+    elif op.body.func == "addFront": delta = ListAddFront(op.body.args[0])
+    elif op.body.func == "addBack":  delta = ListAddBack(op.body.args[0])
     else: raise Exception("Unknown func: {}".format(op.body.func))
     return (name, args, member, delta)
 

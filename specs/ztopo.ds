@@ -4,44 +4,44 @@ TileCache:
         Disk, Loading, DiskAndMemory, MemoryOnly,
         Saving, NetworkPending, IndexPending, Invalid }
     type Key = Long
-    type Entry = Handle<{
+    type Entry = {
         key : Key,
         pixmap : Int,    // todo
         indexData : Int, // todo
         memSize : Int,
         diskSize : Int,
         st : State,
-        inUse : Bool }>
+        inUse : Bool }
 
     state entries : List<Entry>
 
-    assume unique [e.val.key | e <- entries];
+//    assume unique [e.val.key | e <- entries];
 
     op add(k : Key)
         entries.addBack(new Entry(k, 0, 0, 0, 0, IndexPending, true))
 
-    op rm(e : Entry)
-        assume e in entries;
-        del e
+//    op rm(e : Entry)
+//        assume e in entries;
+//        del e
 
-    op updateState(e : Entry, st : State)
-        assume e in entries;
-        e.val.st = st
+//    op updateState(e : Entry, st : State)
+//        assume e in entries;
+//        e.val.st = st
 
     query totalMemSize()
-        sum [e.val.memSize | e <- entries, e.val.st == DiskAndMemory or e.val.st == MemoryOnly]
+        sum [e.memSize | e <- entries, e.st == DiskAndMemory or e.st == MemoryOnly]
 
     query totalDiskSize()
-        sum [e.val.diskSize | e <- entries, e.val.st == Disk]
+        sum [e.diskSize | e <- entries, e.st == Disk]
 
     query diskEntries()
-        [e | e <- entries, e.val.st == Disk]
+        [e | e <- entries, e.st == Disk]
 
     query pendingEntries()
-        [e | e <- bag(entries), e.val.st == IndexPending]
+        [e | e <- entries, e.st == IndexPending]
 
     query inMemEntries(inUse : Bool)
-        [e | e <- entries, (e.val.st == DiskAndMemory or e.val.st == MemoryOnly), e.val.inUse == inUse]
+        [e | e <- entries, (e.st == DiskAndMemory or e.st == MemoryOnly), e.inUse == inUse]
 
-    query findTile(k : Key)
-        some [e | e <- entries, e.val.key == k]
+//    query findTile(k : Key)
+//        some [e | e <- entries, e.key == k]
