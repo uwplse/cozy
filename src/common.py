@@ -27,7 +27,7 @@ class ADT(object):
     def __eq__(self, other):
         return type(self) is type(other) and self.children() == other.children()
     def __lt__(self, other):
-        return (self.children() < other.children()) if (type(self) is type(other)) else (type(self) < type(other))
+        return (self.children() < other.children()) if (type(self) is type(other)) else (type(self).__name__ < type(other).__name__)
 
 _i = 0
 def fresh_name(hint="name"):
