@@ -4,6 +4,58 @@ import re
 import sys
 import os
 import io
+import inspect
+
+def check_type(value, ty, value_name="value"):
+    """
+    Verify that the given value has the given type.
+        value      - the value to check
+        ty         - the type to check for
+        value_name - the name to print for debugging
+
+    The type ty can be:
+        str, int, float, or bytes - value must have this type
+        [ty]                      - value must be a list of ty
+        {k:ty,...}                - value must be a dict with keys of the given types
+    """
+
+    if ty is None:
+        pass
+    elif type(ty) is tuple:
+        assert type(value) is tuple, "{} has type {}, not {}".format(value_name, type(value), tuple)
+        assert len(value) == len(ty), "{} has {} entries, not {}".format(value_name, len(value), len(ty))
+        for v, t, i in zip(value, ty, range(len(value))):
+            check_type(v, t, "{}[{}]".format(value_name, i))
+    elif type(ty) is list:
+        assert type(value) is list, "{} has type {}, not {}".format(value_name, type(value), dict)
+        for i in range(len(value)):
+            check_type(value[i], ty[0], "{}[{}]".format(value_name, i))
+    elif type(ty) is dict:
+        assert type(value) is dict, "{} has type {}, not {}".format(value_name, type(value), dict)
+        for k, t in ty.items():
+            assert k in value, "{} is missing key {}".format(value_name, repr(k))
+            check_type(value[k], t, "{}[{}]".format(value_name, repr(k)))
+    elif type(ty) is set:
+        assert type(value) is set, "{} has type {}, not {}".format(value_name, type(value), set)
+        subty, = ty
+        for i in range(len(value)):
+            check_type(value[i], subty, value_name)
+    else:
+        assert isinstance(value, ty), "{} has type {}, not {}".format(value_name, type(value), ty)
+
+def typechecked(f):
+    argspec = inspect.getfullargspec(f)
+    annotations = f.__annotations__
+    @wraps(f)
+    def g(*args, **kwargs):
+        for argname, argval in zip(argspec.args, args):
+            check_type(argval, annotations.get(argname), argname)
+        for argname, argval in kwargs.items():
+            check_type(argval, annotations.get(argname), argname)
+        ret = f(*args, **kwargs)
+        check_type(ret, annotations.get("return"), "return")
+        return ret
+    return g
 
 @total_ordering
 class ADT(object):
