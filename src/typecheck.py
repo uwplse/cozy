@@ -53,12 +53,20 @@ class Typechecker(Visitor):
         for name, t in spec.types:
             self.tenv[name] = self.visit(t)
         for name, t in spec.statevars:
-            self.env[name] = self.visit(t)
+            self.env[name] = self.handleize(self.visit(t), name)
         spec.statevars = [(name, self.env[name]) for (name, t) in spec.statevars]
         for e in spec.assumptions:
             self.ensure_type(e, BOOL)
         for op in spec.methods:
             self.visit(op)
+
+    def handleize(self, collection_type, statevar_name):
+        if isinstance(collection_type, syntax.TBag):
+            ht = syntax.THandle(statevar_name)
+            ht.value_type = collection_type.t
+            return syntax.TBag(ht)
+        else:
+            self.report_err(statevar_name, "only bag types are supported")
 
     def report_err(self, source, msg):
         self.errors.append("At {}: {}".format(pprint(source), msg))
@@ -81,8 +89,6 @@ class Typechecker(Visitor):
             return syntax.TSet(self.visit(t.args))
         elif t.t == "Bag":
             return syntax.TBag(self.visit(t.args))
-        elif t.t == "Handle":
-            return syntax.THandle(self.visit(t.args))
         else:
             self.report_err(t, "unknown type {}".format(t.t))
             return t
@@ -230,7 +236,7 @@ class Typechecker(Visitor):
                 e.type = DEFAULT_TYPE
         elif isinstance(e.e.type, syntax.THandle):
             if e.f == "val":
-                e.type = e.e.type.t
+                e.type = e.e.type.value_type
             else:
                 self.report_err(e, "no field {} on type {}".format(e.f, e.e.type))
                 e.type = DEFAULT_TYPE
@@ -262,3 +268,22 @@ class Typechecker(Visitor):
             for name, t in q.args:
                 self.env[name] = self.visit(t)
             self.visit(q.ret)
+
+    def visit_SCall(self, s):
+        self.visit(s.target)
+        if s.func == "add":
+            elem_type = self.get_collection_type(s.target)
+            var = s.target.id
+            if len(s.args) != 1:
+                self.report_err(s, "add takes exactly 1 argument")
+            if len(s.args) > 0:
+                self.ensure_type(s.args[0], elem_type)
+        elif s.func == "remove":
+            elem_type = self.get_collection_type(s.target)
+            var = s.target.id
+            if len(s.args) != 1:
+                self.report_err(s, "remove takes exactly 1 argument")
+            if len(s.args) > 0:
+                self.ensure_type(s.args[0], elem_type)
+        else:
+            self.report_err(s, "unknown function {}".format(s.func))

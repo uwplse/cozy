@@ -17,31 +17,29 @@ TileCache:
 
 //    assume unique [e.val.key | e <- entries];
 
-    op add(e : Entry)
+    op add(e : entries.Handle)
         entries.add(e)
 
-    op rm(e : Entry)
-//        assume e in entries;
+    op rm(e : entries.Handle)
         entries.remove(e)
 
-//    op updateState(e : Entry, st : State)
-//        assume e in entries;
-//        e.st = st
+//    op updateState(e : entries.Handle, st : State)
+//        e.val.st = st
 
     query totalMemSize()
-        sum [e.memSize | e <- entries, e.st == DiskAndMemory or e.st == MemoryOnly]
+        sum [e.val.memSize | e <- entries, e.val.st == DiskAndMemory or e.val.st == MemoryOnly]
 
     query totalDiskSize()
-        sum [e.diskSize | e <- entries, e.st == Disk]
+        sum [e.val.diskSize | e <- entries, e.val.st == Disk]
 
     query diskEntries()
-        [e | e <- entries, e.st == Disk]
+        [e | e <- entries, e.val.st == Disk]
 
     query pendingEntries()
-        [e | e <- entries, e.st == IndexPending]
+        [e | e <- entries, e.val.st == IndexPending]
 
     query inMemEntries(inUse : Bool)
-        [e | e <- entries, (e.st == DiskAndMemory or e.st == MemoryOnly), e.inUse == inUse]
+        [e | e <- entries, (e.val.st == DiskAndMemory or e.val.st == MemoryOnly), e.val.inUse == inUse]
 
 //    query findTile(k : Key)
-//        some [e | e <- entries, e.key == k]
+//        some [e | e <- entries, e.val.key == k]

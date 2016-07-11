@@ -57,6 +57,9 @@ class PrettyPrinter(common.Visitor):
     def visit_TRecord(self, r):
         return "{{ {} }}".format(", ".join("{} : {}".format(f, self.visit(t)) for f, t in r.fields))
 
+    def visit_THandle(self, t):
+        return "{}.Handle".format(t.statevar)
+
     def visit_Type(self, t):
         if isinstance(t, library.ConcreteType):
             return type(t).__name__
@@ -131,7 +134,7 @@ class PrettyPrinter(common.Visitor):
         return "{}pass".format(indent)
 
     def visit_SCall(self, s, indent=""):
-        return "{}{}.{}({})".format(indent, s.target, s.func, ", ".join(self.visit(arg) for arg in s.args))
+        return "{}{}.{}({})".format(indent, self.visit(s.target), s.func, ", ".join(self.visit(arg) for arg in s.args))
 
     def visit_SAssign(self, s, indent=""):
         return "{}{} = {}".format(indent, self.visit(s.lhs), self.visit(s.rhs))

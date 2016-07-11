@@ -150,6 +150,7 @@ def make_parser():
     def p_type(p):
         """type : WORD
                 | WORD OP_LT type OP_GT
+                | WORD OP_DOT WORD
                 | OP_OPEN_BRACE typednames OP_CLOSE_BRACE
                 | KW_ENUM OP_OPEN_BRACE enum_cases OP_CLOSE_BRACE"""
         if len(p) == 2:
@@ -160,7 +161,11 @@ def make_parser():
             else:
                 p[0] = syntax.TApp(p[1], p[3])
         elif len(p) == 4:
-            p[0] = syntax.TRecord(p[2])
+            if p[2] == ".":
+                assert p[3] == "Handle"
+                p[0] = syntax.THandle(p[1])
+            else:
+                p[0] = syntax.TRecord(p[2])
 
     parsetools.multi(locals(), "enum_cases", "WORD", sep="OP_COMMA")
 
@@ -291,7 +296,7 @@ def make_parser():
         if p[1] == "(":
             p[0] = syntax.SNoOp()
         elif p[4] == "(":
-            p[0] = syntax.SCall(p[1], p[3], p[5])
+            p[0] = syntax.SCall(syntax.EVar(p[1]), p[3], p[5])
         else:
             p[0] = syntax.SAssign(
                 syntax.EGetField(syntax.EVar(p[1]), p[3]),
