@@ -492,7 +492,7 @@ def synthesize_1d(goal, input, agg, exp, var, collection, predicate, deltas, tim
 
         # TODO: try all?
         new_state_name = fresh_name()
-        for proj, get in understand_plan(agg, plan, StateRef(coll), new_state_name, all_pseudo):
+        for proj, get in understand_plan(agg, plan, StateRef(coll), new_state_name, pseudofields + uniform_subops, pseudovars + nonuniform_subops):
             print((proj, get))
 
             op_impls = []
@@ -670,32 +670,36 @@ class TrackMin(ConcreteStateProjection):
         return syntax.TInt() # TODO
 
 class ToHashMap(ConcreteStateProjection):
-    def __init__(self, abstract_collection, key_func, sub_var, sub_projection):
+    def __init__(self, abstract_collection, key_type, key_func, sub_var, sub_projection):
         self.abstract_collection = abstract_collection
+        self.key_type = key_type
         self.key_func = key_func
         self.sub_var = sub_var
         self.sub_projection = sub_projection
+    def apply_delta(self, target, delta):
+        if isinstance(delta, inc.NoDelta):
+            return (syntax.SNoOp(), ())
+        elif isinstance(delta, inc.SetAdd):
+            return self.sub_projection.incrementalize(
+                syntax.ECall("hash-lookup", [target, self.key_func(delta.e)]),
+                self.sub_var,
+                delta)
+        elif isinstance(delta, inc.SetRemove):
+            return self.sub_projection.incrementalize(
+                syntax.ECall("hash-lookup", [target, self.key_func(delta.e)]),
+                self.sub_var,
+                delta)
+        elif isinstance(delta, inc.Conditional):
+            (proc, subgoals) = self.apply_delta(target, delta.delta)
+            return (syntax.SIf(delta.cond, proc, syntax.SNoOp()), subgoals)
+        else:
+            raise NotImplementedError(d)
     def incrementalize(self, target, var, delta):
-        k = fresh_name()
-        e = fresh_name()
-        # affected_keys = Goal(
-        #     name=fresh_name(),
-        #     args=(), # TODO
-        #     # e = distinct [k | k <- [key(e) | e <- elems], val(k) != val'(k)]
-        #     e=syntax.EUnaryOp("distinct",
-        #         syntax.EListComprehension(syntax.EVar(k), [
-        #             syntax.CPull(k, syntax.EListComprehension(self.key_func(syntax.EVar(e)), [syntax.CPull(e, syntax.EVar(self.abstract_collection[0]))])),
-        #             syntax.CCond(syntax.EBinOp(syntax.EBool(True), "!=", syntax.EBool(True)))]))) # TODO
-        # x = fresh_name()
-        # return (syntax.SForEach(x, syntax.ECall(affected_keys.name, []), self.sub_projection.incrementalize(syntax.ECall("hash-find", [target, syntax.EVar(x)]), var, delta)), [affected_keys])
-        affected_keys = syntax.EVar(k)
-        x = fresh_name()
-        subop, subgoals = self.sub_projection.incrementalize(syntax.ECall("hash-find", [target, syntax.EVar(x)]), var, delta)
-        return (syntax.SForEach(x, affected_keys, subop), subgoals)
+        # TODO: this doesn't work when key_func or sub_projection change!
+        return self.apply_delta(target, self.abstract_collection.derivative(var, delta))
     def result_type(self):
-        key_type = syntax.TInt() # TODO
         return library.HashMap(
-            key_type,
+            self.key_type,
             self.sub_projection.result_type())
     def abstract_state(self):
         return self.abstract_collection
@@ -723,7 +727,7 @@ def aggregation_to_state_projection(agg : aggregations.Aggregation, collection :
         v.type = collection.result_type()
         abs_proj = StateRef(v)
         for (sub_proj, sub_get) in aggregation_to_state_projection(agg.sub_agg, abs_proj):
-            yield (ToHashMap(collection, agg.key_func, var_name, sub_proj), lambda x: syntax.ELet(var_name, syntax.ECall("hash-lookup", [x]), sub_get(v)))
+            yield (ToHashMap(collection, agg.key_type, agg.key_func, var_name, sub_proj), lambda x: syntax.ELet(var_name, syntax.ECall("hash-lookup", [x]), sub_get(v)))
     elif isinstance(agg, aggregations.AggSeq):
         for (proj1, get1) in aggregation_to_state_projection(agg.agg1, collection):
             for (proj2, get2) in aggregation_to_state_projection(agg.agg2, proj1):
@@ -731,14 +735,15 @@ def aggregation_to_state_projection(agg : aggregations.Aggregation, collection :
     else:
         raise NotImplementedError(agg)
 
-def understand_plan(agg, plan, collection, name, pseudo):
+def understand_plan(agg, plan, collection, name, pseudofields, pseudovars):
     """
     Args:
-        agg        - an Aggregation (to compute over the subset of relevant entries)
-        plan       - a Plan (how to get at the subset of relevant entries from collection)
-        collection - an AbstractStateProjection
-        name       - the new name for the generated state (to be used in returned get procedure)
-        pseudo     - pseudo-operations that might appear in plan
+        agg          - an Aggregation (to compute over the subset of relevant entries)
+        plan         - a Plan (how to get at the subset of relevant entries from collection)
+        collection   - an AbstractStateProjection
+        name         - the new name for the generated state (to be used in returned get procedure)
+        pseudofields - pseudo-fields that might appear in plan
+        pseudovars   - pseudo-vars that might appear in plan
     Generates tuples
         (proj, get)
     where
@@ -746,18 +751,26 @@ def understand_plan(agg, plan, collection, name, pseudo):
         get  - a program to compute the plan result for the given agg over (name, type)
     """
     if isinstance(plan, plans.AllWhere):
-        guard = predicate_to_exp(plan.toPredicate(), pseudo)
+        guard = predicate_to_exp(plan.toPredicate(), pseudofields + pseudovars)
         if guard != syntax.EBool(True):
             agg = aggregations.AggSeq(
                 aggregations.Filter(lambda e: guard), # TODO
                 agg)
-            yield from understand_plan(agg, plans.AllWhere(predicates.Bool(True)), collection, name, pseudo)
+            yield from understand_plan(agg, plans.AllWhere(predicates.Bool(True)), collection, name, pseudofields, pseudovars)
         else:
             for (proj, get) in aggregation_to_state_projection(agg, collection):
                 yield (proj, get(syntax.EVar(name)))
     elif isinstance(plan, plans.HashLookup):
-        f = lambda e: e # TODO
-        agg = aggregations.GroupBy(f, agg)
-        yield from understand_plan(agg, plan.plan, collection, name, pseudo)
+        pseudofields_dict = { pf[0] : pf for pf in pseudofields }
+        from structures.hash_map import make_key_args
+        key_args = make_key_args(pseudofields_dict, plan.predicate)
+        kt = syntax.TRecord([(f, pseudofields_dict[f][2].type) for f in key_args])
+        f = lambda e: syntax.EMakeRecord([(f, syntax.ECall(f, [e])) for f in key_args])
+        if len(key_args) == 1:
+            pf = list(key_args.keys())[0]
+            kt = pseudofields_dict[pf][2].type
+            f = lambda e: syntax.ECall(pf, [e])
+        agg = aggregations.GroupBy(kt, f, agg)
+        yield from understand_plan(agg, plan.plan, collection, name, pseudofields, pseudovars)
     else:
         raise NotImplementedError(plan)

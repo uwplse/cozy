@@ -8,6 +8,9 @@
 # Sum
 # Empty
 
+import syntax
+from common import typechecked
+
 class Aggregation(object):
     pass
 
@@ -28,7 +31,9 @@ class Max(Aggregation):
         self.key_func = key_func
 
 class GroupBy(Aggregation):
-    def __init__(self, key_func, sub_agg):
+    @typechecked
+    def __init__(self, key_type : syntax.Type, key_func, sub_agg : Aggregation):
+        self.key_type = key_type
         self.key_func = key_func
         self.sub_agg = sub_agg
 

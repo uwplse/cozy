@@ -9,7 +9,6 @@ import sys
 
 import common
 import syntax
-import library
 
 class PrettyPrinter(common.Visitor):
     def visit_Spec(self, spec):
@@ -60,12 +59,8 @@ class PrettyPrinter(common.Visitor):
     def visit_THandle(self, t):
         return "{}.Handle".format(t.statevar)
 
-    def visit_Type(self, t):
-        if isinstance(t, library.ConcreteType):
-            return type(t).__name__
-        else:
-            print("Warning: implement visit_{} in pprint".format(type(t).__name__), file=sys.stderr)
-            return "??"
+    def visit_ConcreteType(self, t):
+        return t.prettyprint()
 
     def visit_Query(self, q):
         s = "  query {}({}):\n".format(q.name, ", ".join("{} : {}".format(name, self.visit(t)) for name, t in q.args))
@@ -100,7 +95,7 @@ class PrettyPrinter(common.Visitor):
         return "({}).{}".format(self.visit(e.e), e.f)
 
     def visit_EMakeRecord(self, e):
-        return "{{ {} }}".format(", ".join("{} : {}".format(name, val) for name, val in e.fields))
+        return "{{ {} }}".format(", ".join("{} : {}".format(name, self.visit(val)) for name, val in e.fields))
 
     def visit_EEmptyList(self, e):
         return "[]"
