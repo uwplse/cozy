@@ -22,26 +22,26 @@ def check_type(value, ty, value_name="value"):
     if ty is None:
         pass
     elif type(ty) is tuple:
-        assert type(value) is tuple, "{} has type {}, not {}".format(value_name, type(value), tuple)
+        assert type(value) is tuple, "{} has type {}, not {}".format(value_name, type(value).__name__, "tuple")
         assert len(value) == len(ty), "{} has {} entries, not {}".format(value_name, len(value), len(ty))
         for v, t, i in zip(value, ty, range(len(value))):
             check_type(v, t, "{}[{}]".format(value_name, i))
     elif type(ty) is list:
-        assert type(value) is list, "{} has type {}, not {}".format(value_name, type(value), dict)
+        assert type(value) is list, "{} has type {}, not {}".format(value_name, type(value).__name__, "list")
         for i in range(len(value)):
             check_type(value[i], ty[0], "{}[{}]".format(value_name, i))
     elif type(ty) is dict:
-        assert type(value) is dict, "{} has type {}, not {}".format(value_name, type(value), dict)
+        assert type(value) is dict, "{} has type {}, not {}".format(value_name, type(value).__name__, "dict")
         for k, t in ty.items():
             assert k in value, "{} is missing key {}".format(value_name, repr(k))
             check_type(value[k], t, "{}[{}]".format(value_name, repr(k)))
     elif type(ty) is set:
-        assert type(value) is set, "{} has type {}, not {}".format(value_name, type(value), set)
+        assert type(value) is set, "{} has type {}, not {}".format(value_name, type(value).__name__, "set")
         subty, = ty
         for i in range(len(value)):
             check_type(value[i], subty, value_name)
     else:
-        assert isinstance(value, ty), "{} has type {}, not {}".format(value_name, type(value), ty)
+        assert isinstance(value, ty), "{} has type {}, not {}".format(value_name, type(value).__name__, ty.__name__)
 
 def typechecked(f):
     argspec = inspect.getfullargspec(f)

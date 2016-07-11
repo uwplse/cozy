@@ -1,14 +1,17 @@
-from common import declare_case, Visitor
+from common import ADT, declare_case, Visitor
 import syntax
 from syntax_tools import subst
 
-class Delta(object): pass
+class Delta(ADT): pass
 NoDelta         = declare_case(Delta, "NoDelta")
 SetAdd          = declare_case(Delta, "SetAdd",          ["e"])
 SetRemove       = declare_case(Delta, "SetRemove",       ["e"])
-ListAddFront    = declare_case(Delta, "ListAddFront",    ["e"])
-ListAddBack     = declare_case(Delta, "ListAddBack",     ["e"])
-ListRemove      = declare_case(Delta, "ListRemove",      ["e"])
+# ListAddFront    = declare_case(Delta, "ListAddFront",    ["e"])
+# ListAddBack     = declare_case(Delta, "ListAddBack",     ["e"])
+# ListRemove      = declare_case(Delta, "ListRemove",      ["e"])
+Conditional     = declare_case(Delta, "Conditional",     ["cond", "delta"])
+
+Update = declare_case(ADT, "Update", ["var", "delta"])
 
 def to_delta(op):
     """
@@ -17,13 +20,16 @@ def to_delta(op):
     """
     name = op.name
     args = op.args
-    member = op.body.target
-    if   op.body.func == "add":      delta = SetAdd(op.body.args[0])
-    elif op.body.func == "remove":   delta = SetRemove(op.body.args[0])
-    elif op.body.func == "addFront": delta = ListAddFront(op.body.args[0])
-    elif op.body.func == "addBack":  delta = ListAddBack(op.body.args[0])
-    else: raise Exception("Unknown func: {}".format(op.body.func))
-    return (name, args, member, delta)
+    if isinstance(op.body, syntax.SCall):
+        member = op.body.target
+        if   op.body.func == "add":      delta = SetAdd(op.body.args[0])
+        elif op.body.func == "remove":   delta = SetRemove(op.body.args[0])
+        elif op.body.func == "addFront": delta = ListAddFront(op.body.args[0])
+        elif op.body.func == "addBack":  delta = ListAddBack(op.body.args[0])
+        else: raise Exception("Unknown func: {}".format(op.body.func))
+        return (name, args, member, delta)
+    else:
+        raise NotImplementedError(str(op.body))
 
 def delta_apply(e, member, delta):
     if isinstance(delta, SetAdd):
@@ -32,12 +38,3 @@ def delta_apply(e, member, delta):
         return subst(e, { member : syntax.EBinOp(syntax.EVar(member), "-", syntax.EUnaryOp("singleton", delta.e)) })
     else:
         raise NotImplementedError("unhandled case: {}".format(delta))
-
-def change_to(e, var, delta):
-    if isinstance(e, syntax.EVar):
-        if e.id == var:
-            return delta
-        else:
-            return NoDelta()
-    else:
-        raise NotImplementedError(e)

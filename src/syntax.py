@@ -26,7 +26,11 @@ TApp                = declare_case(Type, "TApp",    ["t", "args"])
 TEnum               = declare_case(Type, "TEnum",   ["cases"])
 TTuple              = declare_case(Type, "TTuple",  ["ts"])
 
-class Exp(ADT): pass
+class Exp(ADT):
+    def with_type(self, t):
+        self.type = t
+        return self
+
 EVar                = declare_case(Exp, "EVar",               ["id"])
 EBool               = declare_case(Exp, "EBool",              ["val"])
 ENum                = declare_case(Exp, "ENum",               ["val"])
@@ -50,7 +54,6 @@ SNoOp               = declare_case(Stm, "SNoOp")
 SSeq                = declare_case(Stm, "SSeq",     ["s1", "s2"])
 SCall               = declare_case(Stm, "SCall",    ["target", "func", "args"])
 SAssign             = declare_case(Stm, "SAssign",  ["lhs", "rhs"])
-SDel                = declare_case(Stm, "SDel",     ["e"])
 SForEach            = declare_case(Stm, "SForEach", ["id", "iter", "body"])
 SIf                 = declare_case(Stm, "SIf",      ["cond", "then_branch", "else_branch"])
 

@@ -123,6 +123,10 @@ class PrettyPrinter(common.Visitor):
     def visit_CCond(self, c):
         return self.visit(c.e)
 
+    def visit_object(self, e):
+        print("Warning: implement prettyprinting for {}".format(type(e)), file=sys.stderr)
+        return "??"
+
     def visit_SNoOp(self, s, indent=""):
         return "{}pass".format(indent)
 
@@ -260,6 +264,8 @@ def subst(exp, replacements):
             elif isinstance(c, syntax.CCond):
                 clauses[i] = syntax.CCond(self.visit(c.e))
                 return self.visit_lcmp(clauses, i + 1, e)
+        def visit_EGetField(self, e):
+            return syntax.EGetField(self.visit(e.e), e.f)
         def visit_ECall(self, e):
             return syntax.ECall(e.func, [self.visit(arg) for arg in e.args])
 

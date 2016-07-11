@@ -7,13 +7,16 @@ class ConcreteType(syntax.Type):
     pass
 
 class LinkedList(ConcreteType):
-    pass
+    def __init__(self, t):
+        self.t = t
 
 class ArrayList(ConcreteType):
     pass
 
 class HashMap(ConcreteType):
-    pass
+    def __init__(self, key_type, value_type):
+        self.k = key_type
+        self.v = value_type
 
 class AugTree(ConcreteType):
     pass

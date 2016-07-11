@@ -13,20 +13,20 @@ TileCache:
         st : State,
         inUse : Bool }
 
-    state entries : List<Entry>
+    state entries : Bag<Entry>
 
 //    assume unique [e.val.key | e <- entries];
 
-    op add(k : Key)
-        entries.addBack(new Entry(k, 0, 0, 0, 0, IndexPending, true))
+    op add(e : Entry)
+        entries.add(e)
 
-//    op rm(e : Entry)
+    op rm(e : Entry)
 //        assume e in entries;
-//        del e
+        entries.remove(e)
 
 //    op updateState(e : Entry, st : State)
 //        assume e in entries;
-//        e.val.st = st
+//        e.st = st
 
     query totalMemSize()
         sum [e.memSize | e <- entries, e.st == DiskAndMemory or e.st == MemoryOnly]

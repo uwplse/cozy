@@ -34,3 +34,15 @@ class GroupBy(Aggregation):
 
 class DistinctElements(Aggregation):
     pass
+
+class AggSeq(Aggregation):
+    """
+    Applies self.agg1 to the collection, then self.agg2 to that result.
+    """
+    def __init__(self, agg1, agg2):
+        self.agg1 = agg1
+        self.agg2 = agg2
+
+class Filter(Aggregation):
+    def __init__(self, predicate):
+        self.predicate = predicate
