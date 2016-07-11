@@ -727,7 +727,7 @@ def aggregation_to_state_projection(agg : aggregations.Aggregation, collection :
         v.type = collection.result_type()
         abs_proj = StateRef(v)
         for (sub_proj, sub_get) in aggregation_to_state_projection(agg.sub_agg, abs_proj):
-            yield (ToHashMap(collection, agg.key_type, agg.key_func, var_name, sub_proj), lambda x: syntax.ELet(var_name, syntax.ECall("hash-lookup", [x]), sub_get(v)))
+            yield (ToHashMap(collection, agg.key_type, agg.key_func, var_name, sub_proj), sub_get)
     elif isinstance(agg, aggregations.AggSeq):
         for (proj1, get1) in aggregation_to_state_projection(agg.agg1, collection):
             for (proj2, get2) in aggregation_to_state_projection(agg.agg2, proj1):
@@ -762,15 +762,21 @@ def understand_plan(agg, plan, collection, name, pseudofields, pseudovars):
                 yield (proj, get(syntax.EVar(name)))
     elif isinstance(plan, plans.HashLookup):
         pseudofields_dict = { pf[0] : pf for pf in pseudofields }
+        pseudovars_dict = { pf[0] : pf for pf in pseudovars }
         from structures.hash_map import make_key_args
         key_args = make_key_args(pseudofields_dict, plan.predicate)
         kt = syntax.TRecord([(f, pseudofields_dict[f][2].type) for f in key_args])
         f = lambda e: syntax.EMakeRecord([(f, syntax.ECall(f, [e])) for f in key_args])
+        lookup_key = syntax.EMakeRecord([(f, syntax.ECall(vs[0], [syntax.EVar(arg) for (arg,t) in pseudovars_dict[vs[0]][1]])) for f,vs in key_args.items()])
         if len(key_args) == 1:
             pf = list(key_args.keys())[0]
             kt = pseudofields_dict[pf][2].type
             f = lambda e: syntax.ECall(pf, [e])
+            v = key_args[pf][0]
+            lookup_key = syntax.ECall(v, [syntax.EVar(arg) for (arg,t) in pseudovars_dict[v][1]])
         agg = aggregations.GroupBy(kt, f, agg)
-        yield from understand_plan(agg, plan.plan, collection, name, pseudofields, pseudovars)
+        subname = fresh_name()
+        for (proj, get) in understand_plan(agg, plan.plan, collection, subname, pseudofields, pseudovars):
+            yield (proj, syntax.ELet(subname, syntax.ECall("hash-lookup", [syntax.EVar(name), lookup_key]), get))
     else:
         raise NotImplementedError(plan)
