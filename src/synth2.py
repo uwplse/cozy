@@ -12,8 +12,8 @@ import cost_model
 import stats
 from typecheck import typecheck
 import incrementalization as inc
-import aggregations
-import library
+# import aggregations
+import structures
 
 Context = collections.namedtuple("Context", ["state", "deltas"])
 Goal = collections.namedtuple("Goal", ["name", "args", "e"])
@@ -243,7 +243,7 @@ def synthesize(spec, timeout=None):
         typecheck(e, list(g.args) + list(state))
         print("####### synthesizing: {}({}) = {} = {}".format(g.name, g.args, pprint(g.e), pprint(e)))
         g = g._replace(e=e)
-        psoln = synth_simple(context, g, timeout)
+        psoln = synth_simple(structures.Library(), context, g, timeout)
         print("####### got: {}".format(psoln))
         solutions.append(psoln.solution)
         for subgoal in psoln.subgoals:
@@ -298,27 +298,28 @@ def break_list_comprehension(lcmp):
     return (lcmp.e, pulls, conds)
 
 @stats.task
-def synth_simple(context, goal, timeout=None):
+@typechecked
+def synth_simple(library : structures.Library, context : Context, goal : Goal, timeout=None):
     statedict = dict(context.state)
     deltas = context.deltas
     no_delta = [syntax.SNoOp() for d in deltas]
     e = goal.e
     if isinstance(e, syntax.EUnaryOp):
         if isinstance(e.e, syntax.EListComprehension):
-
             pull = find_the_only_pull(e.e)
             if pull:
-                if e.op == "iterator":   agg = aggregations.IterateOver(lambda x: subst(e.e.e, { pull.id: x }))
-                elif e.op == "sum":      agg = aggregations.Sum(lambda x: subst(e.e.e, { pull.id: x }))
-                elif e.op == "min":      agg = aggregations.Min(lambda x: x)
-                elif e.op == "max":      agg = aggregations.Max(lambda x: x)
-                elif e.op == "distinct": agg = aggregations.DistinctElements()
-                else: raise NotImplementedError(e.op)
-
                 pred = combined_predicate(e.e)
                 coll = (pull.e.id, statedict[pull.e.id]) if isinstance(pull.e, syntax.EVar) and pull.e.id in statedict else None
                 if pred and coll:
-                    return synthesize_1d(goal, goal.args, agg, e.e.e, pull.id, coll, pred, deltas)
+                    coll = StateRef(pull.e)
+                    coll = Mapped(coll, lambda x: subst(e.e.e, { pull.id: x }), e.e.e.type)
+                    if e.op == "iterator":      k = lambda elems: library.bag_impls(elems)
+                    elif e.op == "sum":         k = lambda elems: library.sum_impls(elems)
+                    elif e.op == "min":         k = lambda elems: library.min_impls(elems)
+                    elif e.op == "max":         k = lambda elems: library.max_impls(elems)
+                    elif e.op == "distinct":    k = lambda elems: library.set_impls(elems)
+                    else:                       raise NotImplementedError(e.op)
+                    return synthesize_1d(library, goal, goal.args, e.e.e, pull.id, coll, pred, k, deltas)
 
             lcmp = e.e
             parts = break_list_comprehension(lcmp)
@@ -412,8 +413,79 @@ def synth_simple(context, goal, timeout=None):
         solution=Solution(goal, (), goal.e, no_delta),
         subgoals=())
 
+class StateProjection(object):
+    def abstract_state(self):
+        """
+        The abstract state that this projection tracks.
+        Returns (state_var_name, type)
+        """
+        raise NotImplementedError(str(type(self)))
+    def result_type(self):
+        """
+        The result type of performing this projection.
+        """
+        raise NotImplementedError(str(type(self)))
+    def derivative(self, var, delta):
+        """
+        Returns (delta, goals) when state variable `var` is changed by `delta`.
+        """
+        raise NotImplementedError(str(type(self)))
+
+class StateRef(StateProjection):
+    def __init__(self, statevar):
+        self.statevar = statevar
+    def derivative(self, var, delta):
+        return (delta if var == self.statevar else inc.NoDelta(), ())
+    def abstract_state(self):
+        return (self.statevar.id, self.statevar.type)
+    def result_type(self):
+        return self.statevar.type
+
+class Guarded(StateProjection):
+    @typechecked
+    def __init__(self, sub_proj : StateProjection, predicate):
+        self.sub_proj = sub_proj
+        self.predicate = predicate
+    def map_delta(self, delta):
+        if isinstance(delta, inc.NoDelta):
+            return delta
+        elif isinstance(delta, inc.SetAdd):
+            return inc.Conditional(self.predicate(delta.e), delta)
+        elif isinstance(delta, inc.SetRemove):
+            return inc.Conditional(self.predicate(delta.e), delta)
+        elif isinstance(delta, inc.Conditional):
+            return inc.Conditional(delta.cond, self.map_delta(delta.delta))
+    def derivative(self, var, delta):
+        # TODO: enter/exit sets
+        (d, goals) = self.sub_proj.derivative(var, delta)
+        return (self.map_delta(d), goals)
+    def result_type(self):
+        return self.sub_proj.result_type()
+
+class Mapped(StateProjection):
+    @typechecked
+    def __init__(self, sub_proj : StateProjection, f, out_type):
+        self.sub_proj = sub_proj
+        self.f = f
+        self.out_type = out_type
+    def map_delta(self, delta):
+        if isinstance(delta, inc.NoDelta):
+            return delta
+        elif isinstance(delta, inc.SetAdd):
+            return inc.SetAdd(self.f(delta.e))
+        elif isinstance(delta, inc.SetRemove):
+            return inc.SetRemove(self.f(delta.e))
+        elif isinstance(delta, inc.Conditional):
+            return inc.Conditional(delta.cond, self.map_delta(delta.delta))
+    def derivative(self, var, delta):
+        (d, goals) = self.sub_proj.derivative(var, delta)
+        return (self.map_delta(d), goals)
+    def result_type(self):
+        return syntax.TBag(self.out_type) # TODO: lists, sets, ...
+
 @stats.task
-def synthesize_1d(goal, input, agg, exp, var, collection, predicate, deltas, timeout=None):
+@typechecked
+def synthesize_1d(library : structures.Library, goal : Goal, input : [(str, syntax.Type)], exp : syntax.Exp, var : str, collection : StateProjection, predicate : syntax.Exp, k, deltas : [(str, [(str, syntax.Type)], syntax.Exp, inc.Delta)], timeout=None):
     """
     Synthesize an operation over a single collection.
     ("One-dimensional" synthesis.)
@@ -438,16 +510,8 @@ def synthesize_1d(goal, input, agg, exp, var, collection, predicate, deltas, tim
         predicate   - Exp representing P
         deltas      - list of modification ops to abstract state
 
-    This function returns the best outline found in the given timeout, or the
-    optimal outline if timeout is None. The outline has the form
-
-        (n, T, g, d, s)
-
-    where
-        n,T     is a new name and type for the abstract state
-        g       is a new implementation of f over n and T
-        d       is a list of change implementations, one for each delta
-        s       is a set of sub-ops that must also be solved
+    This function returns a PartialSolution for the best outline found in the
+    given timeout (or for the optimal outline if timeout is None).
     """
 
     # print("input={}".format(input))
@@ -481,302 +545,46 @@ def synthesize_1d(goal, input, agg, exp, var, collection, predicate, deltas, tim
     all_pseudo = pseudofields + pseudovars + subops
     for plan in ctx.synthesizePlansByEnumeration(abstraction, sort_field=None, timeout=timeout):
         subgoals = [Goal(name, args, e) for (name, args, e) in all_pseudo]
-        # print(plan)
-
-        # # plan_expr = plan_to_abstract_exp(plan, { name : syntax.ECall(name, [syntax.EVar(a[0]) for a in args]) for (name, args, e) in pseudofields + pseudovars + subops })
-        coll = syntax.EVar(collection[0])
-        coll.type = collection[1]
-        # plan_expr = plan_to_abstract_exp(plan, coll, var, coll.type.t, pseudofields + pseudovars + subops)
-        # print(plan_expr)
-        # raise NotImplementedError()
 
         # TODO: try all?
-        new_state_name = fresh_name()
-        for proj, get in understand_plan(agg, plan, StateRef(coll), new_state_name, pseudofields + uniform_subops, pseudovars + nonuniform_subops):
-            print((proj, get))
-
+        for impl in possible_implementations(library, plan, k, collection, pseudofields + uniform_subops, pseudovars + nonuniform_subops):
             op_impls = []
             for (name, args, member, d) in deltas:
-                (op_impl, op_subgoals) = proj.incrementalize(syntax.EVar(new_state_name), collection[0], d)
+                (change, new_subgoals) = impl.derivative(member, d)
+                op_impl = impl.apply_change(change)
                 op_impls.append(op_impl)
-                for sg in op_subgoals:
+                for sg in new_subgoals:
                     subgoals.append(sg)
+            return PartialSolution(Solution(goal, impl.state(), impl.query(), op_impls), subgoals)
 
-            new_type = proj.result_type()
-            return PartialSolution(Solution(goal, [(new_state_name, new_type)], get, op_impls), subgoals)
-            # TODO: synthesize ANY of the returned plans??
-
-        raise Exception("no understanding for {}".format(plan))
+        raise Exception("no implementations available for {} {}".format(plan))
     raise Exception("no plan for {}".format(abstraction))
 
-# Lambda = declare_case(syntax.Exp, "Lambda", ["args", "body"])
-# AbstractExpr = declare_case(syntax.Exp, "AbstractExpr")
-# Guard = declare_case(AbstractExpr, "Guard", ["e", "predicate"])
-
-# def plan_to_abstract_exp(plan, collection, var, elem_type, pseudo):
-#     """
-
-#     """
-#     if isinstance(plan, plans.AllWhere):
-#         guard = predicate_to_exp(plan.toPredicate(), pseudo)
-#         if guard == syntax.EBool(True):
-#             return collection
-#         else:
-#             e = plan_to_abstract_exp(plans.AllWhere(predicates.Bool(True)), collection, var, elem_type, pseudo)
-#             return Guard(e, Lambda([(var, elem_type)], guard))
-#     else:
-#         raise NotImplementedError()
-
-class StateProjection(object):
-    def abstract_state(self):
-        """
-        The abstract state that this projection tracks.
-        Returns (state_var_name, type)
-        """
-        raise NotImplementedError(str(type(self)))
-    def result_type(self):
-        """
-        The result type of performing this projection.
-        """
-        raise NotImplementedError(str(type(self)))
-
-class AbstractStateProjection(StateProjection):
-    def derivative(self, var, delta):
-        """
-        Returns delta when state variable `var` is changed by `delta`.
-        """
-        raise NotImplementedError(str(type(self)))
-
-class ConcreteStateProjection(StateProjection):
-    def update(self, target, var, delta):
-        """
-        Update `target` when delta `d` is applied to `var`.
-        Returns (impl, subgoals).
-        """
-        raise NotImplementedError(str(type(self)))
-
-class StateRef(AbstractStateProjection):
-    def __init__(self, statevar):
-        self.statevar = statevar
-    def derivative(self, var, delta):
-        return delta if var == self.statevar.id else inc.NoDelta()
-    def abstract_state(self):
-        return (self.statevar.id, self.statevar.type)
-    def result_type(self):
-        return self.statevar.type
-
-class Guarded(AbstractStateProjection):
-    @typechecked
-    def __init__(self, sub_proj : AbstractStateProjection, predicate):
-        self.sub_proj = sub_proj
-        self.predicate = predicate
-    def map_delta(self, delta):
-        if isinstance(delta, inc.NoDelta):
-            return delta
-        elif isinstance(delta, inc.SetAdd):
-            return inc.Conditional(self.predicate(delta.e), delta)
-        elif isinstance(delta, inc.SetRemove):
-            return inc.Conditional(self.predicate(delta.e), delta)
-        elif isinstance(delta, inc.Conditional):
-            return inc.Conditional(delta.cond, self.map_delta(delta.delta))
-    def derivative(self, var, delta):
-        return self.map_delta(self.sub_proj.derivative(var, delta))
-    def result_type(self):
-        return self.sub_proj.result_type()
-
-class Mapped(AbstractStateProjection):
-    @typechecked
-    def __init__(self, sub_proj : AbstractStateProjection, f):
-        self.sub_proj = sub_proj
-        self.f = f
-    def map_delta(self, delta):
-        if isinstance(delta, inc.NoDelta):
-            return delta
-        elif isinstance(delta, inc.SetAdd):
-            return inc.SetAdd(self.f(delta.e))
-        elif isinstance(delta, inc.SetRemove):
-            return inc.SetRemove(self.f(delta.e))
-        elif isinstance(delta, inc.Conditional):
-            return inc.Conditional(delta.cond, self.map_delta(delta.delta))
-    def derivative(self, var, delta):
-        return self.map_delta(self.sub_proj.derivative(var, delta))
-
-class ToLinkedList(ConcreteStateProjection):
-    @typechecked
-    def __init__(self, e : AbstractStateProjection):
-        self.e = e
-    def apply_delta(self, target, delta):
-        if isinstance(delta, inc.NoDelta):
-            return syntax.SNoOp()
-        elif isinstance(delta, inc.SetAdd):
-            return syntax.SCall(target, "linkedlist-insert-front", [delta.e])
-        elif isinstance(delta, inc.SetRemove):
-            return syntax.SCall(target, "linkedlist-remove", [delta.e])
-        elif isinstance(delta, inc.Conditional):
-            return syntax.SIf(delta.cond, self.apply_delta(target, delta.delta), syntax.SNoOp())
-        else:
-            raise NotImplementedError(d)
-    def incrementalize(self, target, var, delta):
-        d = self.e.derivative(var, delta)
-        impl = self.apply_delta(target, d)
-        return (impl, ())
-    def result_type(self):
-        return library.LinkedList(self.e.result_type().t)
-
-class ToHashSet(ConcreteStateProjection):
-    def __init__(self, e, elem_proj=lambda x: x):
-        self.e = e
-    def incrementalize(self, target, var, delta):
-        d = self.e.derivative(var, delta)
-        raise NotImplementedError(d)
-    def result_type(self):
-        return library.HashSet()
-
-class TrackSum(ConcreteStateProjection):
-    def __init__(self, e):
-        self.e = e
-    def apply_delta(self, target, delta):
-        if isinstance(delta, inc.NoDelta):
-            return syntax.SNoOp()
-        elif isinstance(delta, inc.SetAdd):
-            return syntax.SAssign(target, syntax.EBinOp(target, "+", delta.e))
-        elif isinstance(delta, inc.SetRemove):
-            return syntax.SAssign(target, syntax.EBinOp(target, "-", delta.e))
-        elif isinstance(delta, inc.Conditional):
-            return syntax.SIf(delta.cond, self.apply_delta(target, delta.delta), syntax.SNoOp())
-        else:
-            raise NotImplementedError(d)
-    def incrementalize(self, target, var, delta):
-        d = self.e.derivative(var, delta)
-        return (self.apply_delta(target, d), ())
-    def result_type(self):
-        return syntax.TInt() # TODO
-
-class TrackMin(ConcreteStateProjection):
-    def __init__(self, e, key_func=lambda x: x):
-        self.e = e
-        self.key_func = key_func
-    def incrementalize(self, target, var, delta):
-        d = self.e.derivative(var, delta)
-        if isinstance(d, inc.NoDelta):
-            return (syntax.SNoOp(), ())
-        elif isinstance(d, inc.SetAdd):
-            return (syntax.SIf(syntax.EBinOp(self.key_func(d.e), "<", self.key_func(target)),
-                syntax.SAssign(target, d.e),
-                syntax.SNoOp()), ())
-        else:
-            raise NotImplementedError(d)
-    def result_type(self):
-        return syntax.TInt() # TODO
-
-class ToHashMap(ConcreteStateProjection):
-    def __init__(self, abstract_collection, key_type, key_func, sub_var, sub_projection):
-        self.abstract_collection = abstract_collection
-        self.key_type = key_type
-        self.key_func = key_func
-        self.sub_var = sub_var
-        self.sub_projection = sub_projection
-    def apply_delta(self, target, delta):
-        if isinstance(delta, inc.NoDelta):
-            return (syntax.SNoOp(), ())
-        elif isinstance(delta, inc.SetAdd):
-            return self.sub_projection.incrementalize(
-                syntax.ECall("hash-lookup", [target, self.key_func(delta.e)]),
-                self.sub_var,
-                delta)
-        elif isinstance(delta, inc.SetRemove):
-            return self.sub_projection.incrementalize(
-                syntax.ECall("hash-lookup", [target, self.key_func(delta.e)]),
-                self.sub_var,
-                delta)
-        elif isinstance(delta, inc.Conditional):
-            (proc, subgoals) = self.apply_delta(target, delta.delta)
-            return (syntax.SIf(delta.cond, proc, syntax.SNoOp()), subgoals)
-        else:
-            raise NotImplementedError(d)
-    def incrementalize(self, target, var, delta):
-        # TODO: this doesn't work when key_func or sub_projection change!
-        return self.apply_delta(target, self.abstract_collection.derivative(var, delta))
-    def result_type(self):
-        return library.HashMap(
-            self.key_type,
-            self.sub_projection.result_type())
-    def abstract_state(self):
-        return self.abstract_collection
-
 @typechecked
-def aggregation_to_state_projection(agg : aggregations.Aggregation, collection : AbstractStateProjection):
-    """
-    Args:
-        agg         - an Aggregation
-        collection  - an AbstractStateProjection
-    """
-    if isinstance(agg, aggregations.IterateOver):
-        yield (ToLinkedList(collection), lambda x: syntax.ECall("iterator", [x]))
-    elif isinstance(agg, aggregations.DistinctElements):
-        yield (ToHashSet(collection), lambda x: x)
-    elif isinstance(agg, aggregations.Sum):
-        yield (TrackSum(Mapped(collection, agg.projection)), lambda x: x)
-    elif isinstance(agg, aggregations.Min):
-        yield (TrackMin(Mapped(collection, agg.projection), agg.key_func), lambda x: x)
-    elif isinstance(agg, aggregations.Filter):
-        yield (Guarded(collection, agg.predicate), lambda x: x)
-    elif isinstance(agg, aggregations.GroupBy):
-        var_name = fresh_name()
-        v = syntax.EVar(var_name)
-        v.type = collection.result_type()
-        abs_proj = StateRef(v)
-        for (sub_proj, sub_get) in aggregation_to_state_projection(agg.sub_agg, abs_proj):
-            yield (ToHashMap(collection, agg.key_type, agg.key_func, var_name, sub_proj), sub_get)
-    elif isinstance(agg, aggregations.AggSeq):
-        for (proj1, get1) in aggregation_to_state_projection(agg.agg1, collection):
-            for (proj2, get2) in aggregation_to_state_projection(agg.agg2, proj1):
-                yield (proj2, lambda x: get2(get1(x)))
-    else:
-        raise NotImplementedError(agg)
-
-def understand_plan(agg, plan, collection, name, pseudofields, pseudovars):
-    """
-    Args:
-        agg          - an Aggregation (to compute over the subset of relevant entries)
-        plan         - a Plan (how to get at the subset of relevant entries from collection)
-        collection   - an AbstractStateProjection
-        name         - the new name for the generated state (to be used in returned get procedure)
-        pseudofields - pseudo-fields that might appear in plan
-        pseudovars   - pseudo-vars that might appear in plan
-    Generates tuples
-        (proj, get)
-    where
-        proj - a StateProjection from abstract state to concrete state
-        get  - a program to compute the plan result for the given agg over (name, type)
-    """
+def possible_implementations(
+        library    : structures.Library,
+        plan       : plans.Plan,
+        k,
+        collection : StateProjection,
+        pseudofields,
+        pseudovars):
     if isinstance(plan, plans.AllWhere):
         guard = predicate_to_exp(plan.toPredicate(), pseudofields + pseudovars)
         if guard != syntax.EBool(True):
-            agg = aggregations.AggSeq(
-                aggregations.Filter(lambda e: guard), # TODO
-                agg)
-            yield from understand_plan(agg, plans.AllWhere(predicates.Bool(True)), collection, name, pseudofields, pseudovars)
-        else:
-            for (proj, get) in aggregation_to_state_projection(agg, collection):
-                yield (proj, get(syntax.EVar(name)))
+            collection = Guarded(collection, lambda e: guard) # TODO
+        yield from k(collection)
     elif isinstance(plan, plans.HashLookup):
-        pseudofields_dict = { pf[0] : pf for pf in pseudofields }
-        pseudovars_dict = { pf[0] : pf for pf in pseudovars }
-        from structures.hash_map import make_key_args
-        key_args = make_key_args(pseudofields_dict, plan.predicate)
-        kt = syntax.TRecord([(f, pseudofields_dict[f][2].type) for f in key_args])
-        f = lambda e: syntax.EMakeRecord([(f, syntax.ECall(f, [e])) for f in key_args])
-        lookup_key = syntax.EMakeRecord([(f, syntax.ECall(vs[0], [syntax.EVar(arg) for (arg,t) in pseudovars_dict[vs[0]][1]])) for f,vs in key_args.items()])
-        if len(key_args) == 1:
-            pf = list(key_args.keys())[0]
-            kt = pseudofields_dict[pf][2].type
-            f = lambda e: syntax.ECall(pf, [e])
-            v = key_args[pf][0]
-            lookup_key = syntax.ECall(v, [syntax.EVar(arg) for (arg,t) in pseudovars_dict[v][1]])
-        agg = aggregations.GroupBy(kt, f, agg)
-        subname = fresh_name()
-        for (proj, get) in understand_plan(agg, plan.plan, collection, subname, pseudofields, pseudovars):
-            yield (proj, syntax.ELet(subname, syntax.ECall("hash-lookup", [syntax.EVar(name), lookup_key]), get))
+        assert isinstance(plan.plan, plans.AllWhere)
+        for impl in possible_implementations(library, plan.plan, k, collection, pseudofields, pseudovars):
+            key_type = syntax.TInt() # TODO
+            key_func = lambda x: syntax.ENum(0) # TODO
+            query_key_func = lambda args: syntax.ENum(1) # TODO
+            yield from library.map_impls(impl, key_type, key_func, query_key_func)
+    elif isinstance(plan, plans.Filter):
+        predicate = lambda x: syntax.EBool(True) # TODO
+        def new_k(elems):
+            for impl in k(elems):
+                yield impl.at_query_time(structures.Filtered(elems, predicate))
+        yield from possible_implementations(library, plan.plan, new_k, collection, pseudofields, pseudovars)
     else:
         raise NotImplementedError(plan)

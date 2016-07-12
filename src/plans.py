@@ -82,28 +82,6 @@ class Filter(Plan):
     def isSortedBy(self, fieldName):
         return self.plan.isSortedBy(fieldName)
 
-class Intersect(Plan):
-    def __init__(self, plan1, plan2):
-        self.plan1 = plan1
-        self.plan2 = plan2
-    def toPredicate(self):
-        return And(self.plan1.toPredicate(), self.plan2.toPredicate())
-    def wellFormed(self, *args):
-        return self.plan1.wellFormed(*args) and self.plan2.wellFormed(*args)
-    def children(self):
-        return (self.plan1, self.plan2)
-
-class Union(Plan):
-    def __init__(self, plan1, plan2):
-        self.plan1 = plan1
-        self.plan2 = plan2
-    def toPredicate(self):
-        return Or(self.plan1.toPredicate(), self.plan2.toPredicate())
-    def wellFormed(self, *args):
-        return self.plan1.wellFormed(*args) and self.plan2.wellFormed(*args)
-    def children(self):
-        return (self.plan1, self.plan2)
-
 class Concat(Plan):
     def __init__(self, plan1, plan2):
         self.plan1 = plan1

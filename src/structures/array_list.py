@@ -4,9 +4,6 @@ from common import fresh_name
 INIT_CAPACITY = 8
 
 class ArrayList(ConcreteImpl):
-    """
-    Common interface for generated data structures
-    """
 
     def __str__(self):
         return "ArrayList"

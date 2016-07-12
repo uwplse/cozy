@@ -7,7 +7,6 @@ import predicates
 import plans
 from structures.hash_map import make_key_args
 from structures.vector_map import is_enumerable
-from structures.combined import CONCAT_OP, INTERSECT_OP, UNION_OP
 
 class AbstractImpl(object):
     pass
@@ -49,10 +48,9 @@ class GuardedImpl(AbstractImpl):
         self.impl = impl
 
 class Combine(AbstractImpl):
-    def __init__(self, l, r, op):
+    def __init__(self, l, r):
         self.l = l
         self.r = r
-        self.op = op
 
 class AbstractFilter(AbstractImpl):
     def __init__(self, t, fields, qvars, predicate):
@@ -86,18 +84,10 @@ def implement(plan, fields, qvars, resultTy):
             return implement(plan.plan, fields, qvars, SortedIterable(fields, plan.sortField, plan.predicate))
         else:
             return implement(plan.plan, fields, qvars, BinarySearchable(fields, plan.predicate))
-    elif type(plan) is plans.Intersect:
-        t1 = implement(plan.plan1, fields, qvars, resultTy)
-        t2 = implement(plan.plan2, fields, qvars, resultTy)
-        return Combine(t1, t2, INTERSECT_OP)
-    elif type(plan) is plans.Union:
-        t1 = implement(plan.plan1, fields, qvars, resultTy)
-        t2 = implement(plan.plan2, fields, qvars, resultTy)
-        return Combine(t1, t2, UNION_OP)
     elif type(plan) is plans.Concat:
         t1 = implement(plan.plan1, fields, qvars, resultTy)
         t2 = implement(plan.plan2, fields, qvars, resultTy)
-        return Combine(t1, t2, CONCAT_OP)
+        return Combine(t1, t2)
     elif type(plan) is plans.Filter:
         t = implement(plan.plan, fields, qvars, resultTy)
         return AbstractFilter(t, fields, qvars, plan.predicate)

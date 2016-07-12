@@ -1,4 +1,4 @@
-from common import ADT, declare_case, Visitor
+from common import ADT, declare_case, Visitor, typechecked
 import syntax
 from syntax_tools import subst
 
@@ -13,7 +13,8 @@ Conditional     = declare_case(Delta, "Conditional",     ["cond", "delta"])
 
 Update = declare_case(ADT, "Update", ["var", "delta"])
 
-def to_delta(op):
+@typechecked
+def to_delta(op : syntax.Op) -> (str, [(str, syntax.Type)], syntax.Exp, Delta):
     """
     Input: synax.Op
     Output: (name, [args], member, Delta) representing op's change

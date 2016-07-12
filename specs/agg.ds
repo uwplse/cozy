@@ -2,20 +2,20 @@ Aggr:
 
     state l : Bag<Int>
 
-    op add(i : Int)
+    op add(i : l.Handle)
         l.add(i)
 
-    query all()
-        l
+//    query all()
+//        l
 
     query totalSum()
-        sum l
+        sum [ i.val | i <- l ]
 
     query totalCount()
         sum [ 1 | x <- l ]
 
-    query minimum()
-        min l
+//    query minimum()
+//        min l
 
 //    query maximum()
 //        max l
