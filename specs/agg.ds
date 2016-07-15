@@ -5,14 +5,14 @@ Aggr:
     op add(i : l.Handle)
         l.add(i)
 
-//    query all()
-//        l
+    query all()
+        l
 
     query totalSum()
         sum [ i.val | i <- l ]
 
-    query totalCount()
-        sum [ 1 | x <- l ]
+    query countGt10()
+        sum [ 1 | x <- l, x.val > 10 ]
 
 //    query minimum()
 //        min l

@@ -29,17 +29,22 @@ class Library(object):
 
     def sum_impls(self, collection):
         yield TrackedSum(collection)
-        # elif isinstance(agg, aggregations.Min):
-        #     yield TrackedMin(collection, agg.key_func)
-        #     yield MinHeap(collection, agg.key_func)
-        # elif isinstance(agg, aggregations.Max):
-        #     yield TrackedMax(collection, agg.key_func)
-        #     yield MaxHeap(collection, agg.key_func)
-        # elif isinstance(agg, aggregations.DistinctElements):
-        #     yield HashSet(collection, agg.key_func)
 
     def map_impls(self, impl, key_type, key_func, query_key_func):
         if is_enumerable(key_type):
             yield VectorMap(impl, key_type, key_func, query_key_func)
         else:
             yield HashMap(impl, key_type, key_func, query_key_func)
+
+class Stored(object):
+    def __init__(self, e):
+        self.e = e
+    def __str__(self):
+        return "Stored({})".format(self.e)
+
+class Filtered(object):
+    def __init__(self, e, p):
+        self.e = e
+        self.p = e
+    def __str__(self):
+        return "Filtered({}, {})".format(self.e, self.p)
