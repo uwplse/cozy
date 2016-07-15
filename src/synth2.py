@@ -65,30 +65,22 @@ def abstractify(input, var, predicate):
                 return predicates.Not(self.visit(e.e))
             return self.splitoff(e)
 
-        def splitoff(self, e, as_bool=True):
-            args = [v for v in free_vars(e) if v.id == var or v.id in [i[0] for i in input]]
-            fvs = {v.id for v in args}
-            argtypes = [(arg.id, arg.type) for arg in args]
-            n = fresh_name()
-            if fvs == {var} or not fvs:
-                self.pseudofields.append((n, argtypes, e))
-            elif var not in fvs:
-                self.pseudovars.append((n, argtypes, e))
-            else:
-                self.subops.append((n, argtypes, e))
-            # if e.type == syntax.TBool():
-            #     true = syntax.EBool(True)
-            #     if true in mapping:
-            #         b = mapping[true][0]
-            #     else:
-            #         b = fresh_name()
-            #         res = (b, (), syntax.EBool(True))
-            #         self.pseudovars.append(res)
-            #         mapping[true] = res
-            #     return predicates.Compare(predicates.Var(n), predicates.Eq, predicates.Var(b))
-            # else:
-            #     return predicates.Var(n)
-            return predicates.Var(n)
+        def splitoff(self, e):
+            v = mapping.get(e)
+            if v is None:
+                args = [v for v in free_vars(e) if v.id == var or v.id in [i[0] for i in input]]
+                fvs = {v.id for v in args}
+                argtypes = [(arg.id, arg.type) for arg in args]
+                n = fresh_name()
+                v = predicates.Var(n)
+                mapping[e] = v
+                if fvs == {var} or not fvs:
+                    self.pseudofields.append((n, argtypes, e))
+                elif var not in fvs:
+                    self.pseudovars.append((n, argtypes, e))
+                else:
+                    self.subops.append((n, argtypes, e))
+            return v
 
         def visit_Exp(self, e, as_bool=True):
             return self.splitoff(e)
