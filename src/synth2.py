@@ -1,4 +1,6 @@
 import collections
+import pickle
+import re
 
 from z3 import Context, SolverFor
 
@@ -398,6 +400,33 @@ def synth_simple(library : structures.Library, context : Context, goal : Goal, t
         solution=Solution(goal, (), goal.e, no_delta),
         subgoals=())
 
+def old_cozy(var_names, field_names, predicate, sort_field=None, timeout=None):
+    key = (tuple(sorted(var_names)), tuple(sorted(field_names)), sort_field, str(predicate))
+    key = "cozy" + re.sub(r"[^\w\s]", "-", str(key))
+
+    cache_file = "/tmp/{}.pickle".format(key)
+    try:
+        with open(cache_file, "rb") as f:
+            plans = pickle.load(f)
+        print("loaded cache file {}".format(cache_file))
+        return plans
+    except Exception as e:
+        print("failed to load cache file {}: {}".format(cache_file, e))
+
+    ctx = synthesis.SolverContext(
+        varNames=var_names,
+        fieldNames=field_names,
+        cost_model=lambda plan: cost_model.cost(None, None, plan))
+    plans = set(ctx.synthesizePlansByEnumeration(predicate, sort_field=sort_field, timeout=timeout))
+
+    try:
+        with open(cache_file, "wb") as f:
+            pickle.dump(plans, f)
+    except Exception as e:
+        print("failed to save cache file {}: {}".format(cache_file, e))
+
+    return plans
+
 @stats.task
 @typechecked
 def synthesize_1d(library : structures.Library, goal : Goal, input : [(str, syntax.Type)], var : str, collection : syntax.Exp, predicate : syntax.Exp, agg : str, deltas : [(str, [(str, syntax.Type)], syntax.Exp, inc.Delta)], timeout=None):
@@ -448,16 +477,11 @@ def synthesize_1d(library : structures.Library, goal : Goal, input : [(str, synt
 
     fnames = [f[0] for f in pseudofields] + [v[0] for v in uniform_subops]
     vnames = [v[0] for v in pseudovars]   + [v[0] for v in nonuniform_subops]
-    ctx = synthesis.SolverContext(
-        varNames=vnames,
-        fieldNames=fnames,
-        cost_model=lambda plan: cost_model.cost(None, None, plan))
-
     print("Calling Cozy on {} ----> {}".format(pprint(predicate), abstraction))
 
     # TODO: try all?
     all_pseudo = pseudofields + pseudovars + subops
-    for plan in ctx.synthesizePlansByEnumeration(abstraction, sort_field=None, timeout=timeout):
+    for plan in old_cozy(vnames, fnames, abstraction, sort_field=None, timeout=None):
         subgoals = [Goal(name, args, e) for (name, args, e) in all_pseudo]
 
         # TODO: try all?
