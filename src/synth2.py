@@ -496,6 +496,8 @@ class ELambda(syntax.Exp):
 
 class LLInsertAtFront(inc.SetAdd): pass
 class LLRemove(inc.SetRemove): pass
+HMUpdate = declare_case(inc.Delta, "HMUpdate", ["key", "delta"])
+RecordFieldUpdate = declare_case(inc.Delta, "RecordFieldUpdate", ["f", "delta"])
 
 class AddNum(inc.Delta):
     def __init__(self, e):
@@ -511,6 +513,8 @@ def derivative(
     The answer may require computing some subgoals.
     """
 
+    subgoals = []
+
     def derivative_ll(d):
         if isinstance(d, inc.NoDelta):
             return d
@@ -522,6 +526,22 @@ def derivative(
             return inc.Conditional(
                 d.cond,
                 derivative_ll(d.delta))
+        else:
+            raise NotImplementedError(d)
+
+    def derivative_hm(d, key_func, value_func):
+        if isinstance(d, inc.NoDelta):
+            return d
+        elif isinstance(d, inc.SetAdd) or isinstance(d, inc.SetRemove):
+            affected_key = key_func.apply_to(d.e)
+            (subdelta, sgs) = derivative(value_func.body, syntax.EVar(value_func.argname), d)
+            for sg in sgs:
+                subgoals.append(sg)
+            return HMUpdate(affected_key, subdelta)
+        elif isinstance(d, inc.Conditional):
+            return inc.Conditional(
+                d.cond,
+                derivative_hm(d.delta))
         else:
             raise NotImplementedError(d)
 
@@ -539,8 +559,6 @@ def derivative(
         else:
             raise NotImplementedError(d)
 
-    subgoals = []
-
     class V(Visitor):
 
         def visit_EVar(self, v):
@@ -552,6 +570,8 @@ def derivative(
             func = call.func
             if func == "MakeLinkedList":
                 return derivative_ll(self.visit(call.args[0]))
+            if func == "MakeHashMap":
+                return derivative_hm(self.visit(call.args[0]), call.args[1], call.args[2])
             elif func == "Sum":
                 return derivative_sum(self.visit(call.args[0]))
             elif func == "Mapped":
@@ -581,6 +601,12 @@ def derivative(
             else:
                 raise NotImplementedError(func)
 
+        def visit_EMakeRecord(self, e):
+            return inc.multi_delta([RecordFieldUpdate(f, self.visit(ee)) for (f, ee) in e.fields])
+
+        def visit_Exp(self, e):
+            raise NotImplementedError(str(e))
+
     change = V().visit(e)
     return (change, subgoals)
 
@@ -592,16 +618,32 @@ def apply_change(
     class V(Visitor):
         def visit_LLInsertAtFront(self, delta):
             return syntax.SCall(x, "LLInsertAtFront", [delta.e])
+        def visit_LLRemove(self, delta):
+            return syntax.SCall(x, "LLRemove", [delta.e])
+        def visit_HMUpdate(self, delta):
+            v = syntax.EVar(fresh_name())
+            return syntax.seq([
+                syntax.SAssign(v, syntax.ECall("HMLookup", [x, delta.key])),
+                apply_change(v, delta.delta)])
         def visit_AddNum(self, delta):
             return syntax.SAssign(x, syntax.EBinOp(x, "+", delta.e))
         def visit_Conditional(self, delta):
             substm = self.visit(delta.delta)
             return syntax.SIf(delta.cond, substm, syntax.SNoOp())
+        def visit_RecordFieldUpdate(self, delta):
+            return apply_change(syntax.EGetField(x, delta.f), delta.delta)
+        def visit_MultiDelta(self, delta):
+            return syntax.SSeq(
+                self.visit(delta.delta1),
+                self.visit(delta.delta2))
+        def visit_Delta(self, d):
+            raise NotImplementedError(str(d))
 
     return V().visit(delta)
 
-TArrayList  = declare_case(syntax.Type, "TArrayList",  ["t"])
-TLinkedList = declare_case(syntax.Type, "TLinkedList", ["t"])
+TArrayList  = declare_case(syntax.Type, "TArrayList",   ["t"])
+TLinkedList = declare_case(syntax.Type, "TLinkedList",  ["t"])
+THashMap    = declare_case(syntax.Type, "THashMap",     ["k", "v"])
 
 @typechecked
 def possible_implementations(
@@ -636,13 +678,30 @@ def possible_implementations(
         #     yield syntax.ECall("MinHeapPeek", [syntax.ECall("Stored", [syntax.ECall("MakeMinHeap", [collection])])])
         else:
             raise NotImplementedError(agg)
-    # elif isinstance(plan, plans.HashLookup):
-    #     assert isinstance(plan.plan, plans.AllWhere)
-    #     for impl in possible_implementations(library, plan.plan, k, collection, pseudofields, pseudovars):
-    #         key_type = syntax.TInt() # TODO
-    #         key_func = lambda x: syntax.ENum(0) # TODO
-    #         query_key_func = lambda args: syntax.ENum(1) # TODO
-    #         yield from library.map_impls(impl, key_type, key_func, query_key_func)
+    elif isinstance(plan, plans.HashLookup):
+        subcollection_name = fresh_name()
+        subcollection = syntax.EVar(subcollection_name).with_type(collection.type)
+        for (s, e) in possible_implementations(library, plan.plan, subcollection, pseudofields, pseudovars, agg):
+            value_type = syntax.TRecord([(f, e.type) for (f, e) in s])
+            key_type = syntax.TInt() # TODO
+            x = fresh_name("x")
+            key_func = ELambda(x, syntax.EBool(True)) # TODO
+            lookup_key = syntax.EBool(False)          # TODO
+            value_func = ELambda(subcollection_name, syntax.EMakeRecord(s))
+            map_type = THashMap(key_type, value_type)
+            n = fresh_name()
+            new_state = (n, syntax.ECall("MakeHashMap", [collection, key_func, value_func]).with_type(map_type))
+            v = fresh_name()
+            new_e = syntax.ELet(v,
+                syntax.ECall("HashMapLookup", [syntax.EVar(n), lookup_key]),
+                subst(e, { f : syntax.EGetField(syntax.EVar(v), f) for (f, _) in s }))
+            yield ([new_state], new_e)
+        # assert isinstance(plan.plan, plans.AllWhere)
+        # for impl in possible_implementations(library, plan.plan, k, collection, pseudofields, pseudovars):
+        #     key_type = syntax.TInt() # TODO
+        #     key_func = lambda x: syntax.ENum(0) # TODO
+        #     query_key_func = lambda args: syntax.ENum(1) # TODO
+        #     yield from library.map_impls(impl, key_type, key_func, query_key_func)
     # elif isinstance(plan, plans.Filter):
         # predicate = lambda x: syntax.EBool(True) # TODO
         # def new_k(elems):

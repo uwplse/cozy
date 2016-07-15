@@ -115,6 +115,9 @@ class PrettyPrinter(common.Visitor):
     def visit_ELet(self, e):
         return "let {} = {} in {}".format(e.id, self.visit(e.e1), self.visit(e.e2))
 
+    def visit_ELambda(self, e):
+        return "(\\{} -> {})".format(e.argname, self.visit(e.body))
+
     def visit_CPull(self, c):
         return "{} <- {}".format(c.id, self.visit(c.e))
 

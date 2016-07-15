@@ -10,8 +10,17 @@ SetRemove       = declare_case(Delta, "SetRemove",       ["e"])
 # ListAddBack     = declare_case(Delta, "ListAddBack",     ["e"])
 # ListRemove      = declare_case(Delta, "ListRemove",      ["e"])
 Conditional     = declare_case(Delta, "Conditional",     ["cond", "delta"])
+MultiDelta      = declare_case(Delta, "MultiDelta",      ["delta1", "delta2"])
 
-Update = declare_case(ADT, "Update", ["var", "delta"])
+def multi_delta(deltas):
+    if not isinstance(deltas, list):
+        deltas = list(deltas)
+    if len(deltas) == 0:
+        return NoDelta()
+    d = deltas[0]
+    for i in range(1, len(deltas)):
+        d = MultiDelta(d, deltas[i])
+    return d
 
 @typechecked
 def to_delta(op : syntax.Op) -> (str, [(str, syntax.Type)], syntax.Exp, Delta):
