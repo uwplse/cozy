@@ -1,18 +1,25 @@
 Graph:
 
-    type Edge = Handle<{ src : Bound, dst : Bound }>
+    type Node = { id : Int }
+    type Edge = { src : Int, dst : Int }
 
-    state nverts : Bound
-    state edges : Set<Edge>
+    state nodes : Bag<Node>
+    state edges : Bag<Edge>
 
-    op addEdge(src : Bound, dst : Bound)
-        edges.add(new Edge(src, dst))
+    op addNode(n : nodes.Handle)
+        nodes.add(n)
 
-    op addEdge(e : Edge)
-        edges.remove(e)
+    op addEdge(e : edges.Handle)
+        edges.add(e)
 
-    query outgoing(v : Bound)
-        [ e | e <- edges, e.val.src == v ]
+    query outgoing(nodeId : Int)
+        [ e | e <- edges, e.val.src == nodeId ]
 
-    query incoming(v : Bound)
-        [ e | e <- edges, e.val.dst == v ]
+    query incoming(nodeId : Int)
+        [ e | e <- edges, e.val.dst == nodeId ]
+
+    query degree(nodeId : Int)
+        sum [ 1 | e <- edges, e.val.src == nodeId or e.val.dst == nodeId ]
+
+    query neighbors(n : Node)
+        [ m | e <- edges, m <- nodes, e.val.src == n.id and e.val.dst == m.val.id ]
