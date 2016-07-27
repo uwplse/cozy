@@ -57,6 +57,35 @@ def typechecked(f):
         return ret
     return g
 
+def match(value, binders):
+
+    def match_into(value, pattern, out):
+        if isinstance(pattern, str):
+            if pattern in out:
+                return out[pattern] == value
+            else:
+                out[pattern] = value
+                return True
+        elif pattern is any:
+            return True
+        elif isinstance(pattern, ADT):
+            if isinstance(value, type(pattern)):
+                for i in range(len(pattern.children())):
+                    if not match_into(value.children()[i], pattern.children()[i], out):
+                        return False
+                return True
+            else:
+                return False
+        else:
+            return value == pattern
+
+    for pattern, callback in binders:
+        out = { }
+        if match_into(value, pattern, out):
+            return callback(**out)
+
+    return None
+
 @total_ordering
 class ADT(object):
     def children(self):
