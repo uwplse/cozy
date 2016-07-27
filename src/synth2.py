@@ -1,6 +1,7 @@
 import collections
 import pickle
 import re
+import sys
 
 from z3 import Context, SolverFor
 
@@ -93,16 +94,16 @@ def abstractify(input, var, predicate):
 
 @typechecked
 def predicate_to_exp(p : predicates.Predicate, pseudo=()) -> syntax.Exp:
-    pseudo = { name : syntax.ECall(name, [syntax.EVar(argname).with_type(t) for argname,t in args]) for (name, args, _) in pseudo }
+    pseudo = { name : syntax.ECall(name, [syntax.EVar(argname).with_type(t) for argname,t in args]).with_type(e.type) for (name, args, e) in pseudo }
     class V(Visitor):
         def visit_Bool(self, b):
-            return syntax.EBool(b.val)
+            return syntax.EBool(b.val).with_type(syntax.TBool())
         def visit_Or(self, o):
-            return syntax.EBinOp(self.visit(o.lhs), "or", self.visit(o.rhs))
+            return syntax.EBinOp(self.visit(o.lhs), "or", self.visit(o.rhs)).with_type(syntax.TBool())
         def visit_And(self, a):
-            return syntax.EBinOp(self.visit(a.lhs), "and", self.visit(a.rhs))
+            return syntax.EBinOp(self.visit(a.lhs), "and", self.visit(a.rhs)).with_type(syntax.TBool())
         def visit_Not(self, n):
-            return syntax.EUnaryOp("not", self.visit(n.p))
+            return syntax.EUnaryOp("not", self.visit(n.p)).with_type(syntax.TBool())
         def visit_Compare(self, cmp):
             if cmp.op == predicates.Gt: op = ">"
             if cmp.op == predicates.Ge: op = ">="
@@ -110,7 +111,7 @@ def predicate_to_exp(p : predicates.Predicate, pseudo=()) -> syntax.Exp:
             if cmp.op == predicates.Le: op = "<="
             if cmp.op == predicates.Eq: op = "=="
             if cmp.op == predicates.Ne: op = "!="
-            return syntax.EBinOp(self.visit(cmp.lhs), op, self.visit(cmp.rhs))
+            return syntax.EBinOp(self.visit(cmp.lhs), op, self.visit(cmp.rhs)).with_type(syntax.TBool())
         def visit_Var(self, v):
             return pseudo.get(v.name, syntax.EVar(v))
     v = V()
@@ -155,14 +156,14 @@ def simplify(e):
                         syntax.EBinOp(op.e1, "and", op.e2.e2))
                     return self.visit(op)
 
-                parts = list(p for p in flatten(op, "and") if p != syntax.EBool(True))
+                parts = list(p for p in flatten(op, "and") if p != syntax.EBool(True).with_type(syntax.TBool()))
                 print(parts)
                 if any(p == syntax.EBool(False) for p in parts):
                     return syntax.EBool(False)
                 for x in parts:
                     if any(alpha_equivalent(x, syntax.EUnaryOp("not", part)) for part in parts):
                         return syntax.EBool(False)
-                if len(parts) == 0: return syntax.EBool(True)
+                if len(parts) == 0: return syntax.EBool(True).with_type(syntax.TBool())
                 if len(parts) == 1: return parts[0]
                 res = parts[0]
                 for i in range(1, len(parts)):
@@ -194,7 +195,7 @@ def simplify(e):
         def visit_CCond(self, cond):
             return syntax.CCond(self.visit(cond.e))
         def visit_EGetField(self, e):
-            return syntax.EGetField(self.visit(e.e), e.f)
+            return syntax.EGetField(self.visit(e.e), e.f).with_type(e.type)
         def visit_Exp(self, e):
             print("*** WARNING: not sure how to simplify {}".format(pprint(e)))
             return e
@@ -234,7 +235,12 @@ def synthesize(spec, timeout=None):
             solutions.append(Solution(goal=g, state=(), exp=sln.exp, ops=[syntax.SNoOp() for d in ds]))
             continue
 
-        typecheck(e, list(g.args) + list(state))
+        errs = typecheck(e, list(g.args) + list(state))
+        if errs:
+            print("Internal consistency problem: there are type errors in {}".format(pprint(e)))
+            for e in errs:
+                print("  - {}".format(e))
+            sys.exit(1)
         print("####### synthesizing: {}({}) = {} = {}".format(g.name, g.args, pprint(g.e), pprint(e)))
         g = g._replace(e=e)
         psoln = synth_simple(structures.Library(), context, g, timeout)
@@ -258,7 +264,7 @@ def synthesize(spec, timeout=None):
         [syntax.Query(sln.goal.name, sln.goal.args, (), sln.exp) for sln in solutions])
 
 def combined_predicate(lcmp):
-    l = syntax.EBool(True)
+    l = syntax.EBool(True).with_type(syntax.TBool())
     for c in lcmp.clauses:
         # TODO: alpha renaming
         if isinstance(c, syntax.CCond):
@@ -353,7 +359,10 @@ def synth_simple(library : structures.Library, context : Context, goal : Goal, t
 
         elif isinstance(e.e, syntax.EVar) and e.e.id in statedict:
             n = fresh_name()
-            return synth_simple(context, Goal(name=goal.name, args=goal.args, e=syntax.EUnaryOp(e.op, syntax.EListComprehension(syntax.EVar(n), [syntax.CPull(n, e.e)]))), timeout)
+            return synth_simple(context, Goal(
+                name=goal.name,
+                args=goal.args,
+                e=syntax.EUnaryOp(e.op, syntax.EListComprehension(syntax.EVar(n).with_type(e.e.type.t), [syntax.CPull(n, e.e)]))), timeout)
         elif isinstance(e.e, syntax.EEmptyList):
             return PartialSolution(Solution(goal, (), emptycase(agg), no_delta), ())
         else:
@@ -368,7 +377,7 @@ def synth_simple(library : structures.Library, context : Context, goal : Goal, t
     elif isinstance(e, syntax.EVar):
         if e.id in statedict:
             n = fresh_name()
-            return synthesize_1d(library, goal, [], n, e, syntax.EBool(True), "iterator", deltas)
+            return synthesize_1d(library, goal, [], n, e, syntax.EBool(True).with_type(syntax.TBool()), "iterator", deltas)
         else:
             return PartialSolution(Solution(goal, (), e, no_delta), [])
     elif isinstance(e, syntax.ENum):
@@ -379,7 +388,7 @@ def synth_simple(library : structures.Library, context : Context, goal : Goal, t
             args=goal.args,
             e=syntax.EUnaryOp("iterator", goal.e))
         return PartialSolution(
-            solution=Solution(goal, (), syntax.ECall(g.name, [syntax.EVar(v) for v,t in g.args]), no_delta),
+            solution=Solution(goal, (), syntax.ECall(g.name, [syntax.EVar(v).with_type(t) for v,t in g.args]).with_type(syntax.TIterator(goal.e.type.t)), no_delta),
             subgoals=[g])
     elif isinstance(e, syntax.EGetField):
         g = Goal(
@@ -387,7 +396,11 @@ def synth_simple(library : structures.Library, context : Context, goal : Goal, t
             args=goal.args,
             e=e.e)
         return PartialSolution(
-            solution=Solution(goal, (), syntax.EGetField(syntax.ECall(g.name, [syntax.EVar(a) for a,t in goal.args]), e.f), no_delta),
+            solution=Solution(
+                goal,
+                (),
+                syntax.EGetField(syntax.ECall(g.name, [syntax.EVar(a).with_type(t) for a,t in goal.args]).with_type(e.e.type), e.f).with_type(e.type),
+                no_delta),
             subgoals=[g])
 
     # return PartialSolution(
@@ -511,7 +524,7 @@ def synthesize_1d(
                 (name, args, member, d) = deltas[i]
                 for (sn, se) in state:
                     (change, new_subgoals) = derivative(se, member, d)
-                    op_impl = apply_change(syntax.EVar(sn), change)
+                    op_impl = apply_change(syntax.EVar(sn).with_type(se.type), change)
                     op_impls[i] = syntax.seq([op_impls[i], op_impl])
                     subgoals += list(new_subgoals)
             return PartialSolution(Solution(goal, [(sn, se.type) for (sn, se) in state], e, op_impls), subgoals)
@@ -583,7 +596,7 @@ def derivative(
         elif isinstance(d, inc.SetAdd):
             return AddNum(d.e)
         elif isinstance(d, inc.SetRemove):
-            return AddNum(syntax.EUnaryOp("-", d.e))
+            return AddNum(syntax.EUnaryOp("-", d.e).with_type(e.type))
         elif isinstance(d, inc.Conditional):
             return inc.Conditional(
                 d.cond,
@@ -653,9 +666,9 @@ def apply_change(
         def visit_LLRemove(self, delta):
             return syntax.SCall(x, "LLRemove", [delta.e])
         def visit_HMUpdate(self, delta):
-            v = syntax.EVar(fresh_name())
+            v = syntax.EVar(fresh_name()).with_type(x.type.v)
             return syntax.seq([
-                syntax.SAssign(v, syntax.ECall("HMLookup", [x, delta.key])),
+                syntax.SDecl(v.id, syntax.ECall("HashMapLookup", [x, delta.key]).with_type(v.type)),
                 apply_change(v, delta.delta)])
         def visit_AddNum(self, delta):
             return syntax.SAssign(x, syntax.EBinOp(x, "+", delta.e))
@@ -663,7 +676,7 @@ def apply_change(
             substm = self.visit(delta.delta)
             return syntax.SIf(delta.cond, substm, syntax.SNoOp())
         def visit_RecordFieldUpdate(self, delta):
-            return apply_change(syntax.EGetField(x, delta.f), delta.delta)
+            return apply_change(syntax.EGetField(x, delta.f).with_type(dict(x.type.fields)[delta.f]), delta.delta)
         def visit_MultiDelta(self, delta):
             return syntax.SSeq(
                 self.visit(delta.delta1),
@@ -692,19 +705,21 @@ def possible_implementations(
     """
     if isinstance(plan, plans.AllWhere):
         guard = predicate_to_exp(plan.toPredicate(), pseudofields + pseudovars)
-        if guard != syntax.EBool(True):
+        if guard != syntax.EBool(True).with_type(syntax.TBool()):
             n = fresh_name()
             collection = syntax.ECall("Filter", [collection, ELambda(n, guard)]).with_type(collection.type) # TODO
         if agg == "iterator":
             for (f, t) in [("MakeLinkedList", TLinkedList), ("MakeArrayList", TArrayList)]:
                 n = fresh_name()
-                s = (n, syntax.ECall(f, [collection]).with_type(t(collection.type.t)))
-                e = syntax.ECall("Iterator", [syntax.EVar(n)])
+                list_type = t(collection.type.t)
+                s = (n, syntax.ECall(f, [collection]).with_type(list_type))
+                e = syntax.ECall("Iterator", [syntax.EVar(n).with_type(list_type)]).with_type(syntax.TIterator(collection.type.t))
                 yield ([s], e)
         elif agg == "sum":
             n = fresh_name()
-            s = (n, syntax.ECall("Sum", [collection]).with_type(collection.type.t))
-            yield ([s], syntax.EVar(n))
+            t = collection.type.t
+            s = (n, syntax.ECall("Sum", [collection]).with_type(t))
+            yield ([s], syntax.EVar(n).with_type(t))
         # elif agg == "min":
         #     yield syntax.ECall("Stored", [syntax.ECall("Min", [collection])])
         #     yield syntax.ECall("MinHeapPeek", [syntax.ECall("Stored", [syntax.ECall("MakeMinHeap", [collection])])])
@@ -717,16 +732,17 @@ def possible_implementations(
             value_type = syntax.TRecord([(f, e.type) for (f, e) in s])
             key_type = syntax.TInt() # TODO
             x = fresh_name("x")
-            key_func = ELambda(x, syntax.EBool(True)) # TODO
-            lookup_key = syntax.EBool(False)          # TODO
+            key_func = ELambda(x, syntax.ENum(32).with_type(syntax.TInt())) # TODO
+            lookup_key = syntax.ENum(33).with_type(syntax.TInt())          # TODO
             value_func = ELambda(subcollection_name, syntax.EMakeRecord(s))
             map_type = THashMap(key_type, value_type)
             n = fresh_name()
             new_state = (n, syntax.ECall("MakeHashMap", [collection, key_func, value_func]).with_type(map_type))
             v = fresh_name()
+            let_body = subst(e, { f : syntax.EGetField(syntax.EVar(v).with_type(value_type), f) for (f, _) in s })
             new_e = syntax.ELet(v,
-                syntax.ECall("HashMapLookup", [syntax.EVar(n), lookup_key]),
-                subst(e, { f : syntax.EGetField(syntax.EVar(v), f) for (f, _) in s }))
+                syntax.ECall("HashMapLookup", [syntax.EVar(n).with_type(map_type), lookup_key]).with_type(value_type),
+                let_body).with_type(let_body.type)
             yield ([new_state], new_e)
         # assert isinstance(plan.plan, plans.AllWhere)
         # for impl in possible_implementations(library, plan.plan, k, collection, pseudofields, pseudovars):
@@ -735,7 +751,7 @@ def possible_implementations(
         #     query_key_func = lambda args: syntax.ENum(1) # TODO
         #     yield from library.map_impls(impl, key_type, key_func, query_key_func)
     # elif isinstance(plan, plans.Filter):
-        # predicate = lambda x: syntax.EBool(True) # TODO
+        # predicate = lambda x: syntax.EBool(True).with_type(syntax.TBool()) # TODO
         # def new_k(elems):
         #     for impl in k(elems):
         #         yield impl.at_query_time(structures.Filtered(elems, predicate))

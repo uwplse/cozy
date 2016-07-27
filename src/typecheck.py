@@ -14,7 +14,7 @@ def typecheck(ast, env=None):
 
 INT = syntax.TInt()
 LONG = syntax.TLong()
-DEFAULT_TYPE = INT
+DEFAULT_TYPE = None
 BOOL = syntax.TBool()
 STRING = syntax.TString()
 
@@ -52,6 +52,7 @@ class Typechecker(Visitor):
     def visit_Spec(self, spec):
         for name, t in spec.types:
             self.tenv[name] = self.visit(t)
+        spec.types = [(name, self.tenv[name]) for (name, t) in spec.types]
         for name, t in spec.statevars:
             self.env[name] = self.handleize(self.visit(t), name)
         spec.statevars = [(name, self.env[name]) for (name, t) in spec.statevars]
@@ -94,9 +95,12 @@ class Typechecker(Visitor):
             return t
 
     def visit_TRecord(self, t):
-        return syntax.TRecord([(f, self.visit(ft)) for f, ft in t.fields])
+        return syntax.TRecord(tuple((f, self.visit(ft)) for f, ft in t.fields))
 
-    def visit_Type(self, t):
+    def visit_THandle(self, t):
+        return t
+
+    def visit_TBool(self, t):
         return t
 
     def ensure_type(self, e, t):
@@ -245,7 +249,9 @@ class Typechecker(Visitor):
             e.type = DEFAULT_TYPE
 
     def visit_EVar(self, e):
-        if e.id in self.env:
+        if hasattr(e, "type"):
+            pass
+        elif e.id in self.env:
             e.type = self.env[e.id]
         else:
             self.report_err(e, "no var {} in scope".format(e.id))

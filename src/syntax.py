@@ -16,6 +16,7 @@ TLong               = declare_case(Type, "TLong")
 TBool               = declare_case(Type, "TBool")
 TString             = declare_case(Type, "TString")
 THandle             = declare_case(Type, "THandle", ["statevar"])
+TIterator           = declare_case(Type, "TIterator", ["t"])
 TBag                = declare_case(Type, "TBag",    ["t"])
 TList               = declare_case(Type, "TList",   ["t"])
 TSet                = declare_case(Type, "TSet",    ["t"])
@@ -30,6 +31,8 @@ class Exp(ADT):
     def with_type(self, t):
         self.type = t
         return self
+    def __getattr__(self, name):
+        raise AttributeError("expression {} has no {} field".format(self, name))
 
 EVar                = declare_case(Exp, "EVar",               ["id"])
 EBool               = declare_case(Exp, "EBool",              ["val"])
@@ -54,6 +57,7 @@ SNoOp               = declare_case(Stm, "SNoOp")
 SSeq                = declare_case(Stm, "SSeq",     ["s1", "s2"])
 SCall               = declare_case(Stm, "SCall",    ["target", "func", "args"])
 SAssign             = declare_case(Stm, "SAssign",  ["lhs", "rhs"])
+SDecl               = declare_case(Stm, "SDecl",    ["x", "val"])
 SForEach            = declare_case(Stm, "SForEach", ["id", "iter", "body"])
 SIf                 = declare_case(Stm, "SIf",      ["cond", "then_branch", "else_branch"])
 

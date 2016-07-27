@@ -6,18 +6,31 @@ Main entry point for synthesis. Run with --help for options.
 
 from __future__ import print_function
 import sys
-import pprint
+import argparse
 
 import parse
 import compile
+import common
 import typecheck
 import syntax
 import syntax_tools
 import synth2
 
+def read_file(f):
+    with open(f, "r"):
+        return f.read()
+
 def run():
-    stdin = sys.stdin.read()
-    ast = parse.parse(stdin)
+    parser = argparse.ArgumentParser(description='Data structure synthesizer.')
+
+    java_opts = parser.add_argument_group("Java codegen")
+    java_opts.add_argument("--java", metavar="FILE.java", default=None, help="Output file for java classes, use '-' for stdout")
+
+    parser.add_argument("file", nargs="?", default=None, help="Input file (omit to use stdin)")
+    args = parser.parse_args()
+
+    input_text = sys.stdin.read() if args.file is None else read_file(args.file)
+    ast = parse.parse(input_text)
 
     errors = typecheck.typecheck(ast)
     if errors:
@@ -25,13 +38,16 @@ def run():
             print("Error: {}".format(e))
         sys.exit(1)
 
-    pprint.PrettyPrinter(indent=4).pprint(ast)
+    print(ast)
     print()
     print(syntax_tools.pprint(ast))
 
     ast = synth2.synthesize(ast)
     print(syntax_tools.pprint(ast))
-    # print(compile.JavaPrinter().visit(ast))
+
+    if args.java is not None:
+        with common.open_maybe_stdout(args.java) as out:
+            out.write(compile.JavaPrinter().visit(ast))
 
 if __name__ == "__main__":
     run()

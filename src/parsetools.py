@@ -23,9 +23,9 @@ def multi(ldict, selfname, production, sep=None):
     f1name = fresh_name("multisep")
     def f1(p):
         if len(p) > 2 and p[3]:
-            p[0] = [p[1]] + p[3]
+            p[0] = (p[1],) + p[3]
         else:
-            p[0] = [p[1]]
+            p[0] = (p[1],)
     f1.__doc__ = (
         """{f1name} : {prod}
                     | {prod} {sep} {f1name}""".format(f1name=f1name, prod=production, sep=sep))

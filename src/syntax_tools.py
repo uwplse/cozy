@@ -130,7 +130,7 @@ class PrettyPrinter(common.Visitor):
     def visit_CCond(self, c):
         return self.visit(c.e)
 
-    def visit_object(self, e):
+    def visit_object(self, e, *args, **kwargs):
         print("Warning: implement prettyprinting for {}".format(type(e).__name__), file=sys.stderr)
         return "??"
 
@@ -275,6 +275,11 @@ def subst(exp, replacements):
             return syntax.EGetField(self.visit(e.e), e.f)
         def visit_ECall(self, e):
             return syntax.ECall(e.func, [self.visit(arg) for arg in e.args])
+        def visit(self, x, *args, **kwargs):
+            res = super().visit(x, *args, **kwargs)
+            if isinstance(res, syntax.Exp) and hasattr(x, "type"):
+                res.type = x.type
+            return res
 
     return Subst().visit(exp)
 
