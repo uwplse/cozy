@@ -44,6 +44,12 @@ class PrettyPrinter(common.Visitor):
     def visit_THeap(self, h):
         return "Heap<{}>".format(self.visit(h.t))
 
+    def visit_TLinkedList(self, h):
+        return "LinkedList<{}>".format(self.visit(h.t))
+
+    def visit_THashMap(self, h):
+        return "HashMap<{}, {}>".format(self.visit(h.k), self.visit(h.v))
+
     def visit_TInt(self, t):
         return "Int"
 
@@ -125,7 +131,7 @@ class PrettyPrinter(common.Visitor):
         return self.visit(c.e)
 
     def visit_object(self, e):
-        print("Warning: implement prettyprinting for {}".format(type(e)), file=sys.stderr)
+        print("Warning: implement prettyprinting for {}".format(type(e).__name__), file=sys.stderr)
         return "??"
 
     def visit_SNoOp(self, s, indent=""):

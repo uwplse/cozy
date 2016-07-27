@@ -303,9 +303,8 @@ def synth_simple(library : structures.Library, context : Context, goal : Goal, t
             pull = find_the_only_pull(e.e)
             if pull:
                 pred = combined_predicate(e.e)
-                coll = (pull.e.id, statedict[pull.e.id]) if isinstance(pull.e, syntax.EVar) and pull.e.id in statedict else None
-                if pred and coll:
-                    coll = syntax.ECall("Mapped", [pull.e, ELambda(pull.id, e.e.e)]).with_type(pull.e.type)
+                if pred and isinstance(pull.e, syntax.EVar) and pull.e.id in statedict:
+                    coll = syntax.ECall("Mapped", [pull.e, ELambda(pull.id, e.e.e)]).with_type(syntax.TBag(e.e.e.type))
                     return synthesize_1d(library, goal, goal.args, pull.id, coll, pred, e.op, deltas)
 
             lcmp = e.e
@@ -429,7 +428,16 @@ def old_cozy(var_names, field_names, predicate, sort_field=None, timeout=None):
 
 @stats.task
 @typechecked
-def synthesize_1d(library : structures.Library, goal : Goal, input : [(str, syntax.Type)], var : str, collection : syntax.Exp, predicate : syntax.Exp, agg : str, deltas : [(str, [(str, syntax.Type)], syntax.Exp, inc.Delta)], timeout=None):
+def synthesize_1d(
+        library : structures.Library,
+        goal : Goal,
+        input : [(str, syntax.Type)],
+        var : str,
+        collection : syntax.Exp,
+        predicate : syntax.Exp,
+        agg : str,
+        deltas : [(str, [(str, syntax.Type)], syntax.Exp, inc.Delta)],
+        timeout=None):
     """
     Synthesize an operation over a single collection.
     ("One-dimensional" synthesis.)
@@ -695,7 +703,7 @@ def possible_implementations(
                 yield ([s], e)
         elif agg == "sum":
             n = fresh_name()
-            s = (n, syntax.ECall("Sum", [collection]).with_type(collection.type.t.value_type))
+            s = (n, syntax.ECall("Sum", [collection]).with_type(collection.type.t))
             yield ([s], syntax.EVar(n))
         # elif agg == "min":
         #     yield syntax.ECall("Stored", [syntax.ECall("Min", [collection])])
