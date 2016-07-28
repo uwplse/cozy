@@ -13,8 +13,8 @@ function require-program {
 }
 
 function check-python-version {
-    echo -n "checking for python 2.7... "
-    VERSION="$(python -c 'import sys; print(sys.version); sys.exit(sys.version_info < (2,7) or sys.version_info >= (2,8))' | head -n1)"
+    echo -n "checking for python version >= 3.4... "
+    VERSION="$(python3 -c 'import sys; print(sys.version); sys.exit(sys.version_info < (3,4) or sys.version_info >= (4,))' | head -n1)"
     if [[ $? != 0 ]]; then
         err "found $VERSION"
         return 1
@@ -25,7 +25,7 @@ function check-python-version {
 
 function check-z3 {
     echo -n "checking for z3 python module... "
-    if ! python -c "import z3" >/dev/null 2>&1; then
+    if ! python3 -c "import z3" >/dev/null 2>&1; then
         err "not found"
         return 1
     else
@@ -35,7 +35,7 @@ function check-z3 {
 
 function check-z3-version {
     echo -n "checking for z3 version >= 4.4... "
-    VERSION="$(python -c 'import z3,sys; print(z3.get_version_string()); sys.exit(z3.get_version() < (4,4))')"
+    VERSION="$(python3 -c 'import z3,sys; print(z3.get_version_string()); sys.exit(z3.get_version() < (4,4))')"
     if [[ $? != 0 ]]; then
         err "found $VERSION"
         return 1
@@ -44,7 +44,7 @@ function check-z3-version {
     fi
 }
 
-require-program python && (check-python-version; (check-z3 && check-z3-version))
+require-program python3 && (check-python-version; (check-z3 && check-z3-version))
 
 if [[ $? == 0 ]]; then
     echo "SUCCESS!"
