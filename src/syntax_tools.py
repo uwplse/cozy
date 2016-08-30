@@ -94,6 +94,9 @@ class PrettyPrinter(common.Visitor):
     def visit_EBinOp(self, e):
         return "({} {} {})".format(self.visit(e.e1), e.op, self.visit(e.e2))
 
+    def visit_ECond(self, e):
+        return "({} ? {} : {})".format(self.visit(e.cond), self.visit(e.then_branch), self.visit(e.else_branch))
+
     def visit_EUnaryOp(self, e):
         return "({} {})".format(e.op, self.visit(e.e))
 
@@ -193,6 +196,11 @@ def free_vars(exp):
 
         def visit_EListComprehension(self, e):
             return self.visit_clauses(e.clauses, 0, e.e)
+
+        def visit_ECond(self, e):
+            yield from self.visit(e.cond)
+            yield from self.visit(e.then_branch)
+            yield from self.visit(e.else_branch)
 
         def visit_clauses(self, clauses, i, e):
             if i >= len(clauses):
