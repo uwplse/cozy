@@ -532,13 +532,6 @@ def synthesize_1d(
         raise Exception("no implementations available for {}".format(plan))
     raise Exception("no plan for {}".format(abstraction))
 
-class ELambda(syntax.Exp):
-    def __init__(self, argname, body):
-        self.argname = argname
-        self.body = body
-    def apply_to(self, arg):
-        return subst(self.body, { self.argname : arg })
-
 class LLInsertAtFront(inc.SetAdd): pass
 class LLRemove(inc.SetRemove): pass
 HMUpdate = declare_case(inc.Delta, "HMUpdate", ["key", "delta"])

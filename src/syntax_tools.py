@@ -32,6 +32,9 @@ class PrettyPrinter(common.Visitor):
     def visit_TApp(self, app):
         return "{}<{}>".format(app.t, self.visit(app.args))
 
+    def visit_TBag(self, s):
+        return "Bag<{}>".format(self.visit(s.t))
+
     def visit_TSet(self, s):
         return "Set<{}>".format(self.visit(s.t))
 
@@ -91,6 +94,23 @@ class PrettyPrinter(common.Visitor):
     def visit_ENum(self, e):
         return str(e.val)
 
+    def visit_ELambda(self, e):
+        if hasattr(e.arg, "type"):
+            return "(\\{} : {} -> {})".format(e.arg.id, self.visit(e.arg.type), self.visit(e.body))
+        return "(\\{} -> {})".format(e.arg.id, self.visit(e.body))
+
+    def visit_EApp(self, e):
+        return "{}({})".format(self.visit(e.f), self.visit(e.arg))
+
+    def visit_EMapGet(self, e):
+        return "{}.get({})".format(self.visit(e.map), self.visit(e.key))
+
+    def visit_EMakeMap(self, e):
+        return "MkMap({}, {}, {})".format(self.visit(e.e), self.visit(e.key), self.visit(e.value))
+
+    def visit_EMap(self, e):
+        return "Map {{{}}} ({})".format(self.visit(e.f), self.visit(e.e))
+
     def visit_EBinOp(self, e):
         return "({} {} {})".format(self.visit(e.e1), e.op, self.visit(e.e2))
 
@@ -124,8 +144,8 @@ class PrettyPrinter(common.Visitor):
     def visit_ELet(self, e):
         return "let {} = {} in {}".format(e.id, self.visit(e.e1), self.visit(e.e2))
 
-    def visit_ELambda(self, e):
-        return "(\\{} -> {})".format(e.argname, self.visit(e.body))
+    def visit_EHole(self, e):
+        return "?{}".format(e.name)
 
     def visit_CPull(self, c):
         return "{} <- {}".format(c.id, self.visit(c.e))
@@ -133,9 +153,13 @@ class PrettyPrinter(common.Visitor):
     def visit_CCond(self, c):
         return self.visit(c.e)
 
+    def visit_Exp(self, e):
+        self.visit_object(e)
+        return "{}({})".format(type(e).__name__, ", ".join(self.visit(x) for x in e.children()))
+
     def visit_object(self, e, *args, **kwargs):
         print("Warning: implement prettyprinting for {}".format(type(e).__name__), file=sys.stderr)
-        return "??"
+        return repr(e)
 
     def visit_SNoOp(self, s, indent=""):
         return "{}pass".format(indent)
@@ -230,6 +254,16 @@ def free_vars(exp):
             for ee in e.es:
                 yield from self.visit(ee)
 
+        def visit_ELambda(self, e):
+            for v in self.visit(e.body):
+                if v.id != e.arg.id:
+                    yield v
+
+        def visit_Exp(self, e):
+            for child in e.children():
+                if isinstance(child, syntax.Exp):
+                    yield from self.visit(child)
+
     return set(VarCollector().visit(exp))
 
 def subst(exp, replacements):
@@ -251,6 +285,8 @@ def subst(exp, replacements):
             return b
         def visit_ENum(self, n):
             return n
+        def visit_EHole(self, hole):
+            return replacements.get(hole.name, hole)
         def visit_EVar(self, var):
             return replacements.get(var.id, var)
         def visit_EBinOp(self, op):
@@ -283,6 +319,16 @@ def subst(exp, replacements):
             return syntax.EGetField(self.visit(e.e), e.f)
         def visit_ECall(self, e):
             return syntax.ECall(e.func, [self.visit(arg) for arg in e.args])
+        def visit_ELambda(self, e):
+            m = replacements
+            if e.arg.id in replacements:
+                m = dict(m)
+                del m[e.arg.id]
+            return syntax.ELambda(e.arg, subst(e.body, m))
+        def visit_Exp(self, e):
+            children = e.children()
+            children = tuple((self.visit(c) if isinstance(c, syntax.Exp) else c) for c in children)
+            return type(e)(*children)
         def visit(self, x, *args, **kwargs):
             res = super().visit(x, *args, **kwargs)
             if isinstance(res, syntax.Exp) and hasattr(x, "type"):
