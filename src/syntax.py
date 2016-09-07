@@ -49,17 +49,6 @@ ECall               = declare_case(Exp, "ECall",              ["func", "args"])
 ETuple              = declare_case(Exp, "ETuple",             ["es"])
 ELet                = declare_case(Exp, "ELet",               ["id", "e1", "e2"])
 
-class ELambda(Exp):
-    @typechecked
-    def __init__(self, arg : EVar, body : Exp):
-        self.arg = arg
-        self.body = body
-    def apply_to(self, arg):
-        from syntax_tools import subst
-        return subst(self.body, { self.arg.id : arg })
-    def children(self):
-        return (self.arg, self.body)
-
 class ComprehensionClause(ADT): pass
 CPull               = declare_case(ComprehensionClause, "CPull", ["id", "e"])
 CCond               = declare_case(ComprehensionClause, "CCond", ["e"])

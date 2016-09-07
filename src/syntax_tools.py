@@ -9,6 +9,7 @@ import sys
 
 import common
 import syntax
+import target_syntax
 
 class PrettyPrinter(common.Visitor):
     def visit_Spec(self, spec):
@@ -324,7 +325,7 @@ def subst(exp, replacements):
             if e.arg.id in replacements:
                 m = dict(m)
                 del m[e.arg.id]
-            return syntax.ELambda(e.arg, subst(e.body, m))
+            return target_syntax.ELambda(e.arg, subst(e.body, m))
         def visit_Exp(self, e):
             children = e.children()
             children = tuple((self.visit(c) if isinstance(c, syntax.Exp) else c) for c in children)

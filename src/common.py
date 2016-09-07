@@ -129,6 +129,22 @@ class Visitor(object):
             return getattr(self, visit_func)(x, *args, **kwargs)
         print("Warning: {} does not implement {}".format(self, first_visit_func), file=sys.stderr)
 
+class FrozenDict(dict):
+    """
+    Immutable dictionary that is hashable (suitable for use in sets/maps)
+    """
+    def __init__(self, d):
+        super().__init__(d)
+        self.hc = None
+    def __setitem__(self, k, v):
+        raise Exception("immutable")
+    def __delitem__(self, k):
+        raise Exception("immutable")
+    def __hash__(self):
+        if self.hc is None:
+            self.hc = hash(tuple(sorted(self.items())))
+        return self.hc
+
 _i = 0
 def fresh_name(hint="name"):
     global _i
