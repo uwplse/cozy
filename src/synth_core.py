@@ -252,7 +252,6 @@ def find_consistent_exps(
 
     # print("{}#####".format(indent))
     for (sz1, sz2) in pick_to_sum(2, size + 1):
-        yield
         sz2 -= 1
         # print("{}({},{})".format(indent, sz1, sz2))
         for e in distinct_exps(builder, g_examples, size=sz1, type=type):
@@ -263,19 +262,18 @@ def find_consistent_exps(
                     d[name] = e
                 yield d
 
+def expand(e, mapping):
+    while contains_holes(e):
+        prev = e
+        e = subst(e, mapping)
+        assert e != prev, "failed to converge: {}, {}".format(new_spec, mapping)
+    return e
+
 def synth(spec):
     examples = []
     while True:
         for mapping in find_consistent_exps(spec, examples):
-            if mapping is None:
-                yield
-                continue
-
-            new_spec = spec
-            while contains_holes(new_spec):
-                prev_spec = new_spec
-                new_spec = subst(new_spec, mapping)
-                assert new_spec != prev_spec, "failed to converge: {}, {}".format(new_spec, mapping)
+            new_spec = expand(spec, mapping)
 
             print("considering: {}".format(pprint(new_spec)))
             if all(eval(new_spec, ex) for ex in examples):
@@ -283,7 +281,6 @@ def synth(spec):
                 if model is not None:
                     print("new example: {}".format(model))
                     examples.append(model)
-                    yield
                     break
                 else:
                     yield mapping
@@ -308,13 +305,6 @@ if __name__ == "__main__":
     spec = EBinOp(query_hole, "==", target)
 
     for mapping in synth(spec):
-        if mapping is not None:
-
-            result = query_hole
-            while contains_holes(result):
-                prev_result = result
-                result = subst(result, mapping)
-                assert result != prev_result, "failed to converge: {}, {}".format(result, mapping)
-
-            print(pprint(result))
-            break
+        result = expand(query_hole, mapping)
+        print(pprint(result))
+        break
