@@ -40,7 +40,7 @@ class Builder(object):
                         hole = EHole(fresh_name(), t, self.with_roots([e]))
                         yield EMap(bag, ELambda(e, hole)).with_type(TBag(t))
         for (bagsize, ksize, vsize) in pick_to_sum(3, size - 1):
-            for kt in enum_types(ksize):
+            for kt in enum_key_types(ksize):
                 for vt in enum_types(vsize):
                     for bag in cache.find(type=TBag, size=bagsize):
                         e = EVar(fresh_name()).with_type(bag.type.t)
@@ -155,6 +155,12 @@ Solution = namedtuple("Solution", ["exps"])
 PartialSolution = namedtuple("PartialSolution", ["examples", "spec", "k"])
 
 @typechecked
+def enum_key_types(size : int):
+    if size == 1:
+        yield TInt()
+        yield TBool()
+
+@typechecked
 def enum_types(size : int):
     if size <= 0:
         return
@@ -164,9 +170,10 @@ def enum_types(size : int):
     else:
         for t in enum_types(size - 1):
             yield TBag(t)
-        for k in enum_types(1):
-            for v in enum_types(size - 2):
-                yield TMap(k, v)
+        for (ksize, vsize) in pick_to_sum(2, size - 1):
+            for k in enum_key_types(ksize):
+                for v in enum_types(vsize):
+                    yield TMap(k, v)
                 # TODO: allow record types as map keys
 
 def distinct_exps(builder, examples, size, type):
