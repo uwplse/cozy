@@ -1,15 +1,19 @@
-from collections import namedtuple, deque, defaultdict
+from collections import defaultdict
 import datetime
 import sys
 
 from target_syntax import *
 from syntax_tools import subst, pprint, free_vars
 from common import Visitor, fresh_name, declare_case, typechecked
-from solver import satisfy
+from solver import satisfy, feasible
 from evaluation import HoleException, eval, all_envs_for_hole
 
 # Holes for synthesized expressions
 EHole = declare_case(Exp, "EHole", ["name", "type", "builder"])
+
+# Helpers
+INT = TInt()
+BOOL = TBool()
 
 class Builder(object):
     def __init__(self, roots):
@@ -26,19 +30,32 @@ class Builder(object):
                 yield EGetField(e, f).with_type(t)
         for e in cache.find(type=TBag(INT), size=size-1):
             yield EUnaryOp("sum", e).with_type(INT)
+        for e in cache.find(type=THandle, size=size-1):
+            yield EGetField(e, "val").with_type(e.type.value_type)
+
         for (sz1, sz2) in pick_to_sum(2, size - 1):
             for a1 in cache.find(type=INT, size=sz1):
                 for a2 in cache.find(type=INT, size=sz2):
                     yield EBinOp(a1, "+", a2).with_type(INT)
+            for a1 in cache.find(size=sz1):
+                for a2 in cache.find(type=a1.type, size=sz2):
+                    yield EBinOp(a1, "==", a2).with_type(BOOL)
             for m in cache.find(type=TMap, size=sz1):
                 for k in cache.find(type=m.type.k, size=sz2):
                     yield EMapGet(m, k).with_type(m.type.v)
-            for t in enum_types(sz1):
-                for bag in cache.find(type=TBag, size=sz2):
-                    if not isinstance(bag, EMap):
-                        e = EVar(fresh_name()).with_type(bag.type.t)
-                        hole = EHole(fresh_name(), t, self.with_roots([e]))
-                        yield EMap(bag, ELambda(e, hole)).with_type(TBag(t))
+            for bag in cache.find(type=TBag, size=sz2):
+                    e = EVar(fresh_name()).with_type(bag.type.t)
+                    for t in enum_types(sz1):
+                        if not isinstance(bag, EMap):
+                            hole = EHole(fresh_name(), t, self.with_roots([e]))
+                            yield EMap(bag, ELambda(e, hole)).with_type(TBag(t))
+
+        for bag in cache.find(type=TBag, size=size-1):
+            e = EVar(fresh_name()).with_type(bag.type.t)
+            if not isinstance(bag, EMap) and not isinstance(bag, EFilter):
+                hole = EHole(fresh_name(), BOOL, self.with_roots([e]))
+                yield EFilter(bag, ELambda(e, hole)).with_type(bag.type)
+
         for (bagsize, ksize, vsize) in pick_to_sum(3, size - 1):
             for kt in enum_key_types(ksize):
                 for vt in enum_types(vsize):
@@ -56,22 +73,32 @@ class Counterexample(Exception):
         self.value = value
 
 def find_subgoals(e):
+    """
+    Yields subgoals in evaluation order
+    """
     class V(Visitor):
         def visit_EVar(self, e):
             return ()
         def visit_ENum(self, e):
+            return ()
+        def visit_EBool(self, e):
+            return ()
+        def visit_EEnumEntry(self, e):
             return ()
         def visit_EUnaryOp(self, e):
             return self.visit(e.e)
         def visit_EBinOp(self, e):
             yield from self.visit(e.e1)
             yield from self.visit(e.e2)
+        def visit_ETuple(self, e):
+            for ee in e.es:
+                yield from self.visit(ee)
         def visit_EHole(self, e):
             yield (e.name, e.type, e.builder)
         def visit_EListComprehension(self, e):
-            yield from self.visit(e.e)
             for clause in e.clauses:
                 yield from self.visit(clause)
+            yield from self.visit(e.e)
         def visit_CPull(self, e):
             return self.visit(e.e)
         def visit_CCond(self, e):
@@ -81,9 +108,12 @@ def find_subgoals(e):
         def visit_EMap(self, e):
             yield from self.visit(e.e)
             yield from self.visit(e.f)
+        def visit_EFilter(self, e):
+            yield from self.visit(e.e)
+            yield from self.visit(e.p)
         def visit_EApp(self, e):
-            yield from self.visit(e.f)
             yield from self.visit(e.arg)
+            yield from self.visit(e.f)
         def visit_EMakeMap(self, e):
             yield from self.visit(e.e)
             yield from self.visit(e.key)
@@ -151,9 +181,6 @@ class Cache(object):
                     res += z
         return res
 
-Solution = namedtuple("Solution", ["exps"])
-PartialSolution = namedtuple("PartialSolution", ["examples", "spec", "k"])
-
 @typechecked
 def enum_key_types(size : int):
     if size == 1:
@@ -195,17 +222,20 @@ def distinct_exps(builder, examples, size, type):
     return cache.find(type=type, size=size)
 
 def pick_goal(spec, examples):
-    assert contains_holes(spec), "no subgoals in {}".format(spec)
-    scores = defaultdict(int)
-    for ex in examples:
-        try:
-            eval(spec, ex)
-        except HoleException as e:
-            scores[e.hole.name] += 1
-    if not scores:
-        for g in find_subgoals(spec):
-            return g[0]
-    return max(scores.keys(), key=scores.get)
+    # assert contains_holes(spec), "no subgoals in {}".format(spec)
+    # scores = defaultdict(int)
+    # for ex in examples:
+    #     try:
+    #         eval(spec, ex)
+    #     except HoleException as e:
+    #         scores[e.hole.name] += 1
+    # if not scores:
+    #     for g in find_subgoals(spec):
+    #         return g[0]
+    # return max(scores.keys(), key=scores.get)
+    for g in find_subgoals(spec):
+        return g[0]
+    assert False, "no subgoals in {}".format(spec)
 
 def construct_inputs(spec, goal_name, examples):
     for ex in examples:
@@ -217,6 +247,8 @@ def find_consistent_exps(
         size     : int = None,
         cache    : Cache = None,
         seen     : set = None):
+
+    indent = ""
 
     if cache is None:
         cache = Cache()
@@ -232,18 +264,18 @@ def find_consistent_exps(
             print("final: {}".format(pprint(spec)))
             yield { }
         else:
-            # if size != 0:
-            #     # print("REJECTED (wrong size): {}".format(pprint(spec)))
-            #     pass
-            # else:
-            #     print("  REJECTED: {} [examples={}]".format(pprint(spec), examples))
+            if size != 0:
+                # print("REJECTED (wrong size): {}".format(pprint(spec)))
+                pass
+            else:
+                print("  REJECTED: {} [examples={}]".format(pprint(spec), examples))
             pass
         return
 
     if size is None:
         size = 1
         while True:
-            # print("size={}".format(size))
+            print("size={}".format(size))
             yield from find_consistent_exps(spec, examples, size, cache=cache, seen=seen)
             size += 1
         return
@@ -257,13 +289,17 @@ def find_consistent_exps(
     goals = [goal for goal in goals if goal[0] != name]
     g_examples = list(construct_inputs(spec, name, examples))
 
-    # print("{}#####".format(indent))
+    # print("{}##### working on {}".format(indent, name))
     for (sz1, sz2) in pick_to_sum(2, size + 1):
         sz2 -= 1
         # print("{}({},{})".format(indent, sz1, sz2))
         for e in distinct_exps(builder, g_examples, size=sz1, type=type):
             # print("{}| considering {} for {} [examples={}]".format(indent, pprint(e), name, g_examples))
-            for d in find_consistent_exps(subst(spec, { name : e }), examples, sz2, cache=cache, seen=seen):
+            spec2 = subst(spec, { name : e })
+            if not feasible(spec2, examples):
+                print("{}INFEASIBLE: {}".format(indent, pprint(spec2)))
+                continue
+            for d in find_consistent_exps(spec2, examples, sz2, cache=cache, seen=seen):
                 # TODO: double-check consistency
                 if d is not None:
                     d[name] = e
@@ -286,6 +322,7 @@ def synth(spec):
             if all(eval(new_spec, ex) for ex in examples):
                 model = satisfy(EUnaryOp("not", new_spec).with_type(TBool()))
                 if model is not None:
+                    assert model not in examples, "got duplicate example: {}; examples={}".format(model, examples)
                     print("new example: {}".format(model))
                     examples.append(model)
                     break
@@ -308,8 +345,14 @@ if __name__ == "__main__":
     arg = EVar("k").with_type(INT)
     target = EUnaryOp("sum", EListComprehension(EGetField(v, "value"), (CPull(v.id, bag), CCond(EBinOp(EGetField(v, "key"), "==", arg))))).with_type(INT)
 
-    query_hole = EHole("query", target.type, Builder(free_vars(target)))
-    spec = EBinOp(query_hole, "==", target)
+    if False:
+        query_hole = EHole("query", target.type, Builder(free_vars(target)))
+        spec = EBinOp(query_hole, "==", target)
+    else:
+        state_var = EVar(fresh_name("state")).with_type(TMap(INT, INT))
+        state_hole = EHole("state", state_var.type, Builder([bag]))
+        query_hole = EHole("query", target.type, Builder([state_var, arg]))
+        spec = EBinOp(EApp(ELambda(state_var, query_hole), state_hole), "==", target)
 
     for mapping in synth(spec):
         result = expand(query_hole, mapping)

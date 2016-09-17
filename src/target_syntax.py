@@ -22,6 +22,7 @@ class ELambda(Exp):
 
 # Bag transformations
 EMap     = declare_case(Exp, "EMap", ["e", "f"])
+EFilter  = declare_case(Exp, "EFilter", ["e", "p"])
 
 # Maps
 EMakeMap = declare_case(Exp, "EMakeMap", ["e", "key", "value"])

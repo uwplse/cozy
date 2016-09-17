@@ -95,6 +95,9 @@ class PrettyPrinter(common.Visitor):
     def visit_ENum(self, e):
         return str(e.val)
 
+    def visit_EEnumEntry(self, e):
+        return e.name
+
     def visit_ELambda(self, e):
         if hasattr(e.arg, "type"):
             return "(\\{} : {} -> {})".format(e.arg.id, self.visit(e.arg.type), self.visit(e.body))
@@ -282,6 +285,13 @@ def subst(exp, replacements):
         allfvs |= {fv.id for fv in fvs}
 
     class Subst(common.Visitor):
+        def visit_Spec(self, spec):
+            return syntax.Spec(
+                spec.name,
+                self.visit(spec.types),
+                self.visit(spec.statevars),
+                self.visit(spec.assumptions),
+                self.visit(spec.methods))
         def visit_EBool(self, b):
             return b
         def visit_ENum(self, n):
@@ -330,6 +340,21 @@ def subst(exp, replacements):
             children = e.children()
             children = tuple((self.visit(c) if isinstance(c, syntax.Exp) else c) for c in children)
             return type(e)(*children)
+        def visit_list(self, l):
+            return [self.visit(x) for x in l]
+        def visit_tuple(self, l):
+            return tuple(self.visit(x) for x in l)
+        def visit_str(self, s):
+            return s
+        def visit_Type(self, t):
+            return t
+        def visit_Query(self, q):
+            m = { name: repl for (name, repl) in replacements.items() if not any(n == name for (n, t) in q.args) }
+            return syntax.Query(
+                q.name,
+                q.args,
+                [subst(a, m) for a in q.assumptions],
+                subst(q.ret, m))
         def visit(self, x, *args, **kwargs):
             res = super().visit(x, *args, **kwargs)
             if isinstance(res, syntax.Exp) and hasattr(x, "type"):
@@ -400,3 +425,10 @@ def alpha_equivalent(e1, e2):
             raise NotImplementedError("{} alpha-equiv? {}".format(e1, e2))
 
     return V().visit(e1, e2)
+
+def implies(e1, e2):
+    BOOL = TBool()
+    return syntax.EBinOp(
+        syntax.EUnaryOp("not", e1).with_type(BOOL),
+        "or",
+        e2).with_type(BOOL)

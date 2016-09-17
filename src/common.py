@@ -129,6 +129,51 @@ class Visitor(object):
             return getattr(self, visit_func)(x, *args, **kwargs)
         print("Warning: {} does not implement {}".format(self, first_visit_func), file=sys.stderr)
 
+def ast_find(ast, pred):
+    class V(Visitor):
+        def visit(self, x):
+            if pred(x):
+                yield x
+            yield from super().visit(x)
+        def visit_ADT(self, x):
+            for child in x.children():
+                yield from self.visit(child)
+        def visit_list(self, x):
+            for child in x:
+                yield from self.visit(child)
+        def visit_tuple(self, x):
+            return self.visit_list(x)
+        def visit_object(self, x):
+            return ()
+    return V().visit(ast)
+
+def ast_find_one(ast, pred):
+    for match in ast_find(ast, pred):
+        return match
+    return None
+
+def ast_replace(haystack, pred, repl_func):
+    class V(Visitor):
+        def visit(self, x):
+            if pred(x):
+                return repl_func(x)
+            return super().visit(x)
+        def visit_ADT(self, x):
+            new_children = tuple(self.visit(child) for child in x.children())
+            return type(x)(*new_children)
+        def visit_list(self, x):
+            return [self.visit(child) for child in x]
+        def visit_tuple(self, x):
+            return tuple(self.visit(child) for child in x)
+        def visit_object(self, x):
+            return x
+    return V().visit(haystack)
+
+def ast_replace_ref(haystack, needle, replacement):
+    return ast_replace(haystack,
+        lambda x: x is needle,
+        lambda x: replacement)
+
 class FrozenDict(dict):
     """
     Immutable dictionary that is hashable (suitable for use in sets/maps)

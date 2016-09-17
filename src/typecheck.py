@@ -212,7 +212,7 @@ class Typechecker(Visitor):
             for clause in e.clauses:
                 self.visit(clause)
             self.visit(e.e)
-        e.type = syntax.TList(e.e.type)
+        e.type = syntax.TBag(e.e.type)
 
     def visit_EMakeRecord(self, e):
         fields = []

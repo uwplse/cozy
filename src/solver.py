@@ -1,4 +1,5 @@
 from collections import defaultdict
+import itertools
 
 import z3
 
@@ -12,10 +13,73 @@ TBitVec = declare_case(Type, "TBitVec", ["width"])
 class ToZ3(Visitor):
     def __init__(self, z3ctx):
         self.ctx = z3ctx
+    def eq(self, t, e1, e2, env):
+        if type(t) in [TInt, TLong, TBool, TEnum]:
+            return self.visit(e1, env) == e2
+        elif isinstance(t, TBag):
+            lhs_mask, lhs_elems = e1
+            rhs_mask, rhs_elems = e2
+
+            # n = max(len(lhs_elems), len(rhs_elems))
+
+            # lengths equal... might not be necessary
+            e1len = self.len_of(e1)
+            e2len = self.len_of(e2)
+            e = e1len == e2len
+
+            lhs_counts = [ (x, self.count_in(t.t, e1, x, env)) for x in lhs_elems ]
+            for x, count in lhs_counts:
+                e = z3.And(e, count == self.count_in(t.t, e2, x, env), self.ctx)
+
+            rhs_counts = [ (x, self.count_in(t.t, e1, x, env)) for x in rhs_elems ]
+            for x, count in rhs_counts:
+                e = z3.And(e, count == self.count_in(t.t, e1, x, env), self.ctx)
+
+            # # need: f where
+            # #   f : [0..n] -> [0..n]
+            # #   f is 1:1
+            # #   forall i j, (f(i) = j) <-> (e1[i] = e2[j])
+            # f = z3.Function(fresh_name(), z3.IntSort(self.ctx), z3.IntSort(self.ctx))
+
+            # # f : [0..n] -> [0..n]
+            # for i in range(n):
+            #     e = z3.And(e, (f(i) >= 0), (f(i) < n), self.ctx)
+
+            # # f is 1:1
+            # e = z3.And(e, z3.Distinct(*[f(i) for i in range(n)]), self.ctx)
+
+            # # forall i j, (f(i) = j) <-> (e1[i] = e2[j])
+            # for i in range(len(lhs_mask)):
+            #     for j in range(len(rhs_mask)):
+            #         e = z3.And(e, (f(i) == j) == self.eq(t.t, lhs_elems[i], rhs_elems[j], env), self.ctx)
+
+            return e
+        elif isinstance(t, THandle):
+            h1, val1 = e1
+            h2, val2 = e2
+            return h1 == h2
+        else:
+            raise NotImplementedError(t)
+    def count_in(self, t, bag, x, env):
+        bag_mask, bag_elems = bag
+        l = 0
+        for i in range(len(bag_elems)):
+            l = z3.If(z3.And(bag_mask[i], self.eq(t, x, bag_elems[i], env), self.ctx), 1, 0, ctx=self.ctx) + l
+        return l
+    def len_of(self, val):
+        bag_mask, bag_elems = val
+        l = 0
+        for i in range(len(bag_elems)):
+            l = z3.If(bag_mask[i], 1, 0, ctx=self.ctx) + l
+        return l
     def visit_EVar(self, v, env):
         return env[v.id]
     def visit_ENum(self, n, env):
         return n.val
+    def visit_EBool(self, b, env):
+        return b.val
+    def visit_EEnumEntry(self, e, env):
+        return e.type.cases.index(e.name)
     def visit_EUnaryOp(self, e, env):
         if e.op == "not":
             return z3.Not(self.visit(e.e, env), ctx=self.ctx)
@@ -25,18 +89,25 @@ class ToZ3(Visitor):
             for i in range(len(bag_elems)):
                 sum = z3.If(bag_mask[i], bag_elems[i], 0, ctx=self.ctx) + sum
             return sum
+        elif e.op == "len":
+            return self.len_of(self.visit(e.e, env))
         else:
             raise NotImplementedError(e.op)
     def visit_EGetField(self, e, env):
         r = self.visit(e.e, env)
-        return r[e.f]
+        if isinstance(e.e.type, THandle):
+            assert e.f == "val"
+            h, val = r
+            return val
+        else:
+            return r[e.f]
     def visit_EBinOp(self, e, env):
         if e.op == "and":
-            return z3.And(self.visit(e.e1, env), self.visit(e.e2, env), ctx=self.ctx)
+            return z3.And(self.visit(e.e1, env), self.visit(e.e2, env), self.ctx)
         elif e.op == "or":
-            return z3.Or(self.visit(e.e1, env), self.visit(e.e2, env), ctx=self.ctx)
+            return z3.Or(self.visit(e.e1, env), self.visit(e.e2, env), self.ctx)
         elif e.op == "==":
-            return self.visit(e.e1, env) == self.visit(e.e2, env)
+            return self.eq(e.e1.type, self.visit(e.e1, env), self.visit(e.e2, env), env)
         elif e.op == "+":
             return self.visit(e.e1, env) + self.visit(e.e2, env)
         else:
@@ -51,6 +122,12 @@ class ToZ3(Visitor):
         for x in bag_elems:
             res_elems.append(self.apply(e.f, x, env))
         return bag_mask, res_elems
+    def visit_EFilter(self, e, env):
+        bag_mask, bag_elems = self.visit(e.e, env)
+        res_mask = []
+        for mask, x in zip(bag_mask, bag_elems):
+            res_mask.append(z3.And(mask, self.apply(e.p, x, env), self.ctx))
+        return res_mask, bag_elems
     def visit_EMakeMap(self, e, env):
         # TODO: visiting e.e twice here is bad
         bag_mask, bag_elems = self.visit(e.e, env)
@@ -107,6 +184,44 @@ class ToZ3(Visitor):
         """AstRef is the Z3 AST node type"""
         return e
 
+def mkvar(ctx, solver, collection_depth, type):
+    if type == TInt() or type == TLong():
+        return z3.Int(fresh_name(), ctx=ctx)
+    elif type == TBool():
+        return z3.Bool(fresh_name(), ctx=ctx)
+    elif isinstance(type, TBitVec):
+        return z3.BitVec(fresh_name(), type.width, ctx=ctx)
+    elif isinstance(type, TEnum):
+        ncases = len(type.cases)
+        n = z3.Int(fresh_name(), ctx=ctx)
+        solver.add(n >= 0)
+        solver.add(n < ncases)
+        return n
+    elif isinstance(type, TBag):
+        mask = [mkvar(ctx, solver, collection_depth, TBool()) for i in range(collection_depth)]
+        elems = [mkvar(ctx, solver, collection_depth, type.t) for i in range(collection_depth)]
+        # symmetry breaking
+        for i in range(len(mask) - 1):
+            solver.add(z3.Implies(mask[i], mask[i+1], ctx))
+        return (mask, elems)
+    elif isinstance(type, TRecord):
+        return { field : mkvar(ctx, solver, collection_depth, t) for (field, t) in type.fields }
+    elif isinstance(type, THandle):
+        h = z3.Int(fresh_name(), ctx)
+        return (h, mkvar(ctx, solver, collection_depth, type.value_type))
+    else:
+        raise NotImplementedError(type)
+
+def mkconst(ctx, solver, val):
+    if type(val) == int:
+        return z3.IntVal(val, ctx)
+    elif type(val) == bool:
+        return z3.BoolVal(val, ctx)
+    elif type(val) == tuple:
+        return ([z3.BoolVal(True, ctx) for x in val], [mkconst(ctx, solver, x) for x in val])
+    else:
+        raise NotImplementedError(repr(val))
+
 def satisfy(e, collection_depth=2):
     print("sat? {}".format(pprint(e)))
     # print(repr(e))
@@ -114,25 +229,6 @@ def satisfy(e, collection_depth=2):
     ctx = z3.Context()
     solver = z3.Solver(ctx=ctx)
     visitor = ToZ3(ctx)
-
-    def mkvar(type):
-        if type == TInt() or type == TLong():
-            return z3.Int(fresh_name(), ctx=ctx)
-        if type == TBool():
-            return z3.Bool(fresh_name(), ctx=ctx)
-        if isinstance(type, TBitVec):
-            return z3.BitVec(fresh_name(), type.width, ctx=ctx)
-        elif isinstance(type, TBag):
-            mask = [mkvar(TBool()) for i in range(collection_depth)]
-            elems = [mkvar(type.t) for i in range(collection_depth)]
-            # symmetry breaking
-            for i in range(len(mask) - 1):
-                solver.add(z3.Implies(mask[i], mask[i+1], ctx))
-            return (mask, elems)
-        elif isinstance(type, TRecord):
-            return { field : mkvar(t) for (field, t) in type.fields }
-        else:
-            raise NotImplementedError(type)
 
     def reconstruct(model, value, type):
         if type == TInt() or type == TLong():
@@ -148,6 +244,14 @@ def satisfy(e, collection_depth=2):
                 if reconstruct(model, mask[i], TBool()):
                     real_val += (reconstruct(model, elems[i], type.t),)
             return real_val
+        elif isinstance(type, TEnum):
+            val = model.eval(value, model_completion=True).as_long()
+            return type.cases[val]
+        elif isinstance(type, THandle):
+            id, val = value
+            id = reconstruct(model, id, TInt())
+            val = reconstruct(model, val, type.value_type)
+            return (id, val)
         elif isinstance(type, TRecord):
             res = defaultdict(lambda: None)
             for (field, t) in type.fields:
@@ -160,7 +264,7 @@ def satisfy(e, collection_depth=2):
     fvs = free_vars(e)
     for v in fvs:
         # print("{} : {}".format(pprint(v), pprint(v.type)))
-        _env[v.id] = mkvar(v.type)
+        _env[v.id] = mkvar(ctx, solver, collection_depth, v.type)
     # print(_env)
 
     solver.add(visitor.visit(e, _env))
@@ -178,3 +282,50 @@ def satisfy(e, collection_depth=2):
             res[v.id] = reconstruct(model, _env[v.id], v.type)
         # print(res)
         return res
+
+class ToZ3WithUninterpretedHoles(ToZ3):
+    def __init__(self, z3ctx, z3solver):
+        super().__init__(z3ctx)
+        # self.collectionsort = z3.DeclareSort("Collection", z3ctx)
+        # self.holes = { }
+        self.solver = z3solver
+    # def flatten(self, value):
+    #     if isinstance(value, z3.ExprRef):
+    #         yield value
+    #     else:
+    #         yield z3.Const(fresh_name(), self.collectionsort)
+    # def mksort(self, type):
+    #     if isinstance(type, TInt) or isinstance(type, TLong):
+    #         return z3.IntSort(self.ctx)
+    #     elif isinstance(type, TBool):
+    #         return z3.BoolSort(self.ctx)
+    #     else:
+    #         return self.collectionsort
+    def visit_EHole(self, e, env):
+        # values = tuple(itertools.chain(*(self.flatten(val) for (name, val) in sorted(env.items()))))
+        # hole = self.holes.get(e.name)
+        # if hole is None:
+        #     hole = z3.Function(fresh_name(e.name), *[v.sort() for v in values], self.mksort(e.type))
+        #     self.holes[e.name] = hole
+        # return hole(*values)
+        return mkvar(self.ctx, self.solver, 2, e.type)
+
+def feasible(spec, examples):
+    return True # TODO
+    if not examples:
+        return True
+
+    # print("feasible? {}".format(pprint(spec)))
+
+    ctx = z3.Context()
+    solver = z3.Solver(ctx=ctx)
+    visitor = ToZ3WithUninterpretedHoles(ctx, solver)
+
+    for ex in examples:
+        env = { }
+        for name, val in ex.items():
+            env[name] = mkconst(ctx, solver, val)
+        solver.add(visitor.visit(spec, env))
+
+    # print(solver.assertions())
+    return solver.check() == z3.sat

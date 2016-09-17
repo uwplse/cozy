@@ -25,8 +25,17 @@ class Evaluator(Visitor):
         raise HoleException(e, dict(env))
     def visit_ENum(self, n, env):
         return n.val
+    def visit_EBool(self, b, env):
+        return b.val
+    def visit_EEnumEntry(self, val, env):
+        # return val.type.cases.index(val.name)
+        return val.name
     def visit_EGetField(self, e, env):
-        return self.visit(e.e, env)[e.f]
+        lhs = self.visit(e.e, env)
+        if isinstance(e.e.type, THandle):
+            assert e.f == "val"
+            return lhs[1]
+        return lhs[e.f]
     def visit_EUnaryOp(self, e, env):
         if e.op == "not":
             return not self.visit(e.e, env)
@@ -65,6 +74,8 @@ class Evaluator(Visitor):
         return self.visit(e.map, env)[self.visit(e.key, env)]
     def visit_EMap(self, e, env):
         return tuple(self.eval_lambda(e.f, x, env) for x in self.visit(e.e, env))
+    def visit_EFilter(self, e, env):
+        return tuple(x for x in self.visit(e.e, env) if self.eval_lambda(e.p, x, env))
     def visit_clauses(self, clauses, e, env):
         if not clauses:
             yield self.visit(e, env)
