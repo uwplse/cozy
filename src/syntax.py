@@ -48,6 +48,7 @@ EEmptyList          = declare_case(Exp, "EEmptyList")
 EAlloc              = declare_case(Exp, "EAlloc",             ["t", "args"])
 ECall               = declare_case(Exp, "ECall",              ["func", "args"])
 ETuple              = declare_case(Exp, "ETuple",             ["es"])
+ETupleGet           = declare_case(Exp, "ETupleGet",          ["e", "n"])
 ELet                = declare_case(Exp, "ELet",               ["id", "e1", "e2"])
 
 class ComprehensionClause(ADT): pass

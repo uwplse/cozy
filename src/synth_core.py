@@ -1,9 +1,10 @@
 from collections import defaultdict
 import datetime
+import itertools
 import sys
 
 from target_syntax import *
-from syntax_tools import subst, pprint, free_vars
+from syntax_tools import subst, pprint, free_vars, BottomUpExplorer
 from common import Visitor, fresh_name, declare_case, typechecked
 from solver import satisfy, feasible
 from evaluation import HoleException, eval, all_envs_for_hole
@@ -28,24 +29,30 @@ class Builder(object):
     def __init__(self, roots, type_roots):
         self.roots = roots
         self.type_roots = type_roots
+        self.build_maps = True
 
     @typechecked
-    def enum_types(self, size : int, allow_collections : bool = True):
+    def enum_types(
+            self,
+            size : int,
+            allow_bags : bool = True,
+            allow_maps : bool = True):
         if size <= 0:
             return
         elif size == 1:
             yield from self.type_roots
         else:
-            if allow_collections:
-                for t in self.enum_types(size - 1):
+            if allow_bags:
+                for t in self.enum_types(size - 1, allow_maps=allow_maps):
                     yield TBag(t)
+            if allow_maps:
                 for (ksize, vsize) in pick_to_sum(2, size - 1):
-                    for k in self.enum_types(ksize, allow_collections=False):
-                        for v in self.enum_types(vsize):
+                    for k in self.enum_types(ksize, allow_bags=False, allow_maps=False):
+                        for v in self.enum_types(vsize, allow_bags=allow_bags, allow_maps=False):
                             yield TMap(k, v)
             for tuple_len in range(2, size):
                 for sizes in pick_to_sum(tuple_len, size - 1):
-                    gens = tuple(self.enum_types(sz, allow_collections=allow_collections) for sz in sizes)
+                    gens = tuple(self.enum_types(sz, allow_bags=allow_bags, allow_maps=allow_maps) for sz in sizes)
                     for types in cross_product(gens):
                         yield TTuple(types)
 
@@ -63,6 +70,9 @@ class Builder(object):
             yield EUnaryOp("sum", e).with_type(INT)
         for e in cache.find(type=THandle, size=size-1):
             yield EGetField(e, "val").with_type(e.type.value_type)
+        for e in cache.find(type=TTuple, size=size-1):
+            for n in range(len(e.type.ts)):
+                yield ETupleGet(e, n).with_type(e.type.ts[n])
 
         for (sz1, sz2) in pick_to_sum(2, size - 1):
             for a1 in cache.find(type=INT, size=sz1):
@@ -75,29 +85,32 @@ class Builder(object):
                 for k in cache.find(type=m.type.k, size=sz2):
                     yield EMapGet(m, k).with_type(m.type.v)
             for bag in cache.find(type=TBag, size=sz2):
+                if not isinstance(bag, EMap):
                     e = EVar(fresh_name()).with_type(bag.type.t)
-                    for t in self.enum_types(sz1):
-                        if not isinstance(bag, EMap):
-                            hole = EHole(fresh_name(), t, self.with_roots([e]))
-                            yield EMap(bag, ELambda(e, hole)).with_type(TBag(t))
+                    for t in self.enum_types(sz1, allow_maps=self.build_maps):
+                        hole = EHole(fresh_name(), t, self.with_roots([e]))
+                        yield EMap(bag, ELambda(e, hole)).with_type(TBag(t))
 
         for bag in cache.find(type=TBag, size=size-1):
-            e = EVar(fresh_name()).with_type(bag.type.t)
             if not isinstance(bag, EMap) and not isinstance(bag, EFilter):
-                hole = EHole(fresh_name(), BOOL, self.with_roots([e]))
+                e = EVar(fresh_name()).with_type(bag.type.t)
+                hole = EHole(fresh_name(), BOOL, self.with_roots([e], build_maps=False))
                 yield EFilter(bag, ELambda(e, hole)).with_type(bag.type)
 
-        for (bagsize, ksize, vsize) in pick_to_sum(3, size - 1):
-            for kt in self.enum_types(ksize, allow_collections=False):
-                for vt in self.enum_types(vsize):
-                    for bag in cache.find(type=TBag, size=bagsize):
-                        e = EVar(fresh_name()).with_type(bag.type.t)
-                        es = EVar(fresh_name()).with_type(bag.type)
-                        khole = EHole(fresh_name(), kt, self.with_roots([e]))
-                        vhole = EHole(fresh_name(), vt, self.with_roots([es]))
-                        yield EMakeMap(bag, ELambda(e, khole), ELambda(es, vhole)).with_type(TMap(kt, vt))
-    def with_roots(self, new_roots):
-        return Builder(list(new_roots) + list(self.roots), self.type_roots)
+        if self.build_maps:
+            for (bagsize, ksize, vsize) in pick_to_sum(3, size - 1):
+                for kt in self.enum_types(ksize, allow_bags=False, allow_maps=False):
+                    for vt in self.enum_types(vsize, allow_maps=False):
+                        for bag in cache.find(type=TBag, size=bagsize):
+                            e = EVar(fresh_name()).with_type(bag.type.t)
+                            es = EVar(fresh_name()).with_type(bag.type)
+                            khole = EHole(fresh_name(), kt, self.with_roots([e], build_maps=False))
+                            vhole = EHole(fresh_name(), vt, self.with_roots([es], build_maps=False))
+                            yield EMakeMap(bag, ELambda(e, khole), ELambda(es, vhole)).with_type(TMap(kt, vt))
+    def with_roots(self, new_roots, build_maps=True):
+        b = Builder(list(new_roots) + list(self.roots), self.type_roots)
+        b.build_maps = self.build_maps and build_maps
+        return b
 
 class Counterexample(Exception):
     def __init__(self, value):
@@ -107,57 +120,20 @@ def find_subgoals(e):
     """
     Yields subgoals in evaluation order
     """
-    class V(Visitor):
-        def visit_EVar(self, e):
-            return ()
-        def visit_ENum(self, e):
-            return ()
-        def visit_EBool(self, e):
-            return ()
-        def visit_EEnumEntry(self, e):
-            return ()
-        def visit_EUnaryOp(self, e):
-            return self.visit(e.e)
-        def visit_EBinOp(self, e):
-            yield from self.visit(e.e1)
-            yield from self.visit(e.e2)
-        def visit_ETuple(self, e):
-            for ee in e.es:
-                yield from self.visit(ee)
+    class V(BottomUpExplorer):
         def visit_EHole(self, e):
-            yield (e.name, e.type, e.builder)
-        def visit_EListComprehension(self, e):
-            for clause in e.clauses:
-                yield from self.visit(clause)
-            yield from self.visit(e.e)
-        def visit_CPull(self, e):
-            return self.visit(e.e)
-        def visit_CCond(self, e):
-            return self.visit(e.e)
-        def visit_EGetField(self, e):
-            return self.visit(e.e)
-        def visit_EMap(self, e):
-            yield from self.visit(e.e)
-            yield from self.visit(e.f)
-        def visit_EFilter(self, e):
-            yield from self.visit(e.e)
-            yield from self.visit(e.p)
+            return ((e.name, e.type, e.builder),)
         def visit_EApp(self, e):
-            yield from self.visit(e.arg)
-            yield from self.visit(e.f)
-        def visit_EMakeMap(self, e):
-            yield from self.visit(e.e)
-            yield from self.visit(e.key)
-            yield from self.visit(e.value)
-        def visit_EMapGet(self, e):
-            yield from self.visit(e.map)
-            yield from self.visit(e.key)
-        def visit_ELambda(self, e):
-            return self.visit(e.body)
-        def visit_Exp(self, e):
-            raise NotImplementedError("find_subgoals({})".format(e))
-        def visit_object(self, o):
-            raise Exception("cannot find subgoals in {}".format(repr(o)))
+            """
+            An application node has children (function, arg), but the arg is
+            evaluated first so we need to special-case this and reverse the
+            exploration order.
+            """
+            return itertools.chain(
+                self.visit(e.arg),
+                self.visit(e.f))
+        def join(self, x, children):
+            return itertools.chain(*children)
     return V().visit(e)
 
 def contains_holes(e):
@@ -340,30 +316,3 @@ def synth(spec):
             else:
                 assert False
                 print("rejected: {}".format(pprint(new_spec)))
-
-if __name__ == "__main__":
-    # Next steps:
-    #   - find a way to bias towards the right answer
-
-    INT = TInt()
-    LONG = TLong()
-    BOOL = TBool()
-    REC = TRecord((("key", INT), ("value", INT)))
-    bag = EVar("bag").with_type(TBag(REC))
-    v = EVar("x").with_type(REC)
-    arg = EVar("k").with_type(INT)
-    target = EUnaryOp("sum", EListComprehension(EGetField(v, "value"), (CPull(v.id, bag), CCond(EBinOp(EGetField(v, "key"), "==", arg))))).with_type(INT)
-
-    if False:
-        query_hole = EHole("query", target.type, Builder(free_vars(target)))
-        spec = EBinOp(query_hole, "==", target)
-    else:
-        state_var = EVar(fresh_name("state")).with_type(TMap(INT, INT))
-        state_hole = EHole("state", state_var.type, Builder([bag]))
-        query_hole = EHole("query", target.type, Builder([state_var, arg]))
-        spec = EBinOp(EApp(ELambda(state_var, query_hole), state_hole), "==", target)
-
-    for mapping in synth(spec):
-        result = expand(query_hole, mapping)
-        print(pprint(result))
-        break

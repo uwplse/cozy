@@ -73,15 +73,22 @@ def run():
             self.args_by_q = { q.name: [syntax.EVar(common.fresh_name(name)).with_type(t) for (name, t) in q.args] for q in qs }
             self.state_var_name = common.fresh_name("state")
             self.state_hole_name = common.fresh_name("state")
+        def make_state_hole(self, type):
+            b = synth_core.Builder(common_roots + state_roots, basic_types)
+            return synth_core.EHole(self.state_hole_name, type, b)
+        def make_query_hole(self, q, state_var):
+            args = self.args_by_q[q.name]
+            b = synth_core.Builder(common_roots + args + [state_var], basic_types)
+            b.build_maps = False
+            return synth_core.EHole(q.name, q.ret.type, b)
         def build(self, cache, size):
             for state_type in self.enum_types(size - 1):
                 state_var = syntax.EVar(self.state_var_name).with_type(state_type)
-                state_hole = synth_core.EHole(self.state_hole_name, state_type, synth_core.Builder(common_roots + state_roots, basic_types))
+                state_hole = self.make_state_hole(state_type)
 
                 out = []
                 for q in qs:
-                    args = self.args_by_q[q.name]
-                    q_hole = synth_core.EHole(q.name, q.ret.type, synth_core.Builder(common_roots + args + [state_var], basic_types))
+                    q_hole = self.make_query_hole(q, state_var)
                     out.append(q_hole)
 
                 yield target_syntax.EApp(
