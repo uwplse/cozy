@@ -15,8 +15,17 @@ EHole = declare_case(Exp, "EHole", ["name", "type", "builder"])
 INT = TInt()
 BOOL = TBool()
 
+def cross_product(iters, i=0):
+    if i == len(iters):
+        yield ()
+    if i >= len(iters):
+        return
+    for x in iters[i]:
+        for rest in cross_product(iters, i + 1):
+            yield (x,) + rest
+
 class Builder(object):
-    def __init__(self, roots, type_roots=(INT, BOOL)):
+    def __init__(self, roots, type_roots):
         self.roots = roots
         self.type_roots = type_roots
 
@@ -26,14 +35,19 @@ class Builder(object):
             return
         elif size == 1:
             yield from self.type_roots
-        elif allow_collections:
-            for t in self.enum_types(size - 1):
-                yield TBag(t)
-            for (ksize, vsize) in pick_to_sum(2, size - 1):
-                for k in self.enum_types(ksize, allow_collections=False):
-                    for v in self.enum_types(vsize):
-                        yield TMap(k, v)
-                    # TODO: allow record/tuple types as map keys
+        else:
+            if allow_collections:
+                for t in self.enum_types(size - 1):
+                    yield TBag(t)
+                for (ksize, vsize) in pick_to_sum(2, size - 1):
+                    for k in self.enum_types(ksize, allow_collections=False):
+                        for v in self.enum_types(vsize):
+                            yield TMap(k, v)
+            for tuple_len in range(2, size):
+                for sizes in pick_to_sum(tuple_len, size - 1):
+                    gens = tuple(self.enum_types(sz, allow_collections=allow_collections) for sz in sizes)
+                    for types in cross_product(gens):
+                        yield TTuple(types)
 
     def build(self, cache, size):
         if size == 1:
@@ -83,7 +97,7 @@ class Builder(object):
                         vhole = EHole(fresh_name(), vt, self.with_roots([es]))
                         yield EMakeMap(bag, ELambda(e, khole), ELambda(es, vhole)).with_type(TMap(kt, vt))
     def with_roots(self, new_roots):
-        return Builder(list(new_roots) + list(self.roots))
+        return Builder(list(new_roots) + list(self.roots), self.type_roots)
 
 class Counterexample(Exception):
     def __init__(self, value):

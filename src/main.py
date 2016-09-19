@@ -66,21 +66,22 @@ def run():
     for (name, t) in ast.statevars:
         state_roots.append(syntax.EVar(name).with_type(t))
 
+    basic_types = [t for t in types if not isinstance(t, syntax.TBag)]
     class TopLevelBuilder(synth_core.Builder):
         def __init__(self):
-            super().__init__((), [t for t in types if not isinstance(t, syntax.TBag)])
+            super().__init__((), basic_types)
             self.args_by_q = { q.name: [syntax.EVar(common.fresh_name(name)).with_type(t) for (name, t) in q.args] for q in qs }
             self.state_var_name = common.fresh_name("state")
             self.state_hole_name = common.fresh_name("state")
         def build(self, cache, size):
             for state_type in self.enum_types(size - 1):
                 state_var = syntax.EVar(self.state_var_name).with_type(state_type)
-                state_hole = synth_core.EHole(self.state_hole_name, state_type, synth_core.Builder(common_roots + state_roots))
+                state_hole = synth_core.EHole(self.state_hole_name, state_type, synth_core.Builder(common_roots + state_roots, basic_types))
 
                 out = []
                 for q in qs:
                     args = self.args_by_q[q.name]
-                    q_hole = synth_core.EHole(q.name, q.ret.type, synth_core.Builder(common_roots + args + [state_var]))
+                    q_hole = synth_core.EHole(q.name, q.ret.type, synth_core.Builder(common_roots + args + [state_var], basic_types))
                     out.append(q_hole)
 
                 yield target_syntax.EApp(

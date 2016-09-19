@@ -115,6 +115,8 @@ def mkval(type):
         return { f:mkval(t) for (f, t) in type.fields }
     if isinstance(type, THandle):
         return (0, mkval(type.value_type))
+    if isinstance(type, TTuple):
+        return tuple(mkval(t) for t in type.ts)
     raise NotImplementedError(type)
 
 class EnvCollector(Evaluator):
