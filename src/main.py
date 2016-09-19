@@ -82,7 +82,7 @@ def run():
     print(repr(spec))
 
     for mapping in synth_core.synth(spec):
-        result = synth_core.expand(query_hole, mapping)
+        result = synth_core.expand(q_hole, mapping)
         print(syntax_tools.pprint(result))
         return
 

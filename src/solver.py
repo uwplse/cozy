@@ -15,8 +15,9 @@ class ToZ3(Visitor):
         self.ctx = z3ctx
     def eq(self, t, e1, e2, env):
         if type(t) in [TInt, TLong, TBool, TEnum]:
-            return self.visit(e1, env) == e2
+            return e1 == e2
         elif isinstance(t, TBag):
+            elem_type = t.t
             lhs_mask, lhs_elems = e1
             rhs_mask, rhs_elems = e2
 
@@ -25,35 +26,18 @@ class ToZ3(Visitor):
             # lengths equal... might not be necessary
             e1len = self.len_of(e1)
             e2len = self.len_of(e2)
-            e = e1len == e2len
+            conds = []
+            conds.append(e1len == e2len)
 
-            lhs_counts = [ (x, self.count_in(t.t, e1, x, env)) for x in lhs_elems ]
+            lhs_counts = [ (x, self.count_in(elem_type, e1, x, env)) for x in lhs_elems ]
             for x, count in lhs_counts:
-                e = z3.And(e, count == self.count_in(t.t, e2, x, env), self.ctx)
+                conds.append(count == self.count_in(elem_type, e2, x, env))
 
-            rhs_counts = [ (x, self.count_in(t.t, e1, x, env)) for x in rhs_elems ]
+            rhs_counts = [ (x, self.count_in(elem_type, e1, x, env)) for x in rhs_elems ]
             for x, count in rhs_counts:
-                e = z3.And(e, count == self.count_in(t.t, e1, x, env), self.ctx)
+                conds.append(count == self.count_in(elem_type, e1, x, env))
 
-            # # need: f where
-            # #   f : [0..n] -> [0..n]
-            # #   f is 1:1
-            # #   forall i j, (f(i) = j) <-> (e1[i] = e2[j])
-            # f = z3.Function(fresh_name(), z3.IntSort(self.ctx), z3.IntSort(self.ctx))
-
-            # # f : [0..n] -> [0..n]
-            # for i in range(n):
-            #     e = z3.And(e, (f(i) >= 0), (f(i) < n), self.ctx)
-
-            # # f is 1:1
-            # e = z3.And(e, z3.Distinct(*[f(i) for i in range(n)]), self.ctx)
-
-            # # forall i j, (f(i) = j) <-> (e1[i] = e2[j])
-            # for i in range(len(lhs_mask)):
-            #     for j in range(len(rhs_mask)):
-            #         e = z3.And(e, (f(i) == j) == self.eq(t.t, lhs_elems[i], rhs_elems[j], env), self.ctx)
-
-            return e
+            return z3.And(*conds, self.ctx)
         elif isinstance(t, THandle):
             h1, val1 = e1
             h2, val2 = e2
@@ -222,7 +206,7 @@ def mkconst(ctx, solver, val):
     else:
         raise NotImplementedError(repr(val))
 
-def satisfy(e, collection_depth=2):
+def satisfy(e, collection_depth : int = 2, validate_model : bool = True):
     print("sat? {}".format(pprint(e)))
     # print(repr(e))
 
@@ -281,6 +265,15 @@ def satisfy(e, collection_depth=2):
         for v in fvs:
             res[v.id] = reconstruct(model, _env[v.id], v.type)
         # print(res)
+        if validate_model:
+            import evaluation
+            x = evaluation.eval(e, res)
+            if x is not True:
+                print("bad example: {}".format(res))
+                print(" ---> got {}".format(repr(x)))
+                print(" ---> model: {}".format(model))
+                print(" ---> assertions: {}".format(solver.assertions()))
+                raise Exception()
         return res
 
 class ToZ3WithUninterpretedHoles(ToZ3):
