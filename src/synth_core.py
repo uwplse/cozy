@@ -16,8 +16,25 @@ INT = TInt()
 BOOL = TBool()
 
 class Builder(object):
-    def __init__(self, roots):
+    def __init__(self, roots, type_roots=(INT, BOOL)):
         self.roots = roots
+        self.type_roots = type_roots
+
+    @typechecked
+    def enum_types(self, size : int, allow_collections : bool = True):
+        if size <= 0:
+            return
+        elif size == 1:
+            yield from self.type_roots
+        elif allow_collections:
+            for t in self.enum_types(size - 1):
+                yield TBag(t)
+            for (ksize, vsize) in pick_to_sum(2, size - 1):
+                for k in self.enum_types(ksize, allow_collections=False):
+                    for v in self.enum_types(vsize):
+                        yield TMap(k, v)
+                    # TODO: allow record/tuple types as map keys
+
     def build(self, cache, size):
         if size == 1:
             # for r in self.roots:
@@ -45,7 +62,7 @@ class Builder(object):
                     yield EMapGet(m, k).with_type(m.type.v)
             for bag in cache.find(type=TBag, size=sz2):
                     e = EVar(fresh_name()).with_type(bag.type.t)
-                    for t in enum_types(sz1):
+                    for t in self.enum_types(sz1):
                         if not isinstance(bag, EMap):
                             hole = EHole(fresh_name(), t, self.with_roots([e]))
                             yield EMap(bag, ELambda(e, hole)).with_type(TBag(t))
@@ -57,8 +74,8 @@ class Builder(object):
                 yield EFilter(bag, ELambda(e, hole)).with_type(bag.type)
 
         for (bagsize, ksize, vsize) in pick_to_sum(3, size - 1):
-            for kt in enum_key_types(ksize):
-                for vt in enum_types(vsize):
+            for kt in self.enum_types(ksize, allow_collections=False):
+                for vt in self.enum_types(vsize):
                     for bag in cache.find(type=TBag, size=bagsize):
                         e = EVar(fresh_name()).with_type(bag.type.t)
                         es = EVar(fresh_name()).with_type(bag.type)
@@ -180,28 +197,6 @@ class Cache(object):
                 for z in (y.values() if size is None else [y.get(size, [])]):
                     res += z
         return res
-
-@typechecked
-def enum_key_types(size : int):
-    if size == 1:
-        yield TInt()
-        yield TBool()
-
-@typechecked
-def enum_types(size : int):
-    if size <= 0:
-        return
-    elif size == 1:
-        yield TInt()
-        yield TBool()
-    else:
-        for t in enum_types(size - 1):
-            yield TBag(t)
-        for (ksize, vsize) in pick_to_sum(2, size - 1):
-            for k in enum_key_types(ksize):
-                for v in enum_types(vsize):
-                    yield TMap(k, v)
-                # TODO: allow record types as map keys
 
 def distinct_exps(builder, examples, size, type):
     cache = Cache()

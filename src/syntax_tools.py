@@ -6,10 +6,35 @@ Various utilities for working with syntax trees.
 """
 
 import sys
+import itertools
 
 import common
 import syntax
 import target_syntax
+
+class BottomUpExplorer(common.Visitor):
+    def visit_ADT(self, x):
+        new_children = tuple(self.visit(child) for child in x.children())
+        return self.join(x, new_children)
+    def visit_list(self, l):
+        return self.join(l, tuple(self.visit(x) for x in l))
+    def visit_tuple(self, l):
+        return self.join(l, tuple(self.visit(x) for x in l))
+    def visit_object(self, o):
+        return self.join(o, ())
+    def join(self, x, new_children):
+        pass
+
+def all_types(ast):
+    class TypeCollector(BottomUpExplorer):
+        def visit_Type(self, t):
+            yield t
+            yield from super().visit_ADT(t)
+        def visit_object(self, o):
+            return ()
+        def join(self, t, children):
+            return itertools.chain(*children)
+    return set(TypeCollector().visit(ast))
 
 class PrettyPrinter(common.Visitor):
     def visit_Spec(self, spec):
@@ -114,6 +139,9 @@ class PrettyPrinter(common.Visitor):
 
     def visit_EMap(self, e):
         return "Map {{{}}} ({})".format(self.visit(e.f), self.visit(e.e))
+
+    def visit_EFilter(self, e):
+        return "Filter {{{}}} ({})".format(self.visit(e.p), self.visit(e.e))
 
     def visit_EBinOp(self, e):
         return "({} {} {})".format(self.visit(e.e1), e.op, self.visit(e.e2))

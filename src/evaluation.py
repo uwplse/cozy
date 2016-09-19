@@ -109,6 +109,12 @@ def mkval(type):
         return ()
     if isinstance(type, TMap):
         return hashable_defaultdict(int)
+    if isinstance(type, TEnum):
+        return type.cases[0]
+    if isinstance(type, TRecord):
+        return { f:mkval(t) for (f, t) in type.fields }
+    if isinstance(type, THandle):
+        return (0, mkval(type.value_type))
     raise NotImplementedError(type)
 
 class EnvCollector(Evaluator):
