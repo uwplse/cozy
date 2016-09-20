@@ -1,7 +1,7 @@
 from collections import defaultdict
 
 from syntax import *
-from common import Visitor
+from common import Visitor, FrozenDict
 
 class HoleException(Exception):
     def __init__(self, hole, env):
@@ -112,7 +112,7 @@ def mkval(type):
     if isinstance(type, TEnum):
         return type.cases[0]
     if isinstance(type, TRecord):
-        return { f:mkval(t) for (f, t) in type.fields }
+        return FrozenDict({ f:mkval(t) for (f, t) in type.fields })
     if isinstance(type, THandle):
         return (0, mkval(type.value_type))
     if isinstance(type, TTuple):
