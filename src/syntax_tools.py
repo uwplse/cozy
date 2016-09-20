@@ -20,6 +20,8 @@ class BottomUpExplorer(common.Visitor):
         return self.join(l, tuple(self.visit(x) for x in l))
     def visit_tuple(self, l):
         return self.join(l, tuple(self.visit(x) for x in l))
+    def visit_dict(self, d):
+        return self.join(d, tuple((self.visit(k), self.visit(v)) for (k,v) in d.items()))
     def visit_object(self, o):
         return self.join(o, ())
     def join(self, x, new_children):
@@ -87,6 +89,9 @@ class PrettyPrinter(common.Visitor):
 
     def visit_TBool(self, t):
         return "Bool"
+
+    def visit_TTuple(self, t):
+        return "({})".format(", ".join(self.visit(tt) for tt in t.ts))
 
     def visit_TRecord(self, r):
         return "{{ {} }}".format(", ".join("{} : {}".format(f, self.visit(t)) for f, t in r.fields))
@@ -173,11 +178,14 @@ class PrettyPrinter(common.Visitor):
     def visit_ETuple(self, e):
         return "({})".format(", ".join(self.visit(e) for e in e.es))
 
+    def visit_ETupleGet(self, e):
+        return "({}).{}".format(self.visit(e.e), e.n)
+
     def visit_ELet(self, e):
         return "let {} = {} in {}".format(e.id, self.visit(e.e1), self.visit(e.e2))
 
     def visit_EHole(self, e):
-        return "?{}".format(e.name)
+        return "?{}".format(e.name) if not hasattr(e, "type") else "?{}:{}".format(e.name, self.visit(e.type))
 
     def visit_CPull(self, c):
         return "{} <- {}".format(c.id, self.visit(c.e))
@@ -313,30 +321,30 @@ def subst(exp, replacements):
         allfvs |= {fv.id for fv in fvs}
 
     class Subst(common.Visitor):
-        def visit_Spec(self, spec):
-            return syntax.Spec(
-                spec.name,
-                self.visit(spec.types),
-                self.visit(spec.statevars),
-                self.visit(spec.assumptions),
-                self.visit(spec.methods))
-        def visit_EBool(self, b):
-            return b
-        def visit_ENum(self, n):
-            return n
+        # def visit_Spec(self, spec):
+        #     return syntax.Spec(
+        #         spec.name,
+        #         self.visit(spec.types),
+        #         self.visit(spec.statevars),
+        #         self.visit(spec.assumptions),
+        #         self.visit(spec.methods))
+        # def visit_EBool(self, b):
+        #     return b
+        # def visit_ENum(self, n):
+        #     return n
         def visit_EHole(self, hole):
             return replacements.get(hole.name, hole)
         def visit_EVar(self, var):
             return replacements.get(var.id, var)
-        def visit_EBinOp(self, op):
-            return syntax.EBinOp(self.visit(op.e1), op.op, self.visit(op.e2))
-        def visit_EUnaryOp(self, op):
-            return syntax.EUnaryOp(op.op, self.visit(op.e))
+        # def visit_EBinOp(self, op):
+        #     return syntax.EBinOp(self.visit(op.e1), op.op, self.visit(op.e2))
+        # def visit_EUnaryOp(self, op):
+        #     return syntax.EUnaryOp(op.op, self.visit(op.e))
         def visit_EListComprehension(self, lcmp):
             return self.visit_lcmp(list(lcmp.clauses), 0, lcmp.e)
         def visit_lcmp(self, clauses, i, e):
             if i >= len(clauses):
-                return syntax.EListComprehension(self.visit(e), clauses)
+                return syntax.EListComprehension(self.visit(e), tuple(clauses))
             c = clauses[i]
             if isinstance(c, syntax.CPull):
                 if c.id in allfvs:
@@ -354,26 +362,28 @@ def subst(exp, replacements):
             elif isinstance(c, syntax.CCond):
                 clauses[i] = syntax.CCond(self.visit(c.e))
                 return self.visit_lcmp(clauses, i + 1, e)
-        def visit_EGetField(self, e):
-            return syntax.EGetField(self.visit(e.e), e.f)
-        def visit_ECall(self, e):
-            return syntax.ECall(e.func, [self.visit(arg) for arg in e.args])
+        # def visit_EGetField(self, e):
+        #     return syntax.EGetField(self.visit(e.e), e.f)
+        # def visit_ECall(self, e):
+        #     return syntax.ECall(e.func, [self.visit(arg) for arg in e.args])
         def visit_ELambda(self, e):
             m = replacements
             if e.arg.id in replacements:
                 m = dict(m)
                 del m[e.arg.id]
             return target_syntax.ELambda(e.arg, subst(e.body, m))
-        def visit_Exp(self, e):
+        def visit_ADT(self, e):
             children = e.children()
-            children = tuple((self.visit(c) if isinstance(c, syntax.Exp) else c) for c in children)
+            children = tuple(self.visit(c) for c in children)
             return type(e)(*children)
         def visit_list(self, l):
             return [self.visit(x) for x in l]
         def visit_tuple(self, l):
             return tuple(self.visit(x) for x in l)
-        def visit_str(self, s):
-            return s
+        def visit_dict(self, d):
+            return {self.visit(k):self.visit(v) for (k,v) in d.items()}
+        def visit_object(self, o):
+            return o
         def visit_Type(self, t):
             return t
         def visit_Query(self, q):

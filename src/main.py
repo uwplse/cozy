@@ -21,6 +21,8 @@ def read_file(f):
     with open(f, "r"):
         return f.read()
 
+HINTS = True
+
 def run():
     parser = argparse.ArgumentParser(description='Data structure synthesizer.')
 
@@ -56,17 +58,37 @@ def run():
 
     # synthesis
     import synth_core
-    qs = [q for q in ast.methods if isinstance(q, syntax.Query) if q.name == "pendingEntries"]
+    # qs = [q for q in ast.methods if isinstance(q, syntax.Query) if q.name == "totalMemSize"]
+    qs = [q for q in ast.methods if isinstance(q, syntax.Query) if q.name in ("totalMemSize", "totalDiskSize")]
     # qs = [q for q in ast.methods if isinstance(q, syntax.Query)]
+    # qs = [qs[0]]
     assert len(qs) > 0
-    res_type = syntax.TTuple(tuple(q.ret.type) for q in qs) if len(qs) > 1 else qs[0].ret.type
+    res_type = syntax.TTuple(tuple(q.ret.type for q in qs)) if len(qs) > 1 else qs[0].ret.type
+
+    def all_exps(e):
+        class V(syntax_tools.BottomUpExplorer):
+            def join(self, x, children):
+                for child in children:
+                    yield from child
+                if isinstance(x, syntax.Exp):
+                    yield x
+        return V().visit(e)
 
     common_roots = list(repl.values())
-    state_roots = []
-    for (name, t) in ast.statevars:
-        state_roots.append(syntax.EVar(name).with_type(t))
+    if HINTS:
+        state_var_names = set(name for (name, t) in ast.statevars)
+        state_roots = set(common_roots)
+        for q in qs:
+            for e in all_exps(q.ret):
+                if all(fv.id in state_var_names for fv in syntax_tools.free_vars(e)):
+                    state_roots.add(e)
+        state_roots = list(state_roots)
+    else:
+        state_roots = []
+        for (name, t) in ast.statevars:
+            state_roots.append(syntax.EVar(name).with_type(t))
 
-    basic_types = [t for t in types if not isinstance(t, syntax.TBag)]
+    basic_types = list(set(t for t in types if not isinstance(t, syntax.TBag)))
     class TopLevelBuilder(synth_core.Builder):
         def __init__(self):
             super().__init__((), basic_types)
@@ -74,15 +96,18 @@ def run():
             self.state_var_name = common.fresh_name("state")
             self.state_hole_name = common.fresh_name("state")
         def make_state_hole(self, type):
-            b = synth_core.Builder(common_roots + state_roots, basic_types)
+            b = synth_core.Builder(state_roots, basic_types)
             return synth_core.EHole(self.state_hole_name, type, b)
         def make_query_hole(self, q, state_var):
             args = self.args_by_q[q.name]
+            # for e in common_roots + args + [state_var]:
+            #     print("{} : {}".format(syntax_tools.pprint(e), syntax_tools.pprint(e.type)))
             b = synth_core.Builder(common_roots + args + [state_var], basic_types)
             b.build_maps = False
             return synth_core.EHole(q.name, q.ret.type, b)
         def build(self, cache, size):
             for state_type in self.enum_types(size - 1):
+                # print(syntax_tools.pprint(state_type))
                 state_var = syntax.EVar(self.state_var_name).with_type(state_type)
                 state_hole = self.make_state_hole(state_type)
 

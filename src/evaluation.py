@@ -54,6 +54,11 @@ class Evaluator(Visitor):
             return self.visit(e.e1, env) + self.visit(e.e2, env)
         else:
             raise NotImplementedError(e.op)
+    def visit_ETuple(self, e, env):
+        return tuple(self.visit(ee, env) for ee in e.es)
+    def visit_ETupleGet(self, e, env):
+        tup = self.visit(e.e, env)
+        return tup[e.n]
     def visit_EApp(self, e, env):
         return self.eval_lambda(e.f, self.visit(e.arg, env), env)
     def visit_EListComprehension(self, e, env):

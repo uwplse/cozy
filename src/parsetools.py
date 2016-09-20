@@ -14,7 +14,7 @@ def multi(ldict, selfname, production, sep=None):
 
         NAME ::= empty | P (SEP P)*
 
-    that produces lists of whatever P produces.
+    that produces tuples of whatever P produces.
     """
 
     if sep is None:
@@ -36,7 +36,7 @@ def multi(ldict, selfname, production, sep=None):
         if p[1]:
             p[0] = p[1]
         else:
-            p[0] = []
+            p[0] = ()
     f2.__doc__ = (
         """{self} : empty
                   | {f1name}""".format(self=selfname, f1name=f1name))

@@ -52,7 +52,7 @@ class Builder(object):
                             yield TMap(k, v)
             for tuple_len in range(2, size):
                 for sizes in pick_to_sum(tuple_len, size - 1):
-                    gens = tuple(self.enum_types(sz, allow_bags=allow_bags, allow_maps=allow_maps) for sz in sizes)
+                    gens = tuple(list(self.enum_types(sz, allow_bags=allow_bags, allow_maps=allow_maps)) for sz in sizes)
                     for types in cross_product(gens):
                         yield TTuple(types)
 
@@ -90,6 +90,14 @@ class Builder(object):
                     for t in self.enum_types(sz1, allow_maps=self.build_maps):
                         hole = EHole(fresh_name(), t, self.with_roots([e]))
                         yield EMap(bag, ELambda(e, hole)).with_type(TBag(t))
+
+        for tuple_len in range(2, size):
+            for sizes in pick_to_sum(tuple_len, size - 1):
+                exp_lists = tuple(list(cache.find(size=sz)) for sz in sizes)
+                for exps in cross_product(exp_lists):
+                    e = ETuple(exps).with_type(TTuple(tuple(e.type for e in exps)))
+                    # if size == 3 and e.type == TTuple((INT, INT)): print(pprint(e))
+                    yield e
 
         for bag in cache.find(type=TBag, size=size-1):
             if not isinstance(bag, EMap) and not isinstance(bag, EFilter):
@@ -204,6 +212,8 @@ def distinct_exps(builder, examples, size, type):
             if fp not in seen:
                 seen.add(fp)
                 cache.add(e, size=i)
+                # print("    ---> adding @ size={}".format(i))
+    # print("RESULT={}".format(list(cache.find(type=type, size=size))))
     return cache.find(type=type, size=size)
 
 def pick_goal(spec, examples):
@@ -226,6 +236,7 @@ def construct_inputs(spec, goal_name, examples):
     for ex in examples:
         yield from all_envs_for_hole(spec, ex, goal_name)
 
+indent = ""
 def find_consistent_exps(
         spec     : Exp,
         examples : [Exp],
@@ -233,62 +244,74 @@ def find_consistent_exps(
         cache    : Cache = None,
         seen     : set = None):
 
-    indent = ""
+    global indent
+    indent = indent + "  "
 
-    if cache is None:
-        cache = Cache()
-    if seen is None:
-        seen = set()
+    try:
+        if cache is None:
+            cache = Cache()
+        if seen is None:
+            seen = set()
 
-    # print("{}find({}, {})".format(indent, pprint(spec), size))
+        # print("{}find({}, {})".format(indent, pprint(spec), size))
 
-    goals = list(find_subgoals(spec))
+        goals = list(find_subgoals(spec))
 
-    if not goals:
-        if size == 0 and all(eval(spec, ex) for ex in examples):
-            print("final: {}".format(pprint(spec)))
-            yield { }
-        else:
-            if size != 0:
-                # print("REJECTED (wrong size): {}".format(pprint(spec)))
-                pass
+        if not goals:
+            if size == 0 and all(eval(spec, ex) for ex in examples):
+                print("final: {}".format(pprint(spec)))
+                yield { }
             else:
-                print("  REJECTED: {} [examples={}]".format(pprint(spec), examples))
-            pass
-        return
+                if size != 0:
+                    # print("REJECTED (wrong size): {}".format(pprint(spec)))
+                    pass
+                else:
+                    print("  REJECTED: {} [examples={}]".format(pprint(spec), examples))
+                pass
+            return
 
-    if size is None:
-        size = 1
-        while True:
-            print("size={}".format(size))
-            yield from find_consistent_exps(spec, examples, size, cache=cache, seen=seen)
-            size += 1
-        return
+        if size is None:
+            size = 1
+            while True:
+                print("size={}".format(size))
+                yield from find_consistent_exps(spec, examples, size, cache=cache, seen=seen)
+                size += 1
+            return
 
-    # not strictly necessary, but this helps
-    if len(goals) > size:
-        return
+        # not strictly necessary, but this helps
+        if len(goals) > size:
+            return
 
-    name = pick_goal(spec, examples)
-    _, type, builder = [goal for goal in goals if goal[0] == name][0]
-    goals = [goal for goal in goals if goal[0] != name]
-    g_examples = list(construct_inputs(spec, name, examples))
+        name = pick_goal(spec, examples)
+        _, type, builder = [goal for goal in goals if goal[0] == name][0]
+        goals = [goal for goal in goals if goal[0] != name]
+        g_examples = list(construct_inputs(spec, name, examples))
 
-    # print("{}##### working on {}".format(indent, name))
-    for (sz1, sz2) in pick_to_sum(2, size + 1):
-        sz2 -= 1
-        # print("{}({},{})".format(indent, sz1, sz2))
-        for e in distinct_exps(builder, g_examples, size=sz1, type=type):
-            # print("{}| considering {} for {} [examples={}]".format(indent, pprint(e), name, g_examples))
-            spec2 = subst(spec, { name : e })
-            if not feasible(spec2, examples):
-                print("{}INFEASIBLE: {}".format(indent, pprint(spec2)))
-                continue
-            for d in find_consistent_exps(spec2, examples, sz2, cache=cache, seen=seen):
-                # TODO: double-check consistency
-                if d is not None:
-                    d[name] = e
-                yield d
+        # print("{}##### working on {}".format(indent, name))
+        for (sz1, sz2) in pick_to_sum(2, size + 1):
+            sz2 -= 1
+            # print("{}({},{})".format(indent, sz1, sz2))
+            found = False
+            for e in distinct_exps(builder, g_examples, size=sz1, type=type):
+                # print("{}| considering {} for {} [examples={}]".format(indent, pprint(e), name, g_examples))
+                spec2 = subst(spec, { name : e })
+                # print("{}|{} -----> {}".format(indent, pprint(spec), pprint(spec2)))
+                assert name not in (name for (name, _, _) in find_subgoals(spec2))
+                if not feasible(spec2, examples):
+                    print("{}INFEASIBLE: {}".format(indent, pprint(spec2)))
+                    continue
+                for d in find_consistent_exps(spec2, examples, sz2, cache=cache, seen=seen):
+                    # TODO: double-check consistency
+                    if d is not None:
+                        d[name] = e
+                    found = True
+                    yield d
+            # if not found:
+            #     print("{}none of size {} while synth'ing {} + {}".format(indent, sz1, name, list(name for (name, _, _) in goals)))
+                # if sz1 == 1:
+                #     print("{}roots of builder are: {}".format(indent, ", ".join("{}:{}".format(pprint(e), pprint(e.type)) for e in builder.roots)))
+    finally:
+        indent = indent[2:]
 
 def expand(e, mapping):
     while contains_holes(e):

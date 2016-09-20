@@ -42,6 +42,9 @@ class ToZ3(Visitor):
             h1, val1 = e1
             h2, val2 = e2
             return h1 == h2
+        elif isinstance(t, TTuple):
+            conds = [self.eq(t, x, y, env) for (t, x, y) in zip(t.ts, e1, e2)]
+            return z3.And(*conds, self.ctx)
         else:
             raise NotImplementedError(t)
     def count_in(self, t, bag, x, env):
@@ -64,6 +67,8 @@ class ToZ3(Visitor):
         return b.val
     def visit_EEnumEntry(self, e, env):
         return e.type.cases.index(e.name)
+    def visit_ETuple(self, e, env):
+        return tuple(self.visit(ee, env) for ee in e.es)
     def visit_EUnaryOp(self, e, env):
         if e.op == "not":
             return z3.Not(self.visit(e.e, env), ctx=self.ctx)
