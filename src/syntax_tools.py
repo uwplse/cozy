@@ -411,7 +411,7 @@ def alpha_equivalent(e1, e2):
     Equality on expression ASTs is syntactic equality; even variable names are
     compared. So,
         [x | x <- L] != [y | y <- L].
-    However, alpha equivalence allows renaming of non-free variables, so
+    However, alpha equivalence allows renaming of variables, so
         alpha_equivalent([x | x <- L], [y | y <- L]) == True.
     """
     class V(common.Visitor):
@@ -420,32 +420,28 @@ def alpha_equivalent(e1, e2):
         def visit_EVar(self, e1, e2):
             if not isinstance(e2, syntax.EVar):
                 return False
-            e1id = self.remap.get(e1.id, e1.id)
+            if not e1.id in self.remap:
+                e1id = e2.id
+                self.remap[e1.id] = e1id
+            else:
+                e1id = self.remap[e1.id]
             return e1id == e2.id
-        def visit_ENum(self, e1, e2):
-            return isinstance(e2, syntax.ENum) and e1.val == e2.val
-        def visit_EBool(self, e1, e2):
-            return isinstance(e2, syntax.EBool) and e1.val == e2.val
-        def visit_EEmptyList(self, e1, e2):
-            if isinstance(e2, syntax.EEmptyList):
-                return True
-            return False
+        def visit_EHole(self, e1, e2):
+            import synth_core
+            if not isinstance(e2, synth_core.EHole):
+                return False
+            return self.visit_EVar(syntax.EVar(e1.name), syntax.EVar(e2.name))
+        def visit_ELambda(self, e1, e2):
+            if not isinstance(e2, target_syntax.ELambda):
+                return False
+            with common.extend(self.remap, e1.arg.id, e2.arg.id):
+                return self.visit(e1.body, e2.body)
         def visit_EListComprehension(self, lcmp, other):
             if not isinstance(other, syntax.EListComprehension):
                 return False
             if len(lcmp.clauses) != len(other.clauses):
                 return False
             return self.visit_clauses(0, lcmp.clauses, other.clauses, lcmp.e, other.e)
-        def visit_EBinOp(self, e1, e2):
-            if not isinstance(e2, syntax.EBinOp):
-                return False
-            return (e1.op == e2.op and
-                self.visit(e1.e1, e2.e1) and
-                self.visit(e1.e2, e2.e2))
-        def visit_EUnaryOp(self, e1, e2):
-            if not isinstance(e2, syntax.EUnaryOp):
-                return False
-            return (e1.op == e2.op and self.visit(e1.e, e2.e))
         def visit_clauses(self, i, clauses1, clauses2, e1, e2):
             if i >= len(clauses1):
                 return self.visit(e1, e2)
@@ -460,12 +456,12 @@ def alpha_equivalent(e1, e2):
                 return self.visit(c1.e, c2.e) and self.visit_clauses(i + 1, clauses1, clauses2, e1, e2)
             else:
                 raise NotImplementedError(pprint(c1))
-        def visit_EGetField(self, e1, e2):
-            if not isinstance(e2, syntax.EGetField):
-                return False
-            return (e1.f == e2.f and self.visit(e1.e, e2.e))
+        def visit_str(self, s1, s2):
+            return s1 == s2
         def visit_Exp(self, e1, e2):
-            raise NotImplementedError("{} alpha-equiv? {}".format(e1, e2))
+            if type(e1) is not type(e2):
+                return False
+            return all(self.visit(x, y) for (x, y) in zip(e1.children(), e2.children()))
 
     return V().visit(e1, e2)
 
