@@ -18,6 +18,16 @@ def all_exps(e):
                 yield x
     return V().visit(e)
 
+def fragmentize(exp : Exp, bound_names : {str} = set()):
+    so_far = []
+    for e in all_exps(exp):
+        fvs = [fv for fv in free_vars(e) if fv.id not in bound_names]
+        remap = { v.id : synth_core.EHole(fresh_name(), v.type, None) for v in fvs }
+        e = subst(e, remap)
+        if not any(alpha_equivalent(e, root) for root in so_far):
+            so_far.append(e)
+            yield e
+
 @typechecked
 def synthesize_queries(ctx : SynthCtx, state : [EVar], queries : [Query]) -> (EVar, Exp, [Query]):
     """
@@ -40,25 +50,13 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], queries : [Query]) -> (EV
     all_types = ctx.all_types
     basic_types = ctx.basic_types
 
-    common_roots = []
-    # common_roots = list(repl.values())
-    # print("Common roots:")
-    # for e in common_roots:
-    #     print("  --> {} : {}".format(pprint(e), pprint(e.type)))
-
     if HINTS:
         state_var_names = set(v.id for v in state)
-        state_roots = set(common_roots)
+        state_roots = []
         for q in queries:
-            for e in all_exps(q.ret):
-                bound_vars = [fv for fv in free_vars(e) if fv.id not in state_var_names]
-                remap = { v.id : synth_core.EHole(fresh_name(), v.type, None) for v in bound_vars }
-                e = subst(e, remap)
-                if not any(alpha_equivalent(e, root) for root in state_roots):
-                    state_roots.add(e)
-        state_roots = list(state_roots)
+            state_roots += list(fragmentize(q.ret, bound_names=state_var_names))
     else:
-        state_roots = common_roots + list(state)
+        state_roots = list(state)
         for t in basic_types:
             if isinstance(t, TEnum):
                 for case in t.cases:
@@ -108,9 +106,7 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], queries : [Query]) -> (EV
                 yield self.make_state_hole_core(type, builder)
         def make_query_hole(self, q, state_var):
             args = self.args_by_q[q.name]
-            # for e in common_roots + args + [state_var]:
-            #     print("{} : {}".format(pprint(e), pprint(e.type)))
-            b = synth_core.Builder(common_roots + args + [state_var], basic_types)
+            b = synth_core.Builder(args + [state_var], basic_types)
             b.build_maps = False
             b.build_tuples = False
             return synth_core.EHole(q.name, q.ret.type, b)
@@ -202,13 +198,14 @@ def synthesize(spec : Spec):
         for name in t.cases }
     spec = subst(spec, repl)
 
-    # synthesis
+    # collect queries
     qs = [q for q in spec.methods if isinstance(q, Query) if q.name == "inMemEntries"]
     # qs = [q for q in spec.methods if isinstance(q, Query) if q.name in ("totalMemSize", "totalDiskSize")]
     # qs = [q for q in spec.methods if isinstance(q, Query)]
     # qs = [qs[0]]
     assert len(qs) > 0
 
+    # synthesis
     ctx = SynthCtx(all_types=types, basic_types=basic_types)
     new_state, state_proj, new_qs = synthesize_queries(ctx, [EVar(name).with_type(t) for (name, t) in spec.statevars], qs)
     raise NotImplementedError()
