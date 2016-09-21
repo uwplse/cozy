@@ -4,6 +4,7 @@ import itertools
 import sys
 
 from target_syntax import *
+from typecheck import INT, BOOL
 from syntax_tools import subst, pprint, free_vars, BottomUpExplorer
 from common import Visitor, fresh_name, declare_case, typechecked, unique
 from solver import satisfy, feasible
@@ -11,10 +12,6 @@ from evaluation import HoleException, eval, all_envs_for_hole
 
 # Holes for synthesized expressions
 EHole = declare_case(Exp, "EHole", ["name", "type", "builder"])
-
-# Helpers
-INT = TInt()
-BOOL = TBool()
 
 def cross_product(iters, i=0):
     if i == len(iters):
@@ -63,25 +60,26 @@ class Builder(object):
     @typechecked
     def enum_types(
             self,
-            size : int,
-            allow_bags : bool = True,
-            allow_maps : bool = True):
+            size          : int,
+            allow_bags    : bool = True,
+            allow_maps    : bool = True,
+            max_bag_depth : int  = 2):
         if size <= 0:
             return
         elif size == 1:
             yield from self.type_roots
         else:
-            if allow_bags:
-                for t in self.enum_types(size - 1, allow_maps=allow_maps):
+            if allow_bags and max_bag_depth > 0:
+                for t in self.enum_types(size - 1, allow_maps=allow_maps, max_bag_depth=max_bag_depth-1):
                     yield TBag(t)
             if allow_maps:
                 for (ksize, vsize) in pick_to_sum(2, size - 1):
                     for k in self.enum_types(ksize, allow_bags=False, allow_maps=False):
-                        for v in self.enum_types(vsize, allow_bags=allow_bags, allow_maps=False):
+                        for v in self.enum_types(vsize, allow_bags=allow_bags, allow_maps=False, max_bag_depth=max_bag_depth):
                             yield TMap(k, v)
             for tuple_len in range(2, size):
                 for sizes in pick_to_sum(tuple_len, size - 1):
-                    gens = tuple(list(self.enum_types(sz, allow_bags=allow_bags, allow_maps=allow_maps)) for sz in sizes)
+                    gens = tuple(list(self.enum_types(sz, allow_bags=allow_bags, allow_maps=allow_maps, max_bag_depth=max_bag_depth)) for sz in sizes)
                     for types in cross_product(gens):
                         yield TTuple(types)
 
@@ -130,8 +128,9 @@ class Builder(object):
                 for a2 in cache.find(type=INT, size=sz2):
                     yield EBinOp(a1, "+", a2).with_type(INT)
             for a1 in cache.find(size=sz1):
-                for a2 in cache.find(type=a1.type, size=sz2):
-                    yield EBinOp(a1, "==", a2).with_type(BOOL)
+                if not isinstance(a1.type, TMap):
+                    for a2 in cache.find(type=a1.type, size=sz2):
+                        yield EBinOp(a1, "==", a2).with_type(BOOL)
             for m in cache.find(type=TMap, size=sz1):
                 for k in cache.find(type=m.type.k, size=sz2):
                     yield EMapGet(m, k).with_type(m.type.v)

@@ -1,269 +1,207 @@
-#!/usr/bin/env python2
+from collections import namedtuple
 
-from __future__ import print_function
-import datetime
-import itertools
-import math
-import random
-import sys
-import time
-from collections import defaultdict
-import traceback
-from z3 import *
+from common import typechecked, fresh_name
+from target_syntax import *
+from syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, free_vars, pprint, subst
+import synth_core
 
-from common import ADT
-from cache import Cache
-import predicates
-import plans
-import stats
+HINTS = True
 
-class Timeout(Exception):
-    pass
+SynthCtx = namedtuple("SynthCtx", ["basic_types"])
 
-# Z3 4.4.1 seems to segfault if this is ever deallocated. :(
-_global_z3ctx = Context()
+def all_exps(e):
+    class V(BottomUpExplorer):
+        def join(self, x, children):
+            for child in children:
+                yield from child
+            if isinstance(x, Exp):
+                yield x
+    return V().visit(e)
 
-class SolverContext(object):
+@typechecked
+def synthesize_queries(ctx : SynthCtx, state : [EVar], queries : [Query]) -> (EVar, Exp, [Query]):
+    """
+    Synthesize efficient re-implementations for the given queries.
 
-    def __init__(self, varNames, fieldNames, cost_model, assumptions=()):
-        self.varNames = varNames
-        self.fieldNames = fieldNames
-        self.z3ctx = _global_z3ctx
-        self.z3solver = SolverFor("QF_LIA", ctx=self.z3ctx)
-        self.assumptions = assumptions
-        for a in assumptions:
-            self.z3solver.add(a.toZ3(self.z3ctx))
-        self.cost_model = cost_model
+    Input:
+        ctx     - a synthesis context for the problem
+        state   - list of state variables
+        queries - a list of queries in the specification
 
-    def cost(self, plan):
-        if not hasattr(plan, "_cost"):
-            plan._cost = self.cost_model(plan)
-            # This small bump is to ensure we favor simpler plans
-            plan._cost += plan.size() / 10000.0
-        return plan._cost
+    Output:
+        (new_state, state_proj, new_queries)
+    where
+        new_state is a variable
+        state_proj is an expression mapping state to new_state
+        new_queries is a list of new query expressions
+    """
 
-    def _check_timeout(self):
-        if self.timeout is not None and (time.time() - self.startTime) > self.timeout:
-            raise Timeout()
+    res_type = TTuple(tuple(q.ret.type for q in queries)) if len(queries) > 1 else queries[0].ret.type
+    basic_types = ctx.basic_types
 
-    @stats.generator_task
-    def synthesizePlansByEnumeration(self, query, sort_field=None, maxSize=1000, timeout=None):
-        examples = []
-        query = query.toNNF()
+    common_roots = []
+    # common_roots = list(repl.values())
+    # print("Common roots:")
+    # for e in common_roots:
+    #     print("  --> {} : {}".format(pprint(e), pprint(e.type)))
 
-        dumbestPlan = plans.Filter(plans.AllWhere(predicates.Bool(True)), query)
-        self.bestCost = self.cost(dumbestPlan) # cost of best valid plan found so far
-        self.bestPlans = set([dumbestPlan]) # set of valid plans with cost == self.bestCost
-        self.startTime = time.time()
-        self.timeout = timeout
-        proceed = True
+    if HINTS:
+        state_var_names = set(v.id for v in state)
+        state_roots = set(common_roots)
+        for q in queries:
+            for e in all_exps(q.ret):
+                bound_vars = [fv for fv in free_vars(e) if fv.id not in state_var_names]
+                remap = { v.id : synth_core.EHole(fresh_name(), v.type, None) for v in bound_vars }
+                e = subst(e, remap)
+                if not any(alpha_equivalent(e, root) for root in state_roots):
+                    state_roots.add(e)
+        state_roots = list(state_roots)
+    else:
+        state_roots = common_roots + list(state)
+        for t in basic_types:
+            if isinstance(t, TEnum):
+                for case in t.cases:
+                    state_roots.append(EEnumEntry(case).with_type(t))
+    print("State roots:")
+    for r in state_roots:
+        print("  --> {}".format(pprint(r)))
 
-        try:
-            while proceed:
-                # print("starting synthesis using", len(examples), "examples")
-                for responseType, response in self._synthesizePlansByEnumeration(query, sort_field, maxSize, examples):
-                    if responseType == "counterexample":
-                        example, plan = response
-                        print("found counterexample", example, "\n\tfor", plan)
-                        if example in examples:
-                            raise Exception("error: already saw counterexample!")
-                        examples.append(example)
-                        break
-                    elif responseType == "validPlan":
-                        pass
-                    elif responseType == "stop":
-                        proceed = False
-                        break
-        except:
-            print("stopping due to exception")
-            traceback.print_exc()
-
-        for plan in self.bestPlans:
-            yield plan
-
-    @stats.generator_task
-    def _synthesizePlansByEnumeration(self, query, sort_field, maxSize, examples):
-        """note: query should be in NNF"""
-
-        def outputvector(predicate):
-            correct_sorting = True
-            if isinstance(predicate, plans.Plan):
-                if sort_field is not None:
-                    correct_sorting = predicate.isSortedBy(sort_field)
-                predicate = predicate.toPredicate()
-            if not hasattr(predicate, "_outputvector") or len(predicate._outputvector) != len(examples) + 1:
-                vec = [predicate.eval(dict(itertools.chain(zip(self.varNames, vs), zip(self.fieldNames, fs)))) for fs,vs,_ in examples]
-                if sort_field is not None:
-                    vec.append(correct_sorting)
-                predicate._outputvector = tuple(vec)
-            return predicate._outputvector
-
-        def isValid(plan):
-            """returns True, False, or a new counterexample"""
-            assert len(outputvector(plan)) == len(queryVector)
-            if outputvector(plan) != queryVector:
-                return False
-
-            result = False
-            s = self.z3solver
-            s.push()
-            try:
-                s.add(plan.toPredicate().toZ3(self.z3ctx) != query.toZ3(self.z3ctx))
-            except Exception as e:
-                print(plan, e, plan.toPredicate())
-                raise e
-            if str(s.check()) == 'unsat':
-                result = True
+    class TopLevelBuilder(synth_core.Builder):
+        def __init__(self):
+            super().__init__((), basic_types)
+            self.args_by_q = { q.name: [EVar(fresh_name(name)).with_type(t) for (name, t) in q.args] for q in queries }
+            self.state_var_name = fresh_name("state")
+            # self.state_hole_name = fresh_name("state")
+        def make_state_hole_core(self, type, builder):
+            builder.build_maps = False
+            builder.build_tuples = False
+            return synth_core.EHole(fresh_name(), type, builder)
+        def make_state_hole(self, type, builder=None):
+            if builder is None:
+                builder = synth_core.Builder(state_roots, basic_types)
+            if isinstance(type, TMap):
+                # TODO: HACK
+                for size in range(1, 3):
+                    for t in self.enum_types(size, allow_maps=False):
+                        bag_type = TBag(t)
+                        e = EVar(fresh_name()).with_type(t)
+                        es = EVar(fresh_name()).with_type(bag_type)
+                        khole = synth_core.EHole(fresh_name(), type.k, builder.with_roots([e], build_maps=False))
+                        vhole = synth_core.EHole(fresh_name(), type.v, builder.with_roots([es], build_maps=False))
+                        for bag in self.make_state_hole(bag_type, builder):
+                            yield EMakeMap(
+                                bag,
+                                ELambda(e, khole),
+                                ELambda(es, vhole)).with_type(type)
+            elif isinstance(type, TTuple):
+                if len(type.ts) == 2:
+                    for hole1 in self.make_state_hole(type.ts[0], builder):
+                        for hole2 in self.make_state_hole(type.ts[1], builder):
+                            yield ETuple((hole1, hole2)).with_type(type)
+                else:
+                    for hole in self.make_state_hole(type.ts[0], builder):
+                        for rest in self.make_state_hole(TTuple(type.ts[1:]), builder):
+                            yield ETuple((hole,) + rest.es).with_type(type)
             else:
-                m = s.model()
-                result = (
-                    [int(str(0 if m[Int(f, self.z3ctx)] is None else m[Int(f, self.z3ctx)])) for f in self.fieldNames],
-                    [int(str(0 if m[Int(v, self.z3ctx)] is None else m[Int(v, self.z3ctx)])) for v in self.varNames],
-                    plan.isSortedBy(sort_field) if sort_field is not None else True)
-            s.pop()
+                yield self.make_state_hole_core(type, builder)
+        def make_query_hole(self, q, state_var):
+            args = self.args_by_q[q.name]
+            # for e in common_roots + args + [state_var]:
+            #     print("{} : {}".format(pprint(e), pprint(e.type)))
+            b = synth_core.Builder(common_roots + args + [state_var], basic_types)
+            b.build_maps = False
+            b.build_tuples = False
+            return synth_core.EHole(q.name, q.ret.type, b)
+        def build(self, cache, size):
+            # TODO: HACK
+            if size != 1: return
+            for state_type in (TMap(TBool(), TBag([t for t in basic_types if isinstance(t, THandle)][0])),):
+            # for state_type in self.enum_types(size - 1):
+                # print(pprint(state_type))
+                state_var = EVar(self.state_var_name).with_type(state_type)
+                for state_hole in self.make_state_hole(state_type):
+                    # print("{} --> {}".format(pprint(state_type), pprint(state_hole)))
 
-            return result
+                    out = []
+                    for q in queries:
+                        q_hole = self.make_query_hole(q, state_var)
+                        out.append(q_hole)
 
-        def implies(vec1, vec2):
-            """Every element of vec1 implies corresponding element in vec2"""
-            return all(v2 if v1 else True for (v1, v2) in zip(vec1, vec2))
+                    yield EApp(
+                        ELambda(state_var, ETuple(tuple(out)) if len(out) > 1 else out[0]),
+                        state_hole).with_type(res_type)
 
-        def on_valid_plan(plan, cost):
-            if cost > self.bestCost:
-                return
-            print("found good valid plan: {}, cost={}".format(plan, cost))
-            if cost < self.bestCost:
-                self.bestCost = cost
-                self.bestPlans = set()
-            self.bestPlans.add(plan)
-            plan_cache.evict_higher_cost_entries(cost)
+    builder = TopLevelBuilder()
+    if False:
+        for q in queries:
+            hole = synth_core.EHole(fresh_name(), q.ret.type, synth_core.Builder(common_roots + [EVar(name).with_type(t) for (name, t) in q.args] + state_roots, basic_types))
+            spec = EBinOp(hole, "==", q.ret).with_type(TBool())
+            for mapping in synth_core.synth(spec):
+                print("SOLUTION FOR {}".format(q.name))
+                type = mapping[hole.name].type
+                result = synth_core.expand(hole, mapping)
+                print("  {}".format(pprint(result)))
+                # break
+        return
 
-        def consider(plan):
-            self._check_timeout()
-            size = plan.size()
-            if not plan.wellFormed(self.z3ctx, self.z3solver, self.fieldNames, self.varNames):
-                return None, None
-            x = isValid(plan)
-            cost = self.cost(plan)
+    hole = synth_core.EHole(fresh_name(), res_type, builder)
+    target = tuple(subst(q.ret, { a1name:a2 for ((a1name, type), a2) in zip(q.args, builder.args_by_q[q.name]) }) for q in queries)
+    if len(target) == 1:
+        target = target[0]
+    else:
+        target = ETuple(target)
+    spec = EBinOp(hole, "==", target)
+    print(pprint(spec))
 
-            # too expensive? it can't possibly be part of a great plan!
-            if self.bestCost is not None and cost > self.bestCost:
-                return None, None
+    for mapping in synth_core.synth(spec):
 
-            if x is True:
-                on_valid_plan(plan, cost)
-                return "validPlan", plan
-            elif x is False:
-                vec = outputvector(plan)
+        print("SOLUTION")
+        expr = synth_core.expand(hole, mapping)
+        result = expr.arg
+        type = result.type
+        print("{} : {} = {}".format(
+            builder.state_var_name,
+            pprint(type),
+            pprint(result)))
 
-                # fastforward
-                if implies(queryVector, vec):
-                    plan2 = plans.Filter(plan, query)
-                    x2 = isValid(plan2)
-                    if x2 is True:
-                        on_valid_plan(plan2, self.cost(plan2))
-                    elif x2 is False:
-                        # This case can happen if plan2 is correct BUT not
-                        # not sorted correctly.
-                        pass
-                    else:
-                        return "counterexample", (x2, plan2)
+        for q in queries:
+            hole = synth_core.EHole(q.name, q.ret.type, None)
+            result = synth_core.expand(hole, mapping)
+            print("{} =".format(q.name))
+            print("  {}".format(pprint(result)))
 
-                plan_cache.put(plan, key=vec, size=size, cost=cost)
-                return None, None
-            else:
-                # x is new example!
-                return "counterexample", (x, plan)
+        raise NotImplementedError()
 
-        def registerExp(e, cull=True, size=None):
-            self._check_timeout()
-            return expr_cache.put(e, size=size)
+@typechecked
+def synthesize(spec : Spec):
+    """
+    Main synthesis routine.
+    """
 
-        def pickToSum(cache1, cache2, sum):
-            return ((x1, x2) for split in range(1, sum-1)
-                for x1 in cache1.entries_of_size(split)
-                for x2 in cache2.entries_of_size(sum-split-1))
+    # gather root types
+    types = all_types(spec)
+    basic_types = set(t for t in types if not isinstance(t, TBag))
+    basic_types |= { TBool(), TInt() }
+    print("basic types:")
+    for t in basic_types:
+        print("  --> {}".format(pprint(t)))
+    basic_types = list(basic_types)
 
-        queryVector = outputvector(query)
-        comps = set(query.comparisons())
-        for a in self.assumptions:
-            # print("A ==> {}".format(a))
-            for c in a.comparisons():
-                comps.add(c)
-        for a, b in list(comps):
-            comps.add((b, a))
+    # rewrite enums
+    enum_types = [t for t in basic_types if isinstance(t, TEnum)]
+    repl = {
+        name : EEnumEntry(name).with_type(t)
+        for t in enum_types
+        for name in t.cases }
+    spec = subst(spec, repl)
 
-        def transitively_related(x1, x2, comps, visited=None):
-            if x1 == x2:
-                return True
-            if visited is None:
-                visited = set()
-            elif x1 in visited:
-                return False
-            visited.add(x1)
-            for a, b in comps:
-                if a == x1:
-                    if transitively_related(b, x2, comps, visited):
-                        return True
-            return False
+    # synthesis
+    qs = [q for q in spec.methods if isinstance(q, Query) if q.name == "inMemEntries"]
+    # qs = [q for q in spec.methods if isinstance(q, Query) if q.name in ("totalMemSize", "totalDiskSize")]
+    # qs = [q for q in spec.methods if isinstance(q, Query)]
+    # qs = [qs[0]]
+    assert len(qs) > 0
 
-        plan_cache = Cache(cost_func=self.cost,   size_func=ADT.size, key_func=outputvector, allow_multi=True)
-        expr_cache = Cache(cost_func=lambda e: 1, size_func=ADT.size, key_func=outputvector, allow_multi=False)
-
-        print("starting with {} examples".format(len(examples)))
-        print("round 1")
-        for b in (True, False):
-            registerExp(predicates.Bool(b), cull=False)
-
-        all_names = self.varNames + self.fieldNames
-        for v in all_names:
-            for f in all_names:
-                if v < f and transitively_related(v, f, comps):
-                    for op in predicates.operators:
-                        registerExp(
-                            predicates.Compare(predicates.Var(v), op, predicates.Var(f)),
-                            cull=False)
-
-        q = registerExp(query)
-
-        yield consider(plans.BinarySearch(plans.AllWhere(predicates.Bool(True)), q))
-        yield consider(plans.HashLookup(plans.AllWhere(predicates.Bool(True)), q))
-
-        if all(type(x) is predicates.Compare for x in predicates.break_conj(query)):
-            eqs = [x for x in predicates.break_conj(query) if x.op == plans.Eq]
-            others = [x for x in predicates.break_conj(query) if x.op != plans.Eq]
-            if eqs and others:
-                hashcond = predicates.conjunction(eqs)
-                bscond = predicates.conjunction(others)
-                plan = plans.BinarySearch(plans.HashLookup(plans.AllWhere(predicates.Bool(True)), hashcond), bscond)
-                yield consider(plan)
-
-        roundsWithoutProgress = 0
-        maxRoundsWithoutProgress = 10
-
-        for size in range(2, maxSize + 1):
-            # termination criterion: no plans can ever be formed above this point
-            halfsize = int(size/2)
-            if all((sz > 2 and not plan_cache.entries_of_size(sz-1) and all((not plan_cache.entries_of_size(i) or (not plan_cache.entries_of_size(sz - i - 1) and not plan_cache.entries_of_size(sz - i - 1))) for i in range(1, sz - 1))) for sz in range(halfsize, size+1)):
-                yield ("stop", None)
-
-            # exprs
-            # Since we have all operators and their negations, we will never
-            # generate anything interesting involving Not.
-            for e1, e2 in pickToSum(expr_cache, expr_cache, size):
-                registerExp(predicates.And(e1, e2), size=size)
-                registerExp(predicates.Or(e1, e2),  size=size)
-
-            # plans
-            print("round {}; cache={}/{max}; ecache={}/{max}; bestCost={}".format(size, len(plan_cache), len(expr_cache), self.bestCost, max=2**len(examples)))
-            for e in expr_cache.entries_of_size(size - 1):
-                if all(v.name in self.fieldNames for v in e.vars()):
-                    yield consider(plans.AllWhere(e))
-            for plan in (plans.HashLookup(p, e) for p, e in pickToSum(plan_cache, expr_cache, size)):
-                yield consider(plan)
-            for plan in (plans.BinarySearch(p, e) for p, e in pickToSum(plan_cache, expr_cache, size)):
-                yield consider(plan)
-            for plan in (plans.Filter(p, e) for p, e in pickToSum(plan_cache, expr_cache, size)):
-                yield consider(plan)
-            for plan in (plans.Concat(p1, p2) for p1, p2 in pickToSum(plan_cache, plan_cache, size)):
-                yield consider(plan)
+    ctx = SynthCtx(basic_types=basic_types)
+    new_state, state_proj, new_qs = synthesize_queries(ctx, [EVar(name).with_type(t) for (name, t) in spec.statevars], qs)
+    raise NotImplementedError()
