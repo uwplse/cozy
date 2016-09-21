@@ -98,6 +98,12 @@ class Evaluator(Visitor):
         raise NotImplementedError("eval({})".format(e))
     def visit_object(self, o, *args):
         raise Exception("cannot eval {}".format(repr(o)))
+    def visit(self, o, *args):
+        try:
+            return super().visit(o, *args)
+        except:
+            print("evaluation of {} failed".format(repr(o)))
+            raise
 
 def eval(e, env):
     return Evaluator().visit(e, env)

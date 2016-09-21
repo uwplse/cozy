@@ -315,6 +315,7 @@ def subst(exp, replacements):
     Output:
         exp with each var mapped to its replacement (if any) from replacements
     """
+    # print("subst({}, {})".format(exp, replacements))
 
     allfvs = set()
     for fvs in (free_vars(val) for val in replacements.values()):
@@ -396,7 +397,11 @@ def subst(exp, replacements):
         def visit(self, x, *args, **kwargs):
             res = super().visit(x, *args, **kwargs)
             if isinstance(res, syntax.Exp) and hasattr(x, "type"):
-                res.type = x.type
+                try:
+                    res.type = x.type
+                except:
+                    print("original was {}, mapping={}".format(pprint(x), replacements))
+                    raise
             return res
 
     return Subst().visit(exp)

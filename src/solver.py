@@ -10,10 +10,27 @@ from common import declare_case, fresh_name, Visitor, FrozenDict
 # TODO: Int==Bv32, Long==Bv64
 TBitVec = declare_case(Type, "TBitVec", ["width"])
 
+class SymbolicUnion(object):
+    """
+    Represents `If(cond, x, y)` expression
+    """
+    def __init__(self, cond, x, y):
+        self.cond = cond
+        self.lhs = x
+        self.rhs = y
+    def map(self, f):
+        new_lhs = self.lhs.map(f) if isinstance(self.lhs, SymbolicUnion) else f(self.lhs)
+        new_rhs = self.rhs.map(f) if isinstance(self.rhs, SymbolicUnion) else f(self.rhs)
+        return SymbolicUnion(self.cond, new_lhs, new_rhs)
+
 class ToZ3(Visitor):
     def __init__(self, z3ctx):
         self.ctx = z3ctx
     def eq(self, t, e1, e2, env):
+        if isinstance(e1, SymbolicUnion):
+            return z3.If(e1.cond, self.eq(t, e1.lhs, e2, env), self.eq(t, e1.rhs, e2, env), self.ctx)
+        if isinstance(e2, SymbolicUnion):
+            return z3.If(e2.cond, self.eq(t, e1, e2.lhs, env), self.eq(t, e1, e2.rhs, env), self.ctx)
         if type(t) in [TInt, TLong, TBool, TEnum]:
             return e1 == e2
         elif isinstance(t, TBag):
@@ -136,8 +153,13 @@ class ToZ3(Visitor):
         map = self.visit(e.map, env)
         key = self.visit(e.key, env)
         res = self.apply(map["default"], ((), ()), env)
+        # print("map get {} on {}".format(key, map))
         for (k, v) in map["mapping"]:
-            res = z3.If(k == key, v, res)
+            # print("   k   = {}".format(repr(k)))
+            # print("   key = {}".format(repr(key)))
+            # print("   v   = {}".format(repr(v)))
+            # print("   res = {}".format(repr(res)))
+            res = SymbolicUnion(k == key, v, res)
         return res
     def visit_EApp(self, e, env):
         return self.apply(e.f, self.visit(e.arg, env), env)
@@ -172,6 +194,14 @@ class ToZ3(Visitor):
     def visit_AstRef(self, e, env):
         """AstRef is the Z3 AST node type"""
         return e
+    def visit_bool(self, e, env):
+        return z3.BoolVal(e, self.ctx)
+    def visit(self, e, *args):
+        try:
+            return super().visit(e, *args)
+        except:
+            print("failed to convert {}".format(pprint(e)))
+            raise
 
 def mkvar(ctx, solver, collection_depth, type):
     if type == TInt() or type == TLong():
@@ -311,7 +341,8 @@ class ToZ3WithUninterpretedHoles(ToZ3):
 def feasible(spec, examples):
     return True # TODO
     if not examples:
-        return True
+        import evaluation
+        examples = [{ v.id: evaluation.mkval(v.type) for v in free_vars(spec) }]
 
     # print("feasible? {}".format(pprint(spec)))
 

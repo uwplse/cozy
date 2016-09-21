@@ -237,6 +237,20 @@ def split(iter, p):
             f.append(x)
     return (t, f)
 
+def unique(iter, key=lambda x: x):
+    """
+    Yields a stream of deduplicated elements. If the 'key' parameter is
+    provided, elements x are deduplicated according to key(x). When duplicates
+    are found, the first element in the iterable is kept and others are
+    dropped.
+    """
+    seen = set()
+    for x in iter:
+        k = key(x)
+        if k not in seen:
+            seen.add(k)
+            yield x
+
 def declare_case(supertype, name, attrs=()):
     """
     Usage:
