@@ -63,6 +63,7 @@ class Builder(object):
             size          : int,
             allow_bags    : bool = True,
             allow_maps    : bool = True,
+            allow_tuples  : bool = True,
             max_bag_depth : int  = 2):
         if size <= 0:
             return
@@ -70,18 +71,19 @@ class Builder(object):
             yield from self.type_roots
         else:
             if allow_bags and max_bag_depth > 0:
-                for t in self.enum_types(size - 1, allow_maps=allow_maps, max_bag_depth=max_bag_depth-1):
+                for t in self.enum_types(size - 1, allow_maps=allow_maps, allow_tuples=allow_tuples, max_bag_depth=max_bag_depth-1):
                     yield TBag(t)
             if allow_maps:
                 for (ksize, vsize) in pick_to_sum(2, size - 1):
-                    for k in self.enum_types(ksize, allow_bags=False, allow_maps=False):
-                        for v in self.enum_types(vsize, allow_bags=allow_bags, allow_maps=False, max_bag_depth=max_bag_depth):
+                    for k in self.enum_types(ksize, allow_bags=False, allow_maps=False, allow_tuples=allow_tuples):
+                        for v in self.enum_types(vsize, allow_bags=allow_bags, allow_maps=False, allow_tuples=allow_tuples, max_bag_depth=max_bag_depth):
                             yield TMap(k, v)
-            for tuple_len in range(2, size):
-                for sizes in pick_to_sum(tuple_len, size - 1):
-                    gens = tuple(list(self.enum_types(sz, allow_bags=allow_bags, allow_maps=allow_maps, max_bag_depth=max_bag_depth)) for sz in sizes)
-                    for types in cross_product(gens):
-                        yield TTuple(types)
+            if allow_tuples:
+                for tuple_len in range(2, size):
+                    for sizes in pick_to_sum(tuple_len, size - 1):
+                        gens = tuple(list(self.enum_types(sz, allow_bags=allow_bags, allow_maps=allow_maps, allow_tuples=False, max_bag_depth=max_bag_depth)) for sz in sizes)
+                        for types in cross_product(gens):
+                            yield TTuple(types)
 
     def instantiate(self, e : Exp, cache : Cache, total_size : int):
         holes = list(find_holes(e))

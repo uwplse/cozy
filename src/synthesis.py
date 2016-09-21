@@ -7,7 +7,7 @@ import synth_core
 
 HINTS = True
 
-SynthCtx = namedtuple("SynthCtx", ["basic_types"])
+SynthCtx = namedtuple("SynthCtx", ["all_types", "basic_types"])
 
 def all_exps(e):
     class V(BottomUpExplorer):
@@ -37,6 +37,7 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], queries : [Query]) -> (EV
     """
 
     res_type = TTuple(tuple(q.ret.type for q in queries)) if len(queries) > 1 else queries[0].ret.type
+    all_types = ctx.all_types
     basic_types = ctx.basic_types
 
     common_roots = []
@@ -80,19 +81,20 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], queries : [Query]) -> (EV
             if builder is None:
                 builder = synth_core.Builder(state_roots, basic_types)
             if isinstance(type, TMap):
-                # TODO: HACK
-                for size in range(1, 3):
-                    for t in self.enum_types(size, allow_maps=False):
-                        bag_type = TBag(t)
-                        e = EVar(fresh_name()).with_type(t)
-                        es = EVar(fresh_name()).with_type(bag_type)
-                        khole = synth_core.EHole(fresh_name(), type.k, builder.with_roots([e], build_maps=False))
-                        vhole = synth_core.EHole(fresh_name(), type.v, builder.with_roots([es], build_maps=False))
-                        for bag in self.make_state_hole(bag_type, builder):
-                            yield EMakeMap(
-                                bag,
-                                ELambda(e, khole),
-                                ELambda(es, vhole)).with_type(type)
+                for t in all_types:
+                    if isinstance(t, TBag):
+                        bag_type = t
+                        for r in state_roots:
+                            holes = list(synth_core.find_holes(r))
+                            if r.type == type.k and len(holes) == 1 and holes[0].type == bag_type.t:
+                                e = EVar(fresh_name()).with_type(bag_type.t)
+                                es = EVar(fresh_name()).with_type(bag_type)
+                                vhole = synth_core.EHole(fresh_name(), type.v, builder.with_roots([es], build_maps=False))
+                                for bag in self.make_state_hole(bag_type, builder):
+                                    yield EMakeMap(
+                                        bag,
+                                        ELambda(e, subst(r, { holes[0].name : e })),
+                                        ELambda(es, vhole)).with_type(type)
             elif isinstance(type, TTuple):
                 if len(type.ts) == 2:
                     for hole1 in self.make_state_hole(type.ts[0], builder):
@@ -114,12 +116,17 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], queries : [Query]) -> (EV
             return synth_core.EHole(q.name, q.ret.type, b)
         def build(self, cache, size):
             # TODO: HACK
-            if size != 1: return
-            for state_type in (TMap(TBool(), TBag([t for t in basic_types if isinstance(t, THandle)][0])),):
-            # for state_type in self.enum_types(size - 1):
+            cheat = TMap(TBool(), TBag([t for t in basic_types if isinstance(t, THandle)][0]))
+            # if size != 1: return
+            # for state_type in (cheat,):
+            for state_type in self.enum_types(size - 1, allow_tuples=False):
+                # if state_type == cheat:
+                #     print("now exploring {}".format(pprint(state_type)))
+                # print("state ?= {}".format(pprint(state_type)))
                 # print(pprint(state_type))
                 state_var = EVar(self.state_var_name).with_type(state_type)
                 for state_hole in self.make_state_hole(state_type):
+                    # print("   --> {}".format(pprint(state_hole)))
                     # print("{} --> {}".format(pprint(state_type), pprint(state_hole)))
 
                     out = []
@@ -202,6 +209,6 @@ def synthesize(spec : Spec):
     # qs = [qs[0]]
     assert len(qs) > 0
 
-    ctx = SynthCtx(basic_types=basic_types)
+    ctx = SynthCtx(all_types=types, basic_types=basic_types)
     new_state, state_proj, new_qs = synthesize_queries(ctx, [EVar(name).with_type(t) for (name, t) in spec.statevars], qs)
     raise NotImplementedError()
