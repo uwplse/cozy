@@ -174,6 +174,7 @@ def ast_replace_ref(haystack, needle, replacement):
         lambda x: x is needle,
         lambda x: replacement)
 
+@total_ordering
 class FrozenDict(dict):
     """
     Immutable dictionary that is hashable (suitable for use in sets/maps)
@@ -189,6 +190,8 @@ class FrozenDict(dict):
         if self.hc is None:
             self.hc = hash(tuple(sorted(self.items())))
         return self.hc
+    def __lt__(self, other):
+        return tuple(sorted(self.items())) < tuple(sorted(other.items()))
 
 _i = 0
 def fresh_name(hint="name"):
