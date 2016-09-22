@@ -29,7 +29,7 @@ def fragmentize(exp : Exp, bound_names : {str} = set()):
             yield e
 
 @typechecked
-def synthesize_queries(ctx : SynthCtx, state : [EVar], queries : [Query]) -> (EVar, Exp, [Query]):
+def synthesize_queries(ctx : SynthCtx, state : [EVar], queries : [Query]): # -> (EVar, Exp, [Query]):
     """
     Synthesize efficient re-implementations for the given queries.
 
@@ -45,6 +45,7 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], queries : [Query]) -> (EV
         state_proj is an expression mapping state to new_state
         new_queries is a list of new query expressions
     """
+    assert len(queries) > 0
 
     res_type = TTuple(tuple(q.ret.type for q in queries)) if len(queries) > 1 else queries[0].ret.type
     all_types = ctx.all_types
@@ -52,9 +53,7 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], queries : [Query]) -> (EV
 
     if HINTS:
         state_var_names = set(v.id for v in state)
-        state_roots = []
-        for q in queries:
-            state_roots += list(fragmentize(q.ret, bound_names=state_var_names))
+        state_roots = list(fragmentize(ETuple(tuple(q.ret for q in queries)).with_type(res_type) if len(queries) > 1 else queries[0].ret, bound_names=state_var_names))
     else:
         state_roots = list(state)
         for t in basic_types:
@@ -112,7 +111,8 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], queries : [Query]) -> (EV
             return synth_core.EHole(q.name, q.ret.type, b)
         def build(self, cache, size):
             # TODO: HACK
-            cheat = TMap(TBool(), TBag([t for t in basic_types if isinstance(t, THandle)][0]))
+            # cheat = TMap(TBool(), TBag([t for t in basic_types if isinstance(t, THandle)][0]))
+            # cheat = TTuple((TInt(), TInt()))
             # if size != 1: return
             # for state_type in (cheat,):
             for state_type in self.enum_types(size - 1, allow_tuples=False):
@@ -173,7 +173,7 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], queries : [Query]) -> (EV
             print("{} =".format(q.name))
             print("  {}".format(pprint(result)))
 
-        raise NotImplementedError()
+        return
 
 @typechecked
 def synthesize(spec : Spec):
@@ -189,6 +189,7 @@ def synthesize(spec : Spec):
     for t in basic_types:
         print("  --> {}".format(pprint(t)))
     basic_types = list(basic_types)
+    ctx = SynthCtx(all_types=types, basic_types=basic_types)
 
     # rewrite enums
     enum_types = [t for t in basic_types if isinstance(t, TEnum)]
@@ -199,13 +200,15 @@ def synthesize(spec : Spec):
     spec = subst(spec, repl)
 
     # collect queries
-    qs = [q for q in spec.methods if isinstance(q, Query) if q.name == "inMemEntries"]
-    # qs = [q for q in spec.methods if isinstance(q, Query) if q.name in ("totalMemSize", "totalDiskSize")]
-    # qs = [q for q in spec.methods if isinstance(q, Query)]
     # qs = [qs[0]]
-    assert len(qs) > 0
+    # qs = [q for q in spec.methods if isinstance(q, Query) if q.name == "inMemEntries"]
+    # qs = [q for q in spec.methods if isinstance(q, Query) if q.name in ("totalMemSize", "totalDiskSize")]
+    qs = [q for q in spec.methods if isinstance(q, Query)]
+    # assert len(qs) > 0
 
     # synthesis
-    ctx = SynthCtx(all_types=types, basic_types=basic_types)
-    new_state, state_proj, new_qs = synthesize_queries(ctx, [EVar(name).with_type(t) for (name, t) in spec.statevars], qs)
+    for q in qs:
+        print("##### SYNTHESIZING {}".format(q.name))
+        synthesize_queries(ctx, [EVar(name).with_type(t) for (name, t) in spec.statevars], [q])
+
     raise NotImplementedError()
