@@ -103,6 +103,9 @@ class Typechecker(Visitor):
     def visit_TBool(self, t):
         return t
 
+    def visit_TInt(self, t):
+        return t
+
     def ensure_type(self, e, t):
         if not hasattr(e, "type"):
             self.visit(e)
