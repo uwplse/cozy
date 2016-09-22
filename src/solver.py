@@ -19,9 +19,14 @@ class SymbolicUnion(object):
         self.lhs = x
         self.rhs = y
     def map(self, f):
-        new_lhs = self.lhs.map(f) if isinstance(self.lhs, SymbolicUnion) else f(self.lhs)
-        new_rhs = self.rhs.map(f) if isinstance(self.rhs, SymbolicUnion) else f(self.rhs)
+        new_lhs = fmap(self.lhs, f)
+        new_rhs = fmap(self.rhs, f)
         return SymbolicUnion(self.cond, new_lhs, new_rhs)
+
+def fmap(x, f):
+    if isinstance(x, SymbolicUnion):
+        return x.map(f)
+    return f(x)
 
 class ToZ3(Visitor):
     def __init__(self, z3ctx):
@@ -86,6 +91,9 @@ class ToZ3(Visitor):
         return e.type.cases.index(e.name)
     def visit_ETuple(self, e, env):
         return tuple(self.visit(ee, env) for ee in e.es)
+    def visit_ETupleGet(self, e, env):
+        tup = self.visit(e.e, env)
+        return fmap(tup, lambda tup: tup[e.n])
     def visit_EUnaryOp(self, e, env):
         if e.op == "not":
             return z3.Not(self.visit(e.e, env), ctx=self.ctx)
