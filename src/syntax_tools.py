@@ -466,7 +466,7 @@ def alpha_equivalent(e1, e2):
     return V().visit(e1, e2)
 
 def implies(e1, e2):
-    BOOL = TBool()
+    BOOL = syntax.TBool()
     return syntax.EBinOp(
         syntax.EUnaryOp("not", e1).with_type(BOOL),
         "or",
