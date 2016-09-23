@@ -64,7 +64,7 @@ SNoOp               = declare_case(Stm, "SNoOp")
 SSeq                = declare_case(Stm, "SSeq",     ["s1", "s2"])
 SCall               = declare_case(Stm, "SCall",    ["target", "func", "args"])
 SAssign             = declare_case(Stm, "SAssign",  ["lhs", "rhs"])
-SDecl               = declare_case(Stm, "SDecl",    ["x", "val"])
+SDecl               = declare_case(Stm, "SDecl",    ["id", "val"])
 SForEach            = declare_case(Stm, "SForEach", ["id", "iter", "body"])
 SIf                 = declare_case(Stm, "SIf",      ["cond", "then_branch", "else_branch"])
 
@@ -79,3 +79,15 @@ def seq(stms):
         for s in stms:
             result = s if result is None else SSeq(result, s)
         return result
+
+def EAll(exps):
+    BOOL = TBool()
+    res = None
+    for e in exps:
+        if res is None:
+            res = e
+        else:
+            res = EBinOp(res, "and", e).with_type(BOOL)
+    if res is None:
+        return EBool(True).with_type(BOOL)
+    return res

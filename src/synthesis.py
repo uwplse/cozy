@@ -143,7 +143,7 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
                 builder = synth_core.Builder(state_roots, basic_types)
             if isinstance(type, TMap):
                 for t in all_types:
-                    if isinstance(t, TBag):
+                    if isinstance(t, TBag) and isinstance(t.t, THandle):
                         bag_type = t
                         for r in state_roots:
                             holes = list(synth_core.find_holes(r))
@@ -221,9 +221,7 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
     else:
         target = ETuple(target)
 
-    assumption = EBool(True).with_type(BOOL)
-    for a in assumptions:
-        assumption = EBinOp(assumption, "and", a).with_type(BOOL)
+    assumption = EAll(assumptions)
     spec = implies(assumption, EBinOp(hole, "==", target))
     print(pprint(spec))
 

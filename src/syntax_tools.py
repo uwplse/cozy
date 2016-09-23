@@ -222,6 +222,9 @@ class PrettyPrinter(common.Visitor):
     def visit_SAssign(self, s, indent=""):
         return "{}{} = {}".format(indent, self.visit(s.lhs), self.visit(s.rhs))
 
+    def visit_SDecl(self, s, indent=""):
+        return "{}var {} : {} = {}".format(indent, s.id, self.visit(s.val.type), self.visit(s.val))
+
     def visit_SDel(self, s, indent=""):
         return "{}del {}".format(indent, self.visit(s.e))
 

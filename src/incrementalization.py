@@ -1,19 +1,15 @@
-from common import ADT, declare_case, Visitor, typechecked
+from common import ADT, declare_case, Visitor, typechecked, fresh_name
 import syntax
 from syntax_tools import subst, free_vars
 
 class Delta(ADT): pass
-NoDelta         = declare_case(Delta, "NoDelta")
-BagAdd          = declare_case(Delta, "BagAdd",          ["e"])
-BagRemove       = declare_case(Delta, "BagRemove",       ["e"])
-# ListAddFront    = declare_case(Delta, "ListAddFront",    ["e"])
-# ListAddBack     = declare_case(Delta, "ListAddBack",     ["e"])
-# ListRemove      = declare_case(Delta, "ListRemove",      ["e"])
-Conditional     = declare_case(Delta, "Conditional",     ["cond", "delta"])
-MultiDelta      = declare_case(Delta, "MultiDelta",      ["delta1", "delta2"])
-AddNum          = declare_case(Delta, "AddNum", ["e"])
-
-MapUpdate = declare_case(Delta, "MapUpdate", ["key", "delta"])
+NoDelta           = declare_case(Delta, "NoDelta")
+BagAdd            = declare_case(Delta, "BagAdd",          ["e"])
+BagRemove         = declare_case(Delta, "BagRemove",       ["e"])
+Conditional       = declare_case(Delta, "Conditional",     ["cond", "delta"])
+MultiDelta        = declare_case(Delta, "MultiDelta",      ["delta1", "delta2"])
+AddNum            = declare_case(Delta, "AddNum", ["e"])
+MapUpdate         = declare_case(Delta, "MapUpdate", ["key", "delta"])
 RecordFieldUpdate = declare_case(Delta, "RecordFieldUpdate", ["f", "delta"])
 
 def multi_delta(deltas):
@@ -57,33 +53,30 @@ def derivative(
 
     subgoals = []
 
-    def derivative_ll(d):
-        if isinstance(d, NoDelta):
-            return d
-        elif isinstance(d, BagAdd):
-            return LLInsertAtFront(d.e)
-        elif isinstance(d, BagRemove):
-            return LLRemove(d.e)
-        elif isinstance(d, Conditional):
-            return Conditional(
-                d.cond,
-                derivative_ll(d.delta))
-        else:
-            raise NotImplementedError(d)
-
-    def derivative_hm(d, key_func, value_func):
+    def derivative_makemap(d, key_func, value_func):
         if isinstance(d, NoDelta):
             return d
         elif isinstance(d, BagAdd) or isinstance(d, BagRemove):
             affected_key = key_func.apply_to(d.e)
-            (subdelta, sgs) = derivative(value_func.body, syntax.EVar(value_func.argname), d)
+            (subdelta, sgs) = derivative(value_func.body, value_func.arg, d)
             for sg in sgs:
                 subgoals.append(sg)
-            return MapUpdate(affected_key, subdelta)
+
+            # If the subdelta is conditional, but the conditions don't depend on
+            # the actual value, then we can push the map update inside the
+            # condition for better performance.
+            guards = []
+            while isinstance(subdelta, Conditional) and not any(v == value_func.arg for v in free_vars(subdelta.cond)):
+                guards.append(subdelta.cond)
+                subdelta = subdelta.delta
+            res = MapUpdate(affected_key, subdelta)
+            if guards:
+                res = Conditional(syntax.EAll(guards), res)
+            return res
         elif isinstance(d, Conditional):
             return Conditional(
                 d.cond,
-                derivative_hm(d.delta))
+                derivative_makemap(d.delta))
         else:
             raise NotImplementedError(d)
 
@@ -144,48 +137,21 @@ def derivative(
 
         def visit_EMap(self, e):
             if var in free_vars(e.f):
-                # TODO
+                # TODO: requires subgoals
                 raise NotImplementedError(e)
             return derivative_map(self.visit(e.e), e.f)
 
         def visit_EFilter(self, e):
             if var in free_vars(e.p):
-                # TODO
+                # TODO: requires subgoals
                 raise NotImplementedError(e)
             return derivative_filter(self.visit(e.e), e.p)
 
-        def visit_ECall(self, call):
-            func = call.func
-            if func == "MakeLinkedList":
-                return derivative_ll(self.visit(call.args[0]))
-            if func == "MakeHashMap":
-                return derivative_hm(self.visit(call.args[0]), call.args[1], call.args[2])
-            elif func == "Mapped":
-                d = self.visit(call.args[0])
-                if isinstance(d, NoDelta):
-                    return d
-                elif isinstance(d, BagAdd):
-                    return BagAdd(call.args[1].apply_to(d.e))
-                elif isinstance(d, BagRemove):
-                    return BagRemove(call.args[1].apply_to(d.e))
-                else:
-                    raise NotImplementedError(d)
-            elif func == "Filter":
-                d = self.visit(call.args[0])
-                if isinstance(d, NoDelta):
-                    return d
-                elif isinstance(d, BagAdd):
-                    return Conditional(
-                        call.args[1].apply_to(d.e),
-                        BagAdd(d.e))
-                elif isinstance(d, BagRemove):
-                    return Conditional(
-                        call.args[1].apply_to(d.e),
-                        BagRemove(d.e))
-                else:
-                    raise NotImplementedError(d)
-            else:
-                raise NotImplementedError(func)
+        def visit_EMakeMap(self, e):
+            if var in free_vars(e.key) or var in free_vars(e.value):
+                # TODO: requires subgoals
+                raise NotImplementedError(e)
+            return derivative_makemap(self.visit(e.e), e.key, e.value)
 
         def visit_EMakeRecord(self, e):
             return multi_delta([RecordFieldUpdate(f, self.visit(ee)) for (f, ee) in e.fields])

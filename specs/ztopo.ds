@@ -38,8 +38,8 @@ TileCache:
     query pendingEntries()
         [e | e <- entries, e.val.st == IndexPending]
 
-//    query inMemEntries(inUse : Bool)
-//        [e | e <- entries, (e.val.st == DiskAndMemory or e.val.st == MemoryOnly), e.val.inUse == inUse]
+    query inMemEntries(inUse : Bool)
+        [e | e <- entries, (e.val.st == DiskAndMemory or e.val.st == MemoryOnly), e.val.inUse == inUse]
 
 //    query findTile(k : Key)
 //        some [e | e <- entries, e.val.key == k]
