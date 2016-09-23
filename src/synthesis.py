@@ -104,9 +104,22 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
                             yield ETuple((hole,) + rest.es).with_type(type)
             else:
                 yield self.make_state_hole_core(type, builder)
+        def make_query_hints(self, state_type, state_exp):
+            yield state_exp
+            if isinstance(state_type, TMap):
+                e = EMapGet(state_exp, synth_core.EHole(fresh_name(), state_type.k, None)).with_type(state_type.v)
+                yield from self.make_query_hints(state_type.v, e)
+            elif isinstance(state_type, TTuple):
+                for i in range(len(state_type.ts)):
+                    e = ETupleGet(state_exp, i).with_type(state_type.ts[i])
+                    yield from self.make_query_hints(state_type.ts[i], e)
         def make_query_hole(self, q, state_var):
             args = self.args_by_q[q.name]
-            b = synth_core.Builder(args + [state_var], basic_types)
+            state_hints = list(self.make_query_hints(state_var.type, state_var))
+            # print("hints:")
+            # for h in state_hints:
+            #     print("  {}".format(pprint(h)))
+            b = synth_core.Builder(args + state_hints if HINTS else [state_var], basic_types)
             b.build_maps = False
             b.build_tuples = False
             return synth_core.EHole(q.name, q.ret.type, b)
