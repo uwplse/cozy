@@ -2,8 +2,9 @@ from collections import namedtuple
 
 from common import typechecked, fresh_name
 from target_syntax import *
-from syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, free_vars, pprint, subst
+from syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, free_vars, pprint, subst, implies
 import synth_core
+from typecheck import INT, BOOL
 
 HINTS = True
 
@@ -29,7 +30,7 @@ def fragmentize(exp : Exp, bound_names : {str} = set()):
             yield e
 
 @typechecked
-def synthesize_queries(ctx : SynthCtx, state : [EVar], queries : [Query]): # -> (EVar, Exp, [Query]):
+def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], queries : [Query]): # -> (EVar, Exp, [Query]):
     """
     Synthesize efficient re-implementations for the given queries.
 
@@ -135,25 +136,17 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], queries : [Query]): # -> 
                         state_hole).with_type(res_type)
 
     builder = TopLevelBuilder()
-    if False:
-        for q in queries:
-            hole = synth_core.EHole(fresh_name(), q.ret.type, synth_core.Builder(common_roots + [EVar(name).with_type(t) for (name, t) in q.args] + state_roots, basic_types))
-            spec = EBinOp(hole, "==", q.ret).with_type(TBool())
-            for mapping in synth_core.synth(spec):
-                print("SOLUTION FOR {}".format(q.name))
-                type = mapping[hole.name].type
-                result = synth_core.expand(hole, mapping)
-                print("  {}".format(pprint(result)))
-                # break
-        return
-
     hole = synth_core.EHole(fresh_name(), res_type, builder)
     target = tuple(subst(q.ret, { a1name:a2 for ((a1name, type), a2) in zip(q.args, builder.args_by_q[q.name]) }) for q in queries)
     if len(target) == 1:
         target = target[0]
     else:
         target = ETuple(target)
-    spec = EBinOp(hole, "==", target)
+
+    assumption = EBool(True).with_type(BOOL)
+    for a in assumptions:
+        assumption = EBinOp(assumption, "and", a).with_type(BOOL)
+    spec = implies(assumption, EBinOp(hole, "==", target))
     print(pprint(spec))
 
     for mapping in synth_core.synth(spec):
@@ -209,6 +202,6 @@ def synthesize(spec : Spec):
     # synthesis
     for q in qs:
         print("##### SYNTHESIZING {}".format(q.name))
-        synthesize_queries(ctx, [EVar(name).with_type(t) for (name, t) in spec.statevars], [q])
+        synthesize_queries(ctx, [EVar(name).with_type(t) for (name, t) in spec.statevars], list(spec.assumptions), [q])
 
     raise NotImplementedError()
