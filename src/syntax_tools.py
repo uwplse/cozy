@@ -27,6 +27,18 @@ class BottomUpExplorer(common.Visitor):
     def join(self, x, new_children):
         pass
 
+class BottomUpRewriter(BottomUpExplorer):
+    def join(self, x, new_children):
+        if isinstance(x, common.ADT):
+            out = type(x)(*new_children)
+        elif type(x) in [list, tuple, dict]:
+            out = type(x)(new_children)
+        else:
+            out = x
+        if isinstance(x, syntax.Exp) and hasattr(x, "type"):
+            out.type = x.type
+        return out
+
 def all_types(ast):
     class TypeCollector(BottomUpExplorer):
         def visit_Type(self, t):
@@ -322,25 +334,10 @@ def subst(exp, replacements):
         allfvs |= {fv.id for fv in fvs}
 
     class Subst(common.Visitor):
-        # def visit_Spec(self, spec):
-        #     return syntax.Spec(
-        #         spec.name,
-        #         self.visit(spec.types),
-        #         self.visit(spec.statevars),
-        #         self.visit(spec.assumptions),
-        #         self.visit(spec.methods))
-        # def visit_EBool(self, b):
-        #     return b
-        # def visit_ENum(self, n):
-        #     return n
         def visit_EHole(self, hole):
             return replacements.get(hole.name, hole)
         def visit_EVar(self, var):
             return replacements.get(var.id, var)
-        # def visit_EBinOp(self, op):
-        #     return syntax.EBinOp(self.visit(op.e1), op.op, self.visit(op.e2))
-        # def visit_EUnaryOp(self, op):
-        #     return syntax.EUnaryOp(op.op, self.visit(op.e))
         def visit_EListComprehension(self, lcmp):
             return self.visit_lcmp(list(lcmp.clauses), 0, lcmp.e)
         def visit_lcmp(self, clauses, i, e):
@@ -363,10 +360,6 @@ def subst(exp, replacements):
             elif isinstance(c, syntax.CCond):
                 clauses[i] = syntax.CCond(self.visit(c.e))
                 return self.visit_lcmp(clauses, i + 1, e)
-        # def visit_EGetField(self, e):
-        #     return syntax.EGetField(self.visit(e.e), e.f)
-        # def visit_ECall(self, e):
-        #     return syntax.ECall(e.func, [self.visit(arg) for arg in e.args])
         def visit_ELambda(self, e):
             m = replacements
             if e.arg.id in replacements:

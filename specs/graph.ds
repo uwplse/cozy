@@ -6,20 +6,25 @@ Graph:
     state nodes : Bag<Node>
     state edges : Bag<Edge>
 
+    assume (sum [ 1 | e <- edges, e.val.src == e.val.dst ]) == 0;
+
     op addNode(n : nodes.Handle)
         nodes.add(n)
 
     op addEdge(e : edges.Handle)
         edges.add(e)
 
-    query outgoing(nodeId : Int)
-        [ e | e <- edges, e.val.src == nodeId ]
+//    query outgoing(nodeId : Int)
+//        [ e | e <- edges, e.val.src == nodeId ]
+//
+//    query incoming(nodeId : Int)
+//        [ e | e <- edges, e.val.dst == nodeId ]
 
-    query incoming(nodeId : Int)
-        [ e | e <- edges, e.val.dst == nodeId ]
+    query out_degree(nodeId : Int)
+        sum [ 1 | e <- edges, e.val.src == nodeId ]
 
-    query degree(nodeId : Int)
-        sum [ 1 | e <- edges, e.val.src == nodeId or e.val.dst == nodeId ]
+//    query degree(nodeId : Int)
+//        sum [ 1 | e <- edges, e.val.src == nodeId or e.val.dst == nodeId ]
 
-    query neighbors(n : Node)
-        [ m | e <- edges, m <- nodes, e.val.src == n.id and e.val.dst == m.val.id ]
+//    query neighbors(n : Node)
+//        [ m | e <- edges, m <- nodes, e.val.src == n.id and e.val.dst == m.val.id ]

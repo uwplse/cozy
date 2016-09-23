@@ -1,10 +1,11 @@
-from collections import namedtuple
+from collections import namedtuple, deque, defaultdict
 
 from common import typechecked, fresh_name
 from target_syntax import *
-from syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, free_vars, pprint, subst, implies
+from syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, BottomUpRewriter, free_vars, pprint, subst, implies
 import synth_core
 from typecheck import INT, BOOL
+import incrementalization as inc
 
 HINTS = True
 
@@ -22,6 +23,11 @@ def all_exps(e):
 def fragmentize(exp : Exp, bound_names : {str} = set()):
     so_far = []
     for e in all_exps(exp):
+        if isinstance(e, ELambda):
+            # lambdas may only appear in certain places---they aren't
+            # first-class expressions---so we don't really want to see
+            # them in the list of "all expressions"
+            continue
         fvs = [fv for fv in free_vars(e) if fv.id not in bound_names]
         remap = { v.id : synth_core.EHole(fresh_name(), v.type, None) for v in fvs }
         e = subst(e, remap)
@@ -29,8 +35,65 @@ def fragmentize(exp : Exp, bound_names : {str} = set()):
             so_far.append(e)
             yield e
 
+# def constructors(type, roots, basic_types):
+#     builder = synth_core.Builder(roots, basic_types, build_sums=False, build_maps=False, build_filters=False)
+#     if isinstance(type, TMap):
+#         bag_types = set(t for t in basic_types if isinstance(t, TBag)) | set(TBag(t) for t in basic_types)
+#         for bag_type in bag_types:
+#             for bag_ctor in constructors(bag_type, roots, basic_types):
+#                 for key_proj in roots:
+#                     # TODO: leave holes in key??
+#                     holes = list(synth_core.find_holes(key_proj))
+#                     if key_proj.type == type.k and len(holes) == 1 and holes[0].type == bag_type.t:
+#                         e = EVar(fresh_name()).with_type(bag_type.t)
+#                         es = EVar(fresh_name()).with_type(bag_type)
+#                         for vhole in constructors(type.v, roots + [es], basic_types):
+#                             map = EMakeMap(
+#                                 bag_ctor,
+#                                 ELambda(e, subst(key_proj, { holes[0].name : e })),
+#                                 ELambda(es, vhole)).with_type(type)
+#                             yield map
+#         return
+#     elif isinstance(type, TTuple):
+#         if len(type.ts) == 2:
+#             for hole1 in constructors(type.ts[0], roots, basic_types):
+#                 for hole2 in constructors(type.ts[1], roots, basic_types):
+#                     yield ETuple((hole1, hole2)).with_type(type)
+#         else:
+#             for hole in constructors(type.ts[0], roots, basic_types):
+#                 for rest in constructors(TTuple(type.ts[1:]), roots, basic_types):
+#                     yield ETuple((hole,) + rest.es).with_type(type)
+#         return
+#     elif isinstance(type, TBag):
+#         for bag in roots:
+#             if isinstance(bag.type, TBag):
+#                 m = { h.name : synth_core.EHole(fresh_name(), h.type, builder) for h in synth_core.find_holes(bag) }
+#                 bag = subst(bag, m)
+
+#                 src_type = bag.type.t
+#                 dst_type = type.t
+#                 filt_arg = EVar(fresh_name()).with_type(src_type)
+#                 filt_body = synth_core.EHole(fresh_name(), BOOL, builder)
+#                 filt = EFilter(bag, ELambda(filt_arg, filt_body)).with_type(TBag(src_type))
+
+#                 if src_type == dst_type:
+#                     yield filt
+#                 else:
+#                     map_arg = EVar(fresh_name()).with_type(src_type)
+#                     for proj in roots:
+#                         holes = list(synth_core.find_holes(proj))
+#                         if proj.type == dst_type and len(holes) == 1 and holes[0].type == src_type:
+#                             proj = subst(proj, { holes[0].name : map_arg })
+#                             yield EMap(filt, ELambda(map_arg, proj)).with_type(type)
+#         return
+#     elif isinstance(type, TInt):
+#         for bag_of_ints in constructors(TBag(INT), roots, basic_types):
+#             yield EUnaryOp("sum", bag_of_ints).with_type(INT)
+
+#     yield synth_core.EHole(fresh_name(), type, builder)
+
 @typechecked
-def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], queries : [Query]): # -> (EVar, Exp, [Query]):
+def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], queries : [Query]) -> (EVar, Exp, [Query]):
     """
     Synthesize efficient re-implementations for the given queries.
 
@@ -125,11 +188,13 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
             return synth_core.EHole(q.name, q.ret.type, b)
         def build(self, cache, size):
             # TODO: HACK
+            cheat = None
             # cheat = TMap(TBool(), TBag([t for t in basic_types if isinstance(t, THandle)][0]))
             # cheat = TTuple((TInt(), TInt()))
-            # if size != 1: return
-            # for state_type in (cheat,):
-            for state_type in self.enum_types(size - 1, allow_tuples=False):
+            # cheat = TTuple((TMap(TInt(), TInt()), TMap(TInt(), TInt())))
+            if cheat and size != 1: return
+            it = (cheat,) if cheat else self.enum_types(size - 1, allow_tuples=False)
+            for state_type in it:
                 # if state_type == cheat:
                 #     print("now exploring {}".format(pprint(state_type)))
                 # print("state ?= {}".format(pprint(state_type)))
@@ -173,13 +238,44 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
             pprint(type),
             pprint(result)))
 
+        new_queries = []
         for q in queries:
-            hole = synth_core.EHole(q.name, q.ret.type, None)
-            result = synth_core.expand(hole, mapping)
-            print("{} =".format(q.name))
-            print("  {}".format(pprint(result)))
+            q_hole = synth_core.EHole(q.name, q.ret.type, None)
+            q_result = synth_core.expand(q_hole, mapping)
+            print("{} = {}".format(q.name, pprint(q_result)))
+            arg_remap = builder.args_by_q[q.name]
+            new_queries.append(Query(q.name, [(a.id, a.type) for a in arg_remap], [], q_result))
 
-        return
+        return (EVar(builder.state_var_name).with_type(result.type), result, new_queries)
+
+def fix_lcmps(e):
+    class V(BottomUpRewriter):
+        def visit_EListComprehension(self, e):
+            res, _, _ = self.visit_clauses(e.clauses, self.visit(e.e))
+            return res
+        def visit_clauses(self, clauses, final, i=0):
+            if i >= len(clauses):
+                return final, [], False
+            clause = clauses[i]
+            if isinstance(clause, CPull):
+                bag = self.visit(clause.e)
+                arg = EVar(clause.id).with_type(bag.type.t)
+                rest, guards, pulls = self.visit_clauses(clauses, final, i + 1)
+                if guards:
+                    guard = guards[0]
+                    for g in guards[1:]:
+                        guard = EBinOp(guard, "and", g).with_type(BOOL)
+                    bag = EFilter(bag, ELambda(arg, guard)).with_type(bag.type)
+                res = EMap(bag, ELambda(arg, rest)).with_type(TBag(rest.type))
+                if pulls:
+                    res = EFlatten(res)
+                return res, [], True
+            elif isinstance(clause, CCond):
+                rest, guards, pulls = self.visit_clauses(clauses, final, i + 1)
+                return rest, guards + [clause.e], pulls
+            else:
+                raise NotImplementedError(clause)
+    return V().visit(e)
 
 @typechecked
 def synthesize(spec : Spec):
@@ -205,16 +301,53 @@ def synthesize(spec : Spec):
         for name in t.cases }
     spec = subst(spec, repl)
 
-    # collect queries
+    # collect queries, rewrite list comprehensions
     # qs = [qs[0]]
     # qs = [q for q in spec.methods if isinstance(q, Query) if q.name == "inMemEntries"]
     # qs = [q for q in spec.methods if isinstance(q, Query) if q.name in ("totalMemSize", "totalDiskSize")]
-    qs = [q for q in spec.methods if isinstance(q, Query)]
+    qs = [Query(q.name, q.args, q.assumptions, fix_lcmps(q.ret)) for q in spec.methods if isinstance(q, Query)]
     # assert len(qs) > 0
 
+    worklist = deque(qs)
+    new_statevars = []
+    new_qs = []
+    op_stms = defaultdict(list)
+
     # synthesis
-    for q in qs:
+    while worklist:
+        q = worklist.popleft()
         print("##### SYNTHESIZING {}".format(q.name))
-        synthesize_queries(ctx, [EVar(name).with_type(t) for (name, t) in spec.statevars], list(spec.assumptions), [q])
+        state_var, state_exp, q = synthesize_queries(ctx, [EVar(name).with_type(t) for (name, t) in spec.statevars], list(spec.assumptions), [q])
+        new_statevars.append((state_var.id, state_var.type))
+        new_qs.append(q[0])
+
+        for op in spec.methods:
+            if isinstance(op, Op):
+                (member, delta) = inc.to_delta(op)
+                print(member, delta)
+                (state_update, subqueries) = inc.derivative(state_exp, member, delta)
+                print(state_update, subqueries)
+                for q in subqueries:
+                    worklist.add(q)
+                state_update_stm = inc.apply_delta(state_var, state_update)
+                print(pprint(state_update_stm))
+                op_stms[op.name].append(state_update_stm)
+
+    new_ops = []
+    for op in spec.methods:
+        if isinstance(op, Op):
+            new_stms = seq(op_stms[op.name])
+            new_ops.append(Op(
+                op.name,
+                op.args,
+                [],
+                new_stms))
+
+    return Spec(
+        spec.name,
+        spec.types,
+        new_statevars,
+        [],
+        new_ops + new_qs)
 
     raise NotImplementedError()

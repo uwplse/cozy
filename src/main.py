@@ -40,7 +40,9 @@ def run():
     print()
     print(syntax_tools.pprint(ast))
 
-    synthesis.synthesize(ast)
+    ast = synthesis.synthesize(ast)
+    print()
+    print(syntax_tools.pprint(ast))
 
     # if args.java is not None:
     #     with common.open_maybe_stdout(args.java) as out:
