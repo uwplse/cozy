@@ -23,9 +23,12 @@ def cross_product(iters, i=0):
             yield (x,) + rest
 
 class Cache(object):
-    def __init__(self):
+    def __init__(self, items=None):
         self.data = nested_dict(3, list) # data[type_tag][type][size] is list of exprs
         self.size = 0
+        if items:
+            for (e, size) in items:
+                self.add(e, size)
     def tag(self, t):
         return type(t)
     def is_tag(self, t):
@@ -47,15 +50,41 @@ class Cache(object):
                 for z in (y.values() if size is None else [y.get(size, [])]):
                     res += z
         return res
+    def __iter__(self):
+        for x in self.data.values():
+            for y in x.values():
+                for (size, es) in y.items():
+                    for e in es:
+                        yield (e, size)
     def __len__(self):
         return self.size
 
+@typechecked
+def instantiate(e : Exp, cache : Cache, total_size : int):
+    holes = list(find_holes(e))
+    if not holes:
+        if total_size == 1:
+            yield e
+        return
+    for sizes in pick_to_sum(len(holes), total_size):
+        exp_lists = tuple(list(cache.find(type=hole.type, size=sz)) for (hole, sz) in zip(holes, sizes))
+        for exps in cross_product(exp_lists):
+            # print("exps:  {}".format(", ".join([pprint(e) for e in exps])))
+            # print("types: {}".format(", ".join([pprint(e.type) for e in exps])))
+            remap = { hole.name : e for (hole, e) in zip(holes, exps) }
+            res = subst(e, remap)
+            # print(pprint(e) + " ----> " + pprint(res))
+            yield res
+
 class Builder(object):
-    def __init__(self, roots, type_roots):
+    def __init__(self, roots, type_roots, build_sums = True, build_maps = True, build_filters = True):
         self.roots = roots
         self.type_roots = type_roots
         self.build_maps = True
         self.build_tuples = True
+        self.build_sums = build_sums
+        self.build_maps = build_maps
+        self.build_filters = build_filters
 
     @typechecked
     def enum_types(
@@ -85,21 +114,6 @@ class Builder(object):
                         for types in cross_product(gens):
                             yield TTuple(types)
 
-    def instantiate(self, e : Exp, cache : Cache, total_size : int):
-        holes = list(find_holes(e))
-        if not holes:
-            yield e
-            return
-        for sizes in pick_to_sum(len(holes), total_size):
-            exp_lists = tuple(list(cache.find(type=hole.type, size=sz)) for (hole, sz) in zip(holes, sizes))
-            for exps in cross_product(exp_lists):
-                # print("exps:  {}".format(", ".join([pprint(e) for e in exps])))
-                # print("types: {}".format(", ".join([pprint(e.type) for e in exps])))
-                remap = { hole.name : e for (hole, e) in zip(holes, exps) }
-                res = subst(e, remap)
-                # print(pprint(e) + " ----> " + pprint(res))
-                yield res
-
     def build(self, cache, size):
         if size == 1:
             # for r in self.roots:
@@ -112,13 +126,14 @@ class Builder(object):
 
         for r in self.roots:
             if contains_holes(r):
-                yield from self.instantiate(r, cache, size - 1)
+                yield from instantiate(r, cache, size - 1)
 
         # for e in cache.find(type=TRecord, size=size-1):
         #     for (f,t) in e.type.fields:
         #         yield EGetField(e, f).with_type(t)
-        for e in cache.find(type=TBag(INT), size=size-1):
-            yield EUnaryOp("sum", e).with_type(INT)
+        if self.build_sums:
+            for e in cache.find(type=TBag(INT), size=size-1):
+                yield EUnaryOp("sum", e).with_type(INT)
         for e in cache.find(type=THandle, size=size-1):
             yield EGetField(e, "val").with_type(e.type.value_type)
         for e in cache.find(type=TTuple, size=size-1):
@@ -137,26 +152,43 @@ class Builder(object):
                 for k in cache.find(type=m.type.k, size=sz2):
                     yield EMapGet(m, k).with_type(m.type.v)
 
-        for r in self.roots:
-            for hole in find_holes(r):
-                for (sz1, sz2) in pick_to_sum(2, size - 1):
-                    for bag in cache.find(type=TBag(hole.type), size=sz1):
-                        map_arg = EVar(fresh_name()).with_type(hole.type)
-                        for body in self.instantiate(subst(r, { hole.name: map_arg }), cache, sz2):
-                            e = EMap(bag, ELambda(map_arg, body)).with_type(TBag(r.type))
-                            # print("filter: {}".format(pprint(e)))
-                            yield e
-
-        for r in self.roots:
-            if r.type == BOOL:
-                for hole in find_holes(r):
-                    for (sz1, sz2) in pick_to_sum(2, size - 1):
-                        for bag in cache.find(type=TBag(hole.type), size=sz1):
-                            filt_arg = EVar(fresh_name()).with_type(hole.type)
-                            for body in self.instantiate(subst(r, { hole.name: filt_arg }), cache, sz2):
-                                e = EFilter(bag, ELambda(filt_arg, body)).with_type(bag.type)
-                                # print("filter: {}".format(pprint(e)))
+        if self.build_maps:
+            # print("####### {}".format(size))
+            for (sz1, sz2) in pick_to_sum(2, size - 1):
+                for bag in cache.find(type=TBag, size=sz1):
+                    map_arg = EVar(fresh_name()).with_type(bag.type.t)
+                    new_cache = Cache(cache)
+                    new_cache.add(map_arg, size=1)
+                    # print("{} : {}".format(pprint(map_arg), pprint(map_arg.type)))
+                    for r in self.roots:
+                        # print("  " + pprint(r) + " sizes=({}, {})".format(sz1, sz2))
+                        for body in instantiate(r, new_cache, sz2):
+                            # print("    @{} = {}".format(sz2, pprint(body)))
+                            if isinstance(body, ENum):
+                                e = EMap(bag, ELambda(map_arg, body)).with_type(TBag(r.type))
+                                # print("  " + pprint(e))
                                 yield e
+            # for r in self.roots:
+            #     for hole in find_holes(r):
+            #         for (sz1, sz2) in pick_to_sum(2, size - 1):
+            #             for bag in cache.find(type=TBag(hole.type), size=sz1):
+            #                 map_arg = EVar(fresh_name()).with_type(hole.type)
+            #                 for body in instantiate(subst(r, { hole.name: map_arg }), cache, sz2):
+            #                     e = EMap(bag, ELambda(map_arg, body)).with_type(TBag(r.type))
+            #                     # print("filter: {}".format(pprint(e)))
+            #                     yield e
+
+        if self.build_filters:
+            for r in self.roots:
+                if r.type == BOOL:
+                    for hole in find_holes(r):
+                        for (sz1, sz2) in pick_to_sum(2, size - 1):
+                            for bag in cache.find(type=TBag(hole.type), size=sz1):
+                                filt_arg = EVar(fresh_name()).with_type(hole.type)
+                                for body in instantiate(subst(r, { hole.name: filt_arg }), cache, sz2):
+                                    e = EFilter(bag, ELambda(filt_arg, body)).with_type(bag.type)
+                                    # print("filter: {}".format(pprint(e)))
+                                    yield e
 
         # if self.build_tuples:
         #     for tuple_len in range(2, size):
@@ -183,6 +215,9 @@ class Builder(object):
         b = Builder(list(new_roots) + list(self.roots), self.type_roots)
         b.build_maps = self.build_maps and build_maps
         b.build_tuples = self.build_tuples
+        b.build_sums = self.build_sums
+        b.build_maps = self.build_maps
+        b.build_filters = self.build_filters
         return b
 
 class Counterexample(Exception):
