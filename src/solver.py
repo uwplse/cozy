@@ -98,13 +98,15 @@ class ToZ3(Visitor):
         if e.op == "not":
             return z3.Not(self.visit(e.e, env), ctx=self.ctx)
         elif e.op == "sum":
-            bag_mask, bag_elems = self.visit(e.e, env)
-            sum = 0
-            for i in range(len(bag_elems)):
-                sum = z3.If(bag_mask[i], bag_elems[i], 0, ctx=self.ctx) + sum
-            return sum
+            def take_sum(bag):
+                bag_mask, bag_elems = bag
+                sum = 0
+                for i in range(len(bag_elems)):
+                    sum = z3.If(bag_mask[i], bag_elems[i], 0, ctx=self.ctx) + sum
+                return sum
+            return fmap(self.visit(e.e, env), take_sum)
         elif e.op == "len":
-            return self.len_of(self.visit(e.e, env))
+            return fmap(self.visit(e.e, env), self.len_of)
         else:
             raise NotImplementedError(e.op)
     def visit_EGetField(self, e, env):
