@@ -20,6 +20,7 @@ def read_file(f):
 
 def run():
     parser = argparse.ArgumentParser(description='Data structure synthesizer.')
+    parser.add_argument("-d", "--disable-cache", action="store_true", help="Disable caching of synthesis results")
 
     java_opts = parser.add_argument_group("Java codegen")
     java_opts.add_argument("--java", metavar="FILE.java", default=None, help="Output file for java classes, use '-' for stdout")
@@ -40,7 +41,7 @@ def run():
     print()
     print(syntax_tools.pprint(ast))
 
-    ast = synthesis.synthesize(ast)
+    ast = synthesis.synthesize(ast, use_cache = not args.disable_cache)
     print()
     print(syntax_tools.pprint(ast))
 

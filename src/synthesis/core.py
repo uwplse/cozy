@@ -10,9 +10,6 @@ from common import Visitor, fresh_name, declare_case, typechecked, unique
 from solver import satisfy, feasible
 from evaluation import HoleException, eval, all_envs_for_hole
 
-# Holes for synthesized expressions
-EHole = declare_case(Exp, "EHole", ["name", "type", "builder"])
-
 def cross_product(iters, i=0):
     if i == len(iters):
         yield ()

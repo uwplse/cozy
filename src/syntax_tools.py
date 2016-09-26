@@ -423,8 +423,7 @@ def alpha_equivalent(e1, e2):
                 e1id = self.remap[e1.id]
             return e1id == e2.id
         def visit_EHole(self, e1, e2):
-            import synth_core
-            if not isinstance(e2, synth_core.EHole):
+            if not isinstance(e2, target_syntax.EHole):
                 return False
             return self.visit_EVar(syntax.EVar(e1.name), syntax.EVar(e2.name))
         def visit_ELambda(self, e1, e2):

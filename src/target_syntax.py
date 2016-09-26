@@ -1,11 +1,14 @@
 """
 While the syntax module declares the core _input_ language, this module declares
 additional syntax extensions that can appear in the _target_ language: the
-primitives the tool can output during synthesis.
+primitives the tool can output and use during synthesis.
 """
 
 from syntax import *
 from common import declare_case, typechecked
+
+# Holes for synthesized expressions
+EHole = declare_case(Exp, "EHole", ["name", "type", "builder"])
 
 # Lambdas
 EApp = declare_case(Exp, "EApp", ["f", "arg"])
