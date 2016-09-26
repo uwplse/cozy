@@ -309,6 +309,9 @@ def synthesize(spec : Spec):
         for name in t.cases }
     spec = subst(spec, repl)
 
+    # collect state variables
+    state_vars = [EVar(name).with_type(t) for (name, t) in spec.statevars]
+
     # collect queries, rewrite list comprehensions
     # qs = [qs[0]]
     # qs = [q for q in spec.methods if isinstance(q, Query) if q.name == "inMemEntries"]
@@ -325,21 +328,23 @@ def synthesize(spec : Spec):
     while worklist:
         q = worklist.popleft()
         print("##### SYNTHESIZING {}".format(q.name))
-        state_var, state_exp, q = synthesize_queries(ctx, [EVar(name).with_type(t) for (name, t) in spec.statevars], list(spec.assumptions), [q])
+        state_var, state_exp, q = synthesize_queries(ctx, state_vars, list(spec.assumptions), [q])
         new_statevars.append((state_var.id, state_var.type))
         new_qs.append(q[0])
 
         for op in spec.methods:
+            print("###### INCREMENTALIZING: {}".format(op.name))
             if isinstance(op, Op):
                 (member, delta) = inc.to_delta(op)
                 print(member, delta)
-                (state_update, subqueries) = inc.derivative(state_exp, member, delta)
+                (state_update, subqueries) = inc.derivative(state_exp, member, delta, state_vars)
                 print(state_update, subqueries)
-                for q in subqueries:
-                    worklist.add(q)
-                state_update_stm = inc.apply_delta(state_var, state_update)
+                state_update_stm = inc.apply_delta_in_place(state_var, state_update)
                 print(pprint(state_update_stm))
                 op_stms[op.name].append(state_update_stm)
+                for q in subqueries:
+                    print("########### SUBGOAL: {}".format(pprint(q)))
+                    worklist.append(q)
 
     new_ops = []
     for op in spec.methods:
