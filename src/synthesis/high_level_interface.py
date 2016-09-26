@@ -4,6 +4,7 @@ from common import typechecked, fresh_name
 from target_syntax import *
 from syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, BottomUpRewriter, free_vars, pprint, subst, implies
 from . import core
+from . import caching
 from typecheck import INT, BOOL
 import incrementalization as inc
 
@@ -330,13 +331,22 @@ def synthesize(
     while worklist:
         q = worklist.popleft()
         print("##### SYNTHESIZING {}".format(q.name))
-        state_var, state_exp, q = synthesize_queries(ctx, state_vars, list(spec.assumptions), [q])
+
+        cached_result = caching.find_cached_result(state_vars, list(spec.assumptions), q)
+        if cached_result:
+            print("##### FOUND CACHED RESULT")
+            state_var, state_exp, new_q = cached_result
+        else:
+            state_var, state_exp, new_q = synthesize_queries(ctx, state_vars, list(spec.assumptions), [q])
+            new_q = new_q[0]
+            caching.cache((state_vars, list(spec.assumptions), q), (state_var, state_exp, new_q))
+
         new_statevars.append((state_var.id, state_var.type))
-        new_qs.append(q[0])
+        new_qs.append(new_q)
 
         for op in spec.methods:
-            print("###### INCREMENTALIZING: {}".format(op.name))
             if isinstance(op, Op):
+                print("###### INCREMENTALIZING: {}".format(op.name))
                 (member, delta) = inc.to_delta(op)
                 print(member, delta)
                 (state_update, subqueries) = inc.derivative(state_exp, member, delta, state_vars)
@@ -344,9 +354,9 @@ def synthesize(
                 state_update_stm = inc.apply_delta_in_place(state_var, state_update)
                 print(pprint(state_update_stm))
                 op_stms[op.name].append(state_update_stm)
-                for q in subqueries:
-                    print("########### SUBGOAL: {}".format(pprint(q)))
-                    worklist.append(q)
+                for sub_q in subqueries:
+                    print("########### SUBGOAL: {}".format(pprint(sub_q)))
+                    worklist.append(sub_q)
 
     new_ops = []
     for op in spec.methods:

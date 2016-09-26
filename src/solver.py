@@ -332,6 +332,9 @@ def satisfy(e, collection_depth : int = 2, validate_model : bool = True):
                 raise Exception()
         return res
 
+def valid(e, **opts):
+    return not satisfy(EUnaryOp("not", e).with_type(TBool()), **opts)
+
 class ToZ3WithUninterpretedHoles(ToZ3):
     def __init__(self, z3ctx, z3solver):
         super().__init__(z3ctx)

@@ -468,3 +468,7 @@ def implies(e1, e2):
         syntax.EUnaryOp("not", e1).with_type(BOOL),
         "or",
         e2).with_type(BOOL)
+
+def equal(e1, e2):
+    BOOL = syntax.TBool()
+    return syntax.EBinOp(e1, "==", e2).with_type(BOOL)
