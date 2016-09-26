@@ -272,11 +272,13 @@ def declare_case(supertype, name, attrs=()):
         return "{}({})".format(name, ", ".join("{}={}".format(attr, repr(val)) for attr, val in zip(attrs, self.children())))
     def children(self):
         return tuple(getattr(self, a) for a in attrs)
-    return type(name, (supertype,), {
+    t = type(name, (supertype,), {
         "__init__": __init__,
         "__str__": __str__,
         "__repr__": __repr__,
         "children": children })
+    globals()[name] = t
+    return t
 
 class extend(object):
     """
