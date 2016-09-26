@@ -6,7 +6,7 @@ import sys
 from target_syntax import *
 from typecheck import INT, BOOL
 from syntax_tools import subst, pprint, free_vars, BottomUpExplorer
-from common import Visitor, fresh_name, declare_case, typechecked, unique
+from common import Visitor, fresh_name, typechecked, unique
 from solver import satisfy, feasible
 from evaluation import HoleException, eval, all_envs_for_hole
 
