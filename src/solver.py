@@ -94,6 +94,14 @@ class ToZ3(Visitor):
     def visit_ETupleGet(self, e, env):
         tup = self.visit(e.e, env)
         return fmap(tup, lambda tup: tup[e.n])
+    def visit_ECond(self, e, env):
+        cond = self.visit(e.cond, env)
+        then_branch = self.visit(e.then_branch, env)
+        else_branch = self.visit(e.else_branch, env)
+        if decideable(e.type):
+            return z3.If(cond, then_branch, else_branch, ctx=self.ctx)
+        else:
+            return SymbolicUnion(cond, then_branch, else_branch)
     def visit_EUnaryOp(self, e, env):
         if e.op == "not":
             return z3.Not(self.visit(e.e, env), ctx=self.ctx)
@@ -212,6 +220,9 @@ class ToZ3(Visitor):
         except:
             print("failed to convert {}".format(pprint(e)))
             raise
+
+def decideable(t):
+    return type(t) in [TInt, TLong, TBool, TBitVec, TEnum]
 
 def mkvar(ctx, solver, collection_depth, type):
     if type == TInt() or type == TLong():

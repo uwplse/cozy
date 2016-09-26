@@ -454,6 +454,8 @@ def alpha_equivalent(e1, e2):
                 raise NotImplementedError(pprint(c1))
         def visit_str(self, s1, s2):
             return s1 == s2
+        def visit_int(self, i1, i2):
+            return i1 == i2
         def visit_Exp(self, e1, e2):
             if type(e1) is not type(e2):
                 return False

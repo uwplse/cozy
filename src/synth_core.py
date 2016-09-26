@@ -139,11 +139,17 @@ class Builder(object):
         for e in cache.find(type=TTuple, size=size-1):
             for n in range(len(e.type.ts)):
                 yield ETupleGet(e, n).with_type(e.type.ts[n])
+        for e in cache.find(type=BOOL, size=size-1):
+            yield EUnaryOp("not", e).with_type(BOOL)
 
         for (sz1, sz2) in pick_to_sum(2, size - 1):
             for a1 in cache.find(type=INT, size=sz1):
                 for a2 in cache.find(type=INT, size=sz2):
                     yield EBinOp(a1, "+", a2).with_type(INT)
+            for a1 in cache.find(type=BOOL, size=sz1):
+                for a2 in cache.find(type=BOOL, size=sz2):
+                    yield EBinOp(a1, "and", a2).with_type(BOOL)
+                    yield EBinOp(a1, "or", a2).with_type(BOOL)
             for a1 in cache.find(size=sz1):
                 if not isinstance(a1.type, TMap):
                     for a2 in cache.find(type=a1.type, size=sz2):

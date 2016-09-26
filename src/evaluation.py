@@ -27,6 +27,11 @@ class Evaluator(Visitor):
         return n.val
     def visit_EBool(self, b, env):
         return b.val
+    def visit_ECond(self, e, env):
+        if self.visit(e.cond, env):
+            return self.visit(e.then_branch, env)
+        else:
+            return self.visit(e.else_branch, env)
     def visit_EEnumEntry(self, val, env):
         # return val.type.cases.index(val.name)
         return val.name
