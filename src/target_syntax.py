@@ -19,6 +19,8 @@ class ELambda(Exp):
         return subst(self.body, { self.arg.id : arg })
     def children(self):
         return (self.arg, self.body)
+    def __repr__(self):
+        return "ELambda{}".format(repr(self.children()))
 
 # Bag transformations
 EMap     = declare_case(Exp, "EMap", ["e", "f"])

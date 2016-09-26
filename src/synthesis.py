@@ -246,7 +246,7 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
 
         return (EVar(builder.state_var_name).with_type(result.type), result, new_queries)
 
-def fix_lcmps(e):
+def desugar(e):
     class V(BottomUpRewriter):
         def visit_EListComprehension(self, e):
             res, _, _ = self.visit_clauses(e.clauses, self.visit(e.e))
@@ -270,9 +270,19 @@ def fix_lcmps(e):
                 return res, [], True
             elif isinstance(clause, CCond):
                 rest, guards, pulls = self.visit_clauses(clauses, final, i + 1)
-                return rest, guards + [clause.e], pulls
+                return rest, guards + [self.visit(clause.e)], pulls
             else:
                 raise NotImplementedError(clause)
+        def visit_EUnaryOp(self, e):
+            sub = self.visit(e.e)
+            if e.op == "empty":
+                arg = EVar(fresh_name()).with_type(sub.type.t)
+                return EBinOp(
+                    EUnaryOp("sum", EMap(sub, ELambda(arg, ENum(1).with_type(INT))).with_type(TBag(INT))).with_type(INT),
+                    "==",
+                    ENum(0).with_type(INT)).with_type(BOOL)
+            else:
+                return EUnaryOp(e.op, sub).with_type(e.type)
     return V().visit(e)
 
 @typechecked
@@ -303,7 +313,7 @@ def synthesize(spec : Spec):
     # qs = [qs[0]]
     # qs = [q for q in spec.methods if isinstance(q, Query) if q.name == "inMemEntries"]
     # qs = [q for q in spec.methods if isinstance(q, Query) if q.name in ("totalMemSize", "totalDiskSize")]
-    qs = [Query(q.name, q.args, q.assumptions, fix_lcmps(q.ret)) for q in spec.methods if isinstance(q, Query)]
+    qs = [Query(q.name, q.args, q.assumptions, desugar(q.ret)) for q in spec.methods if isinstance(q, Query)]
     # assert len(qs) > 0
 
     worklist = deque(qs)
