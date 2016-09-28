@@ -2,96 +2,68 @@
 Concrete data structure implementations.
 """
 
-import syntax
-import syntax_tools
-import aggregations
-
-# class ConcreteType(syntax.Type):
-#     def prettyprint(self):
-#         raise NotImplementedError(str(type(self)))
-
-# class LinkedList(ConcreteType):
-#     def __init__(self, t):
-#         self.t = t
-#     def prettyprint(self):
-#         return "LinkedList<{}>".format(syntax_tools.pprint(self.t))
-
-# class ArrayList(ConcreteType):
-#     pass
-
-# class HashMap(ConcreteType):
-#     def __init__(self, key_type, value_type):
-#         self.k = key_type
-#         self.v = value_type
-#     def prettyprint(self):
-#         return "HashMap<{}, {}>".format(syntax_tools.pprint(self.k), syntax_tools.pprint(self.v))
-
-# class AugTree(ConcreteType):
-#     pass
-
-# class Heap(ConcreteType):
-#     pass
-
-# class TrackedSum(ConcreteType):
-#     pass
-
-# class TrackedMinOrMax(ConcreteType):
-#     pass
-
-class TPtr(syntax.Type):
-    def __init__(self, t):
-        self.t = t
-
-class TArray(syntax.Type):
-    def __init__(self, t):
-        self.t = t
-
-class TVector(syntax.Type):
-    def __init__(self, t, size):
-        self.t = t
-        self.size = size
-
-class ConcreteImpl(object):
-
-    def rep(self, handle_type : syntax.Type) -> syntax.Type:
-        raise NotImplementedError(str(type(self)))
-
-    def handle_rep(self, handle_type : syntax.Type) -> syntax.Type:
-        raise NotImplementedError(str(type(self)))
-
-    def exec_query(self, data, vars) -> syntax.Exp:
-        raise NotImplementedError(str(type(self)))
-
-    def update(self, data, var, delta) -> ([Goal], syntax.Stm):
-        raise NotImplementedError(str(type(self)))
-
-class LinkedList(ConcreteImpl):
-    def __init__(self):
-        pass
-    def rep(self, handle_type):
-        return TPtr(handle_type)
-    def handle_rep(self, handle_type):
-        return syntax.TRecord([
-            "next": TPtr(handle_type),
-            "prev": TPtr(handle_type)])
-    def exec_query(self, data, vars):
+from common import fresh_name
+from target_syntax import *
+from syntax_tools import equal
 
 class Library(object):
+    def impls(self, ty):
+        if type(ty) is TMap:
+            for k in self.impls(ty.k):
+                for v in self.impls(ty.v):
+                    yield TNativeMap(k, v)
+        elif type(ty) is TBag:
+            for t in self.impls(ty.t):
+                if isinstance(ty.t, THandle):
+                    yield TIntrusiveLinkedList(ty.t)
+                yield TLinkedList(ty.t)
+                yield TArrayList(ty.t)
+        else:
+            yield ty
 
-    def basic_impls(self, agg, collection):
-        if isinstance(agg, aggregations.IterateOver):
-            yield LinkedList(collection)
-            yield ArrayList(collection)
-        elif isinstance(agg, aggregations.Sum):
-            yield TrackedSum(collection)
-        elif isinstance(agg, aggregations.Min):
-            yield TrackedMin(collection, agg.key_func)
-            yield MinHeap(collection, agg.key_func)
-        elif isinstance(agg, aggregations.Max):
-            yield TrackedMax(collection, agg.key_func)
-            yield MaxHeap(collection, agg.key_func)
-        elif isinstance(agg, aggregations.DistinctElements):
-            yield HashSet(collection, agg.key_func)
+NULL = ENull()
 
-    def map_impls(self, sub_impl, key_type, key_func, query_key_func):
-        yield HashMap(sub_impl, key_type, key_func, query_key_func)
+class TNativeMap(TMap):
+    def __init__(self, k, v):
+        super().__init__(k, v)
+
+class TIntrusiveLinkedList(TBag):
+    def __init__(self, t):
+        super().__init__(t)
+        self.next_ptr = fresh_name("next_ptr")
+        self.prev_ptr = fresh_name("prev_ptr")
+    def __eq__(self, other):
+        return self is other
+    def __hash__(self):
+        return super().__hash__()
+    def intrusive_data(self, handle_type):
+        if handle_type == self.t:
+            return [
+                (self.next_ptr, self.t),
+                (self.prev_ptr, self.t)]
+        return []
+    def implement_add(self, target, args):
+        new_elem, = args
+        return seq([
+            SAssign(EGetField(new_elem, self.next_ptr).with_type(self.t), target),
+            SAssign(EGetField(new_elem, self.prev_ptr).with_type(self.t), NULL),
+            SIf(ENot(equal(target, NULL)), SAssign(EGetField(target, self.prev_ptr).with_type(self.t), new_elem), SNoOp()),
+            SAssign(target, new_elem)])
+    def implement_remove(self, target, args):
+        elem, = args
+        prev = EGetField(elem, self.prev_ptr).with_type(self.t)
+        next = EGetField(elem, self.next_ptr).with_type(self.t)
+        return seq([
+            SIf(equal(elem, target), SAssign(target, next), SNoOp()),
+            SIf(ENot(equal(prev, NULL)), SAssign(EGetField(prev, self.next_ptr).with_type(self.t), next), SNoOp()),
+            SIf(ENot(equal(next, NULL)), SAssign(EGetField(next, self.prev_ptr).with_type(self.t), prev), SNoOp()),
+            SAssign(next, NULL),
+            SAssign(prev, NULL)])
+
+class TLinkedList(TBag):
+    def __init__(self, t):
+        super().__init__(t)
+
+class TArrayList(TBag):
+    def __init__(self, t):
+        super().__init__(t)

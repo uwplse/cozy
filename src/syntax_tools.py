@@ -37,7 +37,12 @@ class BottomUpRewriter(BottomUpExplorer):
             out = x
         if isinstance(x, syntax.Exp) and hasattr(x, "type"):
             out.type = x.type
+        if isinstance(x, syntax.THandle) and hasattr(x, "value_type"):
+            out.value_type = x.value_type
         return out
+
+def deep_copy(ast):
+    return BottomUpRewriter().visit(ast)
 
 def all_types(ast):
     class TypeCollector(BottomUpExplorer):

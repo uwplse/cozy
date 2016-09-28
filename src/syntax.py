@@ -42,6 +42,7 @@ EVar                = declare_case(Exp, "EVar",               ["id"])
 EBool               = declare_case(Exp, "EBool",              ["val"])
 ENum                = declare_case(Exp, "ENum",               ["val"])
 EEnumEntry          = declare_case(Exp, "EEnumEntry",         ["name"])
+ENull               = declare_case(Exp, "ENull")
 ECond               = declare_case(Exp, "ECond",              ["cond", "then_branch", "else_branch"])
 EBinOp              = declare_case(Exp, "EBinOp",             ["e1", "op", "e2"])
 EUnaryOp            = declare_case(Exp, "EUnaryOp",           ["op", "e"])
@@ -68,6 +69,11 @@ SDecl               = declare_case(Stm, "SDecl",    ["id", "val"])
 SForEach            = declare_case(Stm, "SForEach", ["id", "iter", "body"])
 SIf                 = declare_case(Stm, "SIf",      ["cond", "then_branch", "else_branch"])
 
+# -----------------------------------------------------------------------------
+# Various utilities
+
+BOOL = TBool()
+
 def seq(stms):
     stms = [s for s in stms if not isinstance(s, SNoOp)]
     if not stms:
@@ -81,7 +87,6 @@ def seq(stms):
         return result
 
 def EAll(exps):
-    BOOL = TBool()
     res = None
     for e in exps:
         if res is None:
@@ -91,3 +96,6 @@ def EAll(exps):
     if res is None:
         return EBool(True).with_type(BOOL)
     return res
+
+def ENot(e):
+    return EUnaryOp("not", e).with_type(BOOL)

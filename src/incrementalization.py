@@ -311,14 +311,12 @@ def apply_delta_in_place(
         def visit_Become(self, delta):
             return syntax.SAssign(x, delta.e)
         def visit_BagAdd(self, delta):
-            return syntax.SCall(x, "BagAdd", [delta.e])
+            return syntax.SCall(x, "add", [delta.e])
         def visit_BagRemove(self, delta):
-            return syntax.SCall(x, "BagRemove", [delta.e])
+            return syntax.SCall(x, "remove", [delta.e])
         def visit_MapUpdate(self, delta):
             v = syntax.EVar(fresh_name()).with_type(x.type.v)
-            return syntax.seq([
-                syntax.SDecl(v.id, syntax.ECall("MapGet", [x, delta.key]).with_type(v.type)),
-                apply_delta_in_place(v, delta.delta)])
+            return target_syntax.SMapUpdate(x, delta.key, v, apply_delta_in_place(v, delta.delta))
         def visit_AddNum(self, delta):
             return syntax.SAssign(x, syntax.EBinOp(x, "+", delta.e))
         def visit_Conditional(self, delta):
