@@ -37,9 +37,7 @@ _KEYWORDS = [
     "min",
     "max",
     "sum",
-    "some",
-    "new",
-    "del"]
+    "the"]
 
 # Each operator has a name and a raw string. Each becomes an OP_* token for the
 # lexer. So, e.g. ("ASSIGN", "=") matches "=" and the token will be named
@@ -194,7 +192,7 @@ def make_parser():
         ("left", "OP_EQ", "OP_NE", "OP_LT", "OP_LE", "OP_GT", "OP_GE"),
         ("left", "OP_PLUS", "OP_MINUS"),
         ("left", "KW_IN"),
-        ("left", "KW_NOT", "KW_UNIQUE", "KW_EMPTY", "KW_SOME", "KW_MIN", "KW_MAX", "KW_SUM", "KW_NEW", "KW_DEL"),
+        ("left", "KW_NOT", "KW_UNIQUE", "KW_EMPTY", "KW_THE", "KW_MIN", "KW_MAX", "KW_SUM"),
         ("left", "OP_OPEN_PAREN"),
         ("left", "OP_DOT"))
 
@@ -220,13 +218,12 @@ def make_parser():
                | OP_VBAR exp OP_VBAR
                | KW_UNIQUE exp
                | KW_EMPTY exp
-               | KW_SOME exp
+               | KW_THE exp
                | KW_MIN exp
                | KW_MAX exp
                | KW_SUM exp
                | exp OP_DOT WORD
                | OP_OPEN_PAREN exp OP_CLOSE_PAREN
-               | KW_NEW WORD OP_OPEN_PAREN exp_list OP_CLOSE_PAREN
                | OP_OPEN_BRACE record_fields OP_CLOSE_BRACE
                | OP_OPEN_BRACKET exp OP_VBAR comprehension_body OP_CLOSE_BRACKET"""
         if len(p) == 2:
@@ -252,9 +249,7 @@ def make_parser():
             else:
                 p[0] = syntax.EBinOp(p[1], p[2], p[3])
         else:
-            if p[1] == "new":
-                p[0] = syntax.EAlloc(syntax.TNamed(p[2]), p[4])
-            elif p[1] == "[":
+            if p[1] == "[":
                 p[0] = syntax.EListComprehension(p[2], p[4])
             elif p[2] == "(":
                 p[0] = syntax.ECall(p[1], p[3])
@@ -279,6 +274,14 @@ def make_parser():
 
     parsetools.multi(locals(), "comprehension_body", "comprehension_clause", sep="OP_COMMA")
 
+    def p_accesschain(p):
+        """accesschain : WORD
+                       | accesschain OP_DOT WORD"""
+        if len(p) > 2:
+            p[0] = syntax.EGetField(p[1], p[3])
+        else:
+            p[0] = syntax.EVar(p[1])
+
     def p_method(p):
         """method : KW_OP    WORD OP_OPEN_PAREN typednames OP_CLOSE_PAREN assumes stm
                   | KW_QUERY WORD OP_OPEN_PAREN typednames OP_CLOSE_PAREN assumes exp"""
@@ -290,24 +293,21 @@ def make_parser():
     parsetools.multi(locals(), "methods", "method")
 
     def p_stm(p):
-        """stm : OP_OPEN_PAREN OP_CLOSE_PAREN
-               | WORD OP_DOT WORD OP_OPEN_PAREN exp_list OP_CLOSE_PAREN
-               | WORD OP_DOT WORD OP_ASSIGN exp"""
-        if p[1] == "(":
-            p[0] = syntax.SNoOp()
-        elif p[4] == "(":
-            p[0] = syntax.SCall(syntax.EVar(p[1]), p[3], p[5])
+        """stm : accesschain OP_OPEN_PAREN exp_list OP_CLOSE_PAREN
+               | accesschain OP_ASSIGN exp"""
+        if p[2] == "(":
+            if not (isinstance(p[1], syntax.EGetField) and isinstance(p[1].e, syntax.EVar)):
+                p_error(p)
+            p[0] = syntax.SCall(p[1].e, p[1].f, p[3])
         else:
-            p[0] = syntax.SAssign(
-                syntax.EGetField(syntax.EVar(p[1]), p[3]),
-                p[5])
+            p[0] = syntax.SAssign(p[1], p[3])
 
     def p_empty(p):
         'empty :'
         pass
 
     def p_error(p):
-        raise Exception("Syntax error at {}:{}".format(p.lineno, p.lexpos))
+        raise Exception("Syntax error on line {}".format(p.lineno))
 
     return yacc.yacc()
 
