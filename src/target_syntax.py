@@ -25,6 +25,16 @@ class ELambda(Exp):
     def __repr__(self):
         return "ELambda{}".format(repr(self.children()))
 
+# Misc
+TRef       = declare_case(Type, "TRef", ["t"])
+EEnumToInt = declare_case(Exp, "EEnumToInt", ["e"])
+EBoolToInt = declare_case(Exp, "EBoolToInt", ["e"])
+EStm       = declare_case(Exp, "EStm", ["stm", "e"])
+
+# Fixed-length vectors
+TVector    = declare_case(Type, "TVector", ["t", "n"])
+EVectorGet = declare_case(Exp, "EVectorGet", ["e", "i"])
+
 # Iterators
 SWhile   = declare_case(Stm, "SWhile", ["e", "body"])
 

@@ -2,16 +2,37 @@
 Concrete data structure implementations.
 """
 
-from common import fresh_name
+from common import fresh_name, typechecked, product
 from target_syntax import *
-from syntax_tools import equal
+from syntax_tools import equal, subst
+
+def count_cases(t):
+    if t == BOOL:
+        return 2
+    elif isinstance(t, TEnum):
+        return len(t.cases)
+    elif isinstance(t, TTuple):
+        return product(count_cases(tt) for tt in t.ts)
+    elif isinstance(t, TRecord):
+        return product(count_cases(tt) for (f, tt) in t.fields)
+    else:
+        raise ValueError(t)
+
+def is_enumerable(t):
+    try:
+        count_cases(t)
+        return True
+    except ValueError:
+        return False
 
 class Library(object):
     def impls(self, ty):
         if type(ty) is TMap:
-            for k in self.impls(ty.k):
-                for v in self.impls(ty.v):
-                    yield TNativeMap(k, v)
+            for v in self.impls(ty.v):
+                if is_enumerable(ty.k):
+                    yield TVectorMap(ty.k, v)
+                else:
+                    yield TNativeMap(ty.k, v)
         elif type(ty) is TBag:
             for t in self.impls(ty.t):
                 if isinstance(ty.t, THandle):
@@ -27,11 +48,47 @@ class TNativeMap(TMap):
     def __init__(self, k, v):
         super().__init__(k, v)
 
+class TVectorMap(TMap):
+    def __init__(self, k, v):
+        super().__init__(k, v)
+
+    def rep_type(self):
+        return TVector(self.v, count_cases(self.k))
+
+    def to_index(self, key):
+        if key.type == BOOL:
+            return EBoolToInt(key).with_type(TInt())
+        elif isinstance(key.type, TEnum):
+            return EEnumToInt(key).with_type(TInt())
+        elif isinstance(key.type, TTuple):
+            i = self.to_index(ETupleGet(key, 0).with_type(key.type.ts[0]))
+            for i in range(1, len(key.type.ts)):
+                i = EBinOp(i, "*", ENum(count_cases(key.type.ts[i-1]))).with_type(TInt())
+                i = EBinOp(i, "+", self.to_index(ETupleGet(key, i).with_type(key.type.ts[i]))).with_type(TInt())
+        else:
+            raise NotImplementedError()
+
+    @typechecked
+    def update_key(self, m : Exp, k : Exp, v : EVar, change : Stm):
+        idx = EVar(fresh_name("index")).with_type(TInt())
+        return seq([
+            SDecl(idx.id, self.to_index(k)),
+            subst(change, {v.id : EVectorGet(m, idx)})])
+
+    @typechecked
+    def get_key(self, m : Exp, k : Exp):
+        return EVectorGet(m, self.to_index(k))
+
+
 class TIntrusiveLinkedList(TBag):
     def __init__(self, t):
         super().__init__(t)
         self.next_ptr = fresh_name("next_ptr")
         self.prev_ptr = fresh_name("prev_ptr")
+
+    def rep_type(self):
+        return self.t
+
     def __eq__(self, other):
         return self is other
     def __hash__(self):

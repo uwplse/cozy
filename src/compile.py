@@ -1,7 +1,7 @@
 from collections import OrderedDict
 
 import common
-from syntax import *
+from target_syntax import *
 import library
 from syntax_tools import all_types
 
@@ -317,23 +317,40 @@ class JavaPrinter(common.Visitor):
 
 class CxxPrinter(JavaPrinter):
 
-    def visit_TInt(self, t):
-        return "int"
+    def visit_TInt(self, t, name):
+        return "int {}".format(name)
 
-    def visit_TLong(self, t):
-        return "long"
+    def visit_TLong(self, t, name):
+        return "long {}".format(name)
 
-    def visit_TBool(self, t):
-        return "bool"
+    def visit_TBool(self, t, name):
+        return "bool {}".format(name)
 
-    def visit_THandle(self, t):
-        return self.typename(t) + " *"
+    def visit_THandle(self, t, name):
+        return self.typename(t) + " *{}".format(name)
 
     def visit_TNativeMap(self, t):
-        return "std::map< {}, {} >".format(self.visit(t.k), self.visit(t.v))
+        return "std::map< {}, {} > {}".format(self.visit(t.k, ""), self.visit(t.v, ""), name)
 
-    def visit_TIntrusiveLinkedList(self, t):
-        return "{}".format(self.visit(t.t))
+    def visit_TMap(self, t, name):
+        return self.visit(t.rep_type(), name)
+
+    def visit_TBag(self, t, name):
+        return self.visit(t.rep_type(), name)
+
+    def visit_TRecord(self, t, name):
+        return "{} {}".format(self.typename(t), name)
+
+    def visit_TEnum(self, enum, name):
+        return "{} {}".format(self.typename(enum), name)
+
+    def visit_TVector(self, t, name):
+        return "{}[{}]".format(self.visit(t.t, name), t.n)
+
+    def visit_EVectorGet(self, e, indent=""):
+        vsetup, v = self.visit(e.e, indent)
+        isetup, i = self.visit(e.i, indent)
+        return (vsetup + isetup, "{}[{}]".format(v, i))
 
     def visit_SForEach(self, for_each, indent):
         id = for_each.id
@@ -361,20 +378,20 @@ class CxxPrinter(JavaPrinter):
         if isinstance(ret_type, TBag):
             x = EVar(common.fresh_name("x")).with_type(ret_type.t)
             s  = "{indent}template <class F>\n".format(indent=indent)
-            s += "{indent}inline void {name} ({args}F _callback) {{\n{body}  }}\n\n".format(
+            s += "{indent}inline void {name} ({args}const F& _callback) {{\n{body}  }}\n\n".format(
                 indent=indent,
-                type=self.visit(ret_type),
+                type=self.visit(ret_type, ""),
                 name=q.name,
-                args="".join("{} {}, ".format(self.visit(t), name) for name, t in q.args),
+                args="".join("{}, ".format(self.visit(t, name)) for name, t in q.args),
                 body=self.visit(SForEach(x, q.ret, "_callback({});".format(x.id)), indent=indent+INDENT))
             return s
         else:
             body, out = self.visit(q.ret, indent+INDENT)
             return "{indent}inline {type} {name} ({args}) {{\n{body}    return {out};\n  }}\n\n".format(
                 indent=indent,
-                type=self.visit(ret_type),
+                type=self.visit(ret_type, ""),
                 name=q.name,
-                args=", ".join("{} {}".format(self.visit(t), name) for name, t in q.args),
+                args=", ".join(self.visit(t, name) for name, t in q.args),
                 out=out,
                 body=body)
 
@@ -382,7 +399,7 @@ class CxxPrinter(JavaPrinter):
         s = "{}inline void {} ({}) {{\n{}  }}\n\n".format(
             indent,
             q.name,
-            ", ".join("{} {}".format(self.visit(t), name) for name, t in q.args),
+            ", ".join(self.visit(t, name) for name, t in q.args),
             self.visit(q.body, indent+INDENT))
         return s
 
@@ -391,17 +408,39 @@ class CxxPrinter(JavaPrinter):
 
     def visit_EMapGet(self, e, indent=""):
         if isinstance(e.map.type, library.TNativeMap):
-            (smap, emap) = self.visit(e.map)
-            (skey, ekey) = self.visit(e.key)
+            (smap, emap) = self.visit(e.map, indent)
+            (skey, ekey) = self.visit(e.key, indent)
             return (smap + skey, "{}[{}]".format(emap, ekey))
         else:
-            raise NotImplementedError(e.map.type)
+            return self.visit(e.map.type.get_key(e.map, e.key), indent)
+
+    def visit_SMapUpdate(self, update, indent=""):
+        if isinstance(update.map.type, library.TNativeMap):
+            msetup, map = self.visit(update.map)
+            ksetup, key = self.visit(update.key)
+            s = "{indent}{type} & {v} = {map}[{key}];\n".format(
+                indent=indent,
+                type=self.visit(update.val_var.type),
+                v=update.val_var.id,
+                map=map,
+                key=key)
+            return msetup + ksetup + s + self.visit(update.change, indent)
+        else:
+            return self.visit(update.map.type.update_key(update.map, update.key, update.val_var, update.change), indent)
 
     def visit_EVar(self, e, indent=""):
         return ("", e.id)
 
     def visit_EEnumEntry(self, e, indent=""):
         return ("", e.name)
+
+    def visit_EEnumToInt(self, e, indent=""):
+        setup, e = self.visit(e.e, indent)
+        return (setup, "reinterpret_cast<int>(" + e + ")")
+
+    def visit_EBoolToInt(self, e, indent=""):
+        setup, e = self.visit(e.e, indent)
+        return (setup, "(" + e + " ? 1 : 0)")
 
     def visit_EBinOp(self, e, indent=""):
         op = e.op
@@ -438,7 +477,7 @@ class CxxPrinter(JavaPrinter):
 
     def visit_SDecl(self, s, indent=""):
         cv, ev = self.visit(s.val, indent)
-        return cv + indent + "{type} {x} = {ev};\n".format(type=self.visit(s.val.type), x=s.id, ev=ev)
+        return cv + indent + "{decl} = {ev};\n".format(decl=self.visit(s.val.type, s.id), ev=ev)
 
     def visit_SSeq(self, s, indent=""):
         return self.visit(s.s1, indent) + self.visit(s.s2, indent)
@@ -461,17 +500,6 @@ class CxxPrinter(JavaPrinter):
         stm = f(call.target, call.args)
         return self.visit(stm, indent)
 
-    def visit_SMapUpdate(self, update, indent=""):
-        msetup, map = self.visit(update.map)
-        ksetup, key = self.visit(update.key)
-        s = "{indent}{type} & {v} = {map}[{key}];\n".format(
-            indent=indent,
-            type=self.visit(update.val_var.type),
-            v=update.val_var.id,
-            map=map,
-            key=key)
-        return msetup + ksetup + s + self.visit(update.change, indent)
-
     def define_type(self, t, name, indent, intrusive_fields):
         if isinstance(t, TEnum):
             return "{indent}enum {name} {{\n{cases}{indent}}};\n".format(
@@ -483,24 +511,26 @@ class CxxPrinter(JavaPrinter):
             return "{indent}struct {name} {{\n{fields}{indent}}};\n".format(
                 indent=indent,
                 name=name,
-                fields="".join("{indent}{type} {field};\n".format(indent=indent+INDENT, type=self.visit(t), field=f) for (f, t) in fields))
+                fields="".join("{indent}{field_decl};\n".format(indent=indent+INDENT, field_decl=self.visit(t, f)) for (f, t) in fields))
         elif isinstance(t, TRecord):
             return "{indent}struct {name} {{\n{fields}{indent}}};\n".format(
                 indent=indent,
                 name=name,
-                fields="".join("{indent}{type} {field};\n".format(indent=indent+INDENT, type=self.visit(t), field=f) for (f, t) in t.fields))
+                fields="".join("{indent}{field_decl};\n".format(indent=indent+INDENT, field_decl=self.visit(t, f)) for (f, t) in t.fields))
         else:
             return ""
 
     def initial_value(self, t):
         if isinstance(t, TBool):
-            return "false"
+            return "(false)"
         elif isinstance(t, TInt) or isinstance(t, TLong):
-            return "0"
-        elif self.visit(t).endswith("*"): # a little hacky
-            return "NULL"
+            return "(0)"
+        elif isinstance(t, TVector):
+            return "{{ {} }}".format(", ".join(self.initial_value(t.t) for i in range(t.n)))
+        elif self.visit(t, "").endswith("*"): # a little hacky
+            return "(NULL)"
         else:
-            return ""
+            return self.initial_value(t.rep_type())
 
     def visit_Spec(self, spec):
         s = "#pragma once\n"
@@ -527,9 +557,10 @@ class CxxPrinter(JavaPrinter):
         s += "protected:\n"
         for name, t in spec.statevars:
             self.statevar_name = name
-            s += "  {} {};\n".format(self.visit(t), name)
+            s += "{}{};\n".format(INDENT, self.visit(t, name))
         s += "public:\n"
-        s += INDENT + "{name}() : {inits} {{ }}\n".format(name=spec.name, inits=", ".join("{}({})".format(name, self.initial_value(t)) for (name, t) in spec.statevars))
+        s += INDENT + "inline {name}() : {inits} {{ }}\n".format(name=spec.name, inits=", ".join("{} {}".format(name, self.initial_value(t)) for (name, t) in spec.statevars))
+        s += INDENT + "{name}(const {name}& other) = delete;\n".format(name=spec.name)
         for op in spec.methods:
             s += self.visit(op, INDENT)
         s += "};"
