@@ -1,10 +1,16 @@
+from collections import OrderedDict
+
 import common
 from syntax import *
+import library
+from syntax_tools import all_types
+
+INDENT = "  "
 
 class JavaPrinter(common.Visitor):
     def __init__(self):
         self.statevar_name = ""
-        self.types = { }
+        self.types = OrderedDict()
 
     def visit_Spec(self, spec):
         s = "public class {} {{\n".format(spec.name)
@@ -59,7 +65,7 @@ class JavaPrinter(common.Visitor):
         return res
 
     def visit_THandle(self, t):
-        return "{}Handle".format(common.capitalize(t.statevar))
+        return self.typename(t)
 
     def visit_TEnum(self, enum):
         return self.typename(enum)
@@ -122,53 +128,56 @@ class JavaPrinter(common.Visitor):
             "{} = {};\n".format(out, callback(*tmps)) if out is not None else
             "{};\n".format(callback(*tmps)))
 
-    def visit_EVar(self, e, out):
-        return "{} = {};\n".format(out, e.id)
+    # def visit_EVar(self, e, out):
+    #     return "{} = {};\n".format(out, e.id)
 
-    def visit_EBool(self, e, out):
-        return "{} = {};\n".format(out, "true" if e.val else "false")
+    # def visit_EEnumEntry(self, e, out):
+    #     return "{} = {};\n".format(out, e.name)
 
-    def visit_ENum(self, e, out):
-        return "{} = {};\n".format(out, e.val)
+    # def visit_EBool(self, e, out):
+    #     return "{} = {};\n".format(out, "true" if e.val else "false")
 
-    def visit_ELet(self, e, out):
-        s = self.visit_SDecl(SDecl(e.id, e.e1))
-        return s + self.visit(e.e2, out)
+    # def visit_ENum(self, e, out):
+    #     return "{} = {};\n".format(out, e.val)
 
-    def visit_EBinOp(self, e, out):
-        op = e.op
-        if op == "and": op = "&&"
-        if op == "or": op = "||"
-        e1 = e.e1
-        e2 = e.e2
-        e1_name = common.fresh_name();
-        e2_name = common.fresh_name();
-        return """
-            {t1} {e1};
-            {compute_e1}
-            {t2} {e2};
-            {compute_e2}
-            {out} = {e1} {op} {e2};
-            """.format(
-                t1=self.visit(e1.type),
-                t2=self.visit(e2.type),
-                e1=e1_name,
-                e2=e2_name,
-                compute_e1=self.visit(e1, e1_name),
-                compute_e2=self.visit(e2, e2_name),
-                op=op,
-                out=out)
-        return "({} {} {})".format(self.visit(e.e1), e.op, self.visit(e.e2))
+    # def visit_ELet(self, e, out):
+    #     s = self.visit_SDecl(SDecl(e.id, e.e1))
+    #     return s + self.visit(e.e2, out)
 
-    def visit_EUnaryOp(self, e, out):
-        op = e.op
-        e = e.e
-        if op == "-":
-            return self.compute(out, [e], lambda val: "(- {})".format(val))
-        raise NotImplementedError(e.op)
+    # def visit_EBinOp(self, e, out):
+    #     op = e.op
+    #     if op == "and": op = "&&"
+    #     if op == "or": op = "||"
+    #     e1 = e.e1
+    #     e2 = e.e2
+    #     e1_name = common.fresh_name();
+    #     e2_name = common.fresh_name();
+    #     return """
+    #         {t1} {e1};
+    #         {compute_e1}
+    #         {t2} {e2};
+    #         {compute_e2}
+    #         {out} = {e1} {op} {e2};
+    #         """.format(
+    #             t1=self.visit(e1.type),
+    #             t2=self.visit(e2.type),
+    #             e1=e1_name,
+    #             e2=e2_name,
+    #             compute_e1=self.visit(e1, e1_name),
+    #             compute_e2=self.visit(e2, e2_name),
+    #             op=op,
+    #             out=out)
+    #     return "({} {} {})".format(self.visit(e.e1), e.op, self.visit(e.e2))
 
-    def visit_EGetField(self, e, out):
-        return self.compute(out, [e.e], lambda val: "{}.{}".format(val, e.f))
+    # def visit_EUnaryOp(self, e, out):
+    #     op = e.op
+    #     e = e.e
+    #     if op == "-":
+    #         return self.compute(out, [e], lambda val: "(- {})".format(val))
+    #     raise NotImplementedError(e.op)
+
+    # def visit_EGetField(self, e, out):
+    #     return self.compute(out, [e.e], lambda val: "{}.{}".format(val, e.f))
 
     # def visit_EMakeRecord(self, e):
     #     return "{{ {} }}".format(", ".join("{} : {}".format(name, val) for name, val in e.fields))
@@ -204,24 +213,24 @@ class JavaPrinter(common.Visitor):
     # def visit_EAlloc(self, e):
     #     return "new {}({})".format(self.visit(e.t), ", ".join(self.visit(arg) for arg in e.args))
 
-    def visit_ECall(self, e, out):
-        def compile(*args):
-            if e.func == "HashMapLookup":
-                return "{}.computeIfAbsent({}, ({} key) -> new {}())".format(
-                    args[0], args[1],
-                    self.visit(e.args[0].type.k),
-                    self.visit(e.args[0].type.v))
-            elif e.func == "LLInsertAtFront":
-                return "{}.addFirst({})".format(args[0], args[1])
-            elif e.func == "LLRemove":
-                return "{}.remove({})".format(args[0], args[1])
-            elif e.func == "Iterator":
-                return "{}.iterator()".format(args[0])
-            else:
-                return "{}({})".format(e.func, ",".join(args))
-                # raise NotImplementedError(e.func)
+    # def visit_ECall(self, e, out):
+    #     def compile(*args):
+    #         if e.func == "HashMapLookup":
+    #             return "{}.computeIfAbsent({}, ({} key) -> new {}())".format(
+    #                 args[0], args[1],
+    #                 self.visit(e.args[0].type.k),
+    #                 self.visit(e.args[0].type.v))
+    #         elif e.func == "LLInsertAtFront":
+    #             return "{}.addFirst({})".format(args[0], args[1])
+    #         elif e.func == "LLRemove":
+    #             return "{}.remove({})".format(args[0], args[1])
+    #         elif e.func == "Iterator":
+    #             return "{}.iterator()".format(args[0])
+    #         else:
+    #             return "{}({})".format(e.func, ",".join(args))
+    #             # raise NotImplementedError(e.func)
 
-        return self.compute(out, e.args, compile)
+    #     return self.compute(out, e.args, compile)
 
         # tmps = [common.fresh_name() for i in range(len(e.args))]
         # s = ""
@@ -236,53 +245,53 @@ class JavaPrinter(common.Visitor):
     # def visit_CCond(self, c):
     #     return "if ({})".format(self.visit(c.e))
 
-    def visit_SNoOp(self, s):
-        return ""
+    # def visit_SNoOp(self, s):
+    #     return ""
 
-    def visit_SCall(self, call):
-        args = [call.target] + list(call.args)
-        return self.visit_ECall(ECall(call.func, args), out=None)
+    # def visit_SCall(self, call):
+    #     args = [call.target] + list(call.args)
+    #     return self.visit_ECall(ECall(call.func, args), out=None)
 
-    def visit_SDecl(self, s):
-        return """
-            {type} {x};
-            {do_assign}
-            """.format(
-                type=self.visit(s.val.type),
-                x=s.x,
-                do_assign=self.visit(SAssign(EVar(s.x).with_type(s.val.type), s.val)))
+    # def visit_SDecl(self, s):
+    #     return """
+    #         {type} {x};
+    #         {do_assign}
+    #         """.format(
+    #             type=self.visit(s.val.type),
+    #             x=s.id,
+    #             do_assign=self.visit(SAssign(EVar(s.id).with_type(s.val.type), s.val)))
 
-    def visit_SAssign(self, s):
-        if isinstance(s.lhs, EVar):
-            val = common.fresh_name()
-            return """
-                {val_type} {val};
-                {compute_val}
-                {out} = {val};
-                """.format(
-                    val_type=self.visit(s.lhs.type),
-                    val=val,
-                    compute_val=self.visit(s.rhs, val),
-                    out=s.lhs.id)
-        elif isinstance(s.lhs, EGetField):
-            out = common.fresh_name()
-            val = common.fresh_name()
-            return """
-                {out_type} {out};
-                {compute_out};
-                {val_type} {val};
-                {compute_val};
-                {out}.{field} = {val};
-                """.format(
-                    out_type=self.visit(s.lhs.e.type),
-                    val_type=self.visit(s.rhs.type),
-                    out=out,
-                    val=val,
-                    compute_out=self.visit(s.lhs.e, out),
-                    compute_val=self.visit(s.rhs, val),
-                    field=s.lhs.f)
-        else:
-            raise Exception("not an lvalue: {}".format(s))
+    # def visit_SAssign(self, s):
+    #     if isinstance(s.lhs, EVar):
+    #         val = common.fresh_name()
+    #         return """
+    #             {val_type} {val};
+    #             {compute_val}
+    #             {out} = {val};
+    #             """.format(
+    #                 val_type=self.visit(s.lhs.type),
+    #                 val=val,
+    #                 compute_val=self.visit(s.rhs, val),
+    #                 out=s.lhs.id)
+    #     elif isinstance(s.lhs, EGetField):
+    #         out = common.fresh_name()
+    #         val = common.fresh_name()
+    #         return """
+    #             {out_type} {out};
+    #             {compute_out};
+    #             {val_type} {val};
+    #             {compute_val};
+    #             {out}.{field} = {val};
+    #             """.format(
+    #                 out_type=self.visit(s.lhs.e.type),
+    #                 val_type=self.visit(s.rhs.type),
+    #                 out=out,
+    #                 val=val,
+    #                 compute_out=self.visit(s.lhs.e, out),
+    #                 compute_val=self.visit(s.rhs, val),
+    #                 field=s.lhs.f)
+    #     else:
+    #         raise Exception("not an lvalue: {}".format(s))
 
     def visit_SSeq(self, s):
         return self.visit(s.s1) + self.visit(s.s2)
@@ -305,3 +314,188 @@ class JavaPrinter(common.Visitor):
 
     def visit_object(self, o, *args, **kwargs):
         return "/* implement visit_{} */".format(type(o).__name__)
+
+class CxxPrinter(JavaPrinter):
+
+    def visit_TInt(self, t):
+        return "int"
+
+    def visit_TLong(self, t):
+        return "long"
+
+    def visit_TBool(self, t):
+        return "bool"
+
+    def visit_THandle(self, t):
+        return self.typename(t) + " *"
+
+    def visit_TNativeMap(self, t):
+        return "std::map< {}, {} >".format(self.visit(t.k), self.visit(t.v))
+
+    def visit_TIntrusiveLinkedList(self, t):
+        return "{}".format(self.visit(t.t))
+
+    def visit_Query(self, q):
+        ret_type = self.visit(q.ret.type)
+        body, out = self.visit(q.ret, "    ")
+        s = "  inline {type} {name} ({args}) {{\n{body}    return {out};\n  }}\n\n".format(
+            type=ret_type,
+            name=q.name,
+            args=", ".join("{} {}".format(self.visit(t), name) for name, t in q.args),
+            out=out,
+            body=body)
+        return s
+
+    def visit_Op(self, q):
+        s = "  inline void {} ({}) {{\n{}  }}\n\n".format(q.name, ", ".join("{} {}".format(self.visit(t), name) for name, t in q.args),
+            self.visit(q.body, "    "))
+        return s
+
+    def visit_ENull(self, e, indent=""):
+        return ("", "NULL")
+
+    def visit_EMapGet(self, e, indent=""):
+        if isinstance(e.map.type, library.TNativeMap):
+            (smap, emap) = self.visit(e.map)
+            (skey, ekey) = self.visit(e.key)
+            return (smap + skey, "{}[{}]".format(emap, ekey))
+        else:
+            raise NotImplementedError(e.map.type)
+
+    def visit_EVar(self, e, indent=""):
+        return ("", e.id)
+
+    def visit_EEnumEntry(self, e, indent=""):
+        return ("", e.name)
+
+    def visit_EBinOp(self, e, indent=""):
+        op = e.op
+        ce1, e1 = self.visit(e.e1, indent)
+        ce2, e2 = self.visit(e.e2, indent)
+        return (ce1 + ce2, "({e1} {op} {e2})".format(e1=e1, op=op, e2=e2))
+
+    def visit_EUnaryOp(self, e, indent):
+        op = e.op
+        ce, ee = self.visit(e.e, indent)
+        return (ce, "({op} {ee})".format(op=op, ee=ee))
+
+    def visit_EGetField(self, e, indent=""):
+        ce, ee = self.visit(e.e, indent)
+        op = "."
+        if isinstance(e.e.type, THandle) or isinstance(e.e.type, library.TIntrusiveLinkedList):
+            op = "->"
+        return (ce, "({ee}{op}{f})".format(ee=ee, op=op, f=e.f))
+
+    def visit_ECall(self, e, indent=""):
+        setups, args = zip(*[self.visit(arg) for arg in e.args])
+        return ("".join(setups), "{func}({args})".format(func=e.func, args=", ".join(args)))
+
+    def visit_Exp(self, e, indent=""):
+        raise NotImplementedError(e)
+
+    def visit_SNoOp(self, s, indent=""):
+        return ""
+
+    def visit_SAssign(self, s, indent=""):
+        cl, el = self.visit(s.lhs, indent)
+        cr, er = self.visit(s.rhs, indent)
+        return cl + cr + indent + "{} = {};\n".format(el, er)
+
+    def visit_SDecl(self, s, indent=""):
+        cv, ev = self.visit(s.val, indent)
+        return cv + indent + "{type} {x} = {ev};\n".format(type=self.visit(s.val.type), x=s.id, ev=ev)
+
+    def visit_SSeq(self, s, indent=""):
+        return self.visit(s.s1, indent) + self.visit(s.s2, indent)
+
+    def visit_SIf(self, s, indent=""):
+        compute_cond, cond = self.visit(s.cond, indent)
+        res = """{compute_cond}{indent}if ({cond}) {{\n{then_branch}{indent}}}""".format(
+            indent=indent,
+            cond=cond,
+            compute_cond=compute_cond,
+            then_branch=self.visit(s.then_branch, indent + INDENT))
+        if not isinstance(s.else_branch, SNoOp):
+            res += "{indent}}} else {{\n{else_branch}{indent}}}".format(
+                indent=indent,
+                else_branch=self.visit(s.else_branch, indent + INDENT))
+        return res + "\n"
+
+    def visit_SCall(self, call, indent=""):
+        f = getattr(call.target.type, "implement_{}".format(call.func))
+        stm = f(call.target, call.args)
+        return self.visit(stm, indent)
+
+    def visit_SMapUpdate(self, update, indent=""):
+        msetup, map = self.visit(update.map)
+        ksetup, key = self.visit(update.key)
+        s = "{indent}{type} & {v} = {map}[{key}];\n".format(
+            indent=indent,
+            type=self.visit(update.val_var.type),
+            v=update.val_var.id,
+            map=map,
+            key=key)
+        return msetup + ksetup + s + self.visit(update.change, indent)
+
+    def define_type(self, t, name, indent, intrusive_fields):
+        if isinstance(t, TEnum):
+            return "{indent}enum {name} {{\n{cases}{indent}}};\n".format(
+                indent=indent,
+                name=name,
+                cases="".join("{indent}{case},\n".format(indent=indent+INDENT, case=case) for case in t.cases))
+        elif isinstance(t, THandle):
+            fields = [("val", t.value_type)] + intrusive_fields[t]
+            return "{indent}struct {name} {{\n{fields}{indent}}};\n".format(
+                indent=indent,
+                name=name,
+                fields="".join("{indent}{type} {field};\n".format(indent=indent+INDENT, type=self.visit(t), field=f) for (f, t) in fields))
+        elif isinstance(t, TRecord):
+            return "{indent}struct {name} {{\n{fields}{indent}}};\n".format(
+                indent=indent,
+                name=name,
+                fields="".join("{indent}{type} {field};\n".format(indent=indent+INDENT, type=self.visit(t), field=f) for (f, t) in t.fields))
+        else:
+            return ""
+
+    def initial_value(self, t):
+        if isinstance(t, TBool):
+            return "false"
+        elif isinstance(t, TInt) or isinstance(t, TLong):
+            return "0"
+        elif self.visit(t).endswith("*"): # a little hacky
+            return "NULL"
+        else:
+            return ""
+
+    def visit_Spec(self, spec):
+        s = "#pragma once\n"
+        s += "#include <map>\n"
+        s += "class {} {{\n".format(spec.name)
+        s += "public:\n"
+
+        for name, t in spec.types:
+            self.types[t] = name
+        handle_types = [t for t in all_types(spec) if isinstance(t, THandle)]
+        intrusive_fields = { t: [] for t in handle_types }
+        for t in all_types(spec):
+            if t not in self.types and type(t) in [THandle, TRecord, TTuple, TEnum]:
+                if isinstance(t, THandle):
+                    name = "{}Handle".format(common.capitalize(t.statevar))
+                else:
+                    name = common.fresh_name("Type")
+                self.types[t] = name
+            if hasattr(t, "intrusive_data"):
+                for ht in handle_types:
+                    intrusive_fields[ht] += t.intrusive_data(ht)
+        for t, name in self.types.items():
+            s += self.define_type(t, name, "  ", intrusive_fields)
+        s += "protected:\n"
+        for name, t in spec.statevars:
+            self.statevar_name = name
+            s += "  {} {};\n".format(self.visit(t), name)
+        s += "public:\n"
+        s += INDENT + "{name}() : {inits} {{ }}\n".format(name=spec.name, inits=", ".join("{}({})".format(name, self.initial_value(t)) for (name, t) in spec.statevars))
+        for op in spec.methods:
+            s += self.visit(op)
+        s += "};"
+        return s

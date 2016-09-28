@@ -10,9 +10,12 @@ import argparse
 
 import parse
 import compile
+import common
 import typecheck
 import syntax_tools
 import synthesis
+import library
+import autotuning
 
 def read_file(f):
     with open(f, "r"):
@@ -24,6 +27,9 @@ def run():
 
     java_opts = parser.add_argument_group("Java codegen")
     java_opts.add_argument("--java", metavar="FILE.java", default=None, help="Output file for java classes, use '-' for stdout")
+
+    cxx_opts = parser.add_argument_group("C++ codegen")
+    cxx_opts.add_argument("--c++", metavar="FILE.h", default=None, help="Output file for C++ (header-only class), use '-' for stdout")
 
     parser.add_argument("file", nargs="?", default=None, help="Input file (omit to use stdin)")
     args = parser.parse_args()
@@ -45,9 +51,24 @@ def run():
     print()
     print(syntax_tools.pprint(ast))
 
-    # if args.java is not None:
-    #     with common.open_maybe_stdout(args.java) as out:
-    #         out.write(compile.JavaPrinter().visit(ast))
+    lib = library.Library()
+    impls = list(autotuning.enumerate_impls(ast, lib))
+    print("# impls: {}".format(len(impls)))
+
+    impl = impls[0] # TODO: autotuning
+
+    print()
+    print(impl.statevars)
+
+    java = args.java
+    if java is not None:
+        with common.open_maybe_stdout(java) as out:
+            out.write(compile.JavaPrinter().visit(impl))
+
+    cxx = getattr(args, "c++")
+    if cxx is not None:
+        with common.open_maybe_stdout(cxx) as out:
+            out.write(compile.CxxPrinter().visit(impl))
 
 if __name__ == "__main__":
     run()

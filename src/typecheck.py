@@ -2,13 +2,13 @@ from common import Visitor
 import syntax
 from syntax_tools import pprint
 
-def typecheck(ast, env=None):
+def typecheck(ast, env=None, handleize=True):
     """
     Typecheck the syntax tree.
     This procedure attaches a .type attribute to every expression, and returns
     a list of type errors (or an empty list if everything typechecks properly).
     """
-    typechecker = Typechecker(env or ())
+    typechecker = Typechecker(env or (), handleize)
     typechecker.visit(ast)
     return typechecker.errors
 
@@ -20,7 +20,7 @@ STRING = syntax.TString()
 
 class Typechecker(Visitor):
 
-    def __init__(self, env):
+    def __init__(self, env, handleize):
         self.tenv = {
             "Int": INT,
             "Bound": INT, # TODO?
@@ -29,6 +29,7 @@ class Typechecker(Visitor):
             "String": STRING }
 
         self.env = dict(env)
+        self.should_handleize = handleize
         self.oldenv = []
         self.errors = []
 
@@ -62,6 +63,8 @@ class Typechecker(Visitor):
             self.visit(op)
 
     def handleize(self, collection_type, statevar_name):
+        if not self.should_handleize:
+            return collection_type
         if isinstance(collection_type, syntax.TBag):
             ht = syntax.THandle(statevar_name)
             ht.value_type = collection_type.t
@@ -98,6 +101,13 @@ class Typechecker(Visitor):
         return syntax.TRecord(tuple((f, self.visit(ft)) for f, ft in t.fields))
 
     def visit_THandle(self, t):
+        if hasattr(t, "value_type"):
+            return t
+        elem = self.env[t.statevar] # TODO: what if statevar is shadowed?
+        if isinstance(elem, syntax.TBag):
+            t.value_type = elem.t.value_type
+        else:
+            self.report_err(t, "no handle type for {}".format(t.statevar))
         return t
 
     def visit_TBool(self, t):
@@ -106,11 +116,31 @@ class Typechecker(Visitor):
     def visit_TInt(self, t):
         return t
 
+    def visit_TLong(self, t):
+        return t
+
+    def visit_TBag(self, t):
+        return type(t)(self.visit(t.t))
+
+    def visit_TMap(self, t):
+        return type(t)(self.visit(t.k), self.visit(t.v))
+
     def ensure_type(self, e, t):
         if not hasattr(e, "type"):
             self.visit(e)
-        if e.type != t:
+        if t is not DEFAULT_TYPE and e.type is not DEFAULT_TYPE and e.type != t:
             self.report_err(e, "expression has type {} instead of {}".format(e.type, t))
+
+    def ensure_numeric(self, e):
+        if e.type is DEFAULT_TYPE:
+            return
+        if e.type not in [INT, LONG]:
+            self.report_err(e, "expression has non-numeric type {}".format(e.type))
+
+    def numeric_lub(self, t1, t2):
+        if t1 == LONG or t2 == LONG:
+            return LONG
+        return INT
 
     def get_collection_type(self, e):
         """if e has a collection type, e.g. List<Int>, this returns the inner type, e.g. Int"""
@@ -139,6 +169,9 @@ class Typechecker(Visitor):
         elif e.op == "not":
             self.ensure_type(e.e, BOOL)
             e.type = BOOL
+        elif e.op == "-":
+            self.ensure_numeric(e.e)
+            e.type = e.e.type
         elif e.op == "singleton":
             e.type = syntax.TSet(e.e.type)
         elif e.op == "iterator":
@@ -152,15 +185,6 @@ class Typechecker(Visitor):
 
     def visit_ENum(self, e):
         e.type = INT
-
-    def ensure_numeric(self, e):
-        if e.type not in [INT, LONG]:
-            self.report_err(e, "expression has non-numeric type {}".format(e.type))
-
-    def numeric_lub(self, t1, t2):
-        if t1 == LONG or t2 == LONG:
-            return LONG
-        return INT
 
     def visit_EBinOp(self, e):
         self.visit(e.e1)
@@ -252,17 +276,41 @@ class Typechecker(Visitor):
             e.type = DEFAULT_TYPE
 
     def visit_EVar(self, e):
-        if hasattr(e, "type"):
-            pass
-        elif e.id in self.env:
+        if e.id in self.env:
             e.type = self.env[e.id]
         else:
             self.report_err(e, "no var {} in scope".format(e.id))
             e.type = DEFAULT_TYPE
 
+    def visit_EEnumEntry(self, e):
+        if e.name in self.env:
+            e.type = self.env[e.name]
+        else:
+            self.report_err(e, "no enum entry {} in scope".format(e.name))
+            e.type = DEFAULT_TYPE
+
     def visit_ETuple(self, e):
         ts = [self.visit(ee) for ee in e.es]
         e.type = syntax.TTuple(ts)
+
+    def visit_EMapGet(self, e):
+        self.visit(e.map)
+        self.visit(e.key)
+        if not isinstance(e.map.type, syntax.TMap):
+            self.report_err(e, "{} is not a map".format(e.map))
+            e.type = DEFAULT_TYPE
+        self.ensure_type(e.key, e.map.type.k)
+        e.type = e.map.type.v
+
+    def visit_SMapUpdate(self, s):
+        self.visit(s.map)
+        if not isinstance(s.map.type, syntax.TMap):
+            self.report_err(s, "{} is not a map".format(s.map))
+        self.visit(s.key)
+        with self.scope():
+            self.env[s.val_var.id] = s.map.type.v
+            s.val_var.type = s.map.type.v
+            self.visit(s.change)
 
     def visit_Op(self, op):
         op.args = [(name, self.visit(t)) for (name, t) in op.args]
@@ -296,3 +344,27 @@ class Typechecker(Visitor):
                 self.ensure_type(s.args[0], elem_type)
         else:
             self.report_err(s, "unknown function {}".format(s.func))
+
+    def visit_SSeq(self, s):
+        self.visit(s.s1)
+        self.visit(s.s2)
+
+    def visit_SIf(self, s):
+        self.visit(s.cond)
+        self.ensure_type(s.cond, syntax.TBool())
+        with self.scope():
+            self.visit(s.then_branch)
+        with self.scope():
+            self.visit(s.else_branch)
+
+    def visit_SNoOp(self, s):
+        pass
+
+    def visit_SAssign(self, s):
+        self.visit(s.lhs)
+        self.visit(s.rhs)
+        self.ensure_type(s.rhs, s.lhs.type)
+
+    def visit_SDecl(self, s):
+        self.visit(s.val)
+        self.env[s.id] = s.val.type
