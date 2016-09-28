@@ -60,10 +60,14 @@ class TIntrusiveLinkedList(TBag):
             SAssign(next, NULL),
             SAssign(prev, NULL)])
     def for_each(self, id, iter, body):
+        next = fresh_name("next")
         return seq([
             SDecl(id.id, iter),
             SWhile(ENot(equal(id, NULL)),
-                seq([body, SAssign(id, EGetField(id, self.next_ptr))]))])
+                seq([
+                    SDecl(next, EGetField(id, self.next_ptr).with_type(id.type)),
+                    body,
+                    SAssign(id, EVar(next))]))])
 
 class TLinkedList(TBag):
     def __init__(self, t):
