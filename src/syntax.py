@@ -98,4 +98,6 @@ def EAll(exps):
     return res
 
 def ENot(e):
+    if isinstance(e, EUnaryOp) and e.op == "not":
+        return e.e
     return EUnaryOp("not", e).with_type(BOOL)

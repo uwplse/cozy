@@ -335,20 +335,55 @@ class CxxPrinter(JavaPrinter):
     def visit_TIntrusiveLinkedList(self, t):
         return "{}".format(self.visit(t.t))
 
-    def visit_Query(self, q):
-        ret_type = self.visit(q.ret.type)
-        body, out = self.visit(q.ret, "    ")
-        s = "  inline {type} {name} ({args}) {{\n{body}    return {out};\n  }}\n\n".format(
-            type=ret_type,
-            name=q.name,
-            args=", ".join("{} {}".format(self.visit(t), name) for name, t in q.args),
-            out=out,
-            body=body)
-        return s
+    def visit_SForEach(self, for_each, indent):
+        id = for_each.id
+        iter = for_each.iter
+        body = for_each.body
+        if isinstance(iter.type, library.TIntrusiveLinkedList):
+            return self.visit(iter.type.for_each(id, iter, body), indent)
+        raise NotImplementedError()
 
-    def visit_Op(self, q):
-        s = "  inline void {} ({}) {{\n{}  }}\n\n".format(q.name, ", ".join("{} {}".format(self.visit(t), name) for name, t in q.args),
-            self.visit(q.body, "    "))
+    def visit_SWhile(self, w, indent):
+        cond_setup, cond = self.visit(ENot(w.e), indent+INDENT)
+        body = self.visit(w.body, indent=indent+INDENT)
+        return "{indent0}for (;;) {{\n{cond_setup}{indent}if ({cond}) break;\n{body}{indent0}}}\n".format(
+            indent0=indent,
+            indent=indent+INDENT,
+            cond_setup=cond_setup,
+            cond=cond,
+            body=body)
+
+    def visit_str(self, s, indent=""):
+        return indent + s + "\n"
+
+    def visit_Query(self, q, indent=""):
+        ret_type = q.ret.type
+        if isinstance(ret_type, TBag):
+            x = EVar(common.fresh_name("x")).with_type(ret_type.t)
+            s  = "{indent}template <class F>\n".format(indent=indent)
+            s += "{indent}inline void {name} ({args}F _callback) {{\n{body}  }}\n\n".format(
+                indent=indent,
+                type=self.visit(ret_type),
+                name=q.name,
+                args="".join("{} {}, ".format(self.visit(t), name) for name, t in q.args),
+                body=self.visit(SForEach(x, q.ret, "_callback({});".format(x.id)), indent=indent+INDENT))
+            return s
+        else:
+            body, out = self.visit(q.ret, indent+INDENT)
+            return "{indent}inline {type} {name} ({args}) {{\n{body}    return {out};\n  }}\n\n".format(
+                indent=indent,
+                type=self.visit(ret_type),
+                name=q.name,
+                args=", ".join("{} {}".format(self.visit(t), name) for name, t in q.args),
+                out=out,
+                body=body)
+
+    def visit_Op(self, q, indent=""):
+        s = "{}inline void {} ({}) {{\n{}  }}\n\n".format(
+            indent,
+            q.name,
+            ", ".join("{} {}".format(self.visit(t), name) for name, t in q.args),
+            self.visit(q.body, indent+INDENT))
         return s
 
     def visit_ENull(self, e, indent=""):
@@ -496,6 +531,6 @@ class CxxPrinter(JavaPrinter):
         s += "public:\n"
         s += INDENT + "{name}() : {inits} {{ }}\n".format(name=spec.name, inits=", ".join("{}({})".format(name, self.initial_value(t)) for (name, t) in spec.statevars))
         for op in spec.methods:
-            s += self.visit(op)
+            s += self.visit(op, INDENT)
         s += "};"
         return s

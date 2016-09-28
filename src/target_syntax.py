@@ -25,6 +25,9 @@ class ELambda(Exp):
     def __repr__(self):
         return "ELambda{}".format(repr(self.children()))
 
+# Iterators
+SWhile   = declare_case(Stm, "SWhile", ["e", "body"])
+
 # Bag transformations
 EMap     = declare_case(Exp, "EMap", ["e", "f"])
 EFilter  = declare_case(Exp, "EFilter", ["e", "p"])
