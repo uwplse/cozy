@@ -274,7 +274,7 @@ def declare_case(supertype, name, attrs=()):
             return "<<recursive>>"
         self._protect = True
         try:
-            return "{}({})".format(name, ", ".join("{}={}".format(attr, repr(val)) for attr, val in zip(attrs, self.children())))
+            return "{}({})".format(type(self).__name__, ", ".join("{}={}".format(attr, repr(val)) for attr, val in zip(attrs, self.children())))
         finally:
             self._protect = False
     def children(self):
