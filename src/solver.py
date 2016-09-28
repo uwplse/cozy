@@ -70,6 +70,14 @@ class ToZ3(Visitor):
         else:
             raise NotImplementedError(t)
     def count_in(self, t, bag, x, env):
+        """
+        t - type of elems in bag
+        bag - concrete (non-SymbolicUnion) bag
+        x - elem
+        env - environment
+
+        returns # of times x appears in bag
+        """
         bag_mask, bag_elems = bag
         l = 0
         for i in range(len(bag_elems)):
@@ -113,6 +121,18 @@ class ToZ3(Visitor):
                     sum = z3.If(bag_mask[i], bag_elems[i], 0, ctx=self.ctx) + sum
                 return sum
             return fmap(self.visit(e.e, env), take_sum)
+        elif e.op == "unique":
+            def is_unique(bag):
+                bag_mask, bag_elems = bag
+                rest = (bag_mask[1:], bag_elems[1:])
+                if bag_elems:
+                    return z3.And(
+                        z3.Implies(bag_mask[0], self.count_in(e.e.type.t, rest, bag_elems[0], env) == 0, self.ctx),
+                        is_unique(rest),
+                        self.ctx)
+                else:
+                    return z3.BoolVal(True, self.ctx)
+            return fmap(self.visit(e.e, env), is_unique)
         elif e.op == "len":
             return fmap(self.visit(e.e, env), self.len_of)
         else:

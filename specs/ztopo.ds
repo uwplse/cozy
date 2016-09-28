@@ -15,7 +15,7 @@ TileCache:
 
     state entries : Bag<Entry>
 
-//    assume unique [e.val.key | e <- entries];
+    assume unique [e.val.key | e <- entries];
 
     op add(e : entries.Handle)
         entries.add(e)
