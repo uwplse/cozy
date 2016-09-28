@@ -35,8 +35,8 @@ class Exp(ADT):
     #     if name == "type" and isinstance(self, EEnumEntry) and not isinstance(val, TEnum):
     #         raise Exception("set {}.type = {}".format(self, val))
     #     super().__setattr__(name, val)
-    def __getattr__(self, name):
-        raise AttributeError("expression {} has no {} field".format(self, name))
+    # def __getattr__(self, name):
+    #     raise AttributeError("expression {} has no {} field".format(self, name))
 
 EVar                = declare_case(Exp, "EVar",               ["id"])
 EBool               = declare_case(Exp, "EBool",              ["val"])
