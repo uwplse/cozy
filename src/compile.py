@@ -436,6 +436,8 @@ class CxxPrinter(JavaPrinter):
             return self.visit(e.map.type.get_key(e.map, e.key), indent)
 
     def visit_SMapUpdate(self, update, indent=""):
+        if isinstance(update.change, SNoOp):
+            return ""
         if isinstance(update.map.type, library.TNativeMap):
             msetup, map = self.visit(update.map)
             ksetup, key = self.visit(update.key)
@@ -456,11 +458,11 @@ class CxxPrinter(JavaPrinter):
 
     def visit_EEnumToInt(self, e, indent=""):
         setup, e = self.visit(e.e, indent)
-        return (setup, "reinterpret_cast<int>(" + e + ")")
+        return (setup, "static_cast<int>(" + e + ")")
 
     def visit_EBoolToInt(self, e, indent=""):
         setup, e = self.visit(e.e, indent)
-        return (setup, "(" + e + " ? 1 : 0)")
+        return (setup, "static_cast<int>(" + e + ")")
 
     def visit_EBinOp(self, e, indent=""):
         op = e.op
