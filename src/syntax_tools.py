@@ -403,12 +403,8 @@ def subst(exp, replacements):
                 subst(q.ret, m))
         def visit(self, x, *args, **kwargs):
             res = super().visit(x, *args, **kwargs)
-            if isinstance(res, syntax.Exp) and hasattr(x, "type"):
-                try:
-                    res.type = x.type
-                except:
-                    print("original was {}, mapping={}".format(pprint(x), replacements))
-                    raise
+            if isinstance(res, syntax.Exp) and hasattr(x, "type") and not hasattr(res, "type"):
+                res.type = x.type
             return res
 
     return Subst().visit(exp)
