@@ -351,7 +351,7 @@ class CxxPrinter(JavaPrinter):
         return "{} *{}".format(self.typename(t), name)
 
     def visit_TNativeMap(self, t, name):
-        return "std::map< {}, {} > {}".format(self.visit(t.k, ""), self.visit(t.v, ""), name)
+        return "std::unordered_map< {}, {} > {}".format(self.visit(t.k, ""), self.visit(t.v, ""), name)
 
     def visit_TMap(self, t, name):
         return self.visit(t.rep_type(), name)
@@ -559,7 +559,7 @@ class CxxPrinter(JavaPrinter):
 
     def visit_Spec(self, spec):
         s = "#pragma once\n"
-        s += "#include <map>\n"
+        s += "#include <unordered_map>\n"
         s += "class {} {{\n".format(spec.name)
         s += "public:\n"
 
