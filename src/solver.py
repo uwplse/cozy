@@ -259,7 +259,7 @@ def decideable(t):
     return type(t) in [TInt, TLong, TBool, TBitVec, TEnum]
 
 def mkvar(ctx, solver, collection_depth, type):
-    if type == TInt() or type == TLong():
+    if type == TInt() or type == TLong() or isinstance(type, TNative):
         return z3.Int(fresh_name(), ctx=ctx)
     elif type == TBool():
         return z3.Bool(fresh_name(), ctx=ctx)

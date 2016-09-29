@@ -371,6 +371,6 @@ class Typechecker(Visitor):
 
     def visit(self, x):
         res = super().visit(x)
-        if isinstance(x, syntax.Exp) and not hasattr(x, "type"):
+        if isinstance(x, syntax.Exp) and (not hasattr(x, "type") or x.type is None):
             raise Exception(x)
         return res
