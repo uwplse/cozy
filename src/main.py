@@ -17,8 +17,8 @@ import synthesis
 import library
 import autotuning
 
-def read_file(f):
-    with open(f, "r"):
+def read_file(filename):
+    with open(filename, "r") as f:
         return f.read()
 
 def run():
