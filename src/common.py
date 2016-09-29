@@ -281,6 +281,8 @@ def declare_case(supertype, name, attrs=()):
     def __str__(self):
         return repr(self)
     def __repr__(self):
+        if not hasattr(self, "_protect"):
+            self._protect = False
         if self._protect:
             return "<<recursive>>"
         self._protect = True
