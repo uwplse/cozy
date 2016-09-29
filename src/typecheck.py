@@ -115,6 +115,9 @@ class Typechecker(Visitor):
     def visit_TLong(self, t):
         return t
 
+    def visit_TNative(self, t):
+        return t
+
     def visit_TBag(self, t):
         return type(t)(self.visit(t.t))
 

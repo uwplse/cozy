@@ -9,6 +9,7 @@ The key function to look at is:
 from __future__ import print_function
 import re
 import sys
+import ast
 
 # 3rd party
 from ply import lex, yacc
@@ -37,7 +38,8 @@ _KEYWORDS = [
     "min",
     "max",
     "sum",
-    "the"]
+    "the",
+    "Native"]
 
 # Each operator has a name and a raw string. Each becomes an OP_* token for the
 # lexer. So, e.g. ("ASSIGN", "=") matches "=" and the token will be named
@@ -80,7 +82,7 @@ for kw in _KEYWORDS:
     tokens.append(keyword_token_name(kw))
 for opname, op in _OPERATORS:
     tokens.append(op_token_name(opname))
-tokens += ["WORD", "NUM"]
+tokens += ["WORD", "NUM", "STRINGLITERAL"]
 tokens = tuple(tokens) # freeze tokens
 
 def make_lexer():
@@ -105,6 +107,11 @@ def make_lexer():
     def t_NUM(t):
         r"\d+"
         t.value = int(t.value)
+        return t
+
+    def t_STRINGLITERAL(t):
+        r'"([^\\"]|\\.)*"'
+        t.value = ast.literal_eval(t.value)
         return t
 
     # Define a rule so we can track line numbers
@@ -150,9 +157,12 @@ def make_parser():
                 | WORD OP_LT type OP_GT
                 | WORD OP_DOT WORD
                 | OP_OPEN_BRACE typednames OP_CLOSE_BRACE
-                | KW_ENUM OP_OPEN_BRACE enum_cases OP_CLOSE_BRACE"""
+                | KW_ENUM OP_OPEN_BRACE enum_cases OP_CLOSE_BRACE
+                | KW_NATIVE STRINGLITERAL"""
         if len(p) == 2:
             p[0] = syntax.TNamed(p[1])
+        elif len(p) == 3:
+            p[0] = syntax.TNative(p[2])
         elif len(p) == 5:
             if p[1] == "enum":
                 p[0] = syntax.TEnum(p[3])

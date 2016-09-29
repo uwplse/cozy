@@ -36,7 +36,7 @@ class ToZ3(Visitor):
             return z3.If(e1.cond, self.eq(t, e1.lhs, e2, env), self.eq(t, e1.rhs, e2, env), self.ctx)
         if isinstance(e2, SymbolicUnion):
             return z3.If(e2.cond, self.eq(t, e1, e2.lhs, env), self.eq(t, e1, e2.rhs, env), self.ctx)
-        if type(t) in [TInt, TLong, TBool, TEnum]:
+        if type(t) in [TInt, TLong, TBool, TEnum, TNative]:
             return e1 == e2
         elif isinstance(t, TMaybe):
             if (e1 is None) and (e2 is None):
@@ -305,7 +305,7 @@ def satisfy(e, collection_depth : int = 2, validate_model : bool = True):
     visitor = ToZ3(ctx)
 
     def reconstruct(model, value, type):
-        if type == TInt() or type == TLong():
+        if type == TInt() or type == TLong() or isinstance(type, TNative):
             return model.eval(value, model_completion=True).as_long()
         if type == TBool():
             return bool(model.eval(value, model_completion=True))

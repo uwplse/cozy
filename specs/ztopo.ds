@@ -3,11 +3,11 @@ TileCache:
     type State = enum {
         Disk, Loading, DiskAndMemory, MemoryOnly,
         Saving, NetworkPending, IndexPending, Invalid }
-    type Key = Long
+    type Key = Native "uint64_t"
     type Entry = {
         key : Key,
-        pixmap : Int,    // todo
-        indexData : Int, // todo
+        pixmap : Native "QPixmap *",
+        indexData : Native "QByteArray",
         memSize : Int,
         diskSize : Int,
         st : State,

@@ -74,6 +74,9 @@ class PrettyPrinter(common.Visitor):
     def visit_TNamed(self, named):
         return named.id
 
+    def visit_TNative(self, t):
+        return t.name
+
     def visit_TApp(self, app):
         return "{}<{}>".format(app.t, self.visit(app.args))
 

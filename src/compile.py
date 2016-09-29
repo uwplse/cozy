@@ -64,6 +64,9 @@ class JavaPrinter(common.Visitor):
             self.types[t] = res
         return res
 
+    def visit_TNative(self, t):
+        return t.name
+
     def visit_THandle(self, t):
         return self.typename(t)
 
@@ -317,11 +320,17 @@ class JavaPrinter(common.Visitor):
 
 class CxxPrinter(JavaPrinter):
 
+    def typename(self, t):
+        return self.types[t]
+
     def is_ptr_type(self, t):
         return isinstance(t, THandle)
 
     def to_ptr(self, x, t):
         return x if self.is_ptr_type(t) else "&({})".format(x)
+
+    def visit_TNative(self, t, name):
+        return "{} {}".format(t.name, name)
 
     def visit_TInt(self, t, name):
         return "int {}".format(name)
