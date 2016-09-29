@@ -70,6 +70,9 @@ class ToZ3(Visitor):
             h1, val1 = e1
             h2, val2 = e2
             return h1 == h2
+        elif isinstance(t, TRecord):
+            conds = [self.eq(tt, e1[f], e2[f], env) for (f, tt) in t.fields]
+            return z3.And(*conds, self.ctx)
         elif isinstance(t, TTuple):
             conds = [self.eq(t, x, y, env) for (t, x, y) in zip(t.ts, e1, e2)]
             return z3.And(*conds, self.ctx)
@@ -168,6 +171,9 @@ class ToZ3(Visitor):
             return self.eq(e.e1.type, self.visit(e.e1, env), self.visit(e.e2, env), env)
         elif e.op == "+":
             return self.visit(e.e1, env) + self.visit(e.e2, env)
+        elif e.op == "in":
+            return fmap(self.visit(e.e2, env),
+                lambda bag: self.count_in(e.e1.type, bag, self.visit(e.e1, env), env) > 0)
         else:
             raise NotImplementedError(e.op)
     def visit_EListComprehension(self, e, env):
@@ -258,7 +264,7 @@ class ToZ3(Visitor):
 def decideable(t):
     return type(t) in [TInt, TLong, TBool, TBitVec, TEnum]
 
-def mkvar(ctx, solver, collection_depth, type):
+def mkvar(ctx, solver, collection_depth, type, handle_vars):
     if type == TInt() or type == TLong() or isinstance(type, TNative):
         return z3.Int(fresh_name(), ctx=ctx)
     elif type == TBool():
@@ -272,17 +278,19 @@ def mkvar(ctx, solver, collection_depth, type):
         solver.add(n < ncases)
         return n
     elif isinstance(type, TBag):
-        mask = [mkvar(ctx, solver, collection_depth, TBool()) for i in range(collection_depth)]
-        elems = [mkvar(ctx, solver, collection_depth, type.t) for i in range(collection_depth)]
+        mask = [mkvar(ctx, solver, collection_depth, TBool(), handle_vars) for i in range(collection_depth)]
+        elems = [mkvar(ctx, solver, collection_depth, type.t, handle_vars) for i in range(collection_depth)]
         # symmetry breaking
         for i in range(len(mask) - 1):
             solver.add(z3.Implies(mask[i], mask[i+1], ctx))
         return (mask, elems)
     elif isinstance(type, TRecord):
-        return { field : mkvar(ctx, solver, collection_depth, t) for (field, t) in type.fields }
+        return { field : mkvar(ctx, solver, collection_depth, t, handle_vars) for (field, t) in type.fields }
     elif isinstance(type, THandle):
         h = z3.Int(fresh_name(), ctx)
-        return (h, mkvar(ctx, solver, collection_depth, type.value_type))
+        v = (h, mkvar(ctx, solver, collection_depth, type.value_type, handle_vars))
+        handle_vars.append((type.value_type,) + v)
+        return v
     else:
         raise NotImplementedError(type)
 
@@ -336,10 +344,22 @@ def satisfy(e, collection_depth : int = 2, validate_model : bool = True):
 
     _env = { }
     fvs = free_vars(e)
+    handle_vars = []
     for v in fvs:
         # print("{} : {}".format(pprint(v), pprint(v.type)))
-        _env[v.id] = mkvar(ctx, solver, collection_depth, v.type)
+        _env[v.id] = mkvar(ctx, solver, collection_depth, v.type, handle_vars)
     # print(_env)
+
+    # Handles implement reference equality... so if the references are the same,
+    # the values must be also. TODO: we could eliminiate the need for this by
+    # encoding handles as ints plus an uninterpreted "read_value" function for
+    # each handle type.
+    for i in range(len(handle_vars)):
+        for j in range(i + 1, len(handle_vars)):
+            h1type, h1, v1 = handle_vars[i]
+            h2type, h2, v2 = handle_vars[j]
+            if h1type == h2type:
+                solver.add(z3.Implies(h1 == h2, visitor.eq(h1type, v1, v2, _env), ctx))
 
     solver.add(visitor.visit(e, _env))
     # print(solver.assertions())
@@ -369,50 +389,5 @@ def satisfy(e, collection_depth : int = 2, validate_model : bool = True):
 def valid(e, **opts):
     return not satisfy(EUnaryOp("not", e).with_type(TBool()), **opts)
 
-class ToZ3WithUninterpretedHoles(ToZ3):
-    def __init__(self, z3ctx, z3solver):
-        super().__init__(z3ctx)
-        # self.collectionsort = z3.DeclareSort("Collection", z3ctx)
-        # self.holes = { }
-        self.solver = z3solver
-    # def flatten(self, value):
-    #     if isinstance(value, z3.ExprRef):
-    #         yield value
-    #     else:
-    #         yield z3.Const(fresh_name(), self.collectionsort)
-    # def mksort(self, type):
-    #     if isinstance(type, TInt) or isinstance(type, TLong):
-    #         return z3.IntSort(self.ctx)
-    #     elif isinstance(type, TBool):
-    #         return z3.BoolSort(self.ctx)
-    #     else:
-    #         return self.collectionsort
-    def visit_EHole(self, e, env):
-        # values = tuple(itertools.chain(*(self.flatten(val) for (name, val) in sorted(env.items()))))
-        # hole = self.holes.get(e.name)
-        # if hole is None:
-        #     hole = z3.Function(fresh_name(e.name), *[v.sort() for v in values], self.mksort(e.type))
-        #     self.holes[e.name] = hole
-        # return hole(*values)
-        return mkvar(self.ctx, self.solver, 2, e.type)
-
 def feasible(spec, examples):
     return True # TODO
-    if not examples:
-        import evaluation
-        examples = [{ v.id: evaluation.mkval(v.type) for v in free_vars(spec) }]
-
-    # print("feasible? {}".format(pprint(spec)))
-
-    ctx = z3.Context()
-    solver = z3.Solver(ctx=ctx)
-    visitor = ToZ3WithUninterpretedHoles(ctx, solver)
-
-    for ex in examples:
-        env = { }
-        for name, val in ex.items():
-            env[name] = mkconst(ctx, solver, val)
-        solver.add(visitor.visit(spec, env))
-
-    # print(solver.assertions())
-    return solver.check() == z3.sat
