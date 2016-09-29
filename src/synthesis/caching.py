@@ -14,6 +14,9 @@ def load_cache():
             return pickle.load(f)
     except FileNotFoundError:
         return []
+    except:
+        print("CACHE APPEARS CORRUPT")
+        return []
 
 def save_cache(data):
     # print(" -> caching {}".format(repr(data)))
@@ -29,8 +32,8 @@ def find_cached_result(state_vars, assumptions, q, **opts):
         (state_var, state_exp, new_q) = res
         if new_q.ret.type != q.ret.type:
             continue
-        types1 = { v.id : v.type for v in free_vars(q.ret) }
-        types2 = { v.id : v.type for v in free_vars(new_q.ret) }
+        types1 = { v.id : v.type for v in free_vars(q.ret) | set(state_vars) }
+        types2 = { v.id : v.type for v in free_vars(new_q.ret) | free_vars(state_exp) }
         vc = subst(implies(EAll(assumptions), equal(q.ret, new_q.ret)), {state_var.id: state_exp})
         if not all(types1.get(v.id, v.type) == types2.get(v.id, v.type) for v in free_vars(vc)):
             continue
