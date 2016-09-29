@@ -161,7 +161,7 @@ def make_parser():
         elif len(p) == 4:
             if p[2] == ".":
                 assert p[3] == "Handle"
-                p[0] = syntax.THandle(p[1])
+                p[0] = syntax.THandle(p[1], None)
             else:
                 p[0] = syntax.TRecord(p[2])
 

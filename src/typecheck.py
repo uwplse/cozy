@@ -66,8 +66,7 @@ class Typechecker(Visitor):
         if not self.should_handleize:
             return collection_type
         if isinstance(collection_type, syntax.TBag):
-            ht = syntax.THandle(statevar_name)
-            ht.value_type = collection_type.t
+            ht = syntax.THandle(statevar_name, collection_type.t)
             return syntax.TBag(ht)
         else:
             self.report_err(statevar_name, "only bag types are supported")
@@ -101,14 +100,11 @@ class Typechecker(Visitor):
         return syntax.TRecord(tuple((f, self.visit(ft)) for f, ft in t.fields))
 
     def visit_THandle(self, t):
-        if hasattr(t, "value_type"):
-            return t
-        elem = self.env[t.statevar] # TODO: what if statevar is shadowed?
-        if isinstance(elem, syntax.TBag):
-            t.value_type = elem.t.value_type
-        else:
-            self.report_err(t, "no handle type for {}".format(t.statevar))
-        return t
+        if t.value_type is None:
+            assert self.handleize
+            elem = self.env[t.statevar]
+            return elem.t
+        return syntax.THandle(t.statevar, self.visit(t.value_type))
 
     def visit_TBool(self, t):
         return t
