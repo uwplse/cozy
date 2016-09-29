@@ -23,8 +23,8 @@ TileCache:
     op rm(e : entries.Handle)
         entries.remove(e)
 
-//    op updateState(e : entries.Handle, st : State)
-//        e.val.st = st
+    op updateState(e : entries.Handle, st : State)
+        e.val.st = st
 
     query totalMemSize()
         sum [e.val.memSize | e <- entries, e.val.st == DiskAndMemory or e.val.st == MemoryOnly]
@@ -41,5 +41,5 @@ TileCache:
     query inMemEntries(inUse : Bool)
         [e | e <- entries, (e.val.st == DiskAndMemory or e.val.st == MemoryOnly), e.val.inUse == inUse]
 
-//    query findTile(k : Key)
-//        some [e | e <- entries, e.val.key == k]
+    query findTile(k : Key)
+        the [e | e <- entries, e.val.key == k]

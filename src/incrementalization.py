@@ -1,7 +1,7 @@
 from common import ADT, declare_case, Visitor, typechecked, fresh_name
 import syntax
 import target_syntax
-from syntax_tools import subst, free_vars, pprint
+from syntax_tools import subst, free_vars, pprint, equal
 
 # General deltas
 class Delta(ADT): pass
@@ -15,6 +15,7 @@ BagAdd            = declare_case(Delta, "BagAdd",          ["e"])
 BagAddAll         = declare_case(Delta, "BagAddAll",       ["e"])
 BagRemove         = declare_case(Delta, "BagRemove",       ["e"])
 BagRemoveAll      = declare_case(Delta, "BagRemoveAll",    ["e"])
+BagElemUpdated    = declare_case(Delta, "BagElemUpdated",  ["elem", "delta"])
 
 # Numbers
 AddNum            = declare_case(Delta, "AddNum", ["e"])
@@ -59,8 +60,17 @@ def map_cond(delta, f):
             return f(d)
     return V().visit(delta)
 
+def _push_assignment_through_field_access(members, lhs, delta):
+    if isinstance(lhs, syntax.EVar):
+        assert isinstance(lhs.type, syntax.THandle)
+        return (syntax.EVar(lhs.type.statevar).with_type(dict(members)[lhs.type.statevar]), lhs, delta)
+    elif isinstance(lhs, syntax.EGetField):
+        return _push_assignment_through_field_access(members, lhs.e, RecordFieldUpdate(lhs.f, delta))
+    else:
+        raise Exception(lhs)
+
 @typechecked
-def to_delta(op : syntax.Op) -> (syntax.Exp, Delta):
+def to_delta(members : [(str, syntax.Type)], op : syntax.Op) -> (syntax.Exp, Delta):
     """
     Input: synax.Op
     Output: (member, delta) indicating that op transforms member by delta
@@ -75,6 +85,13 @@ def to_delta(op : syntax.Op) -> (syntax.Exp, Delta):
         elif op.body.func == "addBack":  delta = ListAddBack(op.body.args[0])
         else: raise Exception("Unknown func: {}".format(op.body.func))
         return (member, delta)
+    elif isinstance(op.body, syntax.SAssign):
+        lhs = op.body.lhs
+        rhs = op.body.rhs
+        if not isinstance(lhs, syntax.EGetField):
+            raise NotImplementedError("not sure how to incrementalize {}".format(pprint(op.body)))
+        sv, elem, update = _push_assignment_through_field_access(members, lhs, Become(rhs))
+        return (sv, BagElemUpdated(elem, update))
     else:
         raise NotImplementedError(str(op.body))
 
@@ -95,13 +112,18 @@ def derivative(
 
     def make_subgoal(e):
         fvs = free_vars(e)
-        if not fvs:
+        if not any(v in ctx for v in fvs):
             return e
         query_name = fresh_name()
         query_vars = [v for v in fvs if v not in ctx]
         query = syntax.Query(query_name, [(arg.id, arg.type) for arg in query_vars], [], e)
         subgoals.append(query)
         return syntax.ECall(query_name, query_vars).with_type(e.type)
+
+    def recurse(*args, **kwargs):
+        (res, sgs) = derivative(*args, **kwargs)
+        subgoals.extend(sgs)
+        return res
 
     def derivative_makemap(d, key_func, value_func):
         if isinstance(d, NoDelta):
@@ -123,6 +145,31 @@ def derivative(
             if guards:
                 res = mk_conditional(syntax.EAll(guards), res)
             return res
+        elif isinstance(d, BagElemUpdated):
+            affected_key = key_func.apply_to(d.elem)
+            key_delta = recurse(key_func.body, key_func.arg, d.delta, ctx)
+            if isinstance(key_delta, NoDelta):
+                return MapUpdate(affected_key, recurse(value_func.body, value_func.arg, BagElemUpdated(d.elem, d.delta), ctx))
+            else:
+                on_add = recurse(value_func.body, value_func.arg, BagAdd(d.elem), ctx)
+                on_rm = recurse(value_func.body, value_func.arg, BagRemove(d.elem), ctx)
+                return multi_delta([
+                    MapUpdate(affected_key, on_rm),
+                    MapUpdate(new_key, on_add)])
+
+            # raise NotImplementedError(key_delta)
+
+            # new_key = key_func.apply_to(apply_delta(d.elem, d.delta))
+            # on_add = recurse(value_func.body, value_func.arg, BagAdd(d.elem), ctx)
+            # on_rm = recurse(value_func.body, value_func.arg, BagRemove(d.elem), ctx)
+            # on_mod = recurse(value_func.body, value_func.arg, BagElemUpdated(d.elem, d.delta), ctx)
+            # return multi_delta([
+            #     mk_conditional(syntax.ENot(equal(affected_key, new_key)), multi_delta([
+            #         MapUpdate(affected_key, on_rm),
+            #         MapUpdate(new_key, on_add)])),
+            #     mk_conditional(equal(affected_key, new_key),
+            #         MapUpdate(affected_key, on_mod))])
+            # raise NotImplementedError()
         elif isinstance(d, Conditional):
             return mk_conditional(
                 d.cond,
@@ -131,7 +178,9 @@ def derivative(
             raise NotImplementedError(d)
 
     def derivative_sum(d):
-        if isinstance(d, BagAdd):
+        if isinstance(d, NoDelta):
+            return d
+        elif isinstance(d, BagAdd):
             return AddNum(d.e)
         elif isinstance(d, BagAddAll):
             return AddNum(syntax.EUnaryOp("sum", d.e).with_type(d.e.type.t))
@@ -149,6 +198,10 @@ def derivative(
             return BagAddAll(target_syntax.EMap(d.e, proj).with_type(syntax.TBag(proj.body.type)))
         elif isinstance(d, BagRemove):
             return BagRemove(proj.apply_to(d.e))
+        elif isinstance(d, BagElemUpdated):
+            change = recurse(proj.body, proj.arg, d.delta, ctx)
+            elem = proj.apply_to(d.elem)
+            return BagElemUpdated(elem, change)
         elif isinstance(d, Conditional):
             return mk_conditional(
                 d.cond,
@@ -167,10 +220,16 @@ def derivative(
             return mk_conditional(cond.apply_to(d.e), BagAdd(d.e))
         elif isinstance(d, BagRemove):
             return mk_conditional(cond.apply_to(d.e), BagRemove(d.e))
-        elif isinstance(d, Conditional):
-            return mk_conditional(
-                d.cond,
-                derivative_filter(d.delta, cond))
+        elif isinstance(d, BagElemUpdated):
+            containment_change = recurse(cond.body, cond.arg, d.delta, ctx)
+            if isinstance(containment_change, NoDelta):
+                return mk_conditional(cond.apply_to(d.elem), d)
+            else:
+                contained = cond.apply_to(d.elem)
+                now_contains = apply_delta(contained, containment_change)
+                return multi_delta([
+                    mk_conditional(syntax.EAll([contained, syntax.ENot(now_contains)]), BagRemove(d.elem)),
+                    mk_conditional(syntax.EAll([syntax.ENot(contained), now_contains]), BagAdd(d.elem))])
         else:
             raise NotImplementedError(d)
 
@@ -194,7 +253,7 @@ def derivative(
                 if isinstance(d, NoDelta):
                     return d
                 elif isinstance(d, RecordFieldUpdate):
-                    return d.delts if d.f == e.f else NoDelta()
+                    return d.delta if d.f == e.f else NoDelta()
                 else:
                     raise Exception(d)
             return map_cond(subdelta, xform)
@@ -208,14 +267,18 @@ def derivative(
                 raise NotImplementedError(e.op)
 
         def visit_EBinOp(self, e):
-            if e.op == "==" and e.e1.type == syntax.TInt():
-                v1 = e.e1 #make_subgoal(e.e1)
-                v2 = e.e2 #make_subgoal(e.e2)
-                v1d = self.visit(e.e1)
-                v2d = self.visit(e.e2)
+            v1 = e.e1 #make_subgoal(e.e1)
+            v2 = e.e2 #make_subgoal(e.e2)
+            v1d = self.visit(e.e1)
+            v2d = self.visit(e.e2)
+            if isinstance(v1d, NoDelta) and isinstance(v2d, NoDelta):
+                return v1d
+            if e.op == "==" and type(e.e1.type) in [syntax.TInt, syntax.TLong, syntax.TBool, syntax.TEnum]:
                 return Become(syntax.EBinOp(apply_delta(v1, v1d), "==", apply_delta(v2, v2d)).with_type(syntax.TBool()))
+            elif e.op == "or" or e.op == "and":
+                return Become(syntax.EBinOp(apply_delta(v1, v1d), e.op, apply_delta(v2, v2d)).with_type(syntax.TBool()))
             else:
-                raise NotImplementedError(e.op)
+                raise NotImplementedError("{} over {}, {}".format(e.op, e.e1.type, e.e2.type))
 
         def visit_EMap(self, e):
             if var in free_vars(e.f):
@@ -244,13 +307,13 @@ def derivative(
                 exit = make_subgoal(target_syntax.EFilter(
                     e.e,
                     target_syntax.ELambda(arg, syntax.EAll([syntax.EUnaryOp("not", new_cond), cond]))).with_type(e.type))
-                rest = derivative_filter(self.visit(e.e), target_syntax.ELambda(arg, new_cond))
+                rest = map_cond(self.visit(e.e), lambda d: derivative_filter(d, target_syntax.ELambda(arg, new_cond)))
 
                 return multi_delta([
                     BagAddAll(enter),
                     BagAddAll(exit),
                     rest])
-            return derivative_filter(self.visit(e.e), e.p)
+            return map_cond(self.visit(e.e), lambda d: derivative_filter(d, e.p))
 
         def visit_EMakeMap(self, e):
             if var in free_vars(e.key) or var in free_vars(e.value):
@@ -288,6 +351,15 @@ def apply_delta(
             return delta.e
         def visit_AddNum(self, delta):
             return syntax.EBinOp(x, "+", delta.e).with_type(x.type)
+        # def visit_RecordFieldUpdate(self, delta):
+        #     if isinstance(x.type, syntax.THandle):
+        #         return syntax.EMakeHandle(apply_delta(syntax.EGetField(x, "val").with_type(x.type.value_type), delta.delta)).with_type(x.type)
+        #     else:
+        #         if isinstance(x, syntax.EGetField) and x.f != delta.f:
+        #             return x
+        #         assert isinstance(x.type, syntax.TRecord)
+        #         fields = x.type.fields
+        #         return syntax.EMakeRecord(tuple((f, apply_delta(syntax.EGetField(x, f).with_type(t), delta.delta) if f == delta.f else syntax.EGetField(x, f).with_type(t)) for f, t in fields)).with_type(x.type)
         def visit_Conditional(self, delta):
             return syntax.ECond(delta.cond, self.visit(delta.delta), x).with_type(x.type)
         def visit_MultiDelta(self, delta):
@@ -314,6 +386,8 @@ def apply_delta_in_place(
             return syntax.SCall(x, "add", [delta.e])
         def visit_BagRemove(self, delta):
             return syntax.SCall(x, "remove", [delta.e])
+        def visit_BagElemUpdated(self, delta):
+            return syntax.SNoOp()
         def visit_MapUpdate(self, delta):
             v = syntax.EVar(fresh_name()).with_type(x.type.v)
             return target_syntax.SMapUpdate(x, delta.key, v, apply_delta_in_place(v, delta.delta))
@@ -323,7 +397,10 @@ def apply_delta_in_place(
             substm = self.visit(delta.delta)
             return syntax.SIf(delta.cond, substm, syntax.SNoOp())
         def visit_RecordFieldUpdate(self, delta):
-            return apply_delta_in_place(syntax.EGetField(x, delta.f).with_type(dict(x.type.fields)[delta.f]), delta.delta)
+            if not (isinstance(x.type, syntax.TRecord) or isinstance(x.type, syntax.THandle)):
+                raise Exception("ill-typed expression for update: " + repr(x) + " [type={}]".format(repr(x.type)))
+            field_type = dict(x.type.fields)[delta.f] if isinstance(x.type, syntax.TRecord) else x.type.value_type
+            return apply_delta_in_place(syntax.EGetField(x, delta.f).with_type(field_type), delta.delta)
         def visit_MultiDelta(self, delta):
             return syntax.SSeq(
                 self.visit(delta.delta1),

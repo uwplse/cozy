@@ -1,7 +1,7 @@
 from collections import defaultdict
 
 from syntax import *
-from common import Visitor, FrozenDict
+from common import Visitor, FrozenDict, all_distinct
 
 class HoleException(Exception):
     def __init__(self, hole, env):
@@ -46,6 +46,13 @@ class Evaluator(Visitor):
             return not self.visit(e.e, env)
         elif e.op == "sum":
             return sum(self.visit(e.e, env))
+        elif e.op == "unique":
+            return all_distinct(self.visit(e.e, env))
+        elif e.op == "the":
+            bag = self.visit(e.e, env)
+            if bag:
+                return bag[0]
+            return None
         else:
             raise NotImplementedError(e.op)
     def visit_EBinOp(self, e, env):
@@ -133,6 +140,8 @@ def mkval(type):
         return (0, mkval(type.value_type))
     if isinstance(type, TTuple):
         return tuple(mkval(t) for t in type.ts)
+    if isinstance(type, TMaybe):
+        return None
     raise NotImplementedError(type)
 
 class EnvCollector(Evaluator):

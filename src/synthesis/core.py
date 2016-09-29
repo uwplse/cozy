@@ -131,6 +131,8 @@ class Builder(object):
         if self.build_sums:
             for e in cache.find(type=TBag(INT), size=size-1):
                 yield EUnaryOp("sum", e).with_type(INT)
+        for e in cache.find(type=TBag, size=size-1):
+            yield EUnaryOp("the", e).with_type(TMaybe(e.type.t))
         for e in cache.find(type=THandle, size=size-1):
             yield EGetField(e, "val").with_type(e.type.value_type)
         for e in cache.find(type=TTuple, size=size-1):

@@ -317,6 +317,12 @@ class JavaPrinter(common.Visitor):
 
 class CxxPrinter(JavaPrinter):
 
+    def is_ptr_type(self, t):
+        return isinstance(t, THandle)
+
+    def to_ptr(self, x, t):
+        return x if self.is_ptr_type(t) else "&({})".format(x)
+
     def visit_TInt(self, t, name):
         return "int {}".format(name)
 
@@ -326,10 +332,16 @@ class CxxPrinter(JavaPrinter):
     def visit_TBool(self, t, name):
         return "bool {}".format(name)
 
-    def visit_THandle(self, t, name):
-        return self.typename(t) + " *{}".format(name)
+    def visit_TRef(self, t, name):
+        return self.visit(t.t, "&{}".format(name))
 
-    def visit_TNativeMap(self, t):
+    def visit_TMaybe(self, t, name):
+        return self.visit(t.t, name) if self.is_ptr_type(t.t) else self.visit(t.t, "*{}".format(name))
+
+    def visit_THandle(self, t, name):
+        return "{} *{}".format(self.typename(t), name)
+
+    def visit_TNativeMap(self, t, name):
         return "std::map< {}, {} > {}".format(self.visit(t.k, ""), self.visit(t.v, ""), name)
 
     def visit_TMap(self, t, name):
@@ -418,10 +430,9 @@ class CxxPrinter(JavaPrinter):
         if isinstance(update.map.type, library.TNativeMap):
             msetup, map = self.visit(update.map)
             ksetup, key = self.visit(update.key)
-            s = "{indent}{type} & {v} = {map}[{key}];\n".format(
+            s = "{indent}{decl} = {map}[{key}];\n".format(
                 indent=indent,
-                type=self.visit(update.val_var.type),
-                v=update.val_var.id,
+                decl=self.visit(TRef(update.val_var.type), update.val_var.id),
                 map=map,
                 key=key)
             return msetup + ksetup + s + self.visit(update.change, indent)
@@ -450,6 +461,9 @@ class CxxPrinter(JavaPrinter):
 
     def visit_EUnaryOp(self, e, indent):
         op = e.op
+        if op == "the":
+            setup, elem = self.visit(e.e.type.find_one(e.e))
+            return (setup, self.to_ptr(elem, e.e.type.t))
         ce, ee = self.visit(e.e, indent)
         return (ce, "({op} {ee})".format(op=op, ee=ee))
 
@@ -527,6 +541,8 @@ class CxxPrinter(JavaPrinter):
             return "(0)"
         elif isinstance(t, TVector):
             return "{{ {} }}".format(", ".join(self.initial_value(t.t) for i in range(t.n)))
+        elif isinstance(t, library.TNativeMap):
+            return "()"
         elif self.visit(t, "").endswith("*"): # a little hacky
             return "(NULL)"
         else:

@@ -347,7 +347,7 @@ def synthesize(
         for op in spec.methods:
             if isinstance(op, Op):
                 print("###### INCREMENTALIZING: {}".format(op.name))
-                (member, delta) = inc.to_delta(op)
+                (member, delta) = inc.to_delta(spec.statevars, op)
                 print(member, delta)
                 (state_update, subqueries) = inc.derivative(state_exp, member, delta, state_vars)
                 print(state_update, subqueries)
@@ -361,6 +361,8 @@ def synthesize(
     new_ops = []
     for op in spec.methods:
         if isinstance(op, Op):
+            if isinstance(op.body, SAssign):
+                op_stms[op.name].append(op.body)
             new_stms = seq(op_stms[op.name])
             new_ops.append(Op(
                 op.name,

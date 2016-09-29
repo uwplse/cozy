@@ -38,6 +38,12 @@ class ToZ3(Visitor):
             return z3.If(e2.cond, self.eq(t, e1, e2.lhs, env), self.eq(t, e1, e2.rhs, env), self.ctx)
         if type(t) in [TInt, TLong, TBool, TEnum]:
             return e1 == e2
+        elif isinstance(t, TMaybe):
+            if (e1 is None) and (e2 is None):
+                return True
+            if (e1 is None) != (e2 is None):
+                return False
+            return self.eq(t.t, e1, e2, env)
         elif isinstance(t, TBag):
             elem_type = t.t
             lhs_mask, lhs_elems = e1
@@ -135,6 +141,14 @@ class ToZ3(Visitor):
             return fmap(self.visit(e.e, env), is_unique)
         elif e.op == "len":
             return fmap(self.visit(e.e, env), self.len_of)
+        elif e.op == "the":
+            def get_first(bag):
+                bag_mask, bag_elems = bag
+                rest = (bag_mask[1:], bag_elems[1:])
+                if not bag_elems:
+                    return None
+                return SymbolicUnion(bag_mask[0], bag_elems[0], get_first(rest))
+            return fmap(self.visit(e.e, env), get_first)
         else:
             raise NotImplementedError(e.op)
     def visit_EGetField(self, e, env):

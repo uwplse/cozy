@@ -208,6 +208,11 @@ def product(iter):
         p *= x
     return p
 
+def all_distinct(iter):
+    elems = iter if isinstance(iter, list) else list(iter)
+    distinct_elems = set(elems)
+    return len(elems) == len(distinct_elems)
+
 _START_OF_LINE = re.compile(r"^", re.MULTILINE)
 def indent(i, s):
     return _START_OF_LINE.sub(i, s)

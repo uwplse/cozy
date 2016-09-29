@@ -160,9 +160,9 @@ class Typechecker(Visitor):
         elif e.op == "distinct":
             t = self.get_collection_type(e.e)
             e.type = syntax.TSet(t)
-        elif e.op in ["some", "min", "max"]:
+        elif e.op in ["the", "min", "max"]:
             t = self.get_collection_type(e.e)
-            e.type = t
+            e.type = syntax.TMaybe(t)
         elif e.op == "len":
             self.get_collection_type(e.e)
             e.type = INT

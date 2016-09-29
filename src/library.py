@@ -125,6 +125,8 @@ class TIntrusiveLinkedList(TBag):
                     SDecl(next, EGetField(id, self.next_ptr).with_type(id.type)),
                     body,
                     SAssign(id, EVar(next))]))])
+    def find_one(self, target):
+        return target
 
 class TLinkedList(TBag):
     def __init__(self, t):
