@@ -289,9 +289,13 @@ def desugar(e):
 @typechecked
 def synthesize(
         spec      : Spec,
-        use_cache : bool = True):
+        use_cache : bool = True) -> (Spec, dict):
     """
     Main synthesis routine.
+
+    Returns refined specification with better asymptotic performance, plus a
+    dictionary mapping new state variables to their expressions in terms of
+    original state variables.
     """
 
     # gather root types
@@ -324,6 +328,7 @@ def synthesize(
 
     worklist = deque(qs)
     new_statevars = []
+    state_var_exps = { }
     new_qs = []
     op_stms = defaultdict(list)
 
@@ -345,6 +350,7 @@ def synthesize(
         print("  -> return {}".format(pprint(new_q.ret)))
 
         new_statevars.append((state_var.id, state_var.type))
+        state_var_exps[state_var.id] = state_exp
         new_qs.append(new_q)
 
         for op in spec.methods:
@@ -373,11 +379,11 @@ def synthesize(
                 [],
                 new_stms))
 
-    return Spec(
+    return (Spec(
         spec.name,
         spec.types,
         new_statevars,
         [],
-        new_ops + new_qs)
+        new_ops + new_qs), state_var_exps)
 
     raise NotImplementedError()

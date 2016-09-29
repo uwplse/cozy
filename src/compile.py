@@ -318,7 +318,10 @@ class JavaPrinter(common.Visitor):
     def visit_object(self, o, *args, **kwargs):
         return "/* implement visit_{} */".format(type(o).__name__)
 
-class CxxPrinter(JavaPrinter):
+class CxxPrinter(common.Visitor):
+
+    def __init__(self):
+        self.types = OrderedDict()
 
     def typename(self, t):
         return self.types[t]
@@ -525,18 +528,31 @@ class CxxPrinter(JavaPrinter):
         stm = f(call.target, call.args)
         return self.visit(stm, indent)
 
-    def define_type(self, t, name, indent, intrusive_fields):
+    def define_type(self, toplevel_name, t, name, indent, sharing):
         if isinstance(t, TEnum):
             return "{indent}enum {name} {{\n{cases}{indent}}};\n".format(
                 indent=indent,
                 name=name,
                 cases="".join("{indent}{case},\n".format(indent=indent+INDENT, case=case) for case in t.cases))
         elif isinstance(t, THandle):
-            fields = [("val", t.value_type)] + intrusive_fields[t]
-            return "{indent}struct {name} {{\n{fields}{indent}}};\n".format(
-                indent=indent,
-                name=name,
-                fields="".join("{indent}{field_decl};\n".format(indent=indent+INDENT, field_decl=self.visit(t, f)) for (f, t) in fields))
+            fields = [("val", t.value_type)]
+            s = "{indent}struct {name} {{\n".format(indent=indent, name=name)
+            s += "{indent}public:\n".format(indent=indent)
+            for (f, ft) in fields:
+                s += "{indent}{field_decl};\n".format(indent=indent+INDENT, field_decl=self.visit(ft, f))
+            s += "{indent}private:\n".format(indent=indent)
+            s += "{indent}friend class {toplevel_name};\n".format(indent=indent+INDENT, toplevel_name=toplevel_name)
+            for group in sharing.get(t, []):
+                s += "{indent}union {{\n".format(indent=indent+INDENT)
+                for gt in group:
+                    intrusive_data = gt.intrusive_data(t)
+                    s += "{indent}struct {{\n".format(indent=indent+INDENT*2)
+                    for (f, ft) in intrusive_data:
+                        s += "{indent}{field_decl};\n".format(indent=indent+INDENT*3, field_decl=self.visit(ft, f))
+                    s += "{indent}}};\n".format(indent=indent+INDENT*2)
+                s += "{indent}}};\n".format(indent=indent+INDENT)
+            s += "{indent}}};\n".format(indent=indent)
+            return s
         elif isinstance(t, TRecord):
             return "{indent}struct {name} {{\n{fields}{indent}}};\n".format(
                 indent=indent,
@@ -559,7 +575,7 @@ class CxxPrinter(JavaPrinter):
         else:
             return self.initial_value(t.rep_type())
 
-    def visit_Spec(self, spec):
+    def visit_Spec(self, spec, sharing):
         s = "#pragma once\n"
         s += "#include <unordered_map>\n"
         s += "class {} {{\n".format(spec.name)
@@ -568,7 +584,6 @@ class CxxPrinter(JavaPrinter):
         for name, t in spec.types:
             self.types[t] = name
         handle_types = [t for t in all_types(spec) if isinstance(t, THandle)]
-        intrusive_fields = { t: [] for t in handle_types }
         for t in all_types(spec):
             if t not in self.types and type(t) in [THandle, TRecord, TTuple, TEnum]:
                 if isinstance(t, THandle):
@@ -576,11 +591,8 @@ class CxxPrinter(JavaPrinter):
                 else:
                     name = common.fresh_name("Type")
                 self.types[t] = name
-            if hasattr(t, "intrusive_data"):
-                for ht in handle_types:
-                    intrusive_fields[ht] += t.intrusive_data(ht)
         for t, name in self.types.items():
-            s += self.define_type(t, name, "  ", intrusive_fields)
+            s += self.define_type(spec.name, t, name, "  ", sharing)
         s += "protected:\n"
         for name, t in spec.statevars:
             self.statevar_name = name
