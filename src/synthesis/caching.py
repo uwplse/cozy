@@ -16,7 +16,7 @@ def load_cache():
         return []
 
 def save_cache(data):
-    print(" -> caching {}".format(repr(data)))
+    # print(" -> caching {}".format(repr(data)))
     tmp_file = CACHE_FILE + ".tmp"
     with open(tmp_file, "wb") as f:
         pickle.dump(data, f)
@@ -24,7 +24,7 @@ def save_cache(data):
 
 def find_cached_result(state_vars, assumptions, q, **opts):
     data = load_cache()
-    print(" -> loaded {}".format(data))
+    # print(" -> loaded {}".format(data))
     for res in data:
         (state_var, state_exp, new_q) = res
         if new_q.ret.type != q.ret.type:
@@ -37,11 +37,11 @@ def find_cached_result(state_vars, assumptions, q, **opts):
         if len(q.args) != len(new_q.args) or any(t1 != t2 for ((a1, t1), (a2, t2)) in zip(q.args, new_q.args)):
             continue
         vc = subst(vc, { a1: EVar(a2).with_type(t) for ((a1, _), (a2, t)) in zip(q.args, new_q.args) })
-        print("considering {}".format(new_q))
+        # print("considering {}".format(new_q))
         if valid(vc, **opts):
             return res
-        else:
-            print(" -> cache rejected {}".format(res))
+        # else:
+        #     print(" -> cache rejected {}".format(res))
     return None
 
 def cache(key, res):

@@ -368,3 +368,9 @@ class Typechecker(Visitor):
     def visit_SDecl(self, s):
         self.visit(s.val)
         self.env[s.id] = s.val.type
+
+    def visit(self, x):
+        res = super().visit(x)
+        if isinstance(x, syntax.Exp) and not hasattr(x, "type"):
+            raise Exception(x)
+        return res

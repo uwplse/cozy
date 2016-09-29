@@ -351,15 +351,6 @@ def apply_delta(
             return delta.e
         def visit_AddNum(self, delta):
             return syntax.EBinOp(x, "+", delta.e).with_type(x.type)
-        # def visit_RecordFieldUpdate(self, delta):
-        #     if isinstance(x.type, syntax.THandle):
-        #         return syntax.EMakeHandle(apply_delta(syntax.EGetField(x, "val").with_type(x.type.value_type), delta.delta)).with_type(x.type)
-        #     else:
-        #         if isinstance(x, syntax.EGetField) and x.f != delta.f:
-        #             return x
-        #         assert isinstance(x.type, syntax.TRecord)
-        #         fields = x.type.fields
-        #         return syntax.EMakeRecord(tuple((f, apply_delta(syntax.EGetField(x, f).with_type(t), delta.delta) if f == delta.f else syntax.EGetField(x, f).with_type(t)) for f, t in fields)).with_type(x.type)
         def visit_Conditional(self, delta):
             return syntax.ECond(delta.cond, self.visit(delta.delta), x).with_type(x.type)
         def visit_MultiDelta(self, delta):

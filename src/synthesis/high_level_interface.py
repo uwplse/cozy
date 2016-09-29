@@ -341,6 +341,9 @@ def synthesize(
             new_q = new_q[0]
             caching.cache((state_vars, list(spec.assumptions), q), (state_var, state_exp, new_q))
 
+        print("  -> {} : {} = {}".format(state_var.id, pprint(state_var.type), pprint(state_exp)))
+        print("  -> return {}".format(pprint(new_q.ret)))
+
         new_statevars.append((state_var.id, state_var.type))
         new_qs.append(new_q)
 
