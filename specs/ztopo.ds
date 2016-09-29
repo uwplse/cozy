@@ -26,6 +26,9 @@ TileCache:
     op updateState(e : entries.Handle, st : State)
         e.val.st = st
 
+    op updateInUse(e : entries.Handle, inUse : Bool)
+        e.val.inUse = inUse
+
     query totalMemSize()
         sum [e.val.memSize | e <- entries, e.val.st == DiskAndMemory or e.val.st == MemoryOnly]
 

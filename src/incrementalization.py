@@ -151,8 +151,9 @@ def derivative(
             if isinstance(key_delta, NoDelta):
                 return MapUpdate(affected_key, recurse(value_func.body, value_func.arg, BagElemUpdated(d.elem, d.delta), ctx))
             else:
-                on_add = recurse(value_func.body, value_func.arg, BagAdd(d.elem), ctx)
+                new_key = apply_delta(key_func.apply_to(d.elem), key_delta)
                 on_rm = recurse(value_func.body, value_func.arg, BagRemove(d.elem), ctx)
+                on_add = recurse(value_func.body, value_func.arg, BagAdd(d.elem), ctx) # TODO: BagAdd(apply_delta(d.elem), d.delta)
                 return multi_delta([
                     MapUpdate(affected_key, on_rm),
                     MapUpdate(new_key, on_add)])
@@ -186,6 +187,14 @@ def derivative(
             return AddNum(syntax.EUnaryOp("sum", d.e).with_type(d.e.type.t))
         elif isinstance(d, BagRemove):
             return AddNum(syntax.EUnaryOp("-", d.e).with_type(d.e.type))
+        elif isinstance(d, BagElemUpdated):
+            if isinstance(d.delta, NoDelta):
+                return d.delta
+            elif isinstance(d.delta, AddNum):
+                return d.delta
+            else:
+                # TODO: requires subgoals
+                raise NotImplementedError("update sum: " + d)
         else:
             raise NotImplementedError(d)
 
@@ -356,7 +365,7 @@ def apply_delta(
         def visit_MultiDelta(self, delta):
             return apply_delta(apply_delta(x, delta.delta1), delta.delta2)
         def visit_Delta(self, d):
-            raise NotImplementedError(str(d))
+            raise NotImplementedError("apply {} to {}".format(d, x))
 
     return V().visit(delta)
 
