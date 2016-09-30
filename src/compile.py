@@ -3,7 +3,7 @@ from collections import OrderedDict
 import common
 from target_syntax import *
 import library
-from syntax_tools import all_types
+from syntax_tools import all_types, fresh_var
 
 INDENT = "  "
 
@@ -402,7 +402,7 @@ class CxxPrinter(common.Visitor):
         if isinstance(ret_type, TBag):
             x = EVar(common.fresh_name("x")).with_type(ret_type.t)
             s  = "{indent}template <class F>\n".format(indent=indent)
-            s += "{indent}inline void {name} ({args}const F& _callback) {{\n{body}  }}\n\n".format(
+            s += "{indent}inline void {name} ({args}const F& _callback) const {{\n{body}  }}\n\n".format(
                 indent=indent,
                 type=self.visit(ret_type, ""),
                 name=q.name,
@@ -411,7 +411,7 @@ class CxxPrinter(common.Visitor):
             return s
         else:
             body, out = self.visit(q.ret, indent+INDENT)
-            return "{indent}inline {type} {name} ({args}) {{\n{body}    return {out};\n  }}\n\n".format(
+            return "{indent}inline {type} {name} ({args}) const {{\n{body}    return {out};\n  }}\n\n".format(
                 indent=indent,
                 type=self.visit(ret_type, ""),
                 name=q.name,
@@ -430,11 +430,34 @@ class CxxPrinter(common.Visitor):
     def visit_ENull(self, e, indent=""):
         return ("", "NULL")
 
+    def visit_EEmptyList(self, e, indent=""):
+        return self.visit(e.type.make_empty(), indent)
+
     def visit_EMapGet(self, e, indent=""):
+        assert isinstance(e.map, EVar)
+        value_constructor = self.state_exps[e.map.id].value
         if isinstance(e.map.type, library.TNativeMap):
             (smap, emap) = self.visit(e.map, indent)
             (skey, ekey) = self.visit(e.key, indent)
-            return (smap + skey, "{}[{}]".format(emap, ekey))
+            (sdefault, edefault) = self.visit(value_constructor.apply_to(EEmptyList().with_type(e.type)), indent)
+            iterator = fresh_var(TNative("auto"), "map_iterator")
+            res = fresh_var(e.type, "lookup_result")
+            s  = "{indent}{declare_res};\n".format(indent=indent, declare_res=self.visit(res.type, res.id))
+            s += smap + skey
+            s += "{indent}{declare_iterator}({map}.find({key}));\n".format(
+                indent=indent,
+                declare_iterator=self.visit(iterator.type, iterator.id),
+                map=emap,
+                key=ekey)
+            s += "{indent0}if ({iterator} == {map}.end()) {{\n{sdefault}{indent}{res} = {edefault};\n{indent0}}} else {{\n{indent}{res} = {iterator}->second;\n{indent0}}}\n".format(
+                indent0=indent,
+                indent=indent+INDENT,
+                iterator=iterator.id,
+                res=res.id,
+                map=emap,
+                sdefault=sdefault,
+                edefault=edefault)
+            return (s, res.id)
         else:
             return self.visit(e.map.type.get_key(e.map, e.key), indent)
 
@@ -476,7 +499,7 @@ class CxxPrinter(common.Visitor):
     def visit_EUnaryOp(self, e, indent):
         op = e.op
         if op == "the":
-            setup, elem = self.visit(e.e.type.find_one(e.e))
+            setup, elem = self.visit(e.e.type.find_one(e.e), indent)
             return (setup, self.to_ptr(elem, e.e.type.t))
         ce, ee = self.visit(e.e, indent)
         return (ce, "({op} {ee})".format(op=op, ee=ee))
@@ -575,7 +598,9 @@ class CxxPrinter(common.Visitor):
         else:
             return self.initial_value(t.rep_type())
 
-    def visit_Spec(self, spec, sharing):
+    def visit_Spec(self, spec, state_exps, sharing):
+        self.state_exps = state_exps
+
         s = "#pragma once\n"
         s += "#include <unordered_map>\n"
         s += "class {} {{\n".format(spec.name)

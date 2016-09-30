@@ -143,7 +143,7 @@ def run():
     cxx = getattr(args, "c++")
     if cxx is not None:
         with common.open_maybe_stdout(cxx) as out:
-            out.write(compile.CxxPrinter().visit(impl, sharing))
+            out.write(compile.CxxPrinter().visit(impl, state_map, sharing))
 
 if __name__ == "__main__":
     run()

@@ -127,6 +127,8 @@ class TIntrusiveLinkedList(TBag):
                     SAssign(id, EVar(next))]))])
     def find_one(self, target):
         return target
+    def make_empty(self):
+        return ENull().with_type(self.t)
 
 class TLinkedList(TBag):
     def __init__(self, t):
