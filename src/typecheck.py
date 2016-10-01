@@ -14,7 +14,7 @@ def typecheck(ast, env=None, handleize=True):
 
 INT = syntax.TInt()
 LONG = syntax.TLong()
-DEFAULT_TYPE = None
+DEFAULT_TYPE = object()
 BOOL = syntax.TBool()
 STRING = syntax.TString()
 
@@ -107,6 +107,9 @@ class Typechecker(Visitor):
         return syntax.THandle(t.statevar, self.visit(t.value_type))
 
     def visit_TBool(self, t):
+        return t
+
+    def visit_TString(self, t):
         return t
 
     def visit_TInt(self, t):
