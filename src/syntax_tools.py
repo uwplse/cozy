@@ -113,6 +113,12 @@ class PrettyPrinter(common.Visitor):
     def visit_TBool(self, t):
         return "Bool"
 
+    def visit_TString(self, t):
+        return "String"
+
+    def visit_TMaybe(self, t):
+        return "Maybe<{}>".format(self.visit(t.t))
+
     def visit_TTuple(self, t):
         return "({})".format(", ".join(self.visit(tt) for tt in t.ts))
 
