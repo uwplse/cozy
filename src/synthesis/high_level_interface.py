@@ -202,7 +202,7 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
             for state_type in it:
                 # if state_type == cheat:
                 #     print("now exploring {}".format(pprint(state_type)))
-                print("state ?= {}".format(pprint(state_type)))
+                # print("state ?= {}".format(pprint(state_type)))
                 # print(pprint(state_type))
                 state_var = EVar(self.state_var_name).with_type(state_type)
                 for state_hole in self.make_state_hole(state_type):
@@ -341,7 +341,7 @@ def synthesize(
         q = worklist.popleft()
         print("##### SYNTHESIZING {}".format(q.name))
 
-        cached_result = caching.find_cached_result(state_vars, list(spec.assumptions), q)
+        cached_result = caching.find_cached_result(state_vars, list(spec.assumptions), q) if use_cache else None
         if cached_result:
             print("##### FOUND CACHED RESULT")
             state_var, state_exp, new_q = cached_result
