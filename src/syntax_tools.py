@@ -165,8 +165,11 @@ class PrettyPrinter(common.Visitor):
     def visit_EApp(self, e):
         return "{}({})".format(self.visit(e.f), self.visit(e.arg))
 
+    def visit_EAlterMaybe(self, e):
+        return "AlterMaybe({}, {})".format(self.visit(e.e), self.visit(e.f))
+
     def visit_EMapGet(self, e):
-        return "{}.get({})".format(self.visit(e.map), self.visit(e.key))
+        return "{}[{}]".format(self.visit(e.map), self.visit(e.key))
 
     def visit_EMakeMap(self, e):
         return "MkMap({}, {}, {})".format(self.visit(e.e), self.visit(e.key), self.visit(e.value))
@@ -247,6 +250,13 @@ class PrettyPrinter(common.Visitor):
 
     def visit_SSeq(self, s, indent=""):
         return "{}\n{}".format(self.visit(s.s1, indent), self.visit(s.s2, indent))
+
+    def visit_SMapUpdate(self, s, indent=""):
+        return "{indent}with {} as {}:\n{}".format(
+            self.visit(target_syntax.EMapGet(s.map, s.key)),
+            s.val_var.id,
+            self.visit(s.change, indent + "  "),
+            indent=indent)
 
     def visit_SForEach(self, s, indent=""):
         return "{}for {} in {}:\n{}".format(indent, s.id, self.visit(s.iter), self.visit(s.body, indent + "  "))

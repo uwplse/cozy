@@ -136,7 +136,7 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
             self.state_var_name = fresh_name("state")
             # self.state_hole_name = fresh_name("state")
         def make_state_hole_core(self, type, builder):
-            builder.build_maps = False
+            builder.build_maps = True
             builder.build_tuples = False
             return core.EHole(fresh_name(), type, builder)
         def make_state_hole(self, type, builder=None):
@@ -151,7 +151,7 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
                             if r.type == type.k and len(holes) == 1 and holes[0].type == bag_type.t:
                                 e = EVar(fresh_name()).with_type(bag_type.t)
                                 es = EVar(fresh_name()).with_type(bag_type)
-                                vhole = core.EHole(fresh_name(), type.v, builder.with_roots([es], build_maps=False))
+                                vhole = core.EHole(fresh_name("xxx"), type.v, builder.with_roots([es], build_maps=True))
                                 for bag in self.make_state_hole(bag_type, builder):
                                     yield EMakeMap(
                                         bag,
@@ -179,17 +179,21 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
                     yield from self.make_query_hints(state_type.ts[i], e)
         def make_query_hole(self, q, state_var):
             args = self.args_by_q[q.name]
-            state_hints = list(self.make_query_hints(state_var.type, state_var))
+            hints = list(self.make_query_hints(state_var.type, state_var))
+            for r in list(fragmentize(ETuple(tuple(qq.ret for qq in queries)).with_type(res_type) if len(queries) > 1 else queries[0].ret)):
+                hints.append(r)
             # print("hints:")
-            # for h in state_hints:
+            # for h in hints:
             #     print("  {}".format(pprint(h)))
-            b = core.Builder(args + state_hints if HINTS else [state_var], basic_types)
-            b.build_maps = False
+            b = core.Builder(args + hints if HINTS else [state_var], basic_types)
+            b.build_maps = True
             b.build_tuples = False
             return core.EHole(q.name, q.ret.type, b)
         def build(self, cache, size):
             # TODO: HACK
             cheat = None
+            # cheat = TMap(TNative("org.xmpp.packet.JID"), TBag([t for t in basic_types if isinstance(t, THandle)][0]))
+            # cheat = TMap(TNative("org.xmpp.packet.JID"), TMaybe([t for t in basic_types if isinstance(t, THandle)][0]))
             # cheat = TMap(TBool(), TBag([t for t in basic_types if isinstance(t, THandle)][0]))
             # cheat = TTuple((TInt(), TInt()))
             # cheat = TTuple((TMap(TInt(), TInt()), TMap(TInt(), TInt())))
@@ -198,7 +202,7 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
             for state_type in it:
                 # if state_type == cheat:
                 #     print("now exploring {}".format(pprint(state_type)))
-                # print("state ?= {}".format(pprint(state_type)))
+                print("state ?= {}".format(pprint(state_type)))
                 # print(pprint(state_type))
                 state_var = EVar(self.state_var_name).with_type(state_type)
                 for state_hole in self.make_state_hole(state_type):

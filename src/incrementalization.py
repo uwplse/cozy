@@ -198,6 +198,16 @@ def derivative(
         else:
             raise NotImplementedError(d)
 
+    def derivative_the(d):
+        if isinstance(d, BagAdd):
+            return Become(d.e)
+        elif isinstance(d, BagRemove):
+            return Become(syntax.ENull().with_type(syntax.TMaybe(d.e.type)))
+        elif isinstance(d, BagElemUpdated):
+            return NoDelta()
+        else:
+            raise NotImplementedError(d)
+
     def derivative_map(d, proj):
         if isinstance(d, NoDelta):
             return d
@@ -272,6 +282,8 @@ def derivative(
                 return map_cond(self.visit(e.e), derivative_sum)
             elif e.op == "not":
                 return rewrite_becomes(self.visit(e.e), lambda e: syntax.EUnaryOp("not", e).with_type(syntax.TBool()))
+            elif e.op == "the":
+                return map_cond(self.visit(e.e), derivative_the)
             else:
                 raise NotImplementedError(e.op)
 

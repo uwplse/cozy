@@ -110,6 +110,9 @@ class Builder(object):
                         gens = tuple(list(self.enum_types(sz, allow_bags=allow_bags, allow_maps=allow_maps, allow_tuples=False, max_bag_depth=max_bag_depth)) for sz in sizes)
                         for types in cross_product(gens):
                             yield TTuple(types)
+            for t in self.enum_types(size - 1, allow_bags=allow_bags, allow_maps=allow_maps, allow_tuples=allow_tuples, max_bag_depth=max_bag_depth):
+                if not isinstance(t, TMaybe):
+                    yield TMaybe(t)
 
     def build(self, cache, size):
         if size == 1:
@@ -156,6 +159,17 @@ class Builder(object):
             for m in cache.find(type=TMap, size=sz1):
                 for k in cache.find(type=m.type.k, size=sz2):
                     yield EMapGet(m, k).with_type(m.type.v)
+
+        for (sz1, sz2) in pick_to_sum(2, size - 1):
+            for e in cache.find(type=TMaybe, size=sz1):
+                arg = EVar(fresh_name()).with_type(e.type.t)
+                for r in self.roots:
+                    for hole in find_holes(r):
+                        if hole.type == e.type.t:
+                            for body in instantiate(subst(r, { hole.name: arg }), cache, sz2):
+                                x = EAlterMaybe(e, ELambda(arg, body)).with_type(TMaybe(r.type))
+                                # print(" ... {} : {} @ {}".format(pprint(x), pprint(x.type), size))
+                                yield x
 
         if self.build_maps:
             # print("####### {}".format(size))
@@ -340,8 +354,7 @@ def find_consistent_exps(
                 yield { }
             else:
                 # if size != 0:
-                #     # print("REJECTED (wrong size): {}".format(pprint(spec)))
-                #     pass
+                #     print("REJECTED (wrong size): {}".format(pprint(spec)))
                 # else:
                 #     print("  REJECTED: {} [examples={}]".format(pprint(spec), examples))
                 pass
@@ -387,9 +400,17 @@ def find_consistent_exps(
                         cache.add(e, size=sz1)
                     else:
                         continue
+
+                # # debug = "xxx" in name
+                # debug = name == "implicitFrom"
+                # if debug: print("got expr: {} : {} @ {}".format(pprint(e), pprint(e.type), sz1))
+
                 if e.type != type:
+                    # if debug: print("    --> FAIL; I wanted {}".format(pprint(type)))
                     continue
-            # for e in distinct_exps(builder, g_examples, size=sz1, type=type):
+
+                # if debug: print("    --> OK!")
+
                 # print("{}| considering {} for {} [examples={}]".format(indent, pprint(e), name, g_examples))
                 spec2 = subst(spec, { name : e })
                 # print("{}|{} ---> {}".format(indent, name, pprint(e)))

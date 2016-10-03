@@ -81,6 +81,11 @@ class Evaluator(Visitor):
         env2 = dict(env)
         env2[lam.arg.id] = arg
         return self.visit(lam.body, env2)
+    def visit_EAlterMaybe(self, e, env):
+        x = self.visit(e.e, env)
+        if x is not None:
+            x = self.eval_lambda(e.f, x, env)
+        return x
     def visit_EMakeMap(self, e, env):
         im = defaultdict(tuple)
         for x in self.visit(e.e, env):
@@ -128,6 +133,8 @@ def mkval(type):
     """
     if isinstance(type, TInt) or isinstance(type, TLong) or isinstance(type, TNative):
         return 0
+    if isinstance(type, TMaybe):
+        return None
     if isinstance(type, TBool):
         return False
     if isinstance(type, TBag):

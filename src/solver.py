@@ -36,7 +36,7 @@ class ToZ3(Visitor):
             return z3.If(e1.cond, self.eq(t, e1.lhs, e2, env), self.eq(t, e1.rhs, e2, env), self.ctx)
         if isinstance(e2, SymbolicUnion):
             return z3.If(e2.cond, self.eq(t, e1, e2.lhs, env), self.eq(t, e1, e2.rhs, env), self.ctx)
-        if type(t) in [TInt, TLong, TBool, TEnum, TNative]:
+        if type(t) in [TInt, TLong, TBool, TEnum, TNative, TString]:
             return e1 == e2
         elif isinstance(t, TMaybe):
             if (e1 is None) and (e2 is None):
@@ -111,6 +111,9 @@ class ToZ3(Visitor):
     def visit_ETupleGet(self, e, env):
         tup = self.visit(e.e, env)
         return fmap(tup, lambda tup: tup[e.n])
+    def visit_EAlterMaybe(self, e, env):
+        return fmap(self.visit(e.e, env),
+            lambda res: self.apply(e.f, res, env) if res is not None else res)
     def visit_ECond(self, e, env):
         cond = self.visit(e.cond, env)
         then_branch = self.visit(e.then_branch, env)
@@ -265,7 +268,7 @@ def decideable(t):
     return type(t) in [TInt, TLong, TBool, TBitVec, TEnum]
 
 def mkvar(ctx, solver, collection_depth, type, handle_vars):
-    if type == TInt() or type == TLong() or isinstance(type, TNative):
+    if type == TInt() or type == TLong() or isinstance(type, TNative) or type == TString():
         return z3.Int(fresh_name(), ctx=ctx)
     elif type == TBool():
         return z3.Bool(fresh_name(), ctx=ctx)
@@ -315,9 +318,14 @@ def satisfy(e, collection_depth : int = 2, validate_model : bool = True):
     def reconstruct(model, value, type):
         if type == TInt() or type == TLong() or isinstance(type, TNative):
             return model.eval(value, model_completion=True).as_long()
-        if type == TBool():
+        elif type == TString():
+            s = str(model.eval(value, model_completion=True).as_long())
+            while len(s) < 64:
+                s = ' ' + s
+            return s
+        elif type == TBool():
             return bool(model.eval(value, model_completion=True))
-        if isinstance(type, TBitVec):
+        elif isinstance(type, TBitVec):
             return model.eval(value, model_completion=True).as_long()
         elif isinstance(type, TBag):
             mask, elems = value

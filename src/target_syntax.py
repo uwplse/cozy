@@ -31,6 +31,9 @@ EEnumToInt = declare_case(Exp, "EEnumToInt", ["e"])
 EBoolToInt = declare_case(Exp, "EBoolToInt", ["e"])
 EStm       = declare_case(Exp, "EStm", ["stm", "e"])
 
+# Maybe
+EAlterMaybe = declare_case(Exp, "EAlterMaybe", ["e", "f"])
+
 # Fixed-length vectors
 TVector    = declare_case(Type, "TVector", ["t", "n"])
 EVectorGet = declare_case(Exp, "EVectorGet", ["e", "i"])
