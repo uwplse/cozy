@@ -21,6 +21,7 @@ import syntax
 # Each keyword becomes a KW_* token for the lexer. So, e.g. "and" becomes
 # KW_AND.
 _KEYWORDS = [
+    "extern",
     "type",
     "enum",
     "op",
@@ -143,8 +144,8 @@ def make_parser():
     start = "spec"
 
     def p_spec(p):
-        """spec : WORD OP_COLON typedecls states assumes methods"""
-        p[0] = syntax.Spec(p[1], p[3], p[4], p[5], p[6])
+        """spec : WORD OP_COLON typedecls funcdecls states assumes methods"""
+        p[0] = syntax.Spec(p[1], p[3], p[4], p[5], p[6], p[7])
 
     parsetools.multi(locals(), "typedecls", "typedecl")
 
@@ -182,6 +183,12 @@ def make_parser():
         p[0] = (p[1], p[3])
 
     parsetools.multi(locals(), "typednames", "typedname", sep="OP_COMMA")
+
+    def p_func(p):
+        """func : KW_EXTERN WORD OP_OPEN_PAREN typednames OP_CLOSE_PAREN OP_COLON type OP_ASSIGN STRINGLITERAL"""
+        p[0] = syntax.ExternFunc(p[2], p[4], p[7], p[9])
+
+    parsetools.multi(locals(), "funcdecls", "func")
 
     def p_statevar(p):
         """statevar : KW_STATE WORD OP_COLON type"""

@@ -31,6 +31,7 @@ def fmap(x, f):
 class ToZ3(Visitor):
     def __init__(self, z3ctx):
         self.ctx = z3ctx
+        self.funcs = { }
     def eq(self, t, e1, e2, env):
         if isinstance(e1, SymbolicUnion):
             return z3.If(e1.cond, self.eq(t, e1.lhs, e2, env), self.eq(t, e1.rhs, e2, env), self.ctx)
@@ -98,12 +99,29 @@ class ToZ3(Visitor):
         for i in range(len(bag_elems)):
             l = z3.If(bag_mask[i], 1, 0, ctx=self.ctx) + l
         return l
+    def visit_TInt(self, t):
+        return z3.IntSort(self.ctx)
+    def visit_Type(self, t):
+        raise NotImplementedError(t)
     def visit_EVar(self, v, env):
         return env[v.id]
     def visit_ENum(self, n, env):
         return n.val
     def visit_EBool(self, b, env):
         return b.val
+    def flatten(self, e, env):
+        if type(e.type) in [TInt, TBool]:
+            yield (self.visit(e, env), e.type)
+        else:
+            raise NotImplementedError(e.type)
+    def visit_ECall(self, call, env):
+        args = [x for arg in call.args for x in self.flatten(arg, env)]
+        key = (call.func, call.type, tuple(t for (v, t) in args))
+        f = self.funcs.get(key)
+        if f is None:
+            f = z3.Function(fresh_name(call.func), *[self.visit(t) for (v, t) in args], self.visit(call.type))
+            self.funcs[key] = f
+        return f(*[v for (v, t) in args])
     def visit_EEnumEntry(self, e, env):
         return e.type.cases.index(e.name)
     def visit_ETuple(self, e, env):
@@ -382,6 +400,10 @@ def satisfy(e, collection_depth : int = 2, validate_model : bool = True):
         res = { }
         for v in fvs:
             res[v.id] = reconstruct(model, _env[v.id], v.type)
+        for k, f in visitor.funcs.items():
+            name = k[0]
+            out_type = k[1]
+            res[name] = lambda args: reconstruct(model, f(*args), out_type)
         # print(res)
         if validate_model:
             import evaluation

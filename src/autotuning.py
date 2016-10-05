@@ -17,6 +17,7 @@ def apply_rewrite(statevar, new_type, ast):
     new_ast = Spec(
         ast.name,
         ast.types,
+        ast.extern_funcs,
         [v for v in ast.statevars if v[0] != statevar] + [(statevar, new_type)],
         deep_copy(ast.assumptions),
         deep_copy(ast.methods))

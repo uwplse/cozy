@@ -374,7 +374,7 @@ def synthesize(
     new_ops = []
     for op in spec.methods:
         if isinstance(op, Op):
-            if isinstance(op.body, SAssign):
+            if isinstance(op.body, SAssign) and isinstance(op.body.lhs, EGetField):
                 op_stms[op.name].append(op.body)
             new_stms = seq(op_stms[op.name])
             new_ops.append(Op(
@@ -386,6 +386,7 @@ def synthesize(
     return (Spec(
         spec.name,
         spec.types,
+        spec.extern_funcs,
         new_statevars,
         [],
         new_ops + new_qs), state_var_exps)

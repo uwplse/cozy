@@ -30,6 +30,7 @@ class Typechecker(Visitor):
             "String": STRING }
 
         self.env = dict(env)
+        self.funcs = dict()
         self.should_handleize = handleize
         self.oldenv = []
         self.errors = []
@@ -52,9 +53,11 @@ class Typechecker(Visitor):
         return Scope()
 
     def visit_Spec(self, spec):
+        print(spec)
         for name, t in spec.types:
             self.tenv[name] = self.visit(t)
         spec.types = [(name, self.tenv[name]) for (name, t) in spec.types]
+        spec.extern_funcs = [self.visit(f) for f in spec.extern_funcs]
         for name, t in spec.statevars:
             self.env[name] = self.handleize(self.visit(t), name)
         spec.statevars = [(name, self.env[name]) for (name, t) in spec.statevars]
@@ -63,14 +66,20 @@ class Typechecker(Visitor):
         for op in spec.methods:
             self.visit(op)
 
-    def handleize(self, collection_type, statevar_name):
-        if not self.should_handleize:
-            return collection_type
-        if isinstance(collection_type, syntax.TBag):
-            ht = syntax.THandle(statevar_name, collection_type.t)
+    def visit_ExternFunc(self, f):
+        f = syntax.ExternFunc(
+            f.name,
+            [(arg_name, self.visit(arg_type)) for (arg_name, arg_type) in f.args],
+            self.visit(f.out_type),
+            f.body_string)
+        self.funcs[f.name] = f
+        return f
+
+    def handleize(self, statevar_type, statevar_name):
+        if self.should_handleize and isinstance(statevar_type, syntax.TBag):
+            ht = syntax.THandle(statevar_name, statevar_type.t)
             return syntax.TBag(ht)
-        else:
-            self.report_err(statevar_name, "only bag types are supported")
+        return statevar_type
 
     def report_err(self, source, msg):
         self.errors.append("At {}: {}".format(pprint(source), msg))
@@ -131,11 +140,11 @@ class Typechecker(Visitor):
     def visit_TMap(self, t):
         return type(t)(self.visit(t.k), self.visit(t.v))
 
-    def ensure_type(self, e, t):
+    def ensure_type(self, e, t, msg="expression has type {} instead of {}"):
         if not hasattr(e, "type"):
             self.visit(e)
         if t is not DEFAULT_TYPE and e.type is not DEFAULT_TYPE and e.type != t:
-            self.report_err(e, "expression has type {} instead of {}".format(e.type, t))
+            self.report_err(e, msg.format(pprint(e.type), pprint(t)))
 
     def ensure_numeric(self, e):
         if e.type is DEFAULT_TYPE:
@@ -244,17 +253,23 @@ class Typechecker(Visitor):
             raise NotImplementedError(e.op)
 
     def visit_ECall(self, e):
+        f = self.funcs.get(e.func)
+        if f is None:
+            self.report_err(e, "unknown function {}".format(repr(e.func)))
         for a in e.args:
             self.visit(a)
-        if e.func == "bag":
-            if len(e.args) == 1:
-                t = self.get_collection_type(e.args[0])
-                e.type = syntax.TBag(t)
-            else:
-                self.report_err(e, "function called with {} args instead of 1".format(len(e.args)))
-                e.type = syntax.TBag(DEFAULT_TYPE)
+
+        if f is not None:
+            if len(f.args) != len(e.args):
+                self.report_err(e, "wrong number of arguments to {}".format(repr(e.func)))
+            i = 1
+            for arg_decl, arg_val in zip(f.args, e.args):
+                arg_name, arg_type = arg_decl
+                self.ensure_type(arg_val, arg_type, "argument {} to {} has type {{}} instead of {{}}".format(i, f.name))
+                i += 1
+            e.type = f.out_type
         else:
-            raise NotImplementedError(e.func)
+            e.type = DEFAULT_TYPE
 
     def visit_EEmptyList(self, e):
         e.type = syntax.TList(None)
@@ -302,6 +317,7 @@ class Typechecker(Visitor):
 
     def visit_EVar(self, e):
         if e.id in self.env:
+            print(self.env)
             e.type = self.env[e.id]
         else:
             self.report_err(e, "no var {} in scope".format(e.id))

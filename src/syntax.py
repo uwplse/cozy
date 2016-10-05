@@ -4,7 +4,8 @@ AST definitions.
 
 from common import ADT, declare_case, typechecked
 
-Spec                = declare_case(ADT, "Spec", ["name", "types", "statevars", "assumptions", "methods"])
+Spec                = declare_case(ADT, "Spec", ["name", "types", "extern_funcs", "statevars", "assumptions", "methods"])
+ExternFunc          = declare_case(ADT, "ExternFunc", ["name", "args", "out_type", "body_string"])
 
 class Method(ADT): pass
 Op                  = declare_case(Method, "Op",    ["name", "args", "assumptions", "body"])

@@ -88,6 +88,8 @@ def to_delta(members : [(str, syntax.Type)], op : syntax.Op) -> (syntax.Exp, Del
     elif isinstance(op.body, syntax.SAssign):
         lhs = op.body.lhs
         rhs = op.body.rhs
+        if isinstance(lhs, syntax.EVar) and lhs.id in [v for (v, t) in members]:
+            return (lhs, Become(rhs))
         if not isinstance(lhs, syntax.EGetField):
             raise NotImplementedError("not sure how to incrementalize {}".format(pprint(op.body)))
         sv, elem, update = _push_assignment_through_field_access(members, lhs, Become(rhs))
@@ -265,6 +267,13 @@ def derivative(
             return NoDelta()
         def visit_EEnumEntry(self, e):
             return NoDelta()
+
+        def visit_ECall(self, call):
+            deltas = [self.visit(arg) for arg in call.args]
+            if all(d == NoDelta() for d in deltas):
+                return NoDelta()
+            else:
+                return Become(syntax.ECall(call.func, [apply_delta(arg, delta) for (arg, delta) in zip(call.args, deltas)]))
 
         def visit_EGetField(self, e):
             subdelta = self.visit(e.e)

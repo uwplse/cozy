@@ -27,6 +27,8 @@ class Evaluator(Visitor):
         return n.val
     def visit_EBool(self, b, env):
         return b.val
+    def visit_ECall(self, call, env):
+        return env[call.func]([self.visit(arg, env) for arg in call.args])
     def visit_ECond(self, e, env):
         if self.visit(e.cond, env):
             return self.visit(e.then_branch, env)

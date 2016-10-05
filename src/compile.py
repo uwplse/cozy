@@ -12,6 +12,7 @@ class CxxPrinter(common.Visitor):
 
     def __init__(self):
         self.types = OrderedDict()
+        self.funcs = {}
 
     def typename(self, t):
         return self.types[t]
@@ -261,7 +262,8 @@ class CxxPrinter(common.Visitor):
 
     def visit_ECall(self, e, indent=""):
         setups, args = zip(*[self.visit(arg) for arg in e.args])
-        return ("".join(setups), "{func}({args})".format(func=e.func, args=", ".join(args)))
+        f = self.funcs[e.func]
+        return ("".join(setups), "({})".format(f.body_string.format(**{ arg: val for (arg, _), val in zip(f.args, args) })))
 
     def visit_Exp(self, e, indent=""):
         raise NotImplementedError(e)
@@ -361,6 +363,7 @@ class CxxPrinter(common.Visitor):
 
     def visit_Spec(self, spec, state_exps, sharing):
         self.state_exps = state_exps
+        self.funcs = { f.name: f for f in spec.extern_funcs }
 
         s = "#pragma once\n"
         s += "#include <unordered_map>\n"
@@ -386,6 +389,7 @@ class JavaPrinter(CxxPrinter):
 
     def visit_Spec(self, spec, state_exps, sharing, package=None):
         self.state_exps = state_exps
+        self.funcs = { f.name: f for f in spec.extern_funcs }
         self.setup_types(spec, state_exps, sharing)
 
         s = ""
