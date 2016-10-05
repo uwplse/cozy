@@ -200,7 +200,7 @@ def derivative(
 
     def derivative_the(d):
         if isinstance(d, BagAdd):
-            return Become(d.e)
+            return Become(syntax.EJust(d.e))
         elif isinstance(d, BagRemove):
             return Become(syntax.ENull().with_type(syntax.TMaybe(d.e.type)))
         elif isinstance(d, BagElemUpdated):

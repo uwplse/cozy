@@ -9,7 +9,7 @@ from syntax_tools import subst, deep_copy, all_types
 def find_refinement(ast, lib):
     for (v, t) in ast.statevars:
         refs = list(lib.impls(t))
-        if len(refs) > 1:
+        if not (len(refs) == 1 and refs[0] == t):
             return (v, refs)
     return None
 

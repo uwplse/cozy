@@ -40,6 +40,7 @@ EVectorGet = declare_case(Exp, "EVectorGet", ["e", "i"])
 
 # Iterators
 SWhile   = declare_case(Stm, "SWhile", ["e", "body"])
+SBreak   = declare_case(Stm, "SBreak")
 
 # Bag transformations
 EMap     = declare_case(Exp, "EMap", ["e", "f"])

@@ -1,5 +1,6 @@
 from common import Visitor
 import syntax
+import target_syntax
 from syntax_tools import pprint
 
 def typecheck(ast, env=None, handleize=True):
@@ -121,6 +122,9 @@ class Typechecker(Visitor):
     def visit_TNative(self, t):
         return t
 
+    def visit_TMaybe(self, t):
+        return type(t)(self.visit(t.t))
+
     def visit_TBag(self, t):
         return type(t)(self.visit(t.t))
 
@@ -187,6 +191,25 @@ class Typechecker(Visitor):
 
     def visit_ENum(self, e):
         e.type = INT
+
+    def visit_ENull(self, e):
+        if not hasattr(e, "type"):
+            self.report_err(e, "not sure what type this NULL should have")
+            e.type = DEFAULT_TYPE
+
+    def visit_EJust(self, e):
+        self.visit(e.e)
+        e.type = syntax.TMaybe(e.e.type)
+
+    def visit_EAlterMaybe(self, e):
+        self.visit(e.e)
+        self.visit(e.f)
+        e.type = syntax.TMaybe(e.f.body.type)
+
+    def visit_ELambda(self, e):
+        with self.scope():
+            self.env[e.arg.id] = e.arg.type
+            self.visit(e.body)
 
     def visit_EBinOp(self, e):
         self.visit(e.e1)
@@ -295,6 +318,17 @@ class Typechecker(Visitor):
         ts = [self.visit(ee) for ee in e.es]
         e.type = syntax.TTuple(ts)
 
+    def visit_EMap(self, e):
+        self.visit(e.e)
+        self.visit(e.f)
+        e.type = type(e.e.type)(e.f.body.type)
+
+    def visit_EFilter(self, e):
+        self.visit(e.e)
+        self.visit(e.p)
+        self.ensure_type(e.p.body, BOOL)
+        e.type = e.e.type
+
     def visit_EMapGet(self, e):
         self.visit(e.map)
         self.visit(e.key)
@@ -373,6 +407,7 @@ class Typechecker(Visitor):
 
     def visit(self, x):
         res = super().visit(x)
-        if isinstance(x, syntax.Exp) and (not hasattr(x, "type") or x.type is None):
+        should_have_type = isinstance(x, syntax.Exp) and not isinstance(x, target_syntax.ELambda)
+        if should_have_type and (not hasattr(x, "type") or x.type is None):
             raise Exception(x)
         return res
