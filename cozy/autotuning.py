@@ -1,10 +1,10 @@
 from collections import deque
 
-from common import typechecked
-from typecheck import typecheck
-from library import Library
-from target_syntax import *
-from syntax_tools import subst, deep_copy, all_types
+from cozy.common import typechecked
+from cozy.typecheck import typecheck
+from cozy.library import Library
+from cozy.target_syntax import *
+from cozy.syntax_tools import subst, deep_copy, all_types
 
 def find_refinement(ast, lib):
     for (v, t) in ast.statevars:

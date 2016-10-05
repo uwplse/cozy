@@ -4,8 +4,8 @@ additional syntax extensions that can appear in the _target_ language: the
 primitives the tool can output and use during synthesis.
 """
 
-from syntax import *
-from common import declare_case, typechecked
+from cozy.syntax import *
+from cozy.common import declare_case, typechecked
 
 # Holes for synthesized expressions
 EHole = declare_case(Exp, "EHole", ["name", "type", "builder"])
@@ -18,7 +18,7 @@ class ELambda(Exp):
         self.arg = arg
         self.body = body
     def apply_to(self, arg):
-        from syntax_tools import subst
+        from cozy.syntax_tools import subst
         return subst(self.body, { self.arg.id : arg })
     def children(self):
         return (self.arg, self.body)

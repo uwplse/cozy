@@ -15,8 +15,8 @@ import ast
 from ply import lex, yacc
 
 # ours
-import parsetools
-import syntax
+from cozy import parsetools
+from cozy import syntax
 
 # Each keyword becomes a KW_* token for the lexer. So, e.g. "and" becomes
 # KW_AND.

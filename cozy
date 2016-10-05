@@ -1,2 +1,0 @@
-#!/bin/bash
-exec python3 -u "$(dirname "$0")/src/main.py" "$@"

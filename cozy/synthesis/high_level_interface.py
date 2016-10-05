@@ -1,12 +1,12 @@
 from collections import namedtuple, deque, defaultdict
 
-from common import typechecked, fresh_name
-from target_syntax import *
-from syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, BottomUpRewriter, free_vars, pprint, subst, implies
+from cozy.common import typechecked, fresh_name
+from cozy.target_syntax import *
+from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, BottomUpRewriter, free_vars, pprint, subst, implies
 from . import core
 from . import caching
-from typecheck import INT, BOOL
-import incrementalization as inc
+from cozy.typecheck import INT, BOOL
+import cozy.incrementalization as inc
 
 HINTS = True
 

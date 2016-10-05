@@ -2,7 +2,7 @@
 AST definitions.
 """
 
-from common import ADT, declare_case, typechecked
+from cozy.common import ADT, declare_case, typechecked
 
 Spec                = declare_case(ADT, "Spec", ["name", "types", "extern_funcs", "statevars", "assumptions", "methods"])
 ExternFunc          = declare_case(ADT, "ExternFunc", ["name", "args", "out_type", "body_string"])

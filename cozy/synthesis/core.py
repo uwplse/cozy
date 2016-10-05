@@ -3,12 +3,12 @@ import datetime
 import itertools
 import sys
 
-from target_syntax import *
-from typecheck import INT, BOOL
-from syntax_tools import subst, pprint, free_vars, BottomUpExplorer
-from common import Visitor, fresh_name, typechecked, unique
-from solver import satisfy, feasible
-from evaluation import HoleException, eval, all_envs_for_hole
+from cozy.target_syntax import *
+from cozy.typecheck import INT, BOOL
+from cozy.syntax_tools import subst, pprint, free_vars, BottomUpExplorer
+from cozy.common import Visitor, fresh_name, typechecked, unique
+from cozy.solver import satisfy, feasible
+from cozy.evaluation import HoleException, eval, all_envs_for_hole
 
 def cross_product(iters, i=0):
     if i == len(iters):

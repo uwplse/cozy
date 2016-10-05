@@ -8,9 +8,9 @@ Various utilities for working with syntax trees.
 import sys
 import itertools
 
-import common
-import syntax
-import target_syntax
+from cozy import common
+from cozy import syntax
+from cozy import target_syntax
 
 def fresh_var(type, hint="var"):
     return syntax.EVar(common.fresh_name(hint)).with_type(type)

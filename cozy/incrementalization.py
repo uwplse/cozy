@@ -1,7 +1,7 @@
-from common import ADT, declare_case, Visitor, typechecked, fresh_name
-import syntax
-import target_syntax
-from syntax_tools import subst, free_vars, pprint, equal
+from cozy.common import ADT, declare_case, Visitor, typechecked, fresh_name
+from cozy import syntax
+from cozy import target_syntax
+from cozy.syntax_tools import subst, free_vars, pprint, equal
 
 # General deltas
 class Delta(ADT): pass

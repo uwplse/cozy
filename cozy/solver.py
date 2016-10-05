@@ -3,9 +3,9 @@ import itertools
 
 import z3
 
-from syntax import *
-from syntax_tools import pprint, free_vars
-from common import declare_case, fresh_name, Visitor, FrozenDict
+from cozy.syntax import *
+from cozy.syntax_tools import pprint, free_vars
+from cozy.common import declare_case, fresh_name, Visitor, FrozenDict
 
 # TODO: Int==Bv32, Long==Bv64
 TBitVec = declare_case(Type, "TBitVec", ["width"])
@@ -406,7 +406,7 @@ def satisfy(e, collection_depth : int = 2, validate_model : bool = True):
             res[name] = lambda args: reconstruct(model, f(*args), out_type)
         # print(res)
         if validate_model:
-            import evaluation
+            from cozy import evaluation
             x = evaluation.eval(e, res)
             if x is not True:
                 print("bad example: {}".format(res))

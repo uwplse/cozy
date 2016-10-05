@@ -1,10 +1,10 @@
 from collections import OrderedDict
 
-import common
-from common import fresh_name
-from target_syntax import *
-import library
-from syntax_tools import all_types, fresh_var
+from cozy import common
+from cozy.common import fresh_name
+from cozy.target_syntax import *
+from cozy import library
+from cozy.syntax_tools import all_types, fresh_var
 
 INDENT = "  "
 

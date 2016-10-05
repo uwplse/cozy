@@ -1,7 +1,7 @@
 from collections import defaultdict
 
-from syntax import *
-from common import Visitor, FrozenDict, all_distinct
+from cozy.syntax import *
+from cozy.common import Visitor, FrozenDict, all_distinct
 
 class HoleException(Exception):
     def __init__(self, hole, env):

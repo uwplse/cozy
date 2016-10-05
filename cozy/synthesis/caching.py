@@ -2,9 +2,9 @@ import os
 import pickle
 import sqlite3
 
-from target_syntax import *
-from syntax_tools import implies, equal, free_vars, subst
-from solver import valid
+from cozy.target_syntax import *
+from cozy.syntax_tools import implies, equal, free_vars, subst
+from cozy.solver import valid
 
 CACHE_FILE = "/tmp/cozy-cache.pickle"
 

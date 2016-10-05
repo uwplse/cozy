@@ -4,7 +4,5 @@ __pycache__
 
 # Generated files
 *.class
-/tests/DataStructure*.java
-/tests/fuzz_fail*
-/src/parsetab.py
-/src/parser.out
+parsetab.py
+parser.out

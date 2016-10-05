@@ -2,9 +2,9 @@
 Concrete data structure implementations.
 """
 
-from common import fresh_name, typechecked, product
-from target_syntax import *
-from syntax_tools import equal, subst
+from cozy.common import fresh_name, typechecked, product
+from cozy.target_syntax import *
+from cozy.syntax_tools import equal, subst
 
 def count_cases(t):
     if t == BOOL:

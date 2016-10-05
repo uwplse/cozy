@@ -1,7 +1,7 @@
-from common import Visitor
-import syntax
-import target_syntax
-from syntax_tools import pprint
+from cozy.common import Visitor
+from cozy import syntax
+from cozy import target_syntax
+from cozy.syntax_tools import pprint
 
 def typecheck(ast, env=None, handleize=True):
     """

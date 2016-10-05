@@ -2,7 +2,7 @@
 Helper functions for the parser.
 """
 
-from common import fresh_name
+from cozy.common import fresh_name
 
 def multi(ldict, selfname, production, sep=None):
     """

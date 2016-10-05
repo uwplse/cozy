@@ -8,15 +8,16 @@ from __future__ import print_function
 import sys
 import argparse
 
-import parse
-import compile
-import common
-import typecheck
-import target_syntax
-import syntax_tools
-import synthesis
-import library
-import autotuning
+from cozy import parse
+from cozy import compile
+from cozy import common
+from cozy import typecheck
+from cozy import target_syntax
+from cozy import syntax_tools
+from cozy import synthesis
+from cozy import library
+from cozy import autotuning
+from cozy import solver
 
 def read_file(filename):
     with open(filename, "r") as f:
@@ -31,7 +32,6 @@ def compute_sharing(state_map : dict, true_types : dict) -> dict:
     is a list of implementation types whose intrusive data will
     never be used at the same time.
     """
-    import solver
 
     def uses_intrusive_data(e, handle):
         if isinstance(e, target_syntax.EMakeMap):
@@ -100,7 +100,7 @@ def run():
 
     java_opts = parser.add_argument_group("Java codegen")
     java_opts.add_argument("--java", metavar="FILE.java", default=None, help="Output file for java classes, use '-' for stdout")
-    java_opts.add_argument("--package", metavar="package.name", default=None, help="Java package name")
+    java_opts.add_argument("--package", metavar="pkg.name", default=None, help="Java package name")
 
     cxx_opts = parser.add_argument_group("C++ codegen")
     cxx_opts.add_argument("--c++", metavar="FILE.h", default=None, help="Output file for C++ (header-only class), use '-' for stdout")
@@ -145,6 +145,3 @@ def run():
     if cxx is not None:
         with common.open_maybe_stdout(cxx) as out:
             out.write(compile.CxxPrinter().visit(impl, state_map, sharing))
-
-if __name__ == "__main__":
-    run()
