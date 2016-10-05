@@ -1,3 +1,0 @@
-fields age
-query q(target)
-    age < target or age > target

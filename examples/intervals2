@@ -1,7 +1,0 @@
-fields start end id
-assume start <= end
-query q(rangeMin, rangeMax)
-    assume rangeMin <= rangeMax
-    (start >= rangeMin and start <= rangeMax) or
-    (end >= rangeMin and end <= rangeMax) or
-    (start <= rangeMin and end >= rangeMax)

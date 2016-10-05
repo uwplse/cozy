@@ -1,3 +1,0 @@
-fields name : String
-query q(n1 : String, n2 : String)
-    name == n1 and name == n2

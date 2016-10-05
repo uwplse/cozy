@@ -1,3 +1,0 @@
-fields src : int, dst : int
-query findEdges(node : int)
-    src == node or dst == node

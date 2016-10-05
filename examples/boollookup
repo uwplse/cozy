@@ -1,3 +1,0 @@
-fields state : boolean, time : int
-query q(s : boolean, t : int)
-    state == s and time == t

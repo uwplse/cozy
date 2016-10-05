@@ -1,3 +1,0 @@
-fields age : int, name : String
-query q(minAge : int, theName : String)
-    age > minAge and name == theName

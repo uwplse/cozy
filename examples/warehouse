@@ -1,9 +1,0 @@
-fields
-    size warehouse price
-query q(desiredWarehouse, minSize, maxSize, minPrice, maxPrice)
-    assume
-        minSize <= maxSize and
-        minPrice <= maxPrice
-    warehouse == desiredWarehouse and
-    size >= minSize and size < maxSize and
-    price >= minPrice and price < maxPrice

@@ -1,5 +1,0 @@
-fields name : int
-query q(expectedName : int)
-    name == expectedName
-
-costmodel hamt-cost.java

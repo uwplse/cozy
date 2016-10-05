@@ -1,3 +1,0 @@
-fields age
-query q(minAge, maxAge)
-    age >= minAge and age < maxAge
