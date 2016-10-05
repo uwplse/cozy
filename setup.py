@@ -19,8 +19,11 @@ try:
 except ImportError:
     die("Z3 Python module was not found")
 
-os.makedirs("build/exes")
+os.makedirs("build/exes", exist_ok=True)
 shutil.copy("cozy.py", "build/exes/cozy")
+
+with open("requirements.txt") as f:
+    reqs = [line.strip() for line in f]
 
 setup(
     name='Cozy',
@@ -31,4 +34,5 @@ setup(
     url='https://cozy.uwplse.org/',
     packages=['cozy'],
     scripts=['build/exes/cozy'],
+    requires=reqs,
     )

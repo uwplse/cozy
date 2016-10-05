@@ -7,7 +7,11 @@ from very high-level specifications.
 
 Dependencies:
  - [Python >= 3.4](https://www.python.org/)
+   (probably available in your system's package repo)
  - [Z3 Python bindings >= 4.4.2](https://github.com/Z3Prover/z3)
+   (probably needs to be built from source)
+ - The Python modules listed in `requirements.txt`
+   (install with `pip install -r requirements.txt`)
 
 To run the tool:
 
