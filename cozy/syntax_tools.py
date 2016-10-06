@@ -478,6 +478,10 @@ def alpha_equivalent(e1, e2):
             return s1 == s2
         def visit_int(self, i1, i2):
             return i1 == i2
+        def visit_ECall(self, e1, e2):
+            if not isinstance(e2, syntax.ECall):
+                return False
+            return e1.func == e2.func and len(e1.args) == len(e2.args) and all(self.visit(a1, a2) for (a1, a2) in zip(e1.args, e2.args))
         def visit_Exp(self, e1, e2):
             if type(e1) is not type(e2):
                 return False

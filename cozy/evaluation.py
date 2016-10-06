@@ -139,6 +139,8 @@ def mkval(type):
         return None
     if isinstance(type, TBool):
         return False
+    if isinstance(type, TString):
+        return ""
     if isinstance(type, TBag):
         return ()
     if isinstance(type, TMap):

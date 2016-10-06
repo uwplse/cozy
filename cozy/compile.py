@@ -497,6 +497,40 @@ class JavaPrinter(CxxPrinter):
         else:
             return ""
 
+    def visit_TLinkedList(self, t, name):
+        return "java.util.LinkedList<{}> {}".format(self.visit(t.t, ""), name)
+
+    def visit_TArrayList(self, t, name):
+        return "java.util.ArrayList<{}> {}".format(self.visit(t.t, ""), name)
+
+    def visit_SCall(self, call, indent=""):
+        if isinstance(call.target.type, library.TLinkedList) or isinstance(call.target.type, library.TArrayList):
+            if call.func == "add":
+                setup1, target = self.visit(call.target)
+                setup2, arg = self.visit(call.args[0], indent)
+                return setup1 + setup2 + "{}{}.add({});\n".format(indent, target, arg)
+            elif call.func == "remove":
+                setup1, target = self.visit(call.target)
+                setup2, arg = self.visit(call.args[0], indent)
+                return setup1 + setup2 + "{}{}.remove({});\n".format(indent, target, arg)
+            else:
+                raise NotImplementedError(call.func)
+        return super().visit_SCall(call, indent)
+
+    def visit_SForEach(self, for_each, indent):
+        id = for_each.id
+        iter = for_each.iter
+        body = for_each.body
+        if isinstance(iter.type, library.TLinkedList) or isinstance(iter.type, library.TArrayList):
+            setup, iter = self.visit(iter, indent)
+            return "{setup}{indent}for ({decl} : {iter}) {{\n{body}{indent}}}\n".format(
+                setup=setup,
+                indent=indent,
+                decl=self.visit(id.type, id.id),
+                iter=iter,
+                body=self.visit(body, indent + INDENT))
+        return super().visit_SForEach(for_each, indent)
+
     def visit_TBag(self, t, name):
         if hasattr(t, "rep_type"):
             return self.visit(t.rep_type(), name)
