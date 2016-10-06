@@ -356,11 +356,11 @@ def satisfy(e, collection_depth : int = 2, validate_model : bool = True):
             return model.eval(value, model_completion=True).as_long()
         elif isinstance(type, TBag):
             mask, elems = value
-            real_val = ()
+            real_val = []
             for i in range(len(elems)):
                 if reconstruct(model, mask[i], TBool()):
-                    real_val += (reconstruct(model, elems[i], type.t),)
-            return real_val
+                    real_val.append(reconstruct(model, elems[i], type.t))
+            return tuple(sorted(real_val))
         elif isinstance(type, TEnum):
             val = model.eval(value, model_completion=True).as_long()
             return type.cases[val]
