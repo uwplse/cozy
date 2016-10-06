@@ -261,7 +261,7 @@ class CxxPrinter(common.Visitor):
         return (ce, "({ee}{op}{f})".format(ee=ee, op=op, f=e.f))
 
     def visit_ECall(self, e, indent=""):
-        setups, args = zip(*[self.visit(arg) for arg in e.args])
+        setups, args = zip(*[self.visit(arg, indent) for arg in e.args])
         f = self.funcs[e.func]
         return ("".join(setups), "({})".format(f.body_string.format(**{ arg: val for (arg, _), val in zip(f.args, args) })))
 
