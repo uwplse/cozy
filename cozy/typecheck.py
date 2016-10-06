@@ -53,7 +53,6 @@ class Typechecker(Visitor):
         return Scope()
 
     def visit_Spec(self, spec):
-        print(spec)
         for name, t in spec.types:
             self.tenv[name] = self.visit(t)
         spec.types = [(name, self.tenv[name]) for (name, t) in spec.types]
@@ -317,7 +316,6 @@ class Typechecker(Visitor):
 
     def visit_EVar(self, e):
         if e.id in self.env:
-            print(self.env)
             e.type = self.env[e.id]
         else:
             self.report_err(e, "no var {} in scope".format(e.id))
