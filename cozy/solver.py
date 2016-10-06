@@ -101,6 +101,12 @@ class ToZ3(Visitor):
         return l
     def visit_TInt(self, t):
         return z3.IntSort(self.ctx)
+    def visit_TLong(self, t):
+        return z3.IntSort(self.ctx)
+    def visit_TString(self, t):
+        return z3.IntSort(self.ctx)
+    def visit_TNative(self, t):
+        return z3.IntSort(self.ctx)
     def visit_Type(self, t):
         raise NotImplementedError(t)
     def visit_EVar(self, v, env):
@@ -110,7 +116,7 @@ class ToZ3(Visitor):
     def visit_EBool(self, b, env):
         return b.val
     def flatten(self, e, env):
-        if type(e.type) in [TInt, TBool]:
+        if decideable(e.type):
             yield (self.visit(e, env), e.type)
         else:
             raise NotImplementedError(e.type)
@@ -283,7 +289,7 @@ class ToZ3(Visitor):
             raise
 
 def decideable(t):
-    return type(t) in [TInt, TLong, TBool, TBitVec, TEnum]
+    return type(t) in [TInt, TLong, TBool, TBitVec, TEnum, TNative]
 
 def mkvar(ctx, solver, collection_depth, type, handle_vars):
     if type == TInt() or type == TLong() or isinstance(type, TNative) or type == TString():
