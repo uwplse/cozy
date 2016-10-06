@@ -425,14 +425,13 @@ class JavaPrinter(CxxPrinter):
         ret_type = q.ret.type
         if isinstance(ret_type, TBag):
             x = EVar(common.fresh_name("x")).with_type(ret_type.t)
-            s += "{indent}public void {name} ({args}java.util.function.Consumer<{t}> _callback) {{\n{body}  }}\n\n".format(
+            return "{indent}public void {name} ({args}java.util.function.Consumer<{t}> _callback) {{\n{body}  }}\n\n".format(
                 indent=indent,
                 type=self.visit(ret_type, ""),
                 name=q.name,
                 args="".join("{}, ".format(self.visit(t, name)) for name, t in q.args),
                 t=self.visit(ret_type.t, ""),
                 body=self.visit(SForEach(x, q.ret, "_callback({});".format(x.id)), indent=indent+INDENT))
-            return s
         else:
             body, out = self.visit(q.ret, indent+INDENT)
             return "{indent}public {type} {name} ({args}) {{\n{body}    return {out};\n  }}\n\n".format(
