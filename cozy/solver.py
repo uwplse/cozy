@@ -343,9 +343,12 @@ def satisfy(e, collection_depth : int = 2, validate_model : bool = True):
         if type == TInt() or type == TLong() or isinstance(type, TNative):
             return model.eval(value, model_completion=True).as_long()
         elif type == TString():
-            s = str(model.eval(value, model_completion=True).as_long())
-            while len(s) < 64:
-                s = ' ' + s
+            i = model.eval(value, model_completion=True).as_long()
+            s = "b"
+            if i >= 0:
+                s += "b" * i
+            else:
+                s = "a" * (-i) + s
             return s
         elif type == TBool():
             return bool(model.eval(value, model_completion=True))
