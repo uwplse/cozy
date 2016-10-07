@@ -67,14 +67,6 @@ class CxxPrinter(common.Visitor):
         isetup, i = self.visit(e.i, indent)
         return (vsetup + isetup, "{}[{}]".format(v, i))
 
-    def visit_SForEach(self, for_each, indent):
-        id = for_each.id
-        iter = for_each.iter
-        body = for_each.body
-        if isinstance(iter.type, library.TIntrusiveLinkedList):
-            return self.visit(iter.type.for_each(id, iter, body), indent)
-        raise NotImplementedError()
-
     def visit_SWhile(self, w, indent):
         cond_setup, cond = self.visit(ENot(w.e), indent+INDENT)
         body = self.visit(w.body, indent=indent+INDENT)
@@ -190,6 +182,9 @@ class CxxPrinter(common.Visitor):
     def visit_EEnumEntry(self, e, indent=""):
         return ("", e.name)
 
+    def visit_ENum(self, e, indent=""):
+        return ("", str(e.val))
+
     def visit_EEnumToInt(self, e, indent=""):
         setup, e = self.visit(e.e, indent)
         return (setup, "static_cast<int>(" + e + ")")
@@ -220,6 +215,12 @@ class CxxPrinter(common.Visitor):
                 return self.for_each_native(x, iterable, body, indent)
             return self.visit(iterable.type.for_each(x, iterable, body), indent=indent)
 
+    def visit_SForEach(self, for_each, indent):
+        id = for_each.id
+        iter = for_each.iter
+        body = for_each.body
+        return self.for_each(id, iter, body, indent)
+
     def find_one(self, iterable, indent=""):
         if isinstance(iterable, EEmptyList):
             return self.visit(ENull().with_type(TMaybe(iterable.type.t)))
@@ -227,8 +228,12 @@ class CxxPrinter(common.Visitor):
             setup, elem = self.find_one(iterable.e, indent)
             res = EVar(fresh_name()).with_type(TMaybe(iterable.e.type.t))
             setup += "{indent}{decl} = {v};\n".format(indent=indent, decl=self.visit(res.type, res.id), v=elem)
-            setup2, elem2 = self.visit(iterable.f.apply_to(res), indent)
-            return (setup + setup2, elem2)
+
+            mapped_res = EVar(fresh_name()).with_type(TMaybe(iterable.type.t))
+            setup += self.visit(seq([
+                SDecl(mapped_res.id, ENull().with_type(mapped_res.type)),
+                SIf(EUnaryOp("not", EBinOp(res, "==", ENull().with_type(res.type))), SAssign(mapped_res, iterable.f.apply_to(res)), SNoOp())]), indent)
+            return (setup, mapped_res.id)
         elif isinstance(iterable, EFilter):
             # TODO: break OUTERMOST loop
             v = EVar(fresh_name()).with_type(TMaybe(iterable.type.t))
@@ -250,6 +255,14 @@ class CxxPrinter(common.Visitor):
         op = e.op
         if op == "the":
             return self.find_one(e.e, indent=indent)
+        elif op == "sum":
+            type = e.e.type.t
+            res = fresh_var(type, "sum")
+            x = fresh_var(type, "x")
+            setup = self.visit(seq([
+                SDecl(res.id, ENum(0).with_type(type)),
+                SForEach(x, e.e, SAssign(res, EBinOp(res, "+", x)))]), indent)
+            return (setup, res.id)
         ce, ee = self.visit(e.e, indent)
         return (ce, "({op} {ee})".format(op=op, ee=ee))
 
@@ -431,7 +444,7 @@ class JavaPrinter(CxxPrinter):
                 name=q.name,
                 args="".join("{}, ".format(self.visit(t, name)) for name, t in q.args),
                 t=self.visit(ret_type.t, ""),
-                body=self.visit(SForEach(x, q.ret, "_callback({});".format(x.id)), indent=indent+INDENT))
+                body=self.visit(SForEach(x, q.ret, "_callback.accept({});".format(x.id)), indent=indent+INDENT))
         else:
             body, out = self.visit(q.ret, indent+INDENT)
             return "{indent}public {type} {name} ({args}) {{\n{body}    return {out};\n  }}\n\n".format(
@@ -466,42 +479,97 @@ class JavaPrinter(CxxPrinter):
         elif e.op == "==":
             setup1, e1 = self.visit(e.e1, indent)
             setup2, e2 = self.visit(e.e2, indent)
+            if e1 == "null" or e2 == "null":
+                return (setup1 + setup2, "({} == {})".format(e1, e2))
             return (setup1 + setup2, "java.util.Objects.equals({}, {})".format(e1, e2))
         return super().visit_EBinOp(e, indent)
 
     def define_type(self, toplevel_name, t, name, indent, sharing):
         if isinstance(t, TEnum):
-            return "{indent}enum {name} {{\n{cases}{indent}}};\n".format(
+            return "{indent}public enum {name} {{\n{cases}{indent}}}\n".format(
                 indent=indent,
                 name=name,
                 cases="".join("{indent}{case},\n".format(indent=indent+INDENT, case=case) for case in t.cases))
         elif isinstance(t, THandle) or isinstance(t, TRecord):
             public_fields = []
             private_fields = []
+            value_equality = True
             if isinstance(t, THandle):
                 public_fields = [("val", t.value_type)]
+                value_equality = False
                 for group in sharing.get(t, []):
                     for gt in group:
                         intrusive_data = gt.intrusive_data(t)
                         for (f, ft) in intrusive_data:
                             private_fields.append((f, ft))
             else:
-                public_fields = t.fields
-            s = "{indent}class {name} {{\n".format(indent=indent, name=name)
-            for (f, ft) in public_fields:
-                s += "{indent}public {field_decl};\n".format(indent=indent+INDENT, field_decl=self.visit(ft, f))
-            for (f, ft) in private_fields:
+                public_fields = list(t.fields)
+            all_fields = public_fields + private_fields
+            s = "{indent}public static final class {name} {{\n".format(indent=indent, name=name)
+            for (f, ft) in public_fields + private_fields:
                 s += "{indent}private {field_decl};\n".format(indent=indent+INDENT, field_decl=self.visit(ft, f))
-            s += "{indent}}};\n".format(indent=indent)
+            for (f, ft) in public_fields:
+                s += "{indent}public {type} get{Field}() {{ return {field}; }}\n".format(
+                    indent=indent+INDENT,
+                    type=self.visit(ft, ""),
+                    Field=common.capitalize(f),
+                    field=f)
+
+            s += "{indent}public {ctor}({args}) {{\n{inits}{indent}}}\n".format(
+                indent=indent+INDENT,
+                ctor=name,
+                args=", ".join(self.visit(ft, f) for (f, ft) in public_fields),
+                inits="".join("{indent}this.{f} = {f};\n".format(indent=indent+INDENT*2, f=f) for (f, ft) in public_fields))
+
+            if value_equality:
+                hc = fresh_name("hash_code")
+                s += "{indent}@Override\n{indent}public int hashCode() {{\n".format(indent=indent+INDENT)
+                s += "{indent}int {hc} = 0;\n".format(indent=indent+INDENT*2, hc=hc)
+                for (f, ft) in public_fields + private_fields:
+                    s += "{indent}{hc} = ({hc} * 31) ^ {f}.hashCode();\n".format(indent=indent+INDENT*2, hc=hc, f=f)
+                s += "{indent}return {hc};\n".format(indent=indent+INDENT*2, hc=hc)
+                s += "{indent}}}\n".format(indent=indent+INDENT)
+
+                s += "{indent}@Override\n{indent}public boolean equals(Object other) {{\n".format(indent=indent+INDENT)
+                s += "{indent}if (other == null) return false;\n".format(indent=indent+INDENT*2)
+                s += "{indent}if (other == this) return true;\n".format(indent=indent+INDENT*2)
+                s += "{indent}if (!(other instanceof {name})) return false;\n".format(indent=indent+INDENT*2, name=name)
+                s += "{indent}{name} o = ({name})other;\n".format(indent=indent+INDENT*2, name=name)
+                s += "{indent}return {conds};\n".format(
+                    indent=indent+INDENT*2,
+                    conds=" && ".join("java.util.Objects.equals(this.{f}, o.{f})".format(f=f) for (f, ft) in all_fields) if all_fields else "true")
+                s += "{indent}}}\n".format(indent=indent+INDENT)
+
+            s += "{indent}}}\n".format(indent=indent)
             return s
         else:
             return ""
+
+    def visit_TBool(self, t, name):
+        return "Boolean {}".format(name)
+
+    def visit_TInt(self, t, name):
+        return "Integer {}".format(name)
+
+    def visit_TLong(self, t, name):
+        return "Long {}".format(name)
+
+    def visit_THandle(self, t, name):
+        return "{} {}".format(self.typename(t), name)
+
+    def visit_TString(self, t, name):
+        return "String {}".format(name)
 
     def visit_TLinkedList(self, t, name):
         return "java.util.LinkedList<{}> {}".format(self.visit(t.t, ""), name)
 
     def visit_TArrayList(self, t, name):
         return "java.util.ArrayList<{}> {}".format(self.visit(t.t, ""), name)
+
+    def visit_TBag(self, t, name):
+        if hasattr(t, "rep_type"):
+            return self.visit(t.rep_type(), name)
+        return "java.util.Collection<{}> {}".format(self.visit(t.t, ""), name)
 
     def visit_SCall(self, call, indent=""):
         if isinstance(call.target.type, library.TLinkedList) or isinstance(call.target.type, library.TArrayList):
@@ -530,17 +598,6 @@ class JavaPrinter(CxxPrinter):
                 iter=iter,
                 body=self.visit(body, indent + INDENT))
         return super().visit_SForEach(for_each, indent)
-
-    def visit_TBag(self, t, name):
-        if hasattr(t, "rep_type"):
-            return self.visit(t.rep_type(), name)
-        return "java.util.Collection<{}> {}".format(self.visit(t.t, ""), name)
-
-    def visit_THandle(self, t, name):
-        return "{} {}".format(self.typename(t), name)
-
-    def visit_TString(self, t, name):
-        return "String {}".format(name)
 
     def visit_EJust(self, e, indent):
         return self.visit(e.e)
