@@ -5,7 +5,6 @@ from cozy.target_syntax import *
 from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, free_vars, pprint, subst, implies
 from . import core
 from . import caching
-from cozy.typecheck import INT, BOOL
 import cozy.incrementalization as inc
 
 HINTS = True

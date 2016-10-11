@@ -1,6 +1,7 @@
 from cozy.common import typechecked
 from cozy.target_syntax import *
-from cozy.syntax_tools import BottomUpRewriter
+from cozy.typecheck import INT, BOOL
+from cozy.syntax_tools import BottomUpRewriter, subst, fresh_var
 
 @typechecked
 def desugar(spec : Spec) -> Spec:
@@ -9,8 +10,9 @@ def desugar(spec : Spec) -> Spec:
 
     class V(BottomUpRewriter):
         def visit_ECall(self, e):
-            if e.func in queries:
-                raise NotImplementedError()
+            q = queries.get(e.func)
+            if q is not None:
+                return self.visit(subst(q.ret, { arg_name: arg for ((arg_name, ty), arg) in zip(q.args, e.args) }))
             else:
                 return ECall(e.f, tuple(self.visit(a) for a in e.args))
         def visit_EListComprehension(self, e):
@@ -41,11 +43,17 @@ def desugar(spec : Spec) -> Spec:
         def visit_EUnaryOp(self, e):
             sub = self.visit(e.e)
             if e.op == "empty":
-                arg = EVar(fresh_name()).with_type(sub.type.t)
+                arg = fresh_var(sub.type.t)
                 return EBinOp(
                     EUnaryOp("sum", EMap(sub, ELambda(arg, ENum(1).with_type(INT))).with_type(TBag(INT))).with_type(INT),
                     "==",
                     ENum(0).with_type(INT)).with_type(BOOL)
+            elif e.op == "any":
+                arg = fresh_var(BOOL)
+                return self.visit(ENot(EUnaryOp("empty", EFilter(e.e, ELambda(arg, arg)).with_type(e.e.type)).with_type(e.type)))
+            elif e.op == "all":
+                arg = fresh_var(BOOL)
+                return self.visit(EUnaryOp("empty", EFilter(e.e, ELambda(arg, ENot(arg))).with_type(e.e.type)).with_type(e.type))
             else:
                 return EUnaryOp(e.op, sub).with_type(e.type)
 
