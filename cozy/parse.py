@@ -313,8 +313,6 @@ def make_parser():
         """stm : accesschain OP_OPEN_PAREN exp_list OP_CLOSE_PAREN
                | accesschain OP_ASSIGN exp"""
         if p[2] == "(":
-            if not (isinstance(p[1], syntax.EGetField) and isinstance(p[1].e, syntax.EVar)):
-                p_error(p)
             p[0] = syntax.SCall(p[1].e, p[1].f, p[3])
         else:
             p[0] = syntax.SAssign(p[1], p[3])
@@ -324,6 +322,8 @@ def make_parser():
         pass
 
     def p_error(p):
+        if p is None:
+            raise Exception("Unexpected end-of-file")
         raise Exception("Syntax error on line {}".format(p.lineno))
 
     return yacc.yacc()
