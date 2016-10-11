@@ -116,6 +116,9 @@ class CxxPrinter(common.Visitor):
     def visit_ENull(self, e, indent=""):
         return ("", "NULL")
 
+    def visit_EBool(self, e, indent=""):
+        return ("", "true" if e.val else "false")
+
     def visit_EAlterMaybe(self, e, indent=""):
         setup1, ee = self.visit(e.e, indent)
         tmp = fresh_var(e.e.type)
@@ -195,6 +198,14 @@ class CxxPrinter(common.Visitor):
 
     def visit_EBinOp(self, e, indent=""):
         op = e.op
+        if op == "in":
+            type = TBool()
+            res = fresh_var(type, "found")
+            x = fresh_var(e.e1.type, "x")
+            setup = self.visit(seq([
+                SDecl(res.id, EBool(False).with_type(type)),
+                SForEach(x, e.e2, SAssign(res, EBinOp(res, "or", EBinOp(x, "==", e.e1))))]), indent)
+            return (setup, res.id)
         ce1, e1 = self.visit(e.e1, indent)
         ce2, e2 = self.visit(e.e2, indent)
         return (ce1 + ce2, "({e1} {op} {e2})".format(e1=e1, op=op, e2=e2))
@@ -608,7 +619,7 @@ class JavaPrinter(CxxPrinter):
 
     def for_each_native(self, x, iterable, body, indent):
         setup, iterable = self.visit(iterable, indent)
-        return "{setup}{indent}for ({decl} : {iterable}) {{\n{body}}}\n".format(
+        return "{setup}{indent}for ({decl} : {iterable}) {{\n{body}{indent}}}\n".format(
             indent=indent,
             setup=setup,
             decl=self.visit(x.type, x.id),
