@@ -31,6 +31,7 @@ class Typechecker(Visitor):
 
         self.env = dict(env)
         self.funcs = dict()
+        self.queries = dict()
         self.should_handleize = handleize
         self.oldenv = []
         self.errors = []
@@ -255,9 +256,10 @@ class Typechecker(Visitor):
             raise NotImplementedError(e.op)
 
     def visit_ECall(self, e):
-        f = self.funcs.get(e.func)
+        f = self.funcs.get(e.func) or self.queries.get(e.func)
         if f is None:
             self.report_err(e, "unknown function {}".format(repr(e.func)))
+
         for a in e.args:
             self.visit(a)
 
@@ -378,6 +380,8 @@ class Typechecker(Visitor):
             for name, t in q.args:
                 self.env[name] = self.visit(t)
             self.visit(q.ret)
+        q.out_type = q.ret.type
+        self.queries[q.name] = q
 
     def visit_SCall(self, s):
         self.visit(s.target)

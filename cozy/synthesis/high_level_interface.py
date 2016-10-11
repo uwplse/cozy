@@ -2,7 +2,7 @@ from collections import namedtuple, deque, defaultdict
 
 from cozy.common import typechecked, fresh_name
 from cozy.target_syntax import *
-from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, BottomUpRewriter, free_vars, pprint, subst, implies
+from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, free_vars, pprint, subst, implies
 from . import core
 from . import caching
 from cozy.typecheck import INT, BOOL
@@ -251,45 +251,6 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
 
         return (EVar(builder.state_var_name).with_type(result.type), result, new_queries)
 
-def desugar(e):
-    class V(BottomUpRewriter):
-        def visit_EListComprehension(self, e):
-            res, _, _ = self.visit_clauses(e.clauses, self.visit(e.e))
-            return res
-        def visit_clauses(self, clauses, final, i=0):
-            if i >= len(clauses):
-                return final, [], False
-            clause = clauses[i]
-            if isinstance(clause, CPull):
-                bag = self.visit(clause.e)
-                arg = EVar(clause.id).with_type(bag.type.t)
-                rest, guards, pulls = self.visit_clauses(clauses, final, i + 1)
-                if guards:
-                    guard = guards[0]
-                    for g in guards[1:]:
-                        guard = EBinOp(guard, "and", g).with_type(BOOL)
-                    bag = EFilter(bag, ELambda(arg, guard)).with_type(bag.type)
-                res = EMap(bag, ELambda(arg, rest)).with_type(TBag(rest.type))
-                if pulls:
-                    res = EFlatten(res)
-                return res, [], True
-            elif isinstance(clause, CCond):
-                rest, guards, pulls = self.visit_clauses(clauses, final, i + 1)
-                return rest, guards + [self.visit(clause.e)], pulls
-            else:
-                raise NotImplementedError(clause)
-        def visit_EUnaryOp(self, e):
-            sub = self.visit(e.e)
-            if e.op == "empty":
-                arg = EVar(fresh_name()).with_type(sub.type.t)
-                return EBinOp(
-                    EUnaryOp("sum", EMap(sub, ELambda(arg, ENum(1).with_type(INT))).with_type(TBag(INT))).with_type(INT),
-                    "==",
-                    ENum(0).with_type(INT)).with_type(BOOL)
-            else:
-                return EUnaryOp(e.op, sub).with_type(e.type)
-    return V().visit(e)
-
 @typechecked
 def synthesize(
         spec      : Spec,
@@ -323,12 +284,8 @@ def synthesize(
     # collect state variables
     state_vars = [EVar(name).with_type(t) for (name, t) in spec.statevars]
 
-    # collect queries, rewrite list comprehensions
-    # qs = [qs[0]]
-    # qs = [q for q in spec.methods if isinstance(q, Query) if q.name == "inMemEntries"]
-    # qs = [q for q in spec.methods if isinstance(q, Query) if q.name in ("totalMemSize", "totalDiskSize")]
-    qs = [Query(q.name, q.args, q.assumptions, desugar(q.ret)) for q in spec.methods if isinstance(q, Query)]
-    # assert len(qs) > 0
+    # collect queries
+    qs = [q for q in spec.methods if isinstance(q, Query)]
 
     worklist = deque(qs)
     new_statevars = []

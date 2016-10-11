@@ -12,6 +12,7 @@ from cozy import parse
 from cozy import compile
 from cozy import common
 from cozy import typecheck
+from cozy import desugar
 from cozy import target_syntax
 from cozy import syntax_tools
 from cozy import synthesis
@@ -119,6 +120,9 @@ def run():
 
     print(ast)
     print()
+    print(syntax_tools.pprint(ast))
+
+    ast = desugar.desugar(ast)
     print(syntax_tools.pprint(ast))
 
     orig_ast = ast
