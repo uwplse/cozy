@@ -336,6 +336,8 @@ def synthesize(
     new_qs = []
     op_stms = defaultdict(list)
 
+    op_deltas = { op.name : inc.to_delta(spec.statevars, op) for op in spec.methods if isinstance(op, Op) }
+
     # synthesis
     while worklist:
         q = worklist.popleft()
@@ -360,7 +362,7 @@ def synthesize(
         for op in spec.methods:
             if isinstance(op, Op):
                 print("###### INCREMENTALIZING: {}".format(op.name))
-                (member, delta) = inc.to_delta(spec.statevars, op)
+                (member, delta) = op_deltas[op.name]
                 print(member, delta)
                 (state_update, subqueries) = inc.derivative(state_exp, member, delta, state_vars)
                 print(state_update, subqueries)
@@ -374,7 +376,7 @@ def synthesize(
     new_ops = []
     for op in spec.methods:
         if isinstance(op, Op):
-            if isinstance(op.body, SAssign) and isinstance(op.body.lhs, EGetField):
+            if isinstance(op_deltas[op.name][1], inc.BagElemUpdated):
                 op_stms[op.name].append(op.body)
             new_stms = seq(op_stms[op.name])
             new_ops.append(Op(

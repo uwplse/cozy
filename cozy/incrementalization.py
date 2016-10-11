@@ -60,14 +60,16 @@ def map_cond(delta, f):
             return f(d)
     return V().visit(delta)
 
-def _push_assignment_through_field_access(members, lhs, delta):
+def _push_delta_through_field_access(members, lhs, delta):
     if isinstance(lhs, syntax.EVar):
-        assert isinstance(lhs.type, syntax.THandle)
-        return (syntax.EVar(lhs.type.statevar).with_type(dict(members)[lhs.type.statevar]), lhs, delta)
+        if isinstance(lhs.type, syntax.THandle):
+            bag = syntax.EVar(lhs.type.statevar).with_type(members[lhs.type.statevar])
+            return (bag, BagElemUpdated(bag, delta))
+        elif isinstance(lhs, syntax.EVar) and lhs.id in members:
+            return (lhs, delta)
     elif isinstance(lhs, syntax.EGetField):
-        return _push_assignment_through_field_access(members, lhs.e, RecordFieldUpdate(lhs.f, delta))
-    else:
-        raise Exception(lhs)
+        return _push_delta_through_field_access(members, lhs.e, RecordFieldUpdate(lhs.f, delta))
+    raise Exception("not sure how to incrementalize change to {}".format(pprint(lhs)))
 
 @typechecked
 def to_delta(members : [(str, syntax.Type)], op : syntax.Op) -> (syntax.Exp, Delta):
@@ -77,25 +79,21 @@ def to_delta(members : [(str, syntax.Type)], op : syntax.Op) -> (syntax.Exp, Del
     """
     name = op.name
     args = op.args
+    members = dict(members)
     if isinstance(op.body, syntax.SCall):
-        member = op.body.target
+        target = op.body.target
         if   op.body.func == "add":      delta = BagAdd(op.body.args[0])
         elif op.body.func == "remove":   delta = BagRemove(op.body.args[0])
         elif op.body.func == "addFront": delta = ListAddFront(op.body.args[0])
         elif op.body.func == "addBack":  delta = ListAddBack(op.body.args[0])
         else: raise Exception("Unknown func: {}".format(op.body.func))
-        return (member, delta)
     elif isinstance(op.body, syntax.SAssign):
-        lhs = op.body.lhs
-        rhs = op.body.rhs
-        if isinstance(lhs, syntax.EVar) and lhs.id in [v for (v, t) in members]:
-            return (lhs, Become(rhs))
-        if not isinstance(lhs, syntax.EGetField):
-            raise NotImplementedError("not sure how to incrementalize {}".format(pprint(op.body)))
-        sv, elem, update = _push_assignment_through_field_access(members, lhs, Become(rhs))
-        return (sv, BagElemUpdated(elem, update))
+        target = op.body.lhs
+        delta = Become(op.body.rhs)
     else:
         raise NotImplementedError(str(op.body))
+    member, new_delta = _push_delta_through_field_access(members, target, delta)
+    return (member, new_delta)
 
 @typechecked
 def derivative(

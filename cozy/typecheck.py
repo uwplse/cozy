@@ -380,14 +380,12 @@ class Typechecker(Visitor):
         self.visit(s.target)
         if s.func == "add":
             elem_type = self.get_collection_type(s.target)
-            var = s.target.id
             if len(s.args) != 1:
                 self.report_err(s, "add takes exactly 1 argument")
             if len(s.args) > 0:
                 self.ensure_type(s.args[0], elem_type)
         elif s.func == "remove":
             elem_type = self.get_collection_type(s.target)
-            var = s.target.id
             if len(s.args) != 1:
                 self.report_err(s, "remove takes exactly 1 argument")
             if len(s.args) > 0:
