@@ -40,6 +40,8 @@ _KEYWORDS = [
     "max",
     "sum",
     "the",
+    "any",
+    "all",
     "Native"]
 
 # Each operator has a name and a raw string. Each becomes an OP_* token for the
@@ -209,7 +211,7 @@ def make_parser():
         ("left", "OP_EQ", "OP_NE", "OP_LT", "OP_LE", "OP_GT", "OP_GE"),
         ("left", "OP_PLUS", "OP_MINUS"),
         ("left", "KW_IN"),
-        ("left", "KW_NOT", "KW_UNIQUE", "KW_EMPTY", "KW_THE", "KW_MIN", "KW_MAX", "KW_SUM"),
+        ("left", "KW_NOT", "KW_UNIQUE", "KW_EMPTY", "KW_THE", "KW_MIN", "KW_MAX", "KW_SUM", "KW_ANY", "KW_ALL"),
         ("left", "OP_OPEN_PAREN"),
         ("left", "OP_DOT"))
 
@@ -239,6 +241,8 @@ def make_parser():
                | KW_MIN exp
                | KW_MAX exp
                | KW_SUM exp
+               | KW_ANY exp
+               | KW_ALL exp
                | exp OP_DOT WORD
                | OP_OPEN_PAREN exp OP_CLOSE_PAREN
                | OP_OPEN_BRACE record_fields OP_CLOSE_BRACE

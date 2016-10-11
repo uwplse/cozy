@@ -177,6 +177,9 @@ class Typechecker(Visitor):
         elif e.op in ["the", "min", "max"]:
             t = self.get_collection_type(e.e)
             e.type = syntax.TMaybe(t)
+        elif e.op in ["any", "all"]:
+            self.ensure_type(e.e, syntax.TBag(BOOL))
+            e.type = BOOL
         elif e.op == "len":
             self.get_collection_type(e.e)
             e.type = INT
