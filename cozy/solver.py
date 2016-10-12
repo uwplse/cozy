@@ -289,7 +289,7 @@ class ToZ3(Visitor):
             raise
 
 def decideable(t):
-    return type(t) in [TInt, TLong, TBool, TBitVec, TEnum, TNative]
+    return type(t) in [TInt, TLong, TBool, TString, TBitVec, TEnum, TNative]
 
 def mkvar(ctx, solver, collection_depth, type, handle_vars):
     if type == TInt() or type == TLong() or isinstance(type, TNative) or type == TString():
