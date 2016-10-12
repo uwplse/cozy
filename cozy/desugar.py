@@ -14,7 +14,7 @@ def desugar(spec : Spec) -> Spec:
             if q is not None:
                 return self.visit(subst(q.ret, { arg_name: arg for ((arg_name, ty), arg) in zip(q.args, e.args) }))
             else:
-                return ECall(e.f, tuple(self.visit(a) for a in e.args))
+                return ECall(e.func, tuple(self.visit(a) for a in e.args)).with_type(e.type)
         def visit_EListComprehension(self, e):
             res, _, _ = self.visit_clauses(e.clauses, self.visit(e.e))
             return res
