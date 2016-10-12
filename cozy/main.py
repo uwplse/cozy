@@ -118,7 +118,6 @@ def run():
             print("Error: {}".format(e))
         sys.exit(1)
 
-    print(ast)
     print()
     print(syntax_tools.pprint(ast))
 
