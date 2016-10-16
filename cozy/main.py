@@ -97,6 +97,7 @@ def compute_sharing(state_map : dict, true_types : dict) -> dict:
 
 def run():
     parser = argparse.ArgumentParser(description='Data structure synthesizer.')
+    parser.add_argument("-s", "--simple", action="store_true", help="Do not synthesize improved solution; use the most trivial implementation of the spec")
     parser.add_argument("-d", "--disable-cache", action="store_true", help="Disable caching of synthesis results")
 
     java_opts = parser.add_argument_group("Java codegen")
@@ -124,10 +125,12 @@ def run():
     ast = desugar.desugar(ast)
     print(syntax_tools.pprint(ast))
 
-    orig_ast = ast
-    ast, state_map = synthesis.synthesize(ast, use_cache = not args.disable_cache)
-    print()
-    print(syntax_tools.pprint(ast))
+    if not args.simple:
+        ast, state_map = synthesis.synthesize(ast, use_cache = not args.disable_cache)
+        print()
+        print(syntax_tools.pprint(ast))
+    else:
+        state_map = { v : target_syntax.EVar(v).with_type(t) for (v, t) in ast.statevars }
 
     lib = library.Library()
     impls = list(autotuning.enumerate_impls(ast, lib))
