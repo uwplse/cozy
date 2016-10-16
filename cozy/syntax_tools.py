@@ -360,8 +360,8 @@ def subst(exp, replacements):
     # print("subst({}, {})".format(exp, replacements))
 
     allfvs = set()
-    for fvs in (free_vars(val) for val in replacements.values()):
-        allfvs |= {fv.id for fv in fvs}
+    for val in replacements.values():
+        allfvs |= {fv.id for fv in free_vars(val)}
 
     class Subst(common.Visitor):
         def visit_EHole(self, hole):
