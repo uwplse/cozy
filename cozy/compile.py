@@ -225,7 +225,7 @@ class CxxPrinter(common.Visitor):
         ce2, e2 = self.visit(e.e2, indent)
         return (ce1 + ce2, "({e1} {op} {e2})".format(e1=e1, op=op, e2=e2))
 
-    def for_each(self, x, iterable, body, indent=""):
+    def for_each(self, x : EVar, iterable : Exp, body : Stm, indent=""):
         if isinstance(iterable, EEmptyList):
             return ""
         elif isinstance(iterable, EMap):

@@ -167,20 +167,20 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
                             yield ETuple((hole,) + rest.es).with_type(type)
             else:
                 yield self.make_state_hole_core(type, builder)
-        def make_query_hints(self, state_type, state_exp):
+        def make_query_hints_for_state(self, state_type, state_exp):
             yield state_exp
             if isinstance(state_type, TMap):
                 e = EMapGet(state_exp, core.EHole(fresh_name(), state_type.k, None)).with_type(state_type.v)
-                yield from self.make_query_hints(state_type.v, e)
+                yield from self.make_query_hints_for_state(state_type.v, e)
             elif isinstance(state_type, TTuple):
                 for i in range(len(state_type.ts)):
                     e = ETupleGet(state_exp, i).with_type(state_type.ts[i])
-                    yield from self.make_query_hints(state_type.ts[i], e)
+                    yield from self.make_query_hints_for_state(state_type.ts[i], e)
         def make_query_hole(self, q, state_var):
             args = self.args_by_q[q.name]
-            hints = list(self.make_query_hints(state_var.type, state_var))
-            for r in list(fragmentize(ETuple(tuple(qq.ret for qq in queries)).with_type(res_type) if len(queries) > 1 else queries[0].ret)):
-                hints.append(r)
+            hints = list(self.make_query_hints_for_state(state_var.type, state_var))
+            # for r in list(fragmentize(ETuple(tuple(qq.ret for qq in queries)).with_type(res_type) if len(queries) > 1 else queries[0].ret)):
+            #     hints.append(r)
             # print("hints:")
             # for h in hints:
             #     print("  {}".format(pprint(h)))
@@ -194,6 +194,7 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
             # cheat = TMap(TNative("org.xmpp.packet.JID"), TBag([t for t in basic_types if isinstance(t, THandle)][0]))
             # cheat = TMap(TNative("org.xmpp.packet.JID"), TMaybe([t for t in basic_types if isinstance(t, THandle)][0]))
             # cheat = TMap(TBool(), TBag([t for t in basic_types if isinstance(t, THandle)][0]))
+            # cheat = TMap(TBool(), TMaybe([t for t in basic_types if isinstance(t, THandle)][0]))
             # cheat = TTuple((TInt(), TInt()))
             # cheat = TTuple((TMap(TInt(), TInt()), TMap(TInt(), TInt())))
             if cheat and size != 1: return
