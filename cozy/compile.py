@@ -447,8 +447,6 @@ class JavaPrinter(CxxPrinter):
             self.types[t] = name
         for name, t in spec.statevars:
             s += "{}{};\n".format(INDENT, self.visit(t, name))
-        for e in spec.assumptions:
-            s += "public static boolean assumption {{\n {}\n }}\n\n".format(self.visit(e))
         for op in spec.methods:
             s += str(self.visit(op, INDENT))
 
@@ -605,13 +603,13 @@ class JavaPrinter(CxxPrinter):
         return "java.util.Collection<{}> {}".format(self.visit(t.t, ""), name)
 
     def visit_SCall(self, call, indent=""):
-        if isinstance(call.target.type, library.TLinkedList) or isinstance(call.target.type, library.TArrayList):
+        if isinstance(call.target.type, library.TLinkedList) or isinstance(call.target.type, library.TArrayList) or type(call.target.type) == TBag:
             if call.func == "add":
-                setup1, target = self.visit(call.target)
+                setup1, target = self.visit(call.target, indent)
                 setup2, arg = self.visit(call.args[0], indent)
                 return setup1 + setup2 + "{}{}.add({});\n".format(indent, target, arg)
             elif call.func == "remove":
-                setup1, target = self.visit(call.target)
+                setup1, target = self.visit(call.target, indent)
                 setup2, arg = self.visit(call.args[0], indent)
                 return setup1 + setup2 + "{}{}.remove({});\n".format(indent, target, arg)
             else:
