@@ -375,6 +375,8 @@ def subst(exp, replacements):
                 return syntax.EListComprehension(self.visit(e), tuple(clauses))
             c = clauses[i]
             if isinstance(c, syntax.CPull):
+                if c.id in replacements:
+                    raise NotImplementedError()
                 if c.id in allfvs:
                     name = common.fresh_name()
                     r = { c.id : syntax.EVar(name) }
@@ -385,7 +387,9 @@ def subst(exp, replacements):
                             clauses[j] = syntax.CPull(d.id, subst(d.e, r))
                         elif isinstance(d, syntax.CCond):
                             clauses[j] = syntax.CCond(subst(d.e, r))
-                    clauses[i] = syntax.CPull(name, self.visit(c.e))
+                else:
+                    name = c.id
+                clauses[i] = syntax.CPull(name, self.visit(c.e))
                 return self.visit_lcmp(clauses, i + 1, e)
             elif isinstance(c, syntax.CCond):
                 clauses[i] = syntax.CCond(self.visit(c.e))
