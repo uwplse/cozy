@@ -4,7 +4,7 @@ Concrete data structure implementations.
 
 from cozy.common import fresh_name, typechecked, product
 from cozy.target_syntax import *
-from cozy.syntax_tools import equal, subst
+from cozy.syntax_tools import equal, subst, fresh_var
 
 def count_cases(t):
     if t == BOOL:
@@ -129,6 +129,15 @@ class TIntrusiveLinkedList(TBag):
         return target
     def make_empty(self):
         return ENull().with_type(self.t)
+    def construct_concrete(self, e : Exp, out : Exp):
+        x = fresh_var(self.t, "x")
+        return seq([
+            SAssign(out, NULL),
+            SForEach(x, e, seq([
+                SAssign(EGetField(x, self.next_ptr).with_type(self.t), out),
+                SAssign(EGetField(x, self.prev_ptr).with_type(self.t), NULL),
+                SIf(ENot(equal(out, NULL)), SAssign(EGetField(out, self.prev_ptr).with_type(self.t), x), SNoOp()),
+                SAssign(out, x)]))])
 
 class TLinkedList(TBag):
     def __init__(self, t):

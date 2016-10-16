@@ -136,9 +136,9 @@ class CxxPrinter(common.Visitor):
     def native_map_get(self, e, default_value, indent=""):
         (smap, emap) = self.visit(e.map, indent)
         (skey, ekey) = self.visit(e.key, indent)
-        (sdefault, edefault) = self.visit(default_value, indent)
         iterator = fresh_var(TNative("auto"), "map_iterator")
         res = fresh_var(e.type, "lookup_result")
+        setup_default = self.visit(default_value(res), indent+INDENT)
         s  = "{indent}{declare_res};\n".format(indent=indent, declare_res=self.visit(res.type, res.id))
         s += smap + skey
         s += "{indent}{declare_iterator}({map}.find({key}));\n".format(
@@ -146,21 +146,36 @@ class CxxPrinter(common.Visitor):
             declare_iterator=self.visit(iterator.type, iterator.id),
             map=emap,
             key=ekey)
-        s += "{indent0}if ({iterator} == {map}.end()) {{\n{sdefault}{indent}{res} = {edefault};\n{indent0}}} else {{\n{indent}{res} = {iterator}->second;\n{indent0}}}\n".format(
+        s += "{indent0}if ({iterator} == {map}.end()) {{\n{setup_default}{indent0}}} else {{\n{indent}{res} = {iterator}->second;\n{indent0}}}\n".format(
             indent0=indent,
             indent=indent+INDENT,
             iterator=iterator.id,
             res=res.id,
             map=emap,
-            sdefault=sdefault,
-            edefault=edefault)
+            setup_default=setup_default)
         return (s, res.id)
+
+    def construct_concrete(self, type, e, out):
+        """
+        Convert an expression of an abstract type (e.g. TBag) to one of a
+        concrete type (e.g. TIntrusiveLinkedList) and write the result into
+        lvalue `out`.
+        """
+        if isinstance(type, library.TIntrusiveLinkedList):
+            return type.construct_concrete(e, out)
+        raise NotImplementedError(type)
 
     def visit_EMapGet(self, e, indent=""):
         assert isinstance(e.map, EVar)
         value_constructor = self.state_exps[e.map.id].value
         if isinstance(e.map.type, library.TNativeMap):
-            return self.native_map_get(e, value_constructor.apply_to(EEmptyList().with_type(value_constructor.arg.type)), indent)
+            return self.native_map_get(
+                e,
+                lambda out: self.construct_concrete(
+                    e.map.type.v,
+                    value_constructor.apply_to(EEmptyList().with_type(value_constructor.arg.type)),
+                    out),
+                indent)
         else:
             return self.visit(e.map.type.get_key(e.map, e.key), indent)
 
@@ -259,7 +274,7 @@ class CxxPrinter(common.Visitor):
         else:
             if type(iterable.type) is TBag:
                 return self.find_one_native(iterable, indent)
-            setup, elem = self.visit(iterable.e.type.find_one(e.e), indent)
+            setup, elem = self.visit(iterable.type.find_one(iterable), indent)
             return (setup, elem)
 
     def visit_EUnaryOp(self, e, indent):
