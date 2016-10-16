@@ -96,6 +96,9 @@ class Builder(object):
         elif size == 1:
             yield from self.type_roots
         else:
+            for t in self.enum_types(size - 1, allow_bags=allow_bags, allow_maps=allow_maps, allow_tuples=allow_tuples, max_bag_depth=max_bag_depth):
+                if not isinstance(t, TMaybe):
+                    yield TMaybe(t)
             if allow_bags and max_bag_depth > 0:
                 for t in self.enum_types(size - 1, allow_maps=allow_maps, allow_tuples=allow_tuples, max_bag_depth=max_bag_depth-1):
                     yield TBag(t)
@@ -110,9 +113,6 @@ class Builder(object):
                         gens = tuple(list(self.enum_types(sz, allow_bags=allow_bags, allow_maps=allow_maps, allow_tuples=False, max_bag_depth=max_bag_depth)) for sz in sizes)
                         for types in cross_product(gens):
                             yield TTuple(types)
-            for t in self.enum_types(size - 1, allow_bags=allow_bags, allow_maps=allow_maps, allow_tuples=allow_tuples, max_bag_depth=max_bag_depth):
-                if not isinstance(t, TMaybe):
-                    yield TMaybe(t)
 
     def build(self, cache, size):
         if size == 1:
