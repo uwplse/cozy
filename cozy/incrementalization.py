@@ -64,7 +64,7 @@ def _push_delta_through_field_access(members, lhs, delta):
     if isinstance(lhs, syntax.EVar):
         if isinstance(lhs.type, syntax.THandle):
             bag = syntax.EVar(lhs.type.statevar).with_type(members[lhs.type.statevar])
-            return (bag, BagElemUpdated(bag, delta))
+            return (bag, BagElemUpdated(lhs, delta))
         elif isinstance(lhs, syntax.EVar) and lhs.id in members:
             return (lhs, delta)
     elif isinstance(lhs, syntax.EGetField):
