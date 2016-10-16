@@ -119,6 +119,11 @@ class CxxPrinter(common.Visitor):
     def visit_EBool(self, e, indent=""):
         return ("", "true" if e.val else "false")
 
+    def visit_EJust(self, e, indent=""):
+        if self.is_ptr_type(e.e.type):
+            return self.visit(e.e)
+        raise NotImplementedError(e.type)
+
     def visit_EAlterMaybe(self, e, indent=""):
         setup1, ee = self.visit(e.e, indent)
         tmp = fresh_var(e.e.type)
@@ -155,14 +160,16 @@ class CxxPrinter(common.Visitor):
             setup_default=setup_default)
         return (s, res.id)
 
-    def construct_concrete(self, type, e, out):
+    def construct_concrete(self, t, e, out):
         """
         Convert an expression of an abstract type (e.g. TBag) to one of a
         concrete type (e.g. TIntrusiveLinkedList) and write the result into
         lvalue `out`.
         """
-        if isinstance(type, library.TIntrusiveLinkedList):
-            return type.construct_concrete(e, out)
+        if isinstance(t, library.TIntrusiveLinkedList):
+            return t.construct_concrete(e, out)
+        elif type(t) in [TBool, TInt, TNative, TMaybe, TLong, TString]:
+            return SAssign(out, e)
         raise NotImplementedError(type)
 
     def visit_EMapGet(self, e, indent=""):
