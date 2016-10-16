@@ -1,10 +1,18 @@
 from cozy.common import typechecked
 from cozy.target_syntax import *
 from cozy.typecheck import INT, BOOL
-from cozy.syntax_tools import BottomUpRewriter, subst, fresh_var
+from cozy.syntax_tools import BottomUpRewriter, subst, fresh_var, all_types
 
 @typechecked
 def desugar(spec : Spec) -> Spec:
+
+    # rewrite enums
+    repl = {
+        name : EEnumEntry(name).with_type(t)
+        for t in all_types(spec)
+        if isinstance(t, TEnum)
+        for name in t.cases }
+    spec = subst(spec, repl)
 
     queries = { q.name : q for q in spec.methods if isinstance(q, Query) }
 

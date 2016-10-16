@@ -273,14 +273,6 @@ def synthesize(
     basic_types = list(basic_types)
     ctx = SynthCtx(all_types=types, basic_types=basic_types)
 
-    # rewrite enums
-    enum_types = [t for t in basic_types if isinstance(t, TEnum)]
-    repl = {
-        name : EEnumEntry(name).with_type(t)
-        for t in enum_types
-        for name in t.cases }
-    spec = subst(spec, repl)
-
     # collect state variables
     state_vars = [EVar(name).with_type(t) for (name, t) in spec.statevars]
 
