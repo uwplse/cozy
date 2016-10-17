@@ -239,9 +239,16 @@ class Typechecker(Visitor):
             self.ensure_type(e.e1, t)
             e.type = BOOL
         elif e.op in ["+", "-"]:
-            self.ensure_numeric(e.e1)
-            self.ensure_numeric(e.e2)
-            e.type = self.numeric_lub(e.e1.type, e.e2.type)
+            if e.e1.type in [INT, LONG]:
+                self.ensure_numeric(e.e1)
+                self.ensure_numeric(e.e2)
+                e.type = self.numeric_lub(e.e1.type, e.e2.type)
+            else:
+                t1 = self.get_collection_type(e.e1)
+                t2 = self.get_collection_type(e.e2)
+                if t1 != t2:
+                    self.report_err(e, "cannot concat {} and {}".format(pprint(e.e1.type, e.e2.type)))
+                e.type = syntax.TBag(t1)
         elif e.op in ["union", "intersection"]:
             e1set = isinstance(e.e1.type, syntax.TSet)
             e2set = isinstance(e.e1.type, syntax.TSet)
