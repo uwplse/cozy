@@ -4,7 +4,7 @@ from cozy import common
 from cozy.common import fresh_name
 from cozy.target_syntax import *
 from cozy import library
-from cozy.syntax_tools import all_types, fresh_var
+from cozy.syntax_tools import all_types, fresh_var, subst
 
 INDENT = "  "
 
@@ -220,69 +220,58 @@ class CxxPrinter(common.Visitor):
 
     def visit_EBinOp(self, e, indent=""):
         op = e.op
-        if op == "in":
+        if op == "+" and isinstance(e.e1.type, TBag):
+            raise NotImplementedError("adding bags: {}".format(e))
+        elif op == "in":
             type = TBool()
             res = fresh_var(type, "found")
             x = fresh_var(e.e1.type, "x")
             setup = self.visit(seq([
                 SDecl(res.id, EBool(False).with_type(type)),
-                SForEach(x, e.e2, SAssign(res, EBinOp(res, "or", EBinOp(x, "==", e.e1))))]), indent)
+                SForEach(x, e.e2, SIf(
+                    EBinOp(x, "==", e.e1),
+                    seq([SAssign(res, EBool(True).with_type(type)), SBreak()]),
+                    SNoOp()))]), indent)
             return (setup, res.id)
         ce1, e1 = self.visit(e.e1, indent)
         ce2, e2 = self.visit(e.e2, indent)
         return (ce1 + ce2, "({e1} {op} {e2})".format(e1=e1, op=op, e2=e2))
 
-    def for_each(self, x : EVar, iterable : Exp, body : Stm, indent=""):
+    def for_each(self, iterable : Exp, body, indent="") -> str:
+        """Body is function: exp -> stm"""
+        x = fresh_var(iterable.type.t)
         if isinstance(iterable, EEmptyList):
             return ""
         elif isinstance(iterable, EMap):
-            v = EVar(fresh_name()).with_type(iterable.e.type.t)
-            return self.for_each(v, iterable.e, seq([
-                    SDecl(x.id, iterable.f.apply_to(v)),
-                    body]),
+            return self.for_each(
+                iterable.e,
+                lambda v: body(iterable.f.apply_to(v)),
                 indent=indent)
         elif isinstance(iterable, EFilter):
-            return self.for_each(x, iterable.e, SIf(iterable.p.apply_to(x), body, SNoOp()), indent=indent)
+            return self.for_each(iterable.e, lambda x: SIf(iterable.p.apply_to(x), body(x), SNoOp()), indent=indent)
+        elif isinstance(iterable, EBinOp) and iterable.op == "+":
+            return self.for_each(iterable.e1, body, indent=indent) + self.for_each(iterable.e2, body, indent=indent)
+        elif isinstance(iterable, EFlatten):
+            # TODO: properly handle breaks inside body
+            return self.for_each(iterable.e,
+                lambda bag: self.for_each(bag, body, indent+INDENT),
+                indent=indent)
         else:
             if type(iterable.type) is TBag:
-                return self.for_each_native(x, iterable, body, indent)
-            return self.visit(iterable.type.for_each(x, iterable, body), indent=indent)
+                return self.for_each_native(x, iterable, body(x), indent)
+            return self.visit(iterable.type.for_each(x, iterable, body(x)), indent=indent)
 
     def visit_SForEach(self, for_each, indent):
         id = for_each.id
         iter = for_each.iter
         body = for_each.body
-        return self.for_each(id, iter, body, indent)
+        return self.for_each(iter, lambda x: subst(body, {id.id : x}), indent)
 
     def find_one(self, iterable, indent=""):
-        if isinstance(iterable, EEmptyList):
-            return self.visit(ENull().with_type(TMaybe(iterable.type.t)))
-        elif isinstance(iterable, EMap):
-            setup, elem = self.find_one(iterable.e, indent)
-            res = EVar(fresh_name()).with_type(TMaybe(iterable.e.type.t))
-            setup += "{indent}{decl} = {v};\n".format(indent=indent, decl=self.visit(res.type, res.id), v=elem)
-
-            mapped_res = EVar(fresh_name()).with_type(TMaybe(iterable.type.t))
-            setup += self.visit(seq([
-                SDecl(mapped_res.id, ENull().with_type(mapped_res.type)),
-                SIf(EUnaryOp("not", EBinOp(res, "==", ENull().with_type(res.type))), SAssign(mapped_res, iterable.f.apply_to(res)), SNoOp())]), indent)
-            return (setup, mapped_res.id)
-        elif isinstance(iterable, EFilter):
-            # TODO: break OUTERMOST loop
-            v = EVar(fresh_name()).with_type(TMaybe(iterable.type.t))
-            x = EVar(fresh_name()).with_type(iterable.type.t)
-            find = self.for_each(x, iterable, seq([SAssign(v, EJust(x)), SBreak()]), indent=indent)
-            s = "{indent}{decl} = {null};\n{find}".format(
-                indent=indent,
-                decl=self.visit(v.type, v.id),
-                null=self.visit(ENull())[1],
-                find=find)
-            return (s, v.id)
-        else:
-            if type(iterable.type) is TBag:
-                return self.find_one_native(iterable, indent)
-            setup, elem = self.visit(iterable.type.find_one(iterable), indent)
-            return (setup, elem)
+        v = fresh_var(TMaybe(iterable.type.t))
+        return ("{decl}{find}".format(
+            decl=self.visit(SDecl(v.id, ENull().with_type(v.type)), indent=indent),
+            find=self.for_each(iterable, lambda x: seq([SAssign(v, EJust(x)), SBreak()]), indent=indent)), v.id)
 
     def visit_EUnaryOp(self, e, indent):
         op = e.op
@@ -469,13 +458,16 @@ class JavaPrinter(CxxPrinter):
         ret_type = q.ret.type
         if isinstance(ret_type, TBag):
             x = EVar(common.fresh_name("x")).with_type(ret_type.t)
+            def body(x):
+                setup, arg = self.visit(x, indent+INDENT*2)
+                return setup + "_callback.accept({});".format(arg)
             return "{indent}public void {name} ({args}java.util.function.Consumer<{t}> _callback) {{\n{body}  }}\n\n".format(
                 indent=indent,
                 type=self.visit(ret_type, ""),
                 name=q.name,
                 args="".join("{}, ".format(self.visit(t, name)) for name, t in q.args),
                 t=self.visit(ret_type.t, ""),
-                body=self.visit(SForEach(x, q.ret, "_callback.accept({});".format(x.id)), indent=indent+INDENT))
+                body=self.for_each(q.ret, body, indent=indent+INDENT))
         else:
             body, out = self.visit(q.ret, indent+INDENT)
             return "{indent}public {type} {name} ({args}) {{\n{body}    return {out};\n  }}\n\n".format(
