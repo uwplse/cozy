@@ -446,7 +446,7 @@ class JavaPrinter(CxxPrinter):
         for name, t in spec.types:
             self.types[t] = name
         for name, t in spec.statevars:
-            s += "{}{};\n".format(INDENT, self.visit(t, name))
+            s += "{}protected {};\n".format(INDENT, self.visit(t, name))
         for op in spec.methods:
             s += str(self.visit(op, INDENT))
 
