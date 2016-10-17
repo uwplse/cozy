@@ -233,6 +233,10 @@ class CxxPrinter(common.Visitor):
                     seq([SAssign(res, EBool(True).with_type(type)), SBreak()]),
                     SNoOp()))]), indent)
             return (setup, res.id)
+        elif op == "or":
+            return self.visit(ECond(e.e1, EBool(True), e.e2).with_type(TBool()), indent)
+        elif op == "and":
+            return self.visit(ECond(e.e1, e.e2, EBool(False)).with_type(TBool()), indent)
         ce1, e1 = self.visit(e.e1, indent)
         ce2, e2 = self.visit(e.e2, indent)
         return (ce1 + ce2, "({e1} {op} {e2})".format(e1=e1, op=op, e2=e2))
@@ -330,6 +334,13 @@ class CxxPrinter(common.Visitor):
                 indent=indent,
                 else_branch=self.visit(s.else_branch, indent + INDENT))
         return res + "\n"
+
+    def visit_ECond(self, e, indent=""):
+        v = fresh_var(e.type)
+        return (
+            "{indent}{decl};\n".format(indent=indent, decl=self.visit(v.type, v.id)) +
+            self.visit(SIf(e.cond, SAssign(v, e.then_branch), SAssign(v, e.else_branch)), indent),
+            v.id)
 
     def visit_SCall(self, call, indent=""):
         f = getattr(call.target.type, "implement_{}".format(call.func))
@@ -491,15 +502,7 @@ class JavaPrinter(CxxPrinter):
         return super().visit_EUnaryOp(e, indent)
 
     def visit_EBinOp(self, e, indent):
-        if e.op == "and":
-            setup1, e1 = self.visit(e.e1, indent)
-            setup2, e2 = self.visit(e.e2, indent)
-            return (setup1 + setup2, "({} && {})".format(e1, e2))
-        elif e.op == "or":
-            setup1, e1 = self.visit(e.e1, indent)
-            setup2, e2 = self.visit(e.e2, indent)
-            return (setup1 + setup2, "({} || {})".format(e1, e2))
-        elif e.op == "==":
+        if e.op == "==":
             setup1, e1 = self.visit(e.e1, indent)
             setup2, e2 = self.visit(e.e2, indent)
             if e1 == "null" or e2 == "null":
