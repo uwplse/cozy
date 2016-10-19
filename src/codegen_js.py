@@ -29,10 +29,6 @@ class JsCodeGenerator(codegen.CodeGenerator):
     def record_type(self, *args):     return "var"
 
     def should_use_double_equals(self, ty):
-        if not isinstance(ty, str):
-            ty = ty.gen_type(self)
-        if ty in self.identity_equals_types:
-            return True
         return _is_primitive(ty)
 
     def __str__(self):
