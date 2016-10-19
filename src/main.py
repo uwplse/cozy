@@ -21,12 +21,15 @@ import cost_model
 from codegen import enumerate_impls
 from codegen_java import JavaCodeGenerator
 from codegen_cpp import CppCodeGenerator
+from codegen_js import JsCodeGenerator
 
 def enumerate_code_generators(args):
     if args.java is not None:
         yield JavaCodeGenerator(identity_equals_types=args.java_id_equality)
     elif args.cpp_header is not None or args.cpp is not None:
         yield CppCodeGenerator(with_qt=args.with_qt)
+    elif args.js is not None:
+        yield JsCodeGenerator()
 
 def pick_best_impls(fields, queries, cost_model_file, code_generators, args):
     bestImpls = None
@@ -108,6 +111,10 @@ if __name__ == '__main__':
     cpp_opts.add_argument("--cpp-extra", metavar="cpp-code", default=None, help="Extra text to include at top of C++ header file")
     cpp_opts.add_argument("--cpp-namespace", metavar="ns", default=None, help="C++ namespace")
     cpp_opts.add_argument("--with-qt", action="store_true", help="Allow use of Qt collections classes")
+
+    js_opts = parser.add_argument_group("JavaScript codegen")
+    js_opts.add_argument("--js", metavar="FILE.js", default=None, help="Output file for JavaScript code, use '-' for stdout")
+    js_opts.add_argument("--js-class", metavar="Name", default="DataStructure", help="JavaScript class name for generated structure")
 
     structure_opts = parser.add_argument_group("Library control")
     structure_opts.add_argument("--enable-arrays", action="store_true", help="Allow the use of ArrayLists [experimental]")
