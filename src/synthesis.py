@@ -111,8 +111,8 @@ class SolverContext(object):
             else:
                 m = s.model()
                 result = (
-                    [int(str(m[Int(f, self.z3ctx)] or 0)) for f in self.fieldNames],
-                    [int(str(m[Int(v, self.z3ctx)] or 0)) for v in self.varNames],
+                    [m.eval(Int(f, self.z3ctx)).as_long() for f in self.fieldNames],
+                    [m.eval(Int(v, self.z3ctx)).as_long() for v in self.varNames],
                     plan.isSortedBy(sort_field) if sort_field is not None else True)
             s.pop()
 
