@@ -36,6 +36,9 @@ class JsCodeGenerator(codegen.CodeGenerator):
     def __str__(self):
         return "JsCodeGenerator"
 
+    def to_float(self, ty, e):
+        return e # all JS #s are doubles
+
     def new_array(self, ty, count):
         return "new Array({})".format(count)
 
