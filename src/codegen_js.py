@@ -5,10 +5,12 @@ import tempfile
 import os
 import subprocess
 import sys
+from functools import wraps
 
 import codegen
 import predicates
 import plans
+import structures
 from structures.interface import TupleTy, This, TupleInstance, IntTy
 from common import capitalize, fresh_name, indent, open_maybe_stdout
 
@@ -301,7 +303,12 @@ class JsCodeGenerator(codegen.CodeGenerator):
                 writer("  }\n")
 
     def extensions(self, old):
-        return old # no extensions
+        @wraps(old)
+        def f(*args, **kwargs):
+            for res in old(*args, **kwargs):
+                if not type(res) == structures.HashMap:
+                    yield res
+        return f
 
 def _hash_code(ty, exp):
     raise NotImplementedError()
