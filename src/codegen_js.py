@@ -199,7 +199,7 @@ class JsCodeGenerator(codegen.CodeGenerator):
         return self.set(target, "new {}()".format(ty.gen_type(self)))
 
     def hash1(self, ty, value):
-        return _hash_code(ty.gen_type(self), value)
+        return _hash_code(ty, value)
 
     def write(self, fields, queries, js="-", js_class="DataStructure", **kwargs):
         with open_maybe_stdout(js) as f:
@@ -311,13 +311,25 @@ class JsCodeGenerator(codegen.CodeGenerator):
         return f
 
 def _hash_code(ty, exp):
-    raise NotImplementedError()
+    if type(ty).__name__ in ["IntTy", "FloatTy"]:
+        return "Math.round({})".format(exp)
+    if type(ty).__name__ == "NativeTy":
+        if ty.ty == "String":
+            return '({}.split("").reduce(function(hc, c) {{ return hc * 31 + c.charCodeAt(0); }}, 0))'.format(exp)
+    raise NotImplementedError(str(ty))
 
 def _is_primitive(ty):
     return type(ty).__name__ in ["IntTy", "FloatTy", "NativeTy"]
 
-def _gen_aux_type(*args):
-    raise NotImplementedError()
+def _gen_aux_type(ty, gen, writer, seen):
+    if ty in seen:
+        return
+    seen.add(ty)
+    if type(ty) is TupleTy:
+        writer("function {}({}) {{\n".format(ty.name, ", ".join(ty.fields)))
+        for f in ty.fields:
+            writer("    this.{f} = {f};\n".format(f=f))
+        writer("}\n")
 
 def _gen_record_type(name, fields, private_fields, writer):
     writer("function {}({}) {{\n".format(name, ", ".join(f for f,ty in fields)))
