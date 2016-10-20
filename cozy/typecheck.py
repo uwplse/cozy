@@ -311,7 +311,7 @@ class Typechecker(Visitor):
         for f, val in e.fields:
             self.visit(val)
             fields.append((f, val.type))
-        e.type = syntax.TRecord(fields)
+        e.type = syntax.TRecord(tuple(fields))
 
     def visit_CPull(self, c):
         self.visit(c.e)
