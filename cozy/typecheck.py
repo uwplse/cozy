@@ -247,7 +247,7 @@ class Typechecker(Visitor):
                 t1 = self.get_collection_type(e.e1)
                 t2 = self.get_collection_type(e.e2)
                 if t1 != t2:
-                    self.report_err(e, "cannot concat {} and {}".format(pprint(e.e1.type, e.e2.type)))
+                    self.report_err(e, "cannot concat {} and {}".format(pprint(e.e1.type), pprint(e.e2.type)))
                 e.type = syntax.TBag(t1)
         elif e.op in ["union", "intersection"]:
             e1set = isinstance(e.e1.type, syntax.TSet)
