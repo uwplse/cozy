@@ -218,6 +218,10 @@ def make_parser():
         ("left", "OP_OPEN_PAREN"),
         ("left", "OP_DOT"))
 
+    def p_exp_strlit(p):
+        """exp : STRINGLITERAL"""
+        p[0] = syntax.EStr(p[1])
+
     def p_exp(p):
         """exp : NUM
                | WORD
