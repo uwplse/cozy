@@ -202,7 +202,12 @@ class Typechecker(Visitor):
         e.type = BOOL
 
     def visit_ENum(self, e):
-        e.type = INT
+        if not hasattr(e, "type"):
+            self.report_err("Not sure what the type of numeric literal {} is!".format(e.val))
+            e.type = DEFAULT_TYPE
+
+    def visit_EStr(self, e):
+        e.type = STRING
 
     def visit_ENull(self, e):
         if not hasattr(e, "type"):

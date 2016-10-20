@@ -108,8 +108,11 @@ def make_lexer():
         pass
 
     def t_NUM(t):
-        r"\d+"
-        t.value = int(t.value)
+        r"\d+(l|L)?"
+        if t.value.lower().endswith("l"):
+            t.value = syntax.ENum(int(t.value[:-1])).with_type(syntax.TLong())
+        else:
+            t.value = syntax.ENum(int(t.value)).with_type(syntax.TInt())
         return t
 
     def t_STRINGLITERAL(t):
@@ -248,8 +251,8 @@ def make_parser():
                | OP_OPEN_BRACE record_fields OP_CLOSE_BRACE
                | OP_OPEN_BRACKET exp OP_VBAR comprehension_body OP_CLOSE_BRACKET"""
         if len(p) == 2:
-            if type(p[1]) is int:
-                p[0] = syntax.ENum(p[1])
+            if type(p[1]) is syntax.ENum:
+                p[0] = p[1]
             elif p[1] == "true":
                 p[0] = syntax.EBool(True)
             elif p[1] == "false":
