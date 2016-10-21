@@ -1,4 +1,5 @@
 from collections import OrderedDict
+import json
 
 from cozy import common
 from cozy.common import fresh_name
@@ -257,6 +258,7 @@ class CxxPrinter(common.Visitor):
             return self.for_each(iterable.e1, body, indent=indent) + self.for_each(iterable.e2, body, indent=indent)
         elif isinstance(iterable, EFlatten):
             # TODO: properly handle breaks inside body
+            # TODO: indents get messed up here
             return self.for_each(iterable.e,
                 lambda bag: self.for_each(bag, body, indent+INDENT),
                 indent=indent)
@@ -300,9 +302,12 @@ class CxxPrinter(common.Visitor):
         return (ce, "({ee}{op}{f})".format(ee=ee, op=op, f=e.f))
 
     def visit_ECall(self, e, indent=""):
-        setups, args = zip(*[self.visit(arg, indent) for arg in e.args])
         f = self.funcs[e.func]
-        return ("".join(setups), "({})".format(f.body_string.format(**{ arg: val for (arg, _), val in zip(f.args, args) })))
+        if e.args:
+            setups, args = zip(*[self.visit(arg, indent) for arg in e.args])
+            return ("".join(setups), "({})".format(f.body_string.format(**{ arg: val for (arg, _), val in zip(f.args, args) })))
+        else:
+            return ("", f.body_string)
 
     def visit_Exp(self, e, indent=""):
         raise NotImplementedError(e)
@@ -489,8 +494,22 @@ class JavaPrinter(CxxPrinter):
                 out=out,
                 body=body)
 
+    def visit_EMakeRecord(self, e, indent=""):
+        setups, args = zip(*[self.visit(v, indent) for (f, v) in e.fields])
+        tname = self.typename(e.type)
+        return ("".join(setups), "new {}({})".format(tname, ", ".join(args)))
+
     def visit_ENull(self, e, indent=""):
         return ("", "null")
+
+    def visit_EStr(self, e, indent=""):
+        return ("", json.dumps(e.val))
+
+    def visit_ENum(self, e, indent=""):
+        suffix = ""
+        if e.type == TLong():
+            suffix = "L"
+        return ("", str(e.val) + suffix)
 
     def visit_EEnumEntry(self, e, indent=""):
         return ("", "{}.{}".format(self.typename(e.type), e.name))
@@ -610,20 +629,6 @@ class JavaPrinter(CxxPrinter):
             else:
                 raise NotImplementedError(call.func)
         return super().visit_SCall(call, indent)
-
-    def visit_SForEach(self, for_each, indent):
-        id = for_each.id
-        iter = for_each.iter
-        body = for_each.body
-        if isinstance(iter.type, library.TLinkedList) or isinstance(iter.type, library.TArrayList):
-            setup, iter = self.visit(iter, indent)
-            return "{setup}{indent}for ({decl} : {iter}) {{\n{body}{indent}}}\n".format(
-                setup=setup,
-                indent=indent,
-                decl=self.visit(id.type, id.id),
-                iter=iter,
-                body=self.visit(body, indent + INDENT))
-        return super().visit_SForEach(for_each, indent)
 
     def visit_EJust(self, e, indent):
         return self.visit(e.e)
