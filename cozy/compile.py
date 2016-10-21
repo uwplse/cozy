@@ -447,7 +447,7 @@ class JavaPrinter(CxxPrinter):
         if package:
             s += "package {};\n\n".format(package)
 
-        s += "public class {} {{\n".format(spec.name)
+        s += "public class {} implements java.io.Serializable {{\n".format(spec.name)
         for name, t in spec.types:
             self.types[t] = name
         for name, t in spec.statevars:
@@ -550,7 +550,7 @@ class JavaPrinter(CxxPrinter):
             else:
                 public_fields = list(t.fields)
             all_fields = public_fields + private_fields
-            s = "{indent}public static final class {name} {{\n".format(indent=indent, name=name)
+            s = "{indent}public static final class {name} implements java.io.Serializable {{\n".format(indent=indent, name=name)
             for (f, ft) in public_fields + private_fields:
                 s += "{indent}private {field_decl};\n".format(indent=indent+INDENT, field_decl=self.visit(ft, f))
             for (f, ft) in public_fields:
