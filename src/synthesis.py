@@ -76,6 +76,111 @@ class SolverContext(object):
         for plan in self.bestPlans:
             yield plan
 
+    def _planIsValidForQuery(self, plan, query, sort_field=None):
+        result = False
+        s = self.z3solver
+        s.push()
+        try:
+            s.add(plan.toPredicate().toZ3(self.z3ctx) != query.toZ3(self.z3ctx))
+        except Exception as e:
+            print(plan, e, plan.toPredicate())
+            raise e
+        if str(s.check()) == 'unsat':
+            result = True
+        else:
+            m = s.model()
+            result = (
+                [m.eval(Int(f, self.z3ctx)).as_long() for f in self.fieldNames],
+                [m.eval(Int(v, self.z3ctx)).as_long() for v in self.varNames],
+                plan.isSortedBy(sort_field) if sort_field is not None else True)
+        s.pop()
+
+        return result
+
+    def _initialGuesses(self, query, sort_field):
+        """
+        Attempts to devise a clever starting point. This can greatly accelerate
+        the search.
+        NOTE: query must be in NNF
+        """
+
+        yield plans.Filter(plans.AllWhere(predicates.Bool(True)), query)
+
+        def dnf(p):
+            if isinstance(p, predicates.Or):
+                return dnf(p.lhs) + dnf(p.rhs)
+            elif isinstance(p, predicates.And):
+                cases1 = dnf(p.lhs)
+                cases2 = dnf(p.rhs)
+                return tuple(c1 + c2
+                    for c1 in cases1
+                    for c2 in cases2)
+            else:
+                return ((p,),)
+
+        def venn_regions(cases):
+            if len(cases) > 10:
+                return
+            for n in range(2**len(cases)):
+                if n: # all conditions false ---> exclude
+                    yield tuple(
+                        predicates.conjunction(cases[i]) if (n & (1 << i)) else predicates.Not(predicates.conjunction(cases[i])).toNNF()
+                        for i in range(len(cases)))
+
+        def make_plan(parts):
+            empty = plans.AllWhere(predicates.Bool(False))
+            if self._planIsValidForQuery(empty, predicates.conjunction(parts), sort_field) is True:
+                return None
+            parts = (x for p in parts for x in predicates.break_conj(p))
+            filter_parts = []
+            field_parts = []
+            eq_parts = []
+            cmp_parts = []
+            for p in parts:
+                if isinstance(p, predicates.Compare):
+                    if p.lhs.name in self.fieldNames and p.rhs.name in self.fieldNames:
+                        # print("field part: {}".format(p))
+                        field_parts.append(p)
+                    elif (p.lhs.name in self.fieldNames) != (p.rhs.name in self.fieldNames):
+                        if p.op == predicates.Eq:
+                            eq_parts.append(p)
+                        elif p.op in [predicates.Lt, predicates.Le, predicates.Gt, predicates.Ge]:
+                            cmp_parts.append(p)
+                        else:
+                            # print("filter part (Ne): {}".format(p))
+                            filter_parts.append(p)
+                    else:
+                        # print("filter part (vars only): {}".format(p))
+                        filter_parts.append(p)
+                else:
+                    # print("filter part (not cmp): {}".format(p))
+                    filter_parts.append(p)
+            plan = plans.AllWhere(predicates.conjunction(field_parts))
+            if eq_parts:
+                plan = plans.HashLookup(plan, predicates.conjunction(eq_parts))
+            if cmp_parts:
+                plan = plans.BinarySearch(plan, predicates.conjunction(cmp_parts))
+            if filter_parts:
+                plan = plans.Filter(plan, predicates.conjunction(filter_parts))
+            return plan
+
+        cases = dnf(query)
+        parts = []
+        for rgn in venn_regions(cases):
+            plan = make_plan(rgn)
+            if plan:
+                parts.append(plan)
+
+        if parts:
+            p1 = parts[0]
+            for p2 in parts[1:]:
+                p1 = plans.Concat(p1, p2) if p1 < p2 else plans.Concat(p2, p1)
+            print(p1)
+            if p1.wellFormed(self.z3ctx, self.z3solver, self.fieldNames, self.varNames):
+                yield p1
+            else:
+                print("WARNING: guess was not well-formed: {}".format(p1))
+
     def _synthesizePlansByEnumeration(self, query, sort_field, maxSize, examples):
         """note: query should be in NNF"""
 
@@ -97,26 +202,7 @@ class SolverContext(object):
             assert len(outputvector(plan)) == len(queryVector)
             if outputvector(plan) != queryVector:
                 return False
-
-            result = False
-            s = self.z3solver
-            s.push()
-            try:
-                s.add(plan.toPredicate().toZ3(self.z3ctx) != query.toZ3(self.z3ctx))
-            except Exception as e:
-                print(plan, e, plan.toPredicate())
-                raise e
-            if str(s.check()) == 'unsat':
-                result = True
-            else:
-                m = s.model()
-                result = (
-                    [m.eval(Int(f, self.z3ctx)).as_long() for f in self.fieldNames],
-                    [m.eval(Int(v, self.z3ctx)).as_long() for v in self.varNames],
-                    plan.isSortedBy(sort_field) if sort_field is not None else True)
-            s.pop()
-
-            return result
+            return self._planIsValidForQuery(plan, query, sort_field)
 
         def implies(vec1, vec2):
             """Every element of vec1 implies corresponding element in vec2"""
@@ -220,17 +306,11 @@ class SolverContext(object):
 
         q = registerExp(query)
 
-        yield consider(plans.BinarySearch(plans.AllWhere(predicates.Bool(True)), q))
-        yield consider(plans.HashLookup(plans.AllWhere(predicates.Bool(True)), q))
-
-        if all(type(x) is predicates.Compare for x in predicates.break_conj(query)):
-            eqs = [x for x in predicates.break_conj(query) if x.op == plans.Eq]
-            others = [x for x in predicates.break_conj(query) if x.op != plans.Eq]
-            if eqs and others:
-                hashcond = predicates.conjunction(eqs)
-                bscond = predicates.conjunction(others)
-                plan = plans.BinarySearch(plans.HashLookup(plans.AllWhere(predicates.Bool(True)), hashcond), bscond)
-                yield consider(plan)
+        for p in self._initialGuesses(query, sort_field):
+            yield consider(p)
+            for e in p.expressions():
+                registerExp(e, size=1)
+                pass
 
         roundsWithoutProgress = 0
         maxRoundsWithoutProgress = 10
