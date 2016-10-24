@@ -1,3 +1,5 @@
+from collections import deque
+
 from predicates import *
 from common import ADT
 
@@ -10,6 +12,17 @@ class Plan(ADT):
         return False
     def wellFormed(self, z3ctx, z3solver, fields, vars):
         pass
+    def expressions(self):
+        wq = deque()
+        wq.append(self)
+        while wq:
+            x = wq.pop()
+            if isinstance(x, ADT):
+                if isinstance(x, Predicate):
+                    yield x
+                else:
+                    for child in x.children():
+                        wq.append(child)
 
 class AllWhere(Plan):
     def __init__(self, predicate):
