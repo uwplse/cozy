@@ -175,7 +175,7 @@ class SolverContext(object):
             p1 = parts[0]
             for p2 in parts[1:]:
                 p1 = plans.Concat(p1, p2) if p1 < p2 else plans.Concat(p2, p1)
-            print(p1)
+            print("Initial guess: {}".format(p1))
             if p1.wellFormed(self.z3ctx, self.z3solver, self.fieldNames, self.varNames):
                 yield p1
             else:
