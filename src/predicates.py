@@ -189,6 +189,11 @@ def break_conj(p):
         return (p,)
 
 def conjunction(ps):
+    ps = [p for p in ps if not (isinstance(p, Bool) and p.val)]
+    if any(isinstance(p, Bool) and not p.val for p in ps):
+        return Bool(False)
+    if not ps:
+        return Bool(True)
     p = ps[0]
     i = 1
     while i < len(ps):
