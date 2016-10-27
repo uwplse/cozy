@@ -73,7 +73,11 @@ def instantiate(e : Exp, cache : Cache, total_size : int):
             # print(pprint(e) + " ----> " + pprint(res))
             yield res
 
-class Builder(object):
+class ExpBuilder(object):
+    def build(self, cache, size):
+        raise NotImplementedError()
+
+class Builder(ExpBuilder):
     def __init__(self, roots, type_roots, build_sums = True, build_maps = True, build_filters = True):
         self.roots = roots
         self.type_roots = type_roots
