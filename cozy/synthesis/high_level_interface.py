@@ -98,9 +98,10 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
     Synthesize efficient re-implementations for the given queries.
 
     Input:
-        ctx     - a synthesis context for the problem
-        state   - list of state variables
-        queries - a list of queries in the specification
+        ctx         - a synthesis context for the problem
+        state       - list of state variables
+        assumptions - a list of assumptions
+        queries     - a list of queries in the specification
 
     Output:
         (new_state, state_proj, new_queries)
