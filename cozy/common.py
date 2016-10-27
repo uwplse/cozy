@@ -322,3 +322,7 @@ class extend(object):
             del self.d[self.k]
         else:
             self.d[self.k] = self.old_val
+
+def read_file(filename):
+    with open(filename, "r") as f:
+        return f.read()

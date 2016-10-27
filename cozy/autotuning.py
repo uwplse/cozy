@@ -3,7 +3,7 @@ from collections import deque
 from cozy.common import typechecked
 from cozy.typecheck import typecheck
 from cozy.library import Library
-from cozy.target_syntax import *
+from cozy.target_syntax import Spec
 from cozy.syntax_tools import subst, deep_copy, all_types
 
 def find_refinement(ast, lib):
