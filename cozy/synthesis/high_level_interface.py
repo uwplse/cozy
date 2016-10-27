@@ -300,7 +300,8 @@ def synthesize(
         else:
             state_var, state_exp, new_q = synthesize_queries(ctx, state_vars, list(spec.assumptions), [q])
             new_q = new_q[0]
-            caching.cache((state_vars, list(spec.assumptions), q), (state_var, state_exp, new_q))
+            if use_cache:
+                caching.cache((state_vars, list(spec.assumptions), q), (state_var, state_exp, new_q))
 
         print("  -> {} : {} = {}".format(state_var.id, pprint(state_var.type), pprint(state_exp)))
         print("  -> return {}".format(pprint(new_q.ret)))
