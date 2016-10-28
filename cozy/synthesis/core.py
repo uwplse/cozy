@@ -73,12 +73,57 @@ def instantiate(e : Exp, cache : Cache, total_size : int):
             # print(pprint(e) + " ----> " + pprint(res))
             yield res
 
+class CostModel(object):
+    def cost(self, e):
+        assert not contains_holes(e)
+        return self.best_case_cost(e)
+    def best_case_cost(self, e):
+        raise NotImplementedError()
+    def is_monotonic(self):
+        raise NotImplementedError()
+
+class ConstantCost(CostModel):
+    def best_case_cost(self, e):
+        return 1
+    def is_monotonic(self):
+        return True
+
+class CardinalityVisitor(BottomUpExplorer):
+    def visit_EVar(self, v):
+        return 1000
+    def visit_Exp(self, e):
+        return 0
+
+cardinality = CardinalityVisitor().visit
+
+class RunTimeCostModel(CostModel, BottomUpExplorer):
+    def best_case_cost(self, e):
+        return self.visit(e)
+    def is_monotonic(self):
+        return True
+
+    def visit_EVar(self, e):
+        return 1
+    def visit_EUnaryOp(self, e):
+        cost = self.visit(e.e)
+        if e.op == "sum":
+            cost += cardinality(e.e)
+        return cost
+    def visit_EMap(self, e):
+        return self.visit(e.e) + cardinality(e.e) * self.visit(e.f.body)
+    def visit_EFilter(self, e):
+        return self.visit(e.e) + cardinality(e.e) * self.visit(e.p.body)
+    def join(self, x, child_costs):
+        return 0.01 + sum(child_costs)
+
 class ExpBuilder(object):
     def build(self, cache, size):
         raise NotImplementedError()
+    def cost_model(self):
+        return ConstantCost()
 
 class Builder(ExpBuilder):
-    def __init__(self, roots, type_roots, build_sums = True, build_maps = True, build_filters = True):
+    def __init__(self, roots, type_roots, build_sums = True, build_maps = True, build_filters = True, cost_model = ConstantCost()):
         self.roots = roots
         self.type_roots = type_roots
         self.build_maps = True
@@ -86,6 +131,10 @@ class Builder(ExpBuilder):
         self.build_sums = build_sums
         self.build_maps = build_maps
         self.build_filters = build_filters
+        self.cm = cost_model
+
+    def cost_model(self):
+        return self.cm
 
     @typechecked
     def enum_types(
@@ -187,10 +236,10 @@ class Builder(ExpBuilder):
                         # print("  " + pprint(r) + " sizes=({}, {})".format(sz1, sz2))
                         for body in instantiate(r, new_cache, sz2):
                             # print("    @{} = {}".format(sz2, pprint(body)))
-                            if isinstance(body, ENum):
-                                e = EMap(bag, ELambda(map_arg, body)).with_type(TBag(r.type))
-                                # print("  " + pprint(e))
-                                yield e
+                            # if isinstance(body, ENum):
+                            e = EMap(bag, ELambda(map_arg, body)).with_type(TBag(r.type))
+                            # print("  " + pprint(e))
+                            yield e
             # for r in self.roots:
             #     for hole in find_holes(r):
             #         for (sz1, sz2) in pick_to_sum(2, size - 1):
@@ -241,6 +290,7 @@ class Builder(ExpBuilder):
         b.build_sums = self.build_sums
         b.build_maps = self.build_maps
         b.build_filters = self.build_filters
+        b.cm = self.cm
         return b
 
 class Counterexample(Exception):
@@ -339,9 +389,10 @@ def construct_inputs(spec, goal_name, examples):
 
 indent = ""
 def find_consistent_exps(
-        spec     : Exp,
-        examples : [Exp],
-        size     : int = None):
+        spec      : Exp,
+        examples  : [Exp],
+        size      : int = None,
+        best_cost : float = None):
 
     global indent
     indent = indent + "  "
@@ -380,6 +431,7 @@ def find_consistent_exps(
         g = [goal for goal in goals if goal.name == name][0]
         type = g.type
         builder = g.builder
+        cost_model = builder.cost_model()
         goals = [goal for goal in goals if goal.name != name]
         g_examples = list(construct_inputs(spec, name, examples))
 
@@ -395,6 +447,8 @@ def find_consistent_exps(
             def fingerprint(e):
                 return (e.type,) + tuple(eval(e, ex) for ex in g_examples)
             for e in builder.build(cache, sz1):
+                if cost_model.is_monotonic() and best_cost is not None and cost_model.best_case_cost(e) > best_cost:
+                    continue
                 if contains_holes(e):
                     cache.add(e, size=sz1)
                 else:
@@ -420,14 +474,19 @@ def find_consistent_exps(
                 # print("{}|{} ---> {}".format(indent, name, pprint(e)))
                 # print("{}|{}".format(indent, pprint(spec)))
                 # print("{}|{}".format(indent, pprint(spec2)))
-                assert name not in (g.name for g in find_holes(spec2))
+                # assert name not in (g.name for g in find_holes(spec2))
                 if not feasible(spec2, examples):
                     print("{}INFEASIBLE: {}".format(indent, pprint(spec2)))
                     continue
                 for d in find_consistent_exps(spec2, examples, sz2):
-                    # TODO: double-check consistency
-                    if d is not None:
-                        d[name] = e
+                    cost = cost_model.cost(expand(e, d))
+                    if best_cost is not None and cost > best_cost:
+                        continue
+                    if best_cost is None or cost < best_cost:
+                        print("cost ceiling lowered for {}: {} --> {}".format(name, best_cost, cost))
+                        best_cost = cost
+                    # TODO: if monotonic, clean out cache
+                    d[name] = e
                     found = True
                     yield d
             # if not found:

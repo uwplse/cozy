@@ -139,7 +139,7 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
         def make_state_hole_core(self, type, builder):
             builder.build_maps = True
             builder.build_tuples = False
-            return core.EHole(fresh_name(), type, builder)
+            return core.EHole(fresh_name("state"), type, builder)
         def make_state_hole(self, type, builder=None):
             if builder is None:
                 builder = core.Builder(state_roots, basic_types)
@@ -186,7 +186,7 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
             # print("hints:")
             # for h in hints:
             #     print("  {}".format(pprint(h)))
-            b = core.Builder(args + hints if HINTS else [state_var], basic_types)
+            b = core.Builder(args + hints if HINTS else [state_var], basic_types, cost_model=core.RunTimeCostModel())
             b.build_maps = True
             b.build_tuples = False
             return core.EHole(q.name, q.ret.type, b)
