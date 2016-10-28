@@ -1,6 +1,6 @@
 from collections import namedtuple, deque, defaultdict
 
-from cozy.common import typechecked, fresh_name
+from cozy.common import typechecked, fresh_name, mk_map
 from cozy.target_syntax import *
 from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, free_vars, pprint, subst, implies
 from . import core
@@ -93,6 +93,21 @@ def fragmentize(exp : Exp, bound_names : {str} = set()):
 
 #     yield core.EHole(fresh_name(), type, builder)
 
+def rename_args(queries : [Query]) -> [Query]:
+    arg_hist = mk_map((a for q in queries for (a, t) in q.args), v=len)
+    res = []
+    for q in queries:
+        arg_remap = { a : EVar(fresh_name(a)).with_type(t) for (a, t) in q.args if arg_hist[a] > 1 }
+        if arg_remap:
+            res.append(Query(
+                q.name,
+                tuple((arg_remap.get(a, EVar(a)).id, t) for (a, t) in q.args),
+                subst(q.assumptions, arg_remap),
+                subst(q.ret, arg_remap)))
+        else:
+            res.append(q)
+    return res
+
 @typechecked
 def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], queries : [Query]) -> (EVar, Exp, [Query]):
     """
@@ -112,6 +127,7 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
         new_queries is a list of new query expressions
     """
     assert len(queries) > 0
+    queries = rename_args(queries)
 
     res_type = TTuple(tuple(q.ret.type for q in queries)) if len(queries) > 1 else queries[0].ret.type
     all_types = ctx.all_types
@@ -133,7 +149,7 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
     class TopLevelBuilder(core.Builder):
         def __init__(self):
             super().__init__((), basic_types)
-            self.args_by_q = { q.name: [EVar(fresh_name(name)).with_type(t) for (name, t) in q.args] for q in queries }
+            self.args_by_q = { q.name: [EVar(name).with_type(t) for (name, t) in q.args] for q in queries }
             self.state_var_name = fresh_name("state")
             # self.state_hole_name = fresh_name("state")
         def make_state_hole_core(self, type, builder):
@@ -222,7 +238,7 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
 
     builder = TopLevelBuilder()
     hole = core.EHole(fresh_name(), res_type, builder)
-    target = tuple(subst(q.ret, { a1name:a2 for ((a1name, type), a2) in zip(q.args, builder.args_by_q[q.name]) }) for q in queries)
+    target = tuple(q.ret for q in queries)
     if len(target) == 1:
         target = target[0]
     else:
@@ -248,8 +264,7 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
             q_hole = core.EHole(q.name, q.ret.type, None)
             q_result = core.expand(q_hole, mapping)
             print("{} = {}".format(q.name, pprint(q_result)))
-            arg_remap = builder.args_by_q[q.name]
-            new_queries.append(Query(q.name, [(a.id, a.type) for a in arg_remap], [], q_result))
+            new_queries.append(Query(q.name, q.args, q.assumptions, q_result))
 
         return (EVar(builder.state_var_name).with_type(result.type), result, new_queries)
 
