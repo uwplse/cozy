@@ -3,10 +3,11 @@ from collections import namedtuple, deque, defaultdict
 from cozy.common import typechecked, fresh_name, mk_map
 from cozy.target_syntax import *
 from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, free_vars, pprint, subst, implies
-from . import core
-from . import caching
 import cozy.incrementalization as inc
 from cozy.typecheck import INT, BOOL
+
+from . import core
+from . import caching
 
 HINTS = True
 
@@ -99,13 +100,12 @@ def rename_args(queries : [Query]) -> [Query]:
     for q in queries:
         arg_remap = { a : EVar(fresh_name(a)).with_type(t) for (a, t) in q.args if arg_hist[a] > 1 }
         if arg_remap:
-            res.append(Query(
+            q = Query(
                 q.name,
                 tuple((arg_remap.get(a, EVar(a)).id, t) for (a, t) in q.args),
                 subst(q.assumptions, arg_remap),
-                subst(q.ret, arg_remap)))
-        else:
-            res.append(q)
+                subst(q.ret, arg_remap))
+        res.append(q)
     return res
 
 @typechecked
