@@ -4,7 +4,6 @@
 Main entry point for synthesis. Run with --help for options.
 """
 
-from __future__ import print_function
 import sys
 import argparse
 
