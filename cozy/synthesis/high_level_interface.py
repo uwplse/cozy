@@ -6,6 +6,7 @@ from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, fre
 from . import core
 from . import caching
 import cozy.incrementalization as inc
+from cozy.typecheck import INT, BOOL
 
 HINTS = True
 
@@ -194,10 +195,10 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
             cheat = None
             # cheat = TMap(TNative("org.xmpp.packet.JID"), TBag([t for t in basic_types if isinstance(t, THandle)][0]))
             # cheat = TMap(TNative("org.xmpp.packet.JID"), TMaybe([t for t in basic_types if isinstance(t, THandle)][0]))
-            # cheat = TMap(TBool(), TBag([t for t in basic_types if isinstance(t, THandle)][0]))
-            # cheat = TMap(TBool(), TMaybe([t for t in basic_types if isinstance(t, THandle)][0]))
-            # cheat = TTuple((TInt(), TInt()))
-            # cheat = TTuple((TMap(TInt(), TInt()), TMap(TInt(), TInt())))
+            # cheat = TMap(BOOL, TBag([t for t in basic_types if isinstance(t, THandle)][0]))
+            # cheat = TMap(BOOL, TMaybe([t for t in basic_types if isinstance(t, THandle)][0]))
+            # cheat = TTuple((INT, INT))
+            # cheat = TTuple((TMap(INT, INT), TMap(INT, INT)))
             if cheat and size != 1: return
             it = (cheat,) if cheat else self.enum_types(size - 1, allow_tuples=False)
             for state_type in it:
@@ -267,7 +268,7 @@ def synthesize(
     # gather root types
     types = all_types(spec)
     basic_types = set(t for t in types if not isinstance(t, TBag))
-    basic_types |= { TBool(), TInt() }
+    basic_types |= { BOOL, INT }
     print("basic types:")
     for t in basic_types:
         print("  --> {}".format(pprint(t)))
