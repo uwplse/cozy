@@ -446,6 +446,7 @@ def alpha_equivalent(e1, e2, remap_free=False):
         def visit_EVar(self, e1, e2):
             if not isinstance(e2, syntax.EVar):
                 return False
+            e1id = e1.id
             if not e1.id in self.remap:
                 e1id = e2.id
                 self.remap[e1.id] = e1id
