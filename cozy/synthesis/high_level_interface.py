@@ -2,7 +2,8 @@ from collections import namedtuple, deque, defaultdict
 
 from cozy.common import typechecked, fresh_name, mk_map
 from cozy.target_syntax import *
-from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, free_vars, pprint, subst, implies
+import cozy.syntax_tools
+from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, free_vars, pprint, subst, implies, fresh_var, mk_lambda
 import cozy.incrementalization as inc
 from cozy.typecheck import INT, BOOL
 
@@ -37,63 +38,6 @@ def fragmentize(exp : Exp, bound_names : {str} = set()):
             so_far.append(e)
             yield e
 
-# def constructors(type, roots, basic_types):
-#     builder = core.Builder(roots, basic_types, build_sums=False, build_maps=False, build_filters=False)
-#     if isinstance(type, TMap):
-#         bag_types = set(t for t in basic_types if isinstance(t, TBag)) | set(TBag(t) for t in basic_types)
-#         for bag_type in bag_types:
-#             for bag_ctor in constructors(bag_type, roots, basic_types):
-#                 for key_proj in roots:
-#                     # TODO: leave holes in key??
-#                     holes = list(core.find_holes(key_proj))
-#                     if key_proj.type == type.k and len(holes) == 1 and holes[0].type == bag_type.t:
-#                         e = EVar(fresh_name()).with_type(bag_type.t)
-#                         es = EVar(fresh_name()).with_type(bag_type)
-#                         for vhole in constructors(type.v, roots + [es], basic_types):
-#                             map = EMakeMap(
-#                                 bag_ctor,
-#                                 ELambda(e, subst(key_proj, { holes[0].name : e })),
-#                                 ELambda(es, vhole)).with_type(type)
-#                             yield map
-#         return
-#     elif isinstance(type, TTuple):
-#         if len(type.ts) == 2:
-#             for hole1 in constructors(type.ts[0], roots, basic_types):
-#                 for hole2 in constructors(type.ts[1], roots, basic_types):
-#                     yield ETuple((hole1, hole2)).with_type(type)
-#         else:
-#             for hole in constructors(type.ts[0], roots, basic_types):
-#                 for rest in constructors(TTuple(type.ts[1:]), roots, basic_types):
-#                     yield ETuple((hole,) + rest.es).with_type(type)
-#         return
-#     elif isinstance(type, TBag):
-#         for bag in roots:
-#             if isinstance(bag.type, TBag):
-#                 m = { h.name : core.EHole(fresh_name(), h.type, builder) for h in core.find_holes(bag) }
-#                 bag = subst(bag, m)
-
-#                 src_type = bag.type.t
-#                 dst_type = type.t
-#                 filt_arg = EVar(fresh_name()).with_type(src_type)
-#                 filt_body = core.EHole(fresh_name(), BOOL, builder)
-#                 filt = EFilter(bag, ELambda(filt_arg, filt_body)).with_type(TBag(src_type))
-
-#                 if src_type == dst_type:
-#                     yield filt
-#                 else:
-#                     map_arg = EVar(fresh_name()).with_type(src_type)
-#                     for proj in roots:
-#                         holes = list(core.find_holes(proj))
-#                         if proj.type == dst_type and len(holes) == 1 and holes[0].type == src_type:
-#                             proj = subst(proj, { holes[0].name : map_arg })
-#                             yield EMap(filt, ELambda(map_arg, proj)).with_type(type)
-#         return
-#     elif isinstance(type, TInt):
-#         for bag_of_ints in constructors(TBag(INT), roots, basic_types):
-#             yield EUnaryOp("sum", bag_of_ints).with_type(INT)
-
-#     yield core.EHole(fresh_name(), type, builder)
-
 def rename_args(queries : [Query]) -> [Query]:
     arg_hist = mk_map((a for q in queries for (a, t) in q.args), v=len)
     res = []
@@ -106,6 +50,47 @@ def rename_args(queries : [Query]) -> [Query]:
                 subst(q.assumptions, arg_remap),
                 subst(q.ret, arg_remap))
         res.append(q)
+    return res
+
+@typechecked
+def get_roots(state : [EVar], queries : [Query]) -> [Exp]:
+    state_var_names = set(v.id for v in state)
+    roots = []
+    for q in queries:
+        # TODO: filter . map ----> map . filter
+        roots += fragmentize(q.ret, bound_names=state_var_names)
+    roots = set(roots) # TODO: deduplicate based on alpha-equivalence
+    # for r in roots:
+    #     print("-> " + pprint(r))
+    return list(roots)
+
+@typechecked
+def guess_constructors(state : [EVar], roots : [Exp]) -> [Exp]:
+
+    res = list(state)
+
+    for sv in state:
+        if isinstance(sv.type, TBag):
+            ht = sv.type.t
+            projs = []
+            for r in roots:
+                holes = list(core.find_holes(r))
+                if len(holes) == 1 and holes[0].type == ht:
+                    projs.append(mk_lambda(ht, lambda v: subst(r, { holes[0].name : v })))
+
+            for p in projs:
+                coll_hole = EHole(fresh_name(), sv.type, None)
+                res.append(EMakeMap(
+                    coll_hole,
+                    p,
+                    mk_lambda(sv.type, lambda x: x)).with_type(TMap(p.body.type, sv.type)))
+                res.append(EMap(coll_hole, p).with_type(TBag(p.body.type)))
+                if p.body.type == BOOL:
+                    # TODO: clauses instead
+                    res.append(EFilter(coll_hole, p).with_type(sv.type))
+
+    # for r in res:
+    #     print("   --> {}".format(pprint(r)))
     return res
 
 @typechecked
@@ -126,8 +111,48 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
         state_proj is an expression mapping state to new_state
         new_queries is a list of new query expressions
     """
-    assert len(queries) > 0
+    assert len(queries) == 1 # TODO
     queries = rename_args(queries)
+    roots = get_roots(state, queries)
+    ctors = guess_constructors(state, roots)
+
+    for e in roots + ctors:
+        print(" --> {}".format(pprint(e)))
+
+    all_types = ctx.all_types
+    basic_types = ctx.basic_types
+
+    q = queries[0]
+    args = [EVar(name).with_type(t) for (name, t) in q.args]
+    b = core.Builder(roots + ctors + args, basic_types, cost_model=core.RunTimeCostModel())
+    b.build_maps = False
+    b.build_filters = False
+    b.build_tuples = False
+    hole = core.EHole(q.name, q.ret.type, b)
+    spec = cozy.syntax_tools.equal(hole, q.ret)
+
+    for mapping in core.synth(spec):
+
+        print("SOLUTION")
+        expr = core.expand(hole, mapping)
+        print(pprint(expr))
+
+        continue
+        raise NotImplementedError()
+
+        result = expr.arg
+        type = result.type
+        print("{} : {} = {}".format(
+            builder.state_var_name,
+            pprint(type),
+            pprint(result)))
+
+        new_queries = []
+        for q in queries:
+            q_hole = core.EHole(q.name, q.ret.type, None)
+            q_result = core.expand(q_hole, mapping)
+            print("{} = {}".format(q.name, pprint(q_result)))
+            new_queries.append(Query(q.name, q.args, q.assumptions, q_result))
 
     res_type = TTuple(tuple(q.ret.type for q in queries)) if len(queries) > 1 else queries[0].ret.type
     all_types = ctx.all_types
