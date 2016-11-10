@@ -3,7 +3,7 @@ import itertools
 
 import z3
 
-from cozy.syntax import *
+from cozy.target_syntax import *
 from cozy.syntax_tools import pprint, free_vars
 from cozy.common import declare_case, fresh_name, Visitor, FrozenDict
 
@@ -208,44 +208,46 @@ class ToZ3(Visitor):
         # print("{} ==> {}".format(pprint(e), x))
         return self.visit_clauses(e.clauses, e.e, env)
     def visit_EMap(self, e, env):
-        bag_mask, bag_elems = self.visit(e.e, env)
-        res_elems = []
-        for x in bag_elems:
-            res_elems.append(self.apply(e.f, x, env))
-        return bag_mask, res_elems
-    def visit_EFilter(self, e, env):
-        bag_mask, bag_elems = self.visit(e.e, env)
+        def go(bag):
+            bag_mask, bag_elems = bag
+            res_elems = []
+            for x in bag_elems:
+                res_elems.append(self.apply(e.f, x, env))
+            return bag_mask, res_elems
+        return fmap(self.visit(e.e, env), go)
+    def do_filter(self, bag, p, env):
+        bag_mask, bag_elems = bag
         res_mask = []
         for mask, x in zip(bag_mask, bag_elems):
-            res_mask.append(z3.And(mask, self.apply(e.p, x, env), self.ctx))
+            res_mask.append(z3.And(mask, self.apply(p, x, env), self.ctx))
         return res_mask, bag_elems
+    def visit_EFilter(self, e, env):
+        return fmap(self.visit(e.e, env), lambda bag: self.do_filter(bag, e.p, env))
     def visit_EMakeMap(self, e, env):
-        # TODO: visiting e.e twice here is bad
-        bag_mask, bag_elems = self.visit(e.e, env)
-        ks = [ self.apply(e.key, x, env) for x in bag_elems ]
-        x = EVar(fresh_name()).with_type(e.e.type.t)
-        m = {"mapping": [(k, self.apply(
-            e.value,
-            self.visit(
-                EListComprehension(x,
-                    (CPull(x.id, e.e),
-                     CCond(EBinOp(e.key.apply_to(x), "==", k)))),
-                env),
-            env)) for k in ks],
-            "default": e.value}
-        return m
+        def go(bag):
+            bag_mask, bag_elems = bag
+            ks = [ self.apply(e.key, x, env) for x in bag_elems ]
+            x = EVar(fresh_name()).with_type(e.e.type.t)
+            m = {"mapping": [(k, self.apply(
+                    e.value,
+                    self.do_filter(bag, ELambda(e.key.arg, EBinOp(e.key.body, "==", k)), env),
+                    env)) for k in ks],
+                "default": e.value}
+            return m
+        return fmap(self.visit(e.e, env), go)
     def visit_EMapGet(self, e, env):
-        map = self.visit(e.map, env)
-        key = self.visit(e.key, env)
-        res = self.apply(map["default"], ((), ()), env)
-        # print("map get {} on {}".format(key, map))
-        for (k, v) in map["mapping"]:
-            # print("   k   = {}".format(repr(k)))
-            # print("   key = {}".format(repr(key)))
-            # print("   v   = {}".format(repr(v)))
-            # print("   res = {}".format(repr(res)))
-            res = SymbolicUnion(k == key, v, res)
-        return res
+        def go(map):
+            key = self.visit(e.key, env)
+            res = self.apply(map["default"], ((), ()), env)
+            # print("map get {} on {}".format(key, map))
+            for (k, v) in map["mapping"]:
+                # print("   k   = {}".format(repr(k)))
+                # print("   key = {}".format(repr(key)))
+                # print("   v   = {}".format(repr(v)))
+                # print("   res = {}".format(repr(res)))
+                res = SymbolicUnion(k == key, v, res)
+            return res
+        return fmap(self.visit(e.map, env), go)
     def visit_EApp(self, e, env):
         return self.apply(e.f, self.visit(e.arg, env), env)
     def apply(self, lam, arg, env):
