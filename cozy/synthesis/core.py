@@ -33,6 +33,9 @@ class Cache(object):
     def add(self, e, size):
         self.data[self.tag(e.type)][e.type][size].append(e)
         self.size += 1
+    def evict(self, e, size):
+        self.data[self.tag(e.type)][e.type][size].remove(e)
+        self.size -= 1
     def find(self, type=None, size=None):
         type_tag = None
         if type is not None:
@@ -91,6 +94,10 @@ class ConstantCost(CostModel):
 class CardinalityVisitor(BottomUpExplorer):
     def visit_EVar(self, v):
         return 1000
+    def visit_EMakeMap(self, e):
+        return self.visit(e.e)
+    def visit_EMapGet(self, e):
+        return self.visit(e.map) / 3
     def visit_Exp(self, e):
         return 0
 
@@ -126,7 +133,6 @@ class Builder(ExpBuilder):
     def __init__(self, roots, type_roots, build_sums = True, build_maps = True, build_filters = True, cost_model = ConstantCost()):
         self.roots = roots
         self.type_roots = type_roots
-        self.build_maps = True
         self.build_tuples = True
         self.build_sums = build_sums
         self.build_maps = build_maps
@@ -437,7 +443,7 @@ def find_consistent_exps(
 
         # print("{}##### working on {}".format(indent, name))
         cache = Cache()
-        seen = set()
+        seen = {} # maps fingerprints to (cost, exp, size)
         for sz1 in range(1, size + 1):
             sz2 = size - sz1
         # for (sz1, sz2) in pick_to_sum(2, size + 1):
@@ -447,17 +453,28 @@ def find_consistent_exps(
             def fingerprint(e):
                 return (e.type,) + tuple(eval(e, ex) for ex in g_examples)
             for e in builder.build(cache, sz1):
-                if cost_model.is_monotonic() and best_cost is not None and cost_model.best_case_cost(e) > best_cost:
-                    continue
                 if contains_holes(e):
+                    raise Exception()
+                    if cost_model.is_monotonic() and best_cost is not None and cost_model.best_case_cost(e) > best_cost:
+                        continue
                     cache.add(e, size=sz1)
                 else:
+                    cost = cost_model.cost(e)
                     fp = fingerprint(e)
-                    if fp not in seen:
-                        seen.add(fp)
+                    prev = seen.get(fp)
+                    if prev is None:
+                        seen[fp] = (cost, e, sz1)
                         cache.add(e, size=sz1)
                     else:
-                        continue
+                        prev_cost, prev_exp, prev_size = prev
+                        if cost < prev_cost:
+                            # print("cost ceiling lowered for {}: {} --> {}".format(fp, prev_cost, cost))
+                            cache.evict(prev_exp, prev_size)
+                            cache.add(e, size=sz1)
+                            seen[fp] = (cost, e, sz1)
+                        else:
+                            # print("dropping {}; already seen {}".format(pprint(e), fp))
+                            continue
 
                 # # debug = "xxx" in name
                 # debug = name == "implicitFrom"
@@ -470,6 +487,7 @@ def find_consistent_exps(
                 # if debug: print("    --> OK!")
 
                 # print("{}| considering {} for {} [examples={}]".format(indent, pprint(e), name, g_examples))
+                # print("{}| considering {} @ {}".format(indent, pprint(e), sz1))
                 spec2 = subst(spec, { name : e })
                 # print("{}|{} ---> {}".format(indent, name, pprint(e)))
                 # print("{}|{}".format(indent, pprint(spec)))
