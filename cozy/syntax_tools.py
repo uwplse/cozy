@@ -15,6 +15,10 @@ from cozy import target_syntax
 def fresh_var(type, hint="var"):
     return syntax.EVar(common.fresh_name(hint)).with_type(type)
 
+def mk_lambda(t, l):
+    v = fresh_var(t)
+    return target_syntax.ELambda(v, l(v))
+
 class BottomUpExplorer(common.Visitor):
     def visit_ADT(self, x):
         new_children = tuple(self.visit(child) for child in x.children())
