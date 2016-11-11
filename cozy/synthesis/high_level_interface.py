@@ -9,6 +9,7 @@ from cozy.typecheck import INT, BOOL
 
 from . import core
 from . import caching
+from .rep_inference import infer_rep
 
 HINTS = True
 
@@ -136,6 +137,13 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
         print("SOLUTION")
         expr = core.expand(hole, mapping)
         print(pprint(expr))
+
+        print("-" * 40)
+        for (st, expr) in infer_rep(state, expr):
+            for (sv, proj) in st:
+                print("  {} : {} = {}".format(sv.id, pprint(sv.type), pprint(proj)))
+            print("  return {}".format(pprint(expr)))
+        print("-" * 40)
 
         continue
         raise NotImplementedError()
