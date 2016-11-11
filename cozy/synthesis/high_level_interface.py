@@ -59,7 +59,7 @@ def get_roots(state : [EVar], queries : [Query]) -> [Exp]:
     for q in queries:
         # TODO: filter . map ----> map . filter
         roots += fragmentize(q.ret, bound_names=state_var_names)
-    roots = set(roots) # TODO: deduplicate based on alpha-equivalence
+    # roots = set(roots) # TODO: deduplicate based on alpha-equivalence
     # for r in roots:
     #     print("-> " + pprint(r))
     return list(roots)
