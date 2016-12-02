@@ -393,11 +393,24 @@ def construct_inputs(spec, goal_name, examples):
     for ex in examples:
         yield from all_envs_for_hole(spec, ex, goal_name)
 
+def ints(start, end):
+    """
+    Yields integers from the range [start, end]. If end is None, then it yields
+    integers from the range [start, INFINITY).
+    """
+    i = start
+    if end is None:
+        while True:
+            yield i
+            i += 1
+    else:
+        yield from range(start, end + 1)
+
 indent = ""
 def find_consistent_exps(
         spec      : Exp,
         examples  : [Exp],
-        size      : int = None,
+        max_size  : int = None,
         best_cost : float = None):
 
     global indent
@@ -410,7 +423,7 @@ def find_consistent_exps(
         goals = list(find_holes(spec))
 
         if not goals:
-            if size == 0 and all(eval(spec, ex) for ex in examples):
+            if max_size == 0 and all(eval(spec, ex) for ex in examples):
                 print("final: {}".format(pprint(spec)))
                 yield { }
             else:
@@ -421,16 +434,8 @@ def find_consistent_exps(
                 pass
             return
 
-        if size is None:
-            size = 1
-            while True:
-                print("size={}".format(size))
-                yield from find_consistent_exps(spec, examples, size)
-                size += 1
-            return
-
         # not strictly necessary, but this helps
-        if len(goals) > size:
+        if max_size is not None and len(goals) > max_size:
             return
 
         name = pick_goal(spec, examples)
@@ -444,73 +449,79 @@ def find_consistent_exps(
         # print("{}##### working on {}".format(indent, name))
         cache = Cache()
         seen = {} # maps fingerprints to (cost, exp, size)
-        for sz1 in range(1, size + 1):
-            sz2 = size - sz1
-        # for (sz1, sz2) in pick_to_sum(2, size + 1):
-        #     sz2 -= 1
-            # print("{}({},{})".format(indent, sz1, sz2))
-            found = False
-            def fingerprint(e):
-                return (e.type,) + tuple(eval(e, ex) for ex in g_examples)
-            for e in builder.build(cache, sz1):
-                if contains_holes(e):
-                    raise Exception()
-                    if cost_model.is_monotonic() and best_cost is not None and cost_model.best_case_cost(e) > best_cost:
-                        continue
-                    cache.add(e, size=sz1)
-                else:
-                    cost = cost_model.cost(e)
-                    fp = fingerprint(e)
-                    prev = seen.get(fp)
-                    if prev is None:
-                        seen[fp] = (cost, e, sz1)
+        for size in ints(1, max_size):
+            if max_size is None:
+                print("size={}".format(size))
+            for sz1 in range(1, size + 1):
+                sz2 = size - sz1
+            # for (sz1, sz2) in pick_to_sum(2, size + 1):
+            #     sz2 -= 1
+                # print("{}({},{})".format(indent, sz1, sz2))
+                found = False
+                def fingerprint(e):
+                    return (e.type,) + tuple(eval(e, ex) for ex in g_examples)
+                for e in builder.build(cache, sz1):
+                    if contains_holes(e):
+                        raise Exception()
+                        if cost_model.is_monotonic() and best_cost is not None and cost_model.best_case_cost(e) > best_cost:
+                            continue
                         cache.add(e, size=sz1)
                     else:
-                        prev_cost, prev_exp, prev_size = prev
-                        if cost < prev_cost:
-                            # print("cost ceiling lowered for {}: {} --> {}".format(fp, prev_cost, cost))
-                            cache.evict(prev_exp, prev_size)
-                            cache.add(e, size=sz1)
-                            seen[fp] = (cost, e, sz1)
-                        else:
-                            # print("dropping {}; already seen {}".format(pprint(e), fp))
+                        cost = cost_model.cost(e)
+                        if cost_model.is_monotonic() and best_cost is not None and cost > best_cost:
+                            # print("too expensive: {}".format(pprint(e)))
                             continue
+                        fp = fingerprint(e)
+                        prev = seen.get(fp)
+                        if prev is None:
+                            seen[fp] = (cost, e, sz1)
+                            cache.add(e, size=sz1)
+                        else:
+                            prev_cost, prev_exp, prev_size = prev
+                            if cost < prev_cost:
+                                # print("cost ceiling lowered for {}: {} --> {}".format(fp, prev_cost, cost))
+                                cache.evict(prev_exp, prev_size)
+                                cache.add(e, size=sz1)
+                                seen[fp] = (cost, e, sz1)
+                            else:
+                                # print("dropping {}; already seen {}".format(pprint(e), fp))
+                                continue
 
-                # # debug = "xxx" in name
-                # debug = name == "implicitFrom"
-                # if debug: print("got expr: {} : {} @ {}".format(pprint(e), pprint(e.type), sz1))
+                    # # debug = "xxx" in name
+                    # debug = name == "implicitFrom"
+                    # if debug: print("got expr: {} : {} @ {}".format(pprint(e), pprint(e.type), sz1))
 
-                if e.type != type:
-                    # if debug: print("    --> FAIL; I wanted {}".format(pprint(type)))
-                    continue
-
-                # if debug: print("    --> OK!")
-
-                # print("{}| considering {} for {} [examples={}]".format(indent, pprint(e), name, g_examples))
-                # print("{}| considering {} @ {}".format(indent, pprint(e), sz1))
-                spec2 = subst(spec, { name : e })
-                # print("{}|{} ---> {}".format(indent, name, pprint(e)))
-                # print("{}|{}".format(indent, pprint(spec)))
-                # print("{}|{}".format(indent, pprint(spec2)))
-                # assert name not in (g.name for g in find_holes(spec2))
-                if not feasible(spec2, examples):
-                    print("{}INFEASIBLE: {}".format(indent, pprint(spec2)))
-                    continue
-                for d in find_consistent_exps(spec2, examples, sz2):
-                    cost = cost_model.cost(expand(e, d))
-                    if best_cost is not None and cost > best_cost:
+                    if e.type != type:
+                        # if debug: print("    --> FAIL; I wanted {}".format(pprint(type)))
                         continue
-                    if best_cost is None or cost < best_cost:
-                        print("cost ceiling lowered for {}: {} --> {}".format(name, best_cost, cost))
-                        best_cost = cost
-                    # TODO: if monotonic, clean out cache
-                    d[name] = e
-                    found = True
-                    yield d
-            # if not found:
-            #     print("{}none of size {} while synth'ing {} + {}".format(indent, sz1, name, list(g.name for g in goals)))
-                # if sz1 == 1:
-                #     print("{}roots of builder are: {}".format(indent, ", ".join("{}:{}".format(pprint(e), pprint(e.type)) for e in builder.roots)))
+
+                    # if debug: print("    --> OK!")
+
+                    # print("{}| considering {} for {} [examples={}]".format(indent, pprint(e), name, g_examples))
+                    # print("{}| considering {} @ {}".format(indent, pprint(e), sz1))
+                    spec2 = subst(spec, { name : e })
+                    # print("{}|{} ---> {}".format(indent, name, pprint(e)))
+                    # print("{}|{}".format(indent, pprint(spec)))
+                    # print("{}|{}".format(indent, pprint(spec2)))
+                    # assert name not in (g.name for g in find_holes(spec2))
+                    if not feasible(spec2, examples):
+                        print("{}INFEASIBLE: {}".format(indent, pprint(spec2)))
+                        continue
+                    for d in find_consistent_exps(spec2, examples, sz2):
+                        cost = cost_model.cost(expand(e, d))
+                        if best_cost is not None and cost > best_cost:
+                            continue
+                        if best_cost is None or cost < best_cost:
+                            print("cost ceiling lowered for {}: {} --> {}".format(name, best_cost, cost))
+                            best_cost = cost
+                        # TODO: if monotonic, clean out cache
+                        d[name] = e
+                        found = True
+                        yield d
+                # if not found:
+                #     print("{}none of size {} while synth'ing {} + {}".format(indent, sz1, name, list(g.name for g in goals)))
+                    # if sz1 == 1:
+                    #     print("{}roots of builder are: {}".format(indent, ", ".join("{}:{}".format(pprint(e), pprint(e.type)) for e in builder.roots)))
         # print("{}-> for {}: cache size = {}".format(indent, name, len(cache)))
     finally:
         indent = indent[2:]
