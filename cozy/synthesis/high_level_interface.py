@@ -125,7 +125,13 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
 
     q = queries[0]
     args = [EVar(name).with_type(t) for (name, t) in q.args]
-    b = core.Builder(roots + ctors + args, basic_types, cost_model=core.RunTimeCostModel())
+
+    class CoolCostModel(core.RunTimeCostModel):
+        def best_case_cost(self, e):
+            cm = super().best_case_cost
+            return min(cm(e2) for (rep, e2) in infer_rep(state, e))
+
+    b = core.Builder(roots + ctors + args, basic_types, cost_model=CoolCostModel())
     b.build_maps = False
     b.build_filters = False
     b.build_tuples = False
