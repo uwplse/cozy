@@ -1,4 +1,5 @@
 from collections import namedtuple, deque, defaultdict
+import datetime
 
 from cozy.common import typechecked, fresh_name, mk_map
 from cozy.target_syntax import *
@@ -6,6 +7,7 @@ import cozy.syntax_tools
 from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, free_vars, pprint, subst, implies, fresh_var, mk_lambda
 import cozy.incrementalization as inc
 from cozy.typecheck import INT, BOOL
+from cozy.timeouts import Timeout, TimeoutException
 
 from . import core
 from . import caching
@@ -95,7 +97,7 @@ def guess_constructors(state : [EVar], roots : [Exp]) -> [Exp]:
     return res
 
 @typechecked
-def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], queries : [Query]) -> (EVar, Exp, [Query]):
+def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], queries : [Query], timeout : Timeout) -> (EVar, Exp, [Query]):
     """
     Synthesize efficient re-implementations for the given queries.
 
@@ -138,19 +140,39 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
     hole = core.EHole(q.name, q.ret.type, b)
     spec = cozy.syntax_tools.equal(hole, q.ret)
 
-    for mapping in core.synth(spec):
+    new_state_vars = state
+    state_proj_exprs = state
+    new_ret = q.ret
+    try:
+        for mapping in core.synth(spec, timeout):
 
-        print("SOLUTION")
-        expr = core.expand(hole, mapping)
-        print(pprint(expr))
+            print("SOLUTION")
+            expr = core.expand(hole, mapping)
+            print(pprint(expr))
 
-        print("-" * 40)
-        for (st, expr) in infer_rep(state, expr):
-            for (sv, proj) in st:
-                print("  {} : {} = {}".format(sv.id, pprint(sv.type), pprint(proj)))
-            print("  return {}".format(pprint(expr)))
-        print("-" * 40)
+            print("-" * 40)
 
+            for (st, expr) in infer_rep(state, expr):
+                for (sv, proj) in st:
+                    print("  {} : {} = {}".format(sv.id, pprint(sv.type), pprint(proj)))
+                print("  return {}".format(pprint(expr)))
+
+                new_state_vars, state_proj_exprs = zip(*st)
+                new_ret = expr
+
+            print("-" * 40)
+
+
+    except TimeoutException:
+        print("stopping due to timeout")
+        pass
+
+    if len(new_state_vars) != 1:
+        raise NotImplementedError() # TODO
+
+    return (new_state_vars[0], state_proj_exprs[0], [Query(q.name, q.args, q.assumptions, new_ret)])
+
+    if False:
         continue
         raise NotImplementedError()
 
@@ -310,7 +332,8 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
 @typechecked
 def synthesize(
         spec      : Spec,
-        use_cache : bool = True) -> (Spec, dict):
+        use_cache : bool = True,
+        per_query_timeout : datetime.timedelta = datetime.timedelta(seconds=60)) -> (Spec, dict):
     """
     Main synthesis routine.
 
@@ -353,7 +376,7 @@ def synthesize(
             print("##### FOUND CACHED RESULT")
             state_var, state_exp, new_q = cached_result
         else:
-            state_var, state_exp, new_q = synthesize_queries(ctx, state_vars, list(spec.assumptions), [q])
+            state_var, state_exp, new_q = synthesize_queries(ctx, state_vars, list(spec.assumptions), [q], Timeout(per_query_timeout))
             new_q = new_q[0]
             if use_cache:
                 caching.cache((state_vars, list(spec.assumptions), q), (state_var, state_exp, new_q))

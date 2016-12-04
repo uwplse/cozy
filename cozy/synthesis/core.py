@@ -9,6 +9,7 @@ from cozy.syntax_tools import subst, pprint, free_vars, BottomUpExplorer
 from cozy.common import Visitor, fresh_name, typechecked, unique
 from cozy.solver import satisfy, feasible
 from cozy.evaluation import HoleException, eval, all_envs_for_hole
+from cozy.timeouts import Timeout
 
 def cross_product(iters, i=0):
     if i == len(iters):
@@ -411,7 +412,8 @@ def find_consistent_exps(
         spec      : Exp,
         examples  : [Exp],
         max_size  : int = None,
-        best_cost : float = None):
+        best_cost : float = None,
+        timeout   : Timeout = None):
 
     global indent
     indent = indent + "  "
@@ -453,6 +455,8 @@ def find_consistent_exps(
             if max_size is None:
                 print("size={}".format(size))
             for sz1 in range(1, size + 1):
+                if timeout is not None:
+                    timeout.check()
                 sz2 = size - sz1
             # for (sz1, sz2) in pick_to_sum(2, size + 1):
             #     sz2 -= 1
@@ -507,7 +511,7 @@ def find_consistent_exps(
                     if not feasible(spec2, examples):
                         print("{}INFEASIBLE: {}".format(indent, pprint(spec2)))
                         continue
-                    for d in find_consistent_exps(spec2, examples, sz2):
+                    for d in find_consistent_exps(spec2, examples, sz2, timeout=timeout):
                         cost = cost_model.cost(expand(e, d))
                         if best_cost is not None and cost > best_cost:
                             continue
@@ -533,10 +537,10 @@ def expand(e, mapping):
         assert e != prev, "failed to converge: {}, {}".format(new_spec, mapping)
     return e
 
-def synth(spec):
+def synth(spec, timeout):
     examples = []
     while True:
-        for mapping in find_consistent_exps(spec, examples):
+        for mapping in find_consistent_exps(spec, examples, timeout=timeout):
             new_spec = expand(spec, mapping)
 
             print("considering: {}".format(pprint(new_spec)))
