@@ -37,6 +37,8 @@ def infer_rep(state : [EVar], qexp : Exp) -> [([(EVar, Exp)], Exp)]:
         def visit_EMapGet(self, e, k):
             for (st, exp) in self.visit(e.map, k):
                 yield (st, EMapGet(exp, e.key).with_type(e.type))
+        def visit_EUnaryOp(self, e, k):
+            yield from self.visit(e.e, compose(k, mk_lambda(e.e.type, lambda x: EUnaryOp(e.op, x))))
         def visit_Exp(self, e, k):
             fvs = free_vars(e)
             if all(v in state for v in fvs):
