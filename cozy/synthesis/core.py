@@ -121,6 +121,8 @@ class RunTimeCostModel(CostModel, BottomUpExplorer):
         return self.visit(e.e) + cardinality(e.e) * self.visit(e.f.body)
     def visit_EFilter(self, e):
         return self.visit(e.e) + cardinality(e.e) * self.visit(e.p.body)
+    def visit_EMakeMap(self, e):
+        return self.visit(e.e) + cardinality(e.e) * (self.visit(e.key.body) + self.visit(e.value.body))
     def join(self, x, child_costs):
         return 0.01 + sum(child_costs)
 
