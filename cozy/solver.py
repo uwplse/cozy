@@ -353,6 +353,7 @@ def satisfy(e, collection_depth : int = 2, validate_model : bool = True):
 
     ctx = z3.Context()
     solver = z3.Solver(ctx=ctx)
+    solver.set("core.validate", validate_model)
     visitor = ToZ3(ctx)
 
     def reconstruct(model, value, type):
