@@ -57,6 +57,9 @@ class CxxPrinter(common.Visitor):
     def visit_TRecord(self, t, name):
         return "{} {}".format(self.typename(t), name)
 
+    def visit_TTuple(self, t, name):
+        return "{} {}".format(self.typename(t), name)
+
     def visit_TEnum(self, enum, name):
         return "{} {}".format(self.typename(enum), name)
 
@@ -301,6 +304,9 @@ class CxxPrinter(common.Visitor):
         if isinstance(e.e.type, THandle) or isinstance(e.e.type, library.TIntrusiveLinkedList):
             op = "->"
         return (ce, "({ee}{op}{f})".format(ee=ee, op=op, f=e.f))
+
+    def visit_ETupleGet(self, e, indent=""):
+        return self.visit_EGetField(EGetField(e.e, "_{}".format(e.n)), indent)
 
     def visit_ECall(self, e, indent=""):
         f = self.funcs[e.func]
@@ -588,6 +594,8 @@ class JavaPrinter(CxxPrinter):
 
             s += "{indent}}}\n".format(indent=indent)
             return s
+        elif isinstance(t, TTuple):
+            return self.define_type(toplevel_name, TRecord(tuple(("_{}".format(i), t.ts[i]) for i in range(len(t.ts)))), name, indent, sharing);
         else:
             return ""
 
