@@ -1,6 +1,6 @@
 from cozy.common import Visitor
 from cozy.target_syntax import *
-from cozy.syntax_tools import fresh_var, free_vars, mk_lambda
+from cozy.syntax_tools import fresh_var, free_vars, mk_lambda, subst
 
 def compose(f1 : ELambda, f2 : ELambda) -> ELambda:
     return mk_lambda(f2.arg.type, lambda v: f1.apply_to(f2.apply_to(v)))
@@ -47,5 +47,5 @@ def infer_rep(state : [EVar], qexp : Exp) -> [([(EVar, Exp)], Exp)]:
                 yield ([(v, proj)], v)
             else:
                 st = [(fresh_var(v.type), v) for v in fvs if v in state]
-                yield (st, k.apply_to(e))
+                yield (st, k.apply_to(subst(e, { old_var.id : new_var for (new_var, old_var) in st })))
     yield from V().visit(qexp, mk_lambda(qexp.type, lambda x: x))
