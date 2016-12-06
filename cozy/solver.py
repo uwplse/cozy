@@ -138,6 +138,20 @@ class ToZ3(Visitor):
     def visit_EAlterMaybe(self, e, env):
         return fmap(self.visit(e.e, env),
             lambda res: self.apply(e.f, res, env) if res is not None else res)
+    def visit_EFlatten(self, e, env):
+        def go(bag):
+            mask, elems = bag
+            if not mask:
+                return bag
+            def recurse(sub_bag):
+                sub_mask, sub_elems = sub_bag
+                rest_mask, rest_elems = go((mask[1:], elems[1:]))
+                return (sub_mask + rest_mask, sub_elems + rest_elems)
+            return fmap(elems[0], recurse)
+        flat = fmap(self.visit(e.e, env), go)
+        # print("bag = {}".format(self.visit(e.e, env)))
+        # print("flat = {}".format(flat))
+        return flat
     def visit_ECond(self, e, env):
         cond = self.visit(e.cond, env)
         then_branch = self.visit(e.then_branch, env)
