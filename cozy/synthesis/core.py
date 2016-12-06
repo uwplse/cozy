@@ -205,6 +205,9 @@ class Builder(ExpBuilder):
                 yield ETupleGet(e, n).with_type(e.type.ts[n])
         for e in cache.find(type=BOOL, size=size-1):
             yield EUnaryOp("not", e).with_type(BOOL)
+        for e in cache.find(type=TBag, size=size-1):
+            if isinstance(e.type.t, TBag):
+                yield EFlatten(e).with_type(e.type.t)
 
         for (sz1, sz2) in pick_to_sum(2, size - 1):
             for a1 in cache.find(type=INT, size=sz1):
