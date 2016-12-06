@@ -144,9 +144,10 @@ class ToZ3(Visitor):
             if not mask:
                 return bag
             def recurse(sub_bag):
+                exists = mask[0]
                 sub_mask, sub_elems = sub_bag
                 rest_mask, rest_elems = go((mask[1:], elems[1:]))
-                return (sub_mask + rest_mask, sub_elems + rest_elems)
+                return ([z3.And(exists, m, self.ctx) for m in sub_mask] + rest_mask, sub_elems + rest_elems)
             return fmap(elems[0], recurse)
         flat = fmap(self.visit(e.e, env), go)
         # print("bag = {}".format(self.visit(e.e, env)))
