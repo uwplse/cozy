@@ -455,7 +455,7 @@ def find_consistent_exps(
         seen = {} # maps fingerprints to (cost, exp, size)
         for size in ints(1, max_size):
             if max_size is None:
-                print("size={}".format(size))
+                print("size={}; |cache|={}".format(size, len(cache)))
             for sz1 in range(1, size + 1):
                 if timeout is not None:
                     timeout.check()
