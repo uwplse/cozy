@@ -412,6 +412,9 @@ def ints(start, end):
     else:
         yield from range(start, end + 1)
 
+def fingerprint(e, examples):
+    return (e.type,) + tuple(eval(e, ex) for ex in examples)
+
 indent = ""
 def find_consistent_exps(
         spec      : Exp,
@@ -467,8 +470,6 @@ def find_consistent_exps(
             #     sz2 -= 1
                 # print("{}({},{})".format(indent, sz1, sz2))
                 found = False
-                def fingerprint(e):
-                    return (e.type,) + tuple(eval(e, ex) for ex in g_examples)
                 for e in builder.build(cache, sz1):
                     if contains_holes(e):
                         raise Exception()
@@ -480,7 +481,7 @@ def find_consistent_exps(
                         if cost_model.is_monotonic() and best_cost is not None and cost > best_cost:
                             # print("too expensive: {}".format(pprint(e)))
                             continue
-                        fp = fingerprint(e)
+                        fp = fingerprint(e, g_examples)
                         prev = seen.get(fp)
                         if prev is None:
                             seen[fp] = (cost, e, sz1)
