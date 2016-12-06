@@ -16,6 +16,8 @@ def uses_intrusive_data(e, handle):
         return uses_intrusive_data(e.e, handle)
     elif isinstance(e, target_syntax.EUnaryOp):
         return uses_intrusive_data(e.e, handle)
+    elif isinstance(e, target_syntax.ETuple):
+        return any(uses_intrusive_data(ee, handle) for ee in e.es)
     elif isinstance(e, target_syntax.EVar):
         if isinstance(e.type, target_syntax.TBag) and e.type.t == handle.type:
             return target_syntax.EBinOp(handle, "in", e).with_type(target_syntax.TBool())
