@@ -259,8 +259,9 @@ class CxxPrinter(common.Visitor):
         elif isinstance(iterable, EFlatten):
             # TODO: properly handle breaks inside body
             # TODO: indents get messed up here
+            v = fresh_var(iterable.type.t)
             return self.for_each(iterable.e,
-                lambda bag: self.for_each(bag, body, indent+INDENT),
+                lambda bag: SForEach(v, bag, body(v)),
                 indent=indent)
         else:
             if type(iterable.type) is TBag:
