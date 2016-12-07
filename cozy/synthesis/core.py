@@ -99,6 +99,12 @@ class CardinalityVisitor(BottomUpExplorer):
         return self.visit(e.e)
     def visit_EMapGet(self, e):
         return self.visit(e.map) / 3
+    def visit_EFilter(self, e):
+        return self.visit(e.e) / 2
+    def visit_EMap(self, e):
+        return self.visit(e.e)
+    def visit_EFlatten(self, e):
+        return self.visit(e.e) ** 2 # TODO?
     def visit_Exp(self, e):
         return 0
 
