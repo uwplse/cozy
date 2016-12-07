@@ -348,7 +348,7 @@ def mkconst(ctx, solver, val):
     else:
         raise NotImplementedError(repr(val))
 
-def satisfy(e, collection_depth : int = 2, validate_model : bool = True):
+def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = True):
     print("sat? {}".format(pprint(e)))
     # print(repr(e))
 
@@ -396,7 +396,7 @@ def satisfy(e, collection_depth : int = 2, validate_model : bool = True):
             raise NotImplementedError(type)
 
     _env = { }
-    fvs = free_vars(e)
+    fvs = vars if vars is not None else free_vars(e)
     handle_vars = []
     for v in fvs:
         # print("{} : {}".format(pprint(v), pprint(v.type)))
