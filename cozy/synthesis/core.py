@@ -6,7 +6,7 @@ import sys
 from cozy.target_syntax import *
 from cozy.typecheck import INT, BOOL
 from cozy.syntax_tools import subst, pprint, free_vars, BottomUpExplorer
-from cozy.common import Visitor, fresh_name, typechecked, unique
+from cozy.common import Visitor, fresh_name, typechecked, unique, pick_to_sum
 from cozy.solver import satisfy, feasible
 from cozy.evaluation import HoleException, eval, all_envs_for_hole
 from cozy.timeouts import Timeout
@@ -333,18 +333,6 @@ def contains_holes(e):
     for g in find_holes(e):
         return True
     return False
-
-def pick_to_sum(n, total_size):
-    if n == 0:
-        assert total_size == 0, "total size is {}".format(total_size)
-        yield ()
-        return
-    if n == 1:
-        yield (total_size,)
-        return
-    for size in range(1, total_size - n + 2):
-        for rest in pick_to_sum(n - 1, total_size - size):
-            yield (size,) + rest
 
 def pick(caches, types, sizes):
     if len(caches) == 0:
