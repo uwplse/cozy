@@ -39,6 +39,13 @@ def infer_rep(state : [EVar], qexp : Exp) -> [([(EVar, Exp)], Exp)]:
                 yield (st, EMapGet(exp, e.key).with_type(e.type))
         def visit_EUnaryOp(self, e, k):
             yield from self.visit(e.e, compose(k, mk_lambda(e.e.type, lambda x: EUnaryOp(e.op, x))))
+        def visit_EFlatten(self, e, k):
+            # TODO: if we can prove something about the cardinality of the set,
+            # maybe we can materialize the join.
+            assert isinstance(e.e, EMap)
+            for (outer_st, outer_exp) in self.visit(e.e.e, mk_lambda(e.e.e.type, lambda x: x)):
+                for (inner_st, inner_exp) in self.visit(e.e.f.body, k):
+                    yield (outer_st + inner_st, EFlatten(EMap(outer_exp, ELambda(e.e.f.arg, inner_exp))).with_type(e.type))
         def visit_Exp(self, e, k):
             fvs = free_vars(e)
             if all(v in state for v in fvs):
