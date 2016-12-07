@@ -256,7 +256,7 @@ def unique(iter, key=lambda x: x):
     Yields a stream of deduplicated elements. If the 'key' parameter is
     provided, elements x are deduplicated according to key(x). When duplicates
     are found, the first element in the iterable is kept and others are
-    dropped.
+    dropped. Elements are returned in the same order as the input iterator.
     """
     seen = set()
     for x in iter:
