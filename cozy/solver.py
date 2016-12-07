@@ -146,8 +146,8 @@ class ToZ3(Visitor):
             def recurse(sub_bag):
                 exists = mask[0]
                 sub_mask, sub_elems = sub_bag
-                rest_mask, rest_elems = go((mask[1:], elems[1:]))
-                return ([z3.And(exists, m, self.ctx) for m in sub_mask] + rest_mask, sub_elems + rest_elems)
+                return fmap(go((mask[1:], elems[1:])),
+                    lambda rest: ([z3.And(exists, m, self.ctx) for m in sub_mask] + rest[0], sub_elems + rest[1]))
             return fmap(elems[0], recurse)
         flat = fmap(self.visit(e.e, env), go)
         # print("bag = {}".format(self.visit(e.e, env)))
@@ -253,7 +253,7 @@ class ToZ3(Visitor):
     def visit_EMapGet(self, e, env):
         def go(map):
             key = self.visit(e.key, env)
-            res = self.apply(map["default"], ((), ()), env)
+            res = self.apply(map["default"], ([], []), env)
             # print("map get {} on {}".format(key, map))
             for (k, v) in map["mapping"]:
                 # print("   k   = {}".format(repr(k)))
