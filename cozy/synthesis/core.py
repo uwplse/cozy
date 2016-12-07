@@ -196,9 +196,9 @@ class Builder(ExpBuilder):
             if contains_holes(r):
                 yield from instantiate(r, cache, size - 1)
 
-        # for e in cache.find(type=TRecord, size=size-1):
-        #     for (f,t) in e.type.fields:
-        #         yield EGetField(e, f).with_type(t)
+        for e in cache.find(type=TRecord, size=size-1):
+            for (f,t) in e.type.fields:
+                yield EGetField(e, f).with_type(t)
         if self.build_sums:
             for e in cache.find(type=TBag(INT), size=size-1):
                 yield EUnaryOp("sum", e).with_type(INT)
