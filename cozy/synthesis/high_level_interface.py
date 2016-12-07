@@ -1,7 +1,7 @@
 from collections import namedtuple, deque, defaultdict
 import datetime
 
-from cozy.common import typechecked, fresh_name, mk_map
+from cozy.common import typechecked, fresh_name, mk_map, pick_to_sum
 from cozy.target_syntax import *
 import cozy.syntax_tools
 from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, free_vars, pprint, subst, implies, fresh_var, mk_lambda
@@ -96,6 +96,29 @@ def guess_constructors(state : [EVar], roots : [Exp]) -> [Exp]:
     #     print("   --> {}".format(pprint(r)))
     return res
 
+class BinderBuilder(core.Builder):
+    def __init__(self, binders, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.binders = binders
+    def build(self, cache, size):
+        yield from super().build(cache, size)
+        # print("  CACHE")
+        # for (x, size) in cache:
+        #     print("    " + pprint(x))
+        if size >= 3:
+            for (sz1, sz2) in pick_to_sum(2, size - 1):
+                for bag in cache.find(type=TBag, size=sz1):
+                    # if not isinstance(bag, EMapGet):
+                    #     print("-----> " + pprint(bag) + " : " + pprint(bag.type))
+                    #     continue
+                    # print("###> " + pprint(bag) + " : " + pprint(bag.type))
+                    for binder in self.binders:
+                        if binder.type == bag.type.t:
+                            for body in cache.find(size=sz2):
+                                yield EMap(bag, ELambda(binder, body)).with_type(TBag(body.type))
+                                if body.type == BOOL:
+                                    yield EFilter(bag, ELambda(binder, body)).with_type(bag.type)
+
 @typechecked
 def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], queries : [Query], timeout : Timeout) -> (EVar, Exp, [Query]):
     """
@@ -133,7 +156,15 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
             cm = super().best_case_cost
             return min(cm(e2) for (rep, e2) in infer_rep(state, e))
 
-    b = core.Builder(roots + ctors + args, basic_types, cost_model=CoolCostModel())
+    binders = []
+    n_binders = 3 # TODO?
+    for t in all_types:
+        if isinstance(t, TBag):
+            binders += [fresh_var(t.t) for i in range(n_binders)]
+    print(binders)
+
+    # b = core.Builder(roots + binders + ctors + args, basic_types, cost_model=CoolCostModel())
+    b = BinderBuilder(binders, roots + binders + ctors + args, basic_types, cost_model=CoolCostModel())
     b.build_maps = False
     b.build_filters = False
     b.build_tuples = False
@@ -144,7 +175,7 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
     state_proj_exprs = state
     new_ret = q.ret
     try:
-        for mapping in core.synth(spec, timeout):
+        for mapping in core.synth(spec, binders, timeout):
 
             print("SOLUTION")
             expr = core.expand(hole, mapping)

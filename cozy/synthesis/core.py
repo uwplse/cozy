@@ -406,19 +406,47 @@ def ints(start, end):
     else:
         yield from range(start, end + 1)
 
-def fingerprint(e, examples):
+def values_of_type(value, value_type, desired_type):
+    # see evaluation.mkval for info on the structure of values
+    if value_type == desired_type:
+        yield value
+    elif isinstance(value_type, TBag):
+        for x in value:
+            yield from values_of_type(x, value_type.t, desired_type)
+    else:
+        # I think this is OK since all values for bound vars are pulled from
+        # bags or other collections.
+        pass
+
+def instantiate_examples(examples, vars, binder):
+    for e in examples:
+        for v in vars:
+            for possible_value in unique(values_of_type(e[v.id], v.type, binder.type)):
+                # print("possible value for {}: {}".format(pprint(binder.type), repr(possible_value)))
+                e2 = dict(e)
+                e2[binder.id] = possible_value
+                yield e2
+
+def fingerprint(e, examples, vars : {EVar}, binders : [EVar]):
+    fvs = free_vars(e)
+    for v in binders:
+        if v in fvs:
+            examples = list(instantiate_examples(examples, vars, v))
+            # print("augmented examples for {}: {}".format(v, examples))
     return (e.type,) + tuple(eval(e, ex) for ex in examples)
 
 indent = ""
 def find_consistent_exps(
         spec      : Exp,
-        examples  : [Exp],
+        binders   : [EVar],
+        examples  : [{str:object}],
         max_size  : int = None,
         best_cost : float = None,
         timeout   : Timeout = None):
 
     global indent
     indent = indent + "  "
+    fvs = free_vars(spec)
 
     try:
 
@@ -427,7 +455,7 @@ def find_consistent_exps(
         goals = list(find_holes(spec))
 
         if not goals:
-            if max_size == 0 and all(eval(spec, ex) for ex in examples):
+            if max_size == 0 and all(v not in binders for v in fvs) and all(eval(spec, ex) for ex in examples):
                 print("final: {}".format(pprint(spec)))
                 yield { }
             else:
@@ -470,26 +498,32 @@ def find_consistent_exps(
                         if cost_model.is_monotonic() and best_cost is not None and cost_model.best_case_cost(e) > best_cost:
                             continue
                         cache.add(e, size=sz1)
+                        continue
+
+                    cost = cost_model.cost(e)
+
+                    # if isinstance(e, EMapGet):
+                    #     print("got map get {} @ {}".format(pprint(e), cost))
+
+                    if cost_model.is_monotonic() and best_cost is not None and cost > best_cost:
+                        # print("too expensive: {}".format(pprint(e)))
+                        continue
+                    fp = fingerprint(e, g_examples, fvs, binders)
+                    prev = seen.get(fp)
+                    if prev is None:
+                        seen[fp] = (cost, e, sz1)
+                        cache.add(e, size=sz1)
                     else:
-                        cost = cost_model.cost(e)
-                        if cost_model.is_monotonic() and best_cost is not None and cost > best_cost:
-                            # print("too expensive: {}".format(pprint(e)))
-                            continue
-                        fp = fingerprint(e, g_examples)
-                        prev = seen.get(fp)
-                        if prev is None:
-                            seen[fp] = (cost, e, sz1)
+                        prev_cost, prev_exp, prev_size = prev
+                        if cost < prev_cost:
+                            # print("cost ceiling lowered for {}: {} --> {}".format(fp, prev_cost, cost))
+                            cache.evict(prev_exp, prev_size)
                             cache.add(e, size=sz1)
+                            seen[fp] = (cost, e, sz1)
                         else:
-                            prev_cost, prev_exp, prev_size = prev
-                            if cost < prev_cost:
-                                # print("cost ceiling lowered for {}: {} --> {}".format(fp, prev_cost, cost))
-                                cache.evict(prev_exp, prev_size)
-                                cache.add(e, size=sz1)
-                                seen[fp] = (cost, e, sz1)
-                            else:
-                                # print("dropping {}; already seen {}".format(pprint(e), fp))
-                                continue
+                            # if isinstance(e, EMapGet):
+                            #     print("dropping {}; already handled by {} (examples={})".format(pprint(e), pprint(prev_exp), repr(examples)))
+                            continue
 
                     # # debug = "xxx" in name
                     # debug = name == "implicitFrom"
@@ -511,7 +545,7 @@ def find_consistent_exps(
                     if not feasible(spec2, examples):
                         print("{}INFEASIBLE: {}".format(indent, pprint(spec2)))
                         continue
-                    for d in find_consistent_exps(spec2, examples, sz2, timeout=timeout):
+                    for d in find_consistent_exps(spec2, binders, examples, sz2, timeout=timeout):
                         cost = cost_model.cost(expand(e, d))
                         if best_cost is not None and cost > best_cost:
                             continue
@@ -537,10 +571,11 @@ def expand(e, mapping):
         assert e != prev, "failed to converge: {}, {}".format(new_spec, mapping)
     return e
 
-def synth(spec, timeout):
+@typechecked
+def synth(spec : Exp, binders : [EVar], timeout : Timeout):
     examples = []
     while True:
-        for mapping in find_consistent_exps(spec, examples, timeout=timeout):
+        for mapping in find_consistent_exps(spec, binders, examples, timeout=timeout):
             new_spec = expand(spec, mapping)
 
             print("considering: {}".format(pprint(new_spec)))
