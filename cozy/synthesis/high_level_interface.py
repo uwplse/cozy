@@ -118,6 +118,8 @@ class BinderBuilder(core.Builder):
                                 yield EMap(bag, ELambda(binder, body)).with_type(TBag(body.type))
                                 if body.type == BOOL:
                                     yield EFilter(bag, ELambda(binder, body)).with_type(bag.type)
+                                if isinstance(body.type, TBag):
+                                    yield EFlatMap(bag, ELambda(binder, body)).with_type(body.type)
 
 @typechecked
 def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], queries : [Query], timeout : Timeout) -> (EVar, Exp, [Query]):

@@ -1,6 +1,6 @@
 from collections import defaultdict
 
-from cozy.syntax import *
+from cozy.target_syntax import *
 from cozy.common import Visitor, FrozenDict, all_distinct
 
 class HoleException(Exception):
@@ -105,6 +105,8 @@ class Evaluator(Visitor):
     def visit_EFlatten(self, e, env):
         res = self.visit(e.e, env)
         return tuple(elem for bag in res for elem in bag)
+    def visit_EFlatMap(self, e, env):
+        return self.visit(EFlatten(EMap(e.e, e.f)), env)
     def visit_clauses(self, clauses, e, env):
         if not clauses:
             yield self.visit(e, env)

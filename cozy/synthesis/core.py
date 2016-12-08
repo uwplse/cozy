@@ -103,8 +103,8 @@ class CardinalityVisitor(BottomUpExplorer):
         return self.visit(e.e) / 2
     def visit_EMap(self, e):
         return self.visit(e.e)
-    def visit_EFlatten(self, e):
-        return self.visit(e.e) ** 2 # TODO?
+    def visit_EFlatMap(self, e):
+        return self.visit(e.e) * self.visit(e.f.body)
     def visit_Exp(self, e):
         return 0
 
@@ -125,6 +125,8 @@ class RunTimeCostModel(CostModel, BottomUpExplorer):
         return cost
     def visit_EMap(self, e):
         return self.visit(e.e) + cardinality(e.e) * self.visit(e.f.body)
+    def visit_EFlatMap(self, e):
+        return self.visit(EFlatten(EMap(e.e, e.f)))
     def visit_EFilter(self, e):
         return self.visit(e.e) + cardinality(e.e) * self.visit(e.p.body)
     def visit_EMakeMap(self, e):
@@ -211,9 +213,6 @@ class Builder(ExpBuilder):
                 yield ETupleGet(e, n).with_type(e.type.ts[n])
         for e in cache.find(type=BOOL, size=size-1):
             yield EUnaryOp("not", e).with_type(BOOL)
-        for e in cache.find(type=TBag, size=size-1):
-            if isinstance(e.type.t, TBag):
-                yield EFlatten(e).with_type(e.type.t)
 
         for (sz1, sz2) in pick_to_sum(2, size - 1):
             for a1 in cache.find(type=INT, size=sz1):

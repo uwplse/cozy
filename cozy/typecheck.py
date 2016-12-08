@@ -276,6 +276,14 @@ class Typechecker(Visitor):
             self.report_err("cannot flatten {}".format(e.e.type))
             e.type = DEFAULT_TYPE
 
+    def visit_EFlatMap(self, e):
+        self.visit(e.e)
+        t1 = self.get_collection_type(e.e)
+        self.visit(e.f)
+        self.ensure_type(e.f.arg, t1)
+        t2 = self.get_collection_type(e.f.body)
+        e.type = t2
+
     def visit_ECall(self, e):
         f = self.funcs.get(e.func) or self.queries.get(e.func)
         if f is None:

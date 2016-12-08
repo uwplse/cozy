@@ -31,6 +31,9 @@ EEnumToInt = declare_case(Exp, "EEnumToInt", ["e"])
 EBoolToInt = declare_case(Exp, "EBoolToInt", ["e"])
 EStm       = declare_case(Exp, "EStm", ["stm", "e"])
 
+# EFlatMap(e, f) == EFlatten(EMap(e, f))
+EFlatMap   = declare_case(Exp, "EFlatMap", ["e", "f"])
+
 # Maybe
 EAlterMaybe = declare_case(Exp, "EAlterMaybe", ["e", "f"])
 
