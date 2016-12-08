@@ -37,7 +37,9 @@ def fragmentize(exp : Exp, bound_names : {str} = set()):
         fvs = [fv for fv in free_vars(e) if fv.id not in bound_names]
         remap = { v.id : core.EHole(fresh_name(), v.type, None) for v in fvs }
         e = subst(e, remap)
-        if not any(alpha_equivalent(e, root) for root in so_far):
+        def allow_rename(v1, v2):
+            return isinstance(v1, core.EHole) and v1.type == v2.type
+        if not any(alpha_equivalent(e, root, allow_rename) for root in so_far):
             so_far.append(e)
             yield e
 

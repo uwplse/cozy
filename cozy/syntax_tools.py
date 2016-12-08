@@ -439,7 +439,7 @@ def subst(exp, replacements):
 
     return Subst().visit(exp)
 
-def alpha_equivalent(e1, e2, remap_free=False):
+def alpha_equivalent(e1, e2, allow_rename=lambda v1, v2: False):
     """
     Equality on expression ASTs is syntactic equality; even variable names are
     compared. So,
@@ -447,8 +447,9 @@ def alpha_equivalent(e1, e2, remap_free=False):
     However, alpha equivalence allows renaming of variables, so
         alpha_equivalent([x | x <- L], [y | y <- L]) == True.
 
-    If remap_free=True, then this function behaves like a unification procedure;
-    the expressions "x+y" and "x+z" will be treated as alpha equivalent.
+    The allow_rename parameter lets the programmer specify that some variables
+    may be renamed into others. For instance, if allow_rename(y, z) == True,
+    then the expressions "x+y" and "x+z" will be treated as alpha equivalent.
     """
     class V(common.Visitor):
         def __init__(self):
@@ -460,13 +461,19 @@ def alpha_equivalent(e1, e2, remap_free=False):
             if not e1.id in self.remap:
                 e1id = e2.id
                 self.remap[e1.id] = e1id
-            elif remap_free:
+            elif allow_rename(e1, e2):
                 e1id = self.remap[e1.id]
             return e1id == e2.id
         def visit_EHole(self, e1, e2):
             if not isinstance(e2, target_syntax.EHole):
                 return False
-            return self.visit_EVar(syntax.EVar(e1.name), syntax.EVar(e2.name))
+            e1id = e1.name
+            if not e1.name in self.remap:
+                e1id = e2.name
+                self.remap[e1.name] = e1id
+            elif allow_rename(e1, e2):
+                e1id = self.remap[e1.name]
+            return e1id == e2.name
         def visit_ELambda(self, e1, e2):
             if not isinstance(e2, target_syntax.ELambda):
                 return False
