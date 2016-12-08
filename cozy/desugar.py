@@ -39,9 +39,10 @@ def desugar(spec : Spec) -> Spec:
                     for g in guards[1:]:
                         guard = EBinOp(guard, "and", g).with_type(BOOL)
                     bag = EFilter(bag, ELambda(arg, guard)).with_type(bag.type)
-                res = EMap(bag, ELambda(arg, rest)).with_type(TBag(rest.type))
                 if pulls:
-                    res = EFlatten(res).with_type(res.type.t)
+                    res = EFlatMap(bag, ELambda(arg, rest)).with_type(rest.type)
+                else:
+                    res = EMap(bag, ELambda(arg, rest)).with_type(TBag(rest.type))
                 return res, [], True
             elif isinstance(clause, CCond):
                 rest, guards, pulls = self.visit_clauses(clauses, final, i + 1)
