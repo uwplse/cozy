@@ -100,6 +100,10 @@ class CardinalityVisitor(BottomUpExplorer):
     def visit_EMapGet(self, e):
         return self.visit(e.map) / 3
     def visit_EFilter(self, e):
+        if e.p.body == EBool(True):
+            return self.visit(e.e)
+        if e.p.body == EBool(False):
+            return 0
         return self.visit(e.e) / 2
     def visit_EMap(self, e):
         return self.visit(e.e)
