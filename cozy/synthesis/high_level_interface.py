@@ -60,7 +60,7 @@ def rename_args(queries : [Query]) -> [Query]:
 @typechecked
 def get_roots(state : [EVar], queries : [Query]) -> [Exp]:
     state_var_names = set(v.id for v in state)
-    roots = []
+    roots = [EBool(True).with_type(BOOL), EBool(False).with_type(BOOL)]
     for q in queries:
         # TODO: filter . map ----> map . filter
         roots += fragmentize(q.ret, bound_names=state_var_names)
