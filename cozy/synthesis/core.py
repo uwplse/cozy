@@ -429,9 +429,8 @@ def instantiate_examples(examples, vars, binder):
 def fingerprint(e, examples, vars : {EVar}, binders : [EVar]):
     fvs = free_vars(e)
     for v in binders:
-        if v in fvs:
-            examples = list(instantiate_examples(examples, vars, v))
-            # print("augmented examples for {}: {}".format(v, examples))
+        examples = list(instantiate_examples(examples, vars, v))
+        # print("augmented examples for {}: {}".format(v, examples))
     return (e.type,) + tuple(eval(e, ex) for ex in examples)
 
 indent = ""
