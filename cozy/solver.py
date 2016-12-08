@@ -231,10 +231,12 @@ class ToZ3(Visitor):
             return bag_mask, res_elems
         return fmap(self.visit(e.e, env), go)
     def do_filter(self, bag, p, env):
+        return self.raw_filter(bag, lambda x: self.apply(p, x, env))
+    def raw_filter(self, bag, p):
         bag_mask, bag_elems = bag
         res_mask = []
         for mask, x in zip(bag_mask, bag_elems):
-            res_mask.append(z3.And(mask, self.apply(p, x, env), self.ctx))
+            res_mask.append(z3.And(mask, p(x), self.ctx))
         return res_mask, bag_elems
     def visit_EFilter(self, e, env):
         return fmap(self.visit(e.e, env), lambda bag: self.do_filter(bag, e.p, env))
@@ -245,7 +247,7 @@ class ToZ3(Visitor):
             x = EVar(fresh_name()).with_type(e.e.type.t)
             m = {"mapping": [(k, self.apply(
                     e.value,
-                    self.do_filter(bag, ELambda(e.key.arg, EBinOp(e.key.body, "==", k)), env),
+                    self.raw_filter(bag, lambda x: self.eq(e.key.body.type, self.apply(e.key, x, env), k, env)),
                     env)) for k in ks],
                 "default": e.value}
             return m
