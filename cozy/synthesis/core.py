@@ -5,7 +5,7 @@ import sys
 
 from cozy.target_syntax import *
 from cozy.typecheck import INT, BOOL
-from cozy.syntax_tools import subst, pprint, free_vars, BottomUpExplorer
+from cozy.syntax_tools import subst, pprint, free_vars, BottomUpExplorer, equal, fresh_var
 from cozy.common import Visitor, fresh_name, typechecked, unique, pick_to_sum
 from cozy.solver import satisfy, feasible
 from cozy.evaluation import HoleException, eval, all_envs_for_hole
@@ -109,6 +109,50 @@ class CardinalityVisitor(BottomUpExplorer):
         return 0
 
 cardinality = CardinalityVisitor().visit
+
+class MemoryUsageCostModel(CostModel, BottomUpExplorer):
+    def best_case_cost(self, e):
+        try:
+            return self.visit(e)
+        except:
+            print("estimating memory usage of {}".format(pprint(e)))
+            raise
+    def is_monotonic(self):
+        return True
+
+    def visit_EVar(self, e):
+        if isinstance(e.type, TBag):
+            return cardinality(e)
+        return 1
+    def visit_EUnaryOp(self, e):
+        if e.op == "sum":
+            return 1 # TODO: sizeof(int)
+        if e.op == "not":
+            return 1 # TODO: sizeof(bool)
+        if e.op == "the":
+            return 1 # TODO: sizeof(e.type)
+        raise NotImplementedError(e.op)
+    def visit_EBool(self, e):
+        return 1 # TODO: sizeof(bool)
+    def visit_EBinOp(self, e):
+        return 1 # TODO: sizeof(e.type)
+    def visit_EMap(self, e):
+        return cardinality(e.e) * self.visit(e.f.body)
+    def visit_EFlatMap(self, e):
+        return cardinality(e.e) * self.visit(e.f.body)
+    def visit_EFilter(self, e):
+        return cardinality(e) # TODO: c * sizeof(e.type.t)
+    def visit_EMakeMap(self, e):
+        return cardinality(e.e) * (self.visit(e.key.body) + self.visit(e.value.body))
+    def visit_EMapGet(self, e):
+        assert isinstance(e.map, EMakeMap)
+        return self.visit(e.map.value.apply_to(EFilter(e.map.e, ELambda(e.map.key.arg, equal(e.map.key.arg, fresh_var(e.map.key.arg.type))))))
+    def visit_EAlterMaybe(self, e):
+        return self.visit(e.f.body)
+    def visit_EGetField(self, e):
+        return 1 # TODO: sizeof(e.type)
+    def visit_Exp(self, e):
+        raise NotImplementedError(repr(e))
 
 class RunTimeCostModel(CostModel, BottomUpExplorer):
     def best_case_cost(self, e):
