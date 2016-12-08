@@ -187,6 +187,9 @@ class PrettyPrinter(common.Visitor):
     def visit_EFlatten(self, e):
         return "Flatten({})".format(self.visit(e.e))
 
+    def visit_EFlatMap(self, e):
+        return "FlatMap({}, {})".format(self.visit(e.e), self.visit(e.f))
+
     def visit_EBinOp(self, e):
         return "({} {} {})".format(self.visit(e.e1), e.op, self.visit(e.e2))
 
