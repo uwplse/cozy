@@ -6,19 +6,10 @@ import sys
 from cozy.target_syntax import *
 from cozy.typecheck import INT, BOOL
 from cozy.syntax_tools import subst, pprint, free_vars, BottomUpExplorer, equal, fresh_var
-from cozy.common import Visitor, fresh_name, typechecked, unique, pick_to_sum
+from cozy.common import Visitor, fresh_name, typechecked, unique, pick_to_sum, cross_product
 from cozy.solver import satisfy, feasible
 from cozy.evaluation import HoleException, eval, all_envs_for_hole
 from cozy.timeouts import Timeout
-
-def cross_product(iters, i=0):
-    if i == len(iters):
-        yield ()
-    if i >= len(iters):
-        return
-    for x in iters[i]:
-        for rest in cross_product(iters, i + 1):
-            yield (x,) + rest
 
 class Cache(object):
     def __init__(self, items=None):

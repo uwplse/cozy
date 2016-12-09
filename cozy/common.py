@@ -283,6 +283,18 @@ def pick_to_sum(n, total_size):
         for rest in pick_to_sum(n - 1, total_size - size):
             yield (size,) + rest
 
+def cross_product(iters, i=0):
+    """
+    Take the cross product of a finite set of possibly-infinite iterators.
+    """
+    if i == len(iters):
+        yield ()
+    if i >= len(iters):
+        return
+    for x in iters[i]:
+        for rest in cross_product(iters, i + 1):
+            yield (x,) + rest
+
 def declare_case(supertype, name, attrs=()):
     """
     Usage:
