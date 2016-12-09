@@ -384,12 +384,16 @@ class Typechecker(Visitor):
 
     def visit_EMap(self, e):
         self.visit(e.e)
+        elem_type = self.get_collection_type(e.e)
         self.visit(e.f)
-        e.type = type(e.e.type)(e.f.body.type)
+        self.ensure_type(e.f.arg, elem_type)
+        e.type = syntax.TBag(e.f.body.type)
 
     def visit_EFilter(self, e):
         self.visit(e.e)
+        elem_type = self.get_collection_type(e.e)
         self.visit(e.p)
+        self.ensure_type(e.p.arg, elem_type)
         self.ensure_type(e.p.body, BOOL)
         e.type = e.e.type
 
