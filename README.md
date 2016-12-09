@@ -25,3 +25,11 @@ You can install Cozy on your system by running
 
 The setup script works in
 [the usual manner](https://docs.python.org/3/install/).
+
+## Tests
+
+The `tests` folder contains a few tests written with Python's
+[unittest](https://docs.python.org/3/library/unittest.html) library. Run them
+with
+
+    python3 -m unittest tests/*.py
