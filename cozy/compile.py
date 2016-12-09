@@ -266,6 +266,8 @@ class CxxPrinter(common.Visitor):
             return self.for_each(iterable.e,
                 lambda bag: SForEach(v, bag, body(v)),
                 indent=indent)
+        elif isinstance(iterable, EFlatMap):
+            return self.for_each(EFlatten(EMap(iterable.e, iterable.f).with_type(TBag(iterable.type))).with_type(iterable.type), body, indent)
         else:
             if type(iterable.type) is TBag:
                 return self.for_each_native(x, iterable, body(x), indent)
