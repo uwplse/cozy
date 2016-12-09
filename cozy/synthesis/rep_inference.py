@@ -16,15 +16,15 @@ def infer_rep(state : [EVar], qexp : Exp) -> [([(EVar, Exp)], Exp)]:
             if all(v in state for v in fvs):
                 yield from self.visit(e.e, compose(k, mk_lambda(e.e.type, lambda x: EFilter(x, e.p).with_type(e.type))))
             else:
-                for (st, exp) in self.visit(e.e, k):
-                    yield (st, EFilter(exp, e.p).with_type(e.type))
+                for (st, exp) in self.visit(e.e, mk_lambda(e.e.type, lambda x: x)):
+                    yield (st, k.apply_to(EFilter(exp, e.p).with_type(e.type)))
         def visit_EMap(self, e, k):
             fvs = free_vars(e.f)
             if all(v in state for v in fvs):
                 yield from self.visit(e.e, compose(k, mk_lambda(e.e.type, lambda x: EMap(x, e.f).with_type(e.type))))
             else:
-                for (st, exp) in self.visit(e.e, k):
-                    yield (st, EMap(exp, e.f).with_type(e.type))
+                for (st, exp) in self.visit(e.e, mk_lambda(e.e.type, lambda x: x)):
+                    yield (st, k.apply_to(EMap(exp, e.f).with_type(e.type)))
         def visit_EMakeMap(self, e, k):
             assert type(e.type) is TMap
             fvs = free_vars(e.key) | free_vars(e.value)
