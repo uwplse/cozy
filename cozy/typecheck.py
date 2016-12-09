@@ -109,6 +109,9 @@ class Typechecker(Visitor):
     def visit_TRecord(self, t):
         return syntax.TRecord(tuple((f, self.visit(ft)) for f, ft in t.fields))
 
+    def visit_TTuple(self, t):
+        return syntax.TTuple(tuple(self.visit(tt) for tt in t.ts))
+
     def visit_THandle(self, t):
         if t.value_type is None:
             assert self.handleize
@@ -363,8 +366,17 @@ class Typechecker(Visitor):
             e.type = DEFAULT_TYPE
 
     def visit_ETuple(self, e):
-        ts = [self.visit(ee) for ee in e.es]
+        ts = tuple(self.visit(ee) for ee in e.es)
         e.type = syntax.TTuple(ts)
+
+    def visit_ETupleGet(self, e):
+        self.visit(e.e)
+        t = e.e.type
+        if isinstance(t, syntax.TTuple):
+            if e.n < 0 or e.n >= len(t.ts):
+                self.report_err(e, "cannot get element {} from tuple of size {}".format(e.n, len(t.ts)))
+        else:
+            self.report_err(e, "cannot get element from non-tuple")
 
     def visit_EMap(self, e):
         self.visit(e.e)
