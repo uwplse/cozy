@@ -101,6 +101,9 @@ def EAll(exps):
         return EBool(True).with_type(BOOL)
     return res
 
+def EAny(exps):
+    return ENot(EAll([ENot(e) for e in exps]))
+
 def ENot(e):
     if isinstance(e, EUnaryOp) and e.op == "not":
         return e.e

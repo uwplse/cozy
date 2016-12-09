@@ -3,7 +3,8 @@ from cozy import target_syntax
 from cozy import syntax_tools
 from cozy import solver
 
-def uses_intrusive_data(e, handle):
+@common.typechecked
+def uses_intrusive_data(e : target_syntax.Exp, handle : target_syntax.Exp) -> target_syntax.Exp:
     if isinstance(e, target_syntax.EMakeMap):
         if isinstance(e.e.type, target_syntax.TBag) and e.e.type.t == handle.type:
             k = e.key.apply_to(handle)
@@ -17,7 +18,7 @@ def uses_intrusive_data(e, handle):
     elif isinstance(e, target_syntax.EUnaryOp):
         return uses_intrusive_data(e.e, handle)
     elif isinstance(e, target_syntax.ETuple):
-        return any(uses_intrusive_data(ee, handle) for ee in e.es)
+        return target_syntax.EAny(uses_intrusive_data(ee, handle) for ee in e.es)
     elif isinstance(e, target_syntax.EVar):
         if isinstance(e.type, target_syntax.TBag) and e.type.t == handle.type:
             return target_syntax.EBinOp(handle, "in", e).with_type(target_syntax.TBool())
