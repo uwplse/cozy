@@ -3,6 +3,9 @@ from collections import defaultdict
 from cozy.target_syntax import *
 from cozy.common import Visitor, FrozenDict, all_distinct
 
+class NondeterminismException(Exception):
+    pass
+
 class HoleException(Exception):
     def __init__(self, hole, env):
         self.hole = hole
@@ -27,6 +30,12 @@ class Evaluator(Visitor):
         return n.val
     def visit_EBool(self, b, env):
         return b.val
+    def visit_EEmptyList(self, e, env):
+        return ()
+    def visit_ESingleton(self, e, env):
+        return (self.visit(e.e, env),)
+    def visit_EJust(self, e, env):
+        return self.visit(e.e, env)
     def visit_ECall(self, call, env):
         return env[call.func]([self.visit(arg, env) for arg in call.args])
     def visit_ECond(self, e, env):
@@ -52,9 +61,12 @@ class Evaluator(Visitor):
             return all_distinct(self.visit(e.e, env))
         elif e.op == "the":
             bag = self.visit(e.e, env)
-            if bag:
+            if len(bag) == 0:
+                return None
+            elif len(bag) == 1:
                 return bag[0]
-            return None
+            else:
+                raise NondeterminismException()
         else:
             raise NotImplementedError(e.op)
     def visit_EBinOp(self, e, env):

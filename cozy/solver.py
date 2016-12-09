@@ -29,8 +29,9 @@ def fmap(x, f):
     return f(x)
 
 class ToZ3(Visitor):
-    def __init__(self, z3ctx):
+    def __init__(self, z3ctx, z3solver):
         self.ctx = z3ctx
+        self.solver = z3solver
         self.funcs = { }
     def eq(self, t, e1, e2, env):
         if isinstance(e1, SymbolicUnion):
@@ -115,6 +116,12 @@ class ToZ3(Visitor):
         return n.val
     def visit_EBool(self, b, env):
         return b.val
+    def visit_EEmptyList(self, e, env):
+        return ([], [])
+    def visit_ESingleton(self, e, env):
+        return ([z3.BoolVal(True, self.ctx)], [self.visit(e.e, env)])
+    def visit_EJust(self, e, env):
+        return self.visit(e.e, env)
     def flatten(self, e, env):
         if decideable(e.type):
             yield (self.visit(e, env), e.type)
@@ -194,7 +201,9 @@ class ToZ3(Visitor):
                 rest = (bag_mask[1:], bag_elems[1:])
                 if not bag_elems:
                     return None
-                return SymbolicUnion(bag_mask[0], bag_elems[0], get_first(rest))
+                nondeterministic_choice = mkvar(self.ctx, self.solver, 0, TBool(), [])
+                self.solver.add(z3.Implies(self.len_of(rest) == 0, nondeterministic_choice, self.ctx))
+                return SymbolicUnion(z3.And(bag_mask[0], nondeterministic_choice, self.ctx), bag_elems[0], get_first(rest))
             return fmap(self.visit(e.e, env), get_first)
         else:
             raise NotImplementedError(e.op)
@@ -214,7 +223,13 @@ class ToZ3(Visitor):
         elif e.op == "==":
             return self.eq(e.e1.type, self.visit(e.e1, env), self.visit(e.e2, env), env)
         elif e.op == "+":
-            return self.visit(e.e1, env) + self.visit(e.e2, env)
+            v1 = self.visit(e.e1, env)
+            v2 = self.visit(e.e2, env)
+            if isinstance(e.type, TBag):
+                return fmap(v1, lambda bag1:
+                       fmap(v2, lambda bag2:
+                       (bag1[0] + bag2[0], bag1[1] + bag2[1])))
+            return v1 + v2
         elif e.op == "in":
             return fmap(self.visit(e.e2, env),
                 lambda bag: self.count_in(e.e1.type, bag, self.visit(e.e1, env), env) > 0)
@@ -359,7 +374,7 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
     ctx = z3.Context()
     solver = z3.Solver(ctx=ctx)
     solver.set("core.validate", validate_model)
-    visitor = ToZ3(ctx)
+    visitor = ToZ3(ctx, solver)
 
     def reconstruct(model, value, type):
         if type == TInt() or type == TLong() or isinstance(type, TNative):
@@ -437,14 +452,18 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
             res[name] = lambda args: reconstruct(model, f(*args), out_type)
         # print(res)
         if validate_model:
-            from cozy import evaluation
-            x = evaluation.eval(e, res)
-            if x is not True:
-                print("bad example: {}".format(res))
-                print(" ---> got {}".format(repr(x)))
-                print(" ---> model: {}".format(model))
-                print(" ---> assertions: {}".format(solver.assertions()))
-                raise Exception()
+            try:
+                from cozy import evaluation
+                x = evaluation.eval(e, res)
+                if x is not True:
+                    print("bad example: {}".format(res))
+                    print(" ---> got {}".format(repr(x)))
+                    print(" ---> model: {}".format(model))
+                    print(" ---> assertions: {}".format(solver.assertions()))
+                    raise Exception("model validation failed")
+            except evaluation.NondeterminismException:
+                import sys
+                print("Warning: could not validate model (nondeterministic operations were used)", file=sys.stderr)
         return res
 
 def valid(e, **opts):

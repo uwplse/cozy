@@ -208,6 +208,9 @@ class PrettyPrinter(common.Visitor):
     def visit_EEmptyList(self, e):
         return "[]"
 
+    def visit_ESingleton(self, e):
+        return "[{}]".format(self.visit(e.e))
+
     def visit_EListComprehension(self, e):
         return "[{} | {}]".format(self.visit(e.e), ", ".join(self.visit(clause) for clause in e.clauses))
 
