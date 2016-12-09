@@ -169,6 +169,8 @@ class CxxPrinter(common.Visitor):
         Convert an expression of an abstract type (e.g. TBag) to one of a
         concrete type (e.g. TIntrusiveLinkedList) and write the result into
         lvalue `out`.
+
+        TODO: this should be a property of the library implementation
         """
         if isinstance(t, library.TIntrusiveLinkedList):
             return t.construct_concrete(e, out)
@@ -707,8 +709,10 @@ class JavaPrinter(CxxPrinter):
     def native_map_get(self, e, default_value, indent=""):
         (smap, emap) = self.visit(e.map, indent)
         (skey, ekey) = self.visit(e.key, indent)
-        (sdefault, edefault) = self.visit(default_value, indent)
-        return (smap + skey + sdefault, "{emap}.getOrDefault({ekey}, {edefault})".format(emap=emap, ekey=ekey, edefault=edefault))
+        edefault = fresh_var(e.type, "lookup_result")
+        sdefault = indent + self.visit(edefault.type, edefault.id) + ";\n"
+        sdefault += self.visit(default_value(edefault), indent)
+        return (smap + skey + sdefault, "{emap}.getOrDefault({ekey}, {edefault})".format(emap=emap, ekey=ekey, edefault=edefault.id))
 
     def visit_object(self, o, *args, **kwargs):
         return "/* implement visit_{} */".format(type(o).__name__)
