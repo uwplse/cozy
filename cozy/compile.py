@@ -706,7 +706,7 @@ class JavaPrinter(CxxPrinter):
         if isinstance(update.change, SNoOp):
             return ""
         if isinstance(update.map.type, library.TNativeMap):
-            vsetup, val = self.visit(EMapGet(update.map, update.key), indent)
+            vsetup, val = self.visit(EMapGet(update.map, update.key).with_type(update.map.type.v), indent)
             s = "{indent}{decl} = {val};\n".format(
                 indent=indent,
                 decl=self.visit(TRef(update.val_var.type), update.val_var.id),
