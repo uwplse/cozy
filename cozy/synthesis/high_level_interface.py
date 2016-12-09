@@ -181,7 +181,7 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
     state_proj_exprs = state
     new_ret = q.ret
     try:
-        for mapping in core.synth(spec, binders, timeout):
+        for mapping in core.synth(spec, binders, vars=state+args+binders, timeout=timeout):
 
             print("SOLUTION")
             expr = core.expand(hole, mapping)

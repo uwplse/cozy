@@ -501,7 +501,7 @@ def expand(e, mapping):
     return e
 
 @typechecked
-def synth(spec : Exp, binders : [EVar], timeout : Timeout):
+def synth(spec : Exp, binders : [EVar], vars : [EVar], timeout : Timeout):
     examples = []
     while True:
         for mapping in find_consistent_exps(spec, binders, examples, timeout=timeout):
@@ -509,7 +509,7 @@ def synth(spec : Exp, binders : [EVar], timeout : Timeout):
 
             print("considering: {}".format(pprint(new_spec)))
             if all(eval(new_spec, ex) for ex in examples):
-                model = satisfy(EUnaryOp("not", new_spec).with_type(TBool()))
+                model = satisfy(EUnaryOp("not", new_spec).with_type(TBool()), vars=vars)
                 if model is not None:
                     assert model not in examples, "got duplicate example: {}; examples={}".format(model, examples)
                     print("new example: {}".format(model))
