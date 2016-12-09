@@ -6,6 +6,7 @@ Main entry point for synthesis. Run with --help for options.
 
 import sys
 import argparse
+import datetime
 
 from cozy import parse
 from cozy import compile
@@ -21,6 +22,7 @@ from cozy import sharing
 
 def run():
     parser = argparse.ArgumentParser(description='Data structure synthesizer.')
+    parser.add_argument("-t", "--timeout", metavar="N", type=float, default=60, help="Per-query synthesis timeout (in seconds); default=60")
     parser.add_argument("-s", "--simple", action="store_true", help="Do not synthesize improved solution; use the most trivial implementation of the spec")
     parser.add_argument("-d", "--disable-cache", action="store_true", help="Disable caching of synthesis results")
 
@@ -50,7 +52,10 @@ def run():
     print(syntax_tools.pprint(ast))
 
     if not args.simple:
-        ast, state_map = synthesis.synthesize(ast, use_cache = not args.disable_cache)
+        ast, state_map = synthesis.synthesize(
+            ast,
+            use_cache         = not args.disable_cache,
+            per_query_timeout = datetime.timedelta(seconds=args.timeout))
         print()
         print(syntax_tools.pprint(ast))
     else:
