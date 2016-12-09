@@ -2,7 +2,7 @@
 Concrete data structure implementations.
 """
 
-from cozy.common import fresh_name, typechecked, product
+from cozy.common import fresh_name, typechecked, product, cross_product
 from cozy.target_syntax import *
 from cozy.syntax_tools import equal, subst, fresh_var
 
@@ -39,6 +39,9 @@ class Library(object):
                     yield TIntrusiveLinkedList(ty.t)
                 yield TLinkedList(ty.t)
                 yield TArrayList(ty.t)
+        elif type(ty) is TTuple:
+            for refinements in cross_product([self.impls(t) for t in ty.ts]):
+                yield TTuple(refinements)
         else:
             yield ty
 
