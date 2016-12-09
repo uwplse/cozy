@@ -54,13 +54,13 @@ def deep_copy(ast):
 def all_types(ast):
     class TypeCollector(BottomUpExplorer):
         def visit_Type(self, t):
-            yield t
             yield from super().visit_ADT(t)
+            yield t
         def visit_object(self, o):
             return ()
         def join(self, t, children):
             return itertools.chain(*children)
-    return set(TypeCollector().visit(ast))
+    return common.unique(TypeCollector().visit(ast))
 
 class PrettyPrinter(common.Visitor):
     def visit_Spec(self, spec):
