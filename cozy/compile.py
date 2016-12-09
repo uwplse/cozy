@@ -176,9 +176,18 @@ class CxxPrinter(common.Visitor):
             return SAssign(out, e)
         raise NotImplementedError(type)
 
+    def state_exp(self, lval):
+        if isinstance(lval, EVar):
+            return self.state_exps[lval.id]
+        elif isinstance(lval, ETupleGet):
+            return self.state_exp(lval.e).es[lval.n]
+        elif isinstance(lval, EGetField):
+            return dict(self.state_exp(lval.e).fields)[lval.f]
+        else:
+            raise NotImplementedError(repr(lval))
+
     def visit_EMapGet(self, e, indent=""):
-        assert isinstance(e.map, EVar)
-        value_constructor = self.state_exps[e.map.id].value
+        value_constructor = self.state_exp(e.map).value
         if isinstance(e.map.type, library.TNativeMap):
             return self.native_map_get(
                 e,
