@@ -285,7 +285,7 @@ class Typechecker(Visitor):
         self.visit(e.f)
         self.ensure_type(e.f.arg, t1)
         t2 = self.get_collection_type(e.f.body)
-        e.type = t2
+        e.type = e.f.body.type
 
     def visit_ECall(self, e):
         f = self.funcs.get(e.func) or self.queries.get(e.func)
