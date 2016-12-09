@@ -394,6 +394,13 @@ def apply_delta(
             return syntax.ECond(delta.cond, self.visit(delta.delta), x).with_type(x.type)
         def visit_MultiDelta(self, delta):
             return apply_delta(apply_delta(x, delta.delta1), delta.delta2)
+        def visit_TupleEntryUpdate(self, delta):
+            if isinstance(x, syntax.ETuple):
+                return syntax.ETuple(tuple(
+                    apply_delta(x.es[i], delta.delta) if i == delta.n else x.es[i]
+                    for i in range(len(x.es)))).with_type(x.type)
+            else:
+                raise NotImplementedError(x)
         def visit_Delta(self, d):
             raise NotImplementedError("apply {} to {}".format(d, x))
 
@@ -431,6 +438,9 @@ def apply_delta_in_place(
                 raise Exception("ill-typed expression for update: " + repr(x) + " [type={}]".format(repr(x.type)))
             field_type = dict(x.type.fields)[delta.f] if isinstance(x.type, syntax.TRecord) else x.type.value_type
             return apply_delta_in_place(syntax.EGetField(x, delta.f).with_type(field_type), delta.delta)
+        def visit_TupleEntryUpdate(self, delta):
+            elem_type = x.type.ts[delta.n]
+            return apply_delta_in_place(syntax.ETupleGet(x, delta.n).with_type(elem_type), delta.delta)
         def visit_MultiDelta(self, delta):
             return syntax.SSeq(
                 self.visit(delta.delta1),
