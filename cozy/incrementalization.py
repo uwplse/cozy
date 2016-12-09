@@ -26,6 +26,9 @@ MapUpdate         = declare_case(Delta, "MapUpdate", ["key", "delta"])
 # Records
 RecordFieldUpdate = declare_case(Delta, "RecordFieldUpdate", ["f", "delta"])
 
+# Tuples
+TupleEntryUpdate  = declare_case(Delta, "TupleEntryUpdate", ["n", "delta"])
+
 def multi_delta(deltas):
     deltas = [d for d in deltas if not isinstance(d, NoDelta)]
     if len(deltas) == 0:
@@ -34,6 +37,11 @@ def multi_delta(deltas):
     for i in range(1, len(deltas)):
         d = MultiDelta(d, deltas[i])
     return d
+
+def mk_TupleEntryUpdate(n, delta):
+    if isinstance(delta, NoDelta):
+        return delta
+    return TupleEntryUpdate(n, delta)
 
 def rewrite_becomes(delta, f):
     class V(Visitor):
@@ -351,6 +359,9 @@ def derivative(
 
         def visit_EMakeRecord(self, e):
             return multi_delta([RecordFieldUpdate(f, self.visit(ee)) for (f, ee) in e.fields])
+
+        def visit_ETuple(self, e):
+            return multi_delta([mk_TupleEntryUpdate(i, self.visit(e.es[i])) for i in range(len(e.es))])
 
         # def visit(self, e):
         #     res = super().visit(e)
