@@ -410,6 +410,8 @@ class CxxPrinter(common.Visitor):
                 indent=indent,
                 name=name,
                 fields="".join("{indent}{field_decl};\n".format(indent=indent+INDENT, field_decl=self.visit(t, f)) for (f, t) in t.fields))
+        elif isinstance(t, TTuple):
+            return self.define_type(toplevel_name, TRecord(tuple(("_{}".format(i), t.ts[i]) for i in range(len(t.ts)))), name, indent, sharing);
         else:
             return ""
 
@@ -420,8 +422,10 @@ class CxxPrinter(common.Visitor):
             return "(0)"
         elif isinstance(t, TVector):
             return "{{ {} }}".format(", ".join(self.initial_value(t.t) for i in range(t.n)))
+        elif isinstance(t, TTuple):
+            return "{{ {} }}".format(", ".join(self.initial_value(tt) for tt in t.ts))
         elif isinstance(t, library.TNativeMap):
-            return "()"
+            return self.visit(t, "()")
         elif self.visit(t, "").endswith("*"): # a little hacky
             return "(NULL)"
         else:
