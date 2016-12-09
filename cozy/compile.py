@@ -9,6 +9,8 @@ from cozy.syntax_tools import all_types, fresh_var, subst
 
 INDENT = "  "
 
+SEscape = declare_case(Stm, "SEscape", ["body_string", "arg_names", "args"])
+
 class CxxPrinter(common.Visitor):
 
     def __init__(self):
@@ -97,7 +99,7 @@ class CxxPrinter(common.Visitor):
                 type=self.visit(ret_type, ""),
                 name=q.name,
                 args="".join("{}, ".format(self.visit(t, name)) for name, t in q.args),
-                body=self.visit(SForEach(x, q.ret, "_callback({});".format(x.id)), indent=indent+INDENT))
+                body=self.visit(SForEach(x, q.ret, SEscape("{indent}_callback({x});\n", ["x"], [x])), indent=indent+INDENT))
             return s
         else:
             body, out = self.visit(q.ret, indent+INDENT)
@@ -258,7 +260,6 @@ class CxxPrinter(common.Visitor):
 
     def for_each(self, iterable : Exp, body, indent="") -> str:
         """Body is function: exp -> stm"""
-        x = fresh_var(iterable.type.t)
         if isinstance(iterable, EEmptyList):
             return ""
         elif isinstance(iterable, EMap):
@@ -280,6 +281,7 @@ class CxxPrinter(common.Visitor):
         elif isinstance(iterable, EFlatMap):
             return self.for_each(EFlatten(EMap(iterable.e, iterable.f).with_type(TBag(iterable.type))).with_type(iterable.type), body, indent)
         else:
+            x = fresh_var(iterable.type.t)
             if type(iterable.type) is TBag:
                 return self.for_each_native(x, iterable, body(x), indent)
             return self.visit(iterable.type.for_each(x, iterable, body(x)), indent=indent)
@@ -331,6 +333,12 @@ class CxxPrinter(common.Visitor):
 
     def visit_Exp(self, e, indent=""):
         raise NotImplementedError(e)
+
+    def visit_SEscape(self, s, indent=""):
+        body = s.body_string
+        args = s.args
+        setups, args = zip(*[self.visit(arg, indent) for arg in args])
+        return "".join(setups) + body.format(indent=indent, **dict(zip(s.arg_names, args)))
 
     def visit_SNoOp(self, s, indent=""):
         return ""
@@ -495,8 +503,7 @@ class JavaPrinter(CxxPrinter):
         if isinstance(ret_type, TBag):
             x = EVar(common.fresh_name("x")).with_type(ret_type.t)
             def body(x):
-                setup, arg = self.visit(x, indent+INDENT*2)
-                return setup + "_callback.accept({});".format(arg)
+                return SEscape("{indent}_callback.accept({x});\n", ["x"], [x])
             return "{indent}public void {name} ({args}java.util.function.Consumer<{t}> _callback) {{\n{body}  }}\n\n".format(
                 indent=indent,
                 type=self.visit(ret_type, ""),
