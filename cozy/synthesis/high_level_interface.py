@@ -159,16 +159,16 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
         def __init__(self):
             self.rtcm = core.RunTimeCostModel()
             self.memcm = core.MemoryUsageCostModel()
-            self.factor = 0.2 # 0 = only care about runtime, 1 = only care about memory
+            self.factor = 0 # 0 = only care about runtime, 1 = only care about memory
         def is_monotonic(self):
             return self.rtcm.is_monotonic() and self.memcm.is_monotonic()
         def best_case_cost(self, e):
             return min(
-                (1-self.factor) * self.rtcm.best_case_cost(e2) + sum(self.factor * self.memcm.best_case_cost(proj) for (v, proj) in rep)
+                (1-self.factor) * self.rtcm.best_case_cost(e2) #+ sum(self.factor * self.memcm.best_case_cost(proj) for (v, proj) in rep)
                 for (rep, e2) in infer_rep(state, e))
 
     binders = []
-    n_binders = 3 # TODO?
+    n_binders = 1 # TODO?
     for t in all_types:
         if isinstance(t, TBag):
             binders += [fresh_var(t.t) for i in range(n_binders)]

@@ -254,9 +254,9 @@ class Builder(ExpBuilder):
             yield EUnaryOp("not", e).with_type(BOOL)
 
         for (sz1, sz2) in pick_to_sum(2, size - 1):
-            for a1 in cache.find(type=INT, size=sz1):
-                for a2 in cache.find(type=INT, size=sz2):
-                    yield EBinOp(a1, "+", a2).with_type(INT)
+            # for a1 in cache.find(type=INT, size=sz1):
+            #     for a2 in cache.find(type=INT, size=sz2):
+            #         yield EBinOp(a1, "+", a2).with_type(INT)
             for a1 in cache.find(type=BOOL, size=sz1):
                 for a2 in cache.find(type=BOOL, size=sz2):
                     yield EBinOp(a1, "and", a2).with_type(BOOL)
@@ -269,16 +269,16 @@ class Builder(ExpBuilder):
                 for k in cache.find(type=m.type.k, size=sz2):
                     yield EMapGet(m, k).with_type(m.type.v)
 
-        for (sz1, sz2) in pick_to_sum(2, size - 1):
-            for e in cache.find(type=TMaybe, size=sz1):
-                arg = EVar(fresh_name()).with_type(e.type.t)
-                for r in self.roots:
-                    for hole in find_holes(r):
-                        if hole.type == e.type.t:
-                            for body in instantiate(subst(r, { hole.name: arg }), cache, sz2):
-                                x = EAlterMaybe(e, ELambda(arg, body)).with_type(TMaybe(r.type))
-                                # print(" ... {} : {} @ {}".format(pprint(x), pprint(x.type), size))
-                                yield x
+        # for (sz1, sz2) in pick_to_sum(2, size - 1):
+        #     for e in cache.find(type=TMaybe, size=sz1):
+        #         arg = EVar(fresh_name()).with_type(e.type.t)
+        #         for r in self.roots:
+        #             for hole in find_holes(r):
+        #                 if hole.type == e.type.t:
+        #                     for body in instantiate(subst(r, { hole.name: arg }), cache, sz2):
+        #                         x = EAlterMaybe(e, ELambda(arg, body)).with_type(TMaybe(r.type))
+        #                         # print(" ... {} : {} @ {}".format(pprint(x), pprint(x.type), size))
+        #                         yield x
 
         if self.build_maps:
             # print("####### {}".format(size))
