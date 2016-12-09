@@ -13,8 +13,6 @@ from . import core
 from . import caching
 from .rep_inference import infer_rep
 
-HINTS = True
-
 SynthCtx = namedtuple("SynthCtx", ["all_types", "basic_types"])
 
 def all_exps(e):
@@ -176,9 +174,6 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
 
     # b = core.Builder(roots + binders + ctors + args, basic_types, cost_model=CoolCostModel())
     b = BinderBuilder(binders, roots + binders + ctors + args, basic_types, cost_model=CoolCostModel())
-    b.build_maps = False
-    b.build_filters = False
-    b.build_tuples = False
     hole = core.EHole(q.name, q.ret.type, b)
     spec = cozy.syntax_tools.equal(hole, q.ret)
 
@@ -313,5 +308,3 @@ def synthesize(
         new_statevars,
         [],
         new_ops + new_qs), state_var_exps)
-
-    raise NotImplementedError()
