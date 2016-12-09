@@ -373,10 +373,14 @@ class Typechecker(Visitor):
         self.visit(e.e)
         t = e.e.type
         if isinstance(t, syntax.TTuple):
-            if e.n < 0 or e.n >= len(t.ts):
+            if e.n >= 0 and e.n < len(t.ts):
+                e.type = t.ts[e.n]
+            else:
                 self.report_err(e, "cannot get element {} from tuple of size {}".format(e.n, len(t.ts)))
+                e.type = DEFAULT_TYPE
         else:
             self.report_err(e, "cannot get element from non-tuple")
+            e.type = DEFAULT_TYPE
 
     def visit_EMap(self, e):
         self.visit(e.e)
