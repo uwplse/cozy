@@ -40,6 +40,11 @@ class Exp(ADT):
     #     super().__setattr__(name, val)
     # def __getattr__(self, name):
     #     raise AttributeError("expression {} has no {} field".format(self, name))
+    def __repr__(self):
+        s = super().__repr__()
+        if hasattr(self, "type"):
+            s += ".with_type({})".format(repr(self.type))
+        return s
 
 EVar                = declare_case(Exp, "EVar",               ["id"])
 EBool               = declare_case(Exp, "EBool",              ["val"])
