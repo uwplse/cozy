@@ -88,6 +88,8 @@ def match(value, binders):
 
 @total_ordering
 class ADT(object):
+    def __init__(self):
+        self._protect = False
     def children(self):
         return ()
     def size(self):
@@ -103,7 +105,17 @@ class ADT(object):
             if isinstance(child, ADT) and child.contains_subtree(tree):
                 return True
     def __str__(self):
-        return "{}({})".format(type(self).__name__, ", ".join(str(child) for child in self.children()))
+        return repr(self)
+    def __repr__(self):
+        if not hasattr(self, "_protect"):
+            self._protect = False
+        if self._protect:
+            return "<<recursive>>"
+        self._protect = True
+        try:
+            return "{}({})".format(type(self).__name__, ", ".join(repr(child) for child in self.children()))
+        finally:
+            self._protect = False
     def __hash__(self):
         return hash(self.children())
     def __eq__(self, other):
@@ -307,25 +319,10 @@ def declare_case(supertype, name, attrs=()):
         assert len(args) == len(attrs), "{} expects {} args, was given {}".format(name, len(attrs), len(args))
         for attr, val in zip(attrs, args):
             setattr(self, attr, val)
-        self._protect = False # prevent infinite recursion
-    def __str__(self):
-        return repr(self)
-    def __repr__(self):
-        if not hasattr(self, "_protect"):
-            self._protect = False
-        if self._protect:
-            return "<<recursive>>"
-        self._protect = True
-        try:
-            return "{}({})".format(type(self).__name__, ", ".join("{}={}".format(attr, repr(val)) for attr, val in zip(attrs, self.children())))
-        finally:
-            self._protect = False
     def children(self):
         return tuple(getattr(self, a) for a in attrs)
     t = type(name, (supertype,), {
         "__init__": __init__,
-        "__str__": __str__,
-        "__repr__": __repr__,
         "children": children })
     globals()[name] = t
     return t
