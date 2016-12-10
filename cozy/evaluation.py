@@ -115,22 +115,22 @@ class Evaluator(Visitor):
             x = self.eval_lambda(e.f, x, env)
         return x
     def visit_EMakeMap(self, e, env):
-        im = defaultdict(tuple)
+        im = defaultdict(Bag)
         for x in self.visit(e.e, env):
-            im[self.eval_lambda(e.key, x, env)] += (x,)
-        res = hashable_defaultdict(lambda: self.eval_lambda(e.value, (), env))
+            im[self.eval_lambda(e.key, x, env)] += Bag((x,))
+        res = hashable_defaultdict(lambda: self.eval_lambda(e.value, Bag(), env))
         for (k, es) in im.items():
             res[k] = self.eval_lambda(e.value, es, env)
         return res
     def visit_EMapGet(self, e, env):
         return self.visit(e.map, env)[self.visit(e.key, env)]
     def visit_EMap(self, e, env):
-        return tuple(self.eval_lambda(e.f, x, env) for x in self.visit(e.e, env))
+        return Bag(self.eval_lambda(e.f, x, env) for x in self.visit(e.e, env))
     def visit_EFilter(self, e, env):
-        return tuple(x for x in self.visit(e.e, env) if self.eval_lambda(e.p, x, env))
+        return Bag(x for x in self.visit(e.e, env) if self.eval_lambda(e.p, x, env))
     def visit_EFlatten(self, e, env):
         res = self.visit(e.e, env)
-        return tuple(elem for bag in res for elem in bag)
+        return Bag(elem for bag in res for elem in bag)
     def visit_EFlatMap(self, e, env):
         return self.visit(EFlatten(EMap(e.e, e.f)), env)
     def visit_clauses(self, clauses, e, env):
