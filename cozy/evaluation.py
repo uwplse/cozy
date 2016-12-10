@@ -1,10 +1,8 @@
 from collections import defaultdict
+from functools import total_ordering
 
 from cozy.target_syntax import *
 from cozy.common import Visitor, FrozenDict, all_distinct
-
-class NondeterminismException(Exception):
-    pass
 
 class HoleException(Exception):
     def __init__(self, hole, env):
@@ -21,6 +19,25 @@ class hashable_defaultdict(defaultdict):
     def __str__(self):
         return repr(self)
 
+@total_ordering
+class Bag(object):
+    def __init__(self, iterable=()):
+        self.elems = tuple(iterable)
+    def __hash__(self):
+        return hash(tuple(sorted(self.elems)))
+    def __add__(self, other):
+        return Bag(self.elems + other.elems)
+    def __eq__(self, other):
+        return sorted(self.elems) == sorted(other.elems)
+    def __lt__(self, other):
+        return sorted(self.elems) < sorted(other.elems)
+    def __len__(self):
+        return len(self.elems)
+    def __getitem__(self, i):
+        return self.elems[i]
+    def __bool__(self):
+        return bool(self.elems)
+
 class Evaluator(Visitor):
     def visit_EVar(self, v, env):
         return env[v.id]
@@ -31,9 +48,9 @@ class Evaluator(Visitor):
     def visit_EBool(self, b, env):
         return b.val
     def visit_EEmptyList(self, e, env):
-        return ()
+        return Bag()
     def visit_ESingleton(self, e, env):
-        return (self.visit(e.e, env),)
+        return Bag((self.visit(e.e, env),))
     def visit_EJust(self, e, env):
         return self.visit(e.e, env)
     def visit_ECall(self, call, env):
@@ -61,12 +78,10 @@ class Evaluator(Visitor):
             return all_distinct(self.visit(e.e, env))
         elif e.op == "the":
             bag = self.visit(e.e, env)
-            if len(bag) == 0:
-                return None
-            elif len(bag) == 1:
+            if bag:
                 return bag[0]
             else:
-                raise NondeterminismException()
+                return None
         else:
             raise NotImplementedError(e.op)
     def visit_EBinOp(self, e, env):
@@ -90,7 +105,7 @@ class Evaluator(Visitor):
     def visit_EApp(self, e, env):
         return self.eval_lambda(e.f, self.visit(e.arg, env), env)
     def visit_EListComprehension(self, e, env):
-        return tuple(self.visit_clauses(e.clauses, e.e, env))
+        return Bag(self.visit_clauses(e.clauses, e.e, env))
     def eval_lambda(self, lam, arg, env):
         env2 = dict(env)
         env2[lam.arg.id] = arg
@@ -159,7 +174,7 @@ def mkval(type):
     if isinstance(type, TString):
         return ""
     if isinstance(type, TBag):
-        return ()
+        return Bag()
     if isinstance(type, TMap):
         return hashable_defaultdict(int)
     if isinstance(type, TEnum):

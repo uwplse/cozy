@@ -6,6 +6,7 @@ import z3
 from cozy.target_syntax import *
 from cozy.syntax_tools import pprint, free_vars
 from cozy.common import declare_case, fresh_name, Visitor, FrozenDict
+from cozy import evaluation
 
 # TODO: Int==Bv32, Long==Bv64
 TBitVec = declare_case(Type, "TBitVec", ["width"])
@@ -198,12 +199,10 @@ class ToZ3(Visitor):
         elif e.op == "the":
             def get_first(bag):
                 bag_mask, bag_elems = bag
-                rest = (bag_mask[1:], bag_elems[1:])
                 if not bag_elems:
                     return None
-                nondeterministic_choice = mkvar(self.ctx, self.solver, 0, TBool(), [])
-                self.solver.add(z3.Implies(self.len_of(rest) == 0, nondeterministic_choice, self.ctx))
-                return SymbolicUnion(z3.And(bag_mask[0], nondeterministic_choice, self.ctx), bag_elems[0], get_first(rest))
+                rest = (bag_mask[1:], bag_elems[1:])
+                return SymbolicUnion(bag_mask[0], bag_elems[0], get_first(rest))
             return fmap(self.visit(e.e, env), get_first)
         else:
             raise NotImplementedError(e.op)
@@ -369,7 +368,6 @@ def mkconst(ctx, solver, val):
 
 def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = True):
     print("sat? {}".format(pprint(e)))
-    # print(repr(e))
 
     ctx = z3.Context()
     solver = z3.Solver(ctx=ctx)
@@ -397,7 +395,7 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
             for i in range(len(elems)):
                 if reconstruct(model, mask[i], TBool()):
                     real_val.append(reconstruct(model, elems[i], type.t))
-            return tuple(sorted(real_val))
+            return evaluation.Bag(real_val)
         elif isinstance(type, TEnum):
             val = model.eval(value, model_completion=True).as_long()
             return type.cases[val]
@@ -452,18 +450,13 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
             res[name] = lambda args: reconstruct(model, f(*args), out_type)
         # print(res)
         if validate_model:
-            try:
-                from cozy import evaluation
-                x = evaluation.eval(e, res)
-                if x is not True:
-                    print("bad example: {}".format(res))
-                    print(" ---> got {}".format(repr(x)))
-                    print(" ---> model: {}".format(model))
-                    print(" ---> assertions: {}".format(solver.assertions()))
-                    raise Exception("model validation failed")
-            except evaluation.NondeterminismException:
-                import sys
-                print("Warning: could not validate model (nondeterministic operations were used)", file=sys.stderr)
+            x = evaluation.eval(e, res)
+            if x is not True:
+                print("bad example: {}".format(res))
+                print(" ---> got {}".format(repr(x)))
+                print(" ---> model: {}".format(model))
+                print(" ---> assertions: {}".format(solver.assertions()))
+                raise Exception("model validation failed")
         return res
 
 def valid(e, **opts):
