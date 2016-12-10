@@ -9,9 +9,8 @@ class HoleException(Exception):
         self.hole = hole
         self.env = env
 
+# TODO: make this class orderable
 class hashable_defaultdict(defaultdict):
-    def __init__(self, k):
-        super().__init__(k)
     def __hash__(self):
         return hash(tuple(sorted(self.items())))
     def __repr__(self):
