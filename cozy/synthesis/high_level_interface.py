@@ -194,7 +194,7 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
                     print("  {} : {} = {}".format(sv.id, pprint(sv.type), pprint(proj)))
                 print("  return {}".format(pprint(expr)))
 
-                new_state_vars, state_proj_exprs = zip(*st)
+                new_state_vars, state_proj_exprs = zip(*st) if st else ([], [])
                 new_ret = expr
 
             print("-" * 40)
@@ -207,9 +207,10 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
     if len(new_state_vars) != 1:
         new_state_var = fresh_var(TTuple(tuple(v.type for v in new_state_vars)))
         state_proj_expr = ETuple(tuple(state_proj_exprs)).with_type(new_state_var.type)
-        new_ret = subst(new_ret, {
-            new_state_vars[i].id: ETupleGet(new_state_var, i)
-            for i in range(len(new_state_vars)) })
+        if new_state_vars:
+            new_ret = subst(new_ret, {
+                new_state_vars[i].id: ETupleGet(new_state_var, i)
+                for i in range(len(new_state_vars)) })
     else:
         new_state_var = new_state_vars[0]
         state_proj_expr = state_proj_exprs[0]
