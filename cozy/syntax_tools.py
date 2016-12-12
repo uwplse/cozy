@@ -161,6 +161,12 @@ class PrettyPrinter(common.Visitor):
     def visit_EEnumEntry(self, e):
         return e.name
 
+    def visit_EJust(self, e):
+        return "Just({})".format(self.visit(e.e))
+
+    def visit_ENull(self, e):
+        return "NULL"
+
     def visit_ELambda(self, e):
         if hasattr(e.arg, "type"):
             return "(\\{} : {} -> {})".format(e.arg.id, self.visit(e.arg.type), self.visit(e.body))
