@@ -380,6 +380,7 @@ def mkconst(ctx, solver, val):
 
 def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = True):
     print("sat? {}".format(pprint(e)))
+    assert e.type == TBool()
 
     ctx = z3.Context()
     solver = z3.Solver(ctx=ctx)
