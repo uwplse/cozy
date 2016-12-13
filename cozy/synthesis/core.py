@@ -96,6 +96,11 @@ class CardinalityVisitor(BottomUpExplorer):
         if e.p.body == EBool(False):
             return 0
         return self.visit(e.e) / 2
+    def visit_EBinOp(self, e):
+        if e.op == "+":
+            return self.visit(e.e1) + self.visit(e.e2)
+        else:
+            raise NotImplementedError(e.op)
     def visit_EMap(self, e):
         return self.visit(e.e)
     def visit_EFlatMap(self, e):
