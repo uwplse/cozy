@@ -222,6 +222,9 @@ class Builder(ExpBuilder):
             # for a1 in cache.find(type=INT, size=sz1):
             #     for a2 in cache.find(type=INT, size=sz2):
             #         yield EBinOp(a1, "+", a2).with_type(INT)
+            for a1 in cache.find(type=TBag, size=sz1):
+                for a2 in cache.find(type=a1.type, size=sz2):
+                    yield EBinOp(a1, "+", a2).with_type(a1.type)
             for a1 in cache.find(type=BOOL, size=sz1):
                 for a2 in cache.find(type=BOOL, size=sz2):
                     yield EBinOp(a1, "and", a2).with_type(BOOL)
