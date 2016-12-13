@@ -3,6 +3,7 @@ import unittest
 from cozy.solver import satisfy
 from cozy.typecheck import typecheck
 from cozy.target_syntax import *
+from cozy.syntax_tools import pprint, equal
 
 zero = ENum(0).with_type(TInt())
 one  = ENum(1).with_type(TInt())
@@ -32,3 +33,16 @@ class TestSolver(unittest.TestCase):
         errs = typecheck(e, env={ v.id:v.type for v in vars })
         assert not errs
         assert satisfy(e, vars=vars, validate_model=True) is not None
+
+    def test_empty_sum(self):
+        x = EVar("x").with_type(TInt())
+        model = satisfy(equal(x, EUnaryOp("sum", EEmptyList().with_type(TBag(TInt())))))
+        assert model is not None
+        assert model[x.id] == 0
+
+    def test_weird_map_get(self):
+        employee_type = TRecord((('employee_name', TInt()), ('employer_id', TInt())))
+        employer_type = TRecord((('employer_name', TInt()), ('employer_id', TInt())))
+        s = EUnaryOp('sum', EMap(EMapGet(EMakeMap(EVar('employers').with_type(TBag(THandle('employers', employer_type))), ELambda(EVar('_var49').with_type(THandle('employers', employer_type)), EGetField(EGetField(EVar('_var49').with_type(THandle('employers', employer_type)), 'val').with_type(employer_type), 'employer_id').with_type(TInt())), ELambda(EVar('_var57').with_type(TBag(THandle('employers', employer_type))), EVar('_var57').with_type(TBag(THandle('employers', employer_type))))).with_type(TMap(TInt(), TBag(THandle('employers', employer_type)))), EVar('employer_name').with_type(TInt())).with_type(TBag(THandle('employers', employer_type))), ELambda(EVar('_var48').with_type(THandle('employers', employer_type)), EGetField(EGetField(EVar('_var48').with_type(THandle('employers', employer_type)), 'val').with_type(employer_type), 'employer_name').with_type(TInt()))).with_type(TBag(TInt()))).with_type(TInt())
+        e = EMapGet(EMakeMap(EVar('employees').with_type(TBag(THandle('employees', employee_type))), ELambda(EVar('_var39').with_type(THandle('employees', employee_type)), EGetField(EGetField(EVar('_var39').with_type(THandle('employees', employee_type)), 'val').with_type(employee_type), 'employer_id').with_type(TInt())), ELambda(EVar('_var45').with_type(TBag(THandle('employees', employee_type))), EVar('_var45').with_type(TBag(THandle('employees', employee_type))))).with_type(TMap(TInt(), TBag(THandle('employees', employee_type)))), s).with_type(TBag(THandle('employees', employee_type)))
+        satisfy(equal(e, EEmptyList().with_type(e.type)))

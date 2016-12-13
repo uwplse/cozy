@@ -289,7 +289,7 @@ class ToZ3(Visitor):
                 # print("   key = {}".format(repr(key)))
                 # print("   v   = {}".format(repr(v)))
                 # print("   res = {}".format(repr(res)))
-                res = SymbolicUnion(k == key, v, res)
+                res = SymbolicUnion(e.type, self.eq(e.key.type, k, key, env), v, res)
             return res
         return fmap(self.visit(e.map, env), go)
     def visit_EApp(self, e, env):
