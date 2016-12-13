@@ -5,13 +5,13 @@ import z3
 
 from cozy.target_syntax import *
 from cozy.syntax_tools import pprint, free_vars
-from cozy.common import declare_case, fresh_name, Visitor, FrozenDict
+from cozy.common import declare_case, fresh_name, Visitor, FrozenDict, typechecked
 from cozy import evaluation
 
 # TODO: Int==Bv32, Long==Bv64
 TBitVec = declare_case(Type, "TBitVec", ["width"])
 
-class SymbolicUnion(object):
+class _SymbolicUnion(object):
     """
     Represents `If(cond, x, y)` expression
     """
@@ -22,10 +22,22 @@ class SymbolicUnion(object):
     def map(self, f):
         new_lhs = fmap(self.lhs, f)
         new_rhs = fmap(self.rhs, f)
-        return SymbolicUnion(self.cond, new_lhs, new_rhs)
+        if isinstance(new_lhs, z3.AstRef) and isinstance(new_rhs, z3.AstRef):
+            return z3.If(self.cond, new_lhs, new_rhs, self.cond.ctx_ref())
+        return _SymbolicUnion(self.cond, new_lhs, new_rhs)
+    def __repr__(self):
+        return "SymbolicUnion({}, {}, {})".format(repr(self.cond), repr(self.lhs), repr(self.rhs))
+
+@typechecked
+def SymbolicUnion(ty : Type, cond : z3.AstRef, then_branch, else_branch):
+    if decideable(ty):
+        return z3.If(cond, then_branch, else_branch, cond.ctx_ref())
+    else:
+        print(repr(ty))
+        return _SymbolicUnion(cond, then_branch, else_branch)
 
 def fmap(x, f):
-    if isinstance(x, SymbolicUnion):
+    if isinstance(x, _SymbolicUnion):
         return x.map(f)
     return f(x)
 
@@ -35,17 +47,17 @@ class ToZ3(Visitor):
         self.solver = z3solver
         self.funcs = { }
     def eq(self, t, e1, e2, env):
-        if isinstance(e1, SymbolicUnion):
-            return z3.If(e1.cond, self.eq(t, e1.lhs, e2, env), self.eq(t, e1.rhs, e2, env), self.ctx)
-        if isinstance(e2, SymbolicUnion):
-            return z3.If(e2.cond, self.eq(t, e1, e2.lhs, env), self.eq(t, e1, e2.rhs, env), self.ctx)
+        return fmap(e1, lambda v1:
+               fmap(e2, lambda v2:
+               self._eq(t, v1, v2, env)))
+    def _eq(self, t, e1, e2, env):
         if type(t) in [TInt, TLong, TBool, TEnum, TNative, TString]:
             return e1 == e2
         elif isinstance(t, TMaybe):
             if (e1 is None) and (e2 is None):
-                return True
+                return z3.BoolVal(True, self.ctx)
             if (e1 is None) != (e2 is None):
-                return False
+                return z3.BoolVal(False, self.ctx)
             return self.eq(t.t, e1, e2, env)
         elif isinstance(t, TBag):
             elem_type = t.t
@@ -114,9 +126,11 @@ class ToZ3(Visitor):
     def visit_EVar(self, v, env):
         return env[v.id]
     def visit_ENum(self, n, env):
-        return n.val
+        if n.type == TInt():
+            return z3.IntVal(n.val, self.ctx)
+        raise NotImplementedError(n.type)
     def visit_EBool(self, b, env):
-        return b.val
+        return z3.BoolVal(b.val, self.ctx)
     def visit_EEmptyList(self, e, env):
         return ([], [])
     def visit_ESingleton(self, e, env):
@@ -167,17 +181,14 @@ class ToZ3(Visitor):
         cond = self.visit(e.cond, env)
         then_branch = self.visit(e.then_branch, env)
         else_branch = self.visit(e.else_branch, env)
-        if decideable(e.type):
-            return z3.If(cond, then_branch, else_branch, ctx=self.ctx)
-        else:
-            return SymbolicUnion(cond, then_branch, else_branch)
+        return SymbolicUnion(e.type, cond, then_branch, else_branch)
     def visit_EUnaryOp(self, e, env):
         if e.op == "not":
             return z3.Not(self.visit(e.e, env), ctx=self.ctx)
         elif e.op == "sum":
             def take_sum(bag):
                 bag_mask, bag_elems = bag
-                sum = 0
+                sum = z3.IntVal(0, self.ctx)
                 for i in range(len(bag_elems)):
                     sum = z3.If(bag_mask[i], bag_elems[i], 0, ctx=self.ctx) + sum
                 return sum
@@ -197,12 +208,13 @@ class ToZ3(Visitor):
         elif e.op == "len":
             return fmap(self.visit(e.e, env), self.len_of)
         elif e.op == "the":
+            assert isinstance(e.type, TMaybe)
             def get_first(bag):
                 bag_mask, bag_elems = bag
                 if not bag_elems:
                     return None
                 rest = (bag_mask[1:], bag_elems[1:])
-                return SymbolicUnion(bag_mask[0], bag_elems[0], get_first(rest))
+                return SymbolicUnion(e.type, bag_mask[0], bag_elems[0], get_first(rest))
             return fmap(self.visit(e.e, env), get_first)
         else:
             raise NotImplementedError(e.op)

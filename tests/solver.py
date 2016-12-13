@@ -11,18 +11,18 @@ class TestSolver(unittest.TestCase):
 
     def test_the_empty(self):
         x = EEmptyList().with_type(TBag(TInt()))
-        assert satisfy(EBinOp(EUnaryOp("the", x).with_type(TInt()), "==", EJust(one)).with_type(TBool())) is None
-        assert satisfy(EBinOp(EUnaryOp("the", x).with_type(TInt()), "==", EJust(zero)).with_type(TBool())) is None
+        assert satisfy(EBinOp(EUnaryOp("the", x).with_type(TMaybe(TInt())), "==", EJust(one)).with_type(TBool())) is None
+        assert satisfy(EBinOp(EUnaryOp("the", x).with_type(TMaybe(TInt())), "==", EJust(zero)).with_type(TBool())) is None
 
     def test_the(self):
         x = ESingleton(zero).with_type(TBag(TInt()))
-        assert satisfy(EBinOp(EUnaryOp("the", x).with_type(TInt()), "==", EJust(zero)).with_type(TBool())) is not None
-        assert satisfy(EBinOp(EUnaryOp("the", x).with_type(TInt()), "==", EJust(one)).with_type(TBool())) is None
+        assert satisfy(EBinOp(EUnaryOp("the", x).with_type(TMaybe(TInt())), "==", EJust(zero)).with_type(TBool())) is not None
+        assert satisfy(EBinOp(EUnaryOp("the", x).with_type(TMaybe(TInt())), "==", EJust(one)).with_type(TBool())) is None
 
     def test_the_acts_like_first(self):
         x = EBinOp(ESingleton(zero).with_type(TBag(TInt())), "+", ESingleton(one).with_type(TBag(TInt()))).with_type(TBag(TInt()))
-        assert satisfy(EBinOp(EUnaryOp("the", x).with_type(TInt()), "==", EJust(zero)).with_type(TBool())) is not None
-        assert satisfy(EBinOp(EUnaryOp("the", x).with_type(TInt()), "==", EJust(one)).with_type(TBool())) is None
+        assert satisfy(EBinOp(EUnaryOp("the", x).with_type(TMaybe(TInt())), "==", EJust(zero)).with_type(TBool())) is not None
+        assert satisfy(EBinOp(EUnaryOp("the", x).with_type(TMaybe(TInt())), "==", EJust(one)).with_type(TBool())) is None
 
     def test_the(self):
         tgroup = TRecord((('name', TString()), ('description', TString()), ('rosterMode', TEnum(('NOBODY', 'ONLY_GROUP', 'EVERYBODY'))), ('groupList', TBag(TString())), ('members', TBag(TNative('org.xmpp.packet.JID'))), ('administrators', TBag(TNative('org.xmpp.packet.JID')))))
