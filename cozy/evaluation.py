@@ -36,6 +36,10 @@ class Bag(object):
         return self.elems[i]
     def __bool__(self):
         return bool(self.elems)
+    def __str__(self):
+        return repr(self)
+    def __repr__(self):
+        return "Bag({})".format(repr(self.elems))
 
 class Evaluator(Visitor):
     def visit_EVar(self, v, env):
