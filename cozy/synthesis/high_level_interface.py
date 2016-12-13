@@ -24,8 +24,8 @@ def all_exps(e):
                 yield x
     return V().visit(e)
 
-def fragmentize(exp : Exp, bound_names : {str} = set()):
-    so_far = []
+@typechecked
+def fragmentize(exp : Exp, out : [Exp], bound_names : {str} = set()):
     for e in all_exps(exp):
         if isinstance(e, ELambda):
             # lambdas may only appear in certain places---they aren't
@@ -37,9 +37,8 @@ def fragmentize(exp : Exp, bound_names : {str} = set()):
         e = subst(e, remap)
         def allow_rename(v1, v2):
             return isinstance(v1, core.EHole) and v1.type == v2.type
-        if not any(alpha_equivalent(e, root, allow_rename) for root in so_far):
-            so_far.append(e)
-            yield e
+        if not any(alpha_equivalent(e, root, allow_rename) for root in out):
+            out.append(e)
 
 def rename_args(queries : [Query]) -> [Query]:
     arg_hist = mk_map((a for q in queries for (a, t) in q.args), v=len)
@@ -61,7 +60,7 @@ def get_roots(state : [EVar], queries : [Query]) -> [Exp]:
     roots = [EBool(True).with_type(BOOL), EBool(False).with_type(BOOL)]
     for q in queries:
         # TODO: filter . map ----> map . filter
-        roots += fragmentize(q.ret, bound_names=state_var_names)
+        fragmentize(q.ret, roots, bound_names=state_var_names)
     # roots = set(roots) # TODO: deduplicate based on alpha-equivalence
     # for r in roots:
     #     print("-> " + pprint(r))
