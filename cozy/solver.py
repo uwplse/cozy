@@ -120,6 +120,8 @@ class ToZ3(Visitor):
         return z3.IntSort(self.ctx)
     def visit_TNative(self, t):
         return z3.IntSort(self.ctx)
+    def visit_TBool(self, t):
+        return z3.BoolSort(self.ctx)
     def visit_Type(self, t):
         raise NotImplementedError(t)
     def visit_EVar(self, v, env):
