@@ -9,7 +9,7 @@ class HoleException(Exception):
         self.hole = hole
         self.env = env
 
-# TODO: make this class orderable
+@total_ordering
 class hashable_defaultdict(defaultdict):
     def __hash__(self):
         return hash(tuple(sorted(self.items())))
@@ -17,6 +17,8 @@ class hashable_defaultdict(defaultdict):
         return repr(dict(self))
     def __str__(self):
         return repr(self)
+    def __lt__(self, other):
+        return tuple(sorted(self.items())) < tuple(sorted(other.items()))
 
 @total_ordering
 class Bag(object):
