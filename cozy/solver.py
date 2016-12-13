@@ -33,7 +33,6 @@ def SymbolicUnion(ty : Type, cond : z3.AstRef, then_branch, else_branch):
     if decideable(ty):
         return z3.If(cond, then_branch, else_branch, cond.ctx_ref())
     else:
-        print(repr(ty))
         return _SymbolicUnion(cond, then_branch, else_branch)
 
 def fmap(x, f):
