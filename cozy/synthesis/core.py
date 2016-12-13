@@ -180,9 +180,8 @@ class ExpBuilder(object):
         return ConstantCost()
 
 class Builder(ExpBuilder):
-    def __init__(self, roots, type_roots, build_sums = True, cost_model = ConstantCost()):
+    def __init__(self, roots, build_sums = True, cost_model = ConstantCost()):
         self.roots = roots
-        self.type_roots = type_roots
         self.build_sums = build_sums
         self.cm = cost_model
 
@@ -236,7 +235,7 @@ class Builder(ExpBuilder):
                     yield EMapGet(m, k).with_type(m.type.v)
 
     def with_roots(self, new_roots):
-        b = Builder(list(new_roots) + list(self.roots), self.type_roots)
+        b = Builder(list(new_roots) + list(self.roots))
         b.build_sums = self.build_sums
         b.cm = self.cm
         return b

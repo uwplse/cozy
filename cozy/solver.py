@@ -269,8 +269,8 @@ class ToZ3(Visitor):
             return m
         return fmap(self.visit(e.e, env), go)
     def visit_EMapGet(self, e, env):
+        key = self.visit(e.key, env)
         def go(map):
-            key = self.visit(e.key, env)
             res = self.apply(map["default"], ([], []), env)
             # print("map get {} on {}".format(key, map))
             for (k, v) in map["mapping"]:
