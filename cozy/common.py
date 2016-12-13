@@ -38,8 +38,8 @@ def check_type(value, ty, value_name="value"):
     elif type(ty) is set:
         assert type(value) is set, "{} has type {}, not {}".format(value_name, type(value).__name__, "set")
         subty, = ty
-        for i in range(len(value)):
-            check_type(value[i], subty, value_name)
+        for x in value:
+            check_type(x, subty, "{} in {}".format(x, value_name))
     else:
         assert isinstance(value, ty), "{} has type {}, not {}".format(value_name, type(value).__name__, ty.__name__)
 
