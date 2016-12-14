@@ -393,7 +393,7 @@ def find_consistent_exps(
         goals = list(find_holes(spec))
 
         if not goals:
-            if max_size == 0 and all(v not in binders for v in fvs) and all(eval(spec, ex) for ex in examples):
+            if max_size == 0 and all(eval(spec, ex) for ex in examples):
                 print("final: {}".format(pprint(spec)))
                 yield { }
             else:
