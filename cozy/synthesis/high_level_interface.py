@@ -113,12 +113,12 @@ class BinderBuilder(core.Builder):
                     # print("###> " + pprint(bag) + " : " + pprint(bag.type))
                     for binder in self.binders:
                         if binder.type == bag.type.t:
-                            for body in cache.find(size=sz2):
-                                yield EMap(bag, ELambda(binder, body)).with_type(TBag(body.type))
-                                if body.type == BOOL:
-                                    yield EFilter(bag, ELambda(binder, body)).with_type(bag.type)
-                                if isinstance(body.type, TBag):
-                                    yield EFlatMap(bag, ELambda(binder, body)).with_type(body.type)
+                            # for body in cache.find(size=sz2):
+                            #     yield EMap(bag, ELambda(binder, body)).with_type(TBag(body.type))
+                            for body in cache.find(size=sz2, type=BOOL):
+                                yield EFilter(bag, ELambda(binder, body)).with_type(bag.type)
+                            for body in cache.find(size=sz2, type=TBag):
+                                yield EFlatMap(bag, ELambda(binder, body)).with_type(body.type)
 
 @typechecked
 def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], queries : [Query], timeout : Timeout) -> (EVar, Exp, [Query]):
