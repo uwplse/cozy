@@ -230,7 +230,7 @@ def synthesize(
     """
 
     # gather root types
-    types = all_types(spec)
+    types = list(all_types(spec))
     basic_types = set(t for t in types if not isinstance(t, TBag))
     basic_types |= { BOOL, INT }
     print("basic types:")
