@@ -473,6 +473,8 @@ def alpha_equivalent(e1, e2, allow_rename=lambda v1, v2: False):
                     self.remap[e1.id] = e1id
                 else:
                     e1id = self.remap[e1.id]
+            elif e1.id in self.remap:
+                e1id = self.remap[e1.id]
             return e1id == e2.id
         def visit_EHole(self, e1, e2):
             if not isinstance(e2, target_syntax.EHole):
@@ -484,6 +486,8 @@ def alpha_equivalent(e1, e2, allow_rename=lambda v1, v2: False):
                     self.remap[e1.name] = e1id
                 else:
                     e1id = self.remap[e1.name]
+            elif e1.name in self.remap:
+                e1id = self.remap[e1.name]
             return e1id == e2.name
         def visit_ELambda(self, e1, e2):
             if not isinstance(e2, target_syntax.ELambda):

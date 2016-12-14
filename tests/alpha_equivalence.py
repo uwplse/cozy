@@ -18,3 +18,15 @@ class TestAlphaEquivalent(unittest.TestCase):
         e2 = EMap(v1, mk_lambda(TInt(), lambda arg: v1))
         assert e1.f.arg.id != e2.f.arg.id
         assert alpha_equivalent(e1, e2)
+
+    def test_lambdas(self):
+        employers = EVar("employers").with_type(TBag(TInt()))
+        e1 = mk_lambda(employers.type.t, lambda employer: EGetField(EGetField(employer, "val"), "employer_name"))
+        e2 = mk_lambda(employers.type.t, lambda employer: EGetField(EGetField(employer, "val"), "employer_name"))
+        assert alpha_equivalent(e1, e2)
+
+    def test_make_map(self):
+        employers = EVar("employers").with_type(TBag(TInt()))
+        e1 = EMakeMap(employers, mk_lambda(employers.type.t, lambda employer: EGetField(EGetField(employer, "val"), "employer_name")), mk_lambda(employers.type, lambda es: es))
+        e2 = EMakeMap(employers, mk_lambda(employers.type.t, lambda employer: EGetField(EGetField(employer, "val"), "employer_name")), mk_lambda(employers.type, lambda es: es))
+        assert alpha_equivalent(e1, e2)
