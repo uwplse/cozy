@@ -428,6 +428,15 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
         else:
             raise NotImplementedError(type)
 
+    def unreconstruct(value, type):
+        """Converts reconstructed value back to a Z3 value"""
+        if type == TInt() or type == TLong():
+            return z3.IntVal(value, ctx)
+        elif isinstance(type, TNative):
+            return z3.IntVal(value[1], ctx)
+        else:
+            raise NotImplementedError(type)
+
     _env = { }
     fvs = vars if vars is not None else free_vars(e)
     handle_vars = []
@@ -463,7 +472,8 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
         for k, f in visitor.funcs.items():
             name = k[0]
             out_type = k[1]
-            res[name] = lambda args: reconstruct(model, f(*args), out_type)
+            arg_types = k[2]
+            res[name] = lambda *args: reconstruct(model, f(*[unreconstruct(v, t) for (v, t) in zip(args, arg_types)]), out_type)
         # print(res)
         if validate_model:
             x = evaluation.eval(e, res)

@@ -46,3 +46,11 @@ class TestSolver(unittest.TestCase):
         s = EUnaryOp('sum', EMap(EMapGet(EMakeMap(EVar('employers').with_type(TBag(THandle('employers', employer_type))), ELambda(EVar('_var49').with_type(THandle('employers', employer_type)), EGetField(EGetField(EVar('_var49').with_type(THandle('employers', employer_type)), 'val').with_type(employer_type), 'employer_id').with_type(TInt())), ELambda(EVar('_var57').with_type(TBag(THandle('employers', employer_type))), EVar('_var57').with_type(TBag(THandle('employers', employer_type))))).with_type(TMap(TInt(), TBag(THandle('employers', employer_type)))), EVar('employer_name').with_type(TInt())).with_type(TBag(THandle('employers', employer_type))), ELambda(EVar('_var48').with_type(THandle('employers', employer_type)), EGetField(EGetField(EVar('_var48').with_type(THandle('employers', employer_type)), 'val').with_type(employer_type), 'employer_name').with_type(TInt()))).with_type(TBag(TInt()))).with_type(TInt())
         e = EMapGet(EMakeMap(EVar('employees').with_type(TBag(THandle('employees', employee_type))), ELambda(EVar('_var39').with_type(THandle('employees', employee_type)), EGetField(EGetField(EVar('_var39').with_type(THandle('employees', employee_type)), 'val').with_type(employee_type), 'employer_id').with_type(TInt())), ELambda(EVar('_var45').with_type(TBag(THandle('employees', employee_type))), EVar('_var45').with_type(TBag(THandle('employees', employee_type))))).with_type(TMap(TInt(), TBag(THandle('employees', employee_type)))), s).with_type(TBag(THandle('employees', employee_type)))
         satisfy(equal(e, EEmptyList().with_type(e.type)))
+
+    def test_function_extraction(self):
+        x = EVar("x").with_type(TNative("Foo"))
+        e = ECall("f", [x]).with_type(TBool())
+        model = satisfy(e)
+        assert "x" in model
+        assert "f" in model
+        assert model["f"](model["x"]) is True
