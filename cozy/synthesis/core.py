@@ -357,6 +357,8 @@ def values_of_type(value, value_type, desired_type):
 
 def instantiate_examples(examples, vars, binder):
     for e in examples:
+        if binder.id in e:
+            yield e
         for v in vars:
             for possible_value in unique(values_of_type(e[v.id], v.type, binder.type)):
                 # print("possible value for {}: {}".format(pprint(binder.type), repr(possible_value)))
