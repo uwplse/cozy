@@ -438,11 +438,13 @@ def find_consistent_exps(
 
                     cost = cost_model.cost(e)
 
-                    # if isinstance(e, EMapGet):
+                    # type_of_interest = ECall #EMapGet
+                    # if isinstance(e, type_of_interest):
                     #     print("got map get {} @ {}".format(pprint(e), cost))
 
                     if cost_model.is_monotonic() and best_cost is not None and cost > best_cost:
-                        # print("too expensive: {}".format(pprint(e)))
+                        # if isinstance(e, type_of_interest):
+                        #     print("too expensive: {}".format(pprint(e)))
                         continue
                     fp = fingerprint(e, g_examples, fvs, binders)
                     prev = seen.get(fp)
@@ -457,8 +459,8 @@ def find_consistent_exps(
                             cache.add(e, size=sz1)
                             seen[fp] = (cost, e, sz1)
                         else:
-                            # if isinstance(e, EMapGet):
-                            #     print("dropping {}; already handled by {} (examples={})".format(pprint(e), pprint(prev_exp), repr(examples)))
+                            # if isinstance(e, type_of_interest):
+                            #     print("dropping {}; already handled by {} @ {} (examples={})".format(pprint(e), pprint(prev_exp), prev_cost, repr(examples)))
                             continue
 
                     # # debug = "xxx" in name
