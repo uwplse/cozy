@@ -428,7 +428,7 @@ def find_consistent_exps(
             #     sz2 -= 1
                 # print("{}({},{})".format(indent, sz1, sz2))
                 found = False
-                for e in builder.build(cache, sz1):
+                for e in (builder.build(cache, sz1) if sz1 == size else cache.find(size=sz1)):
                     if contains_holes(e):
                         raise Exception()
                         if cost_model.is_monotonic() and best_cost is not None and cost_model.best_case_cost(e) > best_cost:
