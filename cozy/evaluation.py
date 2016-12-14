@@ -21,6 +21,24 @@ class hashable_defaultdict(defaultdict):
         return tuple(sorted(self.items())) < tuple(sorted(other.items()))
 
 @total_ordering
+class Maybe(object):
+    def __init__(self, obj):
+        self.obj = obj
+    def __hash__(self):
+        return hash(self.obj)
+    def __eq__(self, other):
+        return ((self.obj is None) == (other.obj is None)) and self.obj == other.obj
+    def __lt__(self, other):
+        if self.obj is None and other.obj is not None:
+            return True
+        elif self.obj is not None and other.obj is None:
+            return False
+        elif self.obj is None and other.obj is None:
+            return False
+        else:
+            return self.obj < other.obj
+
+@total_ordering
 class Bag(object):
     def __init__(self, iterable=()):
         self.elems = tuple(iterable)
@@ -57,7 +75,9 @@ class Evaluator(Visitor):
     def visit_ESingleton(self, e, env):
         return Bag((self.visit(e.e, env),))
     def visit_EJust(self, e, env):
-        return self.visit(e.e, env)
+        return Maybe(self.visit(e.e, env))
+    def visit_ENull(self, e, env):
+        return Maybe(None)
     def visit_ECall(self, call, env):
         return env[call.func]([self.visit(arg, env) for arg in call.args])
     def visit_ECond(self, e, env):
@@ -84,9 +104,9 @@ class Evaluator(Visitor):
         elif e.op == "the":
             bag = self.visit(e.e, env)
             if bag:
-                return bag[0]
+                return Maybe(bag[0])
             else:
-                return None
+                return self.visit(ENull().with_type(e.type), env)
         else:
             raise NotImplementedError(e.op)
     def visit_EBinOp(self, e, env):
@@ -117,8 +137,8 @@ class Evaluator(Visitor):
         return self.visit(lam.body, env2)
     def visit_EAlterMaybe(self, e, env):
         x = self.visit(e.e, env)
-        if x is not None:
-            x = self.eval_lambda(e.f, x, env)
+        if x.obj is not None:
+            x = Maybe(self.eval_lambda(e.f, x.obj, env))
         return x
     def visit_EMakeMap(self, e, env):
         im = defaultdict(Bag)
@@ -173,7 +193,7 @@ def mkval(type):
     if isinstance(type, TInt) or isinstance(type, TLong) or isinstance(type, TNative):
         return 0
     if isinstance(type, TMaybe):
-        return None
+        return Maybe(None)
     if isinstance(type, TBool):
         return False
     if isinstance(type, TString):
@@ -190,8 +210,6 @@ def mkval(type):
         return (0, mkval(type.value_type))
     if isinstance(type, TTuple):
         return tuple(mkval(t) for t in type.ts)
-    if isinstance(type, TMaybe):
-        return None
     raise NotImplementedError(type)
 
 class EnvCollector(Evaluator):
