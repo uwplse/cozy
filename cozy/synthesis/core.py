@@ -422,7 +422,7 @@ def find_consistent_exps(
         for size in ints(1, max_size):
             if max_size is None:
                 print("size={}; |cache|={}".format(size, len(cache)))
-            for sz1 in range(1, size + 1):
+            for sz1 in (range(1, size + 1) if goals else [size]):
                 if timeout is not None:
                     timeout.check()
                 sz2 = size - sz1
