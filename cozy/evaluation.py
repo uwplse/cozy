@@ -190,8 +190,10 @@ def mkval(type):
     """
     Produce an arbitrary value of the given type.
     """
-    if isinstance(type, TInt) or isinstance(type, TLong) or isinstance(type, TNative):
+    if isinstance(type, TInt) or isinstance(type, TLong):
         return 0
+    if isinstance(type, TNative):
+        return (type.name, 0)
     if isinstance(type, TMaybe):
         return Maybe(None)
     if isinstance(type, TBool):

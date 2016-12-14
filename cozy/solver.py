@@ -389,8 +389,10 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
     visitor = ToZ3(ctx, solver)
 
     def reconstruct(model, value, type):
-        if type == TInt() or type == TLong() or isinstance(type, TNative):
+        if type == TInt() or type == TLong():
             return model.eval(value, model_completion=True).as_long()
+        elif isinstance(type, TNative):
+            return (type.name, model.eval(value, model_completion=True).as_long())
         elif type == TString():
             i = model.eval(value, model_completion=True).as_long()
             s = "b"
