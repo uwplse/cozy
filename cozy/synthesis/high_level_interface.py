@@ -170,8 +170,9 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
             return self.rtcm.is_monotonic() and self.memcm.is_monotonic()
         def best_case_cost(self, e):
             return min(
-                (1-self.factor) * self.rtcm.best_case_cost(e2) #+ sum(self.factor * self.memcm.best_case_cost(proj) for (v, proj) in rep)
-                for (rep, e2) in infer_rep(state, e))
+                ((1-self.factor) * self.rtcm.best_case_cost(e2) #+ sum(self.factor * self.memcm.best_case_cost(proj) for (v, proj) in rep)
+                    for (rep, e2) in infer_rep(state, e)),
+                default=float("inf"))
 
     binders = []
     n_binders = 1 # TODO?
