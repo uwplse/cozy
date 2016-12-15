@@ -10,7 +10,7 @@ class TestRepInference(unittest.TestCase):
     def test_the_filter_typing(self):
         x = EVar("x").with_type(TBag(TInt()))
         y = EVar("y").with_type(TInt())
-        e = EUnaryOp("the", EFilter(x, mk_lambda(x.type.t, lambda elem: EBinOp(elem, "==", y))).with_type(x.type)).with_type(TMaybe(x.type.t))
+        e = EUnaryOp("the", EFilter(x, mk_lambda(x.type.t, lambda elem: EBinOp(elem, "==", y).with_type(TBool()))).with_type(x.type)).with_type(TMaybe(x.type.t))
         for (vars, e2) in infer_rep([x], e):
             for (v, proj) in vars:
                 errs = typecheck(proj, env={ "x": x.type })
@@ -21,7 +21,7 @@ class TestRepInference(unittest.TestCase):
     def test_the_map_typing(self):
         x = EVar("x").with_type(TBag(TInt()))
         y = EVar("y").with_type(TInt())
-        e = EUnaryOp("the", EMap(x, mk_lambda(x.type.t, lambda elem: EBinOp(elem, "==", y))).with_type(x.type)).with_type(TMaybe(x.type.t))
+        e = EUnaryOp("the", EMap(x, mk_lambda(x.type.t, lambda elem: EBinOp(elem, "==", y).with_type(TBool()))).with_type(x.type)).with_type(TMaybe(x.type.t))
         for (vars, e2) in infer_rep([x], e):
             for (v, proj) in vars:
                 errs = typecheck(proj, env={ "x": x.type })
