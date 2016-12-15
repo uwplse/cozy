@@ -182,6 +182,10 @@ class RunTimeCostModel(CostModel, BottomUpExplorer):
         return self.visit(e.e) + cardinality(e.e) * (self.visit(e.key.body) + self.visit(e.value.body))
     def join(self, x, child_costs):
         return 0.01 + sum(child_costs)
+    def visit(self, x):
+        if isinstance(x, Exp) and not free_vars(x):
+            return 0
+        return super().visit(x)
 
 class ExpBuilder(object):
     def build(self, cache, size):
