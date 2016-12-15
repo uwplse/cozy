@@ -118,6 +118,16 @@ class Evaluator(Visitor):
             return self.visit(e.e1, env) == self.visit(e.e2, env)
         elif e.op == "+":
             return self.visit(e.e1, env) + self.visit(e.e2, env)
+        elif e.op == "-":
+            return self.visit(e.e1, env) - self.visit(e.e2, env)
+        elif e.op == "<":
+            return self.visit(e.e1, env) < self.visit(e.e2, env)
+        elif e.op == ">":
+            return self.visit(e.e1, env) > self.visit(e.e2, env)
+        elif e.op == "<=":
+            return self.visit(e.e1, env) <= self.visit(e.e2, env)
+        elif e.op == ">=":
+            return self.visit(e.e1, env) >= self.visit(e.e2, env)
         elif e.op == "in":
             return self.visit(e.e1, env) in self.visit(e.e2, env)
         else:

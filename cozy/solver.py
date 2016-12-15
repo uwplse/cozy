@@ -228,23 +228,32 @@ class ToZ3(Visitor):
         else:
             return r[e.f]
     def visit_EBinOp(self, e, env):
+        v1 = self.visit(e.e1, env)
+        v2 = self.visit(e.e2, env)
         if e.op == "and":
-            return z3.And(self.visit(e.e1, env), self.visit(e.e2, env), self.ctx)
+            return z3.And(v1, v2, self.ctx)
         elif e.op == "or":
-            return z3.Or(self.visit(e.e1, env), self.visit(e.e2, env), self.ctx)
+            return z3.Or(v1, v2, self.ctx)
         elif e.op == "==":
-            return self.eq(e.e1.type, self.visit(e.e1, env), self.visit(e.e2, env), env)
+            return self.eq(e.e1.type, v1, v2, env)
+        elif e.op == ">":
+            return v1 > v2
+        elif e.op == "<":
+            return v1 < v2
+        elif e.op == ">=":
+            return v1 >= v2
+        elif e.op == "<=":
+            return v1 <= v2
         elif e.op == "+":
-            v1 = self.visit(e.e1, env)
-            v2 = self.visit(e.e2, env)
             if isinstance(e.type, TBag):
                 return fmap(v1, lambda bag1:
                        fmap(v2, lambda bag2:
                        (bag1[0] + bag2[0], bag1[1] + bag2[1])))
             return v1 + v2
+        elif e.op == "-":
+            return v1 - v2
         elif e.op == "in":
-            return fmap(self.visit(e.e2, env),
-                lambda bag: self.count_in(e.e1.type, bag, self.visit(e.e1, env), env) > 0)
+            return fmap(v2, lambda bag: self.count_in(e.e1.type, bag, v1, env) > 0)
         else:
             raise NotImplementedError(e.op)
     def visit_EListComprehension(self, e, env):
