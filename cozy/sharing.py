@@ -23,6 +23,8 @@ def uses_intrusive_data(e : target_syntax.Exp, handle : target_syntax.Exp) -> ta
         if isinstance(e.type, target_syntax.TBag) and e.type.t == handle.type:
             return target_syntax.EBinOp(handle, "in", e).with_type(target_syntax.TBool())
         return target_syntax.EBool(False).with_type(target_syntax.TBool())
+    elif type(e) in [target_syntax.ENum, target_syntax.EBool, target_syntax.EEnumEntry]:
+        return target_syntax.EBool(False).with_type(target_syntax.TBool())
     else:
         raise NotImplementedError(e)
 
