@@ -409,7 +409,7 @@ def find_consistent_exps(
         if not goals:
             if max_size == 0 and all(eval(spec, ex) for ex in examples):
                 print("final: {}".format(pprint(spec)))
-                yield { }
+                yield ({ }, 0)
             else:
                 # if size != 0:
                 #     print("REJECTED (wrong size): {}".format(pprint(spec)))
@@ -499,7 +499,7 @@ def find_consistent_exps(
                     if not feasible(spec2, examples):
                         print("{}INFEASIBLE: {}".format(indent, pprint(spec2)))
                         continue
-                    for d in find_consistent_exps(spec2, binders, examples, sz2, timeout=timeout):
+                    for (d, _) in find_consistent_exps(spec2, binders, examples, sz2, timeout=timeout):
                         cost = cost_model.cost(expand(e, d))
                         if best_cost is not None and cost > best_cost:
                             continue
@@ -509,7 +509,7 @@ def find_consistent_exps(
                         # TODO: if monotonic, clean out cache
                         d[name] = e
                         found = True
-                        yield d
+                        yield (d, cost)
                 # if not found:
                 #     print("{}none of size {} while synth'ing {} + {}".format(indent, sz1, name, list(g.name for g in goals)))
                     # if sz1 == 1:
@@ -528,8 +528,9 @@ def expand(e, mapping):
 @typechecked
 def synth(spec : Exp, binders : [EVar], vars : [EVar], timeout : Timeout):
     examples = []
+    best_cost = None
     while True:
-        for mapping in find_consistent_exps(spec, binders, examples, timeout=timeout):
+        for (mapping, cost) in find_consistent_exps(spec, binders, examples, best_cost=best_cost, timeout=timeout):
             new_spec = expand(spec, mapping)
 
             print("considering: {}".format(pprint(new_spec)))
@@ -541,6 +542,7 @@ def synth(spec : Exp, binders : [EVar], vars : [EVar], timeout : Timeout):
                     examples.append(model)
                     break
                 else:
+                    best_cost = cost if best_cost is None else min(cost, best_cost)
                     yield mapping
             else:
                 assert False
