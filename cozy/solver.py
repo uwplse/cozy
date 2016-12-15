@@ -5,7 +5,7 @@ import z3
 
 from cozy.target_syntax import *
 from cozy.syntax_tools import pprint, free_vars
-from cozy.common import declare_case, fresh_name, Visitor, FrozenDict, typechecked
+from cozy.common import declare_case, fresh_name, Visitor, FrozenDict, typechecked, memoize
 from cozy import evaluation
 
 # TODO: Int==Bv32, Long==Bv64
@@ -482,7 +482,10 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
             name = k[0]
             out_type = k[1]
             arg_types = k[2]
-            res[name] = lambda *args: reconstruct(model, f(*[unreconstruct(v, t) for (v, t) in zip(args, arg_types)]), out_type)
+            @memoize
+            def extracted_func(*args):
+                return reconstruct(model, f(*[unreconstruct(v, t) for (v, t) in zip(args, arg_types)]), out_type)
+            res[name] = extracted_func
         # print(res)
         if validate_model:
             x = evaluation.eval(e, res)
