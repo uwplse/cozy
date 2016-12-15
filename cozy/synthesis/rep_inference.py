@@ -53,7 +53,9 @@ def infer_rep(state : [EVar], qexp : Exp) -> [([(EVar, Exp)], Exp)]:
                     yield (st1 + st2, EBinOp(exp1, e.op, exp2).with_type(e.type))
         def visit_Exp(self, e, k):
             fvs = free_vars(e)
-            if all(v in state for v in fvs):
+            if not fvs:
+                yield ([], e)
+            elif all(v in state for v in fvs):
                 proj = k.apply_to(e)
                 v = fresh_var(proj.type)
                 yield ([(v, proj)], v)
