@@ -42,6 +42,9 @@ class Cache(object):
                 for z in (y.values() if size is None else [y.get(size, [])]):
                     res += z
         return res
+    def types(self):
+        for d in self.data.values():
+            yield from d.keys()
     def __iter__(self):
         for x in self.data.values():
             for y in x.values():
@@ -50,6 +53,10 @@ class Cache(object):
                         yield (e, size)
     def __len__(self):
         return self.size
+    def random_sample(self, n):
+        import random
+        es = [ e for (e, size) in self ]
+        return random.sample(es, n)
 
 @typechecked
 def instantiate(e : Exp, cache : Cache, total_size : int):
