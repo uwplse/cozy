@@ -289,11 +289,11 @@ def synthesize(
             if isinstance(op, Op):
                 print("###### INCREMENTALIZING: {}".format(op.name))
                 (member, delta) = op_deltas[op.name]
-                print(member, delta)
+                # print(member, delta)
                 (state_update, subqueries) = inc.derivative(state_exp, member, delta, state_vars)
-                print(state_update, subqueries)
+                # print(state_update, subqueries)
                 state_update_stm = inc.apply_delta_in_place(state_var, state_update)
-                print(pprint(state_update_stm))
+                # print(pprint(state_update_stm))
                 op_stms[op.name].append(state_update_stm)
                 for sub_q in subqueries:
                     print("########### SUBGOAL: {}".format(pprint(sub_q)))
