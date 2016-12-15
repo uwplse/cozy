@@ -310,6 +310,10 @@ class Typechecker(Visitor):
     def visit_EEmptyList(self, e):
         e.type = syntax.TList(None)
 
+    def visit_ESingleton(self, e):
+        self.visit(e.e)
+        e.type = syntax.TBag(e.e.type)
+
     def visit_EListComprehension(self, e):
         with self.scope():
             for clause in e.clauses:
