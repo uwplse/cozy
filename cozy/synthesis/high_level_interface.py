@@ -4,7 +4,7 @@ import datetime
 from cozy.common import typechecked, fresh_name, mk_map, pick_to_sum
 from cozy.target_syntax import *
 import cozy.syntax_tools
-from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, free_vars, pprint, subst, implies, fresh_var, mk_lambda
+from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, free_vars, pprint, subst, implies, fresh_var, mk_lambda, all_exps
 import cozy.incrementalization as inc
 from cozy.typecheck import INT, BOOL
 from cozy.timeouts import Timeout, TimeoutException
@@ -14,15 +14,6 @@ from . import caching
 from .rep_inference import infer_rep
 
 SynthCtx = namedtuple("SynthCtx", ["all_types", "basic_types"])
-
-def all_exps(e):
-    class V(BottomUpExplorer):
-        def join(self, x, children):
-            for child in children:
-                yield from child
-            if isinstance(x, Exp):
-                yield x
-    return V().visit(e)
 
 @typechecked
 def fragmentize(exp : Exp, out : [Exp], bound_names : {str} = set()):

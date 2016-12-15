@@ -367,6 +367,23 @@ def free_vars(exp):
 
     return set(VarCollector().visit(exp))
 
+def all_exps(e):
+    class V(BottomUpExplorer):
+        def join(self, x, children):
+            for child in children:
+                yield from child
+            if isinstance(x, syntax.Exp):
+                yield x
+    return V().visit(e)
+
+def replace(exp, old_exp, new_exp):
+    class Replacer(BottomUpRewriter):
+        def visit(self, e):
+            if e == old_exp:
+                return new_exp
+            return super().visit(e)
+    return Replacer().visit(exp)
+
 def subst(exp, replacements):
     """
     Performs capture-avoiding substitution.
