@@ -45,9 +45,15 @@ def infer_rep(state : [EVar], qexp : Exp) -> [([(EVar, Exp)], Exp)]:
                 for (inner_st, inner_exp) in self.visit(e.f.body, k):
                     yield (outer_st + inner_st, EFlatMap(outer_exp, ELambda(e.f.arg, inner_exp)).with_type(e.type))
         def visit_EBinOp(self, e, k):
+            fvs1 = free_vars(e.e1)
+            fvs2 = free_vars(e.e2)
+            if all(v in state for v in fvs1):
+                yield from self.visit(e.e2, compose(k, mk_lambda(e.e2.type, lambda x: EBinOp(e.e1, e.op, x).with_type(e.type))))
+            if all(v in state for v in fvs2):
+                yield from self.visit(e.e1, compose(k, mk_lambda(e.e1.type, lambda x: EBinOp(x, e.op, e.e2).with_type(e.type))))
             for (st1, exp1) in self.visit(e.e1, mk_lambda(e.e1.type, lambda x: x)):
                 for (st2, exp2) in self.visit(e.e2, mk_lambda(e.e2.type, lambda x: x)):
-                    yield (st1 + st2, EBinOp(exp1, e.op, exp2).with_type(e.type))
+                    yield (st1 + st2, k.apply_to(EBinOp(exp1, e.op, exp2).with_type(e.type)))
         def visit_Exp(self, e, k):
             fvs = free_vars(e)
             if all(v in state for v in fvs):
@@ -62,5 +68,6 @@ def infer_rep(state : [EVar], qexp : Exp) -> [([(EVar, Exp)], Exp)]:
             if fvs:
                 yield from super().visit(e, k)
             else:
-                yield ([], e)
+                yield ([], k.apply_to(e))
+
     yield from V().visit(qexp, mk_lambda(qexp.type, lambda x: x))
