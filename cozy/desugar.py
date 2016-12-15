@@ -65,6 +65,14 @@ def desugar(spec : Spec) -> Spec:
                 return self.visit(EUnaryOp("empty", EFilter(e.e, ELambda(arg, ENot(arg))).with_type(e.e.type)).with_type(e.type))
             else:
                 return EUnaryOp(e.op, sub).with_type(e.type)
+        def visit_EBinOp(self, e):
+            e1 = self.visit(e.e1)
+            e2 = self.visit(e.e2)
+            op = e.op
+            if op == "!=":
+                return self.visit(ENot(EBinOp(e1, "==", e2).with_type(e.type)))
+            else:
+                return EBinOp(e1, op, e2).with_type(e.type)
         def visit_EFlatMap(self, e):
             return EFlatten(EMap(e.e, e.f))
 
