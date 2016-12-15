@@ -1,5 +1,6 @@
 from collections import namedtuple, deque, defaultdict
 import datetime
+import itertools
 
 from cozy.common import typechecked, fresh_name, mk_map, pick_to_sum
 from cozy.target_syntax import *
@@ -46,19 +47,14 @@ def rename_args(queries : [Query]) -> [Query]:
     return res
 
 @typechecked
-def get_roots(state : [EVar], queries : [Query]) -> [Exp]:
+def get_roots(state : [EVar], e : Exp) -> [Exp]:
     state_var_names = set(v.id for v in state)
     roots = [
         EBool(True).with_type(BOOL),
         EBool(False).with_type(BOOL),
         ENum(0).with_type(INT),
         ENum(1).with_type(INT)]
-    for q in queries:
-        # TODO: filter . map ----> map . filter
-        fragmentize(q.ret, roots, bound_names=state_var_names)
-    # roots = set(roots) # TODO: deduplicate based on alpha-equivalence
-    # for r in roots:
-    #     print("-> " + pprint(r))
+    fragmentize(e, roots, bound_names=state_var_names)
     return list(roots)
 
 @typechecked
@@ -140,16 +136,23 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
     """
     assert len(queries) == 1 # TODO
     queries = rename_args(queries)
-    roots = get_roots(state, queries)
+    q = queries[0]
+    all_types = ctx.all_types
+    basic_types = ctx.basic_types
+
+    binders = []
+    n_binders = 1 # TODO?
+    for t in all_types:
+        if isinstance(t, TBag):
+            binders += [fresh_var(t.t) for i in range(n_binders)]
+    print(binders)
+
+    roots = get_roots(state, q.ret)
     ctors = guess_constructors(state, roots)
 
     for e in roots + ctors:
         print(" --> {}".format(pprint(e)))
 
-    all_types = ctx.all_types
-    basic_types = ctx.basic_types
-
-    q = queries[0]
     args = [EVar(name).with_type(t) for (name, t) in q.args]
 
     class CoolCostModel(core.CostModel):
@@ -165,28 +168,21 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
                     for (rep, e2) in infer_rep(state, e)),
                 default=float("inf"))
 
-    binders = []
-    n_binders = 1 # TODO?
-    for t in all_types:
-        if isinstance(t, TBag):
-            binders += [fresh_var(t.t) for i in range(n_binders)]
-    print(binders)
-
-    # b = core.Builder(roots + binders + ctors + args, basic_types, cost_model=CoolCostModel())
     b = BinderBuilder(binders, roots + binders + ctors + args, basic_types, cost_model=CoolCostModel())
-    hole = core.EHole(q.name, q.ret.type, b)
-    spec = cozy.syntax_tools.equal(hole, q.ret)
-
     new_state_vars = state
     state_proj_exprs = state
     new_ret = q.ret
     try:
-        for mapping in core.synth(spec, binders, vars=state+args+binders, timeout=timeout):
+        for expr in itertools.chain([q.ret], core.improve(
+                target=q.ret,
+                assumptions=[],
+                binders=binders,
+                vars=state+args+binders,
+                cost_model=b.cost_model(),
+                builder=b,
+                timeout=timeout)):
 
             print("SOLUTION")
-            expr = core.expand(hole, mapping)
-            print(pprint(expr))
-
             print("-" * 40)
 
             for (st, expr) in infer_rep(state, expr):
@@ -198,11 +194,8 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
                 new_ret = expr
 
             print("-" * 40)
-
-
     except TimeoutException:
         print("stopping due to timeout")
-        pass
 
     if len(new_state_vars) != 1:
         new_state_var = fresh_var(TTuple(tuple(v.type for v in new_state_vars)))

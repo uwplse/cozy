@@ -5,11 +5,16 @@ import sys
 
 from cozy.target_syntax import *
 from cozy.typecheck import INT, BOOL
-from cozy.syntax_tools import subst, pprint, free_vars, BottomUpExplorer, equal, fresh_var
+from cozy.syntax_tools import subst, replace, pprint, free_vars, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps
 from cozy.common import Visitor, fresh_name, typechecked, unique, pick_to_sum, cross_product
 from cozy.solver import satisfy, feasible
 from cozy.evaluation import HoleException, eval, all_envs_for_hole
 from cozy.timeouts import Timeout
+
+def nested_dict(n, t):
+    if n <= 0:
+        return t()
+    return defaultdict(lambda: nested_dict(n-1, t))
 
 class Cache(object):
     def __init__(self, items=None):
@@ -273,10 +278,6 @@ class Builder(ExpBuilder):
         b.cm = self.cm
         return b
 
-class Counterexample(Exception):
-    def __init__(self, value):
-        self.value = value
-
 def find_holes(e):
     """
     Yields holes in evaluation order
@@ -301,72 +302,6 @@ def contains_holes(e):
     for g in find_holes(e):
         return True
     return False
-
-def pick(caches, types, sizes):
-    if len(caches) == 0:
-        yield ()
-    else:
-        for e in caches[0].find(type=types[0], size=sizes[0]):
-            for es in pick(caches[1:], types[1:], sizes[1:]):
-                yield (e,) + es
-
-def nested_dict(n, t):
-    if n <= 0:
-        return t()
-    return defaultdict(lambda: nested_dict(n-1, t))
-
-# def distinct_exps(builder, examples, size, type):
-#     cache = Cache()
-#     seen = set()
-#     def fingerprint(e):
-#         return (e.type,) + tuple(eval(e, ex) for ex in examples)
-#     for i in range(size + 1):
-#         # if not cache.find(size=i):
-#         for e in builder.build(cache, i):
-#             if contains_holes(e):
-#                 cache.add(e, size=i)
-#                 continue
-#             fp = fingerprint(e)
-#             # print("fp({}) = {}".format(pprint(e), fp))
-#             if fp not in seen:
-#                 seen.add(fp)
-#                 cache.add(e, size=i)
-#                 # print("    ---> adding @ size={}".format(i))
-#     # print("RESULT={}".format(list(cache.find(type=type, size=size))))
-#     return cache.find(type=type, size=size)
-
-def pick_goal(spec, examples):
-    # assert contains_holes(spec), "no subgoals in {}".format(spec)
-    # scores = defaultdict(int)
-    # for ex in examples:
-    #     try:
-    #         eval(spec, ex)
-    #     except HoleException as e:
-    #         scores[e.hole.name] += 1
-    # if not scores:
-    #     for g in find_holes(spec):
-    #         return g[0]
-    # return max(scores.keys(), key=scores.get)
-    for g in find_holes(spec):
-        return g.name
-    assert False, "no subgoals in {}".format(spec)
-
-def construct_inputs(spec, goal_name, examples):
-    for ex in examples:
-        yield from all_envs_for_hole(spec, ex, goal_name)
-
-def ints(start, end):
-    """
-    Yields integers from the range [start, end]. If end is None, then it yields
-    integers from the range [start, INFINITY).
-    """
-    i = start
-    if end is None:
-        while True:
-            yield i
-            i += 1
-    else:
-        yield from range(start, end + 1)
 
 def values_of_type(value, value_type, desired_type):
     # see evaluation.mkval for info on the structure of values
@@ -398,163 +333,120 @@ def fingerprint(e, examples, vars : {EVar}, binders : [EVar]):
         # print("augmented examples for {}: {}".format(v, examples))
     return (e.type,) + tuple(eval(e, ex) for ex in examples)
 
-indent = ""
-def find_consistent_exps(
-        spec      : Exp,
-        binders   : [EVar],
-        examples  : [{str:object}],
-        max_size  : int = None,
-        best_cost : float = None,
-        timeout   : Timeout = None):
+class Learner(object):
+    def __init__(self, target, binders, examples, cost_model, builder, timeout):
+        self.binders = binders
+        self.timeout = timeout
+        self.cost_model = cost_model
+        self.builder = builder
+        self.seen = { } # fingerprint:(cost, e, size) map
+        self.reset(examples, update_watched_exps=False)
+        self.watch(target)
 
-    global indent
-    indent = indent + "  "
-    fvs = free_vars(spec)
+    def reset(self, examples, update_watched_exps=True):
+        self.cache = Cache()
+        self.current_size = 0
+        self.examples = examples
+        self.seen.clear()
+        self.builder_iter = ()
+        if update_watched_exps:
+            self.update_watched_exps()
 
-    try:
+    def watch(self, new_target):
+        self.target = new_target
+        self.vars = free_vars(new_target)
+        self.cost_ceiling = self.cost_model.cost(new_target)
+        self.update_watched_exps()
+        if self.cost_model.is_monotonic():
+            seen = list(self.seen.items())
+            for (fp, (cost, e, size)) in seen:
+                if cost > self.cost_ceiling:
+                    self.cache.evict(e, size)
+                    del self.seen[fp]
 
-        # print("{}find({}, {})".format(indent, pprint(spec), size))
+    def update_watched_exps(self):
+        # self.watched_exps = {
+        #     self._fingerprint(e) : (e, self.cost_model.cost(e))
+        #     for e in all_exps(self.target)
+        #     if not isinstance(e, ELambda) }
+        e = self.target
+        self.watched_exps = {
+            self._fingerprint(e) : (e, self.cost_model.cost(e)) }
 
-        goals = list(find_holes(spec))
+    def _fingerprint(self, e):
+        return fingerprint(e, self.examples, self.vars, self.binders)
 
-        if not goals:
-            if max_size == 0 and all(eval(spec, ex) for ex in examples):
-                print("final: {}".format(pprint(spec)))
-                yield ({ }, 0)
-            else:
-                # if size != 0:
-                #     print("REJECTED (wrong size): {}".format(pprint(spec)))
-                # else:
-                #     print("  REJECTED: {} [examples={}]".format(pprint(spec), examples))
-                pass
-            return
+    def next(self):
+        while True:
+            for e in self.builder_iter:
 
-        # not strictly necessary, but this helps
-        if max_size is not None and len(goals) > max_size:
-            return
+                if self.timeout is not None:
+                    self.timeout.check()
 
-        name = pick_goal(spec, examples)
-        g = [goal for goal in goals if goal.name == name][0]
-        type = g.type
-        builder = g.builder
-        cost_model = builder.cost_model()
-        goals = [goal for goal in goals if goal.name != name]
-        g_examples = list(construct_inputs(spec, name, examples))
+                cost = self.cost_model.cost(e)
 
-        # print("{}##### working on {}".format(indent, name))
-        cache = Cache()
-        seen = {} # maps fingerprints to (cost, exp, size)
-        for size in ints(1, max_size):
-            if max_size is None:
-                print("size={}; |cache|={}".format(size, len(cache)))
-            for sz1 in (range(1, size + 1) if goals else [size]):
-                if timeout is not None:
-                    timeout.check()
-                sz2 = size - sz1
-            # for (sz1, sz2) in pick_to_sum(2, size + 1):
-            #     sz2 -= 1
-                # print("{}({},{})".format(indent, sz1, sz2))
-                found = False
-                for e in (builder.build(cache, sz1) if sz1 == size else cache.find(size=sz1)):
-                    if contains_holes(e):
-                        raise Exception()
-                        if cost_model.is_monotonic() and best_cost is not None and cost_model.best_case_cost(e) > best_cost:
-                            continue
-                        cache.add(e, size=sz1)
-                        continue
+                if self.cost_model.is_monotonic() and cost > self.cost_ceiling:
+                    continue
 
-                    cost = cost_model.cost(e)
+                fp = self._fingerprint(e)
+                prev = self.seen.get(fp)
 
-                    # type_of_interest = ECall #EMapGet
-                    # if isinstance(e, type_of_interest):
-                    #     print("got map get {} @ {}".format(pprint(e), cost))
-
-                    if cost_model.is_monotonic() and best_cost is not None and cost > best_cost:
-                        # if isinstance(e, type_of_interest):
-                        #     print("too expensive: {}".format(pprint(e)))
-                        continue
-                    fp = fingerprint(e, g_examples, fvs, binders)
-                    prev = seen.get(fp)
-                    if prev is None:
-                        seen[fp] = (cost, e, sz1)
-                        cache.add(e, size=sz1)
+                if prev is None:
+                    self.seen[fp] = (cost, e, self.current_size)
+                    self.cache.add(e, size=self.current_size)
+                else:
+                    prev_cost, prev_exp, prev_size = prev
+                    if cost < prev_cost:
+                        # print("cost ceiling lowered for {}: {} --> {}".format(fp, prev_cost, cost))
+                        self.cache.evict(prev_exp, prev_size)
+                        self.cache.add(e, size=self.current_size)
+                        self.seen[fp] = (cost, e, self.current_size)
                     else:
-                        prev_cost, prev_exp, prev_size = prev
-                        if cost < prev_cost:
-                            # print("cost ceiling lowered for {}: {} --> {}".format(fp, prev_cost, cost))
-                            cache.evict(prev_exp, prev_size)
-                            cache.add(e, size=sz1)
-                            seen[fp] = (cost, e, sz1)
-                        else:
-                            # if isinstance(e, type_of_interest):
-                            #     print("dropping {}; already handled by {} @ {} (examples={})".format(pprint(e), pprint(prev_exp), prev_cost, repr(examples)))
-                            continue
-
-                    # # debug = "xxx" in name
-                    # debug = name == "implicitFrom"
-                    # if debug: print("got expr: {} : {} @ {}".format(pprint(e), pprint(e.type), sz1))
-
-                    if e.type != type:
-                        # if debug: print("    --> FAIL; I wanted {}".format(pprint(type)))
                         continue
 
-                    # if debug: print("    --> OK!")
+                watched = self.watched_exps.get(fp)
+                if watched is not None:
+                    watched_e, watched_cost = watched
+                    if cost < watched_cost:
+                        return (watched_e, e)
 
-                    # print("{}| considering {} for {} [examples={}]".format(indent, pprint(e), name, g_examples))
-                    # print("{}| considering {} @ {}".format(indent, pprint(e), sz1))
-                    spec2 = subst(spec, { name : e })
-                    # print("{}|{} ---> {}".format(indent, name, pprint(e)))
-                    # print("{}|{}".format(indent, pprint(spec)))
-                    # print("{}|{}".format(indent, pprint(spec2)))
-                    # assert name not in (g.name for g in find_holes(spec2))
-                    if not feasible(spec2, examples):
-                        print("{}INFEASIBLE: {}".format(indent, pprint(spec2)))
-                        continue
-                    for (d, _) in find_consistent_exps(spec2, binders, examples, sz2, timeout=timeout):
-                        cost = cost_model.cost(expand(e, d))
-                        if best_cost is not None and cost > best_cost:
-                            continue
-                        if best_cost is None or cost < best_cost:
-                            print("cost ceiling lowered for {}: {} --> {}".format(name, best_cost, cost))
-                            best_cost = cost
-                        # TODO: if monotonic, clean out cache
-                        d[name] = e
-                        found = True
-                        yield (d, cost)
-                # if not found:
-                #     print("{}none of size {} while synth'ing {} + {}".format(indent, sz1, name, list(g.name for g in goals)))
-                    # if sz1 == 1:
-                    #     print("{}roots of builder are: {}".format(indent, ", ".join("{}:{}".format(pprint(e), pprint(e.type)) for e in builder.roots)))
-        # print("{}-> for {}: cache size = {}".format(indent, name, len(cache)))
-    finally:
-        indent = indent[2:]
-
-def expand(e, mapping):
-    while contains_holes(e):
-        prev = e
-        e = subst(e, mapping)
-        assert e != prev, "failed to converge: {}, {}".format(new_spec, mapping)
-    return e
+            self.current_size += 1
+            self.builder_iter = self.builder.build(self.cache, self.current_size)
+            print("minor iteration {}, |cache|={}".format(self.current_size, len(self.cache)))
 
 @typechecked
-def synth(spec : Exp, binders : [EVar], vars : [EVar], timeout : Timeout):
-    examples = []
-    best_cost = None
-    while True:
-        for (mapping, cost) in find_consistent_exps(spec, binders, examples, best_cost=best_cost, timeout=timeout):
-            new_spec = expand(spec, mapping)
+def improve(
+        target : Exp,
+        assumptions : [Exp],
+        binders : [EVar],
+        vars : [EVar],
+        cost_model : CostModel,
+        builder : Builder,
+        timeout : Timeout):
 
-            print("considering: {}".format(pprint(new_spec)))
-            if all(eval(new_spec, ex) for ex in examples):
-                model = satisfy(EUnaryOp("not", new_spec).with_type(TBool()), vars=vars)
-                if model is not None:
-                    assert model not in examples, "got duplicate example: {}; examples={}".format(model, examples)
-                    print("new example: {}".format(model))
-                    examples.append(model)
-                    break
-                else:
-                    best_cost = cost if best_cost is None else min(cost, best_cost)
-                    yield mapping
-            else:
-                assert False
-                print("rejected: {}".format(pprint(new_spec)))
+    examples = []
+    learner = Learner(target, binders, examples, cost_model, builder, timeout)
+    while True:
+        # 1. find any potential improvement to any sub-exp of target
+        old_e, new_e = learner.next()
+
+        # 2. substitute the improvement in (assert cost is lower)
+        new_target = replace(target, old_e, new_e)
+        assert cost_model.cost(new_target) < cost_model.cost(target)
+
+        # 3. check
+        formula = EAll(assumptions + [ENot(equal(target, new_target))])
+        counterexample = satisfy(formula, vars=vars)
+        if counterexample is not None:
+            # a. if incorrect: add example, reset the learner
+            examples.append(counterexample)
+            print("new example: {}".format(counterexample))
+            print("restarting with {} examples".format(len(examples)))
+            learner.reset(examples)
+        else:
+            # b. if correct: yield it, watch the new target, goto 2
+            print("found improvement: {} -----> {}".format(pprint(old_e), pprint(new_e)))
+            print("cost: {} -----> {}".format(cost_model.cost(old_e), cost_model.cost(new_e)))
+            learner.watch(new_target)
+            target = new_target
+            yield new_target
