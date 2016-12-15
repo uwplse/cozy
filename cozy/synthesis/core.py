@@ -93,6 +93,10 @@ class ConstantCost(CostModel):
 class CardinalityVisitor(BottomUpExplorer):
     def visit_EVar(self, v):
         return 1000
+    def visit_EEmptyList(self, e):
+        return 0
+    def visit_ESingleton(self, e):
+        return 1
     def visit_EMakeMap(self, e):
         return self.visit(e.e)
     def visit_EMapGet(self, e):

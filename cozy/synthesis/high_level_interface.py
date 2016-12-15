@@ -123,6 +123,11 @@ class BinderBuilder(core.Builder):
                                 yield EFilter(bag, ELambda(binder, body)).with_type(bag.type)
                             for body in cache.find(size=sz2, type=TBag):
                                 yield EFlatMap(bag, ELambda(binder, body)).with_type(body.type)
+        for t in cache.types():
+            if isinstance(t, TBag):
+                yield EEmptyList().with_type(t)
+                for e in cache.find(type=t.t, size=size-1):
+                    yield ESingleton(e).with_type(t)
 
 @typechecked
 def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], queries : [Query], timeout : Timeout) -> (EVar, Exp, [Query]):
