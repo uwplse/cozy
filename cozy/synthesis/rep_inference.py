@@ -33,9 +33,6 @@ def infer_rep(state : [EVar], qexp : Exp) -> [([(EVar, Exp)], Exp)]:
             if all(v in state for v in fvs):
                 new_val = compose(k, e.value)
                 yield from self.visit(e.e, mk_lambda(e.e.type, lambda x: EMakeMap(x, e.key, new_val).with_type(TMap(e.type.k, new_val.body.type))))
-            else:
-                for (st, exp) in self.visit(e.e, k):
-                    yield (st, EMakeMap(exp, e.key, e.value).with_type(e.type))
         def visit_EMapGet(self, e, k):
             for (st, exp) in self.visit(e.map, k):
                 yield (st, EMapGet(exp, e.key).with_type(e.type))
