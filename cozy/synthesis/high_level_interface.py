@@ -116,6 +116,34 @@ class BinderBuilder(core.Builder):
                 for e in cache.find(type=t.t, size=size-1):
                     yield ESingleton(e).with_type(t)
 
+
+class CoolCostModel(core.CostModel):
+    def __init__(self, state_vars : [EVar]):
+        self.state_vars = state_vars
+        self.rtcm = core.RunTimeCostModel()
+        self.memcm = core.MemoryUsageCostModel()
+        self.factor = 0.01 # 0 = only care about runtime, 1 = only care about memory
+    def is_monotonic(self):
+        return self.rtcm.is_monotonic() and self.memcm.is_monotonic()
+    def split_cost(self, st, e):
+        return (1-self.factor) * self.rtcm.best_case_cost(e) + sum(self.factor * self.memcm.best_case_cost(proj) for (v, proj) in st)
+    def best_case_cost(self, e):
+        try:
+            return min((self.split_cost(rep, e2) for (rep, e2) in infer_rep(self.state_vars, e)),
+                default=float("inf"))
+        except:
+            print("cost evaluation failed for {}".format(pprint(e)))
+            print(repr(e))
+            for (rep, e2) in infer_rep(self.state_vars, e):
+                try:
+                    self.split_cost(rep, e2)
+                except Exception as exc:
+                    print("-" * 20 + " EXCEPTION: {}".format(repr(exc)))
+                    for (v, proj) in rep:
+                        print("  {} : {} = {}".format(v.id, pprint(v.type), pprint(proj)))
+                    print("  return {}".format(repr(e2)))
+            raise
+
 @typechecked
 def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], queries : [Query], timeout : Timeout) -> (EVar, Exp, [Query]):
     """
@@ -155,20 +183,7 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
 
     args = [EVar(name).with_type(t) for (name, t) in q.args]
 
-    class CoolCostModel(core.CostModel):
-        def __init__(self):
-            self.rtcm = core.RunTimeCostModel()
-            self.memcm = core.MemoryUsageCostModel()
-            self.factor = 0 # 0 = only care about runtime, 1 = only care about memory
-        def is_monotonic(self):
-            return self.rtcm.is_monotonic() and self.memcm.is_monotonic()
-        def best_case_cost(self, e):
-            return min(
-                ((1-self.factor) * self.rtcm.best_case_cost(e2) #+ sum(self.factor * self.memcm.best_case_cost(proj) for (v, proj) in rep)
-                    for (rep, e2) in infer_rep(state, e)),
-                default=float("inf"))
-
-    b = BinderBuilder(binders, roots + binders + ctors + args, basic_types, cost_model=CoolCostModel())
+    b = BinderBuilder(binders, roots + binders + ctors + args, basic_types, cost_model=CoolCostModel(state))
     new_state_vars = state
     state_proj_exprs = state
     new_ret = q.ret

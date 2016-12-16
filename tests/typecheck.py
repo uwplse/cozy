@@ -2,7 +2,7 @@ import unittest
 
 from cozy.syntax_tools import mk_lambda, pprint
 from cozy.target_syntax import *
-from cozy.typecheck import typecheck
+from cozy.typecheck import typecheck, retypecheck
 
 class TestTypechecking(unittest.TestCase):
 
@@ -29,3 +29,7 @@ class TestTypechecking(unittest.TestCase):
         e = EFilter(x, mk_lambda(TBool(), lambda elem: EBool(True)))
         errs = typecheck(e, { x.id : x.type })
         assert errs
+
+    def test_flatmap(self):
+        e = EBinOp(EFlatMap(EBinOp(EVar('ys').with_type(TBag(THandle('ys', TInt()))), '+', EEmptyList().with_type(TBag(THandle('ys', TInt())))).with_type(TBag(THandle('ys', TInt()))), ELambda(EVar('_var12').with_type(THandle('ys', TInt())), EUnaryOp('sum', ESingleton(ENum(1).with_type(TInt())).with_type(TBag(TInt()))).with_type(TInt()))).with_type(TBag(TInt())), '==', ENum(0).with_type(TInt())).with_type(TBool())
+        assert not retypecheck(e)

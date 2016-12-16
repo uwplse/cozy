@@ -13,9 +13,11 @@ def typecheck(ast, env=None, handleize=True):
     typechecker.visit(ast)
     return typechecker.errors
 
-def retypecheck(exp):
+def retypecheck(exp, env=None):
     from cozy.syntax_tools import free_vars
-    errs = typecheck(exp, env={ v.id:v.type for v in free_vars(exp) }, handleize=False)
+    if env is None:
+        env = { v.id:v.type for v in free_vars(exp) }
+    errs = typecheck(exp, env=env, handleize=False)
     if errs:
         print("errors")
         for e in errs:
