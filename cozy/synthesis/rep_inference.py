@@ -5,7 +5,23 @@ from cozy.syntax_tools import fresh_var, free_vars, mk_lambda, subst
 def compose(f1 : ELambda, f2 : ELambda) -> ELambda:
     return mk_lambda(f2.arg.type, lambda v: f1.apply_to(f2.apply_to(v)))
 
-def infer_rep(state : [EVar], qexp : Exp) -> [([(EVar, Exp)], Exp)]:
+def _check_wt(vars, input, output):
+    from cozy.typecheck import retypecheck
+    from cozy.syntax_tools import free_vars
+
+    env = { v.id:v.type for v in free_vars(input) }
+
+    assert retypecheck(input, env)
+
+    for (st, e) in output:
+        ok = True
+        for (_, proj) in st:
+            ok = ok and retypecheck(proj, env)
+        ok = ok and retypecheck(e, env={ v.id:v.type for v in list(free_vars(input)) + [u for (u, proj) in st] })
+        if not ok:
+            raise Exception("rep inference did a bad thing!")
+
+def infer_rep(state : [EVar], qexp : Exp, validate_types : bool = True) -> [([(EVar, Exp)], Exp)]:
     """
     Given state vars and an expression, infer suitable representations for
     fast execution.
@@ -42,8 +58,8 @@ def infer_rep(state : [EVar], qexp : Exp) -> [([(EVar, Exp)], Exp)]:
             # TODO: if we can prove something about the cardinality of the set,
             # maybe we can materialize the join.
             for (outer_st, outer_exp) in self.visit(e.e, mk_lambda(e.e.type, lambda x: x)):
-                for (inner_st, inner_exp) in self.visit(e.f.body, k):
-                    yield (outer_st + inner_st, EFlatMap(outer_exp, ELambda(e.f.arg, inner_exp)).with_type(e.type))
+                for (inner_st, inner_exp) in self.visit(e.f.body, mk_lambda(e.f.body.type, lambda x: x)):
+                    yield (outer_st + inner_st, k.apply_to(EFlatMap(outer_exp, ELambda(e.f.arg, inner_exp)).with_type(e.type)))
         def visit_EBinOp(self, e, k):
             fvs1 = free_vars(e.e1)
             fvs2 = free_vars(e.e2)
@@ -70,4 +86,8 @@ def infer_rep(state : [EVar], qexp : Exp) -> [([(EVar, Exp)], Exp)]:
             else:
                 yield ([], k.apply_to(e))
 
-    yield from V().visit(qexp, mk_lambda(qexp.type, lambda x: x))
+    it = V().visit(qexp, mk_lambda(qexp.type, lambda x: x))
+    if validate_types:
+        it = list(it)
+        _check_wt(state, qexp, it)
+    return it
