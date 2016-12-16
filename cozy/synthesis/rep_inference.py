@@ -1,11 +1,11 @@
 from cozy.common import Visitor
 from cozy.target_syntax import *
-from cozy.syntax_tools import fresh_var, free_vars, mk_lambda, subst
+from cozy.syntax_tools import fresh_var, free_vars, mk_lambda, subst, pprint
 
 def compose(f1 : ELambda, f2 : ELambda) -> ELambda:
     return mk_lambda(f2.arg.type, lambda v: f1.apply_to(f2.apply_to(v)))
 
-def _check_wt(vars, input, output):
+def _check_wt(state, input, output):
     from cozy.typecheck import retypecheck
     from cozy.syntax_tools import free_vars
 
@@ -14,6 +14,7 @@ def _check_wt(vars, input, output):
     assert retypecheck(input, env)
 
     for (st, e) in output:
+        assert all(v not in state for v in free_vars(e)), "output expression {} contains {}".format(pprint(e), [v for v in free_vars(e) if v in state])
         ok = True
         for (_, proj) in st:
             ok = ok and retypecheck(proj, env)
