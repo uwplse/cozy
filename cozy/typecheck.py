@@ -13,6 +13,15 @@ def typecheck(ast, env=None, handleize=True):
     typechecker.visit(ast)
     return typechecker.errors
 
+def retypecheck(exp):
+    from cozy.syntax_tools import free_vars
+    errs = typecheck(exp, env={ v.id:v.type for v in free_vars(exp) }, handleize=False)
+    if errs:
+        print("errors")
+        for e in errs:
+            print(" --> {}".format(e))
+    return not errs
+
 INT = syntax.TInt()
 LONG = syntax.TLong()
 DEFAULT_TYPE = object()
@@ -308,7 +317,10 @@ class Typechecker(Visitor):
             e.type = DEFAULT_TYPE
 
     def visit_EEmptyList(self, e):
-        e.type = syntax.TList(None)
+        if not hasattr(e, "type"):
+            self.report_err(e, "unable to infer type for empty collection")
+        else:
+            self.get_collection_type(e)
 
     def visit_ESingleton(self, e):
         self.visit(e.e)
