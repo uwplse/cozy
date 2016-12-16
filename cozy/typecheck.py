@@ -173,6 +173,7 @@ class Typechecker(Visitor):
 
     def get_collection_type(self, e):
         """if e has a collection type, e.g. List<Int>, this returns the inner type, e.g. Int"""
+        if e.type is DEFAULT_TYPE:           return DEFAULT_TYPE
         if isinstance(e.type, syntax.TList): return e.type.t
         if isinstance(e.type, syntax.TBag):  return e.type.t
         if isinstance(e.type, syntax.TSet):  return e.type.t
