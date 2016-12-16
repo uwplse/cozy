@@ -207,8 +207,8 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
 
                 new_state_vars, state_proj_exprs = zip(*st) if st else ([], [])
                 new_ret = expr
+                print("-" * 40)
 
-            print("-" * 40)
     except TimeoutException:
         print("stopping due to timeout")
 
