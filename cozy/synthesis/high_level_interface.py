@@ -110,7 +110,7 @@ class BinderBuilder(core.Builder):
                                 yield EFilter(bag, ELambda(binder, body)).with_type(bag.type)
                             for body in cache.find(size=sz2, type=TBag):
                                 yield EFlatMap(bag, ELambda(binder, body)).with_type(body.type)
-        for t in cache.types():
+        for t in list(cache.types()):
             if isinstance(t, TBag):
                 yield EEmptyList().with_type(t)
                 for e in cache.find(type=t.t, size=size-1):
