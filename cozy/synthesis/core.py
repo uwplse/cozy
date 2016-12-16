@@ -374,10 +374,14 @@ class Learner(object):
         self.update_watched_exps()
         if self.cost_model.is_monotonic():
             seen = list(self.seen.items())
+            n = 0
             for (fp, (cost, e, size)) in seen:
                 if cost > self.cost_ceiling:
                     self.cache.evict(e, size)
                     del self.seen[fp]
+                    n += 1
+            if n:
+                print("evicted {} elements".format(n))
 
     def update_watched_exps(self):
         # self.watched_exps = {
