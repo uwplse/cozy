@@ -172,7 +172,7 @@ class MemoryUsageCostModel(CostModel, BottomUpExplorer):
     def visit_EFilter(self, e):
         return cardinality(e) # TODO: c * sizeof(e.type.t)
     def visit_EMakeMap(self, e):
-        return cardinality(e.e) * (self.visit(e.key.body) + self.visit(e.value.body))
+        return cardinality(e.e) * 1.05
     def visit_EMapGet(self, e):
         assert isinstance(e.map, EMakeMap)
         return self.visit(e.map.value.apply_to(EFilter(e.map.e, ELambda(e.map.key.arg, equal(e.map.key.arg, fresh_var(e.map.key.arg.type))))))
