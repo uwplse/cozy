@@ -180,6 +180,8 @@ class MemoryUsageCostModel(CostModel, BottomUpExplorer):
         return self.visit(e.f.body)
     def visit_EGetField(self, e):
         return 1 # TODO: sizeof(e.type)
+    def visit_ENum(self, e):
+        return 1 # TODO: sizeof(int)
     def visit_Exp(self, e):
         raise NotImplementedError(repr(e))
 
