@@ -64,9 +64,9 @@ def infer_rep(state : [EVar], qexp : Exp, validate_types : bool = True) -> [([(E
         def visit_EBinOp(self, e, k):
             fvs1 = free_vars(e.e1)
             fvs2 = free_vars(e.e2)
-            if all(v in state for v in fvs1):
+            if not fvs1:
                 yield from self.visit(e.e2, compose(k, mk_lambda(e.e2.type, lambda x: EBinOp(e.e1, e.op, x).with_type(e.type))))
-            if all(v in state for v in fvs2):
+            if not fvs2:
                 yield from self.visit(e.e1, compose(k, mk_lambda(e.e1.type, lambda x: EBinOp(x, e.op, e.e2).with_type(e.type))))
             for (st1, exp1) in self.visit(e.e1, mk_lambda(e.e1.type, lambda x: x)):
                 for (st2, exp2) in self.visit(e.e2, mk_lambda(e.e2.type, lambda x: x)):
