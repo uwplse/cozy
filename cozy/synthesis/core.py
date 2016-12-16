@@ -98,6 +98,10 @@ class ConstantCost(CostModel):
 class CardinalityVisitor(BottomUpExplorer):
     def visit_EVar(self, v):
         return 1000
+    def visit_EGetField(self, e):
+        return 1000
+    def visit_ETupleGet(self, e):
+        return 1000
     def visit_EEmptyList(self, e):
         return 0
     def visit_ESingleton(self, e):
@@ -116,13 +120,18 @@ class CardinalityVisitor(BottomUpExplorer):
         if e.op == "+":
             return self.visit(e.e1) + self.visit(e.e2)
         else:
-            raise NotImplementedError(e.op)
+            raise NotImplementedError(e)
+    def visit_EUnaryOp(self, e):
+        if e.op == "the":
+            return 1000 # TODO???
+        else:
+            raise NotImplementedError(e)
     def visit_EMap(self, e):
         return self.visit(e.e)
     def visit_EFlatMap(self, e):
         return self.visit(e.e) * self.visit(e.f.body)
     def visit_Exp(self, e):
-        return 0
+        raise NotImplementedError(e)
 
 cardinality = CardinalityVisitor().visit
 
@@ -152,6 +161,10 @@ class MemoryUsageCostModel(CostModel, BottomUpExplorer):
         return 1 # TODO: sizeof(bool)
     def visit_EBinOp(self, e):
         return 1 # TODO: sizeof(e.type)
+    def visit_ESingleton(self, e):
+        return self.visit(e.e)
+    def visit_EEmptyList(self, e):
+        return 0
     def visit_EMap(self, e):
         return cardinality(e.e) * self.visit(e.f.body)
     def visit_EFlatMap(self, e):
@@ -187,6 +200,8 @@ class RunTimeCostModel(CostModel, BottomUpExplorer):
         cost = self.visit(e.e1) + self.visit(e.e2)
         if e.op == "in":
             cost += cardinality(e.e2)
+        elif e.op == "==" and isinstance(e.e1.type, TBag):
+            cost += cardinality(e.e1) + cardinality(e.e2)
         return cost
     def visit_EMap(self, e):
         return self.visit(e.e) + cardinality(e.e) * self.visit(e.f.body)
