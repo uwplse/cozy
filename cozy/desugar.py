@@ -1,7 +1,7 @@
 from cozy.common import typechecked
 from cozy.target_syntax import *
-from cozy.typecheck import INT, BOOL
-from cozy.syntax_tools import BottomUpRewriter, subst, fresh_var, all_types
+from cozy.typecheck import INT, BOOL, retypecheck
+from cozy.syntax_tools import BottomUpRewriter, subst, fresh_var, all_types, equal, mk_lambda
 
 @typechecked
 def desugar(spec : Spec) -> Spec:
@@ -71,9 +71,15 @@ def desugar(spec : Spec) -> Spec:
             op = e.op
             if op == "!=":
                 return self.visit(ENot(EBinOp(e1, "==", e2).with_type(e.type)))
+            elif op == "in":
+                return self.visit(ENot(equal(
+                    ENum(0).with_type(INT),
+                    EUnaryOp("sum", EMap(EFilter(e.e2, mk_lambda(e.e2.type.t, lambda x: equal(x, e.e1))).with_type(e.e2.type), mk_lambda(e.e2.type.t, lambda x: ENum(1).with_type(INT))).with_type(TBag(INT))).with_type(INT))))
             else:
                 return EBinOp(e1, op, e2).with_type(e.type)
         def visit_EFlatMap(self, e):
             return EFlatten(EMap(e.e, e.f))
 
-    return V().visit(spec)
+    e = V().visit(spec)
+    assert retypecheck(e, env={})
+    return e

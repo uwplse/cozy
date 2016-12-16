@@ -198,9 +198,7 @@ class RunTimeCostModel(CostModel, BottomUpExplorer):
         return cost
     def visit_EBinOp(self, e):
         cost = self.visit(e.e1) + self.visit(e.e2)
-        if e.op == "in":
-            cost += cardinality(e.e2)
-        elif e.op == "==" and isinstance(e.e1.type, TBag):
+        if e.op == "==" and isinstance(e.e1.type, TBag):
             cost += cardinality(e.e1) + cardinality(e.e2)
         return cost
     def visit_EMap(self, e):
