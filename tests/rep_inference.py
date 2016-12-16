@@ -3,7 +3,7 @@ import unittest
 from cozy.synthesis.rep_inference import infer_rep
 from cozy.syntax_tools import mk_lambda, pprint, free_vars
 from cozy.target_syntax import *
-from cozy.typecheck import typecheck
+from cozy.typecheck import typecheck, retypecheck
 
 class TestRepInference(unittest.TestCase):
 
@@ -33,3 +33,33 @@ class TestRepInference(unittest.TestCase):
         ys = EVar('ys').with_type(TBag(THandle('ys', TInt())))
         e = EBinOp(EBool(True).with_type(TBool()), 'and', EBinOp(ENum(0).with_type(TInt()), 'in', EMap(ys, ELambda(EVar('y').with_type(THandle('ys', TInt())), EGetField(EVar('y').with_type(THandle('ys', TInt())), 'val').with_type(TInt()))).with_type(TBag(TInt()))).with_type(TBool())).with_type(TBool())
         infer_rep([ys], e, validate_types=True)
+
+    def test_binop(self):
+        state = [EVar('xs').with_type(TBag(THandle('xs', TInt()))), EVar('ys').with_type(TBag(THandle('ys', TInt())))]
+        e = EBinOp(EVar('ys').with_type(TBag(THandle('ys', TInt()))), '==', EEmptyList().with_type(TBag(THandle('ys', TInt())))).with_type(TBool())
+        assert retypecheck(e)
+        infer_rep(state, e, validate_types=True)
+
+    def test_filter(self):
+        state = [EVar('xs').with_type(TBag(THandle('xs', TInt()))), EVar('ys').with_type(TBag(THandle('ys', TInt())))]
+        e = EFilter(EEmptyList().with_type(TBag(THandle('xs', TInt()))), ELambda(EVar('_var15').with_type(THandle('xs', TInt())), EBinOp(EVar('ys').with_type(TBag(THandle('ys', TInt()))), '==', EEmptyList().with_type(TBag(THandle('ys', TInt())))).with_type(TBool()))).with_type(TBag(THandle('xs', TInt())))
+        assert retypecheck(e)
+        infer_rep(state, e, validate_types=True)
+
+    def test_map(self):
+        state = [EVar('xs').with_type(TBag(THandle('xs', TInt()))), EVar('ys').with_type(TBag(THandle('ys', TInt())))]
+        e = EMap(EEmptyList().with_type(TBag(THandle('xs', TInt()))), ELambda(EVar('_var15').with_type(THandle('xs', TInt())), EBinOp(EVar('ys').with_type(TBag(THandle('ys', TInt()))), '==', EEmptyList().with_type(TBag(THandle('ys', TInt())))).with_type(TBool()))).with_type(TBag(TBool()))
+        assert retypecheck(e)
+        infer_rep(state, e, validate_types=True)
+
+    def test_regression1(self):
+        state = [EVar('xs').with_type(TBag(THandle('xs', TInt()))), EVar('ys').with_type(TBag(THandle('ys', TInt())))]
+        e = EFilter(EMap(EVar('ys').with_type(TBag(THandle('ys', TInt()))), ELambda(EVar('y').with_type(THandle('ys', TInt())), EGetField(EVar('y').with_type(THandle('ys', TInt())), 'val').with_type(TInt()))).with_type(TBag(TInt())), ELambda(EVar('_var11').with_type(TInt()), EBinOp(EVar('_var11').with_type(TInt()), '==', EUnaryOp('sum', EMap(EFilter(EMap(EVar('ys').with_type(TBag(THandle('ys', TInt()))), ELambda(EVar('y').with_type(THandle('ys', TInt())), EGetField(EVar('y').with_type(THandle('ys', TInt())), 'val').with_type(TInt()))).with_type(TBag(TInt())), ELambda(EVar('_var11').with_type(TInt()), EBinOp(EVar('_var11').with_type(TInt()), '==', ENum(0).with_type(TInt())).with_type(TBool()))).with_type(TBag(TInt())), ELambda(EVar('_var12').with_type(TInt()), ENum(1).with_type(TInt()))).with_type(TBag(TInt()))).with_type(TInt())).with_type(TBool()))).with_type(TBag(TInt()))
+        assert retypecheck(e)
+        infer_rep(state, e, validate_types=True)
+
+    def test_map_get(self):
+        state = [EVar('xs').with_type(TBag(THandle('xs', TInt()))), EVar('ys').with_type(TBag(THandle('ys', TInt())))]
+        e = EFilter(EMap(EVar('ys').with_type(TBag(THandle('ys', TInt()))), ELambda(EVar('y').with_type(THandle('ys', TInt())), EGetField(EVar('y').with_type(THandle('ys', TInt())), 'val').with_type(TInt()))).with_type(TBag(TInt())), ELambda(EVar('_var11').with_type(TInt()), EBinOp(EVar('_var11').with_type(TInt()), '==', EUnaryOp('sum', EMap(EMapGet(EMakeMap(EVar('ys').with_type(TBag(THandle('ys', TInt()))), ELambda(EVar('_var31').with_type(THandle('ys', TInt())), EVar('_var31').with_type(THandle('ys', TInt()))), ELambda(EVar('_var34').with_type(TBag(THandle('ys', TInt()))), EVar('_var34').with_type(TBag(THandle('ys', TInt()))))).with_type(TMap(THandle('ys', TInt()), TBag(THandle('ys', TInt())))), EVar('_var16').with_type(THandle('ys', TInt()))).with_type(TBag(THandle('ys', TInt()))), ELambda(EVar('_var32').with_type(THandle('ys', TInt())), EGetField(EVar('_var32').with_type(THandle('ys', TInt())), 'val').with_type(TInt()))).with_type(TBag(TInt()))).with_type(TInt())).with_type(TBool()))).with_type(TBag(TInt()))
+        assert retypecheck(e)
+        infer_rep(state, e, validate_types=True)
