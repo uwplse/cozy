@@ -126,7 +126,7 @@ class CoolCostModel(core.CostModel):
     def is_monotonic(self):
         return self.rtcm.is_monotonic() and self.memcm.is_monotonic()
     def split_cost(self, st, e):
-        return (1-self.factor) * self.rtcm.best_case_cost(e) + sum(self.factor * self.memcm.best_case_cost(proj) for (v, proj) in st)
+        return (1-self.factor) * self.rtcm.cost(e) + self.factor * sum(self.memcm.cost(proj) for (v, proj) in st)
     def best_case_cost(self, e):
         try:
             return min((self.split_cost(rep, e2) for (rep, e2) in infer_rep(self.state_vars, e)),

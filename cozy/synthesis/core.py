@@ -138,7 +138,7 @@ cardinality = CardinalityVisitor().visit
 class MemoryUsageCostModel(CostModel, BottomUpExplorer):
     def best_case_cost(self, e):
         try:
-            return self.visit(e)
+            return self.visit(e) + e.size() / 100
         except:
             print("estimating memory usage of {}".format(pprint(e)))
             raise
@@ -160,6 +160,8 @@ class MemoryUsageCostModel(CostModel, BottomUpExplorer):
     def visit_EBool(self, e):
         return 1 # TODO: sizeof(bool)
     def visit_EBinOp(self, e):
+        if e.op == "+" and isinstance(e.e1.type, TBag):
+            return cardinality(e.e1) + cardinality(e.e2)
         return 1 # TODO: sizeof(e.type)
     def visit_ESingleton(self, e):
         return self.visit(e.e)
@@ -172,7 +174,7 @@ class MemoryUsageCostModel(CostModel, BottomUpExplorer):
     def visit_EFilter(self, e):
         return cardinality(e) # TODO: c * sizeof(e.type.t)
     def visit_EMakeMap(self, e):
-        return cardinality(e.e) * 1.05
+        return self.visit(e.value.body)
     def visit_EMapGet(self, e):
         assert isinstance(e.map, EMakeMap)
         return self.visit(e.map.value.apply_to(EFilter(e.map.e, ELambda(e.map.key.arg, equal(e.map.key.arg, fresh_var(e.map.key.arg.type))))))
@@ -197,12 +199,12 @@ class RunTimeCostModel(CostModel, BottomUpExplorer):
         cost = self.visit(e.e)
         if e.op == "sum":
             cost += cardinality(e.e)
-        return cost
+        return cost + 0.01
     def visit_EBinOp(self, e):
         cost = self.visit(e.e1) + self.visit(e.e2)
         if e.op == "==" and isinstance(e.e1.type, TBag):
             cost += cardinality(e.e1) + cardinality(e.e2)
-        return cost
+        return cost + 0.01
     def visit_EMap(self, e):
         return self.visit(e.e) + cardinality(e.e) * self.visit(e.f.body)
     def visit_EFlatMap(self, e):
@@ -212,11 +214,9 @@ class RunTimeCostModel(CostModel, BottomUpExplorer):
     def visit_EMakeMap(self, e):
         return self.visit(e.e) + cardinality(e.e) * (self.visit(e.key.body) + self.visit(e.value.body))
     def join(self, x, child_costs):
-        return 0.01 + sum(child_costs)
-    def visit(self, x):
-        if isinstance(x, Exp) and not free_vars(x):
+        if not isinstance(x, Exp):
             return 0
-        return super().visit(x)
+        return 0.01 + sum(child_costs)
 
 class ExpBuilder(object):
     def build(self, cache, size):
