@@ -160,10 +160,13 @@ class Typechecker(Visitor):
         if t is not DEFAULT_TYPE and e.type is not DEFAULT_TYPE and e.type != t:
             self.report_err(e, msg.format(pprint(e.type), pprint(t)))
 
+    def is_numeric(self, t):
+        return t in [INT, LONG]
+
     def ensure_numeric(self, e):
         if e.type is DEFAULT_TYPE:
             return
-        if e.type not in [INT, LONG]:
+        if not self.is_numeric(e.type):
             self.report_err(e, "expression has non-numeric type {}".format(e.type))
 
     def numeric_lub(self, t1, t2):
@@ -183,7 +186,12 @@ class Typechecker(Visitor):
     def visit_EUnaryOp(self, e):
         self.visit(e.e)
         if e.op == "sum":
-            e.type = INT
+            tt = self.get_collection_type(e.e)
+            if self.is_numeric(tt) or tt is DEFAULT_TYPE:
+                e.type = tt
+            else:
+                self.report_err(e, "cannot sum {}".format(e.e.type))
+                e.type = DEFAULT_TYPE
         elif e.op in ["unique", "empty"]:
             self.get_collection_type(e.e)
             e.type = BOOL

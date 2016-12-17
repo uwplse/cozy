@@ -33,3 +33,8 @@ class TestTypechecking(unittest.TestCase):
     def test_flatmap(self):
         e = EBinOp(EFlatMap(EBinOp(EVar('ys').with_type(TBag(THandle('ys', TInt()))), '+', EEmptyList().with_type(TBag(THandle('ys', TInt())))).with_type(TBag(THandle('ys', TInt()))), ELambda(EVar('_var12').with_type(THandle('ys', TInt())), EUnaryOp('sum', ESingleton(ENum(1).with_type(TInt())).with_type(TBag(TInt()))).with_type(TInt()))).with_type(TBag(TInt())), '==', ENum(0).with_type(TInt())).with_type(TBool())
         assert not retypecheck(e)
+
+    def test_sum(self):
+        xs = EVar("xs").with_type(TBag(TBool()))
+        e = EUnaryOp("sum", xs)
+        assert not retypecheck(e)
