@@ -191,7 +191,7 @@ class ToZ3(Visitor):
                 bag_mask, bag_elems = bag
                 sum = z3.IntVal(0, self.ctx)
                 for i in range(len(bag_elems)):
-                    sum = z3.If(bag_mask[i], bag_elems[i], 0, ctx=self.ctx) + sum
+                    sum = z3.If(bag_mask[i], bag_elems[i], z3.IntVal(0, self.ctx), ctx=self.ctx) + sum
                 return sum
             return fmap(self.visit(e.e, env), take_sum)
         elif e.op == "unique":
