@@ -69,24 +69,28 @@ def infer_rep(state : [EVar], qexp : Exp, validate_types : bool = True) -> [([(E
             assert type(e.type) is TMap
             fvs = free_vars(e.key) | free_vars(e.value)
             if all(v in state for v in fvs):
-                # Rewrite e.g. "k = (\m -> sum m[e])" into "k = (\vals -> sum vals)"
-                karg = k.arg
-                kbody = k.body
-                vals = fresh_var(e.value.body.type)
-                keys = []
-                class Rewriter(BottomUpRewriter):
-                    def visit_EMapGet(self, mg):
-                        if mg.map == karg:
-                            keys.append(mg.key)
-                            return vals
-                        else:
-                            return mg
-                new_k = ELambda(vals, Rewriter().visit(kbody))
-                if len(keys) == 1 and all(v in state for v in free_vars(new_k)):
-                    m = fresh_var(TMap(e.type.k, new_k.body.type))
-                    mdef = EMakeMap(e.e, e.key, compose(new_k, e.value)).with_type(m.type)
-                    for (st, res) in self.visit(keys[0], mk_lambda(m.type.k, lambda k: EMapGet(m, k).with_type(kbody.type))):
-                        yield (st + [(m, mdef)], res)
+                if k.body == k.arg:
+                    v = fresh_var(e.type)
+                    yield ([(v, e)], v)
+                else:
+                    # Rewrite e.g. "k = (\m -> sum m[e])" into "k = (\vals -> sum vals)"
+                    karg = k.arg
+                    kbody = k.body
+                    vals = fresh_var(e.value.body.type)
+                    keys = []
+                    class Rewriter(BottomUpRewriter):
+                        def visit_EMapGet(self, mg):
+                            if mg.map == karg:
+                                keys.append(mg.key)
+                                return vals
+                            else:
+                                return mg
+                    new_k = ELambda(vals, Rewriter().visit(kbody))
+                    if len(keys) == 1 and all(v in state for v in free_vars(new_k)):
+                        m = fresh_var(TMap(e.type.k, new_k.body.type))
+                        mdef = EMakeMap(e.e, e.key, compose(new_k, e.value)).with_type(m.type)
+                        for (st, res) in self.visit(keys[0], mk_lambda(m.type.k, lambda k: EMapGet(m, k).with_type(kbody.type))):
+                            yield (st + [(m, mdef)], res)
         def visit_EMapGet(self, e, k):
             for (st1, key) in self.visit(e.key, mk_lambda(e.key.type, lambda x: x)):
                 for (st2, get) in self.visit(e.map, compose(k, mk_lambda(e.map.type, lambda x: EMapGet(x, key).with_type(e.type)))):
