@@ -9,17 +9,15 @@ def _check_wt(state, input, output):
     from cozy.typecheck import retypecheck
     from cozy.syntax_tools import free_vars
 
-    env = { v.id:v.type for v in free_vars(input) }
-
     try:
 
-        assert retypecheck(input, env)
+        assert retypecheck(input)
 
         for (st, e) in output:
             assert all(v not in state for v in free_vars(e)), "output expression {} contains {}".format(pprint(e), [v for v in free_vars(e) if v in state])
             for (_, proj) in st:
-                assert retypecheck(proj, env)
-            assert retypecheck(e, env={ v.id:v.type for v in list(free_vars(input)) + [u for (u, proj) in st] })
+                assert retypecheck(proj)
+            assert retypecheck(e)
 
     except:
         print("output was: {}".format(repr(output)))
