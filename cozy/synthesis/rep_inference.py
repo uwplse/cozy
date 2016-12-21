@@ -96,7 +96,7 @@ def infer_rep(state : [EVar], qexp : Exp, validate_types : bool = True) -> [([(E
                 for (st2, get) in self.visit(e.map, compose(k, mk_lambda(e.map.type, lambda x: EMapGet(x, key).with_type(e.type)))):
                     yield (st2 + st1, get)
         def visit_EUnaryOp(self, e, k):
-            yield from self.visit(e.e, compose(k, mk_lambda(e.e.type, lambda x: EUnaryOp(e.op, x))))
+            yield from self.visit(e.e, compose(k, mk_lambda(e.e.type, lambda x: EUnaryOp(e.op, x).with_type(e.type))))
         def visit_EFlatMap(self, e, k):
             # TODO: if we can prove something about the cardinality of the set,
             # maybe we can materialize the join.
