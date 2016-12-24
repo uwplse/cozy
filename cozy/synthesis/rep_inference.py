@@ -32,7 +32,7 @@ def _check_wt(state, input, output):
         print("    {}".format(pprint(input)))
         raise
 
-def infer_rep(state : [EVar], qexp : Exp, validate_types : bool = True) -> [([(EVar, Exp)], Exp)]:
+def infer_rep(state : [EVar], qexp : Exp, validate_types : bool = False) -> [([(EVar, Exp)], Exp)]:
     """
     Given state vars and an expression, infer suitable representations for
     fast execution.
