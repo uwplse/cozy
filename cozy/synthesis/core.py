@@ -8,7 +8,7 @@ from cozy.typecheck import INT, BOOL
 from cozy.syntax_tools import subst, replace, pprint, free_vars, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps
 from cozy.common import Visitor, fresh_name, typechecked, unique, pick_to_sum, cross_product
 from cozy.solver import satisfy, feasible
-from cozy.evaluation import HoleException, eval, all_envs_for_hole
+from cozy.evaluation import HoleException, eval, all_envs_for_hole, mkval
 from cozy.timeouts import Timeout
 
 def nested_dict(n, t):
@@ -427,6 +427,10 @@ class Learner(object):
 
                 watched = self.watched_exps.get(fp)
                 if watched is not None:
+                    while set(self.binders) & free_vars(e):
+                        print("stripping binders from {}".format(e))
+                        b = list(set(self.binders) & free_vars(e))[0]
+                        e = subst(e, { b.id : mkval(b.type) })
                     watched_e, watched_cost = watched
                     if cost < watched_cost:
                         return (watched_e, e)
