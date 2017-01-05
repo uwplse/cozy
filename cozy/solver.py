@@ -387,7 +387,7 @@ def mkconst(ctx, solver, val):
         raise NotImplementedError(repr(val))
 
 def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = True):
-    print("sat? {}".format(pprint(e)))
+    # print("sat? {}".format(pprint(e)))
     assert e.type == TBool()
 
     ctx = z3.Context()
