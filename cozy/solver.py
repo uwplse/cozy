@@ -497,6 +497,3 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
 
 def valid(e, **opts):
     return satisfy(EUnaryOp("not", e).with_type(TBool()), **opts) is None
-
-def feasible(spec, examples):
-    return True # TODO

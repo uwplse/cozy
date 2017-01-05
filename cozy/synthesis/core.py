@@ -5,10 +5,10 @@ import sys
 
 from cozy.target_syntax import *
 from cozy.typecheck import INT, BOOL
-from cozy.syntax_tools import subst, replace, pprint, free_vars, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps
+from cozy.syntax_tools import subst, replace, pprint, free_vars, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda
 from cozy.common import Visitor, fresh_name, typechecked, unique, pick_to_sum, cross_product
-from cozy.solver import satisfy, feasible
-from cozy.evaluation import HoleException, eval, all_envs_for_hole, mkval
+from cozy.solver import satisfy, valid
+from cozy.evaluation import HoleException, eval, all_envs_for_hole
 from cozy.timeouts import Timeout
 
 def nested_dict(n, t):
@@ -61,7 +61,7 @@ class Cache(object):
     def random_sample(self, n):
         import random
         es = [ e for (e, size) in self ]
-        return random.sample(es, n)
+        return random.sample(es, min(n, len(es)))
 
 @typechecked
 def instantiate(e : Exp, cache : Cache, total_size : int):
@@ -350,6 +350,18 @@ def fingerprint(e, examples, vars : {EVar}, binders : [EVar]):
         # print("augmented examples for {}: {}".format(v, examples))
     return (e.type,) + tuple(eval(e, ex) for ex in examples)
 
+def make_constant_of_type(t):
+    class V(Visitor):
+        def visit_TInt(self, t):
+            return ENum(0).with_type(t)
+        def visit_TBool(self, t):
+            return EBool(False).with_type(t)
+        def visit_TBag(self, t):
+            return EEmptyList().with_type(t)
+        def visit_Type(self, t):
+            raise NotImplementedError(t)
+    return V().visit(t)
+
 class Learner(object):
     def __init__(self, target, assumptions : Exp, binders, examples, cost_model, builder, timeout):
         self.assumptions = assumptions
@@ -405,6 +417,18 @@ class Learner(object):
                 if self.timeout is not None:
                     self.timeout.check()
 
+                # experimental criterion: all bags must have distinct values
+                if isinstance(e.type, TBag):
+                    if not valid(implies(self.assumptions, EUnaryOp("unique", e).with_type(BOOL))):
+                        # print("rejecting non-unique {}".format(pprint(e)))
+                        continue
+
+                # experimental criterion: "the" must be a singleton collection
+                if isinstance(e, EUnaryOp) and e.op == "the":
+                    if not valid(implies(self.assumptions, EBinOp(EUnaryOp("sum", EMap(e.e, mk_lambda(e.type, lambda x: ENum(1).with_type(INT)))).with_type(INT), "<=", ENum(1).with_type(INT)))):
+                        # print("rejecting illegal application of 'the': {}".format(pprint(e)))
+                        continue
+
                 cost = self.cost_model.cost(e)
 
                 if self.cost_model.is_monotonic() and cost > self.cost_ceiling:
@@ -428,10 +452,10 @@ class Learner(object):
 
                 watched = self.watched_exps.get(fp)
                 if watched is not None:
-                    while set(self.binders) & free_vars(e):
+                    while False and set(self.binders) & free_vars(e):
                         print("stripping binders from {}".format(e))
                         b = list(set(self.binders) & free_vars(e))[0]
-                        e = subst(e, { b.id : mkval(b.type) })
+                        e = subst(e, { b.id : make_constant_of_type(b.type) })
                     watched_e, watched_cost = watched
                     if cost < watched_cost:
                         return (watched_e, e)
@@ -451,7 +475,7 @@ def improve(
         timeout : Timeout):
 
     examples = []
-    learner = Learner(target, binders, examples, cost_model, builder, timeout)
+    learner = Learner(target, assumptions, binders, examples, cost_model, builder, timeout)
     while True:
         # 1. find any potential improvement to any sub-exp of target
         old_e, new_e = learner.next()

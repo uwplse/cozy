@@ -52,8 +52,9 @@ def get_roots(state : [EVar], e : Exp) -> [Exp]:
     roots = [
         EBool(True).with_type(BOOL),
         EBool(False).with_type(BOOL),
-        ENum(0).with_type(INT),
-        ENum(1).with_type(INT)]
+        # ENum(0).with_type(INT),
+        # ENum(1).with_type(INT),
+        ]
     fragmentize(e, roots, bound_names=state_var_names)
     return list(roots)
 
@@ -74,7 +75,7 @@ def guess_constructors(state : [EVar], roots : [Exp]) -> [Exp]:
             for p in projs:
                 coll_hole = EHole(fresh_name(), sv.type, None)
                 res.append(EMakeMap(
-                    coll_hole,
+                    sv,
                     p,
                     mk_lambda(sv.type, lambda x: x)).with_type(TMap(p.body.type, sv.type)))
                 res.append(EMap(coll_hole, p).with_type(TBag(p.body.type)))
@@ -104,6 +105,11 @@ class BinderBuilder(core.Builder):
                     # print("###> " + pprint(bag) + " : " + pprint(bag.type))
                     for binder in self.binders:
                         if binder.type == bag.type.t:
+                            # len
+                            len = EUnaryOp("sum", EMap(bag, ELambda(binder, ENum(1).with_type(INT))).with_type(TBag(INT))).with_type(INT)
+                            yield len
+                            # empty?
+                            yield EBinOp(len, "==", ENum(0).with_type(INT)).with_type(BOOL)
                             # for body in cache.find(size=sz2):
                             #     yield EMap(bag, ELambda(binder, body)).with_type(TBag(body.type))
                             for body in cache.find(size=sz2, type=BOOL):
@@ -161,7 +167,7 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], q : 
         state_proj is an expression mapping state to new_state
         new_queries is a list of new query expressions
     """
-    q, = rename_args([q])
+    # q, = rename_args([q])
     assumptions = assumptions + list(q.assumptions)
     all_types = ctx.all_types
     basic_types = ctx.basic_types
