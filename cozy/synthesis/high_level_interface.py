@@ -116,7 +116,6 @@ class BinderBuilder(core.Builder):
                 for e in cache.find(type=t.t, size=size-1):
                     yield ESingleton(e).with_type(t)
 
-
 class CoolCostModel(core.CostModel):
     def __init__(self, state_vars : [EVar]):
         self.state_vars = state_vars
@@ -145,15 +144,15 @@ class CoolCostModel(core.CostModel):
             raise
 
 @typechecked
-def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], queries : [Query], timeout : Timeout) -> (EVar, Exp, [Query]):
+def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], q : Query, timeout : Timeout) -> (EVar, Exp, [Query]):
     """
     Synthesize efficient re-implementations for the given queries.
 
     Input:
         ctx         - a synthesis context for the problem
         state       - list of state variables
-        assumptions - a list of assumptions
-        queries     - a list of queries in the specification
+        assumptions - a list of global assumptions (i.e. not including q.assumptions)
+        q           - a query to improve
 
     Output:
         (new_state, state_proj, new_queries)
@@ -162,9 +161,8 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
         state_proj is an expression mapping state to new_state
         new_queries is a list of new query expressions
     """
-    assert len(queries) == 1 # TODO
-    queries = rename_args(queries)
-    q = queries[0]
+    q, = rename_args([q])
+    assumptions = assumptions + list(q.assumptions)
     all_types = ctx.all_types
     basic_types = ctx.basic_types
 
@@ -190,7 +188,7 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], quer
     try:
         for expr in itertools.chain([q.ret], core.improve(
                 target=q.ret,
-                assumptions=[],
+                assumptions=EAll(assumptions),
                 binders=binders,
                 vars=state+args+binders,
                 cost_model=b.cost_model(),
@@ -262,20 +260,25 @@ def synthesize(
 
     op_deltas = { op.name : inc.to_delta(spec.statevars, op) for op in spec.methods if isinstance(op, Op) }
 
+    global_assumptions = list(spec.assumptions)
+    for v in state_vars:
+        if isinstance(v.type, TBag) and isinstance(v.type.t, THandle):
+            global_assumptions.append(EUnaryOp("unique", v).with_type(BOOL))
+
     # synthesis
     while worklist:
         q = worklist.popleft()
         print("##### SYNTHESIZING {}".format(q.name))
 
-        cached_result = caching.find_cached_result(state_vars, list(spec.assumptions), q) if use_cache else None
+        cached_result = caching.find_cached_result(state_vars, global_assumptions, q) if use_cache else None
         if cached_result:
             print("##### FOUND CACHED RESULT")
             state_var, state_exp, new_q = cached_result
         else:
-            state_var, state_exp, new_q = synthesize_queries(ctx, state_vars, list(spec.assumptions), [q], Timeout(per_query_timeout))
+            state_var, state_exp, new_q = synthesize_queries(ctx, state_vars, global_assumptions, q, Timeout(per_query_timeout))
             new_q = new_q[0]
             if use_cache:
-                caching.cache((state_vars, list(spec.assumptions), q), (state_var, state_exp, new_q))
+                caching.cache((state_vars, global_assumptions, q), (state_var, state_exp, new_q))
 
         print("  -> {} : {} = {}".format(state_var.id, pprint(state_var.type), pprint(state_exp)))
         print("  -> return {}".format(pprint(new_q.ret)))

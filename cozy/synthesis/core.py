@@ -351,7 +351,8 @@ def fingerprint(e, examples, vars : {EVar}, binders : [EVar]):
     return (e.type,) + tuple(eval(e, ex) for ex in examples)
 
 class Learner(object):
-    def __init__(self, target, binders, examples, cost_model, builder, timeout):
+    def __init__(self, target, assumptions : Exp, binders, examples, cost_model, builder, timeout):
+        self.assumptions = assumptions
         self.binders = binders
         self.timeout = timeout
         self.cost_model = cost_model
@@ -442,7 +443,7 @@ class Learner(object):
 @typechecked
 def improve(
         target : Exp,
-        assumptions : [Exp],
+        assumptions : Exp,
         binders : [EVar],
         vars : [EVar],
         cost_model : CostModel,
@@ -460,7 +461,7 @@ def improve(
         assert cost_model.cost(new_target) < cost_model.cost(target)
 
         # 3. check
-        formula = EAll(assumptions + [ENot(equal(target, new_target))])
+        formula = EAll([assumptions, ENot(equal(target, new_target))])
         counterexample = satisfy(formula, vars=vars)
         if counterexample is not None:
             # a. if incorrect: add example, reset the learner
