@@ -506,6 +506,8 @@ def alpha_equivalent(e1, e2, allow_rename=lambda v1, v2: False):
             elif e1.name in self.remap:
                 e1id = self.remap[e1.name]
             return e1id == e2.name
+        def visit_ETuple(self, e1, e2):
+            return all(self.visit(ee1, ee2) for (ee1, ee2) in zip(e1.es, e2.es))
         def visit_ELambda(self, e1, e2):
             if not isinstance(e2, target_syntax.ELambda):
                 return False
@@ -543,6 +545,8 @@ def alpha_equivalent(e1, e2, allow_rename=lambda v1, v2: False):
             if type(e1) is not type(e2):
                 return False
             return all(self.visit(x, y) for (x, y) in zip(e1.children(), e2.children()))
+        def visit_object(self, o, *args):
+            raise NotImplementedError("{} ({})".format(type(o), repr(o)))
 
     return V().visit(e1, e2)
 
