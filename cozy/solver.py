@@ -497,5 +497,8 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
                 raise Exception("model validation failed")
         return res
 
+def satisfiable(e, **opts):
+    return satisfy(e, **opts) is not None
+
 def valid(e, **opts):
     return satisfy(EUnaryOp("not", e).with_type(TBool()), **opts) is None
