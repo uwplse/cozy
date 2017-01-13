@@ -151,6 +151,9 @@ class Typechecker(Visitor):
     def visit_TBag(self, t):
         return type(t)(self.visit(t.t))
 
+    def visit_TSet(self, t):
+        return type(t)(self.visit(t.t))
+
     def visit_TMap(self, t):
         return type(t)(self.visit(t.k), self.visit(t.v))
 
@@ -351,6 +354,10 @@ class Typechecker(Visitor):
             fields.append((f, val.type))
         e.type = syntax.TRecord(tuple(fields))
 
+    def visit_ENewHandle(self, e):
+        self.visit(e.e)
+        self.ensure_type(e.e, e.type.value_type)
+
     def visit_CPull(self, c):
         self.visit(c.e)
         t = self.get_collection_type(c.e)
@@ -482,6 +489,12 @@ class Typechecker(Visitor):
                 self.report_err(s, "remove takes exactly 1 argument")
             if len(s.args) > 0:
                 self.ensure_type(s.args[0], elem_type)
+        elif s.func == "remove_all":
+            elem_type = self.get_collection_type(s.target)
+            if len(s.args) != 1:
+                self.report_err(s, "remove_all takes exactly 1 argument")
+            if len(s.args) > 0:
+                self.ensure_type(s.args[0], syntax.TSet(elem_type))
         else:
             self.report_err(s, "unknown function {}".format(s.func))
 

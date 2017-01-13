@@ -1,7 +1,7 @@
-from cozy.common import typechecked
+from cozy.common import typechecked, fresh_name
 from cozy.target_syntax import *
 from cozy.typecheck import INT, BOOL, retypecheck
-from cozy.syntax_tools import BottomUpRewriter, subst, fresh_var, all_types, equal, mk_lambda
+from cozy.syntax_tools import BottomUpRewriter, subst, fresh_var, all_types, equal, mk_lambda, pprint
 
 @typechecked
 def desugar(spec : Spec) -> Spec:
@@ -14,6 +14,64 @@ def desugar(spec : Spec) -> Spec:
         for name in t.cases }
     spec = subst(spec, repl)
 
+    spec = Spec(
+        spec.name,
+        list(spec.types),
+        list(spec.extern_funcs),
+        list(spec.statevars),
+        list(spec.assumptions),
+        list(spec.methods))
+
+    # convert all collection types to sets of handles
+    def is_set_of_handle(t):
+        return isinstance(t, TSet) and isinstance(t.t, THandle)
+
+    def handleize(m : Method, statevar : EVar):
+        if isinstance(m, Op):
+            class Rw(BottomUpRewriter):
+                def visit_SCall(self, s):
+                    target = self.visit(s.target)
+                    args = [self.visit(a) for a in s.args]
+                    if s.func == "add" and target == statevar:
+                        args = [ENewHandle(args[0], statevar.type.t)]
+                    elif s.func == "remove" and target == statevar:
+                        return SCall(target, "remove_all",
+                            (EFilter(statevar, mk_lambda(statevar.type.t, lambda handle: equal(EGetField(handle, "val").with_type(statevar.type.t.value_type), args[0]))).with_type(TSet(statevar.type.t)),))
+                    return SCall(target, s.func, tuple(args))
+            return Rw().visit(m)
+        elif isinstance(m, Query):
+            class Rw(BottomUpRewriter):
+                def visit_ELambda(self, e):
+                    if e.arg.id == statevar.id:
+                        return e
+                    return ELambda(e.arg, self.visit(e.body))
+                def visit_EVar(self, v):
+                    if v == statevar:
+                        vt = statevar.type.t.value_type
+                        return EMap(v, mk_lambda(statevar.type.t, lambda handle: EGetField(handle, "val").with_type(vt))).with_type(TBag(vt))
+                    return v
+            return Rw().visit(m)
+
+    while not all(is_set_of_handle(t) for (v, t) in spec.statevars):
+        i = [i for i in range(len(spec.statevars)) if not is_set_of_handle(spec.statevars[i][1])][0]
+        v, t = spec.statevars[i]
+        v = EVar(v).with_type(t)
+        if isinstance(t, TSet):
+            ht = THandle(fresh_name(), t.t)
+            t = TSet(ht)
+            v.type = t
+            spec.assumptions.append(EUnaryOp("unique", EMap(v, mk_lambda(ht, lambda handle: EGetField(handle, "val").with_type(ht.value_type))).with_type(TBag(ht.value_type))).with_type(BOOL))
+            spec.methods = [handleize(m, v) for m in spec.methods]
+        elif isinstance(t, TBag):
+            ht = THandle(fresh_name(), t.t)
+            t = TSet(ht)
+            v.type = t
+            spec.methods = [handleize(m, v) for m in spec.methods]
+        else:
+            raise NotImplementedError(t)
+        spec.statevars[i] = (v.id, t)
+
+    # organize queries by name
     queries = { q.name : q for q in spec.methods if isinstance(q, Query) }
 
     class V(BottomUpRewriter):

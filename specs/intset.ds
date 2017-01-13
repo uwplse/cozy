@@ -8,20 +8,20 @@ ClauseDB:
     op remove(i : Int)
         ints.remove(i)
 
-    query minVal()
-        min ints
-
-    query maxVal()
-        max ints
+//    query minVal()
+//        min ints
+//
+//    query maxVal()
+//        max ints
 
     query contains(i : Int)
         i in ints
 
-    query floor(i : Int)
-        max [x | x <- ints, x <= i]
-
-    query ceil(i : Int)
-        min [x | x <- ints, x >= i]
+//    query floor(i : Int)
+//        max [x | x <- ints, x <= i]
+//
+//    query ceil(i : Int)
+//        min [x | x <- ints, x >= i]
 
     query size()
-        |ints|
+        sum [1 | _ <- ints]

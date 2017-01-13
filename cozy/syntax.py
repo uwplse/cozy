@@ -58,6 +58,7 @@ EBinOp              = declare_case(Exp, "EBinOp",             ["e1", "op", "e2"]
 EUnaryOp            = declare_case(Exp, "EUnaryOp",           ["op", "e"])
 EGetField           = declare_case(Exp, "EGetField",          ["e", "f"])
 EMakeRecord         = declare_case(Exp, "EMakeRecord",        ["fields"])
+ENewHandle          = declare_case(Exp, "ENewHandle",         ["e", "type"])
 EListComprehension  = declare_case(Exp, "EListComprehension", ["e", "clauses"])
 EEmptyList          = declare_case(Exp, "EEmptyList")
 ESingleton          = declare_case(Exp, "ESingleton",         ["e"])
