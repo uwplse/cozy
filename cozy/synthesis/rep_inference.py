@@ -1,9 +1,6 @@
 from cozy.common import Visitor
 from cozy.target_syntax import *
-from cozy.syntax_tools import fresh_var, free_vars, mk_lambda, subst, pprint, BottomUpRewriter, alpha_equivalent
-
-def compose(f1 : ELambda, f2 : ELambda) -> ELambda:
-    return mk_lambda(f2.arg.type, lambda v: f1.apply_to(f2.apply_to(v)))
+from cozy.syntax_tools import fresh_var, free_vars, mk_lambda, subst, pprint, BottomUpRewriter, alpha_equivalent, compose
 
 def _check_wt(state, input, output):
     from cozy.typecheck import retypecheck

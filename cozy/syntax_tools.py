@@ -19,6 +19,9 @@ def mk_lambda(t, l):
     v = fresh_var(t)
     return target_syntax.ELambda(v, l(v))
 
+def compose(f1 : target_syntax.ELambda, f2 : target_syntax.ELambda) -> target_syntax.ELambda:
+    return mk_lambda(f2.arg.type, lambda v: f1.apply_to(f2.apply_to(v)))
+
 class BottomUpExplorer(common.Visitor):
     def visit_ADT(self, x):
         new_children = tuple(self.visit(child) for child in x.children())
