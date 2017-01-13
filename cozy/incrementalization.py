@@ -90,10 +90,11 @@ def to_delta(members : [(str, syntax.Type)], op : syntax.Op) -> (syntax.Exp, Del
     members = dict(members)
     if isinstance(op.body, syntax.SCall):
         target = op.body.target
-        if   op.body.func == "add":      delta = BagAdd(op.body.args[0])
-        elif op.body.func == "remove":   delta = BagRemove(op.body.args[0])
-        elif op.body.func == "addFront": delta = ListAddFront(op.body.args[0])
-        elif op.body.func == "addBack":  delta = ListAddBack(op.body.args[0])
+        if   op.body.func == "add":        delta = BagAdd(op.body.args[0])
+        elif op.body.func == "remove":     delta = BagRemove(op.body.args[0])
+        elif op.body.func == "remove_all": delta = BagRemoveAll(op.body.args[0])
+        elif op.body.func == "addFront":   delta = ListAddFront(op.body.args[0])
+        elif op.body.func == "addBack":    delta = ListAddBack(op.body.args[0])
         else: raise Exception("Unknown func: {}".format(op.body.func))
     elif isinstance(op.body, syntax.SAssign):
         target = op.body.lhs
