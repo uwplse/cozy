@@ -8,7 +8,7 @@ from cozy.typecheck import INT, BOOL
 from cozy.syntax_tools import subst, replace, pprint, free_vars, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda
 from cozy.common import Visitor, fresh_name, typechecked, unique, pick_to_sum, cross_product
 from cozy.solver import satisfy, valid
-from cozy.evaluation import HoleException, eval, all_envs_for_hole
+from cozy.evaluation import HoleException, eval, all_envs_for_hole, mkval
 from cozy.timeouts import Timeout
 
 def nested_dict(n, t):
@@ -337,17 +337,22 @@ def instantiate_examples(examples, vars, binder):
         if binder.id in e:
             yield e
         for v in vars:
+            found = False
             for possible_value in unique(values_of_type(e[v.id], v.type, binder.type)):
                 # print("possible value for {}: {}".format(pprint(binder.type), repr(possible_value)))
                 e2 = dict(e)
                 e2[binder.id] = possible_value
+                yield e2
+                found = True
+            if not found:
+                e2 = dict(e)
+                e2[binder.id] = mkval(binder.type)
                 yield e2
 
 def fingerprint(e, examples, vars : {EVar}, binders : [EVar]):
     fvs = free_vars(e)
     for v in binders:
         examples = list(instantiate_examples(examples, vars, v))
-        # print("augmented examples for {}: {}".format(v, examples))
     return (e.type,) + tuple(eval(e, ex) for ex in examples)
 
 def make_constant_of_type(t):

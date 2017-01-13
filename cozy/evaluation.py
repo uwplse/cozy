@@ -62,6 +62,8 @@ class Bag(object):
         return "Bag({})".format(repr(self.elems))
     def __contains__(self, x):
         return x in self.elems
+    def __iter__(self):
+        return iter(self.elems)
 
 class Evaluator(Visitor):
     def visit_EVar(self, v, env):
