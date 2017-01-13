@@ -252,6 +252,8 @@ class ToZ3(Visitor):
             return v1 + v2
         elif e.op == "-":
             return v1 - v2
+        elif e.op == "in":
+            return fmap(v2, lambda bag: self.count_in(e.e1.type, bag, v1, env) > 0)
         else:
             raise NotImplementedError(e.op)
     def visit_EListComprehension(self, e, env):
