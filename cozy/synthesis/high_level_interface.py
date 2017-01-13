@@ -201,6 +201,38 @@ class CoolCostModel(core.CostModel):
                     print("  return {}".format(repr(e2)))
             raise
 
+def normalize(e):
+    from cozy.syntax_tools import BottomUpRewriter, compose
+    class V(BottomUpRewriter):
+        def visit_EMap(self, e):
+            bag = self.visit(e.e)
+            fbody = self.visit(e.f.body)
+            if isinstance(e.e, EMap):
+                return EMap(e.e.e, compose(ELambda(e.f.arg, fbody), e.e.f))
+            return EMap(bag, ELambda(e.f.arg, fbody))
+        def visit_EFilter(self, e):
+            bag = self.visit(e.e)
+            pbody = self.visit(e.p.body)
+            if isinstance(e.e, EMap):
+                return EFilter(e.e.e, compose(ELambda(e.p.arg, pbody), e.e.f))
+            return EFilter(bag, ELambda(e.p.arg, pbody))
+        def visit_EFlatMap(self, e):
+            bag = self.visit(e.e)
+            fbody = self.visit(e.f.body)
+            if isinstance(e.e, EMap):
+                return EMap(EFlatMap(e.e.e, ELambda(e.f.arg, fbody)), e.e.f)
+            return EFlatMap(bag, ELambda(e.f.arg, fbody))
+
+    e = V().visit(e)
+    for ee in all_exps(e):
+        if isinstance(ee, ELambda):
+            if not isinstance(ee.arg.type, THandle):
+                import pdb
+                pdb.set_trace()
+                assert False
+
+    return e
+
 @typechecked
 def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], q : Query, timeout : Timeout) -> (EVar, Exp, [Query]):
     """
@@ -220,6 +252,7 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], q : 
         new_queries is a list of new query expressions
     """
     # q, = rename_args([q])
+    new_ret = normalize(q.ret)
     assumptions = assumptions + list(q.assumptions)
     all_types = ctx.all_types
     basic_types = ctx.basic_types
@@ -231,7 +264,7 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], q : 
             binders += [fresh_var(t.t) for i in range(n_binders)]
     print(binders)
 
-    roots = get_roots(state, q.ret)
+    roots = get_roots(state, new_ret)
     ctors = guess_constructors(state, roots)
 
     for e in roots + ctors:
@@ -242,10 +275,9 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], q : 
     b = BinderBuilder(binders, roots + binders + ctors + args, basic_types, cost_model=CoolCostModel(state))
     new_state_vars = state
     state_proj_exprs = state
-    new_ret = q.ret
     try:
-        for expr in itertools.chain([q.ret], core.improve(
-                target=q.ret,
+        for expr in itertools.chain([new_ret], core.improve(
+                target=new_ret,
                 assumptions=EAll(assumptions),
                 binders=binders,
                 vars=state+args+binders,
