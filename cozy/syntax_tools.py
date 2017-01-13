@@ -550,13 +550,83 @@ def alpha_equivalent(e1, e2, allow_rename=lambda v1, v2: False):
 
     return V().visit(e1, e2)
 
+BOOL = syntax.TBool()
+
 def implies(e1, e2):
-    BOOL = syntax.TBool()
     return syntax.EBinOp(
         syntax.EUnaryOp("not", e1).with_type(BOOL),
         "or",
         e2).with_type(BOOL)
 
 def equal(e1, e2):
-    BOOL = syntax.TBool()
     return syntax.EBinOp(e1, "==", e2).with_type(BOOL)
+
+@common.typechecked
+def nnf(e : syntax.Exp, negate=False) -> syntax.Exp:
+    """Convert a boolean expression to negation-normal-form (NNF)."""
+    assert e.type == BOOL
+    if isinstance(e, syntax.EUnaryOp) and e.op == "not":
+        return nnf(e.e, negate=not negate)
+    if isinstance(e, syntax.EBinOp) and e.op == "and":
+        if negate:
+            return syntax.EBinOp(nnf(e.e1, negate), "or", nnf(e.e2, negate)).with_type(BOOL)
+        else:
+            return syntax.EBinOp(nnf(e.e1), "and", nnf(e.e2)).with_type(BOOL)
+    if isinstance(e, syntax.EBinOp) and e.op == "or":
+        if negate:
+            return syntax.EBinOp(nnf(e.e1, negate), "and", nnf(e.e2, negate)).with_type(BOOL)
+        else:
+            return syntax.EBinOp(nnf(e.e1), "or", nnf(e.e2)).with_type(BOOL)
+    if isinstance(e, syntax.EBool):
+        return syntax.EBool((not e.val) if negate else e.val).with_type(BOOL)
+    if isinstance(e, syntax.EBinOp) and e.op == ">" and negate:
+        return syntax.EBinOp(e.e1, "<=", e.e2).with_type(BOOL)
+    if isinstance(e, syntax.EBinOp) and e.op == ">=" and negate:
+        return syntax.EBinOp(e.e1, "<", e.e2).with_type(BOOL)
+    if isinstance(e, syntax.EBinOp) and e.op == "<" and negate:
+        return syntax.EBinOp(e.e1, ">=", e.e2).with_type(BOOL)
+    if isinstance(e, syntax.EBinOp) and e.op == "<=" and negate:
+        return syntax.EBinOp(e.e1, ">", e.e2).with_type(BOOL)
+    return syntax.ENot(e) if negate else e
+
+@common.typechecked
+def dnf(e : syntax.Exp) -> [[syntax.Exp]]:
+    """
+    Convert a boolean expression to disjunction-normal-form (DNF). The input
+    must already be in NNF.
+
+    WARNING:
+        This may result in an exponential blowup in the size of the expression.
+    """
+    assert e.type == BOOL
+    if isinstance(e, syntax.EBinOp) and e.op == "or":
+        return dnf(e.e1) + dnf(e.e2)
+    if isinstance(e, syntax.EBinOp) and e.op == "and":
+        cases1 = dnf(e.e1)
+        cases2 = dnf(e.e2)
+        return [c1 + c2 for c1 in cases1 for c2 in cases2]
+    return [[e]]
+
+@common.typechecked
+def venn_regions(e : syntax.Exp) -> [syntax.Exp]:
+    """
+    Compute the "Venn regions" of a boolean expression. For all possible
+    assignments of values to free variables satisfying the original expression,
+    exactly one Venn region will evaluate to true.
+
+    WARNING:
+        This may result in an exponential blowup in the size of the expression.
+    """
+    cases = dnf(nnf(e))
+    res = []
+    for n in range(2**len(cases)):
+        res.append(syntax.EAll([
+            syntax.EAll(cases[i]) if (n & (1 << i)) else syntax.ENot(syntax.EAll(cases[i]))
+            for i in range(len(cases))]))
+    return res
+
+def break_conj(e):
+    if isinstance(e, syntax.EBinOp) and e.op == "and":
+        yield from break_conj(e.e1)
+        yield from break_conj(e.e2)
+    yield e
