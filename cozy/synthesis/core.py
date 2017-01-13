@@ -334,16 +334,18 @@ def values_of_type(value, value_type, desired_type):
 
 def instantiate_examples(examples, vars, binder):
     for e in examples:
+        found = 0
         if binder.id in e:
             yield e
+            found += 1
         for v in vars:
-            found = False
             for possible_value in unique(values_of_type(e[v.id], v.type, binder.type)):
                 # print("possible value for {}: {}".format(pprint(binder.type), repr(possible_value)))
                 e2 = dict(e)
                 e2[binder.id] = possible_value
                 yield e2
-                found = True
+                found += 1
+            # print("got {} ways to instantiate {}".format(found, binder.id))
             if not found:
                 e2 = dict(e)
                 e2[binder.id] = mkval(binder.type)
