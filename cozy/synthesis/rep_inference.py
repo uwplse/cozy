@@ -1,6 +1,6 @@
 from cozy.common import Visitor
 from cozy.target_syntax import *
-from cozy.syntax_tools import fresh_var, free_vars, mk_lambda, subst, pprint, BottomUpRewriter
+from cozy.syntax_tools import fresh_var, free_vars, mk_lambda, subst, pprint, BottomUpRewriter, alpha_equivalent
 
 def compose(f1 : ELambda, f2 : ELambda) -> ELambda:
     return mk_lambda(f2.arg.type, lambda v: f1.apply_to(f2.apply_to(v)))
@@ -31,6 +31,17 @@ def _check_wt(state, input, output):
         print("input was: {}".format(repr(input)))
         print("    {}".format(pprint(input)))
         raise
+
+def dedup(vs : [(EVar, Exp)]) -> ([(EVar, Exp)], { EVar : EVar }):
+    m = {}
+    remap = {}
+    for (v, e) in vs:
+        ee = list(ee for ee in m.keys() if alpha_equivalent(e, ee))
+        if ee:
+            remap[v] = m[ee[0]]
+        else:
+            m[e] = v
+    return ([(v, e) for (e, v) in m.items()], remap)
 
 def infer_rep(state : [EVar], qexp : Exp, validate_types : bool = False) -> [([(EVar, Exp)], Exp)]:
     """
@@ -132,4 +143,7 @@ def infer_rep(state : [EVar], qexp : Exp, validate_types : bool = False) -> [([(
     if validate_types:
         it = list(it)
         _check_wt(state, qexp, it)
-    return it
+    for (st, e) in it:
+        st, remap = dedup(st)
+        e = subst(e, { v1.id : v2 for (v1, v2) in remap.items() })
+        yield (st, e)
