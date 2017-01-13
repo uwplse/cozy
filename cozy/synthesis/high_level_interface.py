@@ -60,6 +60,7 @@ def get_roots(state : [EVar], e : Exp) -> [Exp]:
 
 @typechecked
 def guess_constructors(state : [EVar], roots : [Exp]) -> [Exp]:
+    return []
 
     res = list(state)
 
@@ -87,6 +88,39 @@ def guess_constructors(state : [EVar], roots : [Exp]) -> [Exp]:
     #     print("   --> {}".format(pprint(r)))
     return res
 
+def _as_conjunction_of_equalities(p):
+    if isinstance(p, EBinOp) and p.op == "and":
+        return _as_conjunction_of_equalities(p.e1) + _as_conjunction_of_equalities(p.e2)
+    elif isinstance(p, EBinOp) and p.op == "==":
+        return [p]
+    else:
+        raise ValueError(p)
+
+def as_conjunction_of_equalities(p):
+    try:
+        return _as_conjunction_of_equalities(p)
+    except ValueError:
+        return None
+
+def infer_key_and_value(filter, binders, state : {EVar} = set()):
+    equalities = as_conjunction_of_equalities(filter)
+    if not equalities:
+        return
+    def can_serve_as_key(e, binder):
+        fvs = free_vars(e)
+        return binder in fvs and all(v == binder or v in state for v in fvs)
+    for b in binders:
+        sep = []
+        for eq in equalities:
+            if can_serve_as_key(eq.e1, b) and b not in free_vars(eq.e2):
+                sep.append((eq.e1, eq.e2))
+            elif can_serve_as_key(eq.e2, b) and b not in free_vars(eq.e1):
+                sep.append((eq.e2, eq.e1))
+        if len(sep) == len(equalities):
+            key = ETuple(tuple(k for k, v in sep)).with_type(TTuple(tuple(k.type for k, v in sep))) if len(sep) > 1 else sep[0][0]
+            val = ETuple(tuple(v for k, v in sep)).with_type(TTuple(tuple(v.type for k, v in sep))) if len(sep) > 1 else sep[0][1]
+            yield b, key, val
+
 class BinderBuilder(core.Builder):
     def __init__(self, binders, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -96,20 +130,38 @@ class BinderBuilder(core.Builder):
         # print("  CACHE")
         # for (x, size) in cache:
         #     print("    " + pprint(x))
+        if size > 1:
+            for bag in cache.find(type=TBag, size=size-1):
+                # len of bag
+                count = EUnaryOp("sum", EMap(bag, mk_lambda(bag.type.t, lambda x: ENum(1).with_type(INT))).with_type(TBag(INT))).with_type(INT)
+                yield count
+                # empty?
+                empty = EBinOp(count, "==", ENum(0).with_type(INT)).with_type(BOOL)
+                yield empty
+                # exists?
+                yield ENot(empty)
+
         if size >= 3:
             for (sz1, sz2) in pick_to_sum(2, size - 1):
                 for bag in cache.find(type=TBag, size=sz1):
+                    # construct map lookups
+                    for filt in cache.find(type=BOOL, size=sz2):
+                        for (binder, key_proj, key_lookup) in infer_key_and_value(filt, self.binders):
+                            if binder.type == bag.type.t:
+                                # print("for {}: {} {} {}".format(pprint(filt), binder, key_proj, key_lookup))
+                                yield EMapGet(
+                                    EMakeMap(
+                                        bag,
+                                        ELambda(binder, key_proj),
+                                        mk_lambda(bag.type, lambda xs: xs)).with_type(TMap(key_proj.type, bag.type)),
+                                    key_lookup).with_type(bag.type)
+
                     # if not isinstance(bag, EMapGet):
                     #     print("-----> " + pprint(bag) + " : " + pprint(bag.type))
                     #     continue
                     # print("###> " + pprint(bag) + " : " + pprint(bag.type))
                     for binder in self.binders:
                         if binder.type == bag.type.t:
-                            # len
-                            len = EUnaryOp("sum", EMap(bag, ELambda(binder, ENum(1).with_type(INT))).with_type(TBag(INT))).with_type(INT)
-                            yield len
-                            # empty?
-                            yield EBinOp(len, "==", ENum(0).with_type(INT)).with_type(BOOL)
                             # for body in cache.find(size=sz2):
                             #     yield EMap(bag, ELambda(binder, body)).with_type(TBag(body.type))
                             for body in cache.find(size=sz2, type=BOOL):
