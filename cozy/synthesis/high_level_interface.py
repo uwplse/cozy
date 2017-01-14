@@ -207,21 +207,21 @@ def normalize(e):
         def visit_EMap(self, e):
             bag = self.visit(e.e)
             fbody = self.visit(e.f.body)
-            if isinstance(e.e, EMap):
-                return EMap(e.e.e, compose(ELambda(e.f.arg, fbody), e.e.f))
-            return EMap(bag, ELambda(e.f.arg, fbody))
+            if isinstance(bag, EMap):
+                return EMap(bag.e, compose(ELambda(e.f.arg, fbody), bag.f)).with_type(e.type)
+            return EMap(bag, ELambda(e.f.arg, fbody)).with_type(e.type)
         def visit_EFilter(self, e):
             bag = self.visit(e.e)
             pbody = self.visit(e.p.body)
-            if isinstance(e.e, EMap):
-                return EFilter(e.e.e, compose(ELambda(e.p.arg, pbody), e.e.f))
-            return EFilter(bag, ELambda(e.p.arg, pbody))
+            if isinstance(bag, EMap):
+                return EMap(EFilter(bag.e, compose(ELambda(e.p.arg, pbody), bag.f)).with_type(bag.e.type), bag.f).with_type(e.type)
+            return EFilter(bag, ELambda(e.p.arg, pbody)).with_type(e.type)
         def visit_EFlatMap(self, e):
             bag = self.visit(e.e)
             fbody = self.visit(e.f.body)
-            if isinstance(e.e, EMap):
-                return EMap(EFlatMap(e.e.e, ELambda(e.f.arg, fbody)), e.e.f)
-            return EFlatMap(bag, ELambda(e.f.arg, fbody))
+            if isinstance(bag, EMap):
+                return EMap(EFlatMap(bag.e, ELambda(e.f.arg, fbody)), bag.f).with_type(e.type)
+            return EFlatMap(bag, ELambda(e.f.arg, fbody)).with_type(e.type)
 
     e = V().visit(e)
     for ee in all_exps(e):
