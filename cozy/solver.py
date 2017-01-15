@@ -65,7 +65,7 @@ class ToZ3(Visitor):
             if (e1 is None) != (e2 is None):
                 return z3.BoolVal(False, self.ctx)
             return self.eq(t.t, e1, e2, env)
-        elif isinstance(t, TBag):
+        elif isinstance(t, TBag) or isinstance(t, TSet):
             elem_type = t.t
             lhs_mask, lhs_elems = e1
             rhs_mask, rhs_elems = e2
@@ -256,7 +256,10 @@ class ToZ3(Visitor):
                 return fmap(v1, lambda bag1:
                        fmap(v2, lambda bag2:
                        (bag1[0] + bag2[0], bag1[1] + bag2[1])))
-            return v1 + v2
+            elif isinstance(e.type, TInt):
+                return v1 + v2
+            else:
+                raise NotImplementedError(e.type)
         elif e.op == "-":
             return v1 - v2
         elif e.op == "in":
@@ -365,6 +368,12 @@ class ToZ3(Visitor):
             solver.add(n >= 0)
             solver.add(n < ncases)
             return n
+        elif isinstance(type, TSet):
+            res = self.mkvar(ctx, solver, collection_depth, TBag(type.t), handle_vars)
+            mask, elems = res
+            for i in range(1, len(mask)):
+                solver.add(z3.Implies(mask[i], self.distinct(type.t, *(elems[:(i+1)])), ctx))
+            return res
         elif isinstance(type, TBag):
             mask = [self.mkvar(ctx, solver, collection_depth, TBool(), handle_vars) for i in range(collection_depth)]
             elems = [self.mkvar(ctx, solver, collection_depth, type.t, handle_vars) for i in range(collection_depth)]
@@ -372,12 +381,6 @@ class ToZ3(Visitor):
             for i in range(len(mask) - 1):
                 solver.add(z3.Implies(mask[i], mask[i+1], ctx))
             return (mask, elems)
-        elif isinstance(type, TSet):
-            res = self.mkvar(ctx, solver, collection_depth, TBag(type.t), handle_vars)
-            mask, elems = res
-            for i in range(1, len(mask)):
-                solver.add(z3.Implies(mask[i], self.distinct(type.t, *(elems[:(i+1)])), ctx))
-            return res
         elif isinstance(type, TRecord):
             return { field : self.mkvar(ctx, solver, collection_depth, t, handle_vars) for (field, t) in type.fields }
         elif isinstance(type, THandle):

@@ -324,7 +324,7 @@ def values_of_type(value, value_type, desired_type):
     # see evaluation.mkval for info on the structure of values
     if value_type == desired_type:
         yield value
-    elif isinstance(value_type, TBag):
+    elif isinstance(value_type, TSet):
         for x in value:
             yield from values_of_type(x, value_type.t, desired_type)
     else:
@@ -425,14 +425,20 @@ class Learner(object):
                     self.timeout.check()
 
                 # experimental criterion: all bags must have distinct values
-                if isinstance(e.type, TBag):
+                # if isinstance(e.type, TBag):
+                #     if not valid(implies(self.assumptions, EUnaryOp("unique", e).with_type(BOOL))):
+                #         print("rejecting non-unique {}".format(pprint(e)))
+                #         continue
+
+                # all sets must have distinct values
+                if isinstance(e.type, TSet):
                     if not valid(implies(self.assumptions, EUnaryOp("unique", e).with_type(BOOL))):
                         # print("rejecting non-unique {}".format(pprint(e)))
                         continue
 
                 # experimental criterion: "the" must be a singleton collection
                 if isinstance(e, EUnaryOp) and e.op == "the":
-                    if not valid(implies(self.assumptions, EBinOp(EUnaryOp("sum", EMap(e.e, mk_lambda(e.type, lambda x: ENum(1).with_type(INT)))).with_type(INT), "<=", ENum(1).with_type(INT)))):
+                    if not valid(implies(self.assumptions, EBinOp(EUnaryOp("sum", EMap(e.e, mk_lambda(e.type, lambda x: ENum(1).with_type(INT))).with_type(TBag(INT))).with_type(INT), "<=", ENum(1).with_type(INT)))):
                         # print("rejecting illegal application of 'the': {}".format(pprint(e)))
                         continue
 

@@ -131,7 +131,7 @@ class BinderBuilder(core.Builder):
         # for (x, size) in cache:
         #     print("    " + pprint(x))
         if size > 1:
-            for bag in cache.find(type=TBag, size=size-1):
+            for bag in itertools.chain(cache.find(type=TBag, size=size-1), cache.find(type=TSet, size=size-1)):
                 # len of bag
                 count = EUnaryOp("sum", EMap(bag, mk_lambda(bag.type.t, lambda x: ENum(1).with_type(INT))).with_type(TBag(INT))).with_type(INT)
                 yield count
@@ -140,10 +140,13 @@ class BinderBuilder(core.Builder):
                 yield empty
                 # exists?
                 yield ENot(empty)
+                if not isinstance(bag.type, TBag):
+                    from cozy.syntax_tools import deep_copy
+                    yield deep_copy(bag).with_type(TBag(bag.type.t))
 
         if size >= 3:
             for (sz1, sz2) in pick_to_sum(2, size - 1):
-                for bag in cache.find(type=TBag, size=sz1):
+                for bag in itertools.chain(cache.find(type=TBag, size=sz1), cache.find(type=TSet, size=sz1)):
                     # construct map lookups
                     for filt in cache.find(type=BOOL, size=sz2):
                         for (binder, key_proj, key_lookup) in infer_key_and_value(filt, self.binders):
@@ -162,12 +165,12 @@ class BinderBuilder(core.Builder):
                     # print("###> " + pprint(bag) + " : " + pprint(bag.type))
                     for binder in self.binders:
                         if binder.type == bag.type.t:
-                            # for body in cache.find(size=sz2):
-                            #     yield EMap(bag, ELambda(binder, body)).with_type(TBag(body.type))
+                            for body in cache.find(size=sz2):
+                                yield EMap(bag, ELambda(binder, body)).with_type(TBag(body.type))
                             for body in cache.find(size=sz2, type=BOOL):
                                 yield EFilter(bag, ELambda(binder, body)).with_type(bag.type)
                             for body in cache.find(size=sz2, type=TBag):
-                                yield EFlatMap(bag, ELambda(binder, body)).with_type(body.type)
+                                yield EFlatMap(bag, ELambda(binder, body)).with_type(TBag(body.type.t))
         for t in list(cache.types()):
             if isinstance(t, TBag):
                 yield EEmptyList().with_type(t)
@@ -260,7 +263,7 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], q : 
     binders = []
     n_binders = 1 # TODO?
     for t in all_types:
-        if isinstance(t, TBag):
+        if isinstance(t, TBag) or isinstance(t, TSet):
             binders += [fresh_var(t.t) for i in range(n_binders)]
     print(binders)
 
@@ -328,7 +331,7 @@ def synthesize(
 
     # gather root types
     types = list(all_types(spec))
-    basic_types = set(t for t in types if not isinstance(t, TBag))
+    basic_types = set(t for t in types if not isinstance(t, TBag) and not isinstance(t, TSet))
     basic_types |= { BOOL, INT }
     print("basic types:")
     for t in basic_types:
@@ -351,9 +354,9 @@ def synthesize(
     op_deltas = { op.name : inc.to_delta(spec.statevars, op) for op in spec.methods if isinstance(op, Op) }
 
     global_assumptions = list(spec.assumptions)
-    for v in state_vars:
-        if isinstance(v.type, TBag) and isinstance(v.type.t, THandle):
-            global_assumptions.append(EUnaryOp("unique", v).with_type(BOOL))
+    # for v in state_vars:
+    #     if isinstance(v.type, TBag) and isinstance(v.type.t, THandle):
+    #         global_assumptions.append(EUnaryOp("unique", v).with_type(BOOL))
 
     # synthesis
     while worklist:
