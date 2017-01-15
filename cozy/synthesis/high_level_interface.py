@@ -140,9 +140,6 @@ class BinderBuilder(core.Builder):
                 yield empty
                 # exists?
                 yield ENot(empty)
-                if not isinstance(bag.type, TBag):
-                    from cozy.syntax_tools import deep_copy
-                    yield deep_copy(bag).with_type(TBag(bag.type.t))
 
         if size >= 3:
             for (sz1, sz2) in pick_to_sum(2, size - 1):

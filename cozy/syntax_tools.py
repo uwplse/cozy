@@ -54,6 +54,9 @@ class BottomUpRewriter(BottomUpExplorer):
 def deep_copy(ast):
     return BottomUpRewriter().visit(ast)
 
+def shallow_copy(ast):
+    return BottomUpRewriter().join(ast, ast.children())
+
 def all_types(ast):
     class TypeCollector(BottomUpExplorer):
         def visit_Type(self, t):
