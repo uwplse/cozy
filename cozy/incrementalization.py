@@ -1,13 +1,14 @@
 from cozy.common import ADT, declare_case, Visitor, typechecked, fresh_name
 from cozy import syntax
 from cozy import target_syntax
-from cozy.syntax_tools import subst, free_vars, pprint, equal, fresh_var
+from cozy.syntax_tools import subst, free_vars, pprint, equal, fresh_var, mk_lambda
 
 # General deltas
 class Delta(ADT): pass
 NoDelta           = declare_case(Delta, "NoDelta")
 Conditional       = declare_case(Delta, "Conditional",     ["cond", "delta"])
 MultiDelta        = declare_case(Delta, "MultiDelta",      ["delta1", "delta2"])
+ForEachDelta      = declare_case(Delta, "ForEachDelta",    ["elems", "x", "delta"])
 Become            = declare_case(Delta, "Become", ["e"])
 
 # Bags
@@ -21,7 +22,7 @@ BagElemUpdated    = declare_case(Delta, "BagElemUpdated",  ["elem", "delta"])
 AddNum            = declare_case(Delta, "AddNum", ["e"])
 
 # Maps
-MapUpdate         = declare_case(Delta, "MapUpdate", ["keys", "delta"])
+MapUpdate         = declare_case(Delta, "MapUpdate", ["key", "delta"])
 
 # Records
 RecordFieldUpdate = declare_case(Delta, "RecordFieldUpdate", ["f", "delta"])
@@ -122,18 +123,17 @@ def derivative(
 
     subgoals = []
 
-    def make_subgoal(e):
+    def make_subgoal(e, assumptions=None):
+        if assumptions is None:
+            assumptions = []
         fvs = free_vars(e)
         if not any(v in ctx for v in fvs):
             return e
         query_name = fresh_name()
         query_vars = [v for v in fvs if v not in ctx]
-        query = syntax.Query(query_name, [(arg.id, arg.type) for arg in query_vars], [], e)
+        query = syntax.Query(query_name, [(arg.id, arg.type) for arg in query_vars], assumptions, e)
         subgoals.append(query)
         return syntax.ECall(query_name, query_vars).with_type(e.type)
-
-    if (isinstance(delta, BagAddAll) or isinstance(delta, BagRemoveAll)) and not isinstance(delta.e, syntax.ECall):
-        delta = type(delta)(make_subgoal(delta.e))
 
     def recurse(*args, **kwargs):
         (res, sgs) = derivative(*args, **kwargs)
@@ -148,8 +148,13 @@ def derivative(
         elif isinstance(d, BagRemove):
             return derivative_makemap(BagRemoveAll(syntax.ESingleton(d.e).with_type(syntax.TSet(d.e.type))), key_func, value_func)
         elif isinstance(d, BagAddAll) or isinstance(d, BagRemoveAll):
-            affected_keys = target_syntax.EMap(d.e, key_func).with_type(syntax.TBag(key_func.body.type)) # TODO: subgoal?
-            subdelta = recurse(value_func.body, value_func.arg, d, ctx)
+            # affected_keys = syntax.EUnaryOp("distinct", target_syntax.EMap(d.e, key_func).with_type(syntax.TBag(key_func.body.type))).with_type(syntax.TSet(key_func.body.type))
+            x = fresh_var(d.e.type.t, "elem")
+            subdelta = recurse(
+                value_func.body,
+                value_func.arg,
+                (BagAdd if isinstance(d, BagAddAll) else BagRemove)(x),
+                ctx)
 
             # If the subdelta is conditional, but the conditions don't depend on
             # the actual value, then we can push the map update inside the
@@ -158,37 +163,10 @@ def derivative(
             while isinstance(subdelta, Conditional) and (value_func.arg not in free_vars(subdelta.cond)):
                 guards.append(subdelta.cond)
                 subdelta = subdelta.delta
-            res = MapUpdate(affected_keys, subdelta)
+            res = ForEachDelta(make_subgoal(d.e), x, MapUpdate(x, subdelta))
             if guards:
                 res = mk_conditional(syntax.EAll(guards), res)
             return res
-        elif isinstance(d, BagElemUpdated):
-            affected_key = key_func.apply_to(d.elem)
-            affected_keys = syntax.ESingleton(affected_key).with_type(syntax.TSet(affected_key.type))
-            key_delta = recurse(key_func.body, key_func.arg, d.delta, ctx)
-            if isinstance(key_delta, NoDelta):
-                return MapUpdate(affected_keys, recurse(value_func.body, value_func.arg, BagElemUpdated(d.elem, d.delta), ctx))
-            else:
-                new_key = apply_delta(key_func.apply_to(d.elem), key_delta)
-                on_rm = recurse(value_func.body, value_func.arg, BagRemove(d.elem), ctx)
-                on_add = recurse(value_func.body, value_func.arg, BagAdd(d.elem), ctx) # TODO: BagAdd(apply_delta(d.elem), d.delta)
-                return multi_delta([
-                    MapUpdate(affected_keys, on_rm),
-                    MapUpdate(new_key, on_add)])
-
-            # raise NotImplementedError(key_delta)
-
-            # new_key = key_func.apply_to(apply_delta(d.elem, d.delta))
-            # on_add = recurse(value_func.body, value_func.arg, BagAdd(d.elem), ctx)
-            # on_rm = recurse(value_func.body, value_func.arg, BagRemove(d.elem), ctx)
-            # on_mod = recurse(value_func.body, value_func.arg, BagElemUpdated(d.elem, d.delta), ctx)
-            # return multi_delta([
-            #     mk_conditional(syntax.ENot(equal(affected_key, new_key)), multi_delta([
-            #         MapUpdate(affected_key, on_rm),
-            #         MapUpdate(new_key, on_add)])),
-            #     mk_conditional(equal(affected_key, new_key),
-            #         MapUpdate(affected_key, on_mod))])
-            # raise NotImplementedError()
         elif isinstance(d, Conditional):
             return mk_conditional(
                 d.cond,
@@ -443,12 +421,11 @@ def apply_delta_in_place(
             return target_syntax.SForEach(elem, delta.e, apply_delta_in_place(x, BagRemove(elem)))
         def visit_BagElemUpdated(self, delta):
             return syntax.SNoOp()
+        def visit_ForEachDelta(self, delta):
+            return target_syntax.SForEach(delta.x, delta.elems, self.visit(delta.delta))
         def visit_MapUpdate(self, delta):
-            keys = delta.keys
-            k = fresh_var(delta.keys.type.t)
             v = fresh_var(x.type.v)
-            return target_syntax.SForEach(k, keys,
-                target_syntax.SMapUpdate(x, k, v, apply_delta_in_place(v, delta.delta)))
+            return target_syntax.SMapUpdate(x, delta.key, v, apply_delta_in_place(v, delta.delta))
         def visit_AddNum(self, delta):
             return syntax.SAssign(x, syntax.EBinOp(x, "+", delta.e))
         def visit_Conditional(self, delta):

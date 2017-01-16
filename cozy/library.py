@@ -34,11 +34,15 @@ class Library(object):
                 else:
                     yield TNativeMap(ty.k, v)
         elif type(ty) is TBag:
+            if isinstance(ty.t, THandle):
+                yield TIntrusiveLinkedList(ty.t)
             for t in self.impls(ty.t):
-                if isinstance(ty.t, THandle):
-                    yield TIntrusiveLinkedList(ty.t)
-                yield TLinkedList(ty.t)
-                yield TArrayList(ty.t)
+                yield TNativeList(t)
+        elif type(ty) is TSet:
+            if isinstance(ty.t, THandle):
+                yield TIntrusiveLinkedList(ty.t)
+            for t in self.impls(ty.t):
+                yield TNativeSet(t)
         elif type(ty) is TTuple:
             for refinements in cross_product([self.impls(t) for t in ty.ts]):
                 yield TTuple(refinements)
@@ -142,10 +146,10 @@ class TIntrusiveLinkedList(TBag):
                 SIf(ENot(equal(out, NULL)), SAssign(EGetField(out, self.prev_ptr).with_type(self.t), x), SNoOp()),
                 SAssign(out, x)]))])
 
-class TLinkedList(TBag):
+class TNativeList(TBag):
     def __init__(self, t):
         super().__init__(t)
 
-class TArrayList(TBag):
+class TNativeSet(TBag):
     def __init__(self, t):
         super().__init__(t)
