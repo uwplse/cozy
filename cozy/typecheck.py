@@ -229,7 +229,7 @@ class Typechecker(Visitor):
 
     def visit_ENum(self, e):
         if not hasattr(e, "type"):
-            self.report_err("Not sure what the type of numeric literal {} is!".format(e.val))
+            self.report_err(e, "Not sure what the type of numeric literal {} is!".format(e.val))
             e.type = DEFAULT_TYPE
 
     def visit_EStr(self, e):
