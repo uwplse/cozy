@@ -202,7 +202,10 @@ class CoolCostModel(core.CostModel):
             raise
 
 def normalize(e):
-    from cozy.syntax_tools import BottomUpRewriter, compose
+    from cozy.syntax_tools import BottomUpRewriter, compose, equal
+    from cozy.solver import valid
+    from cozy.typecheck import retypecheck
+
     class V(BottomUpRewriter):
         def visit_EMap(self, e):
             bag = self.visit(e.e)
@@ -220,10 +223,22 @@ def normalize(e):
             bag = self.visit(e.e)
             fbody = self.visit(e.f.body)
             if isinstance(bag, EMap):
-                return EMap(EFlatMap(bag.e, ELambda(e.f.arg, fbody)), bag.f).with_type(e.type)
-            return EFlatMap(bag, ELambda(e.f.arg, fbody)).with_type(e.type)
+                e = EFlatMap(bag.e, compose(ELambda(e.f.arg, fbody), bag.f)).with_type(e.type)
+            else:
+                e = EFlatMap(bag, ELambda(e.f.arg, fbody)).with_type(e.type)
+            bag = e.e
+            fbody = e.f.body
+            if isinstance(fbody, EMap):
+                e = EMap(EFlatMap(bag, ELambda(e.f.arg, fbody.e)).with_type(TBag(fbody.e.type.t)), fbody.f).with_type(e.type)
+            return e
 
-    e = V().visit(e)
+    e2 = V().visit(e)
+    assert retypecheck(e2)
+    assert valid(equal(e, e2))
+    e = e2
+
+    print(pprint(e2))
+
     for ee in all_exps(e):
         if isinstance(ee, ELambda):
             if not isinstance(ee.arg.type, THandle):

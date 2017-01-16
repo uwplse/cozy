@@ -507,9 +507,15 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
             x = evaluation.eval(e, res)
             if x is not True:
                 print("bad example: {}".format(res))
+                print(" ---> formula: {}".format(pprint(e)))
                 print(" ---> got {}".format(repr(x)))
                 print(" ---> model: {}".format(model))
                 print(" ---> assertions: {}".format(solver.assertions()))
+                print(" ---> to reproduce: satisfy({e}, vars={vars}, collection_depth={collection_depth}, validate_model={validate_model})".format(
+                    e=repr(e),
+                    vars=repr(vars),
+                    collection_depth=repr(collection_depth),
+                    validate_model=repr(validate_model)))
                 raise Exception("model validation failed")
         return res
 
