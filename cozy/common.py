@@ -327,6 +327,16 @@ def declare_case(supertype, name, attrs=()):
     globals()[name] = t
     return t
 
+class extend_multi(object):
+    def __init__(self, d, items):
+        self.things = [extend(d, k, v) for (k, v) in items]
+    def __enter__(self, *args, **kwargs):
+        for x in self.things:
+            x.__enter__(*args, **kwargs)
+    def __exit__(self, *args, **kwargs):
+        for x in self.things:
+            x.__exit__(*args, **kwargs)
+
 class extend(object):
     """
     Temporarily extend a dictionary with a new value.

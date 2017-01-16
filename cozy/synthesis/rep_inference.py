@@ -73,7 +73,7 @@ def infer_rep(state : [EVar], qexp : Exp, validate_types : bool = False) -> [([(
                             yield (st1 + st2 + st3, res)
         def visit_EMakeMap(self, e, k):
             assert type(e.type) is TMap
-            fvs = free_vars(e.key) | free_vars(e.value)
+            fvs = free_vars(e)
             if all(v in state for v in fvs):
                 if k.body == k.arg:
                     v = fresh_var(e.type)

@@ -284,7 +284,7 @@ class PrettyPrinter(common.Visitor):
             indent=indent)
 
     def visit_SForEach(self, s, indent=""):
-        return "{}for {} in {}:\n{}".format(indent, s.id, self.visit(s.iter), self.visit(s.body, indent + "  "))
+        return "{}for {} in {}:\n{}".format(indent, s.id.id, self.visit(s.iter), self.visit(s.body, indent + "  "))
 
     def visit_SIf(self, s, indent=""):
         if isinstance(s.else_branch, syntax.SNoOp):
@@ -551,6 +551,14 @@ def alpha_equivalent(e1, e2, allow_rename=lambda v1, v2: False):
             if type(e1) is not type(e2):
                 return False
             return all(self.visit(x, y) for (x, y) in zip(e1.children(), e2.children()))
+        def visit_Query(self, q1, q2):
+            if type(q2) is not syntax.Query:
+                return False
+            if len(q1.args) != len(q2.args):
+                return False
+            with common.extend_multi(self.remap, [(arg1, arg2) for ((arg1, type1), (arg2, type2)) in zip(q1.args, q2.args)]):
+                # TODO: assumptions
+                return self.visit(q1.ret, q2.ret)
         def visit_object(self, o, *args):
             raise NotImplementedError("{} ({})".format(type(o), repr(o)))
 

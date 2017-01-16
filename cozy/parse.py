@@ -22,6 +22,7 @@ from cozy import syntax
 _KEYWORDS = [
     "extern",
     "type",
+    "handletype",
     "enum",
     "op",
     "query",
@@ -154,13 +155,16 @@ def make_parser():
     parsetools.multi(locals(), "typedecls", "typedecl")
 
     def p_typedecl(p):
-        """typedecl : KW_TYPE WORD OP_ASSIGN type"""
-        p[0] = (p[2], p[4])
+        """typedecl : KW_TYPE WORD OP_ASSIGN type
+                    | KW_HANDLETYPE WORD OP_ASSIGN type"""
+        if p[1] == "type":
+            p[0] = (p[2], p[4])
+        elif p[1] == "handletype":
+            p[0] = (p[2], syntax.THandle(p[2], p[4]))
 
     def p_type(p):
         """type : WORD
                 | WORD OP_LT type OP_GT
-                | WORD OP_DOT WORD
                 | OP_OPEN_BRACE typednames OP_CLOSE_BRACE
                 | KW_ENUM OP_OPEN_BRACE enum_cases OP_CLOSE_BRACE
                 | KW_NATIVE STRINGLITERAL"""
@@ -174,11 +178,7 @@ def make_parser():
             else:
                 p[0] = syntax.TApp(p[1], p[3])
         elif len(p) == 4:
-            if p[2] == ".":
-                assert p[3] == "Handle"
-                p[0] = syntax.THandle(p[1], None)
-            else:
-                p[0] = syntax.TRecord(p[2])
+            p[0] = syntax.TRecord(p[2])
 
     parsetools.multi(locals(), "enum_cases", "WORD", sep="OP_COMMA")
 

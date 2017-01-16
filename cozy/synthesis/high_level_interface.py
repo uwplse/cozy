@@ -356,10 +356,23 @@ def synthesize(
     #         global_assumptions.append(EUnaryOp("unique", v).with_type(BOOL))
 
     # synthesis
+    solved_queries = []
     while worklist:
         q = worklist.popleft()
         print("##### SYNTHESIZING {}".format(q.name))
 
+        # check to see if we already solved an equivalent query on this run
+        equiv = [qq for qq in solved_queries if alpha_equivalent(q, qq)]
+        if equiv:
+            qq = equiv[0]
+            new_qs.append(Query(
+                q.name,
+                q.args,
+                q.assumptions,
+                ECall(qq.name, tuple(EVar(v).with_type(t) for (v, t) in q.args))))
+            continue
+
+        # check for cached answer
         cached_result = caching.find_cached_result(state_vars, global_assumptions, q) if use_cache else None
         if cached_result:
             print("##### FOUND CACHED RESULT")
@@ -390,6 +403,8 @@ def synthesize(
                 for sub_q in subqueries:
                     print("########### SUBGOAL: {}".format(pprint(sub_q)))
                     worklist.append(sub_q)
+
+        solved_queries.append(q)
 
     new_ops = []
     for op in spec.methods:

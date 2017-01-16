@@ -184,6 +184,8 @@ class MemoryUsageCostModel(CostModel, BottomUpExplorer):
         return 1 # TODO: sizeof(e.type)
     def visit_ENum(self, e):
         return 1 # TODO: sizeof(int)
+    def visit_EEnumEntry(self, e):
+        return 1 # TODO: sizeof(enum)
     def visit_ECall(self, e):
         return 1 # TODO: sizeof(e.type), or cardinality estimation
     def visit_Exp(self, e):
@@ -253,7 +255,7 @@ class Builder(ExpBuilder):
             for (f,t) in e.type.fields:
                 yield EGetField(e, f).with_type(t)
         if self.build_sums:
-            for e in cache.find(type=TBag(INT), size=size-1):
+            for e in itertools.chain(cache.find(type=TBag(INT), size=size-1), cache.find(type=TSet(INT), size=size-1)):
                 yield EUnaryOp("sum", e).with_type(INT)
         for e in cache.find(type=TBag, size=size-1):
             yield EUnaryOp("the", e).with_type(TMaybe(e.type.t))

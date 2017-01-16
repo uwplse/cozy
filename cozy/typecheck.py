@@ -518,6 +518,14 @@ class Typechecker(Visitor):
         self.visit(s.rhs)
         self.ensure_type(s.rhs, s.lhs.type)
 
+    def visit_SForEach(self, s):
+        assert isinstance(s.id, syntax.EVar)
+        with self.scope():
+            self.visit(s.iter)
+            t = self.get_collection_type(s.iter)
+            self.env[s.id.id] = t
+            self.visit(s.body)
+
     def visit_SDecl(self, s):
         self.visit(s.val)
         self.env[s.id] = s.val.type
