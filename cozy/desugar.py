@@ -60,11 +60,12 @@ def desugar(spec : Spec) -> Spec:
         v, t = spec.statevars[i]
         v = EVar(v).with_type(t)
         if isinstance(t, TSet) or isinstance(t, TBag):
+            orig_t = t
             ht = THandle(fresh_name("HandleType"), t.t)
             t = TSet(ht)
             v.type = t
             spec.assumptions = [handleize(a, v) for a in spec.assumptions]
-            if isinstance(t, TSet):
+            if isinstance(orig_t, TSet):
                 spec.assumptions.append(EUnaryOp("unique", EMap(v, mk_lambda(ht, lambda handle: EGetField(handle, "val").with_type(ht.value_type))).with_type(TBag(ht.value_type))).with_type(BOOL))
             spec.methods = [handleize(m, v) for m in spec.methods]
             spec.methods = extra_methods + spec.methods
