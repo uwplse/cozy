@@ -325,7 +325,7 @@ def values_of_type(value, value_type, desired_type):
     # see evaluation.mkval for info on the structure of values
     if value_type == desired_type:
         yield value
-    elif isinstance(value_type, TSet):
+    elif isinstance(value_type, TSet) or isinstance(value_type, TBag):
         for x in value:
             yield from values_of_type(x, value_type.t, desired_type)
     else:
