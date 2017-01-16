@@ -365,6 +365,7 @@ def synthesize(
         equiv = [qq for qq in solved_queries if alpha_equivalent(q, qq)]
         if equiv:
             qq = equiv[0]
+            print(" --> already exists as {}".format(qq.name))
             new_qs.append(Query(
                 q.name,
                 q.args,
@@ -377,6 +378,11 @@ def synthesize(
         if cached_result:
             print("##### FOUND CACHED RESULT")
             state_var, state_exp, new_q = cached_result
+            new_q = Query(
+                q.name,
+                new_q.args,
+                new_q.assumptions,
+                new_q.ret)
         else:
             state_var, state_exp, new_q = synthesize_queries(ctx, state_vars, global_assumptions, q, Timeout(per_query_timeout))
             new_q = new_q[0]
@@ -424,4 +430,4 @@ def synthesize(
         spec.extern_funcs,
         new_statevars,
         [],
-        new_ops + new_qs), state_var_exps)
+        new_qs + new_ops), state_var_exps)
