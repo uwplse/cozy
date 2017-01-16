@@ -283,7 +283,7 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], q : 
                 vars=state+args+binders,
                 cost_model=b.cost_model(),
                 builder=b,
-                timeout=timeout)):
+                stop_callback=timeout.is_timed_out)):
 
             print("SOLUTION")
             print("-" * 40)
@@ -297,7 +297,7 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], q : 
                 new_ret = expr
                 print("-" * 40)
 
-    except TimeoutException:
+    except core.StopException:
         print("stopping due to timeout")
 
     if len(new_state_vars) != 1:

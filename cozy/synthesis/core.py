@@ -9,7 +9,6 @@ from cozy.syntax_tools import subst, replace, pprint, free_vars, BottomUpExplore
 from cozy.common import Visitor, fresh_name, typechecked, unique, pick_to_sum, cross_product
 from cozy.solver import satisfy, valid
 from cozy.evaluation import HoleException, eval, all_envs_for_hole, mkval
-from cozy.timeouts import Timeout
 
 def nested_dict(n, t):
     if n <= 0:
@@ -371,11 +370,14 @@ def make_constant_of_type(t):
             raise NotImplementedError(t)
     return V().visit(t)
 
+class StopException(Exception):
+    pass
+
 class Learner(object):
-    def __init__(self, target, assumptions : Exp, binders, examples, cost_model, builder, timeout):
+    def __init__(self, target, assumptions : Exp, binders, examples, cost_model, builder, stop_callback):
         self.assumptions = assumptions
         self.binders = binders
-        self.timeout = timeout
+        self.stop_callback = stop_callback
         self.cost_model = cost_model
         self.builder = builder
         self.seen = { } # fingerprint:(cost, e, size) map
@@ -423,8 +425,8 @@ class Learner(object):
         while True:
             for e in self.builder_iter:
 
-                if self.timeout is not None:
-                    self.timeout.check()
+                if self.stop_callback():
+                    raise StopException()
 
                 # experimental criterion: all bags must have distinct values
                 # if isinstance(e.type, TBag):
@@ -487,10 +489,10 @@ def improve(
         vars : [EVar],
         cost_model : CostModel,
         builder : Builder,
-        timeout : Timeout):
+        stop_callback):
 
     examples = []
-    learner = Learner(target, assumptions, binders, examples, cost_model, builder, timeout)
+    learner = Learner(target, assumptions, binders, examples, cost_model, builder, stop_callback)
     while True:
         # 1. find any potential improvement to any sub-exp of target
         old_e, new_e = learner.next()
