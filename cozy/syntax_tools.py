@@ -136,7 +136,7 @@ class PrettyPrinter(common.Visitor):
         return "{{ {} }}".format(", ".join("{} : {}".format(f, self.visit(t)) for f, t in r.fields))
 
     def visit_THandle(self, t):
-        return "{}.Handle".format(t.statevar)
+        return t.statevar
 
     def visit_ConcreteType(self, t):
         return t.prettyprint()
@@ -166,6 +166,9 @@ class PrettyPrinter(common.Visitor):
 
     def visit_EEnumEntry(self, e):
         return e.name
+
+    def visit_ENewHandle(self, e):
+        return "new {}({})".format(self.visit(e.type), self.visit(e.e))
 
     def visit_EJust(self, e):
         return "Just({})".format(self.visit(e.e))
