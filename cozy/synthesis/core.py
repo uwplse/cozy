@@ -534,6 +534,14 @@ class FixedBuilder(ExpBuilder):
                     # print("rejecting illegal application of 'the': {}".format(pprint(e)))
                     continue
 
+            # filters must *do* something
+            # This prevents degenerate cases where the synthesizer uses filter
+            # expressions to artificially lower the estimated cardinality of a
+            # collection.
+            if isinstance(e, EFilter):
+                if not valid(implies(self.assumptions, ENot(equal(e, e.e)))):
+                    continue
+
             yield e
 
 @typechecked
