@@ -560,31 +560,36 @@ def improve(
     vars = list(free_vars(target))
     examples = []
     learner = Learner(target, binders, examples, cost_model, builder, stop_callback)
-    while True:
-        # 1. find any potential improvement to any sub-exp of target
-        old_e, new_e = learner.next()
+    try:
+        while True:
+            # 1. find any potential improvement to any sub-exp of target
+            old_e, new_e = learner.next()
 
-        # 2. substitute the improvement in (assert cost is lower)
-        new_target = replace(target, old_e, new_e)
-        assert cost_model.cost(new_target) < cost_model.cost(target), "whoops: {} ----> {}".format(target, new_target)
+            # 2. substitute the improvement in (assert cost is lower)
+            new_target = replace(target, old_e, new_e)
+            assert cost_model.cost(new_target) < cost_model.cost(target), "whoops: {} ----> {}".format(target, new_target)
 
-        if (free_vars(new_target) - set(vars)):
-            print("oops, candidate {} has weird free vars".format(new_target))
-            raise Exception()
+            if (free_vars(new_target) - set(vars)):
+                print("oops, candidate {} has weird free vars".format(new_target))
+                raise Exception()
 
-        # 3. check
-        formula = EAll([assumptions, ENot(equal(target, new_target))])
-        counterexample = satisfy(formula, vars=vars)
-        if counterexample is not None:
-            # a. if incorrect: add example, reset the learner
-            examples.append(counterexample)
-            print("new example: {}".format(counterexample))
-            print("restarting with {} examples".format(len(examples)))
-            learner.reset(examples)
-        else:
-            # b. if correct: yield it, watch the new target, goto 2
-            print("found improvement: {} -----> {}".format(pprint(old_e), pprint(new_e)))
-            print("cost: {} -----> {}".format(cost_model.cost(old_e), cost_model.cost(new_e)))
-            learner.watch(new_target)
-            target = new_target
-            yield new_target
+            # 3. check
+            formula = EAll([assumptions, ENot(equal(target, new_target))])
+            counterexample = satisfy(formula, vars=vars)
+            if counterexample is not None:
+                # a. if incorrect: add example, reset the learner
+                examples.append(counterexample)
+                print("new example: {}".format(counterexample))
+                print("restarting with {} examples".format(len(examples)))
+                learner.reset(examples)
+            else:
+                # b. if correct: yield it, watch the new target, goto 2
+                print("found improvement: {} -----> {}".format(pprint(old_e), pprint(new_e)))
+                print("cost: {} -----> {}".format(cost_model.cost(old_e), cost_model.cost(new_e)))
+                learner.watch(new_target)
+                target = new_target
+                yield new_target
+    except KeyboardInterrupt:
+        for e in learner.cache.random_sample(50):
+            print(pprint(e))
+        raise
