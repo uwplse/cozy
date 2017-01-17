@@ -498,7 +498,7 @@ class Learner(object):
             print("minor iteration {}, |cache|={}".format(self.current_size, len(self.cache)))
 
 @typechecked
-def fixup_binders(e : Exp, binders_to_use : {EVar}) -> Exp:
+def fixup_binders(e : Exp, binders_to_use : [EVar]) -> Exp:
     class V(BottomUpRewriter):
         def visit_ELambda(self, e):
             body = self.visit(e.body)
@@ -565,9 +565,8 @@ def improve(
         builder : Builder,
         stop_callback):
 
-    binder_set = set(binders)
-    target = fixup_binders(target, binder_set)
-    builder = FixedBuilder(builder, binder_set, assumptions)
+    target = fixup_binders(target, binders)
+    builder = FixedBuilder(builder, binders, assumptions)
 
     vars = list(free_vars(target))
     examples = []
@@ -582,7 +581,7 @@ def improve(
             assert cost_model.cost(new_target) < cost_model.cost(target), "whoops: {} ----> {}".format(target, new_target)
 
             if (free_vars(new_target) - set(vars)):
-                print("oops, candidate {} has weird free vars".format(new_target))
+                print("oops, candidate {} has weird free vars".format(pprint(new_target)))
                 raise Exception()
 
             # 3. check
