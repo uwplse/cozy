@@ -1,4 +1,4 @@
-from collections import defaultdict
+from collections import OrderedDict
 import datetime
 import itertools
 import sys
@@ -10,10 +10,22 @@ from cozy.common import Visitor, fresh_name, typechecked, unique, pick_to_sum, c
 from cozy.solver import satisfy, valid
 from cozy.evaluation import HoleException, eval, all_envs_for_hole, mkval
 
+MISSING = object()
+class OrderedDefaultDict(OrderedDict):
+    def __init__(self, factory):
+        super().__init__()
+        self.factory = factory
+    def __missing__(self, k):
+        v = self.get(k, MISSING)
+        if v is MISSING:
+            v = self.factory()
+            self[k] = v
+        return v
+
 def nested_dict(n, t):
     if n <= 0:
         return t()
-    return defaultdict(lambda: nested_dict(n-1, t))
+    return OrderedDefaultDict(lambda: nested_dict(n-1, t))
 
 class Cache(object):
     def __init__(self, items=None):
