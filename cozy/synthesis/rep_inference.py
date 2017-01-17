@@ -48,10 +48,14 @@ def infer_rep(state : [EVar], qexp : Exp, validate_types : bool = False) -> [([(
     class V(Visitor):
 
         def apply_k(self, k, e):
-            e = k.apply_to(e)
-            fvs = free_vars(e)
-            st = [(fresh_var(v.type), v) for v in fvs if v in state]
-            yield (st, subst(e, { old_var.id : new_var for (new_var, old_var) in st }))
+            if isinstance(e, EVar):
+                e = k.apply_to(e)
+                fvs = free_vars(e)
+                st = [(fresh_var(v.type), v) for v in fvs if v in state]
+                yield (st, subst(e, { old_var.id : new_var for (new_var, old_var) in st }))
+            else:
+                for (st, kk) in self.visit(k.body):
+                    yield (st, subst(kk, { k.arg.id : e }))
 
         def visit_EFilter(self, e, k):
             fvs = free_vars(e.p)
@@ -129,7 +133,9 @@ def infer_rep(state : [EVar], qexp : Exp, validate_types : bool = False) -> [([(
                 yield ([(v, proj)], v)
             else:
                 yield from self.apply_k(k, e)
-        def visit(self, e, k):
+        def visit(self, e, k=None):
+            if k is None:
+                k = mk_lambda(e.type, lambda x: x)
             fvs = free_vars(e)
             if fvs:
                 yield from super().visit(e, k)
