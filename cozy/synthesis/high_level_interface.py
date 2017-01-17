@@ -132,6 +132,9 @@ class BinderBuilder(core.Builder):
         #     print("    " + pprint(x))
         if size > 1:
             for bag in itertools.chain(cache.find(type=TBag, size=size-1), cache.find(type=TSet, size=size-1)):
+                if not isinstance(bag.type.t, THandle):
+                    continue
+
                 # len of bag
                 count = EUnaryOp("sum", EMap(bag, mk_lambda(bag.type.t, lambda x: ENum(1).with_type(INT))).with_type(TBag(INT))).with_type(INT)
                 yield count
@@ -144,11 +147,14 @@ class BinderBuilder(core.Builder):
         if size >= 3:
             for (sz1, sz2) in pick_to_sum(2, size - 1):
                 for bag in itertools.chain(cache.find(type=TBag, size=sz1), cache.find(type=TSet, size=sz1)):
+                    if not isinstance(bag.type.t, THandle):
+                        continue
+
                     # construct map lookups
                     for filt in cache.find(type=BOOL, size=sz2):
                         for (binder, key_proj, key_lookup) in infer_key_and_value(filt, self.binders):
                             if binder.type == bag.type.t:
-                                # print("for {}: {} {} {}".format(pprint(filt), binder, key_proj, key_lookup))
+                                # print("for {}: {} {} {} {}".format(pprint(filt), pprint(bag), pprint(binder), pprint(key_proj), pprint(key_lookup)))
                                 yield EMapGet(
                                     EMakeMap(
                                         bag,
@@ -163,11 +169,15 @@ class BinderBuilder(core.Builder):
                     for binder in self.binders:
                         if binder.type == bag.type.t:
                             for body in cache.find(size=sz2):
+                                # experimental filter
+                                if binder not in free_vars(body):
+                                    continue
                                 yield EMap(bag, ELambda(binder, body)).with_type(TBag(body.type))
-                            for body in cache.find(size=sz2, type=BOOL):
-                                yield EFilter(bag, ELambda(binder, body)).with_type(bag.type)
-                            for body in cache.find(size=sz2, type=TBag):
-                                yield EFlatMap(bag, ELambda(binder, body)).with_type(TBag(body.type.t))
+                                if body.type == BOOL:
+                                    yield EFilter(bag, ELambda(binder, body)).with_type(bag.type)
+                                if isinstance(body.type, TBag):
+                                    yield EFlatMap(bag, ELambda(binder, body)).with_type(TBag(body.type.t))
+
         for t in list(cache.types()):
             if isinstance(t, TBag):
                 yield EEmptyList().with_type(t)
@@ -202,7 +212,7 @@ class CoolCostModel(core.CostModel):
             raise
 
 def normalize(e):
-    from cozy.syntax_tools import BottomUpRewriter, compose, equal
+    from cozy.syntax_tools import BottomUpRewriter, compose, equal, break_conj
     from cozy.solver import valid
     from cozy.typecheck import retypecheck
 
@@ -213,12 +223,22 @@ def normalize(e):
             if isinstance(bag, EMap):
                 return EMap(bag.e, compose(ELambda(e.f.arg, fbody), bag.f)).with_type(e.type)
             return EMap(bag, ELambda(e.f.arg, fbody)).with_type(e.type)
+        def break_filter(self, e):
+            parts = list(break_conj(e.p.body))
+            assert len(parts) > 0
+            if len(parts) == 1:
+                return e
+            arg = e.p.arg
+            e = e.e
+            for p in parts:
+                e = EFilter(e, ELambda(arg, p)).with_type(e.type)
+            return e
         def visit_EFilter(self, e):
             bag = self.visit(e.e)
             pbody = self.visit(e.p.body)
             if isinstance(bag, EMap):
-                return EMap(EFilter(bag.e, compose(ELambda(e.p.arg, pbody), bag.f)).with_type(bag.e.type), bag.f).with_type(e.type)
-            return EFilter(bag, ELambda(e.p.arg, pbody)).with_type(e.type)
+                return EMap(self.break_filter(EFilter(bag.e, compose(ELambda(e.p.arg, pbody), bag.f)).with_type(bag.e.type)), bag.f).with_type(e.type)
+            return self.break_filter(EFilter(bag, ELambda(e.p.arg, pbody)).with_type(e.type))
         def visit_EFlatMap(self, e):
             bag = self.visit(e.e)
             fbody = self.visit(e.f.body)
@@ -233,7 +253,7 @@ def normalize(e):
             return e
 
     e2 = V().visit(e)
-    assert retypecheck(e2)
+    # assert retypecheck(e2)
     assert valid(equal(e, e2))
     e = e2
 
@@ -281,11 +301,10 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], q : 
 
     roots = get_roots(state, new_ret)
     ctors = guess_constructors(state, roots)
-
-    for e in roots + ctors:
-        print(" --> {}".format(pprint(e)))
-
     args = [EVar(name).with_type(t) for (name, t) in q.args]
+
+    for e in roots + args + ctors:
+        print(" --> {}".format(pprint(e)))
 
     b = BinderBuilder(binders, roots + binders + ctors + args, basic_types, cost_model=CoolCostModel(state))
     new_state_vars = state
@@ -295,7 +314,6 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], q : 
                 target=new_ret,
                 assumptions=EAll(assumptions),
                 binders=binders,
-                vars=state+args+binders,
                 cost_model=b.cost_model(),
                 builder=b,
                 stop_callback=timeout.is_timed_out)):

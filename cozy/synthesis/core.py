@@ -276,6 +276,8 @@ class Builder(ExpBuilder):
                     yield EBinOp(a1, ">=", a2).with_type(BOOL)
                     yield EBinOp(a1, "<=", a2).with_type(BOOL)
             for a1 in cache.find(type=TBag, size=sz1):
+                if not isinstance(a1.type.t, THandle):
+                    continue
                 for a2 in cache.find(type=a1.type, size=sz2):
                     yield EBinOp(a1, "+", a2).with_type(a1.type)
             for a1 in cache.find(type=BOOL, size=sz1):
@@ -410,16 +412,32 @@ class Learner(object):
                 print("evicted {} elements".format(n))
 
     def update_watched_exps(self):
+        e = self.target
+        self.watched_exps = {}
+        for e in all_exps(self.target):
+            if isinstance(e, ELambda):
+                continue
+            try:
+                self.watched_exps[self._fingerprint(e)] = (e, self.cost_model.cost(e))
+            except Exception:
+                print("WARNING: unable to watch expression {}".format(pprint(e)))
+                continue
         # self.watched_exps = {
         #     self._fingerprint(e) : (e, self.cost_model.cost(e))
         #     for e in all_exps(self.target)
         #     if not isinstance(e, ELambda) }
-        e = self.target
-        self.watched_exps = {
-            self._fingerprint(e) : (e, self.cost_model.cost(e)) }
+        # self.watched_exps = {
+        #     self._fingerprint(e) : (e, self.cost_model.cost(e)) }
 
     def _fingerprint(self, e):
         return fingerprint(e, self.examples, self.vars, self.binders)
+
+    def _on_exp(self, e, fate, *args):
+        return
+        if isinstance(e, EMapGet):
+            print(" ---> [{}] {} {}".format(fate, pprint(e), ", ".join(pprint(e) for e in args)))
+        if isinstance(e, EBinOp) and e.op == "==":
+            print(" ---> [{}] {} {}".format(fate, pprint(e), ", ".join(pprint(e) for e in args)))
 
     def next(self):
         while True:
@@ -428,27 +446,29 @@ class Learner(object):
                 if self.stop_callback():
                     raise StopException()
 
-                # experimental criterion: all bags must have distinct values
-                # if isinstance(e.type, TBag):
-                #     if not valid(implies(self.assumptions, EUnaryOp("unique", e).with_type(BOOL))):
-                #         print("rejecting non-unique {}".format(pprint(e)))
-                #         continue
+                # experimental criterion: bags of handles must have distinct values
+                if isinstance(e.type, TBag) and isinstance(e.type.t, THandle):
+                    if not valid(implies(self.assumptions, EUnaryOp("unique", e).with_type(BOOL))):
+                        # print("rejecting non-unique {}".format(pprint(e)))
+                        self._on_exp(e, "non-unique bag of handles")
+                        continue
 
                 # all sets must have distinct values
                 if isinstance(e.type, TSet):
                     if not valid(implies(self.assumptions, EUnaryOp("unique", e).with_type(BOOL))):
-                        # print("rejecting non-unique {}".format(pprint(e)))
-                        continue
+                        raise Exception("insanity: values of {} are not distinct".format(e))
 
                 # experimental criterion: "the" must be a singleton collection
                 if isinstance(e, EUnaryOp) and e.op == "the":
                     if not valid(implies(self.assumptions, EBinOp(EUnaryOp("sum", EMap(e.e, mk_lambda(e.type, lambda x: ENum(1).with_type(INT))).with_type(TBag(INT))).with_type(INT), "<=", ENum(1).with_type(INT)))):
                         # print("rejecting illegal application of 'the': {}".format(pprint(e)))
+                        self._on_exp(e, "illegal use of 'the'")
                         continue
 
                 cost = self.cost_model.cost(e)
 
                 if self.cost_model.is_monotonic() and cost > self.cost_ceiling:
+                    self._on_exp(e, "too expensive")
                     continue
 
                 fp = self._fingerprint(e)
@@ -457,6 +477,7 @@ class Learner(object):
                 if prev is None:
                     self.seen[fp] = (cost, e, self.current_size)
                     self.cache.add(e, size=self.current_size)
+                    self._on_exp(e, "new")
                 else:
                     prev_cost, prev_exp, prev_size = prev
                     if cost < prev_cost:
@@ -464,17 +485,20 @@ class Learner(object):
                         self.cache.evict(prev_exp, prev_size)
                         self.cache.add(e, size=self.current_size)
                         self.seen[fp] = (cost, e, self.current_size)
+                        self._on_exp(e, "better")
                     else:
+                        self._on_exp(e, "worse", prev_exp)
                         continue
 
                 watched = self.watched_exps.get(fp)
                 if watched is not None:
-                    while False and set(self.binders) & free_vars(e):
-                        print("stripping binders from {}".format(e))
-                        b = list(set(self.binders) & free_vars(e))[0]
-                        e = subst(e, { b.id : make_constant_of_type(b.type) })
                     watched_e, watched_cost = watched
                     if cost < watched_cost:
+                        print("Found potential improvement [{}] for [{}]".format(pprint(e), pprint(watched_e)))
+                        # while set(self.binders) & free_vars(e):
+                        #     print("stripping binders from {}".format(e))
+                        #     b = list(set(self.binders) & free_vars(e))[0]
+                        #     e = subst(e, { b.id : make_constant_of_type(b.type) })
                         return (watched_e, e)
 
             self.current_size += 1
@@ -482,15 +506,50 @@ class Learner(object):
             print("minor iteration {}, |cache|={}".format(self.current_size, len(self.cache)))
 
 @typechecked
+def fixup_binders(e : Exp, binders_to_use : {EVar}) -> Exp:
+    class V(BottomUpRewriter):
+        def visit_ELambda(self, e):
+            body = self.visit(e.body)
+            if e.arg in binders_to_use:
+                return ELambda(e.arg, body)
+            if not any(b.type == e.arg.type for b in binders_to_use):
+                # print("WARNING: I am assuming that subexpressions of [{}] never appear in isolation".format(pprint(e)))
+                return ELambda(e.arg, body)
+            fvs = free_vars(body)
+            legal_repls = [ b for b in binders_to_use if b not in fvs and b.type == e.arg.type ]
+            if not legal_repls:
+                raise Exception("No legal binder to use for {}".format(e))
+            b = legal_repls[0]
+            return ELambda(b, subst(body, { e.arg.id : b }))
+    return V().visit(e)
+
+class FixedBuilder(ExpBuilder):
+    def __init__(self, wrapped_builder, binders_to_use):
+        self.wrapped_builder = wrapped_builder
+        self.binders_to_use = binders_to_use
+    def build(self, cache, size):
+        for e in self.wrapped_builder.build(cache, size):
+            try:
+                yield fixup_binders(e, self.binders_to_use)
+            except Exception:
+                continue
+                import sys
+                print("WARNING: skipping built expression {}".format(pprint(e)), file=sys.stderr)
+
+@typechecked
 def improve(
         target : Exp,
         assumptions : Exp,
         binders : [EVar],
-        vars : [EVar],
         cost_model : CostModel,
         builder : Builder,
         stop_callback):
 
+    binder_set = set(binders)
+    target = fixup_binders(target, binder_set)
+    builder = FixedBuilder(builder, binder_set)
+
+    vars = list(free_vars(target))
     examples = []
     learner = Learner(target, assumptions, binders, examples, cost_model, builder, stop_callback)
     while True:

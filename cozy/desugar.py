@@ -1,7 +1,8 @@
 from cozy.common import typechecked, fresh_name
 from cozy.target_syntax import *
 from cozy.typecheck import INT, BOOL, retypecheck
-from cozy.syntax_tools import BottomUpRewriter, subst, fresh_var, all_types, equal, mk_lambda, pprint
+from cozy.syntax_tools import BottomUpRewriter, subst, fresh_var, all_types, equal, implies, mk_lambda, pprint
+from cozy.solver import valid
 
 @typechecked
 def desugar(spec : Spec) -> Spec:
@@ -55,23 +56,28 @@ def desugar(spec : Spec) -> Spec:
             m = Rw().visit(m)
         return m
 
-    while not all(is_set_of_handle(t) for (v, t) in spec.statevars):
-        i = [i for i in range(len(spec.statevars)) if not is_set_of_handle(spec.statevars[i][1])][0]
+    for i in range(len(spec.statevars)):
         v, t = spec.statevars[i]
         v = EVar(v).with_type(t)
-        if isinstance(t, TSet) or isinstance(t, TBag):
-            orig_t = t
-            ht = THandle(fresh_name("HandleType"), t.t)
-            t = TSet(ht)
-            v.type = t
-            spec.assumptions = [handleize(a, v) for a in spec.assumptions]
-            if isinstance(orig_t, TSet):
-                spec.assumptions.append(EUnaryOp("unique", EMap(v, mk_lambda(ht, lambda handle: EGetField(handle, "val").with_type(ht.value_type))).with_type(TBag(ht.value_type))).with_type(BOOL))
-            spec.methods = [handleize(m, v) for m in spec.methods]
-            spec.methods = extra_methods + spec.methods
+        if isinstance(t, TSet):
+            t = TBag(t.t)
+            spec.statevars[i] = (v.id, t)
+            v = EVar(v.id).with_type(t)
+            spec.assumptions.append(EUnaryOp("unique", v).with_type(BOOL))
+            assert retypecheck(spec, env=())
+        if isinstance(t, TBag):
+            if not isinstance(t.t, THandle) or not valid(implies(EAll(spec.assumptions), EUnaryOp("unique", v).with_type(BOOL))):
+                orig_t = t
+                ht = THandle(fresh_name("HandleType"), t.t)
+                t = TBag(ht)
+                v = EVar(v.id).with_type(t)
+                spec.statevars[i] = (v.id, t)
+                spec.assumptions = [handleize(a, v) for a in spec.assumptions]
+                spec.assumptions.append(EUnaryOp("unique", v).with_type(BOOL))
+                spec.methods = [handleize(m, v) for m in spec.methods]
+                spec.methods = extra_methods + spec.methods
         else:
             raise NotImplementedError(t)
-        spec.statevars[i] = (v.id, t)
 
     assert retypecheck(spec, env=())
 
