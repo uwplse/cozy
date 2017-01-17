@@ -73,8 +73,10 @@ def _push_delta_through_field_access(members : { str : syntax.Type }, lhs, delta
     if isinstance(lhs, syntax.EVar):
         if isinstance(lhs.type, syntax.THandle):
             bags = [ m for (m, ty) in members.items() if isinstance(ty, syntax.TSet) and ty.t == lhs.type ]
+            if len(bags) == 0:
+                return (lhs, NoDelta())
             if len(bags) != 1:
-                raise NotImplementedError("TODO: handle the case where =0 or >1 members change in response to op")
+                raise NotImplementedError("TODO: handle the case where >1 members change in response to op")
             bag = syntax.EVar(bags[0][0]).with_type(bags[0][1])
             return (bag, BagElemUpdated(lhs, delta))
         elif isinstance(lhs, syntax.EVar) and lhs.id in members:
@@ -160,7 +162,7 @@ def derivative(
             # the actual value, then we can push the map update inside the
             # condition for better performance.
             guards = []
-            while isinstance(subdelta, Conditional) and (value_func.arg not in free_vars(subdelta.cond)):
+            while isinstance(subdelta, Conditional) and (not {value_func.arg, x} & free_vars(subdelta.cond)):
                 guards.append(subdelta.cond)
                 subdelta = subdelta.delta
             res = ForEachDelta(make_subgoal(d.e), x, MapUpdate(x, subdelta))
