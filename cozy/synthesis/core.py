@@ -450,6 +450,12 @@ class Learner(object):
         if isinstance(e, EBinOp) and e.op == "==":
             print(" ---> [{}] {} {}".format(fate, pprint(e), ", ".join(pprint(e) for e in args)))
 
+    def forget_most_recent(self):
+        (e, size, fp) = self.most_recent
+        self.cache.evict(e, size)
+        self.seen[fp] = self.overwritten
+        self.most_recent = self.overwritten = None
+
     def next(self):
         while True:
             for e in self.builder_iter:
@@ -467,12 +473,16 @@ class Learner(object):
                 prev = self.seen.get(fp)
 
                 if prev is None:
+                    self.overwritten = None
+                    self.most_recent = (e, self.current_size, fp)
                     self.seen[fp] = (cost, e, self.current_size)
                     self.cache.add(e, size=self.current_size)
                     self._on_exp(e, "new")
                 else:
                     prev_cost, prev_exp, prev_size = prev
                     if cost < prev_cost:
+                        self.overwritten = prev
+                        self.most_recent = (e, self.current_size, fp)
                         # print("cost ceiling lowered for {}: {} --> {}".format(fp, prev_cost, cost))
                         self.cache.evict(prev_exp, prev_size)
                         self.cache.add(e, size=self.current_size)
@@ -582,7 +592,8 @@ def improve(
 
             if (free_vars(new_target) - set(vars)):
                 print("oops, candidate {} has weird free vars".format(pprint(new_target)))
-                raise Exception()
+                learner.forget_most_recent()
+                continue
 
             # 3. check
             formula = EAll([assumptions, ENot(equal(target, new_target))])
