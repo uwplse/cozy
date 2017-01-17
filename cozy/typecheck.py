@@ -369,6 +369,9 @@ class Typechecker(Visitor):
 
     def visit_EGetField(self, e):
         self.visit(e.e)
+        if e.e.type is DEFAULT_TYPE:
+            e.type = DEFAULT_TYPE
+            return
         if isinstance(e.e.type, syntax.TRecord):
             fields = dict(e.e.type.fields)
             if e.f in fields:
