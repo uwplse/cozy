@@ -646,4 +646,5 @@ def break_conj(e):
     if isinstance(e, syntax.EBinOp) and e.op == "and":
         yield from break_conj(e.e1)
         yield from break_conj(e.e2)
-    yield e
+    else:
+        yield e

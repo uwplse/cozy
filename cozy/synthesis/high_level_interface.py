@@ -225,7 +225,6 @@ def normalize(e):
             return EMap(bag, ELambda(e.f.arg, fbody)).with_type(e.type)
         def break_filter(self, e):
             parts = list(break_conj(e.p.body))
-            assert len(parts) > 0
             if len(parts) == 1:
                 return e
             arg = e.p.arg
