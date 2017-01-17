@@ -376,8 +376,7 @@ class StopException(Exception):
     pass
 
 class Learner(object):
-    def __init__(self, target, assumptions : Exp, binders, examples, cost_model, builder, stop_callback):
-        self.assumptions = assumptions
+    def __init__(self, target, binders, examples, cost_model, builder, stop_callback):
         self.binders = binders
         self.stop_callback = stop_callback
         self.cost_model = cost_model
@@ -446,25 +445,6 @@ class Learner(object):
                 if self.stop_callback():
                     raise StopException()
 
-                # experimental criterion: bags of handles must have distinct values
-                if isinstance(e.type, TBag) and isinstance(e.type.t, THandle):
-                    if not valid(implies(self.assumptions, EUnaryOp("unique", e).with_type(BOOL))):
-                        # print("rejecting non-unique {}".format(pprint(e)))
-                        self._on_exp(e, "non-unique bag of handles")
-                        continue
-
-                # all sets must have distinct values
-                if isinstance(e.type, TSet):
-                    if not valid(implies(self.assumptions, EUnaryOp("unique", e).with_type(BOOL))):
-                        raise Exception("insanity: values of {} are not distinct".format(e))
-
-                # experimental criterion: "the" must be a singleton collection
-                if isinstance(e, EUnaryOp) and e.op == "the":
-                    if not valid(implies(self.assumptions, EBinOp(EUnaryOp("sum", EMap(e.e, mk_lambda(e.type, lambda x: ENum(1).with_type(INT))).with_type(TBag(INT))).with_type(INT), "<=", ENum(1).with_type(INT)))):
-                        # print("rejecting illegal application of 'the': {}".format(pprint(e)))
-                        self._on_exp(e, "illegal use of 'the'")
-                        continue
-
                 cost = self.cost_model.cost(e)
 
                 if self.cost_model.is_monotonic() and cost > self.cost_ceiling:
@@ -524,17 +504,37 @@ def fixup_binders(e : Exp, binders_to_use : {EVar}) -> Exp:
     return V().visit(e)
 
 class FixedBuilder(ExpBuilder):
-    def __init__(self, wrapped_builder, binders_to_use):
+    def __init__(self, wrapped_builder, binders_to_use, assumptions : Exp):
         self.wrapped_builder = wrapped_builder
         self.binders_to_use = binders_to_use
+        self.assumptions = assumptions
     def build(self, cache, size):
         for e in self.wrapped_builder.build(cache, size):
             try:
-                yield fixup_binders(e, self.binders_to_use)
+                e = fixup_binders(e, self.binders_to_use)
             except Exception:
                 continue
                 import sys
                 print("WARNING: skipping built expression {}".format(pprint(e)), file=sys.stderr)
+
+            # experimental criterion: bags of handles must have distinct values
+            if isinstance(e.type, TBag) and isinstance(e.type.t, THandle):
+                if not valid(implies(self.assumptions, EUnaryOp("unique", e).with_type(BOOL))):
+                    # print("rejecting non-unique {}".format(pprint(e)))
+                    continue
+
+            # all sets must have distinct values
+            if isinstance(e.type, TSet):
+                if not valid(implies(self.assumptions, EUnaryOp("unique", e).with_type(BOOL))):
+                    raise Exception("insanity: values of {} are not distinct".format(e))
+
+            # experimental criterion: "the" must be a singleton collection
+            if isinstance(e, EUnaryOp) and e.op == "the":
+                if not valid(implies(self.assumptions, EBinOp(EUnaryOp("sum", EMap(e.e, mk_lambda(e.type, lambda x: ENum(1).with_type(INT))).with_type(TBag(INT))).with_type(INT), "<=", ENum(1).with_type(INT)))):
+                    # print("rejecting illegal application of 'the': {}".format(pprint(e)))
+                    continue
+
+            yield e
 
 @typechecked
 def improve(
