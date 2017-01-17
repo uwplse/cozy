@@ -555,18 +555,22 @@ def improve(
 
     binder_set = set(binders)
     target = fixup_binders(target, binder_set)
-    builder = FixedBuilder(builder, binder_set)
+    builder = FixedBuilder(builder, binder_set, assumptions)
 
     vars = list(free_vars(target))
     examples = []
-    learner = Learner(target, assumptions, binders, examples, cost_model, builder, stop_callback)
+    learner = Learner(target, binders, examples, cost_model, builder, stop_callback)
     while True:
         # 1. find any potential improvement to any sub-exp of target
         old_e, new_e = learner.next()
 
         # 2. substitute the improvement in (assert cost is lower)
         new_target = replace(target, old_e, new_e)
-        assert cost_model.cost(new_target) < cost_model.cost(target)
+        assert cost_model.cost(new_target) < cost_model.cost(target), "whoops: {} ----> {}".format(target, new_target)
+
+        if (free_vars(new_target) - set(vars)):
+            print("oops, candidate {} has weird free vars".format(new_target))
+            raise Exception()
 
         # 3. check
         formula = EAll([assumptions, ENot(equal(target, new_target))])
