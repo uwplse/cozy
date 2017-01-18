@@ -593,9 +593,8 @@ def improve(
             # 1. find any potential improvement to any sub-exp of target
             old_e, new_e = learner.next()
 
-            # 2. substitute the improvement in (assert cost is lower)
+            # 2. substitute-in the improvement
             new_target = replace(target, old_e, new_e)
-            assert cost_model.cost(new_target) < cost_model.cost(target), "whoops: {} ----> {}".format(target, new_target)
 
             if (free_vars(new_target) - set(vars)):
                 print("oops, candidate {} has weird free vars".format(pprint(new_target)))
@@ -613,6 +612,7 @@ def improve(
                 learner.reset(examples)
             else:
                 # b. if correct: yield it, watch the new target, goto 2
+                assert cost_model.cost(new_target) < cost_model.cost(target), "whoops: {} ----> {}".format(target, new_target)
                 print("found improvement: {} -----> {}".format(pprint(old_e), pprint(new_e)))
                 print("cost: {} -----> {}".format(cost_model.cost(old_e), cost_model.cost(new_e)))
                 learner.watch(new_target)
