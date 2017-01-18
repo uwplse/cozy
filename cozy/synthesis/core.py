@@ -585,7 +585,7 @@ def improve(
     target = fixup_binders(target, binders)
     builder = FixedBuilder(builder, binders, assumptions)
 
-    vars = list(free_vars(target))
+    vars = list(free_vars(target) | free_vars(assumptions))
     examples = []
     learner = Learner(target, binders, examples, cost_model, builder, stop_callback)
     try:
