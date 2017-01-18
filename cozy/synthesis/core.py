@@ -375,9 +375,7 @@ def instantiate_examples(examples, vars : {EVar}, binders : [EVar]):
         examples = list(_instantiate_examples(examples, vars, v))
     return examples
 
-def fingerprint(e, examples, vars : {EVar}, binders : [EVar]):
-    # for v in binders:
-    #     examples = list(_instantiate_examples(examples, vars, v))
+def fingerprint(e, examples):
     return (e.type,) + tuple(eval(e, ex) for ex in examples)
 
 def make_constant_of_type(t):
@@ -396,8 +394,7 @@ class StopException(Exception):
     pass
 
 class Learner(object):
-    def __init__(self, target, binders, examples, cost_model, builder, stop_callback):
-        self.binders = binders
+    def __init__(self, target, examples, cost_model, builder, stop_callback):
         self.stop_callback = stop_callback
         self.cost_model = cost_model
         self.builder = builder
@@ -417,7 +414,6 @@ class Learner(object):
 
     def watch(self, new_target):
         self.target = new_target
-        self.vars = free_vars(new_target)
         self.cost_ceiling = self.cost_model.cost(new_target)
         self.update_watched_exps()
         if self.cost_model.is_monotonic():
@@ -444,7 +440,7 @@ class Learner(object):
                 continue
 
     def _fingerprint(self, e):
-        return fingerprint(e, self.examples, self.vars, self.binders)
+        return fingerprint(e, self.examples)
 
     def _on_exp(self, e, fate, *args):
         return
@@ -502,10 +498,6 @@ class Learner(object):
                     watched_e, watched_cost = watched
                     if cost < watched_cost:
                         print("Found potential improvement [{}] for [{}]".format(pprint(e), pprint(watched_e)))
-                        # while set(self.binders) & free_vars(e):
-                        #     print("stripping binders from {}".format(e))
-                        #     b = list(set(self.binders) & free_vars(e))[0]
-                        #     e = subst(e, { b.id : make_constant_of_type(b.type) })
                         return (watched_e, e)
 
             if self.last_progress < (self.current_size+1) // 2:
@@ -595,7 +587,7 @@ def improve(
 
     vars = list(free_vars(target) | free_vars(assumptions))
     examples = []
-    learner = Learner(target, binders, examples, cost_model, builder, stop_callback)
+    learner = Learner(target, examples, cost_model, builder, stop_callback)
     try:
         while True:
             # 1. find any potential improvement to any sub-exp of target

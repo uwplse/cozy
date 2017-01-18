@@ -45,6 +45,6 @@ class TestSynthesisCore(unittest.TestCase):
         binder = EVar("binder").with_type(handle_type)
         otherbinder = EVar("otherbinder").with_type(BOOL)
         examples = instantiate_examples(examples, vars, [binder, otherbinder])
-        fp = fingerprint(binder, examples, vars, [binder, otherbinder])
+        fp = fingerprint(binder, examples)
         print("fp = {}".format(fp))
         assert len(fp) > 1
