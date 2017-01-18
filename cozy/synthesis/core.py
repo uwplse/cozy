@@ -42,8 +42,12 @@ class Cache(object):
         self.data[self.tag(e.type)][e.type][size].append(e)
         self.size += 1
     def evict(self, e, size):
-        self.data[self.tag(e.type)][e.type][size].remove(e)
-        self.size -= 1
+        try:
+            self.data[self.tag(e.type)][e.type][size].remove(e)
+            self.size -= 1
+        except ValueError:
+            # this happens if e is not in the list, which is fine
+            pass
     def find(self, type=None, size=None):
         type_tag = None
         if type is not None:
