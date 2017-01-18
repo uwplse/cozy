@@ -550,9 +550,16 @@ class FixedBuilder(ExpBuilder):
                 if not valid(implies(self.assumptions, EUnaryOp("unique", e).with_type(BOOL))):
                     raise Exception("insanity: values of {} are not distinct".format(e))
 
-            # experimental criterion: "the" must be a singleton collection
+            # experimental criterion: "the" must be a 0- or 1-sized collection
             if isinstance(e, EUnaryOp) and e.op == "the":
-                if not valid(implies(self.assumptions, EBinOp(EUnaryOp("sum", EMap(e.e, mk_lambda(e.type, lambda x: ENum(1).with_type(INT))).with_type(TBag(INT))).with_type(INT), "<=", ENum(1).with_type(INT)))):
+                len = EUnaryOp("sum", EMap(e.e, mk_lambda(e.type, lambda x: ENum(1).with_type(INT))).with_type(TBag(INT))).with_type(INT)
+                if not valid(implies(self.assumptions, EBinOp(len, "<=", ENum(1).with_type(INT)))):
+                    # print("rejecting illegal application of 'the': {}".format(pprint(e)))
+                    continue
+                if not satisfy(EAll([self.assumptions, equal(len, ENum(0).with_type(INT))])):
+                    # print("rejecting illegal application of 'the': {}".format(pprint(e)))
+                    continue
+                if not satisfy(EAll([self.assumptions, equal(len, ENum(1).with_type(INT))])):
                     # print("rejecting illegal application of 'the': {}".format(pprint(e)))
                     continue
 
