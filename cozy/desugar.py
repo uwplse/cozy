@@ -52,11 +52,6 @@ def desugar(spec : Spec) -> Spec:
         list(spec.methods))
 
     # convert all collection types to sets of handles
-    def is_set_of_handle(t):
-        return isinstance(t, TSet) and isinstance(t.t, THandle)
-
-    extra_methods = []
-
     for i in range(len(spec.statevars)):
         v, t = spec.statevars[i]
         v = EVar(v).with_type(t)
@@ -76,7 +71,6 @@ def desugar(spec : Spec) -> Spec:
                 spec.assumptions = [_handleize(a, v) for a in spec.assumptions]
                 spec.assumptions.append(EUnaryOp("unique", v).with_type(BOOL))
                 spec.methods = [_handleize(m, v) for m in spec.methods]
-                spec.methods = extra_methods + spec.methods
         else:
             raise NotImplementedError(t)
 
