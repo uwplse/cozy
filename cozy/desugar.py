@@ -4,6 +4,34 @@ from cozy.typecheck import INT, BOOL, retypecheck
 from cozy.syntax_tools import BottomUpRewriter, subst, fresh_var, all_types, equal, implies, mk_lambda, pprint
 from cozy.solver import valid
 
+def _handleize(m : Method, statevar : EVar):
+    class Rw(BottomUpRewriter):
+        def visit_SCall(self, s):
+            return s
+        def visit_ELambda(self, e):
+            if e.arg.id == statevar.id:
+                return e
+            return ELambda(e.arg, self.visit(e.body))
+        def visit_EVar(self, v):
+            if v == statevar:
+                vt = statevar.type.t.value_type
+                return EMap(v, mk_lambda(statevar.type.t, lambda handle: EGetField(handle, "val").with_type(vt))).with_type(TBag(vt))
+            return v
+    m = Rw().visit(m)
+    if isinstance(m, Op):
+        class Rw(BottomUpRewriter):
+            def visit_SCall(self, s):
+                target = self.visit(s.target)
+                args = [self.visit(a) for a in s.args]
+                if s.func == "add" and target == statevar:
+                    args = [ENewHandle(args[0], statevar.type.t)]
+                elif s.func == "remove" and target == statevar:
+                    return SCall(target, "remove_all",
+                        (EFilter(statevar, mk_lambda(statevar.type.t, lambda handle: equal(EGetField(handle, "val").with_type(statevar.type.t.value_type), args[0]))).with_type(TSet(statevar.type.t)),))
+                return SCall(target, s.func, tuple(args))
+        m = Rw().visit(m)
+    return m
+
 @typechecked
 def desugar(spec : Spec) -> Spec:
 
@@ -28,33 +56,6 @@ def desugar(spec : Spec) -> Spec:
         return isinstance(t, TSet) and isinstance(t.t, THandle)
 
     extra_methods = []
-    def handleize(m : Method, statevar : EVar):
-        class Rw(BottomUpRewriter):
-            def visit_SCall(self, s):
-                return s
-            def visit_ELambda(self, e):
-                if e.arg.id == statevar.id:
-                    return e
-                return ELambda(e.arg, self.visit(e.body))
-            def visit_EVar(self, v):
-                if v == statevar:
-                    vt = statevar.type.t.value_type
-                    return EMap(v, mk_lambda(statevar.type.t, lambda handle: EGetField(handle, "val").with_type(vt))).with_type(TBag(vt))
-                return v
-        m = Rw().visit(m)
-        if isinstance(m, Op):
-            class Rw(BottomUpRewriter):
-                def visit_SCall(self, s):
-                    target = self.visit(s.target)
-                    args = [self.visit(a) for a in s.args]
-                    if s.func == "add" and target == statevar:
-                        args = [ENewHandle(args[0], statevar.type.t)]
-                    elif s.func == "remove" and target == statevar:
-                        return SCall(target, "remove_all",
-                            (EFilter(statevar, mk_lambda(statevar.type.t, lambda handle: equal(EGetField(handle, "val").with_type(statevar.type.t.value_type), args[0]))).with_type(TSet(statevar.type.t)),))
-                    return SCall(target, s.func, tuple(args))
-            m = Rw().visit(m)
-        return m
 
     for i in range(len(spec.statevars)):
         v, t = spec.statevars[i]
@@ -72,9 +73,9 @@ def desugar(spec : Spec) -> Spec:
                 t = TBag(ht)
                 v = EVar(v.id).with_type(t)
                 spec.statevars[i] = (v.id, t)
-                spec.assumptions = [handleize(a, v) for a in spec.assumptions]
+                spec.assumptions = [_handleize(a, v) for a in spec.assumptions]
                 spec.assumptions.append(EUnaryOp("unique", v).with_type(BOOL))
-                spec.methods = [handleize(m, v) for m in spec.methods]
+                spec.methods = [_handleize(m, v) for m in spec.methods]
                 spec.methods = extra_methods + spec.methods
         else:
             raise NotImplementedError(t)
