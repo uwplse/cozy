@@ -382,7 +382,11 @@ class ToZ3(Visitor):
                 solver.add(z3.Implies(mask[i], mask[i+1], ctx))
             return (mask, elems)
         elif isinstance(type, TRecord):
+            # TODO: use Z3 ADTs
             return { field : self.mkvar(ctx, solver, collection_depth, t, handle_vars) for (field, t) in type.fields }
+        elif isinstance(type, TTuple):
+            # TODO: use Z3 ADTs
+            return tuple(self.mkvar(ctx, solver, collection_depth, t, handle_vars) for t in type.ts)
         elif isinstance(type, THandle):
             h = z3.Int(fresh_name(), ctx)
             v = (h, self.mkvar(ctx, solver, collection_depth, type.value_type, handle_vars))
@@ -450,6 +454,8 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
             for (field, t) in type.fields:
                 res[field] = reconstruct(model, value[field], t)
             return FrozenDict(res)
+        elif isinstance(type, TTuple):
+            return tuple(reconstruct(model, v, t) for (v, t) in zip(value, type.ts))
         else:
             raise NotImplementedError(type)
 
