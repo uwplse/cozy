@@ -351,7 +351,7 @@ def values_of_type(value, value_type, desired_type):
         # bags or other collections.
         pass
 
-def instantiate_examples(examples, vars, binder):
+def _instantiate_examples(examples, vars, binder):
     for e in examples:
         found = 0
         if binder.id in e:
@@ -370,10 +370,14 @@ def instantiate_examples(examples, vars, binder):
             e2[binder.id] = mkval(binder.type)
             yield e2
 
-def fingerprint(e, examples, vars : {EVar}, binders : [EVar]):
-    fvs = free_vars(e)
+def instantiate_examples(examples, vars : {EVar}, binders : [EVar]):
     for v in binders:
-        examples = list(instantiate_examples(examples, vars, v))
+        examples = list(_instantiate_examples(examples, vars, v))
+    return examples
+
+def fingerprint(e, examples, vars : {EVar}, binders : [EVar]):
+    # for v in binders:
+    #     examples = list(_instantiate_examples(examples, vars, v))
     return (e.type,) + tuple(eval(e, ex) for ex in examples)
 
 def make_constant_of_type(t):
@@ -613,7 +617,9 @@ def improve(
                 examples.append(counterexample)
                 print("new example: {}".format(counterexample))
                 print("restarting with {} examples".format(len(examples)))
-                learner.reset(examples)
+                instantiated_examples = instantiate_examples(examples, set(vars), binders)
+                print("    ({} examples post-instantiation)".format(len(instantiated_examples)))
+                learner.reset(instantiated_examples)
             else:
                 # b. if correct: yield it, watch the new target, goto 2
                 assert cost_model.cost(new_target) < cost_model.cost(target), "whoops: {} ----> {}".format(target, new_target)

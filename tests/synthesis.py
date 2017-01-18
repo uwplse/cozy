@@ -23,7 +23,7 @@ class TestSynthesisCore(unittest.TestCase):
         examples = [{ "x": bag }]
         vars = [EVar("x").with_type(TBag(handle_type))]
         binder = EVar("binder").with_type(handle_type)
-        new_examples = list(instantiate_examples(examples, vars, binder))
+        new_examples = list(instantiate_examples(examples, vars, [binder]))
         assert new_examples == [
             { "x": bag, "binder": handle1 },
             { "x": bag, "binder": handle2 },
@@ -34,7 +34,7 @@ class TestSynthesisCore(unittest.TestCase):
         examples = [{ "x": bag }]
         vars = [EVar("x").with_type(TBag(handle_type))]
         binder = EVar("binder").with_type(BOOL)
-        new_examples = list(instantiate_examples(examples, vars, binder))
+        new_examples = list(instantiate_examples(examples, vars, [binder]))
         assert new_examples == [
             { "x": bag, "binder": False }]
 
@@ -44,6 +44,7 @@ class TestSynthesisCore(unittest.TestCase):
         vars = [EVar("x").with_type(TBag(handle_type))]
         binder = EVar("binder").with_type(handle_type)
         otherbinder = EVar("otherbinder").with_type(BOOL)
+        examples = instantiate_examples(examples, vars, [binder, otherbinder])
         fp = fingerprint(binder, examples, vars, [binder, otherbinder])
         print("fp = {}".format(fp))
         assert len(fp) > 1
