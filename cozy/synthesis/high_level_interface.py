@@ -212,59 +212,12 @@ class CoolCostModel(core.CostModel):
             raise
 
 def normalize(e):
-    from cozy.syntax_tools import BottomUpRewriter, compose, equal, break_conj
-    from cozy.solver import valid
-    from cozy.typecheck import retypecheck
-
-    class V(BottomUpRewriter):
-        def visit_EMap(self, e):
-            bag = self.visit(e.e)
-            fbody = self.visit(e.f.body)
-            if isinstance(bag, EMap):
-                return EMap(bag.e, compose(ELambda(e.f.arg, fbody), bag.f)).with_type(e.type)
-            return EMap(bag, ELambda(e.f.arg, fbody)).with_type(e.type)
-        def break_filter(self, e):
-            parts = list(break_conj(e.p.body))
-            if len(parts) == 1:
-                return e
-            arg = e.p.arg
-            e = e.e
-            for p in parts:
-                e = EFilter(e, ELambda(arg, p)).with_type(e.type)
-            return e
-        def visit_EFilter(self, e):
-            bag = self.visit(e.e)
-            pbody = self.visit(e.p.body)
-            if isinstance(bag, EMap):
-                return EMap(self.break_filter(EFilter(bag.e, compose(ELambda(e.p.arg, pbody), bag.f)).with_type(bag.e.type)), bag.f).with_type(e.type)
-            return self.break_filter(EFilter(bag, ELambda(e.p.arg, pbody)).with_type(e.type))
-        def visit_EFlatMap(self, e):
-            bag = self.visit(e.e)
-            fbody = self.visit(e.f.body)
-            if isinstance(bag, EMap):
-                e = EFlatMap(bag.e, compose(ELambda(e.f.arg, fbody), bag.f)).with_type(e.type)
-            else:
-                e = EFlatMap(bag, ELambda(e.f.arg, fbody)).with_type(e.type)
-            bag = e.e
-            fbody = e.f.body
-            if isinstance(fbody, EMap):
-                e = EMap(EFlatMap(bag, ELambda(e.f.arg, fbody.e)).with_type(TBag(fbody.e.type.t)), fbody.f).with_type(e.type)
-            return e
-
-    e2 = V().visit(e)
-    # assert retypecheck(e2)
-    assert valid(equal(e, e2))
-    e = e2
-
-    print(pprint(e2))
-
     for ee in all_exps(e):
         if isinstance(ee, ELambda):
             if not isinstance(ee.arg.type, THandle):
                 import pdb
                 pdb.set_trace()
                 assert False
-
     return e
 
 @typechecked
