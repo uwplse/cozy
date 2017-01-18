@@ -72,12 +72,13 @@ def map_cond(delta, f):
 def _push_delta_through_field_access(members : { str : syntax.Type }, lhs, delta):
     if isinstance(lhs, syntax.EVar):
         if isinstance(lhs.type, syntax.THandle):
-            bags = [ m for (m, ty) in members.items() if isinstance(ty, syntax.TSet) and ty.t == lhs.type ]
+            bags = [ m for (m, ty) in members.items() if type(ty) in (syntax.TSet, syntax.TBag) and ty.t == lhs.type ]
             if len(bags) == 0:
                 return (lhs, NoDelta())
             if len(bags) != 1:
                 raise NotImplementedError("TODO: handle the case where >1 members change in response to op")
-            bag = syntax.EVar(bags[0][0]).with_type(bags[0][1])
+            bag_id = bags[0]
+            bag = syntax.EVar(bag_id).with_type(members[bag_id])
             return (bag, BagElemUpdated(lhs, delta))
         elif isinstance(lhs, syntax.EVar) and lhs.id in members:
             return (lhs, delta)
