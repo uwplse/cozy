@@ -427,7 +427,7 @@ class CxxPrinter(common.Visitor):
         elif isinstance(t, TTuple):
             return "{{ {} }}".format(", ".join(self.initial_value(tt) for tt in t.ts))
         elif isinstance(t, library.TNativeMap):
-            return self.visit(t, "()")
+            return "()"
         elif self.visit(t, "").endswith("*"): # a little hacky
             return "(NULL)"
         else:
