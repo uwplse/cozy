@@ -73,7 +73,7 @@ class TVectorMap(TMap):
                 i = EBinOp(i, "*", ENum(count_cases(key.type.ts[i-1]))).with_type(TInt())
                 i = EBinOp(i, "+", self.to_index(ETupleGet(key, i).with_type(key.type.ts[i]))).with_type(TInt())
         else:
-            raise NotImplementedError()
+            raise NotImplementedError(key.type)
 
     @typechecked
     def update_key(self, m : Exp, k : Exp, v : EVar, change : Stm):
