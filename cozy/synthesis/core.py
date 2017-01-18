@@ -433,12 +433,6 @@ class Learner(object):
             except Exception:
                 print("WARNING: unable to watch expression {}".format(pprint(e)))
                 continue
-        # self.watched_exps = {
-        #     self._fingerprint(e) : (e, self.cost_model.cost(e))
-        #     for e in all_exps(self.target)
-        #     if not isinstance(e, ELambda) }
-        # self.watched_exps = {
-        #     self._fingerprint(e) : (e, self.cost_model.cost(e)) }
 
     def _fingerprint(self, e):
         return fingerprint(e, self.examples, self.vars, self.binders)
