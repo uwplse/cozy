@@ -365,10 +365,10 @@ def instantiate_examples(examples, vars, binder):
                 yield e2
                 found += 1
             # print("got {} ways to instantiate {}".format(found, binder.id))
-            if not found:
-                e2 = dict(e)
-                e2[binder.id] = mkval(binder.type)
-                yield e2
+        if not found:
+            e2 = dict(e)
+            e2[binder.id] = mkval(binder.type)
+            yield e2
 
 def fingerprint(e, examples, vars : {EVar}, binders : [EVar]):
     fvs = free_vars(e)
