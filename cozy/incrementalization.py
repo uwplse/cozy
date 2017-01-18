@@ -170,6 +170,18 @@ def derivative(
             if guards:
                 res = mk_conditional(syntax.EAll(guards), res)
             return res
+        elif isinstance(d, BagElemUpdated):
+            affected_key = key_func.apply_to(d.elem)
+            key_delta = recurse(key_func.body, key_func.arg, d.delta, ctx)
+            if isinstance(key_delta, NoDelta):
+                return MapUpdate(affected_key, recurse(value_func.body, value_func.arg, BagElemUpdated(d.elem, d.delta), ctx))
+            else:
+                new_key = apply_delta(key_func.apply_to(d.elem), key_delta)
+                on_rm = recurse(value_func.body, value_func.arg, BagRemove(d.elem), ctx)
+                on_add = recurse(value_func.body, value_func.arg, BagAdd(d.elem), ctx) # TODO: BagAdd(apply_delta(d.elem), d.delta)
+                return multi_delta([
+                    MapUpdate(affected_key, on_rm),
+                    MapUpdate(new_key, on_add)])
         elif isinstance(d, Conditional):
             return mk_conditional(
                 d.cond,
