@@ -435,15 +435,10 @@ class CxxPrinter(common.Visitor):
 
     def setup_types(self, spec, state_exps, sharing):
         self.types.clear()
-        for name, t in spec.types:
-            self.types[t] = name
-        handle_types = [t for t in all_types(spec) if isinstance(t, THandle)]
+        names = { t : name for (name, t) in spec.types }
         for t in all_types(spec):
             if t not in self.types and type(t) in [THandle, TRecord, TTuple, TEnum]:
-                if isinstance(t, THandle):
-                    name = "{}Handle".format(common.capitalize(t.statevar))
-                else:
-                    name = common.fresh_name("Type")
+                name = names.get(t, common.fresh_name("Type"))
                 self.types[t] = name
 
     def visit_Spec(self, spec, state_exps, sharing):
