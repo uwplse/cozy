@@ -211,15 +211,6 @@ class CoolCostModel(core.CostModel):
                     print("  return {}".format(repr(e2)))
             raise
 
-def normalize(e):
-    for ee in all_exps(e):
-        if isinstance(ee, ELambda):
-            if not isinstance(ee.arg.type, THandle):
-                import pdb
-                pdb.set_trace()
-                assert False
-    return e
-
 @typechecked
 def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], q : Query, timeout : Timeout) -> (EVar, Exp, [Query]):
     """
@@ -239,7 +230,7 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], q : 
         new_queries is a list of new query expressions
     """
     # q, = rename_args([q])
-    new_ret = normalize(q.ret)
+    new_ret = q.ret
     assumptions = assumptions + list(q.assumptions)
     all_types = ctx.all_types
     basic_types = ctx.basic_types
