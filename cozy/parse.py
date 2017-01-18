@@ -167,6 +167,7 @@ def make_parser():
                 | WORD OP_LT type OP_GT
                 | OP_OPEN_BRACE typednames OP_CLOSE_BRACE
                 | KW_ENUM OP_OPEN_BRACE enum_cases OP_CLOSE_BRACE
+                | OP_OPEN_PAREN typelist OP_CLOSE_PAREN
                 | KW_NATIVE STRINGLITERAL"""
         if len(p) == 2:
             p[0] = syntax.TNamed(p[1])
@@ -178,7 +179,10 @@ def make_parser():
             else:
                 p[0] = syntax.TApp(p[1], p[3])
         elif len(p) == 4:
-            p[0] = syntax.TRecord(p[2])
+            if p[1] == "{":
+                p[0] = syntax.TRecord(p[2])
+            elif p[1] == "(":
+                p[0] = syntax.TTuple(p[2])
 
     parsetools.multi(locals(), "enum_cases", "WORD", sep="OP_COMMA")
 
@@ -187,6 +191,7 @@ def make_parser():
         p[0] = (p[1], p[3])
 
     parsetools.multi(locals(), "typednames", "typedname", sep="OP_COMMA")
+    parsetools.multi(locals(), "typelist", "type", sep="OP_COMMA")
 
     def p_func(p):
         """func : KW_EXTERN WORD OP_OPEN_PAREN typednames OP_CLOSE_PAREN OP_COLON type OP_ASSIGN STRINGLITERAL"""
