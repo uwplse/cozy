@@ -166,7 +166,7 @@ def derivative(
             while isinstance(subdelta, Conditional) and (not {value_func.arg, x} & free_vars(subdelta.cond)):
                 guards.append(subdelta.cond)
                 subdelta = subdelta.delta
-            res = ForEachDelta(make_subgoal(d.e), x, MapUpdate(x, subdelta))
+            res = ForEachDelta(make_subgoal(d.e), x, MapUpdate(key_func.apply_to(x), subdelta))
             if guards:
                 res = mk_conditional(syntax.EAll(guards), res)
             return res
