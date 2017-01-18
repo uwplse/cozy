@@ -403,6 +403,7 @@ class Learner(object):
         self.examples = examples
         self.seen.clear()
         self.builder_iter = ()
+        self.last_progress = 0
         if update_watched_exps:
             self.update_watched_exps()
 
@@ -471,6 +472,7 @@ class Learner(object):
                     self.most_recent = (e, self.current_size, fp)
                     self.seen[fp] = (cost, e, self.current_size)
                     self.cache.add(e, size=self.current_size)
+                    self.last_progress = self.current_size
                     self._on_exp(e, "new")
                 else:
                     prev_cost, prev_exp, prev_size = prev
@@ -481,6 +483,7 @@ class Learner(object):
                         self.cache.evict(prev_exp, prev_size)
                         self.cache.add(e, size=self.current_size)
                         self.seen[fp] = (cost, e, self.current_size)
+                        self.last_progress = self.current_size
                         self._on_exp(e, "better")
                     else:
                         self._on_exp(e, "worse", prev_exp)
@@ -496,6 +499,9 @@ class Learner(object):
                         #     b = list(set(self.binders) & free_vars(e))[0]
                         #     e = subst(e, { b.id : make_constant_of_type(b.type) })
                         return (watched_e, e)
+
+            if self.last_progress < (self.current_size+1) // 2:
+                raise StopException("hit termination condition")
 
             self.current_size += 1
             self.builder_iter = self.builder.build(self.cache, self.current_size)
