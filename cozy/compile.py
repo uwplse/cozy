@@ -262,6 +262,8 @@ class CxxPrinter(common.Visitor):
         """Body is function: exp -> stm"""
         if isinstance(iterable, EEmptyList):
             return ""
+        elif isinstance(iterable, ESingleton):
+            return self.visit(body(iterable.e))
         elif isinstance(iterable, EMap):
             return self.for_each(
                 iterable.e,
