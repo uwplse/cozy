@@ -458,6 +458,7 @@ class Typechecker(Visitor):
         if not isinstance(s.map.type, syntax.TMap):
             self.report_err(s, "{} is not a map".format(s.map))
         self.visit(s.key)
+        self.ensure_type(s.key, s.map.type.k)
         with self.scope():
             self.env[s.val_var.id] = s.map.type.v
             s.val_var.type = s.map.type.v
