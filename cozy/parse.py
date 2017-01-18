@@ -254,8 +254,9 @@ def make_parser():
                | KW_SUM exp
                | KW_ANY exp
                | KW_ALL exp
+               | exp OP_DOT NUM
                | exp OP_DOT WORD
-               | OP_OPEN_PAREN exp OP_CLOSE_PAREN
+               | OP_OPEN_PAREN exp_list OP_CLOSE_PAREN
                | OP_OPEN_BRACE record_fields OP_CLOSE_BRACE
                | OP_OPEN_BRACKET exp OP_VBAR comprehension_body OP_CLOSE_BRACKET"""
         if len(p) == 2:
@@ -271,11 +272,20 @@ def make_parser():
             p[0] = syntax.EUnaryOp(p[1], p[2])
         elif len(p) == 4:
             if p[1] == "(":
-                p[0] = p[2]
+                exps = p[2]
+                if len(exps) == 0:
+                    raise Exception("illegal ()")
+                if len(exps) == 1:
+                    p[0] = exps[0]
+                if len(exps) > 1:
+                    p[0] = syntax.ETuple(tuple(exps))
             elif p[1] == "{":
                 p[0] = syntax.EMakeRecord(p[2])
             elif p[2] == ".":
-                p[0] = syntax.EGetField(p[1], p[3])
+                if isinstance(p[3], syntax.ENum):
+                    p[0] = syntax.ETupleGet(p[1], p[3].val)
+                else:
+                    p[0] = syntax.EGetField(p[1], p[3])
             elif p[1] == "|":
                 p[0] = syntax.EUnaryOp("len", p[2])
             else:

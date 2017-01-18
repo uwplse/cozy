@@ -404,8 +404,9 @@ class Typechecker(Visitor):
             e.type = DEFAULT_TYPE
 
     def visit_ETuple(self, e):
-        ts = tuple(self.visit(ee) for ee in e.es)
-        e.type = syntax.TTuple(ts)
+        for ee in e.es:
+            self.visit(ee)
+        e.type = syntax.TTuple(tuple(ee.type for ee in e.es))
 
     def visit_ETupleGet(self, e):
         self.visit(e.e)
