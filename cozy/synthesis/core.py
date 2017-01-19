@@ -203,6 +203,10 @@ class MemoryUsageCostModel(CostModel, BottomUpExplorer):
         return 1 # TODO: sizeof(enum)
     def visit_ECall(self, e):
         return 1 # TODO: sizeof(e.type), or cardinality estimation
+    def visit_ETupleGet(self, e):
+        return 1 # TODO: sizeof(e.type), or cardinality estimation
+    def visit_EGetField(self, e):
+        return 1 # TODO: sizeof(e.type), or cardinality estimation
     def visit_Exp(self, e):
         raise NotImplementedError(repr(e))
 
