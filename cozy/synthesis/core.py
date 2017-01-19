@@ -577,6 +577,11 @@ class FixedBuilder(ExpBuilder):
 
             yield e
 
+def truncate(s):
+    if len(s) > 60:
+        return s[:60] + "..."
+    return s
+
 @typechecked
 def improve(
         target : Exp,
@@ -611,7 +616,7 @@ def improve(
             if counterexample is not None:
                 # a. if incorrect: add example, reset the learner
                 examples.append(counterexample)
-                print("new example: {}".format(counterexample))
+                print("new example: {}".format(truncate(repr(counterexample))))
                 print("restarting with {} examples".format(len(examples)))
                 instantiated_examples = instantiate_examples(examples, set(vars), binders)
                 print("    ({} examples post-instantiation)".format(len(instantiated_examples)))
