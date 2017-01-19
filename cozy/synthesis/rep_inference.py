@@ -40,6 +40,17 @@ def dedup(vs : [(EVar, Exp)]) -> ([(EVar, Exp)], { EVar : EVar }):
             m[e] = v
     return ([(v, e) for (e, v) in m.items()], remap)
 
+def pprint_rep(r):
+    (st, e) = r
+    print("-" * 20)
+    for v, ve in st:
+        print("{} = {}".format(pprint(v), pprint(ve)))
+    print("return {}".format(pprint(e)))
+
+def pprint_reps(r):
+    for x in r:
+        pprint_rep(x)
+
 def infer_rep(state : [EVar], qexp : Exp, validate_types : bool = False) -> [([(EVar, Exp)], Exp)]:
     """
     Given state vars and an expression, infer suitable representations for
@@ -107,6 +118,8 @@ def infer_rep(state : [EVar], qexp : Exp, validate_types : bool = False) -> [([(
                     yield (st2 + st1, get)
         def visit_EUnaryOp(self, e, k):
             yield from self.visit(e.e, compose(k, mk_lambda(e.e.type, lambda x: EUnaryOp(e.op, x).with_type(e.type))))
+        def visit_ESingleton(self, e, k):
+            yield from self.visit(e.e, compose(k, mk_lambda(e.e.type, lambda x: ESingleton(x).with_type(e.type))))
         def visit_EFlatMap(self, e, k):
             # TODO: if we can prove something about the cardinality of the set,
             # maybe we can materialize the join.
