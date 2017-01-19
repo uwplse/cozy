@@ -122,9 +122,10 @@ def infer_key_and_value(filter, binders, state : {EVar} = set()):
             yield b, key, val
 
 class BinderBuilder(core.Builder):
-    def __init__(self, binders, *args, **kwargs):
+    def __init__(self, binders, state_vars : [EVar], *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.binders = binders
+        self.state_vars = state_vars
     def build(self, cache, size):
         yield from super().build(cache, size)
         # print("  CACHE")
@@ -144,23 +145,23 @@ class BinderBuilder(core.Builder):
                 # exists?
                 yield ENot(empty)
 
+                # construct map lookups
+                if isinstance(bag, EFilter):
+                    binder = bag.p.arg
+                    for (_, key_proj, key_lookup) in infer_key_and_value(bag.p.body, [binder], state=set(self.state_vars)):
+                        # print("for {}: {} {} {} {}".format(pprint(bag.p.body), pprint(bag), pprint(binder), pprint(key_proj), pprint(key_lookup)))
+                        yield EMapGet(
+                            EMakeMap(
+                                bag.e,
+                                ELambda(binder, key_proj),
+                                mk_lambda(bag.type, lambda xs: xs)).with_type(TMap(key_proj.type, bag.type)),
+                            key_lookup).with_type(bag.type)
+
         if size >= 3:
             for (sz1, sz2) in pick_to_sum(2, size - 1):
                 for bag in itertools.chain(cache.find(type=TBag, size=sz1), cache.find(type=TSet, size=sz1)):
                     if not isinstance(bag.type.t, THandle):
                         continue
-
-                    # construct map lookups
-                    for filt in cache.find(type=BOOL, size=sz2):
-                        for (binder, key_proj, key_lookup) in infer_key_and_value(filt, self.binders):
-                            if binder.type == bag.type.t:
-                                # print("for {}: {} {} {} {}".format(pprint(filt), pprint(bag), pprint(binder), pprint(key_proj), pprint(key_lookup)))
-                                yield EMapGet(
-                                    EMakeMap(
-                                        bag,
-                                        ELambda(binder, key_proj),
-                                        mk_lambda(bag.type, lambda xs: xs)).with_type(TMap(key_proj.type, bag.type)),
-                                    key_lookup).with_type(bag.type)
 
                     # if not isinstance(bag, EMapGet):
                     #     print("-----> " + pprint(bag) + " : " + pprint(bag.type))
@@ -249,7 +250,7 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], q : 
     for e in roots + args + ctors:
         print(" --> {}".format(pprint(e)))
 
-    b = BinderBuilder(binders, roots + binders + ctors + args, basic_types, cost_model=CoolCostModel(state))
+    b = BinderBuilder(binders, state, roots + binders + ctors + args, basic_types, cost_model=CoolCostModel(state))
     new_state_vars = state
     state_proj_exprs = state
     try:
