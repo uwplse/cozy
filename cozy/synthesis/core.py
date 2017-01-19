@@ -7,7 +7,7 @@ from cozy.target_syntax import *
 from cozy.typecheck import INT, BOOL
 from cozy.syntax_tools import subst, replace, pprint, free_vars, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda
 from cozy.common import Visitor, fresh_name, typechecked, unique, pick_to_sum, cross_product
-from cozy.solver import satisfy, valid
+from cozy.solver import satisfy, satisfiable, valid
 from cozy.evaluation import HoleException, eval, all_envs_for_hole, mkval
 
 MISSING = object()
@@ -560,10 +560,10 @@ class FixedBuilder(ExpBuilder):
                 if not valid(implies(self.assumptions, EBinOp(len, "<=", ENum(1).with_type(INT)))):
                     # print("rejecting illegal application of 'the': {}".format(pprint(e)))
                     continue
-                if not satisfy(EAll([self.assumptions, equal(len, ENum(0).with_type(INT))])):
+                if not satisfiable(EAll([self.assumptions, equal(len, ENum(0).with_type(INT))])):
                     # print("rejecting illegal application of 'the': {}".format(pprint(e)))
                     continue
-                if not satisfy(EAll([self.assumptions, equal(len, ENum(1).with_type(INT))])):
+                if not satisfiable(EAll([self.assumptions, equal(len, ENum(1).with_type(INT))])):
                     # print("rejecting illegal application of 'the': {}".format(pprint(e)))
                     continue
 
@@ -572,8 +572,10 @@ class FixedBuilder(ExpBuilder):
             # expressions to artificially lower the estimated cardinality of a
             # collection.
             if isinstance(e, EFilter):
-                if not valid(implies(self.assumptions, ENot(equal(e, e.e)))):
+                if not satisfiable(EAll([self.assumptions, ENot(equal(e, e.e))])):
                     continue
+                    import sys
+                    print("rejecting stupid filter {}".format(pprint(e)), file=sys.stderr)
 
             yield e
 
