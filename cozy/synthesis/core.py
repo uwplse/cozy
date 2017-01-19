@@ -456,7 +456,10 @@ class Learner(object):
     def forget_most_recent(self):
         (e, size, fp) = self.most_recent
         self.cache.evict(e, size)
-        self.seen[fp] = self.overwritten
+        if self.overwritten is None:
+            del self.seen[fp]
+        else:
+            self.seen[fp] = self.overwritten
         self.most_recent = self.overwritten = None
 
     def next(self):
