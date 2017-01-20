@@ -3,7 +3,7 @@ import unittest
 from cozy.synthesis.high_level_interface import CoolCostModel
 from cozy.typecheck import INT, retypecheck
 from cozy.target_syntax import *
-from cozy.syntax_tools import equal, pprint
+from cozy.syntax_tools import equal, pprint, fresh_var, mk_lambda
 from cozy.solver import valid
 
 class TestCostModel(unittest.TestCase):
@@ -59,3 +59,21 @@ class TestCostModel(unittest.TestCase):
         cost = CoolCostModel([]).cost
 
         assert cost(e1) < cost(e2), "{} vs {}".format(cost(e1), cost(e2))
+
+    def test_runtime_make_map(self):
+        users = EVar("users").with_type(TBag(TInt()))
+        g = EVar("g").with_type(TInt())
+        u = EVar("u").with_type(TInt())
+        x = EFilter(users, mk_lambda(TInt(), lambda e: equal(e, g)))
+        e1 = EMapGet(EMakeMap(x, mk_lambda(TInt(), lambda e: e), mk_lambda(TBag(TInt()), lambda es: es)), u)
+        e2 = EFilter(x, mk_lambda(TInt(), lambda e: equal(e, u)))
+        assert retypecheck(e1)
+        assert retypecheck(e2)
+        print(pprint(e1))
+        print(pprint(e2))
+        print("="*20)
+        cost = CoolCostModel([users]).cost
+        cost1 = cost(e1)
+        print("="*10)
+        cost2 = cost(e2)
+        assert cost1 > cost2 #, "{} vs {}".format(cost1, cost2)
