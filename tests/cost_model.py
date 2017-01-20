@@ -3,7 +3,7 @@ import unittest
 from cozy.synthesis.high_level_interface import CoolCostModel
 from cozy.typecheck import INT, retypecheck
 from cozy.target_syntax import *
-from cozy.syntax_tools import equal, pprint, fresh_var, mk_lambda
+from cozy.syntax_tools import equal, implies, pprint, fresh_var, mk_lambda
 from cozy.solver import valid
 
 class TestCostModel(unittest.TestCase):
@@ -76,4 +76,18 @@ class TestCostModel(unittest.TestCase):
         cost1 = cost(e1)
         print("="*10)
         cost2 = cost(e2)
-        assert cost1 > cost2 #, "{} vs {}".format(cost1, cost2)
+        assert cost1 > cost2, "{} vs {}".format(cost1, cost2)
+
+    def test_concat(self):
+        xs = EVar("xs").with_type(TBag(INT))
+        a = EVar("a").with_type(INT)
+        b = EVar("b").with_type(INT)
+        e1 = EFilter(xs, mk_lambda(INT, lambda x: EBinOp(equal(x, a), "or", equal(x, b))))
+        e2 = EBinOp(EFilter(xs, mk_lambda(INT, lambda x: equal(x, a))), "+", EFilter(xs, mk_lambda(INT, lambda x: equal(x, b))))
+        assert retypecheck(e1)
+        assert retypecheck(e2)
+        assert valid(implies(ENot(equal(a, b)), equal(e1, e2)))
+        cost = CoolCostModel([xs]).cost
+        cost1 = cost(e1)
+        cost2 = cost(e2)
+        assert cost1 > cost2, "{} vs {}".format(cost1, cost2)
