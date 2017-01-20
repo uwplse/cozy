@@ -1,32 +1,13 @@
-from collections import OrderedDict
-import datetime
 import itertools
 import sys
 
 from cozy.target_syntax import *
 from cozy.typecheck import INT, BOOL
 from cozy.syntax_tools import subst, replace, pprint, free_vars, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda
-from cozy.common import Visitor, fresh_name, typechecked, unique, pick_to_sum, cross_product
+from cozy.common import Visitor, fresh_name, typechecked, unique, pick_to_sum, cross_product, OrderedDefaultDict, nested_dict
 from cozy.solver import satisfy, satisfiable, valid
 from cozy.evaluation import eval, mkval
 from cozy.cost_model import CostModel
-
-MISSING = object()
-class OrderedDefaultDict(OrderedDict):
-    def __init__(self, factory):
-        super().__init__()
-        self.factory = factory
-    def __missing__(self, k):
-        v = self.get(k, MISSING)
-        if v is MISSING:
-            v = self.factory()
-            self[k] = v
-        return v
-
-def nested_dict(n, t):
-    if n <= 0:
-        return t()
-    return OrderedDefaultDict(lambda: nested_dict(n-1, t))
 
 class Cache(object):
     def __init__(self, items=None):
@@ -347,7 +328,6 @@ class FixedBuilder(ExpBuilder):
                 e = fixup_binders(e, self.binders_to_use)
             except Exception:
                 continue
-                import sys
                 print("WARNING: skipping built expression {}".format(pprint(e)), file=sys.stderr)
 
             # experimental criterion: bags of handles must have distinct values
@@ -381,7 +361,6 @@ class FixedBuilder(ExpBuilder):
             if isinstance(e, EFilter):
                 if not satisfiable(EAll([self.assumptions, ENot(equal(e, e.e))])):
                     continue
-                    import sys
                     print("rejecting stupid filter {}".format(pprint(e)), file=sys.stderr)
 
             yield e

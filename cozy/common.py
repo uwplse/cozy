@@ -1,4 +1,4 @@
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 from functools import total_ordering, wraps
 import re
 import sys
@@ -204,6 +204,23 @@ class FrozenDict(dict):
         return self.hc
     def __lt__(self, other):
         return tuple(sorted(self.items())) < tuple(sorted(other.items()))
+
+_MISSING = object()
+class OrderedDefaultDict(OrderedDict):
+    def __init__(self, factory):
+        super().__init__()
+        self.factory = factory
+    def __missing__(self, k):
+        v = self.get(k, _MISSING)
+        if v is _MISSING:
+            v = self.factory()
+            self[k] = v
+        return v
+
+def nested_dict(n, t):
+    if n <= 0:
+        return t()
+    return OrderedDefaultDict(lambda: nested_dict(n-1, t))
 
 _i = 0
 def fresh_name(hint="name"):
