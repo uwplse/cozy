@@ -78,17 +78,11 @@ class BinderBuilder(core.ExpBuilder):
             # for r in self.roots:
             #     print(" {} : {};".format(pprint(r), pprint(r.type)), end="")
             # print()
-            for r in self.roots:
-                if not core.contains_holes(r):
-                    yield r
             yield EBool(True).with_type(BOOL)
             yield EBool(False).with_type(BOOL)
+            yield from self.roots
             yield from self.binders
             return
-
-        for r in self.roots:
-            if core.contains_holes(r):
-                yield from core.instantiate(r, cache, size - 1)
 
         for e in cache.find(type=TRecord, size=size-1):
             for (f,t) in e.type.fields:

@@ -4,11 +4,6 @@ from functools import total_ordering
 from cozy.target_syntax import *
 from cozy.common import Visitor, FrozenDict, all_distinct
 
-class HoleException(Exception):
-    def __init__(self, hole, env):
-        self.hole = hole
-        self.env = env
-
 @total_ordering
 class hashable_defaultdict(defaultdict):
     def __hash__(self):
@@ -68,8 +63,6 @@ class Bag(object):
 class Evaluator(Visitor):
     def visit_EVar(self, v, env):
         return env[v.id]
-    def visit_EHole(self, e, env):
-        raise HoleException(e, dict(env))
     def visit_ENum(self, n, env):
         return n.val
     def visit_EBool(self, b, env):
@@ -227,17 +220,3 @@ def mkval(type):
     if isinstance(type, TTuple):
         return tuple(mkval(t) for t in type.ts)
     raise NotImplementedError(type)
-
-class EnvCollector(Evaluator):
-    def __init__(self, hole_name):
-        self.hole_name = hole_name
-        self.envs = []
-    def visit_EHole(self, e, env):
-        if e.name == self.hole_name:
-            self.envs.append(dict(env))
-        return mkval(e.type)
-
-def all_envs_for_hole(e, env, hole_name):
-    x = EnvCollector(hole_name)
-    x.visit(e, env)
-    return x.envs

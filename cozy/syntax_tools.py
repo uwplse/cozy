@@ -244,9 +244,6 @@ class PrettyPrinter(common.Visitor):
     def visit_ELet(self, e):
         return "let {} = {} in {}".format(e.id, self.visit(e.e1), self.visit(e.e2))
 
-    def visit_EHole(self, e):
-        return "?{}".format(e.name) if not hasattr(e, "type") else "?{}:{}".format(e.name, self.visit(e.type))
-
     def visit_CPull(self, c):
         return "{} <- {}".format(c.id, self.visit(c.e))
 
@@ -409,8 +406,6 @@ def subst(exp, replacements):
         allfvs |= {fv.id for fv in free_vars(val)}
 
     class Subst(common.Visitor):
-        def visit_EHole(self, hole):
-            return replacements.get(hole.name, hole)
         def visit_EVar(self, var):
             return replacements.get(var.id, var)
         def visit_EListComprehension(self, lcmp):
@@ -502,19 +497,6 @@ def alpha_equivalent(e1, e2, allow_rename=lambda v1, v2: False):
             elif e1.id in self.remap:
                 e1id = self.remap[e1.id]
             return e1id == e2.id
-        def visit_EHole(self, e1, e2):
-            if not isinstance(e2, target_syntax.EHole):
-                return False
-            e1id = e1.name
-            if allow_rename(e1, e2):
-                if e1.name not in self.remap:
-                    e1id = e2.name
-                    self.remap[e1.name] = e1id
-                else:
-                    e1id = self.remap[e1.name]
-            elif e1.name in self.remap:
-                e1id = self.remap[e1.name]
-            return e1id == e2.name
         def visit_ETuple(self, e1, e2):
             return all(self.visit(ee1, ee2) for (ee1, ee2) in zip(e1.es, e2.es))
         def visit_ELambda(self, e1, e2):

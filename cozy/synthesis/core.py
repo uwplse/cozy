@@ -60,53 +60,11 @@ class Cache(object):
         es = [ e for (e, size) in self ]
         return random.sample(es, min(n, len(es)))
 
-@typechecked
-def instantiate(e : Exp, cache : Cache, total_size : int):
-    holes = list(find_holes(e))
-    if not holes:
-        if total_size == 1:
-            yield e
-        return
-    for sizes in pick_to_sum(len(holes), total_size):
-        exp_lists = tuple(list(cache.find(type=hole.type, size=sz)) for (hole, sz) in zip(holes, sizes))
-        for exps in cross_product(exp_lists):
-            # print("exps:  {}".format(", ".join([pprint(e) for e in exps])))
-            # print("types: {}".format(", ".join([pprint(e.type) for e in exps])))
-            remap = { hole.name : e for (hole, e) in zip(holes, exps) }
-            res = subst(e, remap)
-            # print(pprint(e) + " ----> " + pprint(res))
-            yield res
-
 class ExpBuilder(object):
     def build(self, cache, size):
         raise NotImplementedError()
     def with_roots(self, new_roots):
         raise NotImplementedError()
-
-def find_holes(e):
-    """
-    Yields holes in evaluation order
-    """
-    class V(BottomUpExplorer):
-        def visit_EHole(self, e):
-            return (e,)
-        def visit_EApp(self, e):
-            """
-            An application node has children (function, arg), but the arg is
-            evaluated first so we need to special-case this and reverse the
-            exploration order.
-            """
-            return itertools.chain(
-                self.visit(e.arg),
-                self.visit(e.f))
-        def join(self, x, children):
-            return itertools.chain(*children)
-    return unique(V().visit(e), key=lambda g: g.name)
-
-def contains_holes(e):
-    for g in find_holes(e):
-        return True
-    return False
 
 def values_of_type(value, value_type, desired_type):
     # see evaluation.mkval for info on the structure of values

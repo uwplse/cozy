@@ -6,8 +6,8 @@ from cozy.target_syntax import *
 class TestAlphaEquivalent(unittest.TestCase):
 
     def test_allow_rename(self):
-        x = EHole("x", TInt(), None)
-        y = EHole("y", TInt(), None)
+        x = EVar("x").with_type(TInt())
+        y = EVar("y").with_type(TInt())
         for b in [True, False]:
             aeq = alpha_equivalent(x, y, allow_rename=lambda v1, v2: b)
             assert aeq == b, "{} is {n}alpha-equiv to {}".format(pprint(x), pprint(y), n="" if aeq else "not ")

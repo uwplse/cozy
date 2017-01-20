@@ -7,9 +7,6 @@ primitives the tool can output and use during synthesis.
 from cozy.syntax import *
 from cozy.common import declare_case, typechecked
 
-# Holes for synthesized expressions
-EHole = declare_case(Exp, "EHole", ["name", "type", "builder"])
-
 # Lambdas
 EApp = declare_case(Exp, "EApp", ["f", "arg"])
 class ELambda(Exp):
