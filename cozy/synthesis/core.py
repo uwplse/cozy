@@ -244,79 +244,8 @@ class RunTimeCostModel(CostModel, BottomUpExplorer):
 class ExpBuilder(object):
     def build(self, cache, size):
         raise NotImplementedError()
-    def cost_model(self):
-        return ConstantCost()
-
-class Builder(ExpBuilder):
-    def __init__(self, roots, build_sums = True, cost_model = ConstantCost()):
-        self.roots = roots
-        self.build_sums = build_sums
-        self.cm = cost_model
-
-    def cost_model(self):
-        return self.cm
-
-    def build(self, cache, size):
-        if size == 1:
-            # for r in self.roots:
-            #     print(" {} : {};".format(pprint(r), pprint(r.type)), end="")
-            # print()
-            for r in self.roots:
-                if not contains_holes(r):
-                    yield r
-            return
-
-        for r in self.roots:
-            if contains_holes(r):
-                yield from instantiate(r, cache, size - 1)
-
-        for e in cache.find(type=TRecord, size=size-1):
-            for (f,t) in e.type.fields:
-                yield EGetField(e, f).with_type(t)
-        if self.build_sums:
-            for e in itertools.chain(cache.find(type=TBag(INT), size=size-1), cache.find(type=TSet(INT), size=size-1)):
-                yield EUnaryOp("sum", e).with_type(INT)
-        for e in cache.find(type=TBag, size=size-1):
-            yield EUnaryOp("the", e).with_type(TMaybe(e.type.t))
-        for e in cache.find(type=THandle, size=size-1):
-            yield EGetField(e, "val").with_type(e.type.value_type)
-        for e in cache.find(type=TTuple, size=size-1):
-            for n in range(len(e.type.ts)):
-                yield ETupleGet(e, n).with_type(e.type.ts[n])
-        for e in cache.find(type=BOOL, size=size-1):
-            yield EUnaryOp("not", e).with_type(BOOL)
-
-        for (sz1, sz2) in pick_to_sum(2, size - 1):
-            for a1 in cache.find(type=INT, size=sz1):
-                for a2 in cache.find(type=INT, size=sz2):
-                    # yield EBinOp(a1, "+", a2).with_type(INT)
-                    # yield EBinOp(a1, "-", a2).with_type(INT)
-                    yield EBinOp(a1, ">", a2).with_type(BOOL)
-                    yield EBinOp(a1, "<", a2).with_type(BOOL)
-                    yield EBinOp(a1, ">=", a2).with_type(BOOL)
-                    yield EBinOp(a1, "<=", a2).with_type(BOOL)
-            for a1 in cache.find(type=TBag, size=sz1):
-                if not isinstance(a1.type.t, THandle):
-                    continue
-                for a2 in cache.find(type=a1.type, size=sz2):
-                    yield EBinOp(a1, "+", a2).with_type(a1.type)
-            for a1 in cache.find(type=BOOL, size=sz1):
-                for a2 in cache.find(type=BOOL, size=sz2):
-                    yield EBinOp(a1, "and", a2).with_type(BOOL)
-                    yield EBinOp(a1, "or", a2).with_type(BOOL)
-            for a1 in cache.find(size=sz1):
-                if not isinstance(a1.type, TMap):
-                    for a2 in cache.find(type=a1.type, size=sz2):
-                        yield EBinOp(a1, "==", a2).with_type(BOOL)
-            for m in cache.find(type=TMap, size=sz1):
-                for k in cache.find(type=m.type.k, size=sz2):
-                    yield EMapGet(m, k).with_type(m.type.v)
-
     def with_roots(self, new_roots):
-        b = Builder(list(new_roots) + list(self.roots))
-        b.build_sums = self.build_sums
-        b.cm = self.cm
-        return b
+        raise NotImplementedError()
 
 def find_holes(e):
     """
@@ -581,6 +510,8 @@ class FixedBuilder(ExpBuilder):
                     print("rejecting stupid filter {}".format(pprint(e)), file=sys.stderr)
 
             yield e
+    def with_roots(self, roots):
+        return FixedBuilder(self.wrapped_builder.with_roots(roots), self.binders_to_use, self.assumptions)
 
 def truncate(s):
     if len(s) > 60:
@@ -593,7 +524,7 @@ def improve(
         assumptions : Exp,
         binders : [EVar],
         cost_model : CostModel,
-        builder : Builder,
+        builder : ExpBuilder,
         stop_callback):
 
     target = fixup_binders(target, binders)
