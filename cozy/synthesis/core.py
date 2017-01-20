@@ -573,11 +573,18 @@ def improve(
                 learner.reset(instantiated_examples)
             else:
                 # b. if correct: yield it, watch the new target, goto 2
-                if cost_model.cost(new_target) > cost_model.cost(target):
+                old_cost = cost_model.cost(target)
+                new_cost = cost_model.cost(new_target)
+                if new_cost > old_cost:
                     print("whoops: {} ----> {}".format(target, new_target))
+                    from .rep_inference import infer_rep, pprint_reps
+                    for x in [old_e, new_e, target, new_target]:
+                        pprint_reps(infer_rep(cost_model.state_vars, x))
                     # import pdb
                     # pdb.set_trace()
                     assert False
+                if new_cost == old_cost:
+                    continue
                 print("found improvement: {} -----> {}".format(pprint(old_e), pprint(new_e)))
                 print("cost: {} -----> {}".format(cost_model.cost(old_e), cost_model.cost(new_e)))
                 learner.reset(instantiate_examples(examples, set(vars), binders), update_watched_exps=False)
