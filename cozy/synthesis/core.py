@@ -371,16 +371,19 @@ class Learner(object):
             except Exception:
                 print("WARNING: unable to watch expression {}".format(pprint(e)))
                 continue
+        # for (fp, (e, cost)) in self.watched_exps.items():
+        #     print("WATCHING {} (fp={}, cost={})".format(pprint(e), hash(fp), cost))
 
     def _fingerprint(self, e):
         return fingerprint(e, self.examples)
 
     def _on_exp(self, e, fate, *args):
         return
-        if isinstance(e, EMapGet):
-            print(" ---> [{}] {} {}".format(fate, pprint(e), ", ".join(pprint(e) for e in args)))
-        if isinstance(e, EBinOp) and e.op == "==":
-            print(" ---> [{}] {} {}".format(fate, pprint(e), ", ".join(pprint(e) for e in args)))
+        if (isinstance(e, EMapGet) or
+                isinstance(e, EFilter) or
+                (isinstance(e, EBinOp) and e.op == "==" and (isinstance(e.e1, EVar) or isinstance(e.e2, EVar))) or
+                (isinstance(e, EBinOp) and e.op == ">=" and (isinstance(e.e1, EVar) or isinstance(e.e2, EVar)))):
+            print(" ---> [{}] {}; {}".format(fate, pprint(e), ", ".join(pprint(e) for e in args)))
 
     def forget_most_recent(self):
         (e, size, fp) = self.most_recent
@@ -424,7 +427,7 @@ class Learner(object):
                         self.cache.add(e, size=self.current_size)
                         self.seen[fp] = (cost, e, self.current_size)
                         self.last_progress = self.current_size
-                        self._on_exp(e, "better")
+                        self._on_exp(e, "better", prev_exp)
                     else:
                         self._on_exp(e, "worse", prev_exp)
                         continue
