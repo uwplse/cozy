@@ -1,7 +1,7 @@
 import unittest
 
-from cozy.synthesis.rep_inference import infer_rep, pprint_rep
-from cozy.syntax_tools import mk_lambda, pprint, free_vars
+from cozy.synthesis.rep_inference import infer_rep, pprint_rep, pprint_reps
+from cozy.syntax_tools import mk_lambda, pprint, free_vars, all_exps
 from cozy.target_syntax import *
 from cozy.typecheck import typecheck, retypecheck
 
@@ -76,3 +76,17 @@ class TestRepInference(unittest.TestCase):
         for (st, ee) in infer_rep(state, e, validate_types=False):
             # expression uses 'rosterItems', so we need some inferred state
             assert len(st) > 0, pprint_rep((st, ee))
+
+    def test_nested_makemap(self):
+        state = EVar("st").with_type(TBag(TTuple((TInt(), TInt()))))
+        x = EVar("x").with_type(state.type.t.ts[0])
+        y = EVar("y").with_type(state.type.t.ts[1])
+        e1 = EMapGet(EMakeMap(state, mk_lambda(state.type.t, lambda k: ETupleGet(k, 0)), mk_lambda(state.type, lambda vs: vs)), x)
+        e2 = EMapGet(EMakeMap(e1,    mk_lambda(state.type.t, lambda k: ETupleGet(k, 1)), mk_lambda(state.type, lambda vs: vs)), y)
+        retypecheck(e2)
+        reps = list(infer_rep([state], e2, validate_types=True))
+        assert reps
+        pprint_reps(reps)
+        for (st, ee) in reps:
+            for e in all_exps(ee):
+                assert not isinstance(e, EMakeMap)

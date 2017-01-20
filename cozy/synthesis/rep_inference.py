@@ -86,36 +86,17 @@ def infer_rep(state : [EVar], qexp : Exp, validate_types : bool = False) -> [([(
                     for (st2, body2) in self.visit(e.f.body, mk_lambda(e.e.type, lambda x: x)):
                         for (st3, res) in self.apply_k(k, EMap(exp, ELambda(e.f.arg, body2)).with_type(e.type)):
                             yield (st1 + st2 + st3, res)
-        def visit_EMakeMap(self, e, k):
-            assert type(e.type) is TMap
-            fvs = free_vars(e)
-            if all(v in state for v in fvs):
-                if k.body == k.arg:
-                    v = fresh_var(e.type)
-                    yield ([(v, e)], v)
-                else:
-                    # Rewrite e.g. "k = (\m -> sum m[e])" into "k = (\vals -> sum vals)"
-                    karg = k.arg
-                    kbody = k.body
-                    vals = fresh_var(e.value.body.type)
-                    keys = []
-                    class Rewriter(BottomUpRewriter):
-                        def visit_EMapGet(self, mg):
-                            if mg.map == karg:
-                                keys.append(mg.key)
-                                return vals
-                            else:
-                                return mg
-                    new_k = ELambda(vals, Rewriter().visit(kbody))
-                    if len(keys) == 1 and all(v in state for v in free_vars(new_k)):
-                        m = fresh_var(TMap(e.type.k, new_k.body.type))
-                        mdef = EMakeMap(e.e, e.key, compose(new_k, e.value)).with_type(m.type)
-                        for (st, res) in self.visit(keys[0], mk_lambda(m.type.k, lambda k: EMapGet(m, k).with_type(kbody.type))):
-                            yield (st + [(m, mdef)], res)
+        def visit_EMakeMap(self, e, k, value_projection=None):
+            if not all(v in state for v in (free_vars(e.key) | free_vars(e.value))):
+                return
+            if value_projection is None:
+                value_projection = mk_lambda(e.type.v, lambda vs: vs)
+            new_val = compose(value_projection, e.value)
+            yield from self.visit(e.e, compose(k, mk_lambda(e.e.type, lambda bag: EMakeMap(bag, e.key, new_val).with_type(TMap(e.type.k, value_projection.body.type)))))
         def visit_EMapGet(self, e, k):
-            for (st1, key) in self.visit(e.key, mk_lambda(e.key.type, lambda x: x)):
-                for (st2, get) in self.visit(e.map, compose(k, mk_lambda(e.map.type, lambda x: EMapGet(x, key).with_type(e.type)))):
-                    yield (st2 + st1, get)
+            for (st1, key) in self.visit(e.key):
+                for (st2, m) in self.visit(e.map, value_projection=k):
+                    yield (st1 + st2, EMapGet(m, key).with_type(m.type.v))
         def visit_EUnaryOp(self, e, k):
             yield from self.visit(e.e, compose(k, mk_lambda(e.e.type, lambda x: EUnaryOp(e.op, x).with_type(e.type))))
         def visit_ESingleton(self, e, k):
@@ -146,12 +127,12 @@ def infer_rep(state : [EVar], qexp : Exp, validate_types : bool = False) -> [([(
                 yield ([(v, proj)], v)
             else:
                 yield from self.apply_k(k, e)
-        def visit(self, e, k=None):
+        def visit(self, e, k=None, **kwargs):
             if k is None:
                 k = mk_lambda(e.type, lambda x: x)
             fvs = free_vars(e)
             if fvs:
-                yield from super().visit(e, k)
+                yield from super().visit(e, k, **kwargs)
             else:
                 yield from self.apply_k(k, e)
 
