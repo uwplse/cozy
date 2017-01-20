@@ -8,7 +8,8 @@ from cozy.typecheck import INT, BOOL
 from cozy.syntax_tools import subst, replace, pprint, free_vars, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda
 from cozy.common import Visitor, fresh_name, typechecked, unique, pick_to_sum, cross_product
 from cozy.solver import satisfy, satisfiable, valid
-from cozy.evaluation import HoleException, eval, all_envs_for_hole, mkval
+from cozy.evaluation import eval, mkval
+from cozy.cost_model import CostModel
 
 MISSING = object()
 class OrderedDefaultDict(OrderedDict):
@@ -94,153 +95,6 @@ def instantiate(e : Exp, cache : Cache, total_size : int):
             res = subst(e, remap)
             # print(pprint(e) + " ----> " + pprint(res))
             yield res
-
-class CostModel(object):
-    def cost(self, e):
-        assert not contains_holes(e)
-        return self.best_case_cost(e)
-    def best_case_cost(self, e):
-        raise NotImplementedError()
-    def is_monotonic(self):
-        raise NotImplementedError()
-
-class ConstantCost(CostModel):
-    def best_case_cost(self, e):
-        return 1
-    def is_monotonic(self):
-        return True
-
-class CardinalityVisitor(BottomUpExplorer):
-    def visit_EVar(self, v):
-        return 1000
-    def visit_EGetField(self, e):
-        return 1000
-    def visit_ETupleGet(self, e):
-        return 1000
-    def visit_EEmptyList(self, e):
-        return 0
-    def visit_ESingleton(self, e):
-        return 1
-    def visit_EMakeMap(self, e):
-        return self.visit(e.e)
-    def visit_EMapGet(self, e):
-        return self.visit(e.map) / 3
-    def visit_EFilter(self, e):
-        if e.p.body == EBool(True):
-            return self.visit(e.e)
-        if e.p.body == EBool(False):
-            return 0
-        return self.visit(e.e) / 2
-    def visit_EBinOp(self, e):
-        if e.op == "+":
-            return self.visit(e.e1) + self.visit(e.e2)
-        else:
-            raise NotImplementedError(e)
-    def visit_EUnaryOp(self, e):
-        if e.op == "the":
-            return 1000 # TODO???
-        else:
-            raise NotImplementedError(e)
-    def visit_EMap(self, e):
-        return self.visit(e.e)
-    def visit_EFlatMap(self, e):
-        return self.visit(e.e) * self.visit(e.f.body)
-    def visit_Exp(self, e):
-        raise NotImplementedError(e)
-
-cardinality = CardinalityVisitor().visit
-
-class MemoryUsageCostModel(CostModel, BottomUpExplorer):
-    def best_case_cost(self, e):
-        try:
-            return self.visit(e) + e.size() / 100
-        except:
-            print("estimating memory usage of {}".format(pprint(e)))
-            raise
-    def is_monotonic(self):
-        return True
-
-    def visit_EVar(self, e):
-        if isinstance(e.type, TBag):
-            return cardinality(e)
-        return 1
-    def visit_EUnaryOp(self, e):
-        if e.op == "sum":
-            return 1 # TODO: sizeof(int)
-        if e.op == "not":
-            return 1 # TODO: sizeof(bool)
-        if e.op == "the":
-            return 1 # TODO: sizeof(e.type)
-        raise NotImplementedError(e.op)
-    def visit_EBool(self, e):
-        return 1 # TODO: sizeof(bool)
-    def visit_EBinOp(self, e):
-        if e.op == "+" and isinstance(e.e1.type, TBag):
-            return cardinality(e.e1) + cardinality(e.e2)
-        return 1 # TODO: sizeof(e.type)
-    def visit_ESingleton(self, e):
-        return self.visit(e.e)
-    def visit_EEmptyList(self, e):
-        return 0
-    def visit_EMap(self, e):
-        return cardinality(e.e) * self.visit(e.f.body)
-    def visit_EFlatMap(self, e):
-        return cardinality(e.e) * self.visit(e.f.body)
-    def visit_EFilter(self, e):
-        return cardinality(e) # TODO: c * sizeof(e.type.t)
-    def visit_EMakeMap(self, e):
-        return self.visit(e.value.body)
-    def visit_EMapGet(self, e):
-        assert isinstance(e.map, EMakeMap)
-        return self.visit(e.map.value.apply_to(EFilter(e.map.e, ELambda(e.map.key.arg, equal(e.map.key.arg, fresh_var(e.map.key.arg.type))))))
-    def visit_EAlterMaybe(self, e):
-        return self.visit(e.f.body)
-    def visit_EGetField(self, e):
-        return 1 # TODO: sizeof(e.type)
-    def visit_ENum(self, e):
-        return 1 # TODO: sizeof(int)
-    def visit_EEnumEntry(self, e):
-        return 1 # TODO: sizeof(enum)
-    def visit_ECall(self, e):
-        return 1 # TODO: sizeof(e.type), or cardinality estimation
-    def visit_ETupleGet(self, e):
-        return 1 # TODO: sizeof(e.type), or cardinality estimation
-    def visit_EGetField(self, e):
-        return 1 # TODO: sizeof(e.type), or cardinality estimation
-    def visit_Exp(self, e):
-        raise NotImplementedError(repr(e))
-
-class RunTimeCostModel(CostModel, BottomUpExplorer):
-    def best_case_cost(self, e):
-        return self.visit(e)
-    def is_monotonic(self):
-        return True
-
-    def visit_EVar(self, e):
-        return 1
-    def visit_EUnaryOp(self, e):
-        cost = self.visit(e.e)
-        if e.op == "sum":
-            cost += cardinality(e.e)
-        return cost + 0.01
-    def visit_EBinOp(self, e):
-        cost = self.visit(e.e1) + self.visit(e.e2)
-        if e.op == "==" and isinstance(e.e1.type, TBag):
-            cost += cardinality(e.e1) + cardinality(e.e2)
-        return cost + 0.01
-    def visit_EMap(self, e):
-        return self.visit(e.e) + cardinality(e.e) * self.visit(e.f.body)
-    def visit_EFlatMap(self, e):
-        return self.visit(EFlatten(EMap(e.e, e.f)))
-    def visit_EFilter(self, e):
-        return self.visit(e.e) + cardinality(e.e) * self.visit(e.p.body)
-    def visit_EMakeMap(self, e):
-        return float("inf")
-        # return self.visit(e.e) + cardinality(e.e) * (self.visit(e.key.body) + self.visit(e.value.body))
-    def join(self, x, child_costs):
-        if not isinstance(x, Exp):
-            return 0
-        return 0.01 + sum(child_costs)
 
 class ExpBuilder(object):
     def build(self, cache, size):
@@ -394,11 +248,13 @@ class Learner(object):
         return fingerprint(e, self.examples)
 
     def _on_exp(self, e, fate, *args):
-        return
-        if (isinstance(e, EMapGet) or
-                isinstance(e, EFilter) or
-                (isinstance(e, EBinOp) and e.op == "==" and (isinstance(e.e1, EVar) or isinstance(e.e2, EVar))) or
-                (isinstance(e, EBinOp) and e.op == ">=" and (isinstance(e.e1, EVar) or isinstance(e.e2, EVar)))):
+        # return
+        # if (isinstance(e, EMapGet) or
+        #         isinstance(e, EFilter) or
+        #         (isinstance(e, EBinOp) and e.op == "==" and (isinstance(e.e1, EVar) or isinstance(e.e2, EVar))) or
+        #         (isinstance(e, EBinOp) and e.op == ">=" and (isinstance(e.e1, EVar) or isinstance(e.e2, EVar)))):
+        # if isinstance(e, EBinOp) and e.op == "+" and isinstance(e.type, TBag):
+        if hasattr(e, "_tag") and e._tag:
             print(" ---> [{}] {}; {}".format(fate, pprint(e), ", ".join(pprint(e) for e in args)))
 
     def forget_most_recent(self):
@@ -588,6 +444,8 @@ def improve(
                     # import pdb
                     # pdb.set_trace()
                     assert False
+                    # learner.forget_most_recent()
+                    # continue
                 if new_cost == old_cost:
                     continue
                 print("found improvement: {} -----> {}".format(pprint(old_e), pprint(new_e)))

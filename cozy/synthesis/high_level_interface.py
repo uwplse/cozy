@@ -9,10 +9,11 @@ from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, fre
 import cozy.incrementalization as inc
 from cozy.typecheck import INT, BOOL
 from cozy.timeouts import Timeout, TimeoutException
+from cozy.cost_model import CompositeCostModel
+from cozy.rep_inference import infer_rep
 
 from . import core
 from . import caching
-from .rep_inference import infer_rep
 
 SynthCtx = namedtuple("SynthCtx", ["all_types", "basic_types"])
 
@@ -192,33 +193,6 @@ class BinderBuilder(core.ExpBuilder):
         # return BinderBuilder(self.binders, self.state_vars, list(new_roots) + list(self.roots))
         return BinderBuilder(self.binders, self.state_vars, list(new_roots))
 
-class CoolCostModel(core.CostModel):
-    def __init__(self, state_vars : [EVar]):
-        self.state_vars = state_vars
-        self.rtcm = core.RunTimeCostModel()
-        self.memcm = core.MemoryUsageCostModel()
-        self.factor = 0.01 # 0 = only care about runtime, 1 = only care about memory
-    def is_monotonic(self):
-        return self.rtcm.is_monotonic() and self.memcm.is_monotonic()
-    def split_cost(self, st, e):
-        return (1-self.factor) * self.rtcm.cost(e) + self.factor * sum(self.memcm.cost(proj) for (v, proj) in st)
-    def best_case_cost(self, e):
-        try:
-            return min((self.split_cost(rep, e2) for (rep, e2) in infer_rep(self.state_vars, e)),
-                default=float("inf"))
-        except:
-            print("cost evaluation failed for {}".format(pprint(e)))
-            print(repr(e))
-            for (rep, e2) in infer_rep(self.state_vars, e):
-                try:
-                    self.split_cost(rep, e2)
-                except Exception as exc:
-                    print("-" * 20 + " EXCEPTION: {}".format(repr(exc)))
-                    for (v, proj) in rep:
-                        print("  {} : {} = {}".format(v.id, pprint(v.type), pprint(proj)))
-                    print("  return {}".format(repr(e2)))
-            raise
-
 @typechecked
 def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], q : Query, timeout : Timeout) -> (EVar, Exp, [Query]):
     """
@@ -258,7 +232,7 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], q : 
                 target=new_ret,
                 assumptions=EAll(assumptions),
                 binders=binders,
-                cost_model=CoolCostModel(state),
+                cost_model=CompositeCostModel(state),
                 builder=b,
                 stop_callback=timeout.is_timed_out)):
 

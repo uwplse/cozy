@@ -1,6 +1,6 @@
 import unittest
 
-from cozy.synthesis.rep_inference import infer_rep, pprint_rep, pprint_reps
+from cozy.rep_inference import infer_rep, pprint_rep, pprint_reps
 from cozy.syntax_tools import mk_lambda, pprint, free_vars, all_exps
 from cozy.target_syntax import *
 from cozy.typecheck import typecheck, retypecheck

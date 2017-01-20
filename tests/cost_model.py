@@ -1,6 +1,6 @@
 import unittest
 
-from cozy.synthesis.high_level_interface import CoolCostModel
+from cozy.cost_model import CompositeCostModel
 from cozy.typecheck import INT, retypecheck
 from cozy.target_syntax import *
 from cozy.syntax_tools import equal, implies, pprint, fresh_var, mk_lambda
@@ -24,13 +24,13 @@ class TestCostModel(unittest.TestCase):
         assert retypecheck(e2)
         assert valid(equal(e1, e2))
 
-        cost = CoolCostModel([xs]).cost
+        cost = CompositeCostModel([xs]).cost
         assert cost(e1) > cost(e2), "{} @ {} > {} @ {}".format(pprint(e1), cost(e1), pprint(e2), cost(e2))
 
     def test_basics(self):
         ys = EVar('ys').with_type(TBag(THandle('ys', TInt())))
         e = EBinOp(EUnaryOp('sum', EFlatMap(EBinOp(ys, '+', EEmptyList().with_type(TBag(THandle('ys', TInt())))).with_type(TBag(THandle('ys', TInt()))), ELambda(EVar('_var12').with_type(THandle('ys', TInt())), ESingleton(ENum(1).with_type(TInt())).with_type(TBag(TInt())))).with_type(TBag(TInt()))).with_type(TInt()), '==', ENum(0).with_type(TInt())).with_type(TBool())
-        assert CoolCostModel([ys]).cost(e) > 0
+        assert CompositeCostModel([ys]).cost(e) > 0
 
     def test_add_empty(self):
         ys = EVar('ys').with_type(TBag(THandle('ys', TInt())))
@@ -38,10 +38,10 @@ class TestCostModel(unittest.TestCase):
         e2 = EBinOp(ys, "+", EEmptyList().with_type(ys.type))
         assert retypecheck(e1)
         assert retypecheck(e2)
-        cost = CoolCostModel([ys]).cost
+        cost = CompositeCostModel([ys]).cost
 
-        cm = CoolCostModel([ys])
-        from cozy.synthesis.rep_inference import infer_rep
+        cm = CompositeCostModel([ys])
+        from cozy.rep_inference import infer_rep
         for ex in [e1, e2]:
             print("="*50 + " " + pprint(ex))
             for (st, e) in infer_rep([ys], ex):
@@ -56,7 +56,7 @@ class TestCostModel(unittest.TestCase):
     def test_sum_empty(self):
         e1 = ENum(0).with_type(TInt())
         e2 = EUnaryOp("sum", EEmptyList().with_type(TBag(TInt()))).with_type(TInt())
-        cost = CoolCostModel([]).cost
+        cost = CompositeCostModel([]).cost
 
         assert cost(e1) < cost(e2), "{} vs {}".format(cost(e1), cost(e2))
 
@@ -72,7 +72,7 @@ class TestCostModel(unittest.TestCase):
         print(pprint(e1))
         print(pprint(e2))
         print("="*20)
-        cost = CoolCostModel([users]).cost
+        cost = CompositeCostModel([users]).cost
         cost1 = cost(e1)
         print("="*10)
         cost2 = cost(e2)
@@ -87,7 +87,7 @@ class TestCostModel(unittest.TestCase):
         assert retypecheck(e1)
         assert retypecheck(e2)
         assert valid(implies(ENot(equal(a, b)), equal(e1, e2)))
-        cost = CoolCostModel([xs]).cost
+        cost = CompositeCostModel([xs]).cost
         cost1 = cost(e1)
         cost2 = cost(e2)
         assert cost1 > cost2, "{} vs {}".format(cost1, cost2)
