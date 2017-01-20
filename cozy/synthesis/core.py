@@ -430,11 +430,11 @@ class Learner(object):
                     self._on_exp(e, "new")
                 else:
                     prev_cost, prev_exp, prev_size = prev
-                    if cost < prev_cost:
+                    if cost <= prev_cost:
                         self.overwritten = prev
                         self.most_recent = (e, self.current_size, fp)
                         # print("cost ceiling lowered for {}: {} --> {}".format(fp, prev_cost, cost))
-                        self.cache.evict(prev_exp, prev_size)
+                        # self.cache.evict(prev_exp, prev_size)
                         self.cache.add(e, size=self.current_size)
                         self.seen[fp] = (cost, e, self.current_size)
                         self.last_progress = self.current_size
