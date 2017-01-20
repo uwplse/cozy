@@ -61,12 +61,15 @@ def infer_key_and_value(filter, binders, state : {EVar} = set()):
     def can_serve_as_key(e, binder):
         fvs = free_vars(e)
         return binder in fvs and all(v == binder or v in state for v in fvs)
+    def can_serve_as_value(e, binder):
+        fvs = free_vars(e)
+        return binder not in fvs and not all(v in state for v in fvs)
     for b in binders:
         sep = []
         for eq in equalities:
-            if can_serve_as_key(eq.e1, b) and b not in free_vars(eq.e2):
+            if can_serve_as_key(eq.e1, b) and can_serve_as_value(eq.e2, b):
                 sep.append((eq.e1, eq.e2))
-            elif can_serve_as_key(eq.e2, b) and b not in free_vars(eq.e1):
+            elif can_serve_as_key(eq.e2, b) and can_serve_as_value(eq.e1, b):
                 sep.append((eq.e2, eq.e1))
         if len(sep) == len(equalities):
             key = ETuple(tuple(k for k, v in sep)).with_type(TTuple(tuple(k.type for k, v in sep))) if len(sep) > 1 else sep[0][0]
