@@ -470,6 +470,9 @@ class Typechecker(Visitor):
         with self.scope():
             for name, t in op.args:
                 self.env[name] = self.visit(t)
+            for e in op.assumptions:
+                self.visit(e)
+                self.ensure_type(e, BOOL)
             self.visit(op.body)
 
     def visit_Query(self, q):
@@ -477,6 +480,9 @@ class Typechecker(Visitor):
         with self.scope():
             for name, t in q.args:
                 self.env[name] = self.visit(t)
+            for e in q.assumptions:
+                self.visit(e)
+                self.ensure_type(e, BOOL)
             self.visit(q.ret)
         q.out_type = q.ret.type
         self.queries[q.name] = q
