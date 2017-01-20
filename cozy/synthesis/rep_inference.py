@@ -1,4 +1,4 @@
-from cozy.common import Visitor
+from cozy.common import Visitor, declare_case
 from cozy.target_syntax import *
 from cozy.syntax_tools import fresh_var, free_vars, mk_lambda, subst, pprint, BottomUpRewriter, alpha_equivalent, compose
 
@@ -51,6 +51,8 @@ def pprint_reps(r):
     for x in r:
         pprint_rep(x)
 
+EAlterMapValues = declare_case(Exp, "EAlterMapValues", ["e", "f"])
+
 def infer_rep(state : [EVar], qexp : Exp, validate_types : bool = False) -> [([(EVar, Exp)], Exp)]:
     """
     Given state vars and an expression, infer suitable representations for
@@ -86,16 +88,17 @@ def infer_rep(state : [EVar], qexp : Exp, validate_types : bool = False) -> [([(
                     for (st2, body2) in self.visit(e.f.body, mk_lambda(e.e.type, lambda x: x)):
                         for (st3, res) in self.apply_k(k, EMap(exp, ELambda(e.f.arg, body2)).with_type(e.type)):
                             yield (st1 + st2 + st3, res)
-        def visit_EMakeMap(self, e, k, value_projection=None):
+        def visit_EMakeMap(self, e, k):
             if not all(v in state for v in (free_vars(e.key) | free_vars(e.value))):
                 return
-            if value_projection is None:
-                value_projection = mk_lambda(e.type.v, lambda vs: vs)
-            new_val = compose(value_projection, e.value)
-            yield from self.visit(e.e, compose(k, mk_lambda(e.e.type, lambda bag: EMakeMap(bag, e.key, new_val).with_type(TMap(e.type.k, value_projection.body.type)))))
+            new_val = e.value
+            while isinstance(k.body, EAlterMapValues):
+                new_val = compose(k.body.f, new_val)
+                k = ELambda(k.arg, k.body.e)
+            yield from self.visit(e.e, compose(k, mk_lambda(e.e.type, lambda bag: EMakeMap(bag, e.key, new_val).with_type(TMap(e.type.k, new_val.body.type)))))
         def visit_EMapGet(self, e, k):
             for (st1, key) in self.visit(e.key):
-                for (st2, m) in self.visit(e.map, value_projection=k):
+                for (st2, m) in self.visit(e.map, k=mk_lambda(e.map.type, lambda m: EAlterMapValues(m, k))):
                     yield (st1 + st2, EMapGet(m, key).with_type(m.type.v))
         def visit_EUnaryOp(self, e, k):
             yield from self.visit(e.e, compose(k, mk_lambda(e.e.type, lambda x: EUnaryOp(e.op, x).with_type(e.type))))
@@ -127,12 +130,12 @@ def infer_rep(state : [EVar], qexp : Exp, validate_types : bool = False) -> [([(
                 yield ([(v, proj)], v)
             else:
                 yield from self.apply_k(k, e)
-        def visit(self, e, k=None, **kwargs):
+        def visit(self, e, k=None):
             if k is None:
                 k = mk_lambda(e.type, lambda x: x)
             fvs = free_vars(e)
             if fvs:
-                yield from super().visit(e, k, **kwargs)
+                yield from super().visit(e, k)
             else:
                 yield from self.apply_k(k, e)
 
