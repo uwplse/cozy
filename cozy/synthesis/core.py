@@ -379,7 +379,11 @@ class Learner(object):
             if isinstance(e, ELambda):
                 continue
             try:
-                self.watched_exps[self._fingerprint(e)] = (e, self.cost_model.cost(e))
+                fp = self._fingerprint(e)
+                cost = self.cost_model.cost(e)
+                prev = self.watched_exps.get(fp)
+                if prev is None or prev[1] < cost:
+                    self.watched_exps[fp] = (e, cost)
             except Exception:
                 print("WARNING: unable to watch expression {}".format(pprint(e)))
                 continue
