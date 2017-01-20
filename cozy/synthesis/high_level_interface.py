@@ -30,16 +30,6 @@ def rename_args(queries : [Query]) -> [Query]:
         res.append(q)
     return res
 
-@typechecked
-def get_roots(state : [EVar], e : Exp) -> [Exp]:
-    roots = [
-        EBool(True).with_type(BOOL),
-        EBool(False).with_type(BOOL),
-        # ENum(0).with_type(INT),
-        # ENum(1).with_type(INT),
-        ]
-    return list(roots) + state
-
 def _as_conjunction_of_equalities(p):
     if isinstance(p, EBinOp) and p.op == "and":
         return _as_conjunction_of_equalities(p.e1) + _as_conjunction_of_equalities(p.e2)
@@ -90,6 +80,9 @@ class BinderBuilder(core.ExpBuilder):
             for r in self.roots:
                 if not core.contains_holes(r):
                     yield r
+            yield EBool(True).with_type(BOOL)
+            yield EBool(False).with_type(BOOL)
+            yield from self.binders
             return
 
         for r in self.roots:
@@ -196,7 +189,8 @@ class BinderBuilder(core.ExpBuilder):
                     yield ESingleton(e).with_type(t)
 
     def with_roots(self, new_roots):
-        return BinderBuilder(self.binders, self.state_vars, list(new_roots) + list(self.roots))
+        # return BinderBuilder(self.binders, self.state_vars, list(new_roots) + list(self.roots))
+        return BinderBuilder(self.binders, self.state_vars, list(new_roots))
 
 class CoolCostModel(core.CostModel):
     def __init__(self, state_vars : [EVar]):
@@ -256,13 +250,7 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], q : 
             binders += [fresh_var(t.t) for i in range(n_binders)]
     print(binders)
 
-    roots = get_roots(state, new_ret)
-    args = [EVar(name).with_type(t) for (name, t) in q.args]
-
-    for e in roots + args:
-        print(" --> {}".format(pprint(e)))
-
-    b = BinderBuilder(binders, state, roots + binders + args)
+    b = BinderBuilder(binders, state, [])
     new_state_vars = state
     state_proj_exprs = state
     try:
