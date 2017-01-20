@@ -344,7 +344,7 @@ def improve(
 
     vars = list(free_vars(target) | free_vars(assumptions))
     examples = []
-    learner = Learner(target, examples, cost_model, builder, stop_callback)
+    learner = Learner(target, instantiate_examples(examples, set(vars), binders), cost_model, builder, stop_callback)
     try:
         while True:
             # 1. find any potential improvement to any sub-exp of target
