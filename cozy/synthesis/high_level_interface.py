@@ -16,22 +16,6 @@ from .rep_inference import infer_rep
 
 SynthCtx = namedtuple("SynthCtx", ["all_types", "basic_types"])
 
-@typechecked
-def fragmentize(exp : Exp, out : [Exp], bound_names : {str} = set()):
-    for e in all_exps(exp):
-        if isinstance(e, ELambda):
-            # lambdas may only appear in certain places---they aren't
-            # first-class expressions---so we don't really want to see
-            # them in the list of "all expressions"
-            continue
-        fvs = [fv for fv in free_vars(e) if fv.id not in bound_names]
-        remap = { v.id : core.EHole(fresh_name(), v.type, None) for v in fvs }
-        e = subst(e, remap)
-        def allow_rename(v1, v2):
-            return isinstance(v1, core.EHole) and v1.type == v2.type
-        if not any(alpha_equivalent(e, root, allow_rename) for root in out):
-            out.append(e)
-
 def rename_args(queries : [Query]) -> [Query]:
     arg_hist = mk_map((a for q in queries for (a, t) in q.args), v=len)
     res = []
@@ -48,45 +32,13 @@ def rename_args(queries : [Query]) -> [Query]:
 
 @typechecked
 def get_roots(state : [EVar], e : Exp) -> [Exp]:
-    state_var_names = set(v.id for v in state)
     roots = [
         EBool(True).with_type(BOOL),
         EBool(False).with_type(BOOL),
         # ENum(0).with_type(INT),
         # ENum(1).with_type(INT),
         ]
-    fragmentize(e, roots, bound_names=state_var_names)
-    return list(roots)
-
-@typechecked
-def guess_constructors(state : [EVar], roots : [Exp]) -> [Exp]:
-    return []
-
-    res = list(state)
-
-    for sv in state:
-        if isinstance(sv.type, TBag):
-            ht = sv.type.t
-            projs = []
-            for r in roots:
-                holes = list(core.find_holes(r))
-                if len(holes) == 1 and holes[0].type == ht:
-                    projs.append(mk_lambda(ht, lambda v: subst(r, { holes[0].name : v })))
-
-            for p in projs:
-                coll_hole = EHole(fresh_name(), sv.type, None)
-                res.append(EMakeMap(
-                    sv,
-                    p,
-                    mk_lambda(sv.type, lambda x: x)).with_type(TMap(p.body.type, sv.type)))
-                res.append(EMap(coll_hole, p).with_type(TBag(p.body.type)))
-                if p.body.type == BOOL:
-                    # TODO: clauses instead
-                    res.append(EFilter(coll_hole, p).with_type(sv.type))
-
-    # for r in res:
-    #     print("   --> {}".format(pprint(r)))
-    return res
+    return list(roots) + state
 
 def _as_conjunction_of_equalities(p):
     if isinstance(p, EBinOp) and p.op == "and":
@@ -302,10 +254,9 @@ def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], q : 
     print(binders)
 
     roots = get_roots(state, new_ret)
-    ctors = guess_constructors(state, roots)
     args = [EVar(name).with_type(t) for (name, t) in q.args]
 
-    for e in roots + args + ctors:
+    for e in roots + args:
         print(" --> {}".format(pprint(e)))
 
     b = BinderBuilder(binders, state, roots + binders + args)

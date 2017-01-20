@@ -346,6 +346,17 @@ class Learner(object):
             self.update_watched_exps()
 
     def watch(self, new_target):
+        new_roots = []
+        for e in all_exps(new_target):
+            if not isinstance(e, ELambda):
+                try:
+                    self._fingerprint(e)
+                    new_roots.append(e)
+                except Exception:
+                    pass
+
+        self.builder = self.builder.with_roots(new_roots)
+
         self.target = new_target
         self.cost_ceiling = self.cost_model.cost(new_target)
         self.update_watched_exps()
@@ -565,6 +576,7 @@ def improve(
                 assert cost_model.cost(new_target) < cost_model.cost(target), "whoops: {} ----> {}".format(target, new_target)
                 print("found improvement: {} -----> {}".format(pprint(old_e), pprint(new_e)))
                 print("cost: {} -----> {}".format(cost_model.cost(old_e), cost_model.cost(new_e)))
+                learner.reset(instantiate_examples(examples, set(vars), binders), update_watched_exps=False)
                 learner.watch(new_target)
                 target = new_target
                 yield new_target
