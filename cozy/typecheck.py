@@ -489,6 +489,8 @@ class Typechecker(Visitor):
 
     def visit_SCall(self, s):
         self.visit(s.target)
+        for a in s.args:
+            self.visit(a)
         if s.func == "add":
             elem_type = self.get_collection_type(s.target)
             if len(s.args) != 1:
@@ -506,7 +508,7 @@ class Typechecker(Visitor):
             if len(s.args) != 1:
                 self.report_err(s, "remove_all takes exactly 1 argument")
             if len(s.args) > 0:
-                self.ensure_type(s.args[0], syntax.TSet(elem_type))
+                self.ensure_type(s.args[0], s.target.type)
         else:
             self.report_err(s, "unknown function {}".format(s.func))
 
