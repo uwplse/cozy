@@ -1,5 +1,5 @@
 from cozy.target_syntax import *
-from cozy.syntax_tools import BottomUpExplorer
+from cozy.syntax_tools import BottomUpExplorer, pprint, equal, fresh_var
 from cozy.rep_inference import infer_rep
 
 class CostModel(object):
