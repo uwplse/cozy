@@ -120,6 +120,9 @@ def make_constant_of_type(t):
 class StopException(Exception):
     pass
 
+class NoMoreImprovements(Exception):
+    pass
+
 class Learner(object):
     def __init__(self, target, examples, cost_model, builder, stop_callback):
         self.stop_callback = stop_callback
@@ -234,11 +237,12 @@ class Learner(object):
                     self._on_exp(e, "new")
                 else:
                     prev_cost, prev_exp, prev_size = prev
-                    if cost < prev_cost:
+                    if cost < prev_cost or (cost == prev_cost and e != prev_exp):
                         self.overwritten = prev
                         self.most_recent = (e, self.current_size, fp)
                         # print("cost ceiling lowered for {}: {} --> {}".format(fp, prev_cost, cost))
-                        self.cache.evict(prev_exp, prev_size)
+                        if cost < prev_cost:
+                            self.cache.evict(prev_exp, prev_size)
                         self.cache.add(e, size=self.current_size)
                         self.seen[fp] = (cost, e, self.current_size)
                         self.last_progress = self.current_size
@@ -255,7 +259,7 @@ class Learner(object):
                         return (watched_e, e)
 
             if self.last_progress < (self.current_size+1) // 2:
-                raise StopException("hit termination condition")
+                raise NoMoreImprovements("hit termination condition")
 
             self.current_size += 1
             self.builder_iter = self.builder.build(self.cache, self.current_size)
@@ -352,7 +356,10 @@ def improve(
     try:
         while True:
             # 1. find any potential improvement to any sub-exp of target
-            old_e, new_e = learner.next()
+            try:
+                old_e, new_e = learner.next()
+            except NoMoreImprovements:
+                break
 
             # 2. substitute-in the improvement
             new_target = replace(target, old_e, new_e)
