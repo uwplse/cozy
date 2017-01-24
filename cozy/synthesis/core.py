@@ -310,7 +310,7 @@ class FixedBuilder(ExpBuilder):
             # experimental criterion: "the" must be a 0- or 1-sized collection
             if isinstance(e, EUnaryOp) and e.op == "the":
                 len = EUnaryOp("sum", EMap(e.e, mk_lambda(e.type, lambda x: ENum(1).with_type(INT))).with_type(TBag(INT))).with_type(INT)
-                if not valid(implies(self.assumptions, EBinOp(len, "<=", ENum(1).with_type(INT)))):
+                if not valid(implies(self.assumptions, EBinOp(len, "<=", ENum(1).with_type(INT)).with_type(BOOL))):
                     # print("rejecting illegal application of 'the': {}".format(pprint(e)))
                     continue
                 if not satisfiable(EAll([self.assumptions, equal(len, ENum(0).with_type(INT))])):
