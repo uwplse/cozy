@@ -87,6 +87,13 @@ class ToZ3(Visitor):
                 conds.append(count == self.count_in(elem_type, e1, x, env))
 
             return z3.And(*conds, self.ctx)
+        elif isinstance(t, TMap):
+            conds = [self.eq(t.v, e1["default"], e2["default"], env)]
+            for (k, v) in e1["mapping"]:
+                conds.append(self.eq(t.v, self._map_get(t, e1, k, env), self._map_get(t, e2, k, env), env))
+            for (k, v) in e2["mapping"]:
+                conds.append(self.eq(t.v, self._map_get(t, e1, k, env), self._map_get(t, e2, k, env), env))
+            return z3.And(*conds, self.ctx)
         elif isinstance(t, THandle):
             h1, val1 = e1
             h2, val2 = e2
@@ -297,21 +304,23 @@ class ToZ3(Visitor):
                     e.value,
                     self.raw_filter(bag, lambda x: self.eq(e.key.body.type, self.apply(e.key, x, env), k, env)),
                     env)) for k in ks],
-                "default": e.value}
+                "default": self.apply(e.value, ([], []), env)}
             return m
         return fmap(self.visit(e.e, env), go)
+    def _map_get(self, map_type, map, key, env):
+        res = map["default"]
+        # print("map get {} on {}".format(key, map))
+        for (k, v) in map["mapping"]:
+            # print("   k   = {}".format(repr(k)))
+            # print("   key = {}".format(repr(key)))
+            # print("   v   = {}".format(repr(v)))
+            # print("   res = {}".format(repr(res)))
+            res = SymbolicUnion(map_type, self.eq(map_type.k, k, key, env), v, res)
+        return res
     def visit_EMapGet(self, e, env):
         key = self.visit(e.key, env)
         def go(map):
-            res = self.apply(map["default"], ([], []), env)
-            # print("map get {} on {}".format(key, map))
-            for (k, v) in map["mapping"]:
-                # print("   k   = {}".format(repr(k)))
-                # print("   key = {}".format(repr(key)))
-                # print("   v   = {}".format(repr(v)))
-                # print("   res = {}".format(repr(res)))
-                res = SymbolicUnion(e.type, self.eq(e.key.type, k, key, env), v, res)
-            return res
+            return self._map_get(e.map.type, map, key, env)
         return fmap(self.visit(e.map, env), go)
     def visit_EApp(self, e, env):
         return self.apply(e.f, self.visit(e.arg, env), env)
@@ -381,6 +390,15 @@ class ToZ3(Visitor):
             for i in range(len(mask) - 1):
                 solver.add(z3.Implies(mask[i], mask[i+1], ctx))
             return (mask, elems)
+        elif isinstance(type, TMap):
+            default = self.mkvar(ctx, solver, collection_depth, type.v, handle_vars)
+            return {
+                "mapping": [(
+                    self.mkvar(ctx, solver, collection_depth, type.k, handle_vars),
+                    self.mkvar(ctx, solver, collection_depth, type.v, handle_vars))
+                    for i in range(collection_depth)],
+                "default":
+                    default }
         elif isinstance(type, TRecord):
             # TODO: use Z3 ADTs
             return { field : self.mkvar(ctx, solver, collection_depth, t, handle_vars) for (field, t) in type.fields }
@@ -441,6 +459,13 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
                 if reconstruct(model, mask[i], TBool()):
                     real_val.append(reconstruct(model, elems[i], type.t))
             return evaluation.Bag(real_val)
+        elif isinstance(type, TMap):
+            res = { }
+            for (k, v) in value["mapping"]:
+                k = reconstruct(model, k, type.k)
+                if k not in res:
+                    res[k] = reconstruct(model, v, type.v)
+            return FrozenDict(res)
         elif isinstance(type, TEnum):
             val = model.eval(value, model_completion=True).as_long()
             return type.cases[val]

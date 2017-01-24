@@ -54,3 +54,9 @@ class TestSolver(unittest.TestCase):
         assert "x" in model
         assert "f" in model
         assert model["f"](model["x"]) is True
+
+    def test_symbolic_maps(self):
+        x = EVar("x").with_type(TMap(TInt(), TInt()))
+        y = EVar("y").with_type(TMap(TInt(), TInt()))
+        e = ENot(equal(x, y))
+        model = satisfy(e, validate_model=True)
