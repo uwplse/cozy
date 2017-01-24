@@ -1,4 +1,4 @@
-from cozy.common import Visitor, declare_case
+from cozy.common import Visitor, declare_case, cross_product
 from cozy.target_syntax import *
 from cozy.syntax_tools import fresh_var, free_vars, mk_lambda, subst, pprint, BottomUpRewriter, alpha_equivalent, compose
 
@@ -72,7 +72,9 @@ def infer_rep(state : [EVar], qexp : Exp, validate_types : bool = False) -> [([(
 
         def visit_EFilter(self, e, k):
             fvs = free_vars(e.p)
-            if all(v in state for v in fvs):
+            if e.p.arg not in free_vars(e.p.body):
+                yield from self.visit(ECond(e.p.body, e.e, EEmptyList().with_type(e.type)).with_type(e.type), k=k)
+            elif all(v in state for v in fvs):
                 yield from self.visit(e.e, compose(k, mk_lambda(e.e.type, lambda x: EFilter(x, e.p).with_type(e.type))))
             else:
                 for (st1, exp) in self.visit(e.e, mk_lambda(e.e.type, lambda x: x)):
@@ -100,10 +102,6 @@ def infer_rep(state : [EVar], qexp : Exp, validate_types : bool = False) -> [([(
             for (st1, key) in self.visit(e.key):
                 for (st2, m) in self.visit(e.map, k=mk_lambda(e.map.type, lambda m: EAlterMapValues(m, k))):
                     yield (st1 + st2, EMapGet(m, key).with_type(m.type.v))
-        def visit_EUnaryOp(self, e, k):
-            yield from self.visit(e.e, compose(k, mk_lambda(e.e.type, lambda x: EUnaryOp(e.op, x).with_type(e.type))))
-        def visit_ESingleton(self, e, k):
-            yield from self.visit(e.e, compose(k, mk_lambda(e.e.type, lambda x: ESingleton(x).with_type(e.type))))
         def visit_EFlatMap(self, e, k):
             # TODO: if we can prove something about the cardinality of the set,
             # maybe we can materialize the join.
@@ -111,25 +109,23 @@ def infer_rep(state : [EVar], qexp : Exp, validate_types : bool = False) -> [([(
                 for (inner_st, inner_exp) in self.visit(e.f.body, mk_lambda(e.f.body.type, lambda x: x)):
                     for (st3, res) in self.apply_k(k, EFlatMap(outer_exp, ELambda(e.f.arg, inner_exp)).with_type(e.type)):
                         yield (outer_st + inner_st + st3, res)
-        def visit_EBinOp(self, e, k):
-            fvs1 = free_vars(e.e1)
-            fvs2 = free_vars(e.e2)
-            # if all(v in state for v in fvs1):
-            #     yield from self.visit(e.e2, compose(k, mk_lambda(e.e2.type, lambda x: EBinOp(e.e1, e.op, x).with_type(e.type))))
-            # if all(v in state for v in fvs2):
-            #     yield from self.visit(e.e1, compose(k, mk_lambda(e.e1.type, lambda x: EBinOp(x, e.op, e.e2).with_type(e.type))))
-            for (st1, exp1) in self.visit(e.e1, mk_lambda(e.e1.type, lambda x: x)):
-                for (st2, exp2) in self.visit(e.e2, mk_lambda(e.e2.type, lambda x: x)):
-                    for (st3, res) in self.apply_k(k, EBinOp(exp1, e.op, exp2).with_type(e.type)):
-                        yield (st1 + st2 + st3, res)
         def visit_Exp(self, e, k):
             fvs = free_vars(e)
-            if all(v in state for v in fvs):
+            if not fvs:
+                yield from self.apply_k(k, e)
+            elif all(v in state for v in fvs):
                 proj = k.apply_to(e)
                 v = fresh_var(proj.type)
                 yield ([(v, proj)], v)
             else:
-                yield from self.apply_k(k, e)
+                if any(isinstance(child, ELambda) for child in e.children()):
+                    raise NotImplementedError(e)
+                for reps in cross_product([self.visit(child) if isinstance(child, Exp) else (child,) for child in e.children()]):
+                    vs = sum((r[0] for (r, child) in zip(reps, e.children()) if isinstance(child, Exp)), [])
+                    args = [r[1] if isinstance(child, Exp) else r for (r, child) in zip(reps, e.children())]
+                    ee = type(e)(*args)
+                    for st, res in self.apply_k(k, ee):
+                        yield (st + vs, res)
         def visit(self, e, k=None):
             if k is None:
                 k = mk_lambda(e.type, lambda x: x)
