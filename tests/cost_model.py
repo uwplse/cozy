@@ -91,3 +91,15 @@ class TestCostModel(unittest.TestCase):
         cost1 = cost(e1)
         cost2 = cost(e2)
         assert cost1 > cost2, "{} vs {}".format(cost1, cost2)
+
+    def test_identity_map(self):
+        xs = EVar("xs").with_type(TBag(INT))
+        e1 = xs
+        e2 = EMap(xs, mk_lambda(INT, lambda x: x))
+        assert retypecheck(e1)
+        assert retypecheck(e2)
+        assert valid(equal(e1, e2))
+        cost = CompositeCostModel([xs]).cost
+        cost1 = cost(e1)
+        cost2 = cost(e2)
+        assert cost1 < cost2, "{} vs {}".format(cost1, cost2)
