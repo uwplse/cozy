@@ -99,9 +99,12 @@ def infer_rep(state : [EVar], qexp : Exp, validate_types : bool = False) -> [([(
                 k = ELambda(k.arg, k.body.e)
             yield from self.visit(e.e, compose(k, mk_lambda(e.e.type, lambda bag: EMakeMap(bag, e.key, new_val).with_type(TMap(e.type.k, new_val.body.type)))))
         def visit_EMapGet(self, e, k):
-            for (st1, key) in self.visit(e.key):
-                for (st2, m) in self.visit(e.map, k=mk_lambda(e.map.type, lambda m: EAlterMapValues(m, k).with_type(TMap(m.type.k, k.body.type)))):
-                    yield (st1 + st2, EMapGet(m, key).with_type(m.type.v))
+            if isinstance(e.map, EMakeMap):
+                for (st1, key) in self.visit(e.key):
+                    for (st2, m) in self.visit(e.map, k=mk_lambda(e.map.type, lambda m: EAlterMapValues(m, k).with_type(TMap(m.type.k, k.body.type)))):
+                        yield (st1 + st2, EMapGet(m, key).with_type(m.type.v))
+            else:
+                yield from self.visit_Exp(e, k)
         def visit_EFlatMap(self, e, k):
             # TODO: if we can prove something about the cardinality of the set,
             # maybe we can materialize the join.
@@ -120,7 +123,7 @@ def infer_rep(state : [EVar], qexp : Exp, validate_types : bool = False) -> [([(
             else:
                 if any(isinstance(child, ELambda) for child in e.children()):
                     raise NotImplementedError(e)
-                for reps in cross_product([self.visit(child) if isinstance(child, Exp) else (child,) for child in e.children()]):
+                for reps in cross_product([(self.visit(child) if isinstance(child, Exp) else (child,)) for child in e.children()]):
                     vs = sum((r[0] for (r, child) in zip(reps, e.children()) if isinstance(child, Exp)), [])
                     args = [r[1] if isinstance(child, Exp) else r for (r, child) in zip(reps, e.children())]
                     ee = type(e)(*args)
@@ -135,11 +138,16 @@ def infer_rep(state : [EVar], qexp : Exp, validate_types : bool = False) -> [([(
             else:
                 yield from self.apply_k(k, e)
 
-    it = V().visit(qexp, mk_lambda(qexp.type, lambda x: x))
-    if validate_types:
-        it = list(it)
-        _check_wt(state, qexp, it)
-    for (st, e) in it:
-        st, remap = dedup(st)
-        e = subst(e, { v1.id : v2 for (v1, v2) in remap.items() })
-        yield (st, e)
+    try:
+        it = V().visit(qexp, mk_lambda(qexp.type, lambda x: x))
+        if validate_types:
+            it = list(it)
+            _check_wt(state, qexp, it)
+        for (st, e) in it:
+            st, remap = dedup(st)
+            e = subst(e, { v1.id : v2 for (v1, v2) in remap.items() })
+            yield (st, e)
+    except Exception:
+        print("Test case:")
+        print("    infer_rep({}, {})".format(repr(state), repr(qexp)))
+        raise

@@ -90,3 +90,9 @@ class TestRepInference(unittest.TestCase):
         for (st, ee) in reps:
             for e in all_exps(ee):
                 assert not isinstance(e, EMakeMap)
+
+    def test_regression4(self):
+        pprint_reps(infer_rep(
+            [EVar('ints').with_type(TBag(THandle('_HandleType12', TInt())))],
+            EUnaryOp('not', EBinOp(ENum(0).with_type(TInt()), '==', EUnaryOp('sum', EMapGet(EVar('_var1141').with_type(TMap(TInt(), TBag(TInt()))), EVar('i').with_type(TInt())).with_type(TBag(TInt()))).with_type(TInt())).with_type(TBool())).with_type(TBool()),
+            validate_types=True))
