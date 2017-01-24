@@ -84,6 +84,8 @@ SIf                 = declare_case(Stm, "SIf",      ["cond", "then_branch", "els
 # Various utilities
 
 BOOL = TBool()
+T = EBool(True) .with_type(BOOL)
+F = EBool(False).with_type(BOOL)
 
 def seq(stms):
     stms = [s for s in stms if not isinstance(s, SNoOp)]
@@ -98,6 +100,9 @@ def seq(stms):
         return result
 
 def EAll(exps):
+    exps = [ e for e in exps if e != T ]
+    if any(e == F for e in exps):
+        return F
     res = None
     for e in exps:
         if res is None:
@@ -105,7 +110,7 @@ def EAll(exps):
         else:
             res = EBinOp(res, "and", e).with_type(BOOL)
     if res is None:
-        return EBool(True).with_type(BOOL)
+        return T
     return res
 
 def EAny(exps):
