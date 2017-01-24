@@ -1,7 +1,7 @@
 from cozy.common import typechecked, fresh_name
 from cozy.target_syntax import *
 from cozy.typecheck import INT, BOOL, retypecheck
-from cozy.syntax_tools import BottomUpRewriter, subst, fresh_var, all_types, all_exps, equal, implies, mk_lambda, compose, break_conj, pprint
+from cozy.syntax_tools import BottomUpRewriter, subst, fresh_var, all_types, all_exps, equal, implies, mk_lambda, compose, nnf, dnf
 from cozy.solver import valid
 
 def _handleize(m : Method, statevar : EVar):
@@ -43,20 +43,30 @@ def desugar_exp(e : Exp) -> Exp:
             if isinstance(bag, EMap):
                 return EMap(bag.e, compose(ELambda(e.f.arg, fbody), bag.f)).with_type(e.type)
             return EMap(bag, ELambda(e.f.arg, fbody)).with_type(e.type)
+        def mk_filter_of_conjunction(self, bag : Exp, arg : EVar, conds : [Exp]) -> EFilter:
+            res = EFilter(bag, ELambda(arg, conds[-1])).with_type(bag.type)
+            for i in range(len(conds) - 2, -1, -1):
+                res = EFilter(res, ELambda(arg, conds[i])).with_type(bag.type)
+            return res
         def break_filter(self, e):
-            parts = list(break_conj(e.p.body))
-            if len(parts) == 1:
-                return e
+            t = e.type
             arg = e.p.arg
-            e = e.e
-            for p in parts:
-                e = EFilter(e, ELambda(arg, p)).with_type(e.type)
-            return e
+            cases = dnf(nnf(e.p.body))
+            negate = []
+            res = None
+            for case in cases:
+                if res is None:
+                    res = self.mk_filter_of_conjunction(e.e, arg, case)
+                else:
+                    res = EBinOp(res, "+", self.mk_filter_of_conjunction(e.e, arg, negate + case)).with_type(t)
+                negate.append(ENot(EAll(case)))
+            assert res is not None
+            return res
         def visit_EFilter(self, e):
             bag = self.visit(e.e)
             pbody = self.visit(e.p.body)
             if isinstance(bag, EMap):
-                return EMap(self.break_filter(EFilter(bag.e, compose(ELambda(e.p.arg, pbody), bag.f)).with_type(bag.e.type)), bag.f).with_type(e.type)
+                return self.visit(EMap(EFilter(bag.e, compose(ELambda(e.p.arg, pbody), bag.f)).with_type(bag.e.type), bag.f).with_type(e.type))
             return self.break_filter(EFilter(bag, ELambda(e.p.arg, pbody)).with_type(e.type))
         def visit_EFlatMap(self, e):
             bag = self.visit(e.e)
@@ -155,7 +165,6 @@ def desugar(spec : Spec) -> Spec:
             spec.statevars[i] = (v.id, t)
             v = EVar(v.id).with_type(t)
             spec.assumptions.append(EUnaryOp("unique", v).with_type(BOOL))
-            assert retypecheck(spec, env=())
         if isinstance(t, TBag):
             if not isinstance(t.t, THandle) or not valid(desugar_exp(implies(EAll(spec.assumptions), EUnaryOp("unique", v).with_type(BOOL)))):
                 orig_t = t
