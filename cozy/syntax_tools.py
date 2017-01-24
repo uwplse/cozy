@@ -606,24 +606,6 @@ def dnf(e : syntax.Exp) -> [[syntax.Exp]]:
         return [c1 + c2 for c1 in cases1 for c2 in cases2]
     return [[e]]
 
-@common.typechecked
-def venn_regions(e : syntax.Exp) -> [syntax.Exp]:
-    """
-    Compute the "Venn regions" of a boolean expression. For all possible
-    assignments of values to free variables satisfying the original expression,
-    exactly one Venn region will evaluate to true.
-
-    WARNING:
-        This may result in an exponential blowup in the size of the expression.
-    """
-    cases = dnf(nnf(e))
-    res = []
-    for n in range(2**len(cases)):
-        res.append(syntax.EAll([
-            syntax.EAll(cases[i]) if (n & (1 << i)) else syntax.ENot(syntax.EAll(cases[i]))
-            for i in range(len(cases))]))
-    return res
-
 def break_conj(e):
     if isinstance(e, syntax.EBinOp) and e.op == "and":
         yield from break_conj(e.e1)
