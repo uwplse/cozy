@@ -61,6 +61,8 @@ class Bag(object):
         return iter(self.elems)
 
 class Evaluator(Visitor):
+    def __init__(self):
+        self.work_done = 0
     def visit_EVar(self, v, env):
         return env[v.id]
     def visit_ENum(self, n, env):
@@ -184,14 +186,23 @@ class Evaluator(Visitor):
     def visit_object(self, o, *args):
         raise Exception("cannot eval {}".format(repr(o)))
     def visit(self, o, *args):
+        self.work_done += 1
         try:
             return super().visit(o, *args)
         except:
             print("evaluation of {} failed".format(repr(o)))
             raise
 
+_work = 0
 def eval(e, env):
-    return Evaluator().visit(e, env)
+    global _work
+    ev = Evaluator()
+    res = ev.visit(e, env)
+    _work = ev.work_done
+    return res
+
+def work_done():
+    return _work
 
 def mkval(type):
     """
