@@ -100,7 +100,7 @@ def infer_rep(state : [EVar], qexp : Exp, validate_types : bool = False) -> [([(
             yield from self.visit(e.e, compose(k, mk_lambda(e.e.type, lambda bag: EMakeMap(bag, e.key, new_val).with_type(TMap(e.type.k, new_val.body.type)))))
         def visit_EMapGet(self, e, k):
             for (st1, key) in self.visit(e.key):
-                for (st2, m) in self.visit(e.map, k=mk_lambda(e.map.type, lambda m: EAlterMapValues(m, k))):
+                for (st2, m) in self.visit(e.map, k=mk_lambda(e.map.type, lambda m: EAlterMapValues(m, k).with_type(TMap(m.type.k, k.body.type)))):
                     yield (st1 + st2, EMapGet(m, key).with_type(m.type.v))
         def visit_EFlatMap(self, e, k):
             # TODO: if we can prove something about the cardinality of the set,
