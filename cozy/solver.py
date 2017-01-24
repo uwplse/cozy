@@ -1,5 +1,6 @@
 from collections import defaultdict
 import itertools
+import threading
 
 import z3
 
@@ -426,129 +427,131 @@ def mkconst(ctx, solver, val):
     else:
         raise NotImplementedError(repr(val))
 
+_LOCK = threading.Lock()
 def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = True):
-    # print("sat? {}".format(pprint(e)))
-    assert e.type == TBool()
+    with _LOCK:
+        # print("sat? {}".format(pprint(e)))
+        assert e.type == TBool()
 
-    ctx = z3.Context()
-    solver = z3.Solver(ctx=ctx)
-    solver.set("core.validate", validate_model)
-    visitor = ToZ3(ctx, solver)
+        ctx = z3.Context()
+        solver = z3.Solver(ctx=ctx)
+        solver.set("core.validate", validate_model)
+        visitor = ToZ3(ctx, solver)
 
-    def reconstruct(model, value, type):
-        if type == TInt() or type == TLong():
-            return model.eval(value, model_completion=True).as_long()
-        elif isinstance(type, TNative):
-            return (type.name, model.eval(value, model_completion=True).as_long())
-        elif type == TString():
-            i = model.eval(value, model_completion=True).as_long()
-            s = "b"
-            if i >= 0:
-                s += "b" * i
+        def reconstruct(model, value, type):
+            if type == TInt() or type == TLong():
+                return model.eval(value, model_completion=True).as_long()
+            elif isinstance(type, TNative):
+                return (type.name, model.eval(value, model_completion=True).as_long())
+            elif type == TString():
+                i = model.eval(value, model_completion=True).as_long()
+                s = "b"
+                if i >= 0:
+                    s += "b" * i
+                else:
+                    s = "a" * (-i) + s
+                return s
+            elif type == TBool():
+                return bool(model.eval(value, model_completion=True))
+            elif isinstance(type, TBitVec):
+                return model.eval(value, model_completion=True).as_long()
+            elif isinstance(type, TBag) or isinstance(type, TSet):
+                mask, elems = value
+                real_val = []
+                for i in range(len(elems)):
+                    if reconstruct(model, mask[i], TBool()):
+                        real_val.append(reconstruct(model, elems[i], type.t))
+                return evaluation.Bag(real_val)
+            elif isinstance(type, TMap):
+                res = { }
+                for (k, v) in value["mapping"]:
+                    k = reconstruct(model, k, type.k)
+                    if k not in res:
+                        res[k] = reconstruct(model, v, type.v)
+                return FrozenDict(res)
+            elif isinstance(type, TEnum):
+                val = model.eval(value, model_completion=True).as_long()
+                return type.cases[val]
+            elif isinstance(type, THandle):
+                id, val = value
+                id = reconstruct(model, id, TInt())
+                val = reconstruct(model, val, type.value_type)
+                return (id, val)
+            elif isinstance(type, TRecord):
+                res = defaultdict(lambda: None)
+                for (field, t) in type.fields:
+                    res[field] = reconstruct(model, value[field], t)
+                return FrozenDict(res)
+            elif isinstance(type, TTuple):
+                return tuple(reconstruct(model, v, t) for (v, t) in zip(value, type.ts))
             else:
-                s = "a" * (-i) + s
-            return s
-        elif type == TBool():
-            return bool(model.eval(value, model_completion=True))
-        elif isinstance(type, TBitVec):
-            return model.eval(value, model_completion=True).as_long()
-        elif isinstance(type, TBag) or isinstance(type, TSet):
-            mask, elems = value
-            real_val = []
-            for i in range(len(elems)):
-                if reconstruct(model, mask[i], TBool()):
-                    real_val.append(reconstruct(model, elems[i], type.t))
-            return evaluation.Bag(real_val)
-        elif isinstance(type, TMap):
-            res = { }
-            for (k, v) in value["mapping"]:
-                k = reconstruct(model, k, type.k)
-                if k not in res:
-                    res[k] = reconstruct(model, v, type.v)
-            return FrozenDict(res)
-        elif isinstance(type, TEnum):
-            val = model.eval(value, model_completion=True).as_long()
-            return type.cases[val]
-        elif isinstance(type, THandle):
-            id, val = value
-            id = reconstruct(model, id, TInt())
-            val = reconstruct(model, val, type.value_type)
-            return (id, val)
-        elif isinstance(type, TRecord):
-            res = defaultdict(lambda: None)
-            for (field, t) in type.fields:
-                res[field] = reconstruct(model, value[field], t)
-            return FrozenDict(res)
-        elif isinstance(type, TTuple):
-            return tuple(reconstruct(model, v, t) for (v, t) in zip(value, type.ts))
-        else:
-            raise NotImplementedError(type)
+                raise NotImplementedError(type)
 
-    def unreconstruct(value, type):
-        """Converts reconstructed value back to a Z3 value"""
-        if type == TInt() or type == TLong():
-            return z3.IntVal(value, ctx)
-        elif isinstance(type, TNative):
-            return z3.IntVal(value[1], ctx)
-        else:
-            raise NotImplementedError(type)
+        def unreconstruct(value, type):
+            """Converts reconstructed value back to a Z3 value"""
+            if type == TInt() or type == TLong():
+                return z3.IntVal(value, ctx)
+            elif isinstance(type, TNative):
+                return z3.IntVal(value[1], ctx)
+            else:
+                raise NotImplementedError(type)
 
-    _env = { }
-    fvs = vars if vars is not None else free_vars(e)
-    handle_vars = []
-    for v in fvs:
-        # print("{} : {}".format(pprint(v), pprint(v.type)))
-        _env[v.id] = visitor.mkvar(ctx, solver, collection_depth, v.type, handle_vars)
-    # print(_env)
-
-    # Handles implement reference equality... so if the references are the same,
-    # the values must be also. TODO: we could eliminiate the need for this by
-    # encoding handles as ints plus an uninterpreted "read_value" function for
-    # each handle type.
-    for i in range(len(handle_vars)):
-        for j in range(i + 1, len(handle_vars)):
-            h1type, h1, v1 = handle_vars[i]
-            h2type, h2, v2 = handle_vars[j]
-            if h1type == h2type:
-                solver.add(z3.Implies(h1 == h2, visitor.eq(h1type, v1, v2, _env), ctx))
-
-    solver.add(visitor.visit(e, _env))
-    # print(solver.assertions())
-    res = solver.check()
-    if res == z3.unsat:
-        return None
-    elif res == z3.unknown:
-        raise Exception("z3 reported unknown")
-    else:
-        model = solver.model()
-        # print(model)
-        res = { }
+        _env = { }
+        fvs = vars if vars is not None else free_vars(e)
+        handle_vars = []
         for v in fvs:
-            res[v.id] = reconstruct(model, _env[v.id], v.type)
-        for k, f in visitor.funcs.items():
-            name = k[0]
-            out_type = k[1]
-            arg_types = k[2]
-            @memoize
-            def extracted_func(*args):
-                return reconstruct(model, f(*[unreconstruct(v, t) for (v, t) in zip(args, arg_types)]), out_type)
-            res[name] = extracted_func
-        # print(res)
-        if validate_model:
-            x = evaluation.eval(e, res)
-            if x is not True:
-                print("bad example: {}".format(res))
-                print(" ---> formula: {}".format(pprint(e)))
-                print(" ---> got {}".format(repr(x)))
-                print(" ---> model: {}".format(model))
-                print(" ---> assertions: {}".format(solver.assertions()))
-                print(" ---> to reproduce: satisfy({e}, vars={vars}, collection_depth={collection_depth}, validate_model={validate_model})".format(
-                    e=repr(e),
-                    vars=repr(vars),
-                    collection_depth=repr(collection_depth),
-                    validate_model=repr(validate_model)))
-                raise Exception("model validation failed")
-        return res
+            # print("{} : {}".format(pprint(v), pprint(v.type)))
+            _env[v.id] = visitor.mkvar(ctx, solver, collection_depth, v.type, handle_vars)
+        # print(_env)
+
+        # Handles implement reference equality... so if the references are the same,
+        # the values must be also. TODO: we could eliminiate the need for this by
+        # encoding handles as ints plus an uninterpreted "read_value" function for
+        # each handle type.
+        for i in range(len(handle_vars)):
+            for j in range(i + 1, len(handle_vars)):
+                h1type, h1, v1 = handle_vars[i]
+                h2type, h2, v2 = handle_vars[j]
+                if h1type == h2type:
+                    solver.add(z3.Implies(h1 == h2, visitor.eq(h1type, v1, v2, _env), ctx))
+
+        solver.add(visitor.visit(e, _env))
+        # print(solver.assertions())
+        res = solver.check()
+        if res == z3.unsat:
+            return None
+        elif res == z3.unknown:
+            raise Exception("z3 reported unknown")
+        else:
+            model = solver.model()
+            # print(model)
+            res = { }
+            for v in fvs:
+                res[v.id] = reconstruct(model, _env[v.id], v.type)
+            for k, f in visitor.funcs.items():
+                name = k[0]
+                out_type = k[1]
+                arg_types = k[2]
+                @memoize
+                def extracted_func(*args):
+                    return reconstruct(model, f(*[unreconstruct(v, t) for (v, t) in zip(args, arg_types)]), out_type)
+                res[name] = extracted_func
+            # print(res)
+            if validate_model:
+                x = evaluation.eval(e, res)
+                if x is not True:
+                    print("bad example: {}".format(res))
+                    print(" ---> formula: {}".format(pprint(e)))
+                    print(" ---> got {}".format(repr(x)))
+                    print(" ---> model: {}".format(model))
+                    print(" ---> assertions: {}".format(solver.assertions()))
+                    print(" ---> to reproduce: satisfy({e}, vars={vars}, collection_depth={collection_depth}, validate_model={validate_model})".format(
+                        e=repr(e),
+                        vars=repr(vars),
+                        collection_depth=repr(collection_depth),
+                        validate_model=repr(validate_model)))
+                    raise Exception("model validation failed")
+            return res
 
 def satisfiable(e, **opts):
     return satisfy(e, **opts) is not None
