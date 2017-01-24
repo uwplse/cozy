@@ -470,8 +470,9 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
                     # so overwriting here is the correct move.
                     k = reconstruct(model, k, type.k)
                     v = reconstruct(model, v, type.v)
-                    if v == default and k in res:
-                        del res[k]
+                    if v == default:
+                        if k in res:
+                            del res[k]
                     else:
                         res[k] = v
                 return res

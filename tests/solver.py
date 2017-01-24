@@ -1,7 +1,7 @@
 import unittest
 
 from cozy.solver import satisfy
-from cozy.typecheck import typecheck
+from cozy.typecheck import typecheck, retypecheck
 from cozy.target_syntax import *
 from cozy.syntax_tools import pprint, equal
 
@@ -67,3 +67,9 @@ class TestSolver(unittest.TestCase):
             vars=None,
             collection_depth=2,
             validate_model=True)
+
+    def test_regression2(self):
+        vars = [EVar('i').with_type(TInt()), EVar('_var1210').with_type(TMap(TInt(), TBag(TInt()))), EVar('ints').with_type(TBag(THandle('_HandleType12', TInt()))), EVar('_var45').with_type(TInt()), EVar('_var31').with_type(TBag(THandle('_HandleType12', TInt())))]
+        e = EBinOp(EBinOp(EBinOp(EBinOp(EBinOp(EUnaryOp('unique', EMap(EVar('ints').with_type(TBag(THandle('_HandleType12', TInt()))), ELambda(EVar('_var13').with_type(THandle('_HandleType12', TInt())), EGetField(EVar('_var13').with_type(THandle('_HandleType12', TInt())), 'val').with_type(TInt()))).with_type(TBag(TInt()))).with_type(TBool()), 'and', EUnaryOp('unique', EVar('ints').with_type(TBag(THandle('_HandleType12', TInt())))).with_type(TBool())).with_type(TBool()), 'and', EBinOp(EVar('_var31').with_type(TBag(THandle('_HandleType12', TInt()))), '==', EVar('ints').with_type(TBag(THandle('_HandleType12', TInt())))).with_type(TBool())).with_type(TBool()), 'and', EBinOp(EVar('_var1210').with_type(TMap(TInt(), TBag(TInt()))), '==', EMakeMap(EVar('_var31').with_type(TBag(THandle('_HandleType12', TInt()))), ELambda(EVar('_var46').with_type(THandle('_HandleType12', TInt())), EGetField(EVar('_var46').with_type(THandle('_HandleType12', TInt())), 'val').with_type(TInt())), ELambda(EVar('_var1207').with_type(TBag(THandle('_HandleType12', TInt()))), EMap(EVar('_var1207').with_type(TBag(THandle('_HandleType12', TInt()))), ELambda(EVar('_var46').with_type(THandle('_HandleType12', TInt())), ENum(1).with_type(TInt()))).with_type(TBag(TInt())))).with_type(TMap(TInt(), TBag(TInt())))).with_type(TBool())).with_type(TBool()), 'and', EBinOp(EVar('_var45').with_type(TInt()), '==', EUnaryOp('sum', EMap(EVar('ints').with_type(TBag(THandle('_HandleType12', TInt()))), ELambda(EVar('_var21').with_type(THandle('_HandleType12', TInt())), ENum(1).with_type(TInt()))).with_type(TBag(TInt()))).with_type(TInt())).with_type(TBool())).with_type(TBool()), 'and', EUnaryOp('not', EBinOp(EUnaryOp('not', EBinOp(ENum(0).with_type(TInt()), '==', EUnaryOp('sum', EMapGet(EVar('_var1210').with_type(TMap(TInt(), TBag(TInt()))), EVar('i').with_type(TInt())).with_type(TBag(TInt()))).with_type(TInt())).with_type(TBool())).with_type(TBool()), '==', EBool(True).with_type(TBool())).with_type(TBool())).with_type(TBool())).with_type(TBool())
+        assert retypecheck(e, env={ v.id : v.type for v in vars })
+        satisfy(e, vars=vars, collection_depth=2, validate_model=True)
