@@ -81,7 +81,7 @@ class BinderBuilder(core.ExpBuilder):
             yield EBool(True).with_type(BOOL)
             yield EBool(False).with_type(BOOL)
             yield from self.roots
-            yield from self.binders
+            yield from (b for b in self.binders if b not in self.roots)
             return
 
         for e in cache.find(type=TRecord, size=size-1):

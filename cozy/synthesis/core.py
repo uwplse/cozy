@@ -142,6 +142,8 @@ class Learner(object):
     def watch(self, new_target):
         new_roots = []
         for e in all_exps(new_target):
+            if e in new_roots:
+                continue
             if not isinstance(e, ELambda):
                 try:
                     self._fingerprint(e)
@@ -152,7 +154,6 @@ class Learner(object):
         self.builder = self.builder.with_roots(new_roots)
 
         self.target = new_target
-        self.cost_ceiling = self.cost_model.cost(new_target)
         self.update_watched_exps()
         if self.cost_model.is_monotonic():
             seen = list(self.seen.items())
@@ -167,6 +168,8 @@ class Learner(object):
 
     def update_watched_exps(self):
         e = self.target
+        self.cost_ceiling = self.cost_model.cost(e)
+        # print(" --< cost ceiling is now {}".format(self.cost_ceiling))
         self.watched_exps = {}
         for e in all_exps(self.target):
             if isinstance(e, ELambda):
@@ -187,13 +190,15 @@ class Learner(object):
         return fingerprint(e, self.examples)
 
     def _on_exp(self, e, fate, *args):
-        # return
+        return
         # if (isinstance(e, EMapGet) or
         #         isinstance(e, EFilter) or
         #         (isinstance(e, EBinOp) and e.op == "==" and (isinstance(e.e1, EVar) or isinstance(e.e2, EVar))) or
         #         (isinstance(e, EBinOp) and e.op == ">=" and (isinstance(e.e1, EVar) or isinstance(e.e2, EVar)))):
         # if isinstance(e, EBinOp) and e.op == "+" and isinstance(e.type, TBag):
-        if hasattr(e, "_tag") and e._tag:
+        # if hasattr(e, "_tag") and e._tag:
+        # if isinstance(e, EFilter):
+        if fate in ("better", "new"):
             print(" ---> [{}] {}; {}".format(fate, pprint(e), ", ".join(pprint(e) for e in args)))
 
     def forget_most_recent(self):
@@ -208,14 +213,13 @@ class Learner(object):
     def next(self):
         while True:
             for e in self.builder_iter:
-
                 if self.stop_callback():
                     raise StopException()
 
                 cost = self.cost_model.cost(e)
 
                 if self.cost_model.is_monotonic() and cost > self.cost_ceiling:
-                    self._on_exp(e, "too expensive")
+                    self._on_exp(e, "too expensive", cost, self.cost_ceiling)
                     continue
 
                 fp = self._fingerprint(e)
@@ -230,11 +234,11 @@ class Learner(object):
                     self._on_exp(e, "new")
                 else:
                     prev_cost, prev_exp, prev_size = prev
-                    if cost <= prev_cost:
+                    if cost < prev_cost:
                         self.overwritten = prev
                         self.most_recent = (e, self.current_size, fp)
                         # print("cost ceiling lowered for {}: {} --> {}".format(fp, prev_cost, cost))
-                        # self.cache.evict(prev_exp, prev_size)
+                        self.cache.evict(prev_exp, prev_size)
                         self.cache.add(e, size=self.current_size)
                         self.seen[fp] = (cost, e, self.current_size)
                         self.last_progress = self.current_size
@@ -246,7 +250,7 @@ class Learner(object):
                 watched = self.watched_exps.get(fp)
                 if watched is not None:
                     watched_e, watched_cost = watched
-                    if cost < watched_cost:
+                    if cost < watched_cost or (cost == watched_cost and e != watched_e):
                         print("Found potential improvement [{}] for [{}]".format(pprint(e), pprint(watched_e)))
                         return (watched_e, e)
 
@@ -375,7 +379,7 @@ def improve(
                 new_cost = cost_model.cost(new_target)
                 if new_cost > old_cost:
                     print("whoops: {} ----> {}".format(target, new_target))
-                    from .rep_inference import infer_rep, pprint_reps
+                    from cozy.rep_inference import infer_rep, pprint_reps
                     for x in [old_e, new_e, target, new_target]:
                         pprint_reps(infer_rep(cost_model.state_vars, x))
                     # import pdb
@@ -386,7 +390,7 @@ def improve(
                 if new_cost == old_cost:
                     continue
                 print("found improvement: {} -----> {}".format(pprint(old_e), pprint(new_e)))
-                print("cost: {} -----> {}".format(cost_model.cost(old_e), cost_model.cost(new_e)))
+                print("cost: {} -----> {}".format(old_cost, new_cost))
                 learner.reset(instantiate_examples(examples, set(vars), binders), update_watched_exps=False)
                 learner.watch(new_target)
                 target = new_target
