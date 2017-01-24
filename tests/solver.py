@@ -60,3 +60,10 @@ class TestSolver(unittest.TestCase):
         y = EVar("y").with_type(TMap(TInt(), TInt()))
         e = ENot(equal(x, y))
         model = satisfy(e, validate_model=True)
+
+    def test_regression1(self):
+        satisfy(
+            EBinOp(EBinOp(EBinOp(EUnaryOp('unique', EMap(EVar('ints').with_type(TBag(THandle('_HandleType12', TInt()))), ELambda(EVar('_var13').with_type(THandle('_HandleType12', TInt())), EGetField(EVar('_var13').with_type(THandle('_HandleType12', TInt())), 'val').with_type(TInt()))).with_type(TBag(TInt()))).with_type(TBool()), 'and', EUnaryOp('unique', EVar('ints').with_type(TBag(THandle('_HandleType12', TInt())))).with_type(TBool())).with_type(TBool()), 'and', EBinOp(EVar('_var1141').with_type(TMap(TInt(), TBag(TInt()))), '==', EMakeMap(EVar('ints').with_type(TBag(THandle('_HandleType12', TInt()))), ELambda(EVar('_var22').with_type(THandle('_HandleType12', TInt())), EGetField(EVar('_var22').with_type(THandle('_HandleType12', TInt())), 'val').with_type(TInt())), ELambda(EVar('_var1138').with_type(TBag(THandle('_HandleType12', TInt()))), EMap(EVar('_var1138').with_type(TBag(THandle('_HandleType12', TInt()))), ELambda(EVar('_var22').with_type(THandle('_HandleType12', TInt())), ENum(1).with_type(TInt()))).with_type(TBag(TInt())))).with_type(TMap(TInt(), TBag(TInt())))).with_type(TBool())).with_type(TBool()), 'and', EBinOp(EUnaryOp('sum', EMap(EFilter(EVar('ints').with_type(TBag(THandle('_HandleType12', TInt()))), ELambda(EVar('_var1168').with_type(THandle('_HandleType12', TInt())), EBinOp(EGetField(EVar('_var1168').with_type(THandle('_HandleType12', TInt())), 'val').with_type(TInt()), '==', EVar('i').with_type(TInt())).with_type(TBool()))).with_type(TBag(THandle('_HandleType12', TInt()))), ELambda(EVar('_var1730').with_type(TMaybe(THandle('_HandleType12', TInt()))), ENum(1).with_type(TInt()))).with_type(TBag(TInt()))).with_type(TInt()), '==', ENum(0).with_type(TInt())).with_type(TBool())).with_type(TBool()),
+            vars=None,
+            collection_depth=2,
+            validate_model=True)
