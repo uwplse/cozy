@@ -49,6 +49,8 @@ class CardinalityVisitor(BottomUpExplorer):
         return self.visit(e.e)
     def visit_EFlatMap(self, e):
         return self.visit(e.e) * self.visit(e.f.body)
+    def visit_ECond(self, e):
+        return (self.visit(e.then_branch) + self.visit(e.else_branch)) / 2
     def visit_Exp(self, e):
         raise NotImplementedError(e)
 
@@ -111,6 +113,8 @@ class MemoryUsageCostModel(CostModel, BottomUpExplorer):
         return 1 # TODO: sizeof(e.type), or cardinality estimation
     def visit_EGetField(self, e):
         return 1 # TODO: sizeof(e.type), or cardinality estimation
+    def visit_ECond(self, e):
+        return max(self.visit(e.then_branch), self.visit(e.else_branch))
     def visit_Exp(self, e):
         raise NotImplementedError(repr(e))
 
@@ -151,8 +155,7 @@ class CompositeCostModel(CostModel):
         self.state_vars = state_vars
         self.rtcm = RunTimeCostModel()
         self.memcm = MemoryUsageCostModel()
-        # self.factor = 0.01 # 0 = only care about runtime, 1 = only care about memory
-        self.factor = 0
+        self.factor = 0.01 # 0 = only care about runtime, 1 = only care about memory
     def is_monotonic(self):
         return self.rtcm.is_monotonic() and self.memcm.is_monotonic()
     def split_cost(self, st, e):
