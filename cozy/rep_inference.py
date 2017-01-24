@@ -61,6 +61,7 @@ def infer_rep(state : [EVar], qexp : Exp, validate_types : bool = False) -> [([(
     class V(Visitor):
 
         def apply_k(self, k, e):
+            assert k.arg.type == e.type, "calling continuation {} on {}".format(pprint(k), pprint(e))
             if isinstance(e, EVar):
                 e = k.apply_to(e)
                 fvs = free_vars(e)
@@ -78,7 +79,7 @@ def infer_rep(state : [EVar], qexp : Exp, validate_types : bool = False) -> [([(
                 yield from self.visit(e.e, compose(k, mk_lambda(e.e.type, lambda x: EFilter(x, e.p).with_type(e.type))))
             else:
                 for (st1, exp) in self.visit(e.e, mk_lambda(e.e.type, lambda x: x)):
-                    for (st2, body2) in self.visit(e.p.body, mk_lambda(e.e.type, lambda x: x)):
+                    for (st2, body2) in self.visit(e.p.body, mk_lambda(BOOL, lambda x: x)):
                         for (st3, res) in self.apply_k(k, EFilter(exp, ELambda(e.p.arg, body2)).with_type(e.type)):
                             yield (st1 + st2 + st3, res)
         def visit_EMap(self, e, k):
@@ -87,7 +88,7 @@ def infer_rep(state : [EVar], qexp : Exp, validate_types : bool = False) -> [([(
                 yield from self.visit(e.e, compose(k, mk_lambda(e.e.type, lambda x: EMap(x, e.f).with_type(e.type))))
             else:
                 for (st1, exp) in self.visit(e.e, mk_lambda(e.e.type, lambda x: x)):
-                    for (st2, body2) in self.visit(e.f.body, mk_lambda(e.e.type, lambda x: x)):
+                    for (st2, body2) in self.visit(e.f.body, mk_lambda(e.f.body.type, lambda x: x)):
                         for (st3, res) in self.apply_k(k, EMap(exp, ELambda(e.f.arg, body2)).with_type(e.type)):
                             yield (st1 + st2 + st3, res)
         def visit_EMakeMap(self, e, k):
@@ -126,7 +127,7 @@ def infer_rep(state : [EVar], qexp : Exp, validate_types : bool = False) -> [([(
                 for reps in cross_product([(self.visit(child) if isinstance(child, Exp) else (child,)) for child in e.children()]):
                     vs = sum((r[0] for (r, child) in zip(reps, e.children()) if isinstance(child, Exp)), [])
                     args = [r[1] if isinstance(child, Exp) else r for (r, child) in zip(reps, e.children())]
-                    ee = type(e)(*args)
+                    ee = type(e)(*args).with_type(e.type)
                     for st, res in self.apply_k(k, ee):
                         yield (st + vs, res)
         def visit(self, e, k=None):
