@@ -124,15 +124,27 @@ def infer_rep(state : [EVar], qexp : Exp, validate_types : bool = False) -> [([(
             else:
                 if any(isinstance(child, ELambda) for child in e.children()):
                     raise NotImplementedError(e)
-                for reps in cross_product([(self.visit(child) if isinstance(child, Exp) else (child,)) for child in e.children()]):
-                    vs = sum((r[0] for (r, child) in zip(reps, e.children()) if isinstance(child, Exp)), [])
-                    args = [r[1] if isinstance(child, Exp) else r for (r, child) in zip(reps, e.children())]
-                    ee = type(e)(*args).with_type(e.type)
-                    for st, res in self.apply_k(k, ee):
-                        yield (st + vs, res)
+                children = e.children()
+                expr_children = [i for i in range(len(children)) if isinstance(children[i], Exp)]
+                if len(expr_children) == 1:
+                    i = expr_children[0]
+                    echild = children[i]
+                    kk = mk_lambda(echild.type, lambda new_child: type(e)(*[(children[j] if j != i else new_child) for j in range(len(children))]).with_type(e.type))
+                    yield from self.visit(echild, k=compose(k, kk))
+                else:
+                    # for i in range(len(e.children())):
+                    #     if isinstance(e.children()[i], Exp) and all(all(v in state for v in free_vars(e.children()[j])) for j in range(len(e.children())) if j != i and isinstance(e.children()[j], Exp)):
+                    #         yield from self.visit(e.children()[i], k=compose(k, mk_lambda(e.children()[i].type, lambda new_child: type(e)(*[(e.children()[j] if j != i else new_child) for j in range(len(e.children()))]).with_type(e.type))))
+                    for reps in cross_product([(self.visit(child) if isinstance(child, Exp) else (child,)) for child in e.children()]):
+                        vs = sum((r[0] for (r, child) in zip(reps, e.children()) if isinstance(child, Exp)), [])
+                        args = [r[1] if isinstance(child, Exp) else r for (r, child) in zip(reps, e.children())]
+                        ee = type(e)(*args).with_type(e.type)
+                        for st, res in self.apply_k(k, ee):
+                            yield (st + vs, res)
         def visit(self, e, k=None):
             if k is None:
                 k = mk_lambda(e.type, lambda x: x)
+            assert k.arg.type == e.type
             fvs = free_vars(e)
             if fvs:
                 yield from super().visit(e, k)

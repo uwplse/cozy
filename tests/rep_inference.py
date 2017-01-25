@@ -96,3 +96,11 @@ class TestRepInference(unittest.TestCase):
             [EVar('ints').with_type(TBag(THandle('_HandleType12', TInt())))],
             EUnaryOp('not', EBinOp(ENum(0).with_type(TInt()), '==', EUnaryOp('sum', EMapGet(EVar('_var1141').with_type(TMap(TInt(), TBag(TInt()))), EVar('i').with_type(TInt())).with_type(TBag(TInt()))).with_type(TInt())).with_type(TBool())).with_type(TBool()),
             validate_types=True))
+
+    def test_regression5(self):
+        state = [EVar('ints').with_type(TBag(THandle('_HandleType12', TInt())))]
+        e = EUnaryOp('not', EBinOp(ENum(0).with_type(TInt()), '==', EUnaryOp('sum', EMap(EMapGet(EMakeMap(EVar('ints').with_type(TBag(THandle('_HandleType12', TInt()))), ELambda(EVar('_var22').with_type(THandle('_HandleType12', TInt())), EGetField(EVar('_var22').with_type(THandle('_HandleType12', TInt())), 'val').with_type(TInt())), ELambda(EVar('_var1001').with_type(TBag(THandle('_HandleType12', TInt()))), EVar('_var1001').with_type(TBag(THandle('_HandleType12', TInt()))))).with_type(TMap(TInt(), TBag(THandle('_HandleType12', TInt())))), EVar('i').with_type(TInt())).with_type(TBag(THandle('_HandleType12', TInt()))), ELambda(EVar('_var22').with_type(THandle('_HandleType12', TInt())), ENum(1).with_type(TInt()))).with_type(TBag(TInt()))).with_type(TInt())).with_type(TBool())).with_type(TBool())
+        for (rep, ret) in infer_rep(state, e, validate_types=True):
+            pprint_rep((rep, ret))
+            for ee in all_exps(ret):
+                assert not (isinstance(ee, EUnaryOp) and ee.op == "sum")
