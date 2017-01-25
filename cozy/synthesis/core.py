@@ -124,7 +124,8 @@ class NoMoreImprovements(Exception):
     pass
 
 class Learner(object):
-    def __init__(self, target, examples, cost_model, builder, stop_callback):
+    def __init__(self, target, legal_free_vars, examples, cost_model, builder, stop_callback):
+        self.legal_free_vars = legal_free_vars
         self.stop_callback = stop_callback
         self.cost_model = cost_model
         self.builder = builder
@@ -147,7 +148,7 @@ class Learner(object):
         for e in all_exps(new_target):
             if e in new_roots:
                 continue
-            if not isinstance(e, ELambda):
+            if not isinstance(e, ELambda) and all(v in self.legal_free_vars for v in free_vars(e)):
                 try:
                     self._fingerprint(e)
                     new_roots.append(e)
@@ -352,7 +353,7 @@ def improve(
 
     vars = list(free_vars(target) | free_vars(assumptions))
     examples = []
-    learner = Learner(target, instantiate_examples(examples, set(vars), binders), cost_model, builder, stop_callback)
+    learner = Learner(target, vars + binders, instantiate_examples(examples, set(vars), binders), cost_model, builder, stop_callback)
     try:
         while True:
             # 1. find any potential improvement to any sub-exp of target
