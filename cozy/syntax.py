@@ -87,6 +87,10 @@ BOOL = TBool()
 T = EBool(True) .with_type(BOOL)
 F = EBool(False).with_type(BOOL)
 
+INT = TInt()
+LONG = TLong()
+STRING = TString()
+
 def seq(stms):
     stms = [s for s in stms if not isinstance(s, SNoOp)]
     if not stms:

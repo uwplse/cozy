@@ -24,11 +24,11 @@ def retypecheck(exp, env=None):
             print(" --> {}".format(e))
     return not errs
 
-INT = syntax.TInt()
-LONG = syntax.TLong()
+BOOL = syntax.BOOL
+INT = syntax.INT
+LONG = syntax.LONG
+STRING = syntax.STRING
 DEFAULT_TYPE = object()
-BOOL = syntax.TBool()
-STRING = syntax.TString()
 
 class Typechecker(Visitor):
 

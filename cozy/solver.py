@@ -20,12 +20,10 @@ class _SymbolicUnion(object):
         self.cond = cond
         self.lhs = x
         self.rhs = y
-    def map(self, f):
-        new_lhs = fmap(self.lhs, f)
-        new_rhs = fmap(self.rhs, f)
-        if isinstance(new_lhs, z3.AstRef) and isinstance(new_rhs, z3.AstRef):
-            return z3.If(self.cond, new_lhs, new_rhs, self.cond.ctx_ref())
-        return _SymbolicUnion(self.cond, new_lhs, new_rhs)
+    def map(self, f, result_ty):
+        new_lhs = fmap(self.lhs, result_ty, f)
+        new_rhs = fmap(self.rhs, result_ty, f)
+        return SymbolicUnion(result_ty, self.cond, new_lhs, new_rhs)
     def __repr__(self):
         return "SymbolicUnion({}, {}, {})".format(repr(self.cond), repr(self.lhs), repr(self.rhs))
 
@@ -36,9 +34,9 @@ def SymbolicUnion(ty : Type, cond : z3.AstRef, then_branch, else_branch):
     else:
         return _SymbolicUnion(cond, then_branch, else_branch)
 
-def fmap(x, f):
+def fmap(x, result_ty, f):
     if isinstance(x, _SymbolicUnion):
-        return x.map(f)
+        return x.map(f, result_ty)
     return f(x)
 
 class ToZ3(Visitor):
@@ -46,16 +44,20 @@ class ToZ3(Visitor):
         self.ctx = z3ctx
         self.solver = z3solver
         self.funcs = { }
+        self.int_zero = z3.IntVal(0, self.ctx)
+        self.int_one  = z3.IntVal(1, self.ctx)
     def distinct(self, t, *values):
         if len(values) <= 1:
             return z3.BoolVal(True, self.ctx)
+        if decideable(t):
+            return z3.Distinct(*values, self.ctx)
         return z3.And(
             self.distinct(t, values[1:]),
             *[z3.Not(self.eq(t, values[0], v1, {})) for v1 in values[1:]],
             self.ctx)
     def eq(self, t, e1, e2, env):
-        return fmap(e1, lambda v1:
-               fmap(e2, lambda v2:
+        return fmap(e1, BOOL, lambda v1:
+               fmap(e2, BOOL, lambda v2:
                self._eq(t, v1, v2, env)))
     def _eq(self, t, e1, e2, env):
         if type(t) in [TInt, TLong, TBool, TEnum, TNative, TString]:
@@ -117,15 +119,15 @@ class ToZ3(Visitor):
         returns # of times x appears in bag
         """
         bag_mask, bag_elems = bag
-        l = 0
+        l = self.int_zero
         for i in range(len(bag_elems)):
-            l = z3.If(z3.And(bag_mask[i], self.eq(t, x, bag_elems[i], env), self.ctx), 1, 0, ctx=self.ctx) + l
+            l = z3.If(z3.And(bag_mask[i], self.eq(t, x, bag_elems[i], env), self.ctx), self.int_one, self.int_zero, ctx=self.ctx) + l
         return l
     def len_of(self, val):
         bag_mask, bag_elems = val
-        l = 0
+        l = self.int_zero
         for i in range(len(bag_elems)):
-            l = z3.If(bag_mask[i], 1, 0, ctx=self.ctx) + l
+            l = z3.If(bag_mask[i], self.int_one, self.int_zero, ctx=self.ctx) + l
         return l
     def visit_TInt(self, t):
         return z3.IntSort(self.ctx)
@@ -172,9 +174,9 @@ class ToZ3(Visitor):
         return tuple(self.visit(ee, env) for ee in e.es)
     def visit_ETupleGet(self, e, env):
         tup = self.visit(e.e, env)
-        return fmap(tup, lambda tup: tup[e.n])
+        return fmap(tup, e.type, lambda tup: tup[e.n])
     def visit_EAlterMaybe(self, e, env):
-        return fmap(self.visit(e.e, env),
+        return fmap(self.visit(e.e, env), e.type,
             lambda res: self.apply(e.f, res, env) if res is not None else res)
     def visit_EFlatten(self, e, env):
         def go(bag):
@@ -184,10 +186,10 @@ class ToZ3(Visitor):
             def recurse(sub_bag):
                 exists = mask[0]
                 sub_mask, sub_elems = sub_bag
-                return fmap(go((mask[1:], elems[1:])),
+                return fmap(go((mask[1:], elems[1:])), e.type,
                     lambda rest: ([z3.And(exists, m, self.ctx) for m in sub_mask] + rest[0], sub_elems + rest[1]))
-            return fmap(elems[0], recurse)
-        flat = fmap(self.visit(e.e, env), go)
+            return fmap(elems[0], e.type, recurse)
+        flat = fmap(self.visit(e.e, env), e.type, go)
         # print("bag = {}".format(self.visit(e.e, env)))
         # print("flat = {}".format(flat))
         return flat
@@ -204,25 +206,25 @@ class ToZ3(Visitor):
         elif e.op == "sum":
             def take_sum(bag):
                 bag_mask, bag_elems = bag
-                sum = z3.IntVal(0, self.ctx)
+                sum = self.int_zero
                 for i in range(len(bag_elems)):
-                    sum = z3.If(bag_mask[i], bag_elems[i], z3.IntVal(0, self.ctx), ctx=self.ctx) + sum
+                    sum = z3.If(bag_mask[i], bag_elems[i], self.int_zero, ctx=self.ctx) + sum
                 return sum
-            return fmap(self.visit(e.e, env), take_sum)
+            return fmap(self.visit(e.e, env), e.type, take_sum)
         elif e.op == "unique":
             def is_unique(bag):
                 bag_mask, bag_elems = bag
                 rest = (bag_mask[1:], bag_elems[1:])
                 if bag_elems:
                     return z3.And(
-                        z3.Implies(bag_mask[0], self.count_in(e.e.type.t, rest, bag_elems[0], env) == 0, self.ctx),
+                        z3.Implies(bag_mask[0], self.count_in(e.e.type.t, rest, bag_elems[0], env) ==  self.int_zero, self.ctx),
                         is_unique(rest),
                         self.ctx)
                 else:
                     return z3.BoolVal(True, self.ctx)
-            return fmap(self.visit(e.e, env), is_unique)
+            return fmap(self.visit(e.e, env), e.type, is_unique)
         elif e.op == "len":
-            return fmap(self.visit(e.e, env), self.len_of)
+            return fmap(self.visit(e.e, env), e.type, self.len_of)
         elif e.op == "the":
             assert isinstance(e.type, TMaybe)
             def get_first(bag):
@@ -231,7 +233,7 @@ class ToZ3(Visitor):
                     return None
                 rest = (bag_mask[1:], bag_elems[1:])
                 return SymbolicUnion(e.type, bag_mask[0], bag_elems[0], get_first(rest))
-            return fmap(self.visit(e.e, env), get_first)
+            return fmap(self.visit(e.e, env), e.type, get_first)
         else:
             raise NotImplementedError(e.op)
     def visit_EGetField(self, e, env):
@@ -261,8 +263,8 @@ class ToZ3(Visitor):
             return v1 <= v2
         elif e.op == "+":
             if isinstance(e.type, TBag):
-                return fmap(v1, lambda bag1:
-                       fmap(v2, lambda bag2:
+                return fmap(v1, e.type, lambda bag1:
+                       fmap(v2, e.type, lambda bag2:
                        (bag1[0] + bag2[0], bag1[1] + bag2[1])))
             elif isinstance(e.type, TInt):
                 return v1 + v2
@@ -271,7 +273,7 @@ class ToZ3(Visitor):
         elif e.op == "-":
             return v1 - v2
         elif e.op == "in":
-            return fmap(v2, lambda bag: self.count_in(e.e1.type, bag, v1, env) > 0)
+            return fmap(v2, e.type, lambda bag: self.count_in(e.e1.type, bag, v1, env) > self.int_zero)
         else:
             raise NotImplementedError(e.op)
     def visit_EListComprehension(self, e, env):
@@ -285,7 +287,7 @@ class ToZ3(Visitor):
             for x in bag_elems:
                 res_elems.append(self.apply(e.f, x, env))
             return bag_mask, res_elems
-        return fmap(self.visit(e.e, env), go)
+        return fmap(self.visit(e.e, env), e.type, go)
     def do_filter(self, bag, p, env):
         return self.raw_filter(bag, lambda x: self.apply(p, x, env))
     def raw_filter(self, bag, p):
@@ -295,7 +297,7 @@ class ToZ3(Visitor):
             res_mask.append(z3.And(mask, p(x), self.ctx))
         return res_mask, bag_elems
     def visit_EFilter(self, e, env):
-        return fmap(self.visit(e.e, env), lambda bag: self.do_filter(bag, e.p, env))
+        return fmap(self.visit(e.e, env), e.type, lambda bag: self.do_filter(bag, e.p, env))
     def visit_EMakeMap(self, e, env):
         def go(bag):
             bag_mask, bag_elems = bag
@@ -307,7 +309,7 @@ class ToZ3(Visitor):
                     env)) for k in ks],
                 "default": self.apply(e.value, ([], []), env)}
             return m
-        return fmap(self.visit(e.e, env), go)
+        return fmap(self.visit(e.e, env), e.type, go)
     def _map_get(self, map_type, map, key, env):
         res = map["default"]
         # print("map get {} on {}".format(key, map))
@@ -316,13 +318,13 @@ class ToZ3(Visitor):
             # print("   key = {}".format(repr(key)))
             # print("   v   = {}".format(repr(v)))
             # print("   res = {}".format(repr(res)))
-            res = SymbolicUnion(map_type, self.eq(map_type.k, k, key, env), v, res)
+            res = SymbolicUnion(map_type.v, self.eq(map_type.k, k, key, env), v, res)
         return res
     def visit_EMapGet(self, e, env):
         key = self.visit(e.key, env)
         def go(map):
             return self._map_get(e.map.type, map, key, env)
-        return fmap(self.visit(e.map, env), go)
+        return fmap(self.visit(e.map, env), e.type, go)
     def visit_EApp(self, e, env):
         return self.apply(e.f, self.visit(e.arg, env), env)
     def apply(self, lam, arg, env):
@@ -522,7 +524,15 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
                 if h1type == h2type:
                     solver.add(z3.Implies(h1 == h2, visitor.eq(h1type, v1, v2, _env), ctx))
 
-        solver.add(visitor.visit(e, _env))
+        try:
+            solver.add(visitor.visit(e, _env))
+        except Exception:
+            print(" ---> to reproduce: satisfy({e}, vars={vars}, collection_depth={collection_depth}, validate_model={validate_model})".format(
+                e=repr(e),
+                vars=repr(vars),
+                collection_depth=repr(collection_depth),
+                validate_model=repr(validate_model)))
+            raise
         # print(solver.assertions())
         res = solver.check()
         if res == z3.unsat:
