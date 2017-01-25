@@ -30,6 +30,32 @@ RecordFieldUpdate = declare_case(Delta, "RecordFieldUpdate", ["f", "delta"])
 # Tuples
 TupleEntryUpdate  = declare_case(Delta, "TupleEntryUpdate", ["n", "delta"])
 
+def fmap(f, delta):
+    if isinstance(delta, NoDelta):
+        return delta
+    elif isinstance(delta, Conditional):
+        return Conditional(f(delta.cond), fmap(f, delta.delta))
+    elif isinstance(delta, MultiDelta):
+        return MultiDelta(fmap(f, delta.delta1), fmap(f, delta.delta2))
+    elif isinstance(delta, ForEachDelta):
+        return ForEachDelta(f(elems), delta.x, fmap(f, delta.delta))
+    elif isinstance(delta, Become):
+        return Become(f(delta.e))
+    elif isinstance(delta, BagAdd):
+        return BagAdd(f(delta.e))
+    elif isinstance(delta, BagAddAll):
+        return BagAddAll(f(delta.e))
+    elif isinstance(delta, BagRemove):
+        return BagRemove(f(delta.e))
+    elif isinstance(delta, BagRemoveAll):
+        return BagRemoveAll(f(delta.e))
+    elif isinstance(delta, AddNum):
+        return AddNum(f(delta.e))
+    elif isinstance(delta, BagElemUpdated):
+        return BagElemUpdated(delta.elem, fmap(f, delta.delta))
+    else:
+        raise NotImplementedError(delta)
+
 def multi_delta(deltas):
     deltas = [d for d in deltas if not isinstance(d, NoDelta)]
     if len(deltas) == 0:
@@ -195,9 +221,11 @@ def derivative(
         elif isinstance(d, BagAdd):
             return AddNum(d.e)
         elif isinstance(d, BagAddAll):
-            return AddNum(syntax.EUnaryOp("sum", d.e).with_type(d.e.type.t))
+            return AddNum(make_subgoal(syntax.EUnaryOp("sum", d.e).with_type(d.e.type.t)))
         elif isinstance(d, BagRemove):
             return AddNum(syntax.EUnaryOp("-", d.e).with_type(d.e.type))
+        elif isinstance(d, BagRemoveAll):
+            return AddNum(syntax.EUnaryOp("-", make_subgoal(syntax.EUnaryOp("sum", d.e).with_type(d.e.type.t))).with_type(d.e.type.t))
         elif isinstance(d, BagElemUpdated):
             if isinstance(d.delta, NoDelta):
                 return d.delta
@@ -269,7 +297,7 @@ def derivative(
 
         def visit_EVar(self, v):
             if v == var:
-                return delta
+                return fmap(make_subgoal, delta)
             return NoDelta()
 
         def visit_ENum(self, e):
