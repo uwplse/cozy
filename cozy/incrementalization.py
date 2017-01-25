@@ -53,6 +53,8 @@ def fmap(f, delta):
         return AddNum(f(delta.e))
     elif isinstance(delta, BagElemUpdated):
         return BagElemUpdated(delta.elem, fmap(f, delta.delta))
+    elif isinstance(delta, RecordFieldUpdate):
+        return RecordFieldUpdate(delta.f, fmap(f, delta.delta))
     else:
         raise NotImplementedError(delta)
 
