@@ -176,17 +176,13 @@ class Learner(object):
         # print(" --< cost ceiling is now {}".format(self.cost_ceiling))
         self.watched_exps = {}
         for e in all_exps(self.target):
-            if isinstance(e, ELambda):
+            if isinstance(e, ELambda) or any(v not in self.legal_free_vars for v in free_vars(e)):
                 continue
-            try:
-                fp = self._fingerprint(e)
-                cost = self.cost_model.cost(e)
-                prev = self.watched_exps.get(fp)
-                if prev is None or prev[1] < cost:
-                    self.watched_exps[fp] = (e, cost)
-            except Exception:
-                print("WARNING: unable to watch expression {}".format(pprint(e)))
-                continue
+            fp = self._fingerprint(e)
+            cost = self.cost_model.cost(e)
+            prev = self.watched_exps.get(fp)
+            if prev is None or prev[1] < cost:
+                self.watched_exps[fp] = (e, cost)
         # for (fp, (e, cost)) in self.watched_exps.items():
         #     print("WATCHING {} (fp={}, cost={})".format(pprint(e), hash(fp), cost))
 
