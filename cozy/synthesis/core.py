@@ -342,7 +342,8 @@ def improve(
         binders : [EVar],
         cost_model : CostModel,
         builder : ExpBuilder,
-        stop_callback):
+        stop_callback,
+        hints : [Exp] = []):
 
     target = fixup_binders(target, binders)
     builder = FixedBuilder(builder, binders, assumptions)

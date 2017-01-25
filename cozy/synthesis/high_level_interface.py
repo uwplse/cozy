@@ -2,15 +2,16 @@ from collections import namedtuple, deque, defaultdict
 import datetime
 import itertools
 
-from cozy.common import typechecked, fresh_name, mk_map, pick_to_sum
+from cozy.common import typechecked, fresh_name, mk_map, pick_to_sum, nested_dict
 from cozy.target_syntax import *
 import cozy.syntax_tools
-from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, free_vars, pprint, subst, implies, fresh_var, mk_lambda, all_exps
+from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, free_vars, pprint, subst, implies, fresh_var, mk_lambda, all_exps, equal
 import cozy.incrementalization as inc
 from cozy.typecheck import INT, BOOL
 from cozy.timeouts import Timeout, TimeoutException
 from cozy.cost_model import CompositeCostModel
 from cozy.rep_inference import infer_rep
+from cozy import jobs
 
 from . import core
 from . import caching
@@ -75,14 +76,19 @@ class BinderBuilder(core.ExpBuilder):
         self.roots = roots
     def build(self, cache, size):
         if size == 1:
+            # print("Roots:")
             # for r in self.roots:
-            #     print(" {} : {};".format(pprint(r), pprint(r.type)), end="")
+            #     print("    {} : {}".format(pprint(r), pprint(r.type)))
             # print()
             yield EBool(True).with_type(BOOL)
             yield EBool(False).with_type(BOOL)
             yield from self.roots
             yield from (b for b in self.binders if b not in self.roots)
             return
+
+        # print("Cache:")
+        # for (e, size) in cache:
+        #     print("    @{}\t:\t{}".format(size, pprint(e)))
 
         for e in cache.find(type=TRecord, size=size-1):
             for (f,t) in e.type.fields:
@@ -195,89 +201,148 @@ class BinderBuilder(core.ExpBuilder):
         # return BinderBuilder(self.binders, self.state_vars, list(new_roots) + list(self.roots))
         return BinderBuilder(self.binders, self.state_vars, list(new_roots))
 
+# @typechecked
+# def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], q : Query, timeout : Timeout) -> (EVar, Exp, [Query]):
+#     """
+#     Synthesize efficient re-implementations for the given queries.
+
+#     Input:
+#         ctx         - a synthesis context for the problem
+#         state       - list of state variables
+#         assumptions - a list of global assumptions (i.e. not including q.assumptions)
+#         q           - a query to improve
+
+#     Output:
+#         (new_state, state_proj, new_queries)
+#     where
+#         new_state is a variable
+#         state_proj is an expression mapping state to new_state
+#         new_queries is a list of new query expressions
+#     """
+#     # q, = rename_args([q])
+#     new_ret = q.ret
+#     assumptions = assumptions + list(q.assumptions)
+#     all_types = ctx.all_types
+#     basic_types = ctx.basic_types
+
+#     binders = []
+#     n_binders = 1 # TODO?
+#     for t in all_types:
+#         if isinstance(t, TBag) or isinstance(t, TSet):
+#             binders += [fresh_var(t.t) for i in range(n_binders)]
+#     print(binders)
+
+#     b = BinderBuilder(binders, state, [])
+#     new_state_vars = state
+#     state_proj_exprs = state
+#     try:
+#         for expr in itertools.chain([new_ret], core.improve(
+#                 target=new_ret,
+#                 assumptions=EAll(assumptions),
+#                 binders=binders,
+#                 cost_model=CompositeCostModel(state),
+#                 builder=b,
+#                 stop_callback=timeout.is_timed_out)):
+
+#             print("SOLUTION")
+#             print("-" * 40)
+
+#             for (st, expr) in infer_rep(state, expr):
+#                 for (sv, proj) in st:
+#                     print("  {} : {} = {}".format(sv.id, pprint(sv.type), pprint(proj)))
+#                 print("  return {}".format(pprint(expr)))
+
+#                 new_state_vars, state_proj_exprs = zip(*st) if st else ([], [])
+#                 new_ret = expr
+#                 print("-" * 40)
+
+#     except core.StopException:
+#         print("stopping due to timeout")
+
+#     if len(new_state_vars) != 1:
+#         new_state_var = fresh_var(TTuple(tuple(v.type for v in new_state_vars)))
+#         state_proj_expr = ETuple(tuple(state_proj_exprs)).with_type(new_state_var.type)
+#         if new_state_vars:
+#             new_ret = subst(new_ret, {
+#                 new_state_vars[i].id: ETupleGet(new_state_var, i)
+#                 for i in range(len(new_state_vars)) })
+#     else:
+#         new_state_var = new_state_vars[0]
+#         state_proj_expr = state_proj_exprs[0]
+
+#     return (new_state_var, state_proj_expr, [Query(q.name, q.args, q.assumptions, new_ret)])
+
 @typechecked
-def synthesize_queries(ctx : SynthCtx, state : [EVar], assumptions : [Exp], q : Query, timeout : Timeout) -> (EVar, Exp, [Query]):
-    """
-    Synthesize efficient re-implementations for the given queries.
+def pick_rep(q_ret : Exp, state : [EVar]) -> ([(EVar, Exp)], Exp):
+    cm = CompositeCostModel(state)
+    return min(infer_rep(state, q_ret), key=lambda r: cm.split_cost(*r), default=None)
 
-    Input:
-        ctx         - a synthesis context for the problem
-        state       - list of state variables
-        assumptions - a list of global assumptions (i.e. not including q.assumptions)
-        q           - a query to improve
+class ImproveQueryJob(jobs.Job):
+    def __init__(self, ctx : SynthCtx, state : [EVar], assumptions : [Exp], q : Query, hints : [Exp] = []):
+        super().__init__()
+        self.ctx = ctx
+        self.state = state
+        self.assumptions = assumptions
+        self.q = q
+        self.hints = hints
+    def run(self):
+        new_ret = self.q.ret
+        all_types = self.ctx.all_types
 
-    Output:
-        (new_state, state_proj, new_queries)
-    where
-        new_state is a variable
-        state_proj is an expression mapping state to new_state
-        new_queries is a list of new query expressions
-    """
-    # q, = rename_args([q])
-    new_ret = q.ret
-    assumptions = assumptions + list(q.assumptions)
-    all_types = ctx.all_types
-    basic_types = ctx.basic_types
+        binders = []
+        n_binders = 1 # TODO?
+        for t in all_types:
+            if isinstance(t, TBag) or isinstance(t, TSet):
+                binders += [fresh_var(t.t) for i in range(n_binders)]
 
-    binders = []
-    n_binders = 1 # TODO?
-    for t in all_types:
-        if isinstance(t, TBag) or isinstance(t, TSet):
-            binders += [fresh_var(t.t) for i in range(n_binders)]
-    print(binders)
+        b = BinderBuilder(binders, self.state, [])
+        new_rep = [(v, v) for v in self.state]
 
-    b = BinderBuilder(binders, state, [])
-    new_state_vars = state
-    state_proj_exprs = state
-    try:
-        for expr in itertools.chain([new_ret], core.improve(
-                target=new_ret,
-                assumptions=EAll(assumptions),
-                binders=binders,
-                cost_model=CompositeCostModel(state),
-                builder=b,
-                stop_callback=timeout.is_timed_out)):
+        try:
+            found = False
+            for expr in core.improve(
+                    target=new_ret,
+                    assumptions=EAll(self.assumptions),
+                    hints=self.hints,
+                    binders=binders,
+                    cost_model=CompositeCostModel(self.state),
+                    builder=b,
+                    stop_callback=lambda: self.stop_requested):
 
-            print("SOLUTION")
-            print("-" * 40)
+                r = pick_rep(expr, self.state)
+                if r is not None:
+                    print("SOLUTION")
+                    print("-" * 40)
+                    for (sv, proj) in r[0]:
+                        print("  {} : {} = {}".format(sv.id, pprint(sv.type), pprint(proj)))
+                    print("  return {}".format(pprint(r[1])))
+                    print("-" * 40)
+                    new_rep, new_ret = r
+                    found = True
+                    break
 
-            for (st, expr) in infer_rep(state, expr):
-                for (sv, proj) in st:
-                    print("  {} : {} = {}".format(sv.id, pprint(sv.type), pprint(proj)))
-                print("  return {}".format(pprint(expr)))
+            if not found:
+                import time
+                while not self.stop_requested:
+                    time.sleep(0.1)
+        except core.StopException:
+            print("stopping synthesis of {}".format(self.q.name))
+            return
 
-                new_state_vars, state_proj_exprs = zip(*st) if st else ([], [])
-                new_ret = expr
-                print("-" * 40)
+        return (new_rep, new_ret)
 
-    except core.StopException:
-        print("stopping due to timeout")
-
-    if len(new_state_vars) != 1:
-        new_state_var = fresh_var(TTuple(tuple(v.type for v in new_state_vars)))
-        state_proj_expr = ETuple(tuple(state_proj_exprs)).with_type(new_state_var.type)
-        if new_state_vars:
-            new_ret = subst(new_ret, {
-                new_state_vars[i].id: ETupleGet(new_state_var, i)
-                for i in range(len(new_state_vars)) })
-    else:
-        new_state_var = new_state_vars[0]
-        state_proj_expr = state_proj_exprs[0]
-
-    return (new_state_var, state_proj_expr, [Query(q.name, q.args, q.assumptions, new_ret)])
+def rewrite_ret(q : Query, repl) -> Query:
+    return Query(
+        q.name,
+        q.args,
+        q.assumptions,
+        repl(q.ret))
 
 @typechecked
 def synthesize(
         spec      : Spec,
         use_cache : bool = True,
         per_query_timeout : datetime.timedelta = datetime.timedelta(seconds=60)) -> (Spec, dict):
-    """
-    Main synthesis routine.
-
-    Returns refined specification with better asymptotic performance, plus a
-    dictionary mapping new state variables to their expressions in terms of
-    original state variables.
-    """
 
     # gather root types
     types = list(all_types(spec))
@@ -293,94 +358,225 @@ def synthesize(
     state_vars = [EVar(name).with_type(t) for (name, t) in spec.statevars]
 
     # collect queries
-    qs = [q for q in spec.methods if isinstance(q, Query)]
+    worklist = []
+    new_state_vars = []
+    root_queries = [q.name for q in worklist]
+    ops = [op for op in spec.methods if isinstance(op, Op)]
 
-    worklist = deque(qs)
-    new_statevars = []
-    state_var_exps = { }
-    new_qs = []
-    op_stms = defaultdict(list)
-
+    # transform ops to delta objects
     op_deltas = { op.name : inc.to_delta(spec.statevars, op) for op in spec.methods if isinstance(op, Op) }
 
-    global_assumptions = list(spec.assumptions)
-    # for v in state_vars:
-    #     if isinstance(v.type, TBag) and isinstance(v.type.t, THandle):
-    #         global_assumptions.append(EUnaryOp("unique", v).with_type(BOOL))
+    # op_stms[var][op_name] gives the statement necessary to update
+    # `var` when `op_name` is called
+    op_stms = nested_dict(2, lambda: SNoOp())
 
-    # synthesis
-    solved_queries = []
-    while worklist:
-        q = worklist.popleft()
-        print("##### SYNTHESIZING {}".format(q.name))
+    def set_impl(q : Query, rep : [(EVar, Exp)], ret : Exp):
+        assert not any(qq.name == q.name for qq in worklist)
 
-        # check to see if we already solved an equivalent query on this run
-        equiv = [qq for qq in solved_queries if alpha_equivalent(q, qq)]
-        if equiv:
-            qq = equiv[0]
-            print(" --> already exists as {}".format(qq.name))
-            new_qs.append(Query(
-                q.name,
-                q.args,
-                q.assumptions,
-                ECall(qq.name, tuple(EVar(v).with_type(t) for (v, t) in q.args))))
-            continue
+        to_remove = set()
+        for (v, e) in rep:
+            aeq = [ vv for (vv, ee) in new_state_vars if alpha_equivalent(e, ee) ]
+            if aeq:
+                ret = subst(ret, { v.id : aeq[0] })
+                to_remove.add(v)
+        rep = [ x for x in rep if x[0] not in to_remove ]
 
-        # check for cached answer
-        cached_result = caching.find_cached_result(state_vars, global_assumptions, q) if use_cache else None
-        if cached_result:
-            print("##### FOUND CACHED RESULT")
-            state_var, state_exp, new_q = cached_result
-            new_q = Query(
-                q.name,
-                new_q.args,
-                new_q.assumptions,
-                new_q.ret)
-        else:
-            state_var, state_exp, new_q = synthesize_queries(ctx, state_vars, global_assumptions, q, Timeout(per_query_timeout))
-            new_q = new_q[0]
-            if use_cache:
-                caching.cache((state_vars, global_assumptions, q), (state_var, state_exp, new_q))
+        # TODO: cleanup worklist & new_state_vars
 
-        print("  -> {} : {} = {}".format(state_var.id, pprint(state_var.type), pprint(state_exp)))
-        print("  -> return {}".format(pprint(new_q.ret)))
-
-        new_statevars.append((state_var.id, state_var.type))
-        state_var_exps[state_var.id] = state_exp
-        new_qs.append(new_q)
-
-        for op in spec.methods:
-            if isinstance(op, Op):
-                print("###### INCREMENTALIZING: {}".format(op.name))
-                (member, delta) = op_deltas[op.name]
-                # print(member, delta)
-                (state_update, subqueries) = inc.derivative(state_exp, member, delta, state_vars)
+        worklist.append(rewrite_ret(q, lambda prev: ret))
+        new_state_vars.extend(rep)
+        for op in ops:
+            print("###### INCREMENTALIZING: {}".format(op.name))
+            (member, delta) = op_deltas[op.name]
+            # print(member, delta)
+            for new_member, projection in rep:
+                (state_update, subqueries) = inc.derivative(projection, member, delta, state_vars)
                 # print(state_update, subqueries)
-                state_update_stm = inc.apply_delta_in_place(state_var, state_update)
+                state_update_stm = inc.apply_delta_in_place(new_member, state_update)
                 # print(pprint(state_update_stm))
-                op_stms[op.name].append(state_update_stm)
+                op_stms[new_member][op.name] = state_update_stm
                 for sub_q in subqueries:
+                    # TODO: all subquery vars must be in new_state_vars
+                    # Do we want to recursively set_impl?
                     print("########### SUBGOAL: {}".format(pprint(sub_q)))
-                    worklist.append(sub_q)
+                    sub_rep, sub_ret = pick_rep(sub_q.ret, state_vars)
+                    set_impl(sub_q, sub_rep, sub_ret)
 
-        solved_queries.append(q)
+    # set initial implementations
+    for q in spec.methods:
+        if isinstance(q, Query):
+            rep, ret = pick_rep(q.ret, state_vars)
+            set_impl(q, rep, ret)
+
+    # start jobs
+    timeout = Timeout(per_query_timeout)
+    while not timeout.is_timed_out():
+        hints = []
+        substitutions = { }
+        for (v, e) in new_state_vars:
+            substitutions[v.id] = e
+            hints.append(e)
+
+        print("Starting round! |worklist|={}".format(len(worklist)))
+
+        js = [ImproveQueryJob(ctx, state_vars, list(spec.assumptions) + q.assumptions, rewrite_ret(q, lambda ret: subst(ret, substitutions)), hints) for q in worklist]
+        for j in js:
+            j.start()
+        try:
+            job = jobs.wait_any(js, timeout)
+            for j in js:
+                j.stop()
+            if not job.successful:
+                raise Exception("job failed")
+            updated_query = job.q
+            print("found improvement for {}".format(updated_query.name))
+            new_rep, new_ret = job.result
+            worklist = [q for q in worklist if q.name != updated_query.name]
+            set_impl(updated_query, new_rep, new_ret)
+        except TimeoutException:
+            break
 
     new_ops = []
-    for op in spec.methods:
-        if isinstance(op, Op):
-            if isinstance(op_deltas[op.name][1], inc.BagElemUpdated):
-                op_stms[op.name].append(op.body)
-            new_stms = seq(op_stms[op.name])
-            new_ops.append(Op(
-                op.name,
-                op.args,
-                [],
-                new_stms))
+    for op in ops:
+        stms = [ ss[op.name] for ss in op_stms.values() ]
+        if isinstance(op_deltas[op.name][1], inc.BagElemUpdated):
+            stms.append(op.body)
+        new_stms = seq(stms)
+        new_ops.append(Op(
+            op.name,
+            op.args,
+            [],
+            new_stms))
 
+    state_var_exps = { }
+    for (v, e) in new_state_vars:
+        state_var_exps[v.id] = e
+    new_statevars = [(v, e.type) for (v, e) in state_var_exps.items()]
     return (Spec(
         spec.name,
         spec.types,
         spec.extern_funcs,
         new_statevars,
         [],
-        new_qs + new_ops), state_var_exps)
+        worklist + new_ops), state_var_exps)
+
+
+# @typechecked
+# def _synthesize(
+#         spec      : Spec,
+#         use_cache : bool = True,
+#         per_query_timeout : datetime.timedelta = datetime.timedelta(seconds=60)) -> (Spec, dict):
+#     """
+#     Main synthesis routine.
+
+#     Returns refined specification with better asymptotic performance, plus a
+#     dictionary mapping new state variables to their expressions in terms of
+#     original state variables.
+#     """
+
+#     # gather root types
+#     types = list(all_types(spec))
+#     basic_types = set(t for t in types if not isinstance(t, TBag) and not isinstance(t, TSet))
+#     basic_types |= { BOOL, INT }
+#     print("basic types:")
+#     for t in basic_types:
+#         print("  --> {}".format(pprint(t)))
+#     basic_types = list(basic_types)
+#     ctx = SynthCtx(all_types=types, basic_types=basic_types)
+
+#     # collect state variables
+#     state_vars = [EVar(name).with_type(t) for (name, t) in spec.statevars]
+
+#     # collect queries
+#     qs = [q for q in spec.methods if isinstance(q, Query)]
+#     # qs = [q for q in spec.methods if isinstance(q, Query) and q.name == "groupIsVisible"]
+
+#     worklist = deque(qs)
+#     new_statevars = []
+#     state_var_exps = { }
+#     new_qs = []
+#     op_stms = defaultdict(list)
+
+#     op_deltas = { op.name : inc.to_delta(spec.statevars, op) for op in spec.methods if isinstance(op, Op) }
+
+#     global_assumptions = list(spec.assumptions)
+#     # for v in state_vars:
+#     #     if isinstance(v.type, TBag) and isinstance(v.type.t, THandle):
+#     #         global_assumptions.append(EUnaryOp("unique", v).with_type(BOOL))
+
+#     # synthesis
+#     solved_queries = []
+#     while worklist:
+#         q = worklist.popleft()
+#         print("##### SYNTHESIZING {}".format(q.name))
+
+#         # check to see if we already solved an equivalent query on this run
+#         equiv = [qq for qq in solved_queries if alpha_equivalent(q, qq)]
+#         if equiv:
+#             qq = equiv[0]
+#             print(" --> already exists as {}".format(qq.name))
+#             new_qs.append(Query(
+#                 q.name,
+#                 q.args,
+#                 q.assumptions,
+#                 ECall(qq.name, tuple(EVar(v).with_type(t) for (v, t) in q.args))))
+#             continue
+
+#         # check for cached answer
+#         cached_result = caching.find_cached_result(state_vars, global_assumptions, q) if use_cache else None
+#         if cached_result:
+#             print("##### FOUND CACHED RESULT")
+#             state_var, state_exp, new_q = cached_result
+#             new_q = Query(
+#                 q.name,
+#                 new_q.args,
+#                 new_q.assumptions,
+#                 new_q.ret)
+#         else:
+#             state_var, state_exp, new_q = synthesize_queries(ctx, state_vars, global_assumptions, q, Timeout(per_query_timeout))
+#             new_q = new_q[0]
+#             if use_cache:
+#                 caching.cache((state_vars, global_assumptions, q), (state_var, state_exp, new_q))
+
+#         print("  -> {} : {} = {}".format(state_var.id, pprint(state_var.type), pprint(state_exp)))
+#         print("  -> return {}".format(pprint(new_q.ret)))
+
+#         new_statevars.append((state_var.id, state_var.type))
+#         state_var_exps[state_var.id] = state_exp
+#         new_qs.append(new_q)
+
+#         for op in spec.methods:
+#             if isinstance(op, Op):
+#                 print("###### INCREMENTALIZING: {}".format(op.name))
+#                 (member, delta) = op_deltas[op.name]
+#                 # print(member, delta)
+#                 (state_update, subqueries) = inc.derivative(state_exp, member, delta, state_vars)
+#                 # print(state_update, subqueries)
+#                 state_update_stm = inc.apply_delta_in_place(state_var, state_update)
+#                 # print(pprint(state_update_stm))
+#                 op_stms[op.name].append(state_update_stm)
+#                 for sub_q in subqueries:
+#                     print("########### SUBGOAL: {}".format(pprint(sub_q)))
+#                     worklist.append(sub_q)
+
+#         solved_queries.append(q)
+
+#     new_ops = []
+#     for op in spec.methods:
+#         if isinstance(op, Op):
+#             if isinstance(op_deltas[op.name][1], inc.BagElemUpdated):
+#                 op_stms[op.name].append(op.body)
+#             new_stms = seq(op_stms[op.name])
+#             new_ops.append(Op(
+#                 op.name,
+#                 op.args,
+#                 [],
+#                 new_stms))
+
+#     return (Spec(
+#         spec.name,
+#         spec.types,
+#         spec.extern_funcs,
+#         new_statevars,
+#         [],
+#         new_qs + new_ops), state_var_exps)
