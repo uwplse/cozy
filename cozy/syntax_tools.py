@@ -348,7 +348,7 @@ def free_vars(exp):
         def visit_Query(self, q):
             args = set(arg_name for (arg_name, arg_type) in q.args)
             for v in itertools.chain(self.visit(q.ret), *[self.visit(a) for a in q.assumptions]):
-                if v not in args:
+                if v.id not in args:
                     yield v
 
         def visit_Exp(self, e):
