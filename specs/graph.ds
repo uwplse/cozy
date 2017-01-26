@@ -1,17 +1,17 @@
 Graph:
 
-    type Node = { id : Int }
-    type Edge = { src : Int, dst : Int }
+    handletype Node = { id : Int }
+    handletype Edge = { src : Int, dst : Int }
 
     state nodes : Bag<Node>
     state edges : Bag<Edge>
 
     assume (sum [ 1 | e <- edges, e.val.src == e.val.dst ]) == 0;
 
-    op addNode(n : nodes.Handle)
+    op addNode(n : Node)
         nodes.add(n)
 
-    op addEdge(e : edges.Handle)
+    op addEdge(e : Edge)
         edges.add(e)
 
 //    query outgoing(nodeId : Int)

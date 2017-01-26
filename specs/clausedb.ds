@@ -22,4 +22,4 @@ ClauseDB:
         not empty [c | c <- clauses, empty [l | l <- c, not (l in falselits)]]
 
     query unit()
-        some [c | c <- clauses, |[l | l <- c, not (l in falselits)]| == 1]
+        [c | c <- clauses, sum [1 | l <- c, not (l in falselits)] == 1]

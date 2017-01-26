@@ -2,10 +2,10 @@ Aggr:
 
     state l : Bag<Int>
 
-    op add(i : l.Handle)
+    op add(i : Int)
         l.add(i)
 
-    query all()
+    query elems()
         l
 
     query totalSum()

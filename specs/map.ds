@@ -1,0 +1,12 @@
+In:
+
+    state xs : Bag<Int>
+
+    op add(x : Int)
+        xs.add(x)
+
+    op rm(x : Int)
+        xs.remove(x)
+
+    query a(z : Int)
+        [ x | x <- xs, x == z ]
