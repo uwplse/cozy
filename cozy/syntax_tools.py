@@ -250,7 +250,7 @@ class PrettyPrinter(common.Visitor):
     def visit_CCond(self, c):
         return self.visit(c.e)
 
-    def visit_Exp(self, e):
+    def visit_ADT(self, e):
         self.visit_object(e)
         return "{}({})".format(type(e).__name__, ", ".join(self.visit(x) for x in e.children()))
 
