@@ -33,6 +33,33 @@ def SymbolicUnion(ty : Type, cond : z3.AstRef, then_branch, else_branch):
     assert isinstance(ctx, z3.Context)
     if decideable(ty):
         return z3.If(cond, then_branch, else_branch, ctx)
+    elif isinstance(ty, TBag):
+        assert isinstance(then_branch, tuple)
+        assert isinstance(else_branch, tuple)
+        # print("CONSTRUCTING SYMBOLIC UNION [cond=({})]".format(cond))
+        # print(" ---> {}".format(then_branch))
+        # print(" ---> {}".format(else_branch))
+        then_mask, then_elems = then_branch
+        else_mask, else_elems = else_branch
+        maxlen = max(len(then_mask), len(else_mask))
+        mask = []
+        elems = []
+        ncond = z3.Not(cond, ctx)
+        for i in range(maxlen):
+            if i < len(then_mask) and i < len(else_mask):
+                mask.append(z3.If(cond, then_mask[i], else_mask[i], ctx))
+                elems.append(SymbolicUnion(ty.t, cond, then_elems[i], else_elems[i]))
+            elif i < len(then_mask):
+                # print("ctx              = {}".format(ctx))
+                # print("cond.ctx         = {}".format(cond.ctx_ref()))
+                # print("then_mask[i].ctx = {}".format(then_mask[i].ctx_ref()))
+                mask.append(z3.And(cond, then_mask[i], ctx))
+                elems.append(then_elems[i])
+            else:
+                assert i < len(else_mask)
+                mask.append(z3.And(ncond, else_mask[i], ctx))
+                elems.append(else_elems[i])
+        return (mask, elems)
     else:
         return _SymbolicUnion(cond, then_branch, else_branch)
 
