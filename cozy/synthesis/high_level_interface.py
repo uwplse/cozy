@@ -311,6 +311,40 @@ def synthesize(
                 return i
         raise ValueError(q.name)
 
+    def cleanup():
+        nonlocal specs
+        nonlocal worklist
+        nonlocal new_state_vars
+
+        changed = True
+        while changed:
+
+            queries_to_keep = set(root_queries)
+            class V(BottomUpExplorer):
+                def visit_ECall(self, e):
+                    queries_to_keep.add(e.func)
+            visitor = V()
+
+            for ss in op_stms.values():
+                for stm in ss.values():
+                    visitor.visit(stm)
+
+            assert all(qname in [qq.name for qq in specs] for qname in queries_to_keep), "WORKLIST={};\nOP_STMS={};\n".format(worklist, op_stms)
+
+            old_specs_len = len(specs)
+            old_worklist_len = len(worklist)
+            old_state_vars_len = len(new_state_vars)
+
+            specs    = [ q for q in specs    if q.name in queries_to_keep ]
+            worklist = [ q for q in worklist if q.name in queries_to_keep ]
+            new_state_vars = [ v for v in new_state_vars if any(v[0] in free_vars(q) for q in worklist) ]
+
+            changed = len(specs) != old_specs_len or len(worklist) != old_worklist_len or len(new_state_vars) != old_state_vars_len
+            for v in list(op_stms.keys()):
+                if v not in [var for (var, exp) in new_state_vars]:
+                    del op_stms[v]
+                    changed = True
+
     def set_impl(q : Query, rep : [(EVar, Exp)], ret : Exp):
         i = find_spec(q)
         if i == len(worklist):
@@ -326,10 +360,9 @@ def synthesize(
                 to_remove.add(v)
         rep = [ x for x in rep if x[0] not in to_remove ]
 
-        # TODO: cleanup worklist & new_state_vars
-
         new_state_vars.extend(rep)
         worklist[i] = rewrite_ret(q, lambda prev: ret)
+
         for op in ops:
             print("###### INCREMENTALIZING: {}".format(op.name))
             (member, delta) = op_deltas[op.name]
@@ -385,6 +418,7 @@ def synthesize(
             print("found improvement for {}".format(updated_query.name))
             new_rep, new_ret = job.result
             set_impl(updated_query, new_rep, new_ret)
+            cleanup()
         except TimeoutException:
             for j in js:
                 j.stop()
