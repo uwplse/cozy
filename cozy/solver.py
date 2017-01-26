@@ -29,8 +29,10 @@ class _SymbolicUnion(object):
 
 @typechecked
 def SymbolicUnion(ty : Type, cond : z3.AstRef, then_branch, else_branch):
+    ctx = cond.ctx
+    assert isinstance(ctx, z3.Context)
     if decideable(ty):
-        return z3.If(cond, then_branch, else_branch, cond.ctx_ref())
+        return z3.If(cond, then_branch, else_branch, ctx)
     else:
         return _SymbolicUnion(cond, then_branch, else_branch)
 
@@ -53,7 +55,7 @@ class ToZ3(Visitor):
             return z3.Distinct(*values, self.ctx)
         return z3.And(
             self.distinct(t, values[1:]),
-            *[z3.Not(self.eq(t, values[0], v1, {})) for v1 in values[1:]],
+            *[z3.Not(self.eq(t, values[0], v1, {}), self.ctx) for v1 in values[1:]],
             self.ctx)
     def eq(self, t, e1, e2, env):
         return fmap(e1, BOOL, lambda v1:
