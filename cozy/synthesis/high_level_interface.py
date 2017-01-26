@@ -5,7 +5,7 @@ import itertools
 from cozy.common import typechecked, fresh_name, mk_map, pick_to_sum, nested_dict
 from cozy.target_syntax import *
 import cozy.syntax_tools
-from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, free_vars, pprint, subst, implies, fresh_var, mk_lambda, all_exps, equal
+from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, BottomUpRewriter, free_vars, pprint, subst, implies, fresh_var, mk_lambda, all_exps, equal
 import cozy.incrementalization as inc
 from cozy.typecheck import INT, BOOL
 from cozy.timeouts import Timeout, TimeoutException
@@ -287,20 +287,36 @@ def synthesize(
     state_vars = [EVar(name).with_type(t) for (name, t) in spec.statevars]
 
     # collect queries
-    worklist = []
-    new_state_vars = []
-    root_queries = [q.name for q in worklist]
-    ops = [op for op in spec.methods if isinstance(op, Op)]
+    specs          = [] # query specifications in terms of state_vars
+    worklist       = [] # query implementations in terms of new_state_vars
+    new_state_vars = [] # list of (var, exp) pairs
+    root_queries   = [q.name for q in worklist]
 
     # transform ops to delta objects
+    ops = [op for op in spec.methods if isinstance(op, Op)]
     op_deltas = { op.name : inc.to_delta(spec.statevars, op) for op in spec.methods if isinstance(op, Op) }
 
     # op_stms[var][op_name] gives the statement necessary to update
     # `var` when `op_name` is called
     op_stms = nested_dict(2, lambda: SNoOp())
 
+    def push_goal(q : Query):
+        specs.append(q)
+        rep, ret = pick_rep(q.ret, state_vars)
+        set_impl(q, rep, ret)
+
+    def find_spec(q : Query):
+        for i in range(len(specs)):
+            if specs[i].name == q.name:
+                return i
+        raise ValueError(q.name)
+
     def set_impl(q : Query, rep : [(EVar, Exp)], ret : Exp):
-        assert not any(qq.name == q.name for qq in worklist)
+        i = find_spec(q)
+        if i == len(worklist):
+            worklist.append(None)
+        else:
+            assert worklist[i].name == q.name
 
         to_remove = set()
         for (v, e) in rep:
@@ -312,8 +328,8 @@ def synthesize(
 
         # TODO: cleanup worklist & new_state_vars
 
-        worklist.append(rewrite_ret(q, lambda prev: ret))
         new_state_vars.extend(rep)
+        worklist[i] = rewrite_ret(q, lambda prev: ret)
         for op in ops:
             print("###### INCREMENTALIZING: {}".format(op.name))
             (member, delta) = op_deltas[op.name]
@@ -323,19 +339,27 @@ def synthesize(
                 # print(state_update, subqueries)
                 state_update_stm = inc.apply_delta_in_place(new_member, state_update)
                 # print(pprint(state_update_stm))
-                op_stms[new_member][op.name] = state_update_stm
                 for sub_q in subqueries:
-                    # TODO: all subquery vars must be in new_state_vars
-                    # Do we want to recursively set_impl?
-                    print("########### SUBGOAL: {}".format(pprint(sub_q)))
-                    sub_rep, sub_ret = pick_rep(sub_q.ret, state_vars)
-                    set_impl(sub_q, sub_rep, sub_ret)
+                    if any(alpha_equivalent(qq, sub_q) for qq in specs):
+                        qq = [qq for qq in specs if alpha_equivalent(qq, sub_q)][0]
+                        print("########### subgoal {} is equivalent to {}".format(sub_q.name, qq.name))
+                        class Repl(BottomUpRewriter):
+                            def visit_ECall(self, e):
+                                args = tuple(self.visit(a) for a in e.args)
+                                if e.func == sub_q.name:
+                                    return ECall(qq.name, args).with_type(e.type)
+                                else:
+                                    return ECall(e.func, args).with_type(e.type)
+                        state_update_stm = Repl().visit(state_update_stm)
+                    else:
+                        print("########### NEW SUBGOAL: {}".format(pprint(sub_q)))
+                        push_goal(sub_q)
+                op_stms[new_member][op.name] = state_update_stm
 
     # set initial implementations
     for q in spec.methods:
         if isinstance(q, Query):
-            rep, ret = pick_rep(q.ret, state_vars)
-            set_impl(q, rep, ret)
+            push_goal(q)
 
     # start jobs
     timeout = Timeout(per_query_timeout)
@@ -360,9 +384,10 @@ def synthesize(
             updated_query = job.q
             print("found improvement for {}".format(updated_query.name))
             new_rep, new_ret = job.result
-            worklist = [q for q in worklist if q.name != updated_query.name]
             set_impl(updated_query, new_rep, new_ret)
         except TimeoutException:
+            for j in js:
+                j.stop()
             break
 
     new_ops = []
