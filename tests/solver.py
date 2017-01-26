@@ -83,3 +83,6 @@ class TestSolver(unittest.TestCase):
             vars=[EVar('ints').with_type(TBag(THandle('_HandleType12', TInt()))), EVar('i').with_type(TInt())],
             collection_depth=2,
             validate_model=True)
+
+    def test_flatmap(self):
+        satisfy(EUnaryOp('not', EBinOp(EUnaryOp('not', EBinOp(EUnaryOp('unique', EMap(EVar('ints').with_type(TBag(THandle('_HandleType12', TInt()))), ELambda(EVar('_var13').with_type(THandle('_HandleType12', TInt())), EGetField(EVar('_var13').with_type(THandle('_HandleType12', TInt())), 'val').with_type(TInt()))).with_type(TBag(TInt()))).with_type(TBool()), 'and', EUnaryOp('unique', EVar('ints').with_type(TBag(THandle('_HandleType12', TInt())))).with_type(TBool())).with_type(TBool())).with_type(TBool()), 'or', EUnaryOp('unique', EFlatMap(EVar('ints').with_type(TBag(THandle('_HandleType12', TInt()))), ELambda(EVar('_var458').with_type(THandle('_HandleType12', TInt())), ESingleton(EVar('_var458').with_type(THandle('_HandleType12', TInt()))).with_type(TBag(THandle('_HandleType12', TInt()))))).with_type(TBag(THandle('_HandleType12', TInt())))).with_type(TBool())).with_type(TBool())).with_type(TBool()), vars=None, collection_depth=2, validate_model=True)

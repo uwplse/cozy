@@ -194,7 +194,7 @@ class ToZ3(Visitor):
         # print("flat = {}".format(flat))
         return flat
     def visit_EFlatMap(self, e, env):
-        return self.visit(EFlatten(EMap(e.e, e.f)), env)
+        return self.visit(EFlatten(EMap(e.e, e.f).with_type(TBag(e.f.body.type))).with_type(e.type), env)
     def visit_ECond(self, e, env):
         cond = self.visit(e.cond, env)
         then_branch = self.visit(e.then_branch, env)
