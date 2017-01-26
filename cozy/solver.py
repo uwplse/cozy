@@ -76,6 +76,7 @@ class ToZ3(Visitor):
         self.funcs = { }
         self.int_zero = z3.IntVal(0, self.ctx)
         self.int_one  = z3.IntVal(1, self.ctx)
+        self.handle_vars = []
     def distinct(self, t, *values):
         if len(values) <= 1:
             return z3.BoolVal(True, self.ctx)
@@ -398,7 +399,7 @@ class ToZ3(Visitor):
             print("failed to convert {}".format(pprint(e)))
             raise
 
-    def mkvar(self, ctx, solver, collection_depth, type, handle_vars):
+    def mkvar(self, ctx, solver, collection_depth, type):
         if type == TInt() or type == TLong() or isinstance(type, TNative) or type == TString():
             return z3.Int(fresh_name(), ctx=ctx)
         elif type == TBool():
@@ -412,37 +413,37 @@ class ToZ3(Visitor):
             solver.add(n < ncases)
             return n
         elif isinstance(type, TSet):
-            res = self.mkvar(ctx, solver, collection_depth, TBag(type.t), handle_vars)
+            res = self.mkvar(ctx, solver, collection_depth, TBag(type.t))
             mask, elems = res
             for i in range(1, len(mask)):
                 solver.add(z3.Implies(mask[i], self.distinct(type.t, *(elems[:(i+1)])), ctx))
             return res
         elif isinstance(type, TBag):
-            mask = [self.mkvar(ctx, solver, collection_depth, TBool(), handle_vars) for i in range(collection_depth)]
-            elems = [self.mkvar(ctx, solver, collection_depth, type.t, handle_vars) for i in range(collection_depth)]
+            mask = [self.mkvar(ctx, solver, collection_depth, TBool()) for i in range(collection_depth)]
+            elems = [self.mkvar(ctx, solver, collection_depth, type.t) for i in range(collection_depth)]
             # symmetry breaking
             for i in range(len(mask) - 1):
                 solver.add(z3.Implies(mask[i], mask[i+1], ctx))
             return (mask, elems)
         elif isinstance(type, TMap):
-            default = self.mkvar(ctx, solver, collection_depth, type.v, handle_vars)
+            default = self.mkvar(ctx, solver, collection_depth, type.v)
             return {
                 "mapping": [(
-                    self.mkvar(ctx, solver, collection_depth, type.k, handle_vars),
-                    self.mkvar(ctx, solver, collection_depth, type.v, handle_vars))
+                    self.mkvar(ctx, solver, collection_depth, type.k),
+                    self.mkvar(ctx, solver, collection_depth, type.v))
                     for i in range(collection_depth)],
                 "default":
                     default }
         elif isinstance(type, TRecord):
             # TODO: use Z3 ADTs
-            return { field : self.mkvar(ctx, solver, collection_depth, t, handle_vars) for (field, t) in type.fields }
+            return { field : self.mkvar(ctx, solver, collection_depth, t) for (field, t) in type.fields }
         elif isinstance(type, TTuple):
             # TODO: use Z3 ADTs
-            return tuple(self.mkvar(ctx, solver, collection_depth, t, handle_vars) for t in type.ts)
+            return tuple(self.mkvar(ctx, solver, collection_depth, t) for t in type.ts)
         elif isinstance(type, THandle):
             h = z3.Int(fresh_name(), ctx)
-            v = (h, self.mkvar(ctx, solver, collection_depth, type.value_type, handle_vars))
-            handle_vars.append((type.value_type,) + v)
+            v = (h, self.mkvar(ctx, solver, collection_depth, type.value_type))
+            self.handle_vars.append((type.value_type,) + v)
             return v
         else:
             raise NotImplementedError(type)
@@ -541,22 +542,10 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
 
         _env = { }
         fvs = vars if vars is not None else free_vars(e)
-        handle_vars = []
         for v in fvs:
             # print("{} : {}".format(pprint(v), pprint(v.type)))
-            _env[v.id] = visitor.mkvar(ctx, solver, collection_depth, v.type, handle_vars)
+            _env[v.id] = visitor.mkvar(ctx, solver, collection_depth, v.type)
         # print(_env)
-
-        # Handles implement reference equality... so if the references are the same,
-        # the values must be also. TODO: we could eliminiate the need for this by
-        # encoding handles as ints plus an uninterpreted "read_value" function for
-        # each handle type.
-        for i in range(len(handle_vars)):
-            for j in range(i + 1, len(handle_vars)):
-                h1type, h1, v1 = handle_vars[i]
-                h2type, h2, v2 = handle_vars[j]
-                if h1type == h2type:
-                    solver.add(z3.Implies(h1 == h2, visitor.eq(h1type, v1, v2, _env), ctx))
 
         try:
             solver.add(visitor.visit(e, _env))
@@ -567,6 +556,19 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
                 collection_depth=repr(collection_depth),
                 validate_model=repr(validate_model)))
             raise
+
+        # Handles implement reference equality... so if the references are the same,
+        # the values must be also. TODO: we could eliminiate the need for this by
+        # encoding handles as ints plus an uninterpreted "read_value" function for
+        # each handle type.
+        handle_vars = visitor.handle_vars
+        for i in range(len(handle_vars)):
+            for j in range(i + 1, len(handle_vars)):
+                h1type, h1, v1 = handle_vars[i]
+                h2type, h2, v2 = handle_vars[j]
+                if h1type == h2type:
+                    solver.add(z3.Implies(h1 == h2, visitor.eq(h1type, v1, v2, _env), ctx))
+
         # print(solver.assertions())
         res = solver.check()
         print("Checked (res={}); time to encode/solve = {}".format(res, datetime.now() - start))
