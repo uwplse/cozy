@@ -343,13 +343,15 @@ def improve(
         cost_model : CostModel,
         builder : ExpBuilder,
         stop_callback,
-        hints : [Exp] = []):
+        hints : [Exp] = [],
+        examples : [dict] = None):
 
     target = fixup_binders(target, binders)
     builder = FixedBuilder(builder, binders, assumptions)
 
     vars = list(free_vars(target) | free_vars(assumptions))
-    examples = []
+    if examples is None:
+        examples = []
     learner = Learner(target, vars + binders, instantiate_examples(examples, set(vars), binders), cost_model, builder, stop_callback)
     try:
         while True:

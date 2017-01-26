@@ -207,14 +207,17 @@ def pick_rep(q_ret : Exp, state : [EVar]) -> ([(EVar, Exp)], Exp):
     return min(infer_rep(state, q_ret), key=lambda r: cm.split_cost(*r), default=None)
 
 class ImproveQueryJob(jobs.Job):
-    def __init__(self, ctx : SynthCtx, state : [EVar], assumptions : [Exp], q : Query, hints : [Exp] = []):
+    def __init__(self, ctx : SynthCtx, state : [EVar], assumptions : [Exp], q : Query, hints : [Exp] = [], examples : [dict] = []):
         super().__init__()
         self.ctx = ctx
         self.state = state
         self.assumptions = assumptions
         self.q = q
         self.hints = hints
+        self.examples = examples
     def run(self):
+        print("STARTING IMPROVEMENT JOB (|examples|={})".format(len(self.examples)))
+
         new_ret = self.q.ret
         all_types = self.ctx.all_types
 
@@ -233,6 +236,7 @@ class ImproveQueryJob(jobs.Job):
                     target=new_ret,
                     assumptions=EAll(self.assumptions),
                     hints=self.hints,
+                    examples=self.examples,
                     binders=binders,
                     cost_model=CompositeCostModel(self.state),
                     builder=b,
@@ -291,6 +295,7 @@ def synthesize(
     worklist       = [] # query implementations in terms of new_state_vars
     new_state_vars = [] # list of (var, exp) pairs
     root_queries   = [q.name for q in spec.methods if isinstance(q, Query)]
+    examples_by_query = { }
 
     # transform ops to delta objects
     ops = [op for op in spec.methods if isinstance(op, Op)]
@@ -302,6 +307,7 @@ def synthesize(
 
     def push_goal(q : Query):
         specs.append(q)
+        examples_by_query[q.name] = []
         rep, ret = pick_rep(q.ret, state_vars)
         set_impl(q, rep, ret)
 
@@ -338,6 +344,9 @@ def synthesize(
             specs    = [ q for q in specs    if q.name in queries_to_keep ]
             worklist = [ q for q in worklist if q.name in queries_to_keep ]
             new_state_vars = [ v for v in new_state_vars if any(v[0] in free_vars(q) for q in worklist) ]
+            for qname in list(examples_by_query.keys()):
+                if qname not in queries_to_keep:
+                    del examples_by_query[qname]
 
             changed = len(specs) != old_specs_len or len(worklist) != old_worklist_len or len(new_state_vars) != old_state_vars_len
             for v in list(op_stms.keys()):
@@ -405,7 +414,7 @@ def synthesize(
 
         print("Starting round! |worklist|={}".format(len(worklist)))
 
-        js = [ImproveQueryJob(ctx, state_vars, list(spec.assumptions) + q.assumptions, rewrite_ret(q, lambda ret: subst(ret, substitutions)), hints) for q in worklist]
+        js = [ImproveQueryJob(ctx, state_vars, list(spec.assumptions) + q.assumptions, rewrite_ret(q, lambda ret: subst(ret, substitutions)), hints, examples_by_query[q.name]) for q in worklist]
         for j in js:
             j.start()
         try:
