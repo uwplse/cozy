@@ -239,13 +239,14 @@ class ToZ3(Visitor):
         else:
             raise NotImplementedError(e.op)
     def visit_EGetField(self, e, env):
-        r = self.visit(e.e, env)
-        if isinstance(e.e.type, THandle):
-            assert e.f == "val"
-            h, val = r
-            return val
-        else:
-            return r[e.f]
+        def go(r):
+            if isinstance(e.e.type, THandle):
+                assert e.f == "val"
+                h, val = r
+                return val
+            else:
+                return r[e.f]
+        return fmap(self.visit(e.e, env), e.type, go)
     def visit_EBinOp(self, e, env):
         v1 = self.visit(e.e1, env)
         v2 = self.visit(e.e2, env)
