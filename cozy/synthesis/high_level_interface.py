@@ -382,6 +382,11 @@ def synthesize(
                 state_update_stm = inc.apply_delta_in_place(new_member, state_update)
                 # print(pprint(state_update_stm))
                 for sub_q in subqueries:
+                    sub_q = Query(
+                        sub_q.name,
+                        sub_q.args,
+                        list(op.assumptions) + list(sub_q.assumptions), # TODO: filter down to assumptions that are legal in this subquery
+                        sub_q.ret)
                     if any(alpha_equivalent(qq, sub_q) for qq in specs):
                         qq = [qq for qq in specs if alpha_equivalent(qq, sub_q)][0]
                         print("########### subgoal {} is equivalent to {}".format(sub_q.name, qq.name))
@@ -414,7 +419,7 @@ def synthesize(
 
         print("Starting round! |worklist|={}".format(len(worklist)))
 
-        js = [ImproveQueryJob(ctx, state_vars, list(spec.assumptions) + q.assumptions, rewrite_ret(q, lambda ret: subst(ret, substitutions)), hints, examples_by_query[q.name]) for q in worklist]
+        js = [ImproveQueryJob(ctx, state_vars, list(spec.assumptions) + list(q.assumptions), rewrite_ret(q, lambda ret: subst(ret, substitutions)), hints, examples_by_query[q.name]) for q in worklist]
         for j in js:
             j.start()
         try:
