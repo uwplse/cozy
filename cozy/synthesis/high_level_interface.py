@@ -290,7 +290,7 @@ def synthesize(
     specs          = [] # query specifications in terms of state_vars
     worklist       = [] # query implementations in terms of new_state_vars
     new_state_vars = [] # list of (var, exp) pairs
-    root_queries   = [q.name for q in worklist]
+    root_queries   = [q.name for q in spec.methods if isinstance(q, Query)]
 
     # transform ops to delta objects
     ops = [op for op in spec.methods if isinstance(op, Op)]
