@@ -24,7 +24,8 @@ def _handleize(m : Method, statevar : EVar):
                 target = self.visit(s.target)
                 args = [self.visit(a) for a in s.args]
                 if s.func == "add" and target == statevar:
-                    args = [ENewHandle(args[0], statevar.type.t)]
+                    raise NotImplementedError()
+                    # args = [ENewHandle(args[0], statevar.type.t)]
                 elif s.func == "remove" and target == statevar:
                     return SCall(target, "remove_all",
                         (EFilter(statevar, mk_lambda(statevar.type.t, lambda handle: equal(EGetField(handle, "val").with_type(statevar.type.t.value_type), args[0]))).with_type(TSet(statevar.type.t)),))
