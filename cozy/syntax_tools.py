@@ -305,33 +305,12 @@ def free_vars(exp):
             if e.id not in self.bound:
                 yield e
 
-        def visit_EBool(self, e):
-            return ()
-
-        def visit_ENum(self, e):
-            return ()
-
-        def visit_EBinOp(self, e):
-            yield from self.visit(e.e1)
-            yield from self.visit(e.e2)
-
-        def visit_EUnaryOp(self, e):
-            return self.visit(e.e)
-
-        def visit_EGetField(self, e):
-            return self.visit(e.e)
-
         def visit_EMakeRecord(self, e):
             for f, ee in e.fields:
                 yield from self.visit(ee)
 
         def visit_EListComprehension(self, e):
             return self.visit_clauses(e.clauses, 0, e.e)
-
-        def visit_ECond(self, e):
-            yield from self.visit(e.cond)
-            yield from self.visit(e.then_branch)
-            yield from self.visit(e.else_branch)
 
         def visit_clauses(self, clauses, i, e):
             if i >= len(clauses):
@@ -366,10 +345,19 @@ def free_vars(exp):
                 if v.id != e.arg.id:
                     yield v
 
+        def visit_Query(self, q):
+            args = set(arg_name for (arg_name, arg_type) in q.args)
+            for v in itertools.chain(self.visit(q.ret), *[self.visit(a) for a in q.assumptions]):
+                if v not in args:
+                    yield v
+
         def visit_Exp(self, e):
             for child in e.children():
                 if isinstance(child, syntax.Exp):
                     yield from self.visit(child)
+
+        def visit_object(self, o):
+            raise NotImplementedError(type(o))
 
     return set(VarCollector().visit(exp))
 
