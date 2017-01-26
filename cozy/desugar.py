@@ -58,7 +58,7 @@ def desugar_exp(e : Exp) -> Exp:
                 if res is None:
                     res = self.mk_filter_of_conjunction(e.e, arg, case)
                 else:
-                    res = EBinOp(res, "+", self.mk_filter_of_conjunction(e.e, arg, negate + case)).with_type(t)
+                    res = EBinOp(res, "+", self.mk_filter_of_conjunction(e.e, arg, negate + case)).with_type(TBag(t.t))
                 negate.append(ENot(EAll(case)))
             assert res is not None
             return res
