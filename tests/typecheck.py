@@ -38,3 +38,21 @@ class TestTypechecking(unittest.TestCase):
         xs = EVar("xs").with_type(TBag(TBool()))
         e = EUnaryOp("sum", xs)
         assert not retypecheck(e)
+
+    def test_ECond_1(self):
+        x = ENum(1).with_type(INT)
+        assert retypecheck(ECond(EBool(True), x, x))
+
+    def test_ECond_2(self):
+        x = ENum(1).with_type(INT)
+        y = EBool(False)
+        assert not retypecheck(ECond(EBool(True), x, y))
+
+    def test_ECond_3(self):
+        x = ENum(1).with_type(INT)
+        y = EBool(False)
+        assert not retypecheck(ECond(EBool(True), y, x))
+
+    def test_ECond_4(self):
+        x = ENum(1).with_type(INT)
+        assert not retypecheck(ECond(x, x, x))

@@ -250,6 +250,14 @@ class Typechecker(Visitor):
         self.visit(e.f)
         e.type = syntax.TMaybe(e.f.body.type)
 
+    def visit_ECond(self, e):
+        self.visit(e.cond)
+        self.visit(e.then_branch)
+        self.visit(e.else_branch)
+        self.ensure_type(e.cond, BOOL)
+        self.ensure_type(e.else_branch, e.then_branch.type)
+        e.type = e.then_branch.type
+
     def visit_ELambda(self, e):
         with self.scope():
             self.env[e.arg.id] = e.arg.type
