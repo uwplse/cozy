@@ -1,4 +1,5 @@
 import datetime
+import time
 
 class TimeoutException(Exception):
     pass
@@ -12,3 +13,15 @@ class Timeout(object):
     def check(self):
         if self.is_timed_out():
             raise TimeoutException()
+    def remaining(self):
+        return self.expiration - datetime.datetime.now()
+    def wait(self):
+        """
+        Blocks until self.is_timed_out()
+        """
+        if self.expiration is None:
+            while True:
+                time.sleep(60)
+        else:
+            while not self.is_timed_out():
+                time.sleep(self.remaining().total_seconds())
