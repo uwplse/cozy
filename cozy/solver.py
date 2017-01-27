@@ -465,7 +465,7 @@ _LOCK = threading.Lock()
 def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = True):
     start = datetime.now()
     with _LOCK:
-        print("Checking sat (|e|={}); time to acquire lock = {}".format(e.size(), datetime.now() - start))
+        # print("Checking sat (|e|={}); time to acquire lock = {}".format(e.size(), datetime.now() - start))
         start = datetime.now()
         # print("sat? {}".format(pprint(e)))
         assert e.type == TBool()
@@ -571,7 +571,7 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
 
         # print(solver.assertions())
         res = solver.check()
-        print("Checked (res={}); time to encode/solve = {}".format(res, datetime.now() - start))
+        # print("Checked (res={}); time to encode/solve = {}".format(res, datetime.now() - start))
         if res == z3.unsat:
             return None
         elif res == z3.unknown:
