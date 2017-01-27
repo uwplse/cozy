@@ -1,6 +1,7 @@
 from collections import namedtuple, deque, defaultdict
 import datetime
 import itertools
+from queue import Queue, Empty
 
 from cozy.common import typechecked, fresh_name, mk_map, pick_to_sum, nested_dict
 from cozy.target_syntax import *
@@ -207,18 +208,25 @@ def pick_rep(q_ret : Exp, state : [EVar]) -> ([(EVar, Exp)], Exp):
     return min(infer_rep(state, q_ret), key=lambda r: cm.split_cost(*r), default=None)
 
 class ImproveQueryJob(jobs.Job):
-    def __init__(self, ctx : SynthCtx, state : [EVar], assumptions : [Exp], q : Query, hints : [Exp] = [], examples : [dict] = []):
+    def __init__(self,
+            ctx : SynthCtx,
+            state : [EVar],
+            assumptions : [Exp],
+            q : Query,
+            k,
+            hints : [Exp] = [],
+            examples : [dict] = None):
         super().__init__()
         self.ctx = ctx
         self.state = state
         self.assumptions = assumptions
         self.q = q
+        assert all(v in state for v in free_vars(q)), str([v for v in free_vars(q) if v not in state])
         self.hints = hints
         self.examples = examples
+        self.k = k
     def run(self):
-        print("STARTING IMPROVEMENT JOB (|examples|={})".format(len(self.examples)))
-
-        new_ret = self.q.ret
+        print("STARTING IMPROVEMENT JOB (|examples|={})".format(len(self.examples or ())))
         all_types = self.ctx.all_types
 
         binders = []
@@ -228,12 +236,10 @@ class ImproveQueryJob(jobs.Job):
                 binders += [fresh_var(t.t) for i in range(n_binders)]
 
         b = BinderBuilder(binders, self.state, [])
-        new_rep = [(v, v) for v in self.state]
 
         try:
-            found = False
             for expr in core.improve(
-                    target=new_ret,
+                    target=self.q.ret,
                     assumptions=EAll(self.assumptions),
                     hints=self.hints,
                     examples=self.examples,
@@ -251,18 +257,11 @@ class ImproveQueryJob(jobs.Job):
                     print("  return {}".format(pprint(r[1])))
                     print("-" * 40)
                     new_rep, new_ret = r
-                    found = True
-                    break
-
-            if not found:
-                import time
-                while not self.stop_requested:
-                    time.sleep(0.1)
+                    self.k(new_rep, new_ret)
+            print("PROVED OPTIMALITY FOR {}".format(self.q.name))
         except core.StopException:
             print("stopping synthesis of {}".format(self.q.name))
             return
-
-        return (new_rep, new_ret)
 
 def rewrite_ret(q : Query, repl) -> Query:
     return Query(
@@ -292,10 +291,9 @@ def synthesize(
 
     # collect queries
     specs          = [] # query specifications in terms of state_vars
-    worklist       = [] # query implementations in terms of new_state_vars
+    impls          = {} # query implementations (by name) in terms of new_state_vars
     new_state_vars = [] # list of (var, exp) pairs
     root_queries   = [q.name for q in spec.methods if isinstance(q, Query)]
-    examples_by_query = { }
 
     # transform ops to delta objects
     ops = [op for op in spec.methods if isinstance(op, Op)]
@@ -305,11 +303,22 @@ def synthesize(
     # `var` when `op_name` is called
     op_stms = nested_dict(2, lambda: SNoOp())
 
+    # the actual worker threads
+    improvement_jobs = []
+    solutions_q = Queue()
+
     def push_goal(q : Query):
         specs.append(q)
-        examples_by_query[q.name] = []
         rep, ret = pick_rep(q.ret, state_vars)
         set_impl(q, rep, ret)
+        j = ImproveQueryJob(
+            ctx,
+            state_vars,
+            list(spec.assumptions) + list(q.assumptions),
+            q,
+            k=lambda new_rep, new_ret: solutions_q.put((q, new_rep, new_ret)))
+        improvement_jobs.append(j)
+        j.start()
 
     def find_spec(q : Query):
         for i in range(len(specs)):
@@ -317,49 +326,62 @@ def synthesize(
                 return i
         raise ValueError(q.name)
 
+    def queries_used_by(thing):
+        qs = set()
+        class V(BottomUpExplorer):
+            def visit_ECall(self, e):
+                qs.add(e.func)
+        V().visit(thing)
+        return qs
+
     def cleanup():
-        nonlocal specs
-        nonlocal worklist
         nonlocal new_state_vars
 
+        # sort of like mark-and-sweep
+        queries_to_keep = set(root_queries)
+        state_vars_to_keep = set()
         changed = True
         while changed:
+            changed = False
+            for qname in queries_to_keep:
+                if qname in impls:
+                    for sv in free_vars(impls[qname]):
+                        if sv not in state_vars_to_keep:
+                            state_vars_to_keep.add(sv)
+                            changed = True
+            for sv in state_vars_to_keep:
+                for op_stm in op_stms[sv].values():
+                    for qname in queries_used_by(op_stm):
+                        if qname not in queries_to_keep:
+                            queries_to_keep.add(qname)
+                            changed = True
 
-            queries_to_keep = set(root_queries)
-            class V(BottomUpExplorer):
-                def visit_ECall(self, e):
-                    queries_to_keep.add(e.func)
-            visitor = V()
+        # remove old specs
+        for q in list(specs):
+            if q.name not in queries_to_keep:
+                specs.remove(q)
 
-            for ss in op_stms.values():
-                for stm in ss.values():
-                    visitor.visit(stm)
+        # remove old implementations
+        for qname in list(impls.keys()):
+            if qname not in queries_to_keep:
+                del impls[qname]
 
-            assert all(qname in [qq.name for qq in specs] for qname in queries_to_keep), "WORKLIST={};\nOP_STMS={};\n".format(worklist, op_stms)
+        # remove old state vars
+        new_state_vars = [ v for v in new_state_vars if any(v[0] in free_vars(q) for q in impls.values()) ]
 
-            old_specs_len = len(specs)
-            old_worklist_len = len(worklist)
-            old_state_vars_len = len(new_state_vars)
+        # stop jobs for old queries
+        for j in list(improvement_jobs):
+            if j.q.name not in queries_to_keep:
+                j.stop()
+                improvement_jobs.remove(j)
 
-            specs    = [ q for q in specs    if q.name in queries_to_keep ]
-            worklist = [ q for q in worklist if q.name in queries_to_keep ]
-            new_state_vars = [ v for v in new_state_vars if any(v[0] in free_vars(q) for q in worklist) ]
-            for qname in list(examples_by_query.keys()):
-                if qname not in queries_to_keep:
-                    del examples_by_query[qname]
-
-            changed = len(specs) != old_specs_len or len(worklist) != old_worklist_len or len(new_state_vars) != old_state_vars_len
-            for v in list(op_stms.keys()):
-                if v not in [var for (var, exp) in new_state_vars]:
-                    del op_stms[v]
-                    changed = True
+        # remove old method implementations
+        for v in list(op_stms.keys()):
+            if v not in [var for (var, exp) in new_state_vars]:
+                del op_stms[v]
 
     def set_impl(q : Query, rep : [(EVar, Exp)], ret : Exp):
         i = find_spec(q)
-        if i == len(worklist):
-            worklist.append(None)
-        else:
-            assert worklist[i].name == q.name
 
         to_remove = set()
         for (v, e) in rep:
@@ -370,7 +392,7 @@ def synthesize(
         rep = [ x for x in rep if x[0] not in to_remove ]
 
         new_state_vars.extend(rep)
-        worklist[i] = rewrite_ret(q, lambda prev: ret)
+        impls[q.name] = rewrite_ret(q, lambda prev: ret)
 
         for op in ops:
             print("###### INCREMENTALIZING: {}".format(op.name))
@@ -408,36 +430,21 @@ def synthesize(
         if isinstance(q, Query):
             push_goal(q)
 
-    # start jobs
+    # wait for results
     timeout = Timeout(per_query_timeout)
     while not timeout.is_timed_out():
-        hints = []
-        substitutions = { }
-        for (v, e) in new_state_vars:
-            substitutions[v.id] = e
-            hints.append(e)
-
-        print("Starting round! |worklist|={}".format(len(worklist)))
-
-        js = [ImproveQueryJob(ctx, state_vars, list(spec.assumptions) + list(q.assumptions), rewrite_ret(q, lambda ret: subst(ret, substitutions)), hints, examples_by_query[q.name]) for q in worklist]
-        for j in js:
-            j.start()
         try:
-            job = jobs.wait_any(js, timeout)
-            for j in js:
-                j.stop()
-            if not job.successful:
-                raise Exception("job failed")
-            updated_query = job.q
-            print("found improvement for {}".format(updated_query.name))
-            new_rep, new_ret = job.result
-            set_impl(updated_query, new_rep, new_ret)
+            (q, new_rep, new_ret) = solutions_q.get(timeout=timeout.remaining().total_seconds())
+            if q.name in [qq.name for qq in specs]:
+                # this might fail if a better solution was enqueued but the job has
+                # already been stopped and cleaned up
+                set_impl(q, new_rep, new_ret)
             cleanup()
-        except TimeoutException:
-            for j in js:
-                j.stop()
-            break
+        except Empty:
+            continue
+    new_queries = list(impls.values())
 
+    # construct new op implementations
     new_ops = []
     for op in ops:
         stms = [ ss[op.name] for ss in op_stms.values() ]
@@ -450,6 +457,7 @@ def synthesize(
             [],
             new_stms))
 
+    # assemble final result
     state_var_exps = { }
     for (v, e) in new_state_vars:
         state_var_exps[v.id] = e
@@ -460,4 +468,4 @@ def synthesize(
         spec.extern_funcs,
         new_statevars,
         [],
-        worklist + new_ops), state_var_exps)
+        new_queries + new_ops), state_var_exps)
