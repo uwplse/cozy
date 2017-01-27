@@ -12,6 +12,7 @@ from cozy.timeouts import Timeout, TimeoutException
 from cozy.cost_model import CompositeCostModel
 from cozy.rep_inference import infer_rep
 from cozy import jobs
+from cozy.solver import valid
 
 from . import core
 from . import caching
@@ -386,6 +387,15 @@ def synthesize(
             if v not in [var for (var, exp) in new_state_vars]:
                 del op_stms[v]
 
+    def equivalent(q1 : Query, q2 : Query):
+        if q1.ret.type != q2.ret.type:
+            return False
+        q1args = dict(q1.args)
+        q2args = dict(q2.args)
+        if q1args != q2args:
+            return False
+        return valid(equal(q1.ret, q2.ret))
+
     def set_impl(q : Query, rep : [(EVar, Exp)], ret : Exp):
         i = find_spec(q)
 
@@ -415,8 +425,10 @@ def synthesize(
                         sub_q.args,
                         list(op.assumptions) + list(sub_q.assumptions), # TODO: filter down to assumptions that are legal in this subquery
                         sub_q.ret)
-                    if any(alpha_equivalent(qq, sub_q) for qq in specs):
-                        qq = [qq for qq in specs if alpha_equivalent(qq, sub_q)][0]
+                    qq = [qq for qq in specs if equivalent(qq, sub_q)]
+                    if qq:
+                        assert len(qq) == 1
+                        qq = qq[0]
                         print("########### subgoal {} is equivalent to {}".format(sub_q.name, qq.name))
                         class Repl(BottomUpRewriter):
                             def visit_ECall(self, e):
