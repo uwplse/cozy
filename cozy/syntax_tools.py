@@ -359,7 +359,7 @@ def free_vars(exp):
         def visit_object(self, o):
             raise NotImplementedError(type(o))
 
-    return set(VarCollector().visit(exp))
+    return common.OrderedSet(VarCollector().visit(exp))
 
 def all_exps(e):
     class V(BottomUpExplorer):
