@@ -344,7 +344,7 @@ def improve(
         builder : ExpBuilder,
         stop_callback,
         hints : [Exp] = [],
-        examples : [dict] = None):
+        examples = None):
 
     target = fixup_binders(target, binders)
     builder = FixedBuilder(builder, binders, assumptions)
