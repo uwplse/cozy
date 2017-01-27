@@ -190,6 +190,8 @@ def derivative(
             if not isinstance(d, NoDelta):
                 deltas.append(TupleEntryUpdate(i, d))
         change = multi_delta(deltas)
+    elif isinstance(e.type, syntax.TBool):
+        change = Become(make_subgoal(e_post_delta))
     else:
         raise NotImplementedError("{} of type {}".format(pprint(e), e.type))
 
