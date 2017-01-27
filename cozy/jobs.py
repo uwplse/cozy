@@ -31,8 +31,11 @@ class Job(object):
     @property
     def successful(self):
         return self._flags[2]
-    def stop(self):
+    def request_stop(self):
+        print("requesting stop for {}".format(self))
         self._flags[0] = True
-        self._thread.join()
-    def wait(self):
+    def stop(self):
+        self.request_stop()
+        self.join()
+    def join(self):
         self._thread.join()
