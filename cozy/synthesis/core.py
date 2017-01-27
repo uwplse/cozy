@@ -123,6 +123,19 @@ class StopException(Exception):
 class NoMoreImprovements(Exception):
     pass
 
+def _on_exp(e, fate, *args):
+    return
+    # if (isinstance(e, EMapGet) or
+    #         isinstance(e, EFilter) or
+    #         (isinstance(e, EBinOp) and e.op == "==" and (isinstance(e.e1, EVar) or isinstance(e.e2, EVar))) or
+    #         (isinstance(e, EBinOp) and e.op == ">=" and (isinstance(e.e1, EVar) or isinstance(e.e2, EVar)))):
+    # if isinstance(e, EBinOp) and e.op == "+" and isinstance(e.type, TBag):
+    # if hasattr(e, "_tag") and e._tag:
+    if isinstance(e, EFilter):
+    # if fate in ("better", "new"):
+    # if isinstance(e, EEmptyList):
+        print(" ---> [{}, {}] {}; {}".format(fate, pprint(e.type), pprint(e), ", ".join(pprint(e) for e in args)))
+
 class Learner(object):
     def __init__(self, target, legal_free_vars, examples, cost_model, builder, stop_callback):
         self.legal_free_vars = legal_free_vars
@@ -189,18 +202,6 @@ class Learner(object):
     def _fingerprint(self, e):
         return fingerprint(e, self.examples)
 
-    def _on_exp(self, e, fate, *args):
-        return
-        # if (isinstance(e, EMapGet) or
-        #         isinstance(e, EFilter) or
-        #         (isinstance(e, EBinOp) and e.op == "==" and (isinstance(e.e1, EVar) or isinstance(e.e2, EVar))) or
-        #         (isinstance(e, EBinOp) and e.op == ">=" and (isinstance(e.e1, EVar) or isinstance(e.e2, EVar)))):
-        # if isinstance(e, EBinOp) and e.op == "+" and isinstance(e.type, TBag):
-        # if hasattr(e, "_tag") and e._tag:
-        # if isinstance(e, EFilter):
-        if fate in ("better", "new"):
-            print(" ---> [{}] {}; {}".format(fate, pprint(e), ", ".join(pprint(e) for e in args)))
-
     def forget_most_recent(self):
         (e, size, fp) = self.most_recent
         self.cache.evict(e, size)
@@ -219,7 +220,7 @@ class Learner(object):
                 cost = self.cost_model.cost(e)
 
                 if self.cost_model.is_monotonic() and cost > self.cost_ceiling:
-                    self._on_exp(e, "too expensive", cost, self.cost_ceiling)
+                    _on_exp(e, "too expensive", cost, self.cost_ceiling)
                     continue
 
                 fp = self._fingerprint(e)
@@ -231,7 +232,7 @@ class Learner(object):
                     self.seen[fp] = (cost, e, self.current_size)
                     self.cache.add(e, size=self.current_size)
                     self.last_progress = self.current_size
-                    self._on_exp(e, "new")
+                    _on_exp(e, "new")
                 else:
                     prev_cost, prev_exp, prev_size = prev
                     if cost < prev_cost or (cost == prev_cost and e != prev_exp):
@@ -243,9 +244,9 @@ class Learner(object):
                         self.cache.add(e, size=self.current_size)
                         self.seen[fp] = (cost, e, self.current_size)
                         self.last_progress = self.current_size
-                        self._on_exp(e, "better", prev_exp)
+                        _on_exp(e, "better", prev_exp)
                     else:
-                        self._on_exp(e, "worse", prev_exp)
+                        _on_exp(e, "worse", prev_exp)
                         continue
 
                 watched = self.watched_exps.get(fp)
@@ -290,13 +291,14 @@ class FixedBuilder(ExpBuilder):
             try:
                 e = fixup_binders(e, self.binders_to_use)
             except Exception:
+                _on_exp(e, "unable to rename binders")
                 continue
                 print("WARNING: skipping built expression {}".format(pprint(e)), file=sys.stderr)
 
             # experimental criterion: bags of handles must have distinct values
             if isinstance(e.type, TBag) and isinstance(e.type.t, THandle):
                 if not valid(implies(self.assumptions, EUnaryOp("unique", e).with_type(BOOL))):
-                    # print("rejecting non-unique {}".format(pprint(e)))
+                    _on_exp(e, "rejecting non-unique bag")
                     continue
 
             # all sets must have distinct values
@@ -308,13 +310,13 @@ class FixedBuilder(ExpBuilder):
             if isinstance(e, EUnaryOp) and e.op == "the":
                 len = EUnaryOp("sum", EMap(e.e, mk_lambda(e.type, lambda x: ENum(1).with_type(INT))).with_type(TBag(INT))).with_type(INT)
                 if not valid(implies(self.assumptions, EBinOp(len, "<=", ENum(1).with_type(INT)).with_type(BOOL))):
-                    # print("rejecting illegal application of 'the': {}".format(pprint(e)))
+                    _on_exp(e, "rejecting illegal application of 'the': could have >1 elems")
                     continue
                 if not satisfiable(EAll([self.assumptions, equal(len, ENum(0).with_type(INT))])):
-                    # print("rejecting illegal application of 'the': {}".format(pprint(e)))
+                    _on_exp(e, "rejecting illegal application of 'the': cannot be empty")
                     continue
                 if not satisfiable(EAll([self.assumptions, equal(len, ENum(1).with_type(INT))])):
-                    # print("rejecting illegal application of 'the': {}".format(pprint(e)))
+                    _on_exp(e, "rejecting illegal application of 'the': always empty")
                     continue
 
             # filters must *do* something
@@ -323,8 +325,8 @@ class FixedBuilder(ExpBuilder):
             # collection.
             if isinstance(e, EFilter):
                 if not satisfiable(EAll([self.assumptions, ENot(equal(e, e.e))])):
+                    _on_exp(e, "rejecting no-op filter")
                     continue
-                    print("rejecting stupid filter {}".format(pprint(e)), file=sys.stderr)
 
             yield e
     def with_roots(self, roots):
