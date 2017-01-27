@@ -1,7 +1,6 @@
 from collections import namedtuple, deque, defaultdict
 import datetime
 import itertools
-from queue import Queue, Empty
 
 from cozy.common import typechecked, fresh_name, mk_map, pick_to_sum, nested_dict
 from cozy.target_syntax import *
@@ -305,6 +304,8 @@ def synthesize(
 
     # the actual worker threads
     improvement_jobs = []
+    from multiprocessing import Queue
+    from queue import Empty
     solutions_q = Queue()
 
     def push_goal(q : Query):
@@ -333,6 +334,12 @@ def synthesize(
                 qs.add(e.func)
         V().visit(thing)
         return qs
+
+    def stop_job(j):
+        j.stop()
+        if not j.successful:
+            raise Exception("failed job: {}".format(j))
+        improvement_jobs.remove(j)
 
     def cleanup():
         nonlocal new_state_vars
@@ -372,8 +379,7 @@ def synthesize(
         # stop jobs for old queries
         for j in list(improvement_jobs):
             if j.q.name not in queries_to_keep:
-                j.stop()
-                improvement_jobs.remove(j)
+                stop_job(j)
 
         # remove old method implementations
         for v in list(op_stms.keys()):
@@ -442,6 +448,8 @@ def synthesize(
             cleanup()
         except Empty:
             continue
+    for j in list(improvement_jobs):
+        stop_job(j)
     new_queries = list(impls.values())
 
     # construct new op implementations
