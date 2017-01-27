@@ -225,6 +225,8 @@ class ImproveQueryJob(jobs.Job):
         self.hints = hints
         self.examples = examples
         self.k = k
+    def __str__(self):
+        return "ImproveQueryJob[{}]".format(self.q.name)
     def run(self):
         print("STARTING IMPROVEMENT JOB (|examples|={})".format(len(self.examples or ())))
         all_types = self.ctx.all_types
