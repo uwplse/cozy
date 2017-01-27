@@ -38,6 +38,10 @@ def desugar_exp(e : Exp) -> Exp:
     class V(BottomUpRewriter):
         def visit_EMap(self, e):
             bag = self.visit(e.e)
+            if isinstance(bag, EBinOp) and bag.op == "+":
+                return self.visit(EBinOp(
+                    EMap(bag.e1, e.f).with_type(e.type), "+",
+                    EMap(bag.e2, e.f).with_type(e.type)).with_type(e.type))
             fbody = self.visit(e.f.body)
             if fbody == e.f.arg:
                 return bag
@@ -65,6 +69,10 @@ def desugar_exp(e : Exp) -> Exp:
             return res
         def visit_EFilter(self, e):
             bag = self.visit(e.e)
+            if isinstance(bag, EBinOp) and bag.op == "+":
+                return self.visit(EBinOp(
+                    EFilter(bag.e1, e.p).with_type(e.type), "+",
+                    EFilter(bag.e2, e.p).with_type(e.type)).with_type(e.type))
             pbody = self.visit(e.p.body)
             if isinstance(bag, EMap):
                 return self.visit(EMap(EFilter(bag.e, compose(ELambda(e.p.arg, pbody), bag.f)).with_type(bag.e.type), bag.f).with_type(e.type))
