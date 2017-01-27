@@ -240,7 +240,7 @@ class ImproveQueryJob(jobs.Job):
         b = BinderBuilder(binders, self.state, [])
 
         try:
-            for expr in core.improve(
+            for expr in itertools.chain((self.q.ret,), core.improve(
                     target=self.q.ret,
                     assumptions=EAll(self.assumptions),
                     hints=self.hints,
@@ -248,7 +248,7 @@ class ImproveQueryJob(jobs.Job):
                     binders=binders,
                     cost_model=CompositeCostModel(self.state),
                     builder=b,
-                    stop_callback=lambda: self.stop_requested):
+                    stop_callback=lambda: self.stop_requested)):
 
                 r = pick_rep(expr, self.state)
                 if r is not None:
@@ -313,7 +313,9 @@ def synthesize(
 
     def push_goal(q : Query):
         specs.append(q)
-        rep, ret = pick_rep(q.ret, state_vars)
+        qargs = set(EVar(a).with_type(t) for (a, t) in q.args)
+        rep = [(fresh_var(v.type), v) for v in free_vars(q) if v not in qargs]
+        ret = subst(q.ret, { sv.id:v for (v, sv) in rep })
         set_impl(q, rep, ret)
         j = ImproveQueryJob(
             ctx,
