@@ -393,9 +393,9 @@ def improve(
                         pprint_reps(infer_rep(cost_model.state_vars, x))
                     # import pdb
                     # pdb.set_trace()
-                    assert False
-                    # learner.forget_most_recent()
-                    # continue
+                    # assert False
+                    learner.forget_most_recent()
+                    continue
                 if new_cost == old_cost:
                     continue
                 print("found improvement: {} -----> {}".format(pprint(old_e), pprint(new_e)))
