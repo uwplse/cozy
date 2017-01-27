@@ -156,6 +156,9 @@ def derivative(
     if var not in free_vars(e):
         return NoDelta()
 
+    if e == var:
+        return (delta, [])
+
     subgoals = []
 
     def make_subgoal(e, assumptions=None):
