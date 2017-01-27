@@ -1,9 +1,9 @@
 import unittest
 
-from cozy.solver import satisfy
+from cozy.solver import satisfy, valid
 from cozy.typecheck import typecheck, retypecheck
 from cozy.target_syntax import *
-from cozy.syntax_tools import pprint, equal
+from cozy.syntax_tools import pprint, equal, mk_lambda
 
 zero = ENum(0).with_type(TInt())
 one  = ENum(1).with_type(TInt())
@@ -86,3 +86,11 @@ class TestSolver(unittest.TestCase):
 
     def test_flatmap(self):
         satisfy(EUnaryOp('not', EBinOp(EUnaryOp('not', EBinOp(EUnaryOp('unique', EMap(EVar('ints').with_type(TBag(THandle('_HandleType12', TInt()))), ELambda(EVar('_var13').with_type(THandle('_HandleType12', TInt())), EGetField(EVar('_var13').with_type(THandle('_HandleType12', TInt())), 'val').with_type(TInt()))).with_type(TBag(TInt()))).with_type(TBool()), 'and', EUnaryOp('unique', EVar('ints').with_type(TBag(THandle('_HandleType12', TInt())))).with_type(TBool())).with_type(TBool())).with_type(TBool()), 'or', EUnaryOp('unique', EFlatMap(EVar('ints').with_type(TBag(THandle('_HandleType12', TInt()))), ELambda(EVar('_var458').with_type(THandle('_HandleType12', TInt())), ESingleton(EVar('_var458').with_type(THandle('_HandleType12', TInt()))).with_type(TBag(THandle('_HandleType12', TInt()))))).with_type(TBag(THandle('_HandleType12', TInt())))).with_type(TBool())).with_type(TBool())).with_type(TBool()), vars=None, collection_depth=2, validate_model=True)
+
+    def test_filter_true(self):
+        xs = EVar("xs").with_type(TBag(THandle("X", INT)))
+        e1 = EFilter(xs, mk_lambda(xs.type.t, lambda x: equal(EGetField(x, "val"), ENum(0).with_type(INT))))
+        assert retypecheck(e1)
+        e2 = EFilter(e1, mk_lambda(xs.type.t, lambda x: EBool(True)))
+        assert retypecheck(e2)
+        assert valid(equal(e1, e2))
