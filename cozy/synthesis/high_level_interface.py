@@ -438,16 +438,16 @@ def synthesize(
 
     # wait for results
     timeout = Timeout(per_query_timeout)
-    while not timeout.is_timed_out():
+    while any(not j.done for j in improvement_jobs) and not timeout.is_timed_out():
         try:
-            (q, new_rep, new_ret) = solutions_q.get(timeout=timeout.remaining().total_seconds())
+            (q, new_rep, new_ret) = solutions_q.get(timeout=0.5)
             if q.name in [qq.name for qq in specs]:
                 # this might fail if a better solution was enqueued but the job has
                 # already been stopped and cleaned up
                 set_impl(q, new_rep, new_ret)
             cleanup()
         except Empty:
-            continue
+            pass
     for j in list(improvement_jobs):
         stop_job(j)
     new_queries = list(impls.values())
