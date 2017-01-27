@@ -2,6 +2,7 @@ from cozy.common import ADT, declare_case, Visitor, typechecked, fresh_name
 from cozy import syntax
 from cozy import target_syntax
 from cozy.syntax_tools import subst, free_vars, pprint, equal, fresh_var, mk_lambda
+from cozy.desugar import desugar_exp
 
 # General deltas
 class Delta(ADT): pass
@@ -163,6 +164,7 @@ def derivative(
         fvs = free_vars(e)
         if not any(v in ctx for v in fvs):
             return e
+        e = desugar_exp(e)
         query_name = fresh_name()
         query_vars = [v for v in fvs if v not in ctx]
         query = syntax.Query(query_name, [(arg.id, arg.type) for arg in query_vars], assumptions, e)
