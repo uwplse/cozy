@@ -1,5 +1,5 @@
 from cozy.target_syntax import *
-from cozy.syntax_tools import BottomUpExplorer, pprint, equal, fresh_var
+from cozy.syntax_tools import BottomUpExplorer, pprint, equal, fresh_var, mk_lambda
 from cozy.rep_inference import infer_rep
 
 class CostModel(object):
@@ -50,7 +50,8 @@ class CardinalityVisitor(BottomUpExplorer):
     def visit_EFlatMap(self, e):
         return self.visit(e.e) * self.visit(e.f.body)
     def visit_ECond(self, e):
-        return (self.visit(e.then_branch) + self.visit(e.else_branch)) / 2
+        # This rule is strange, but it has to work this way to preserve monotonicity
+        return self.visit(e.then_branch) + self.visit(e.else_branch)
     def visit_Exp(self, e):
         raise NotImplementedError(e)
 
@@ -132,6 +133,8 @@ class RunTimeCostModel(CostModel, BottomUpExplorer):
             cost += cardinality(e.e)
         return cost + 0.01
     def visit_EBinOp(self, e):
+        if e.op == "in":
+            return self.visit(EFilter(e.e2, mk_lambda(e.e1.type, lambda x: equal(x, e.e1))))
         cost = self.visit(e.e1) + self.visit(e.e2)
         if e.op == "==" and isinstance(e.e1.type, TBag):
             cost += cardinality(e.e1) + cardinality(e.e2)
