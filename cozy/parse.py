@@ -258,6 +258,7 @@ def make_parser():
                | exp OP_DOT WORD
                | OP_OPEN_PAREN exp_list OP_CLOSE_PAREN
                | OP_OPEN_BRACE record_fields OP_CLOSE_BRACE
+               | OP_OPEN_BRACKET exp OP_CLOSE_BRACKET
                | OP_OPEN_BRACKET exp OP_VBAR comprehension_body OP_CLOSE_BRACKET"""
         if len(p) == 2:
             if type(p[1]) is syntax.ENum:
@@ -279,6 +280,8 @@ def make_parser():
                     p[0] = exps[0]
                 if len(exps) > 1:
                     p[0] = syntax.ETuple(tuple(exps))
+            elif p[1] == "[":
+                p[0] = syntax.ESingleton(p[2])
             elif p[1] == "{":
                 p[0] = syntax.EMakeRecord(p[2])
             elif p[2] == ".":
