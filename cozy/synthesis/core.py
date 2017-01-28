@@ -387,15 +387,19 @@ def improve(
                 old_cost = cost_model.cost(target)
                 new_cost = cost_model.cost(new_target)
                 if new_cost > old_cost:
-                    print("whoops: {} ----> {}".format(target, new_target))
-                    from cozy.rep_inference import infer_rep, pprint_reps
-                    for x in [old_e, new_e, target, new_target]:
-                        pprint_reps(infer_rep(cost_model.state_vars, x))
-                    # import pdb
-                    # pdb.set_trace()
-                    # assert False
-                    learner.forget_most_recent()
-                    continue
+                    print("WHOOPS! COST GOT WORSE!")
+                    if False:
+                        with open("/tmp/cozy_failing_testcases.py", "a") as f:
+                            f.write("def testcase():\n")
+                            f.write("    costmodel = {}\n".format(repr(cost_model)))
+                            f.write("    old_e = {}\n".format(repr(old_e)))
+                            f.write("    new_e = {}\n".format(repr(new_e)))
+                            f.write("    target = {}\n".format(repr(target)))
+                            f.write("    new_target = replace(target, old_e, new_e)\n")
+                            f.write("    if costmodel.cost(new_e) <= costmodel.cost(old_e) and costmodel.cost(new_target) > costmodel.cost(target):\n")
+                            f.write("        for x in [old_e, new_e, target, new_target]:\n")
+                            f.write("            pprint_reps(infer_rep(costmodel.state_vars, x))\n")
+                            f.write("        assert False\n")
                 if new_cost == old_cost:
                     continue
                 print("found improvement: {} -----> {}".format(pprint(old_e), pprint(new_e)))

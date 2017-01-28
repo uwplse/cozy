@@ -159,6 +159,8 @@ class CompositeCostModel(CostModel):
         self.rtcm = RunTimeCostModel()
         self.memcm = MemoryUsageCostModel()
         self.factor = 0.01 # 0 = only care about runtime, 1 = only care about memory
+    def __repr__(self):
+        return "CompositeCostModel({})".format(repr(self.state_vars))
     def is_monotonic(self):
         return self.rtcm.is_monotonic() and self.memcm.is_monotonic()
     def split_cost(self, st, e):
