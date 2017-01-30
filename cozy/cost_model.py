@@ -141,11 +141,11 @@ class RunTimeCostModel(CostModel, BottomUpExplorer):
             cost += cardinality(e.e1) + cardinality(e.e2)
         return cost + 0.01
     def visit_EMap(self, e):
-        return self.visit(e.e) + cardinality(e.e) * self.visit(e.f.body)
+        return 0.01 + self.visit(e.e) + cardinality(e.e) * self.visit(e.f.body)
     def visit_EFlatMap(self, e):
-        return self.visit(EFlatten(EMap(e.e, e.f)))
+        return 0.01 + self.visit(EFlatten(EMap(e.e, e.f)))
     def visit_EFilter(self, e):
-        return self.visit(e.e) + cardinality(e.e) * self.visit(e.p.body)
+        return 0.01 + self.visit(e.e) + cardinality(e.e) * self.visit(e.p.body)
     def visit_EMakeMap(self, e):
         return float("inf")
         # return self.visit(e.e) + cardinality(e.e) * (self.visit(e.key.body) + self.visit(e.value.body))
