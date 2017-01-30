@@ -400,6 +400,7 @@ def improve(
                             f.write("        for x in [old_e, new_e, target, new_target]:\n")
                             f.write("            pprint_reps(infer_rep(costmodel.state_vars, x))\n")
                             f.write("        assert False\n")
+                    continue
                 if new_cost == old_cost:
                     continue
                 print("found improvement: {} -----> {}".format(pprint(old_e), pprint(new_e)))
