@@ -399,6 +399,7 @@ def improve(
                             f.write("    if costmodel.cost(new_e) <= costmodel.cost(old_e) and costmodel.cost(new_target) > costmodel.cost(target):\n")
                             f.write("        for x in [old_e, new_e, target, new_target]:\n")
                             f.write("            pprint_reps(infer_rep(costmodel.state_vars, x))\n")
+                            f.write('            print("cost = {}".format(costmodel.cost(x)))\n')
                             f.write("        assert False\n")
                     continue
                 if new_cost == old_cost:
