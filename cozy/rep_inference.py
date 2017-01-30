@@ -73,9 +73,10 @@ def infer_rep(state : [EVar], qexp : Exp, validate_types : bool = False) -> [([(
 
         def visit_EFilter(self, e, k):
             fvs = free_vars(e.p)
-            if e.p.arg not in free_vars(e.p.body):
-                yield from self.visit(ECond(e.p.body, e.e, EEmptyList().with_type(e.type)).with_type(e.type), k=k)
-            elif all(v in state for v in fvs):
+            # if e.p.arg not in free_vars(e.p.body):
+            #     yield from self.visit(ECond(e.p.body, e.e, EEmptyList().with_type(e.type)).with_type(e.type), k=k)
+            # el
+            if all(v in state for v in fvs):
                 yield from self.visit(e.e, compose(k, mk_lambda(e.e.type, lambda x: EFilter(x, e.p).with_type(e.type))))
             else:
                 for (st1, exp) in self.visit(e.e, mk_lambda(e.e.type, lambda x: x)):

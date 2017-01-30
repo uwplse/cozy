@@ -59,6 +59,7 @@ cardinality = CardinalityVisitor().visit
 
 class MemoryUsageCostModel(CostModel, BottomUpExplorer):
     def cost(self, e):
+        return e.size() / 100
         try:
             return self.visit(e) + e.size() / 100
         except:

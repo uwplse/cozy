@@ -246,7 +246,7 @@ class ImproveQueryJob(jobs.Job):
                     hints=self.hints,
                     examples=self.examples,
                     binders=binders,
-                    cost_model=CompositeCostModel(self.state),
+                    cost_model=CompositeCostModel(self.state + binders),
                     builder=b,
                     stop_callback=lambda: self.stop_requested)):
 
