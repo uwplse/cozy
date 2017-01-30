@@ -131,9 +131,10 @@ def _on_exp(e, fate, *args):
     #         (isinstance(e, EBinOp) and e.op == ">=" and (isinstance(e.e1, EVar) or isinstance(e.e2, EVar)))):
     # if isinstance(e, EBinOp) and e.op == "+" and isinstance(e.type, TBag):
     # if hasattr(e, "_tag") and e._tag:
-    if isinstance(e, EFilter):
+    # if isinstance(e, EFilter):
     # if fate in ("better", "new"):
     # if isinstance(e, EEmptyList):
+    if "commutative" in fate:
         print(" ---> [{}, {}] {}; {}".format(fate, pprint(e.type), pprint(e), ", ".join(pprint(e) for e in args)))
 
 class Learner(object):
@@ -281,6 +282,8 @@ def fixup_binders(e : Exp, binders_to_use : [EVar]) -> Exp:
             return ELambda(b, subst(body, { e.arg.id : b }))
     return V().visit(e)
 
+COMMUTATIVE_OPERATORS = set(("==", "and", "or", "+"))
+
 class FixedBuilder(ExpBuilder):
     def __init__(self, wrapped_builder, binders_to_use, assumptions : Exp):
         self.wrapped_builder = wrapped_builder
@@ -294,6 +297,10 @@ class FixedBuilder(ExpBuilder):
                 _on_exp(e, "unable to rename binders")
                 continue
                 print("WARNING: skipping built expression {}".format(pprint(e)), file=sys.stderr)
+
+            if size > 1 and isinstance(e, EBinOp) and e.op in COMMUTATIVE_OPERATORS and e.e2 < e.e1:
+                _on_exp(e, "rejecting symmetric use of commutative operator")
+                continue
 
             # experimental criterion: bags of handles must have distinct values
             if isinstance(e.type, TBag) and isinstance(e.type.t, THandle):
