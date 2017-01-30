@@ -28,9 +28,6 @@ EEnumToInt = declare_case(Exp, "EEnumToInt", ["e"])
 EBoolToInt = declare_case(Exp, "EBoolToInt", ["e"])
 EStm       = declare_case(Exp, "EStm", ["stm", "e"])
 
-# EFlatMap(e, f) == EFlatten(EMap(e, f))
-EFlatMap   = declare_case(Exp, "EFlatMap", ["e", "f"])
-
 # Maybe
 EAlterMaybe = declare_case(Exp, "EAlterMaybe", ["e", "f"])
 
@@ -46,6 +43,7 @@ SBreak   = declare_case(Stm, "SBreak")
 EMap     = declare_case(Exp, "EMap", ["e", "f"])
 EFilter  = declare_case(Exp, "EFilter", ["e", "p"])
 EFlatten = declare_case(Exp, "EFlatten", ["e"]) # aka concat: Bag<Bag<T>> -> Bag<T>
+EFlatMap = declare_case(Exp, "EFlatMap", ["e", "f"]) # EFlatMap(e, f) == EFlatten(EMap(e, f))
 
 # Maps
 EMakeMap   = declare_case(Exp, "EMakeMap", ["e", "key", "value"])
