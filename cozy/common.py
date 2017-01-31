@@ -381,6 +381,15 @@ def cross_product(iters, i=0):
         for rest in cross_product(iters, i + 1):
             yield (x,) + rest
 
+def group_by(iter, k, v=list):
+    xs = defaultdict(list)
+    for x in iter:
+        xs[k(x)].append(x)
+    res = defaultdict(lambda: v([]))
+    for (key, val) in xs.items():
+        res[key] = v(val)
+    return res
+
 def declare_case(supertype, name, attrs=()):
     """
     Usage:

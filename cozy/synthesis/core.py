@@ -63,8 +63,6 @@ class Cache(object):
 class ExpBuilder(object):
     def build(self, cache, size):
         raise NotImplementedError()
-    def with_roots(self, new_roots):
-        raise NotImplementedError()
 
 def values_of_type(value, value_type, desired_type):
     # see evaluation.mkval for info on the structure of values
@@ -168,9 +166,7 @@ class Learner(object):
                     new_roots.append(e)
                 except Exception:
                     pass
-
-        self.builder = self.builder.with_roots(new_roots)
-
+        self.roots = new_roots
         self.target = new_target
         self.update_watched_exps()
         if self.cost_model.is_monotonic():
@@ -261,7 +257,7 @@ class Learner(object):
                 raise NoMoreImprovements("hit termination condition")
 
             self.current_size += 1
-            self.builder_iter = self.builder.build(self.cache, self.current_size)
+            self.builder_iter = self.builder.build(self.cache, self.current_size) if self.current_size > 1 else self.roots
             print("minor iteration {}, |cache|={}".format(self.current_size, len(self.cache)))
 
 @typechecked
@@ -336,8 +332,6 @@ class FixedBuilder(ExpBuilder):
                     continue
 
             yield e
-    def with_roots(self, roots):
-        return FixedBuilder(self.wrapped_builder.with_roots(roots), self.binders_to_use, self.assumptions)
 
 def truncate(s):
     if len(s) > 60:

@@ -16,6 +16,7 @@ from cozy.solver import valid
 
 from . import core
 from . import caching
+from .grammar import BinderBuilder
 
 SynthCtx = namedtuple("SynthCtx", ["all_types", "basic_types"])
 
@@ -32,175 +33,6 @@ def rename_args(queries : [Query]) -> [Query]:
                 subst(q.ret, arg_remap))
         res.append(q)
     return res
-
-def _as_conjunction_of_equalities(p):
-    if isinstance(p, EBinOp) and p.op == "and":
-        return _as_conjunction_of_equalities(p.e1) + _as_conjunction_of_equalities(p.e2)
-    elif isinstance(p, EBinOp) and p.op == "==":
-        return [p]
-    else:
-        raise ValueError(p)
-
-def as_conjunction_of_equalities(p):
-    try:
-        return _as_conjunction_of_equalities(p)
-    except ValueError:
-        return None
-
-def infer_key_and_value(filter, binders, state : {EVar} = set()):
-    equalities = as_conjunction_of_equalities(filter)
-    if not equalities:
-        return
-    def can_serve_as_key(e, binder):
-        fvs = free_vars(e)
-        return binder in fvs and all(v == binder or v in state for v in fvs)
-    def can_serve_as_value(e, binder):
-        fvs = free_vars(e)
-        return binder not in fvs and not all(v in state for v in fvs)
-    for b in binders:
-        sep = []
-        for eq in equalities:
-            if can_serve_as_key(eq.e1, b) and can_serve_as_value(eq.e2, b):
-                sep.append((eq.e1, eq.e2))
-            elif can_serve_as_key(eq.e2, b) and can_serve_as_value(eq.e1, b):
-                sep.append((eq.e2, eq.e1))
-        if len(sep) == len(equalities):
-            key = ETuple(tuple(k for k, v in sep)).with_type(TTuple(tuple(k.type for k, v in sep))) if len(sep) > 1 else sep[0][0]
-            val = ETuple(tuple(v for k, v in sep)).with_type(TTuple(tuple(v.type for k, v in sep))) if len(sep) > 1 else sep[0][1]
-            yield b, key, val
-
-class BinderBuilder(core.ExpBuilder):
-    def __init__(self, binders, state_vars : [EVar], roots):
-        super().__init__()
-        self.binders = binders
-        self.state_vars = state_vars
-        self.roots = roots
-    def build(self, cache, size):
-        if size == 1:
-            # print("Roots:")
-            # for r in self.roots:
-            #     print("    {} : {}".format(pprint(r), pprint(r.type)))
-            # print()
-            yield EBool(True).with_type(BOOL)
-            yield EBool(False).with_type(BOOL)
-            yield from self.roots
-            yield from (b for b in self.binders if b not in self.roots)
-            return
-
-        # print("Cache:")
-        # for (e, size) in cache:
-        #     print("    @{}\t:\t{}".format(size, pprint(e)))
-
-        for e in cache.find(type=TRecord, size=size-1):
-            for (f,t) in e.type.fields:
-                yield EGetField(e, f).with_type(t)
-        for e in itertools.chain(cache.find(type=TBag(INT), size=size-1), cache.find(type=TSet(INT), size=size-1)):
-            yield EUnaryOp("sum", e).with_type(INT)
-        for e in cache.find(type=TBag, size=size-1):
-            yield EUnaryOp("the", e).with_type(TMaybe(e.type.t))
-        for e in cache.find(type=THandle, size=size-1):
-            yield EGetField(e, "val").with_type(e.type.value_type)
-        for e in cache.find(type=TTuple, size=size-1):
-            for n in range(len(e.type.ts)):
-                yield ETupleGet(e, n).with_type(e.type.ts[n])
-        for e in cache.find(type=BOOL, size=size-1):
-            yield EUnaryOp("not", e).with_type(BOOL)
-
-        for (sz1, sz2) in pick_to_sum(2, size - 1):
-            # Try instantiating bound expressions
-            for e1 in cache.find(size=sz1):
-                binders = free_vars(e1) & set(self.binders)
-                for b in binders:
-                    for e2 in cache.find(type=b.type, size=sz2):
-                        e = subst(e1, { b.id: e2 })
-                        e._tag = True
-                        yield e
-            for a1 in cache.find(type=INT, size=sz1):
-                for a2 in cache.find(type=INT, size=sz2):
-                    # yield EBinOp(a1, "+", a2).with_type(INT)
-                    # yield EBinOp(a1, "-", a2).with_type(INT)
-                    yield EBinOp(a1, ">", a2).with_type(BOOL)
-                    yield EBinOp(a1, "<", a2).with_type(BOOL)
-                    yield EBinOp(a1, ">=", a2).with_type(BOOL)
-                    yield EBinOp(a1, "<=", a2).with_type(BOOL)
-            for a1 in cache.find(type=TBag, size=sz1):
-                if not isinstance(a1.type.t, THandle):
-                    continue
-                for a2 in cache.find(type=a1.type, size=sz2):
-                    yield EBinOp(a1, "+", a2).with_type(a1.type)
-            for a1 in cache.find(type=BOOL, size=sz1):
-                for a2 in cache.find(type=BOOL, size=sz2):
-                    yield EBinOp(a1, "and", a2).with_type(BOOL)
-                    yield EBinOp(a1, "or", a2).with_type(BOOL)
-            for a1 in cache.find(size=sz1):
-                if not isinstance(a1.type, TMap):
-                    for a2 in cache.find(type=a1.type, size=sz2):
-                        yield EBinOp(a1, "==", a2).with_type(BOOL)
-            for m in cache.find(type=TMap, size=sz1):
-                for k in cache.find(type=m.type.k, size=sz2):
-                    yield EMapGet(m, k).with_type(m.type.v)
-
-        for bag in itertools.chain(cache.find(type=TBag, size=size-1), cache.find(type=TSet, size=size-1)):
-            if not isinstance(bag.type.t, THandle):
-                continue
-
-            # len of bag
-            count = EUnaryOp("sum", EMap(bag, mk_lambda(bag.type.t, lambda x: ENum(1).with_type(INT))).with_type(TBag(INT))).with_type(INT)
-            yield count
-            # empty?
-            empty = EBinOp(count, "==", ENum(0).with_type(INT)).with_type(BOOL)
-            yield empty
-            # exists?
-            yield ENot(empty)
-
-            # construct map lookups
-            if isinstance(bag, EFilter):
-                binder = bag.p.arg
-                found = False
-                for (_, key_proj, key_lookup) in infer_key_and_value(bag.p.body, [binder], state=set(self.state_vars)):
-                    # print("for {}: {} {} {}".format(pprint(bag.p.body), pprint(bag), pprint(key_proj), pprint(key_lookup)))
-                    found = True
-                    yield EMapGet(
-                        EMakeMap(
-                            bag.e,
-                            ELambda(binder, key_proj),
-                            mk_lambda(bag.type, lambda xs: xs)).with_type(TMap(key_proj.type, bag.type)),
-                        key_lookup).with_type(bag.type)
-                # if not found:
-                #     print("DUD FIND: {}".format(pprint(bag)))
-
-        for (sz1, sz2) in pick_to_sum(2, size - 1):
-            for bag in itertools.chain(cache.find(type=TBag, size=sz1), cache.find(type=TSet, size=sz1)):
-                if not isinstance(bag.type.t, THandle):
-                    continue
-
-                # if not isinstance(bag, EMapGet):
-                #     print("-----> " + pprint(bag) + " : " + pprint(bag.type))
-                #     continue
-                # print("###> " + pprint(bag) + " : " + pprint(bag.type))
-                for binder in self.binders:
-                    if binder.type == bag.type.t:
-                        for body in cache.find(size=sz2):
-                            # experimental filter
-                            if binder not in free_vars(body):
-                                continue
-                            yield EMap(bag, ELambda(binder, body)).with_type(TBag(body.type))
-                            if body.type == BOOL:
-                                x = EFilter(bag, ELambda(binder, body)).with_type(bag.type)
-                                # print("SYNTHESIZED FILT: {}".format(pprint(x)))
-                                yield x
-                            if isinstance(body.type, TBag):
-                                yield EFlatMap(bag, ELambda(binder, body)).with_type(TBag(body.type.t))
-
-        for t in list(cache.types()):
-            if isinstance(t, TBag):
-                yield EEmptyList().with_type(t)
-                for e in cache.find(type=t.t, size=size-1):
-                    yield ESingleton(e).with_type(t)
-
-    def with_roots(self, new_roots):
-        # return BinderBuilder(self.binders, self.state_vars, list(new_roots) + list(self.roots))
-        return BinderBuilder(self.binders, self.state_vars, list(new_roots))
 
 @typechecked
 def pick_rep(q_ret : Exp, state : [EVar]) -> ([(EVar, Exp)], Exp):
@@ -236,8 +68,13 @@ class ImproveQueryJob(jobs.Job):
         for t in all_types:
             if isinstance(t, TBag) or isinstance(t, TSet):
                 binders += [fresh_var(t.t) for i in range(n_binders)]
+                if isinstance(t.t, THandle):
+                    for i in range(n_binders):
+                        b = fresh_var(t)
+                        binders.append(b)
+                        self.assumptions.append(EUnaryOp("unique", b).with_type(BOOL))
 
-        b = BinderBuilder(binders, self.state, [])
+        b = BinderBuilder(binders, self.state)
 
         try:
             for expr in itertools.chain((self.q.ret,), core.improve(
