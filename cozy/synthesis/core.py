@@ -303,12 +303,6 @@ class FixedBuilder(ExpBuilder):
                 _on_exp(e, "rejecting symmetric use of commutative operator")
                 continue
 
-            # experimental criterion: bags of handles must have distinct values
-            if isinstance(e.type, TBag) and isinstance(e.type.t, THandle):
-                if not valid(implies(self.assumptions, EUnaryOp("unique", e).with_type(BOOL))):
-                    _on_exp(e, "rejecting non-unique bag")
-                    continue
-
             # all sets must have distinct values
             if isinstance(e.type, TSet):
                 if not valid(implies(self.assumptions, EUnaryOp("unique", e).with_type(BOOL))):
