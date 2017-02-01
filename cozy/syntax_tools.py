@@ -369,6 +369,8 @@ def all_exps(e):
 
 def replace(exp, old_exp, new_exp):
     class Replacer(BottomUpRewriter):
+        def visit_ELambda(self, e):
+            return target_syntax.ELambda(e.arg, self.visit(e.body))
         def visit(self, e):
             if e == old_exp:
                 return new_exp
