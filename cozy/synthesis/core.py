@@ -262,7 +262,9 @@ class Learner(object):
                 raise NoMoreImprovements("hit termination condition")
 
             self.current_size += 1
-            self.builder_iter = self.builder.build(self.cache, self.current_size) if self.current_size > 1 else iter(self.roots)
+            self.builder_iter = self.builder.build(self.cache, self.current_size)
+            if self.current_size == 1:
+                self.builder_iter = itertools.chain(self.builder_iter, iter(self.roots))
             print("minor iteration {}, |cache|={}".format(self.current_size, len(self.cache)))
 
 @typechecked

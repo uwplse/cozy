@@ -15,6 +15,10 @@ class BinderBuilder(ExpBuilder):
         # for (e, sz) in cache:
         #     from cozy.syntax_tools import pprint
         #     print("    @{}\t:\t{}".format(sz, pprint(e)))
+        if size == 1:
+            yield T
+            yield F
+            yield ENum(0).with_type(INT)
 
         for e in cache.find(type=TRecord, size=size-1):
             for (f,t) in e.type.fields:
