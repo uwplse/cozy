@@ -45,6 +45,9 @@ EFilter  = declare_case(Exp, "EFilter", ["e", "p"])
 EFlatten = declare_case(Exp, "EFlatten", ["e"]) # aka concat: Bag<Bag<T>> -> Bag<T>
 EFlatMap = declare_case(Exp, "EFlatMap", ["e", "f"]) # EFlatMap(e, f) == EFlatten(EMap(e, f))
 
+# Handle transformations
+EWithAlteredValue = declare_case(Exp, "EWithAlteredValue", ["handle", "new_value"])
+
 # Maps
 EMakeMap   = declare_case(Exp, "EMakeMap", ["e", "key", "value"])
 EMapGet    = declare_case(Exp, "EMapGet", ["map", "key"])

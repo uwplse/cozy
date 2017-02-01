@@ -87,6 +87,10 @@ class Evaluator(Visitor):
     def visit_EEnumEntry(self, val, env):
         # return val.type.cases.index(val.name)
         return val.name
+    def visit_EWithAlteredValue(self, e, env):
+        h, val = self.visit(e.handle, env)
+        new_val = self.visit(e.new_value, env)
+        return (h, new_val)
     def visit_EGetField(self, e, env):
         lhs = self.visit(e.e, env)
         if isinstance(e.e.type, THandle):

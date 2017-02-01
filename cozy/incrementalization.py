@@ -228,6 +228,22 @@ def apply_delta(
             return target_syntax.EFilter(x, mk_lambda(x.type.t, lambda elem: syntax.ENot(equal(elem, delta.e)))).with_type(x.type)
         def visit_BagRemoveAll(self, delta):
             return target_syntax.EFilter(x, mk_lambda(x.type.t, lambda elem: syntax.ENot(syntax.EBinOp(elem, "in", delta.e).with_type(syntax.BOOL)))).with_type(x.type)
+        def visit_BagElemUpdated(self, delta):
+            # Remove the old elements
+            # Add the new one with the same multiplicity
+            present = target_syntax.EFilter(x, mk_lambda(x.type.t, lambda elem: equal(elem, delta.elem))).with_type(x.type)
+            return apply_delta(x,
+                multi_delta([
+                    BagRemoveAll(present),
+                    BagAddAll(target_syntax.EMap(present, mk_lambda(x.type.t, lambda elem: apply_delta(delta.elem, delta.delta))).with_type(x.type))]))
+            # return apply_delta(x,
+            #     mk_conditional(syntax.EBinOp(delta.elem, "in", x).with_type(syntax.BOOL),
+            #         multi_delta([
+            #             BagRemove(delta.elem),
+            #             BagAdd(apply_delta(delta.elem, delta.delta))])))
+            # bag_minus_old = apply_delta(x, BagRemove(delta.elem))
+            # return apply_delta(bag_minus_old,
+            #     mk_conditional(syntax.EBinOp(delta.elem, "in", x).with_type(syntax.BOOL), BagAdd(apply_delta(delta.elem, delta.delta))))
         def visit_Conditional(self, delta):
             return syntax.ECond(delta.cond, self.visit(delta.delta), x).with_type(x.type)
         def visit_MultiDelta(self, delta):
@@ -235,7 +251,7 @@ def apply_delta(
         def visit_RecordFieldUpdate(self, delta):
             if isinstance(x.type, syntax.THandle):
                 assert delta.f == "val"
-                return EWithAlteredValue(x, apply_delta(syntax.EGetField(x, "val").with_type(x.type.value_type), delta.delta)).with_type(x.type)
+                return target_syntax.EWithAlteredValue(x, apply_delta(syntax.EGetField(x, "val").with_type(x.type.value_type), delta.delta)).with_type(x.type)
             else:
                 assert isinstance(x.type, syntax.TRecord)
                 return syntax.EMakeRecord(

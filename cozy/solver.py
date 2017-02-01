@@ -267,6 +267,12 @@ class ToZ3(Visitor):
             return fmap(self.visit(e.e, env), e.type, get_first)
         else:
             raise NotImplementedError(e.op)
+    def visit_EWithAlteredValue(self, e, env):
+        def go(handle, new_value):
+            id, val = handle
+            return (id, new_value)
+        return fmap(self.visit(e.handle, env), e.type, lambda h:
+               fmap(self.visit(e.new_value, env), e.type.value_type, lambda v: go(h, v)))
     def visit_EGetField(self, e, env):
         def go(r):
             if isinstance(e.e.type, THandle):
