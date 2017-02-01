@@ -3,7 +3,7 @@
 import os
 import shutil
 import sys
-from distutils.core import setup
+from setuptools import setup, find_packages
 
 def die(msg):
     print(msg, file=sys.stderr)
@@ -27,12 +27,12 @@ with open("requirements.txt") as f:
 
 setup(
     name='Cozy',
-    version='2.0-alpha',
+    version='2.0a1',
     description='Data Structure Synthesizer',
     author='Calvin Loncaric',
     author_email='loncaric@cs.washington.edu',
     url='https://cozy.uwplse.org/',
-    packages=['cozy'],
-    scripts=['build/exes/cozy'],
+    packages=find_packages(),
+    entry_points = { "console_scripts": "cozy=cozy.main:run" },
     requires=reqs,
     )

@@ -15,7 +15,7 @@ Dependencies:
 
 To run the tool:
 
-    $ ./cozy.py --help
+    $ python3 -m cozy --help
 
 ## Installation
 
@@ -23,8 +23,10 @@ You can install Cozy on your system by running
 
     $ ./setup.py install
 
+(Note: you may need to install the `setuptools` package with pip first.)
+
 The setup script works in
-[the usual manner](https://docs.python.org/3/install/).
+[the usual manner](https://packaging.python.org/distributing/#setup-py).
 
 ## Tests
 
