@@ -7,3 +7,6 @@ __pycache__
 parsetab.py
 parser.out
 /build
+/dist
+*.egg
+*.egg-info
