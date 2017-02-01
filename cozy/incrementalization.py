@@ -232,6 +232,15 @@ def apply_delta(
             return syntax.ECond(delta.cond, self.visit(delta.delta), x).with_type(x.type)
         def visit_MultiDelta(self, delta):
             return apply_delta(apply_delta(x, delta.delta1), delta.delta2)
+        def visit_RecordFieldUpdate(self, delta):
+            if isinstance(x.type, syntax.THandle):
+                assert delta.f == "val"
+                return EWithAlteredValue(x, apply_delta(syntax.EGetField(x, "val").with_type(x.type.value_type), delta.delta)).with_type(x.type)
+            else:
+                assert isinstance(x.type, syntax.TRecord)
+                return syntax.EMakeRecord(
+                    (f, syntax.EGetField(x, f).with_type(t) if f != delta.f else apply_delta(syntax.EGetField(x, f).with_type(t), delta.delta))
+                    for (f, t) in x.type.fields).with_type(x.type)
         def visit_TupleEntryUpdate(self, delta):
             if isinstance(x, syntax.ETuple):
                 return syntax.ETuple(tuple(
