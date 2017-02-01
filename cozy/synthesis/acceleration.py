@@ -2,7 +2,7 @@ import itertools
 
 from .core import ExpBuilder
 from cozy.target_syntax import *
-from cozy.syntax_tools import mk_lambda, free_vars
+from cozy.syntax_tools import mk_lambda, free_vars, break_conj
 
 def _as_conjunction_of_equalities(p):
     if isinstance(p, EBinOp) and p.op == "and":
@@ -40,6 +40,21 @@ def infer_key_and_value(filter, binders, state : {EVar} = set()):
             val = ETuple(tuple(v for k, v in sep)).with_type(TTuple(tuple(v.type for k, v in sep))) if len(sep) > 1 else sep[0][1]
             yield b, key, val
 
+def infer_map_lookup(filter, binder, state : {EVar}):
+    map_conds = []
+    other_conds = []
+    for c in break_conj(filter):
+        if list(infer_key_and_value(c, (binder,), state)):
+            map_conds.append(c)
+        else:
+            other_conds.append(c)
+    if map_conds:
+        for (_, key_proj, key_lookup) in infer_key_and_value(EAll(map_conds), (binder,), state):
+            return (key_proj, key_lookup, EAll(other_conds))
+    else:
+        return None
+    assert False
+
 class AcceleratedBuilder(ExpBuilder):
     def __init__(self, wrapped : ExpBuilder, binders : [EVar], state_vars : [EVar]):
         super().__init__()
@@ -55,17 +70,15 @@ class AcceleratedBuilder(ExpBuilder):
             # construct map lookups
             if isinstance(bag, EFilter):
                 binder = bag.p.arg
-                # found = False
-                for (_, key_proj, key_lookup) in infer_key_and_value(bag.p.body, [binder], state=set(self.state_vars)):
-                    # print("for {}: {} {} {}".format(pprint(bag.p.body), pprint(bag), pprint(key_proj), pprint(key_lookup)))
-                    # found = True
+                inf = infer_map_lookup(bag.p.body, binder, set(self.state_vars))
+                if inf:
+                    key_proj, key_lookup, remaining_filter = inf
+
                     m = EMakeMap(
                         bag.e,
                         ELambda(binder, key_proj),
                         mk_lambda(bag.type, lambda xs: xs)).with_type(TMap(key_proj.type, bag.type))
                     yield m
-                    yield EMapGet(m, key_lookup).with_type(bag.type)
-                    # yield key_proj
-                    # yield key_lookup
-                # if not found:
-                #     print("DUD FIND: {}".format(pprint(bag)))
+                    mg = EMapGet(m, key_lookup).with_type(bag.type)
+                    yield mg
+                    yield EFilter(mg, ELambda(binder, remaining_filter)).with_type(mg.type)

@@ -49,10 +49,7 @@ def desugar_exp(e : Exp) -> Exp:
                 return EMap(bag.e, compose(ELambda(e.f.arg, fbody), bag.f)).with_type(e.type)
             return EMap(bag, ELambda(e.f.arg, fbody)).with_type(e.type)
         def mk_filter_of_conjunction(self, bag : Exp, arg : EVar, conds : [Exp]) -> EFilter:
-            res = EFilter(bag, ELambda(arg, conds[-1])).with_type(bag.type)
-            for i in range(len(conds) - 2, -1, -1):
-                res = EFilter(res, ELambda(arg, conds[i])).with_type(bag.type)
-            return res
+            return EFilter(bag, ELambda(arg, EAll(conds))).with_type(bag.type)
         def break_filter(self, e):
             t = e.type
             arg = e.p.arg
