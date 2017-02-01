@@ -348,6 +348,8 @@ class ToZ3(Visitor):
                 "default": self.apply(e.value, ([], []), env)}
             return m
         return fmap(self.visit(e.e, env), e.type, go)
+    def visit_EMakeRecord(self, e, env):
+        return { f:self.visit(v, env) for (f, v) in e.fields }
     def _map_get(self, map_type, map, key, env):
         res = map["default"]
         # print("map get {} on {}".format(key, map))

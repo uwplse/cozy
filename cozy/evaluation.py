@@ -153,6 +153,8 @@ class Evaluator(Visitor):
         if x.obj is not None:
             x = Maybe(self.eval_lambda(e.f, x.obj, env))
         return x
+    def visit_EMakeRecord(self, e, env):
+        return FrozenDict({ f:self.visit(v, env) for (f, v) in e.fields })
     def visit_EMakeMap(self, e, env):
         im = defaultdict(Bag)
         for x in self.visit(e.e, env):

@@ -94,3 +94,13 @@ class TestSolver(unittest.TestCase):
         e2 = EFilter(e1, mk_lambda(xs.type.t, lambda x: EBool(True)))
         assert retypecheck(e2)
         assert valid(equal(e1, e2))
+
+    def test_make_record(self):
+        t = TRecord((("f", INT), ("g", INT)))
+        a = EVar("a").with_type(INT)
+        b = EVar("b").with_type(INT)
+        x = EMakeRecord((("f", a), ("g", b))).with_type(t)
+        y = EMakeRecord((("f", b), ("g", a))).with_type(t)
+        z = EMakeRecord((("g", b), ("f", a))).with_type(t)
+        assert not valid(equal(x, y), validate_model=True)
+        assert valid(equal(x, z), validate_model=True)
