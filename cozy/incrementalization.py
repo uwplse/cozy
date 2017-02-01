@@ -225,7 +225,7 @@ def apply_delta(
         def visit_BagAddAll(self, delta):
             return syntax.EBinOp(x, "+", delta.e).with_type(x.type)
         def visit_BagRemove(self, delta):
-            return target_syntax.EFilter(x, mk_lambda(x.type.t, lambda elem: syntax.ENot(syntax_tools.equal(elem, delta.e))))
+            return target_syntax.EFilter(x, mk_lambda(x.type.t, lambda elem: syntax.ENot(equal(elem, delta.e))))
         def visit_BagRemoveAll(self, delta):
             return target_syntax.EFilter(x, mk_lambda(x.type.t, lambda elem: syntax.ENot(syntax.EBinOp(elem, "in", delta.e).with_type(syntax.BOOL))))
         def visit_Conditional(self, delta):
