@@ -448,6 +448,13 @@ def subst(exp, replacements):
                 q.args,
                 [subst(a, m) for a in q.assumptions],
                 subst(q.ret, m))
+        def visit_Op(self, o):
+            m = { name: repl for (name, repl) in replacements.items() if not any(n == name for (n, t) in o.args) }
+            return syntax.Op(
+                o.name,
+                o.args,
+                [subst(a, m) for a in o.assumptions],
+                subst(o.body, m))
         def visit(self, x, *args, **kwargs):
             res = super().visit(x, *args, **kwargs)
             if isinstance(res, syntax.Exp) and hasattr(x, "type") and not hasattr(res, "type"):
