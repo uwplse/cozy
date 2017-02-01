@@ -1,8 +1,17 @@
 from cozy.common import typechecked, fresh_name
 from cozy.target_syntax import *
 from cozy.typecheck import INT, BOOL, retypecheck
-from cozy.syntax_tools import BottomUpRewriter, subst, fresh_var, all_types, all_exps, equal, implies, mk_lambda, compose, nnf, dnf
+from cozy.syntax_tools import BottomUpRewriter, subst, fresh_var, all_types, all_exps, equal, implies, mk_lambda, compose, nnf, dnf, break_conj, pprint
 from cozy.solver import valid
+
+def predicate_is_normal(p):
+    for part in break_conj(p):
+        if isinstance(part, EUnaryOp) and part.op == "not":
+            if not predicate_is_normal(part.e):
+                return False
+        elif isinstance(part, EBinOp) and part.op == "or":
+            return False
+    return True
 
 @typechecked
 def desugar_exp(e : Exp) -> Exp:
@@ -22,6 +31,9 @@ def desugar_exp(e : Exp) -> Exp:
         def mk_filter_of_conjunction(self, bag : Exp, arg : EVar, conds : [Exp]) -> EFilter:
             return EFilter(bag, ELambda(arg, EAll(conds))).with_type(bag.type)
         def break_filter(self, e):
+            if predicate_is_normal(e.p.body):
+                # print("breaking normal-form filter: {}".format(pprint(e)))
+                return e
             t = e.type
             arg = e.p.arg
             cases = dnf(nnf(e.p.body))
@@ -36,12 +48,15 @@ def desugar_exp(e : Exp) -> Exp:
             assert res is not None
             return res
         def visit_EFilter(self, e):
+            # assert not hasattr(e, "broken")
             bag = self.visit(e.e)
             if isinstance(bag, EBinOp) and bag.op == "+":
                 return self.visit(EBinOp(
                     EFilter(bag.e1, e.p).with_type(e.type), "+",
                     EFilter(bag.e2, e.p).with_type(e.type)).with_type(e.type))
             pbody = self.visit(e.p.body)
+            if isinstance(bag, EFilter):
+                return self.visit(EFilter(bag.e, ELambda(e.p.arg, EAll([pbody, bag.p.apply_to(e.p.arg)]))).with_type(e.type))
             if isinstance(bag, EMap):
                 return self.visit(EMap(EFilter(bag.e, compose(ELambda(e.p.arg, pbody), bag.f)).with_type(bag.e.type), bag.f).with_type(e.type))
             return self.break_filter(EFilter(bag, ELambda(e.p.arg, pbody)).with_type(e.type))
@@ -65,7 +80,7 @@ def desugar_exp(e : Exp) -> Exp:
                 return final, [], False
             clause = clauses[i]
             if isinstance(clause, CPull):
-                bag = self.visit(clause.e)
+                bag = clause.e
                 arg = EVar(clause.id).with_type(bag.type.t)
                 rest, guards, pulls = self.visit_clauses(clauses, final, i + 1)
                 if guards:
@@ -80,7 +95,7 @@ def desugar_exp(e : Exp) -> Exp:
                 return res, [], True
             elif isinstance(clause, CCond):
                 rest, guards, pulls = self.visit_clauses(clauses, final, i + 1)
-                return rest, guards + [self.visit(clause.e)], pulls
+                return rest, guards + [clause.e], pulls
             else:
                 raise NotImplementedError(clause)
         def visit_EUnaryOp(self, e):
