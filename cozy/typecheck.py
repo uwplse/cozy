@@ -363,10 +363,6 @@ class Typechecker(Visitor):
             fields.append((f, val.type))
         e.type = syntax.TRecord(tuple(fields))
 
-    def visit_ENewHandle(self, e):
-        self.visit(e.e)
-        self.ensure_type(e.e, e.type.value_type)
-
     def visit_CPull(self, c):
         self.visit(c.e)
         t = self.get_collection_type(c.e)

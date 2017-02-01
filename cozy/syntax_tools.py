@@ -167,9 +167,6 @@ class PrettyPrinter(common.Visitor):
     def visit_EEnumEntry(self, e):
         return e.name
 
-    def visit_ENewHandle(self, e):
-        return "new {}({})".format(self.visit(e.type), self.visit(e.e))
-
     def visit_EJust(self, e):
         return "Just({})".format(self.visit(e.e))
 
