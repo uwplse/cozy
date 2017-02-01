@@ -17,6 +17,7 @@ from cozy.solver import valid
 from . import core
 from . import caching
 from .grammar import BinderBuilder
+from .acceleration import AcceleratedBuilder
 
 SynthCtx = namedtuple("SynthCtx", ["all_types", "basic_types"])
 
@@ -74,7 +75,7 @@ class ImproveQueryJob(jobs.Job):
                         binders.append(b)
                         self.assumptions.append(EUnaryOp("unique", b).with_type(BOOL))
 
-        b = BinderBuilder(binders, self.state)
+        b = AcceleratedBuilder(BinderBuilder(binders, self.state), binders, self.state)
 
         try:
             for expr in itertools.chain((self.q.ret,), core.improve(
