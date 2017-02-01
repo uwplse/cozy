@@ -154,7 +154,7 @@ def derivative(
     """
 
     if var not in free_vars(e):
-        return NoDelta()
+        return (NoDelta(), [])
 
     if e == var:
         return (delta, [])
