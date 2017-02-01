@@ -10,9 +10,6 @@ from cozy.syntax_tools import pprint, free_vars
 from cozy.common import declare_case, fresh_name, Visitor, FrozenDict, typechecked, memoize
 from cozy import evaluation
 
-# TODO: Int==Bv32, Long==Bv64
-TBitVec = declare_case(Type, "TBitVec", ["width"])
-
 class _SymbolicUnion(object):
     """
     Represents `If(cond, x, y)` expression
@@ -412,8 +409,6 @@ class ToZ3(Visitor):
             return z3.Int(fresh_name(), ctx=ctx)
         elif type == TBool():
             return z3.Bool(fresh_name(), ctx=ctx)
-        elif isinstance(type, TBitVec):
-            return z3.BitVec(fresh_name(), type.width, ctx=ctx)
         elif isinstance(type, TEnum):
             ncases = len(type.cases)
             n = z3.Int(fresh_name(), ctx=ctx)
@@ -457,7 +452,7 @@ class ToZ3(Visitor):
             raise NotImplementedError(type)
 
 def decideable(t):
-    return type(t) in [TInt, TLong, TBool, TString, TBitVec, TEnum, TNative]
+    return type(t) in [TInt, TLong, TBool, TString, TEnum, TNative]
 
 def mkconst(ctx, solver, val):
     if type(val) == int:
@@ -498,8 +493,6 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
                 return s
             elif type == TBool():
                 return bool(model.eval(value, model_completion=True))
-            elif isinstance(type, TBitVec):
-                return model.eval(value, model_completion=True).as_long()
             elif isinstance(type, TBag) or isinstance(type, TSet):
                 mask, elems = value
                 real_val = []
