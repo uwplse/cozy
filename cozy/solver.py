@@ -262,6 +262,8 @@ class ToZ3(Visitor):
                 rest = (bag_mask[1:], bag_elems[1:])
                 return SymbolicUnion(e.type, bag_mask[0], bag_elems[0], get_first(rest))
             return fmap(self.visit(e.e, env), e.type, get_first)
+        elif e.op == "-":
+            return -self.visit(e.e, env)
         else:
             raise NotImplementedError(e.op)
     def visit_EWithAlteredValue(self, e, env):

@@ -1,6 +1,6 @@
 import unittest
 
-from cozy.solver import satisfy, valid
+from cozy.solver import satisfy, valid, satisfiable
 from cozy.typecheck import typecheck, retypecheck
 from cozy.target_syntax import *
 from cozy.syntax_tools import pprint, equal, mk_lambda
@@ -104,3 +104,7 @@ class TestSolver(unittest.TestCase):
         z = EMakeRecord((("g", b), ("f", a))).with_type(t)
         assert not valid(equal(x, y), validate_model=True)
         assert valid(equal(x, z), validate_model=True)
+
+    def test_unary_minus(self):
+        a = EVar("a").with_type(INT)
+        assert satisfiable(ENot(equal(a, EUnaryOp("-", a).with_type(INT))), validate_model=True)

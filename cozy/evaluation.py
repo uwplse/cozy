@@ -110,6 +110,8 @@ class Evaluator(Visitor):
                 return Maybe(bag[0])
             else:
                 return self.visit(ENull().with_type(e.type), env)
+        elif e.op == "-":
+            return -self.visit(e.e, env)
         else:
             raise NotImplementedError(e.op)
     def visit_EBinOp(self, e, env):

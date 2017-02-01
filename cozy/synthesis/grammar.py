@@ -30,6 +30,8 @@ class BinderBuilder(ExpBuilder):
                 yield ETupleGet(e, n).with_type(e.type.ts[n])
         for e in cache.find(type=BOOL, size=size-1):
             yield EUnaryOp("not", e).with_type(BOOL)
+        for e in cache.find(type=INT, size=size-1):
+            yield EUnaryOp("-", e).with_type(INT)
 
         for (sz1, sz2) in pick_to_sum(2, size - 1):
             # Try instantiating bound expressions
