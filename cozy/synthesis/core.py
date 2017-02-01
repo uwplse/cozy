@@ -238,6 +238,11 @@ class Learner(object):
                         # print("cost ceiling lowered for {}: {} --> {}".format(fp, prev_cost, cost))
                         if cost < prev_cost:
                             self.cache.evict(prev_exp, prev_size)
+                            # Experimental hyperaggressive eviction policy
+                            for (cached_e, size) in list(self.cache):
+                                if prev_exp in all_exps(cached_e):
+                                    # print("evicting {}".format(cached_e))
+                                    self.cache.evict(cached_e, size)
                         self.cache.add(e, size=self.current_size)
                         self.seen[fp] = (cost, e, self.current_size)
                         self.last_progress = self.current_size
