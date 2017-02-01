@@ -386,7 +386,6 @@ def subst(exp, replacements):
     Output:
         exp with each var mapped to its replacement (if any) from replacements
     """
-    # print("subst({}, {})".format(exp, replacements))
 
     allfvs = set()
     for val in replacements.values():
@@ -403,6 +402,8 @@ def subst(exp, replacements):
             c = clauses[i]
             if isinstance(c, syntax.CPull):
                 if c.id in replacements:
+                    raise NotImplementedError()
+                if any(v.id == d.id for r in replacements.values() for v in free_vars(r)):
                     raise NotImplementedError()
                 if c.id in allfvs:
                     name = common.fresh_name()
@@ -426,7 +427,13 @@ def subst(exp, replacements):
             if e.arg.id in replacements:
                 m = dict(m)
                 del m[e.arg.id]
-            return target_syntax.ELambda(e.arg, subst(e.body, m))
+            arg = e.arg
+            body = e.body
+            while any(arg in free_vars(r) for r in replacements.values()):
+                new_arg = fresh_var(arg.type)
+                body = subst(body, { arg.id : new_arg })
+                arg = new_arg
+            return target_syntax.ELambda(arg, subst(body, m))
         def visit_ADT(self, e):
             children = e.children()
             children = tuple(self.visit(c) for c in children)
@@ -443,6 +450,10 @@ def subst(exp, replacements):
             return t
         def visit_Query(self, q):
             m = { name: repl for (name, repl) in replacements.items() if not any(n == name for (n, t) in q.args) }
+            for (a, t) in q.args:
+                for r in replacements.values():
+                    if any(v.id == a for v in free_vars(r)):
+                        raise NotImplementedError("need to rename query argument {} in {}".format(a, pprint(q)))
             return syntax.Query(
                 q.name,
                 q.args,
@@ -450,6 +461,10 @@ def subst(exp, replacements):
                 subst(q.ret, m))
         def visit_Op(self, o):
             m = { name: repl for (name, repl) in replacements.items() if not any(n == name for (n, t) in o.args) }
+            for (a, t) in o.args:
+                for r in replacements.values():
+                    if any(v.id == a for v in free_vars(r)):
+                        raise NotImplementedError("need to rename op argument {} in {}".format(a, pprint(o)))
             return syntax.Op(
                 o.name,
                 o.args,
