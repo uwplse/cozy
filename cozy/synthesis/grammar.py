@@ -63,7 +63,6 @@ class BinderBuilder(ExpBuilder):
                         yield EBinOp(a1, "==", a2).with_type(BOOL)
             for m in cache.find(type=TMap, size=sz1):
                 for k in cache.find(type=m.type.k, size=sz2):
-                    print("made mapget {}[{}]".format(pprint(m), pprint(k)))
                     yield EMapGet(m, k).with_type(m.type.v)
 
         for bag in itertools.chain(cache.find(type=TBag, size=size-1), cache.find(type=TSet, size=size-1)):
@@ -90,24 +89,14 @@ class BinderBuilder(ExpBuilder):
                 if not all((v in self.binders or v in self.state_vars) for v in (free_vars(bag) | free_vars(k) | free_vars(v))):
                     continue
                 for (b1, b2) in cross_product([binders_by_type[bag.type.t], binders_by_type[bag.type]]):
-                    # print("considering {}".format(pprint(m)))
                     if b1 in free_vars(k) and b2 in free_vars(v):
-                        m = EMakeMap(bag, ELambda(b1, k), ELambda(b2, v)).with_type(TMap(k.type, v.type))
-                        print("made map {}".format(pprint(m.type)))
-                        yield m
-            # for bag in itertools.chain(cache.find(type=TBag, size=sz1), cache.find(type=TSet, size=sz1)):
-            #     if not isinstance(bag.type.t, THandle):
-            #         continue
+                        yield EMakeMap(bag, ELambda(b1, k), ELambda(b2, v)).with_type(TMap(k.type, v.type))
 
         for (sz1, sz2) in pick_to_sum(2, size - 1):
             for bag in itertools.chain(cache.find(type=TBag, size=sz1), cache.find(type=TSet, size=sz1)):
                 if not isinstance(bag.type.t, THandle):
                     continue
 
-                # if not isinstance(bag, EMapGet):
-                #     print("-----> " + pprint(bag) + " : " + pprint(bag.type))
-                #     continue
-                # print("###> " + pprint(bag) + " : " + pprint(bag.type))
                 for binder in self.binders:
                     if binder.type == bag.type.t:
                         for body in cache.find(size=sz2):
@@ -116,9 +105,7 @@ class BinderBuilder(ExpBuilder):
                                 continue
                             yield EMap(bag, ELambda(binder, body)).with_type(TBag(body.type))
                             if body.type == BOOL:
-                                x = EFilter(bag, ELambda(binder, body)).with_type(bag.type)
-                                # print("SYNTHESIZED FILT: {}".format(pprint(x)))
-                                yield x
+                                yield EFilter(bag, ELambda(binder, body)).with_type(bag.type)
                             if isinstance(body.type, TBag):
                                 yield EFlatMap(bag, ELambda(binder, body)).with_type(TBag(body.type.t))
 
