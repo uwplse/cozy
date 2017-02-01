@@ -64,9 +64,6 @@ class AcceleratedBuilder(ExpBuilder):
     def build(self, cache, size):
         yield from self.wrapped.build(cache, size)
         for bag in itertools.chain(cache.find(type=TBag, size=size-1), cache.find(type=TSet, size=size-1)):
-            if not isinstance(bag.type.t, THandle):
-                continue
-
             # construct map lookups
             if isinstance(bag, EFilter):
                 binder = bag.p.arg

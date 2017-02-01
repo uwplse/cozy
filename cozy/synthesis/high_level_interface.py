@@ -69,11 +69,9 @@ class ImproveQueryJob(jobs.Job):
         for t in all_types:
             if isinstance(t, TBag) or isinstance(t, TSet):
                 binders += [fresh_var(t.t) for i in range(n_binders)]
-                if isinstance(t.t, THandle):
-                    for i in range(n_binders):
-                        b = fresh_var(t)
-                        binders.append(b)
-                        self.assumptions.append(EUnaryOp("unique", b).with_type(BOOL))
+                for i in range(n_binders):
+                    b = fresh_var(t)
+                    binders.append(b)
 
         b = AcceleratedBuilder(BinderBuilder(binders, self.state), binders, self.state)
 

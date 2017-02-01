@@ -49,8 +49,6 @@ class BinderBuilder(ExpBuilder):
                     yield EBinOp(a1, ">=", a2).with_type(BOOL)
                     yield EBinOp(a1, "<=", a2).with_type(BOOL)
             for a1 in cache.find(type=TBag, size=sz1):
-                if not isinstance(a1.type.t, THandle):
-                    continue
                 for a2 in cache.find(type=a1.type, size=sz2):
                     yield EBinOp(a1, "+", a2).with_type(a1.type)
             for a1 in cache.find(type=BOOL, size=sz1):
@@ -66,9 +64,6 @@ class BinderBuilder(ExpBuilder):
                     yield EMapGet(m, k).with_type(m.type.v)
 
         for bag in itertools.chain(cache.find(type=TBag, size=size-1), cache.find(type=TSet, size=size-1)):
-            if not isinstance(bag.type.t, THandle):
-                continue
-
             # len of bag
             count = EUnaryOp("sum", EMap(bag, mk_lambda(bag.type.t, lambda x: ENum(1).with_type(INT))).with_type(TBag(INT))).with_type(INT)
             yield count
@@ -84,8 +79,6 @@ class BinderBuilder(ExpBuilder):
                     itertools.chain(cache.find(type=TBag, size=sz1), cache.find(type=TSet, size=sz1)),
                     cache.find(size=sz2),
                     cache.find(size=sz3)]):
-                if not isinstance(bag.type.t, THandle):
-                    continue
                 if not all((v in self.binders or v in self.state_vars) for v in (free_vars(bag) | free_vars(k) | free_vars(v))):
                     continue
                 for (b1, b2) in cross_product([binders_by_type[bag.type.t], binders_by_type[bag.type]]):
@@ -94,9 +87,6 @@ class BinderBuilder(ExpBuilder):
 
         for (sz1, sz2) in pick_to_sum(2, size - 1):
             for bag in itertools.chain(cache.find(type=TBag, size=sz1), cache.find(type=TSet, size=sz1)):
-                if not isinstance(bag.type.t, THandle):
-                    continue
-
                 for binder in self.binders:
                     if binder.type == bag.type.t:
                         for body in cache.find(size=sz2):
