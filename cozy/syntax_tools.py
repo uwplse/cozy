@@ -22,6 +22,25 @@ def mk_lambda(t, l):
 def compose(f1 : target_syntax.ELambda, f2 : target_syntax.ELambda) -> target_syntax.ELambda:
     return mk_lambda(f2.arg.type, lambda v: f1.apply_to(f2.apply_to(v)))
 
+_SCALAR_TYPES = set((
+    syntax.TInt,
+    syntax.TLong,
+    syntax.TBool,
+    syntax.TString,
+    syntax.TNative,
+    syntax.THandle,
+    syntax.TEnum))
+def is_scalar(t : syntax.Type):
+    if type(t) in _SCALAR_TYPES:
+        return True
+    if isinstance(t, syntax.TTuple):
+        return all(is_scalar(tt) for tt in t.ts)
+    if isinstance(t, syntax.TRecord):
+        return all(is_scalar(tt) for (f, tt) in t.fields)
+    if isinstance(t, syntax.TMaybe):
+        return is_scalar(t.t)
+    return False
+
 class BottomUpExplorer(common.Visitor):
     def visit_ADT(self, x):
         new_children = tuple(self.visit(child) for child in x.children())
