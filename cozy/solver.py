@@ -544,8 +544,12 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
                 raise NotImplementedError(type)
 
         _env = { }
-        fvs = vars if vars is not None else free_vars(e)
-        for v in fvs:
+        fvs = free_vars(e)
+        if vars is None:
+            vars = fvs
+        else:
+            vars = list(vars) + [v for v in fvs if v not in vars]
+        for v in vars:
             # print("{} : {}".format(pprint(v), pprint(v.type)))
             _env[v.id] = visitor.mkvar(ctx, solver, collection_depth, v.type)
         # print(_env)
@@ -583,7 +587,7 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
             model = solver.model()
             # print(model)
             res = { }
-            for v in fvs:
+            for v in vars:
                 res[v.id] = reconstruct(model, _env[v.id], v.type)
             for k, f in visitor.funcs.items():
                 name = k[0]
