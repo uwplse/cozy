@@ -19,6 +19,7 @@ class BinderBuilder(ExpBuilder):
             yield T
             yield F
             yield ENum(0).with_type(INT)
+            yield from self.binders
 
         for e in cache.find(type=TRecord, size=size-1):
             for (f,t) in e.type.fields:
