@@ -92,12 +92,6 @@ class ImproveQueryJob(jobs.Job):
 
                     r = pick_rep(expr, self.state)
                     if r is not None:
-                        print("SOLUTION")
-                        print("-" * 40)
-                        for (sv, proj) in r[0]:
-                            print("  {} : {} = {}".format(sv.id, pprint(sv.type), pprint(proj)))
-                        print("  return {}".format(pprint(r[1])))
-                        print("-" * 40)
                         new_rep, new_ret = r
                         self.k(new_rep, new_ret)
                 print("PROVED OPTIMALITY FOR {}".format(self.q.name))
@@ -304,10 +298,16 @@ def synthesize(
             try:
                 (q, new_rep, new_ret) = solutions_q.get(timeout=0.5)
                 if q.name in [qq.name for qq in specs]:
+                    print("SOLUTION FOR {}".format(q.name))
+                    print("-" * 40)
+                    for (sv, proj) in new_rep:
+                        print("  {} : {} = {}".format(sv.id, pprint(sv.type), pprint(proj)))
+                    print("  return {}".format(pprint(new_ret)))
+                    print("-" * 40)
                     # this might fail if a better solution was enqueued but the job has
                     # already been stopped and cleaned up
                     set_impl(q, new_rep, new_ret)
-                cleanup()
+                    cleanup()
             except Empty:
                 pass
 
