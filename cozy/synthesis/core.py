@@ -201,6 +201,7 @@ class Learner(object):
 
     def forget_most_recent(self):
         (e, size, fp) = self.most_recent
+        _on_exp(e, "forgotten")
         self.cache.evict(e, size)
         if self.overwritten is None:
             del self.seen[fp]

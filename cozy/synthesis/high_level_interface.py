@@ -333,6 +333,8 @@ def synthesize(
         state_var_exps = { }
         for (v, e) in new_state_vars:
             state_var_exps[v.id] = e
+            print("{} : {} = {}".format(v.id, pprint(v.type), pprint(e)))
+
         new_statevars = [(v, e.type) for (v, e) in state_var_exps.items()]
         return (Spec(
             spec.name,
