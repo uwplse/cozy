@@ -2,7 +2,8 @@ import itertools
 
 from .core import ExpBuilder
 from cozy.target_syntax import *
-from cozy.syntax_tools import mk_lambda, free_vars, break_conj
+from cozy.syntax_tools import mk_lambda, free_vars, break_conj, all_exps, replace, pprint
+from cozy.desugar import desugar_exp
 
 def _as_conjunction_of_equalities(p):
     if isinstance(p, EBinOp) and p.op == "and":
@@ -79,3 +80,26 @@ class AcceleratedBuilder(ExpBuilder):
                     mg = EMapGet(m, key_lookup).with_type(bag.type)
                     yield mg
                     yield EFilter(mg, ELambda(binder, remaining_filter)).with_type(mg.type)
+
+        # F(filter {\x -> P and x != e} xs) ----> F(filter P [e])
+        for e in cache.find(size=size-1):
+            e = desugar_exp(e)
+            for filt in (x for x in all_exps(e) if isinstance(x, EFilter)):
+                for clause in break_conj(filt.p.body):
+                    if isinstance(clause, EUnaryOp) and clause.op == "not" and isinstance(clause.e, EBinOp) and clause.e.op == "==":
+                        v = None
+                        if clause.e.e1 == filt.p.arg and filt.p.arg not in free_vars(clause.e.e2):
+                            # print(" > {}".format(pprint(clause)))
+                            v = clause.e.e2
+                        elif clause.e.e2 == filt.p.arg and filt.p.arg not in free_vars(clause.e.e1):
+                            # print(" < {}".format(pprint(clause)))
+                            v = clause.e.e1
+                        if v:
+                            new_clauses = [c for c in break_conj(filt.p.body) if c != clause]
+                            if new_clauses:
+                                new_filt = EFilter(ESingleton(v).with_type(filt.type), ELambda(filt.p.arg, EAll(new_clauses))).with_type(filt.type)
+                                yield new_filt
+                            else:
+                                new_filt = ESingleton(v).with_type(filt.type)
+                            print("proposing acceleration: {}".format(pprint(replace(e, filt, new_filt))))
+                            yield replace(e, filt, new_filt)
