@@ -199,16 +199,6 @@ class Learner(object):
     def _fingerprint(self, e):
         return fingerprint(e, self.examples)
 
-    def forget_most_recent(self):
-        (e, size, fp) = self.most_recent
-        _on_exp(e, "forgotten")
-        self.cache.evict(e, size)
-        if self.overwritten is None:
-            del self.seen[fp]
-        else:
-            self.seen[fp] = self.overwritten
-        self.most_recent = self.overwritten = None
-
     def next(self):
         while True:
             for e in self.builder_iter:
@@ -371,8 +361,6 @@ def improve(
 
             if (free_vars(new_target) - set(vars)):
                 print("oops, candidate {} has weird free vars".format(pprint(new_target)))
-                learner.forget_most_recent()
-                continue
 
             # 3. check
             formula = EAll([assumptions, ENot(equal(target, new_target))])
