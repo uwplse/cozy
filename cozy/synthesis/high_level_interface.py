@@ -62,45 +62,48 @@ class ImproveQueryJob(jobs.Job):
     def __str__(self):
         return "ImproveQueryJob[{}]".format(self.q.name)
     def run(self):
-        print("STARTING IMPROVEMENT JOB (|examples|={})".format(len(self.examples or ())))
-        all_types = self.ctx.all_types
+        print("STARTING IMPROVEMENT JOB {} (|examples|={})".format(self.q.name, len(self.examples or ())))
+        with open("/tmp/{}.log".format(self.q.name), "w") as f:
+            sys.stdout = f
+            print("STARTING IMPROVEMENT JOB {} (|examples|={})".format(self.q.name, len(self.examples or ())))
 
-        binders = []
-        n_binders = 1 # TODO?
-        for t in all_types:
-            if isinstance(t, TBag) or isinstance(t, TSet):
-                binders += [fresh_var(t.t) for i in range(n_binders)]
-                for i in range(n_binders):
-                    b = fresh_var(t)
-                    binders.append(b)
+            all_types = self.ctx.all_types
+            binders = []
+            n_binders = 1 # TODO?
+            for t in all_types:
+                if isinstance(t, TBag) or isinstance(t, TSet):
+                    binders += [fresh_var(t.t) for i in range(n_binders)]
+                    for i in range(n_binders):
+                        b = fresh_var(t)
+                        binders.append(b)
 
-        b = AcceleratedBuilder(BinderBuilder(binders, self.state), binders, self.state)
+            b = AcceleratedBuilder(BinderBuilder(binders, self.state), binders, self.state)
 
-        try:
-            for expr in itertools.chain((self.q.ret,), core.improve(
-                    target=self.q.ret,
-                    assumptions=EAll(self.assumptions),
-                    hints=self.hints,
-                    examples=self.examples,
-                    binders=binders,
-                    cost_model=CompositeCostModel(self.state + binders),
-                    builder=b,
-                    stop_callback=lambda: self.stop_requested)):
+            try:
+                for expr in itertools.chain((self.q.ret,), core.improve(
+                        target=self.q.ret,
+                        assumptions=EAll(self.assumptions),
+                        hints=self.hints,
+                        examples=self.examples,
+                        binders=binders,
+                        cost_model=CompositeCostModel(self.state + binders),
+                        builder=b,
+                        stop_callback=lambda: self.stop_requested)):
 
-                r = pick_rep(expr, self.state)
-                if r is not None:
-                    print("SOLUTION")
-                    print("-" * 40)
-                    for (sv, proj) in r[0]:
-                        print("  {} : {} = {}".format(sv.id, pprint(sv.type), pprint(proj)))
-                    print("  return {}".format(pprint(r[1])))
-                    print("-" * 40)
-                    new_rep, new_ret = r
-                    self.k(new_rep, new_ret)
-            print("PROVED OPTIMALITY FOR {}".format(self.q.name))
-        except core.StopException:
-            print("stopping synthesis of {}".format(self.q.name))
-            return
+                    r = pick_rep(expr, self.state)
+                    if r is not None:
+                        print("SOLUTION")
+                        print("-" * 40)
+                        for (sv, proj) in r[0]:
+                            print("  {} : {} = {}".format(sv.id, pprint(sv.type), pprint(proj)))
+                        print("  return {}".format(pprint(r[1])))
+                        print("-" * 40)
+                        new_rep, new_ret = r
+                        self.k(new_rep, new_ret)
+                print("PROVED OPTIMALITY FOR {}".format(self.q.name))
+            except core.StopException:
+                print("stopping synthesis of {}".format(self.q.name))
+                return
 
 def rewrite_ret(q : Query, repl) -> Query:
     return Query(
