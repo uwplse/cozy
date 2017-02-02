@@ -195,7 +195,8 @@ def derivative(
         change = multi_delta(deltas)
     elif isinstance(e.type, syntax.TBool):
         change = Become(make_subgoal(e_post_delta))
-    # elif isinstance(e.type, syntax.TMap):
+    elif isinstance(e.type, syntax.TMap):
+        change = NoDelta()
         # TODO:
         #    altered_keys = make_subgoal(keys_that_changed)
         #    value_delta    = derivative(my_value_func, ...)
