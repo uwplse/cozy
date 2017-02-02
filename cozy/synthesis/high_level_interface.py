@@ -1,6 +1,7 @@
 from collections import namedtuple, deque, defaultdict
 import datetime
 import itertools
+import sys
 
 from cozy.common import typechecked, fresh_name, mk_map, pick_to_sum, nested_dict
 from cozy.target_syntax import *
@@ -177,9 +178,11 @@ def synthesize(
 
         def stop_job(j):
             j.request_stop()
-            j.join(timeout=30)
-            if not j.done:
-                raise Exception("job '{}' failed to stop in 30 seconds; it is probably deadlocked".format(j))
+            while True:
+                j.join(timeout=30)
+                if j.done:
+                    break
+                print("job '{}' failed to stop in 30 seconds; it is probably deadlocked".format(j), file=sys.stderr)
             if not j.successful:
                 raise Exception("failed job: {}".format(j))
             improvement_jobs.remove(j)
