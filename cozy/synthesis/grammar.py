@@ -21,6 +21,12 @@ class BinderBuilder(ExpBuilder):
             yield ENum(0).with_type(INT)
             yield from self.binders
 
+        for t in list(cache.types()):
+            if isinstance(t, TBag):
+                yield EEmptyList().with_type(t)
+                for e in cache.find(type=t.t, size=size-1):
+                    yield ESingleton(e).with_type(t)
+
         for e in cache.find(type=TRecord, size=size-1):
             for (f,t) in e.type.fields:
                 yield EGetField(e, f).with_type(t)
@@ -112,9 +118,3 @@ class BinderBuilder(ExpBuilder):
                             yield EFilter(bag, ELambda(binder, body)).with_type(bag.type)
                         if isinstance(body.type, TBag):
                             yield EFlatMap(bag, ELambda(binder, body)).with_type(TBag(body.type.t))
-
-        for t in list(cache.types()):
-            if isinstance(t, TBag):
-                yield EEmptyList().with_type(t)
-                for e in cache.find(type=t.t, size=size-1):
-                    yield ESingleton(e).with_type(t)
