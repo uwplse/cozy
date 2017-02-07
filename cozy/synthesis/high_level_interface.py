@@ -88,11 +88,11 @@ class ImproveQueryJob(jobs.Job):
                 print("stopping synthesis of {}".format(self.q.name))
                 return
 
-def rewrite_ret(q : Query, repl) -> Query:
+def rewrite_ret(q : Query, repl, keep_assumptions=True) -> Query:
     return Query(
         q.name,
         q.args,
-        q.assumptions,
+        q.assumptions if keep_assumptions else (),
         repl(q.ret))
 
 @typechecked
@@ -231,7 +231,7 @@ def synthesize(
             rep = [ x for x in rep if x[0] not in to_remove ]
 
             new_state_vars.extend(rep)
-            impls[q.name] = rewrite_ret(q, lambda prev: ret)
+            impls[q.name] = rewrite_ret(q, lambda prev: ret, keep_assumptions=False)
 
             for op in ops:
                 print("###### INCREMENTALIZING: {}".format(op.name))
