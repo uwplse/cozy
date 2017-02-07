@@ -96,7 +96,6 @@ class CxxPrinter(common.Visitor):
             s  = "{indent}template <class F>\n".format(indent=indent)
             s += "{indent}inline void {name} ({args}const F& _callback) const {{\n{body}  }}\n\n".format(
                 indent=indent,
-                type=self.visit(ret_type, ""),
                 name=q.name,
                 args="".join("{}, ".format(self.visit(t, name)) for name, t in q.args),
                 body=self.visit(SForEach(x, q.ret, SEscape("{indent}_callback({x});\n", ["x"], [x])), indent=indent+INDENT))
