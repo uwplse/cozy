@@ -446,9 +446,3 @@ class extend(object):
 def read_file(filename):
     with open(filename, "r") as f:
         return f.read()
-
-def mk_map(iter, k=lambda x: x, v=lambda xs: xs) -> dict:
-    staging = defaultdict(list)
-    for x in iter:
-        staging[k(x)].append(x)
-    return { key : v(xs) for (key, xs) in staging.items() }

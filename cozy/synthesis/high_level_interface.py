@@ -3,7 +3,7 @@ import datetime
 import itertools
 import sys
 
-from cozy.common import typechecked, fresh_name, mk_map, pick_to_sum, nested_dict
+from cozy.common import typechecked, fresh_name, pick_to_sum, nested_dict
 from cozy.target_syntax import *
 import cozy.syntax_tools
 from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, BottomUpRewriter, free_vars, pprint, subst, implies, fresh_var, mk_lambda, all_exps, equal
@@ -22,20 +22,6 @@ from .acceleration import AcceleratedBuilder
 
 accelerate = Option("acceleration-rules", bool, True)
 SynthCtx = namedtuple("SynthCtx", ["all_types", "basic_types"])
-
-def rename_args(queries : [Query]) -> [Query]:
-    arg_hist = mk_map((a for q in queries for (a, t) in q.args), v=len)
-    res = []
-    for q in queries:
-        arg_remap = { a : EVar(fresh_name(a)).with_type(t) for (a, t) in q.args if arg_hist[a] > 1 }
-        if arg_remap:
-            q = Query(
-                q.name,
-                tuple((arg_remap.get(a, EVar(a)).id, t) for (a, t) in q.args),
-                subst(q.assumptions, arg_remap),
-                subst(q.ret, arg_remap))
-        res.append(q)
-    return res
 
 @typechecked
 def pick_rep(q_ret : Exp, state : [EVar]) -> ([(EVar, Exp)], Exp):
