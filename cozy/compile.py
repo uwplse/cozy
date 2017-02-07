@@ -263,7 +263,7 @@ class CxxPrinter(common.Visitor):
         if isinstance(iterable, EEmptyList):
             return ""
         elif isinstance(iterable, ESingleton):
-            return self.visit(body(iterable.e))
+            return self.visit(body(iterable.e), indent=indent)
         elif isinstance(iterable, EMap):
             return self.for_each(
                 iterable.e,
