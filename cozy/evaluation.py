@@ -2,7 +2,7 @@ from collections import defaultdict
 from functools import total_ordering
 
 from cozy.target_syntax import *
-from cozy.common import Visitor, FrozenDict, all_distinct
+from cozy.common import Visitor, FrozenDict, all_distinct, unique
 
 @total_ordering
 class hashable_defaultdict(defaultdict):
@@ -104,6 +104,8 @@ class Evaluator(Visitor):
             return sum(self.visit(e.e, env))
         elif e.op == "unique":
             return all_distinct(self.visit(e.e, env))
+        elif e.op == "distinct":
+            return Bag(unique(self.visit(e.e, env)))
         elif e.op == "the":
             bag = self.visit(e.e, env)
             if bag:

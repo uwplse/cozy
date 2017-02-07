@@ -251,6 +251,18 @@ class ToZ3(Visitor):
                 else:
                     return z3.BoolVal(True, self.ctx)
             return fmap(self.visit(e.e, env), e.type, is_unique)
+        elif e.op == "distinct":
+            bag_type = e.type.t
+            def distinct(bag):
+                mask, elems = bag
+                if elems:
+                    rest_mask, rest_elems = self.raw_filter(
+                        distinct((mask[1:], elems[1:])),
+                        lambda x: z3.Implies(mask[0], z3.Not(self.eq(bag_type, elems[0], x, env), self.ctx), self.ctx))
+                    return ([mask[0]] + rest_mask, [elems[0]] + rest_elems)
+                else:
+                    return bag
+            return fmap(self.visit(e.e, env), e.type, distinct)
         elif e.op == "len":
             return fmap(self.visit(e.e, env), e.type, self.len_of)
         elif e.op == "the":

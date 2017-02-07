@@ -3,7 +3,7 @@ import unittest
 from cozy.solver import satisfy, valid, satisfiable
 from cozy.typecheck import typecheck, retypecheck
 from cozy.target_syntax import *
-from cozy.syntax_tools import pprint, equal, mk_lambda
+from cozy.syntax_tools import pprint, equal, implies, mk_lambda
 
 zero = ENum(0).with_type(TInt())
 one  = ENum(1).with_type(TInt())
@@ -108,3 +108,11 @@ class TestSolver(unittest.TestCase):
     def test_unary_minus(self):
         a = EVar("a").with_type(INT)
         assert satisfiable(ENot(equal(a, EUnaryOp("-", a).with_type(INT))), validate_model=True)
+
+    def test_distinct(self):
+        a = EVar("a").with_type(TBag(INT))
+        assert satisfiable(ENot(equal(a, EUnaryOp("distinct", a).with_type(TBag(INT)))), validate_model=True)
+
+    def test_unique_distinct(self):
+        a = EVar("a").with_type(TBag(INT))
+        assert valid(implies(EUnaryOp("unique", a).with_type(BOOL), equal(a, EUnaryOp("distinct", a).with_type(TBag(INT)))), validate_model=True)
