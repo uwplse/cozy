@@ -155,16 +155,18 @@ def synthesize(
             V().visit(thing)
             return qs
 
-        def stop_job(j):
-            j.request_stop()
-            while True:
-                j.join(timeout=30)
-                if j.done:
-                    break
-                print("job '{}' failed to stop in 30 seconds; it is probably deadlocked".format(j), file=sys.stderr)
-            if not j.successful:
-                raise Exception("failed job: {}".format(j))
-            improvement_jobs.remove(j)
+        def stop_jobs(js):
+            for j in list(js):
+                j.request_stop()
+            for j in js:
+                while True:
+                    j.join(timeout=30)
+                    if j.done:
+                        break
+                    print("job '{}' failed to stop in 30 seconds; it is probably deadlocked".format(j), file=sys.stderr)
+                if not j.successful:
+                    raise Exception("failed job: {}".format(j))
+                improvement_jobs.remove(j)
 
         def cleanup():
             nonlocal new_state_vars
@@ -202,11 +204,8 @@ def synthesize(
             new_state_vars = [ v for v in new_state_vars if any(v[0] in free_vars(q) for q in impls.values()) ]
 
             # stop jobs for old queries
-            for j in list(improvement_jobs):
-                if j.q.name not in queries_to_keep:
-                    # TODO: I'm worried this could cause rare deadlocks. See the
-                    # "Stopping jobs" section below regarding draining the queue.
-                    stop_job(j)
+            jobs_to_stop = [ j for j in improvement_jobs if j.q.name not in queries_to_keep ]
+            stop_jobs(jobs_to_stop)
 
             # remove old method implementations
             for v in list(op_stms.keys()):
@@ -293,8 +292,7 @@ def synthesize(
 
         # stop jobs
         print("Stopping jobs")
-        for j in list(improvement_jobs):
-            stop_job(j)
+        stop_jobs(list(improvement_jobs))
 
         # construct new queries
         new_queries = list(impls.values())
