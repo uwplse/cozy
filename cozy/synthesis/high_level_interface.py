@@ -6,7 +6,7 @@ import sys
 from cozy.common import typechecked, fresh_name, pick_to_sum, nested_dict
 from cozy.target_syntax import *
 import cozy.syntax_tools
-from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, BottomUpRewriter, free_vars, pprint, subst, implies, fresh_var, mk_lambda, all_exps, equal
+from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, BottomUpRewriter, free_vars, pprint, subst, implies, fresh_var, mk_lambda, all_exps, equal, is_scalar
 import cozy.incrementalization as inc
 from cozy.typecheck import INT, BOOL
 from cozy.timeouts import Timeout, TimeoutException
@@ -58,7 +58,7 @@ class ImproveQueryJob(jobs.Job):
             binders = []
             n_binders = 1 # TODO?
             for t in all_types:
-                if isinstance(t, TBag) or isinstance(t, TSet):
+                if isinstance(t, TBag):
                     binders += [fresh_var(t.t) for i in range(n_binders)]
                     for i in range(n_binders):
                         b = fresh_var(t)
@@ -102,7 +102,7 @@ def synthesize(
 
     # gather root types
     types = list(all_types(spec))
-    basic_types = set(t for t in types if not isinstance(t, TBag) and not isinstance(t, TSet))
+    basic_types = set(t for t in types if is_scalar(t))
     basic_types |= { BOOL, INT }
     print("basic types:")
     for t in basic_types:

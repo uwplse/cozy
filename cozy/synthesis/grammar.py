@@ -30,7 +30,7 @@ class BinderBuilder(ExpBuilder):
         for e in cache.find(type=TRecord, size=size-1):
             for (f,t) in e.type.fields:
                 yield EGetField(e, f).with_type(t)
-        for e in itertools.chain(cache.find(type=TBag(INT), size=size-1), cache.find(type=TSet(INT), size=size-1)):
+        for e in cache.find(type=TBag(INT), size=size-1):
             yield EUnaryOp("sum", e).with_type(INT)
         for e in cache.find(type=TBag, size=size-1):
             yield EUnaryOp("the", e).with_type(TMaybe(e.type.t))
@@ -76,7 +76,7 @@ class BinderBuilder(ExpBuilder):
                 for k in cache.find(type=m.type.k, size=sz2):
                     yield EMapGet(m, k).with_type(m.type.v)
 
-        for bag in itertools.chain(cache.find(type=TBag, size=size-1), cache.find(type=TSet, size=size-1)):
+        for bag in cache.find(type=TBag, size=size-1):
             # len of bag
             count = EUnaryOp("sum", EMap(bag, mk_lambda(bag.type.t, lambda x: ENum(1).with_type(INT))).with_type(TBag(INT))).with_type(INT)
             yield count
@@ -88,7 +88,7 @@ class BinderBuilder(ExpBuilder):
 
         binders_by_type = group_by(self.binders, lambda b: b.type)
         for (sz1, sz2, sz3) in pick_to_sum(3, size - 1):
-            for bag in itertools.chain(cache.find(type=TBag, size=sz1), cache.find(type=TSet, size=sz1)):
+            for bag in cache.find(type=TBag, size=sz1):
                 if not all((v in self.binders or v in self.state_vars) for v in free_vars(bag)):
                     continue
                 for k in cache.find(size=sz2):
@@ -107,7 +107,7 @@ class BinderBuilder(ExpBuilder):
                             yield EMakeMap(bag, ELambda(b1, k), ELambda(b2, val)).with_type(TMap(k.type, val.type))
 
         for (sz1, sz2) in pick_to_sum(2, size - 1):
-            for bag in itertools.chain(cache.find(type=TBag, size=sz1), cache.find(type=TSet, size=sz1)):
+            for bag in cache.find(type=TBag, size=sz1):
                 for binder in binders_by_type[bag.type.t]:
                     for body in cache.find(size=sz2):
                         # experimental filter

@@ -101,7 +101,7 @@ def map_cond(delta, f):
 def _push_delta_through_field_access(members : { str : syntax.Type }, lhs, delta):
     if isinstance(lhs, syntax.EVar):
         if isinstance(lhs.type, syntax.THandle):
-            bags = [ m for (m, ty) in members.items() if type(ty) in (syntax.TSet, syntax.TBag) and ty.t == lhs.type ]
+            bags = [ m for (m, ty) in members.items() if type(ty) is syntax.TBag and ty.t == lhs.type ]
             if len(bags) == 0:
                 return (lhs, NoDelta())
             if len(bags) != 1:
