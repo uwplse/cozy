@@ -108,9 +108,7 @@ class Typechecker(Visitor):
         return t
 
     def visit_TApp(self, t):
-        if t.t == "List":
-            return syntax.TList(self.visit(t.args))
-        elif t.t == "Set":
+        if t.t == "Set":
             return syntax.TSet(self.visit(t.args))
         elif t.t == "Bag":
             return syntax.TBag(self.visit(t.args))
@@ -181,7 +179,6 @@ class Typechecker(Visitor):
     def get_collection_type(self, e):
         """if e has a collection type, e.g. List<Int>, this returns the inner type, e.g. Int"""
         if e.type is DEFAULT_TYPE:           return DEFAULT_TYPE
-        if isinstance(e.type, syntax.TList): return e.type.t
         if isinstance(e.type, syntax.TBag):  return e.type.t
         if isinstance(e.type, syntax.TSet):  return e.type.t
         self.report_err(e, "expression has non-collection type {}".format(e.type))
