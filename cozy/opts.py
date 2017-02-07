@@ -20,12 +20,12 @@ def setup(parser):
     for o in _OPTS:
         n = _argname(o)
         if o.type is bool:
-            parser.add_argument("--" + n, action="store_true", default=o.default, help=o.description)
+            parser.add_argument("--" + n, action="store_true", default=False, help=o.description)
         elif o.type is str:
             parser.add_argument("--" + n, metavar=o.metavar, default=o.default, help=(o.description + " (default={})".format(repr(o.default))) if o.description else "default={}".format(repr(o.default)))
 
 def read(args):
     for o in _OPTS:
-        o.value = getattr(args, _argname(o))
+        o.value = getattr(args, _argname(o).replace("-", "_"))
         if o.type is bool and o.default:
             o.value = not o.value
