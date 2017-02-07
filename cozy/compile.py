@@ -16,6 +16,7 @@ class CxxPrinter(common.Visitor):
     def __init__(self):
         self.types = OrderedDict()
         self.funcs = {}
+        self.queries = {}
 
     def typename(self, t):
         return self.types[t]
@@ -281,6 +282,9 @@ class CxxPrinter(common.Visitor):
                 indent=indent)
         elif isinstance(iterable, EFlatMap):
             return self.for_each(EFlatten(EMap(iterable.e, iterable.f).with_type(TBag(iterable.type))).with_type(iterable.type), body, indent)
+        elif isinstance(iterable, ECall) and iterable.func in self.queries:
+            q = self.queries[iterable.func]
+            return self.for_each(subst(q.ret, { a : v for ((a, t), v) in zip(q.args, iterable.args) }), body, indent=indent)
         else:
             x = fresh_var(iterable.type.t)
             if type(iterable.type) is TBag:
@@ -325,12 +329,18 @@ class CxxPrinter(common.Visitor):
         return self.visit_EGetField(EGetField(e.e, "_{}".format(e.n)), indent)
 
     def visit_ECall(self, e, indent=""):
-        f = self.funcs[e.func]
-        if e.args:
+        if e.func in self.funcs:
+            f = self.funcs[e.func]
+            if e.args:
+                setups, args = zip(*[self.visit(arg, indent) for arg in e.args])
+                return ("".join(setups), "({})".format(f.body_string.format(**{ arg: val for (arg, _), val in zip(f.args, args) })))
+            else:
+                return ("", f.body_string)
+        elif e.func in self.queries:
             setups, args = zip(*[self.visit(arg, indent) for arg in e.args])
-            return ("".join(setups), "({})".format(f.body_string.format(**{ arg: val for (arg, _), val in zip(f.args, args) })))
+            return ("".join(setups), "{}({})".format(e.func, ", ".join(args)))
         else:
-            return ("", f.body_string)
+            raise Exception("unknown function {}".format(repr(e.func)))
 
     def visit_Exp(self, e, indent=""):
         raise NotImplementedError(e)
@@ -443,6 +453,7 @@ class CxxPrinter(common.Visitor):
     def visit_Spec(self, spec, state_exps, sharing):
         self.state_exps = state_exps
         self.funcs = { f.name: f for f in spec.extern_funcs }
+        self.queries = { q.name: q for q in spec.methods if isinstance(q, Query) }
 
         s = "#pragma once\n"
         s += "#include <unordered_map>\n"
@@ -469,6 +480,7 @@ class JavaPrinter(CxxPrinter):
     def visit_Spec(self, spec, state_exps, sharing, package=None):
         self.state_exps = state_exps
         self.funcs = { f.name: f for f in spec.extern_funcs }
+        self.queries = { q.name: q for q in spec.methods if isinstance(q, Query) }
         self.setup_types(spec, state_exps, sharing)
 
         s = ""
