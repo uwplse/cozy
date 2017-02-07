@@ -14,12 +14,13 @@ from cozy.cost_model import CompositeCostModel
 from cozy.rep_inference import infer_rep
 from cozy import jobs
 from cozy.solver import valid
+from cozy.opts import Option
 
 from . import core
-from . import caching
 from .grammar import BinderBuilder
 from .acceleration import AcceleratedBuilder
 
+accelerate = Option("acceleration-rules", bool, True)
 SynthCtx = namedtuple("SynthCtx", ["all_types", "basic_types"])
 
 def rename_args(queries : [Query]) -> [Query]:
@@ -77,7 +78,9 @@ class ImproveQueryJob(jobs.Job):
                         b = fresh_var(t)
                         binders.append(b)
 
-            b = AcceleratedBuilder(BinderBuilder(binders, self.state), binders, self.state)
+            b = BinderBuilder(binders, self.state)
+            if accelerate.value:
+                b = AcceleratedBuilder(b, binders, self.state)
 
             try:
                 for expr in itertools.chain((self.q.ret,), core.improve(
@@ -109,7 +112,6 @@ def rewrite_ret(q : Query, repl) -> Query:
 @typechecked
 def synthesize(
         spec      : Spec,
-        use_cache : bool = True,
         per_query_timeout : datetime.timedelta = datetime.timedelta(seconds=60)) -> (Spec, dict):
 
     # gather root types

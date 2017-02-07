@@ -8,6 +8,9 @@ from cozy.common import Visitor, fresh_name, typechecked, unique, pick_to_sum, c
 from cozy.solver import satisfy, satisfiable, valid
 from cozy.evaluation import eval, mkval
 from cozy.cost_model import CostModel
+from cozy.opts import Option
+
+save_testcases = Option("save-testcases", str, "", metavar="PATH")
 
 class Cache(object):
     def __init__(self, items=None):
@@ -379,8 +382,8 @@ def improve(
                 new_cost = cost_model.cost(new_target)
                 if new_cost > old_cost:
                     print("WHOOPS! COST GOT WORSE!")
-                    if False:
-                        with open("/tmp/cozy_failing_testcases.py", "a") as f:
+                    if save_testcases.value:
+                        with open(save_testcases.value, "a") as f:
                             f.write("def testcase():\n")
                             f.write("    costmodel = {}\n".format(repr(cost_model)))
                             f.write("    old_e = {}\n".format(repr(old_e)))

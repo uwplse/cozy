@@ -19,12 +19,12 @@ from cozy import synthesis
 from cozy import library
 from cozy import autotuning
 from cozy import sharing
+from cozy import opts
 
 def run():
     parser = argparse.ArgumentParser(description='Data structure synthesizer.')
     parser.add_argument("-t", "--timeout", metavar="N", type=float, default=60, help="Per-query synthesis timeout (in seconds); default=60")
     parser.add_argument("-s", "--simple", action="store_true", help="Do not synthesize improved solution; use the most trivial implementation of the spec")
-    parser.add_argument("-d", "--disable-cache", action="store_true", help="Disable caching of synthesis results")
 
     java_opts = parser.add_argument_group("Java codegen")
     java_opts.add_argument("--java", metavar="FILE.java", default=None, help="Output file for java classes, use '-' for stdout")
@@ -33,8 +33,12 @@ def run():
     cxx_opts = parser.add_argument_group("C++ codegen")
     cxx_opts.add_argument("--c++", metavar="FILE.h", default=None, help="Output file for C++ (header-only class), use '-' for stdout")
 
+    internal_opts = parser.add_argument_group("Internal parameters")
+    opts.setup(internal_opts)
+
     parser.add_argument("file", nargs="?", default=None, help="Input file (omit to use stdin)")
     args = parser.parse_args()
+    opts.read(args)
 
     input_text = sys.stdin.read() if args.file is None else common.read_file(args.file)
     ast = parse.parse(input_text)
@@ -54,7 +58,6 @@ def run():
     if not args.simple:
         ast, state_map = synthesis.synthesize(
             ast,
-            use_cache         = not args.disable_cache,
             per_query_timeout = datetime.timedelta(seconds=args.timeout))
         print()
         print(syntax_tools.pprint(ast))
