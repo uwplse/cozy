@@ -30,6 +30,40 @@ TApp                = declare_case(Type, "TApp",    ["t", "args"])
 TEnum               = declare_case(Type, "TEnum",   ["cases"])
 TTuple              = declare_case(Type, "TTuple",  ["ts"])
 
+# Unary operators
+class UOp(object):
+    Sum       = "sum"
+    Not       = "not"
+    Distinct  = "distinct"
+    AreUnique = "unique"
+    All       = "all"
+    Any       = "any"
+    Exists    = "exists"
+    Length    = "len"
+    Empty     = "empty"
+    The       = "the"
+
+UOps = (UOp.Sum,
+        UOp.Not,
+        UOp.Distinct,
+        UOp.AreUnique,
+        UOp.All,
+        UOp.Any,
+        UOp.Exists,
+        UOp.Length,
+        UOp.Empty,
+        UOp.The)
+
+# Binary operators
+class BOp(object):
+    And = "and"
+    Or  = "or"
+    In  = "in"
+
+BOps = (BOp.And,
+        BOp.Or,
+        BOp.In)
+
 class Exp(ADT):
     def with_type(self, t):
         self.type = t

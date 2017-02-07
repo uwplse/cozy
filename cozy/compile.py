@@ -239,7 +239,7 @@ class CxxPrinter(common.Visitor):
         op = e.op
         if op == "+" and isinstance(e.e1.type, TBag):
             raise NotImplementedError("adding bags: {}".format(e))
-        elif op == "in":
+        elif op == BOp.In:
             type = TBool()
             res = fresh_var(type, "found")
             x = fresh_var(e.e1.type, "x")
@@ -250,9 +250,9 @@ class CxxPrinter(common.Visitor):
                     seq([SAssign(res, EBool(True).with_type(type)), SBreak()]),
                     SNoOp()))]), indent)
             return (setup, res.id)
-        elif op == "or":
+        elif op == BOp.Or:
             return self.visit(ECond(e.e1, EBool(True), e.e2).with_type(TBool()), indent)
-        elif op == "and":
+        elif op == BOp.And:
             return self.visit(ECond(e.e1, e.e2, EBool(False)).with_type(TBool()), indent)
         ce1, e1 = self.visit(e.e1, indent)
         ce2, e2 = self.visit(e.e2, indent)
@@ -305,9 +305,9 @@ class CxxPrinter(common.Visitor):
 
     def visit_EUnaryOp(self, e, indent):
         op = e.op
-        if op == "the":
+        if op == UOp.The:
             return self.find_one(e.e, indent=indent)
-        elif op == "sum":
+        elif op == UOp.Sum:
             type = e.e.type.t
             res = fresh_var(type, "sum")
             x = fresh_var(type, "x")
@@ -554,7 +554,7 @@ class JavaPrinter(CxxPrinter):
         return ("", "{}.{}".format(self.typename(e.type), e.name))
 
     def visit_EUnaryOp(self, e, indent):
-        if e.op == "not":
+        if e.op == UOp.Not:
             setup, ee = self.visit(e.e, indent)
             return (setup, "!({})".format(ee))
         return super().visit_EUnaryOp(e, indent)

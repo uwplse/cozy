@@ -31,16 +31,16 @@ class BinderBuilder(ExpBuilder):
             for (f,t) in e.type.fields:
                 yield EGetField(e, f).with_type(t)
         for e in cache.find(type=TBag(INT), size=size-1):
-            yield EUnaryOp("sum", e).with_type(INT)
+            yield EUnaryOp(UOp.Sum, e).with_type(INT)
         for e in cache.find(type=TBag, size=size-1):
-            yield EUnaryOp("the", e).with_type(TMaybe(e.type.t))
+            yield EUnaryOp(UOp.The, e).with_type(TMaybe(e.type.t))
         for e in cache.find(type=THandle, size=size-1):
             yield EGetField(e, "val").with_type(e.type.value_type)
         for e in cache.find(type=TTuple, size=size-1):
             for n in range(len(e.type.ts)):
                 yield ETupleGet(e, n).with_type(e.type.ts[n])
         for e in cache.find(type=BOOL, size=size-1):
-            yield EUnaryOp("not", e).with_type(BOOL)
+            yield EUnaryOp(UOp.Not, e).with_type(BOOL)
         for e in cache.find(type=INT, size=size-1):
             yield EUnaryOp("-", e).with_type(INT)
 
@@ -66,8 +66,8 @@ class BinderBuilder(ExpBuilder):
                     yield EBinOp(a1, "+", a2).with_type(a1.type)
             for a1 in cache.find(type=BOOL, size=sz1):
                 for a2 in cache.find(type=BOOL, size=sz2):
-                    yield EBinOp(a1, "and", a2).with_type(BOOL)
-                    yield EBinOp(a1, "or", a2).with_type(BOOL)
+                    yield EBinOp(a1, BOp.And, a2).with_type(BOOL)
+                    yield EBinOp(a1, BOp.Or, a2).with_type(BOOL)
             for a1 in cache.find(size=sz1):
                 if not isinstance(a1.type, TMap):
                     for a2 in cache.find(type=a1.type, size=sz2):
@@ -78,7 +78,7 @@ class BinderBuilder(ExpBuilder):
 
         for bag in cache.find(type=TBag, size=size-1):
             # len of bag
-            count = EUnaryOp("sum", EMap(bag, mk_lambda(bag.type.t, lambda x: ENum(1).with_type(INT))).with_type(TBag(INT))).with_type(INT)
+            count = EUnaryOp(UOp.Sum, EMap(bag, mk_lambda(bag.type.t, lambda x: ENum(1).with_type(INT))).with_type(TBag(INT))).with_type(INT)
             yield count
             # empty?
             empty = EBinOp(count, "==", ENum(0).with_type(INT)).with_type(BOOL)

@@ -41,7 +41,7 @@ class CardinalityVisitor(BottomUpExplorer):
         else:
             raise NotImplementedError(e)
     def visit_EUnaryOp(self, e):
-        if e.op == "the":
+        if e.op == UOp.The:
             return 1000 # TODO???
         else:
             raise NotImplementedError(e)
@@ -73,11 +73,11 @@ class MemoryUsageCostModel(CostModel, BottomUpExplorer):
             return cardinality(e)
         return 1
     def visit_EUnaryOp(self, e):
-        if e.op == "sum":
+        if e.op == UOp.Sum:
             return 1 # TODO: sizeof(int)
-        if e.op == "not":
+        if e.op == UOp.Not:
             return 1 # TODO: sizeof(bool)
-        if e.op == "the":
+        if e.op == UOp.The:
             return 1 # TODO: sizeof(e.type)
         raise NotImplementedError(e.op)
     def visit_EBool(self, e):
@@ -130,11 +130,11 @@ class RunTimeCostModel(CostModel, BottomUpExplorer):
         return 1
     def visit_EUnaryOp(self, e):
         cost = self.visit(e.e)
-        if e.op == "sum":
+        if e.op == UOp.Sum:
             cost += cardinality(e.e)
         return cost + 0.01
     def visit_EBinOp(self, e):
-        if e.op == "in":
+        if e.op == BOp.In:
             return self.visit(EFilter(e.e2, mk_lambda(e.e1.type, lambda x: equal(x, e.e1))))
         cost = self.visit(e.e1) + self.visit(e.e2)
         if e.op == "==" and isinstance(e.e1.type, TBag):

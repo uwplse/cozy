@@ -100,18 +100,18 @@ def desugar_exp(e : Exp) -> Exp:
                 raise NotImplementedError(clause)
         def visit_EUnaryOp(self, e):
             sub = self.visit(e.e)
-            if e.op == "empty":
+            if e.op == UOp.Empty:
                 arg = fresh_var(sub.type.t)
                 return self.visit(EBinOp(
-                    EUnaryOp("sum", EMap(sub, ELambda(arg, ENum(1).with_type(INT))).with_type(TBag(INT))).with_type(INT),
+                    EUnaryOp(UOp.Sum, EMap(sub, ELambda(arg, ENum(1).with_type(INT))).with_type(TBag(INT))).with_type(INT),
                     "==",
                     ENum(0).with_type(INT)).with_type(BOOL))
-            elif e.op == "any":
+            elif e.op == UOp.Any:
                 arg = fresh_var(BOOL)
-                return self.visit(ENot(EUnaryOp("empty", EFilter(e.e, ELambda(arg, arg)).with_type(e.e.type)).with_type(e.type)))
-            elif e.op == "all":
+                return self.visit(ENot(EUnaryOp(UOp.Empty, EFilter(e.e, ELambda(arg, arg)).with_type(e.e.type)).with_type(e.type)))
+            elif e.op == UOp.All:
                 arg = fresh_var(BOOL)
-                return self.visit(EUnaryOp("empty", EFilter(e.e, ELambda(arg, ENot(arg))).with_type(e.e.type)).with_type(e.type))
+                return self.visit(EUnaryOp(UOp.Empty, EFilter(e.e, ELambda(arg, ENot(arg))).with_type(e.e.type)).with_type(e.type))
             else:
                 return EUnaryOp(e.op, sub).with_type(e.type)
         def visit_EBinOp(self, e):
@@ -120,10 +120,10 @@ def desugar_exp(e : Exp) -> Exp:
             op = e.op
             if op == "!=":
                 return self.visit(ENot(EBinOp(e1, "==", e2).with_type(e.type)))
-            elif op == "in":
+            elif op == BOp.In:
                 return self.visit(ENot(equal(
                     ENum(0).with_type(INT),
-                    EUnaryOp("sum", EMap(EFilter(e.e2, mk_lambda(e.e2.type.t, lambda x: equal(x, e.e1))).with_type(e.e2.type), mk_lambda(e.e2.type.t, lambda x: ENum(1).with_type(INT))).with_type(TBag(INT))).with_type(INT))))
+                    EUnaryOp(UOp.Sum, EMap(EFilter(e.e2, mk_lambda(e.e2.type.t, lambda x: equal(x, e.e1))).with_type(e.e2.type), mk_lambda(e.e2.type.t, lambda x: ENum(1).with_type(INT))).with_type(TBag(INT))).with_type(INT))))
             else:
                 return EBinOp(e1, op, e2).with_type(e.type)
         def visit_EFlatMap(self, e):

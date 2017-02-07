@@ -19,7 +19,7 @@ from cozy import syntax
 
 # Each keyword becomes a KW_* token for the lexer. So, e.g. "and" becomes
 # KW_AND.
-_KEYWORDS = [
+_KEYWORDS = ([
     "extern",
     "type",
     "handletype",
@@ -30,19 +30,11 @@ _KEYWORDS = [
     "assume",
     "true",
     "false",
-    "not",
-    "and",
-    "or",
-    "in",
-    "empty",
-    "unique",
     "min",
     "max",
-    "sum",
-    "the",
-    "any",
-    "all",
-    "Native"]
+    "Native"] +
+    list(syntax.UOps) +
+    list(syntax.BOps))
 
 # Each operator has a name and a raw string. Each becomes an OP_* token for the
 # lexer. So, e.g. ("ASSIGN", "=") matches "=" and the token will be named

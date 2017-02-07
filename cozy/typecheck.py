@@ -189,38 +189,33 @@ class Typechecker(Visitor):
 
     def visit_EUnaryOp(self, e):
         self.visit(e.e)
-        if e.op == "sum":
+        if e.op == syntax.UOp.Sum:
             tt = self.get_collection_type(e.e)
             if self.is_numeric(tt) or tt is DEFAULT_TYPE:
                 e.type = tt
             else:
                 self.report_err(e, "cannot sum {}".format(e.e.type))
                 e.type = DEFAULT_TYPE
-        elif e.op in ["unique", "empty"]:
+        elif e.op in [syntax.UOp.AreUnique, syntax.UOp.Empty]:
             self.get_collection_type(e.e)
             e.type = BOOL
-        elif e.op == "distinct":
+        elif e.op == syntax.UOp.Distinct:
             t = self.get_collection_type(e.e)
             e.type = syntax.TSet(t)
-        elif e.op in ["the", "min", "max"]:
+        elif e.op == syntax.UOp.The:
             t = self.get_collection_type(e.e)
             e.type = syntax.TMaybe(t)
-        elif e.op in ["any", "all"]:
+        elif e.op in [syntax.UOp.Any, syntax.UOp.All]:
             self.ensure_type(e.e, syntax.TBag(BOOL))
             e.type = BOOL
-        elif e.op == "len":
+        elif e.op == syntax.UOp.Length:
             self.get_collection_type(e.e)
             e.type = INT
-        elif e.op == "not":
+        elif e.op == syntax.UOp.Not:
             self.ensure_type(e.e, BOOL)
             e.type = BOOL
         elif e.op == "-":
             self.ensure_numeric(e.e)
-            e.type = e.e.type
-        elif e.op == "singleton":
-            e.type = syntax.TSet(e.e.type)
-        elif e.op == "iterator":
-            self.get_collection_type(e.e)
             e.type = e.e.type
         else:
             raise NotImplementedError(e.op)
@@ -270,11 +265,11 @@ class Typechecker(Visitor):
             if not all([t in (INT, LONG) for t in [e.e1.type, e.e2.type]]):
                 self.ensure_type(e.e2, e.e1.type)
             e.type = BOOL
-        elif e.op in ["and", "or", "=>"]:
+        elif e.op in [syntax.BOp.And, syntax.BOp.Or, "=>"]:
             self.ensure_type(e.e1, BOOL)
             self.ensure_type(e.e2, BOOL)
             e.type = BOOL
-        elif e.op == "in":
+        elif e.op == syntax.BOp.In:
             t = self.get_collection_type(e.e2)
             self.ensure_type(e.e1, t)
             e.type = BOOL
@@ -289,16 +284,6 @@ class Typechecker(Visitor):
                 if t1 != t2:
                     self.report_err(e, "cannot concat {} and {}".format(pprint(e.e1.type), pprint(e.e2.type)))
                 e.type = syntax.TBag(t1)
-        elif e.op in ["union", "intersection"]:
-            e1set = isinstance(e.e1.type, syntax.TSet)
-            e2set = isinstance(e.e1.type, syntax.TSet)
-            e1set or self.report_err(e.e1, "not a set")
-            e2set or self.report_err(e.e2, "not a set")
-            if e1set and e2set:
-                self.ensure_type(e.e2, e.e1.type)
-                e.type = e.e1.type
-            else:
-                e.type = DEFAULT_TYPE
         else:
             raise NotImplementedError(e.op)
 

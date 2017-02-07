@@ -229,9 +229,9 @@ class ToZ3(Visitor):
         else_branch = self.visit(e.else_branch, env)
         return SymbolicUnion(e.type, cond, then_branch, else_branch)
     def visit_EUnaryOp(self, e, env):
-        if e.op == "not":
+        if e.op == UOp.Not:
             return z3.Not(self.visit(e.e, env), ctx=self.ctx)
-        elif e.op == "sum":
+        elif e.op == UOp.Sum:
             def take_sum(bag):
                 bag_mask, bag_elems = bag
                 sum = self.int_zero
@@ -239,7 +239,7 @@ class ToZ3(Visitor):
                     sum = z3.If(bag_mask[i], bag_elems[i], self.int_zero, ctx=self.ctx) + sum
                 return sum
             return fmap(self.visit(e.e, env), e.type, take_sum)
-        elif e.op == "unique":
+        elif e.op == UOp.AreUnique:
             def is_unique(bag):
                 bag_mask, bag_elems = bag
                 rest = (bag_mask[1:], bag_elems[1:])
@@ -251,7 +251,7 @@ class ToZ3(Visitor):
                 else:
                     return z3.BoolVal(True, self.ctx)
             return fmap(self.visit(e.e, env), e.type, is_unique)
-        elif e.op == "distinct":
+        elif e.op == UOp.Distinct:
             bag_type = e.type.t
             def distinct(bag):
                 mask, elems = bag
@@ -263,9 +263,9 @@ class ToZ3(Visitor):
                 else:
                     return bag
             return fmap(self.visit(e.e, env), e.type, distinct)
-        elif e.op == "len":
+        elif e.op == UOp.Length:
             return fmap(self.visit(e.e, env), e.type, self.len_of)
-        elif e.op == "the":
+        elif e.op == UOp.The:
             assert isinstance(e.type, TMaybe)
             def get_first(bag):
                 bag_mask, bag_elems = bag
@@ -296,9 +296,9 @@ class ToZ3(Visitor):
     def visit_EBinOp(self, e, env):
         v1 = self.visit(e.e1, env)
         v2 = self.visit(e.e2, env)
-        if e.op == "and":
+        if e.op == BOp.And:
             return z3.And(v1, v2, self.ctx)
-        elif e.op == "or":
+        elif e.op == BOp.Or:
             return z3.Or(v1, v2, self.ctx)
         elif e.op == "==":
             return self.eq(e.e1.type, v1, v2, env)
@@ -321,7 +321,7 @@ class ToZ3(Visitor):
                 raise NotImplementedError(e.type)
         elif e.op == "-":
             return v1 - v2
-        elif e.op == "in":
+        elif e.op == BOp.In:
             return fmap(v2, e.type, lambda bag: self.count_in(e.e1.type, bag, v1, env) > self.int_zero)
         else:
             raise NotImplementedError(e.op)

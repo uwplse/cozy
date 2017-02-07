@@ -98,15 +98,15 @@ class Evaluator(Visitor):
             return lhs[1]
         return lhs[e.f]
     def visit_EUnaryOp(self, e, env):
-        if e.op == "not":
+        if e.op == UOp.Not:
             return not self.visit(e.e, env)
-        elif e.op == "sum":
+        elif e.op == UOp.Sum:
             return sum(self.visit(e.e, env))
-        elif e.op == "unique":
+        elif e.op == UOp.AreUnique:
             return all_distinct(self.visit(e.e, env))
-        elif e.op == "distinct":
+        elif e.op == UOp.Distinct:
             return Bag(unique(self.visit(e.e, env)))
-        elif e.op == "the":
+        elif e.op == UOp.The:
             bag = self.visit(e.e, env)
             if bag:
                 return Maybe(bag[0])
@@ -117,9 +117,9 @@ class Evaluator(Visitor):
         else:
             raise NotImplementedError(e.op)
     def visit_EBinOp(self, e, env):
-        if e.op == "and":
+        if e.op == BOp.And:
             return self.visit(e.e1, env) and self.visit(e.e2, env)
-        elif e.op == "or":
+        elif e.op == BOp.Or:
             return self.visit(e.e1, env) or self.visit(e.e2, env)
         elif e.op == "==":
             return self.visit(e.e1, env) == self.visit(e.e2, env)
@@ -135,7 +135,7 @@ class Evaluator(Visitor):
             return self.visit(e.e1, env) <= self.visit(e.e2, env)
         elif e.op == ">=":
             return self.visit(e.e1, env) >= self.visit(e.e2, env)
-        elif e.op == "in":
+        elif e.op == BOp.In:
             return self.visit(e.e1, env) in self.visit(e.e2, env)
         else:
             raise NotImplementedError(e.op)
