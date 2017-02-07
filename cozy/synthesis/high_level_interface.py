@@ -147,12 +147,6 @@ def synthesize(
             improvement_jobs.append(j)
             j.start()
 
-        def find_spec(q : Query):
-            for i in range(len(specs)):
-                if specs[i].name == q.name:
-                    return i
-            raise ValueError(q.name)
-
         def queries_used_by(thing):
             qs = set()
             class V(BottomUpExplorer):
@@ -229,8 +223,6 @@ def synthesize(
             return valid(equal(q1.ret, q2.ret))
 
         def set_impl(q : Query, rep : [(EVar, Exp)], ret : Exp):
-            i = find_spec(q)
-
             to_remove = set()
             for (v, e) in rep:
                 aeq = [ vv for (vv, ee) in new_state_vars if alpha_equivalent(e, ee) ]
