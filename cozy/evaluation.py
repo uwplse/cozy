@@ -1,19 +1,28 @@
-from collections import defaultdict
+from collections import UserDict, defaultdict
 from functools import total_ordering
 
 from cozy.target_syntax import *
 from cozy.common import Visitor, FrozenDict, all_distinct, unique
 
 @total_ordering
-class hashable_defaultdict(defaultdict):
+class hashable_defaultdict(UserDict):
+    def __init__(self, default):
+        super().__init__()
+        self.default = default
+    def __missing__(self, k):
+        return self.default
+    def _hashable(self):
+        return (self.default,) + tuple(sorted(self.items()))
     def __hash__(self):
-        return hash(tuple(sorted(self.items())))
+        return hash(self._hashable())
     def __repr__(self):
         return repr(dict(self))
     def __str__(self):
         return repr(self)
     def __lt__(self, other):
-        return tuple(sorted(self.items())) < tuple(sorted(other.items()))
+        return self._hashable() < other._hashable()
+    def __eq__(self, other):
+        return self._hashable() == other._hashable()
 
 @total_ordering
 class Maybe(object):
@@ -163,7 +172,7 @@ class Evaluator(Visitor):
         im = defaultdict(Bag)
         for x in self.visit(e.e, env):
             im[self.eval_lambda(e.key, x, env)] += Bag((x,))
-        res = hashable_defaultdict(lambda: self.eval_lambda(e.value, Bag(), env))
+        res = hashable_defaultdict(self.eval_lambda(e.value, Bag(), env))
         for (k, es) in im.items():
             res[k] = self.eval_lambda(e.value, es, env)
         return res
@@ -233,7 +242,7 @@ def mkval(type):
     if isinstance(type, TBag):
         return Bag()
     if isinstance(type, TMap):
-        return hashable_defaultdict(int)
+        return hashable_defaultdict(mkval(type.v))
     if isinstance(type, TEnum):
         return type.cases[0]
     if isinstance(type, TRecord):
