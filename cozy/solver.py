@@ -233,11 +233,11 @@ class ToZ3(Visitor):
         then_branch = self.visit(e.then_branch, env)
         else_branch = self.visit(e.else_branch, env)
         return SymbolicUnion(e.type, cond, then_branch, else_branch)
-    def distinct(self, bag, elem_type, env):
+    def distinct_bag_elems(self, bag, elem_type, env):
         mask, elems = bag
         if elems:
             rest_mask, rest_elems = self.raw_filter(
-                self.distinct((mask[1:], elems[1:]), elem_type, env),
+                self.distinct_bag_elems((mask[1:], elems[1:]), elem_type, env),
                 lambda x: z3.Implies(mask[0], z3.Not(self.eq(elem_type, elems[0], x, env), self.ctx), self.ctx))
             return ([mask[0]] + rest_mask, [elems[0]] + rest_elems)
         else:
@@ -267,7 +267,7 @@ class ToZ3(Visitor):
             return fmap(self.visit(e.e, env), e.type, is_unique)
         elif e.op == UOp.Distinct:
             elem_type = e.type.t
-            return fmap(self.visit(e.e, env), e.type, lambda b: self.distinct(b, elem_type, env))
+            return fmap(self.visit(e.e, env), e.type, lambda b: self.distinct_bag_elems(b, elem_type, env))
         elif e.op == UOp.Length:
             return fmap(self.visit(e.e, env), e.type, self.len_of)
         elif e.op == UOp.The:
@@ -369,7 +369,7 @@ class ToZ3(Visitor):
             m = m["mapping"]
             bag_mask = [self.true] * len(m)
             bag_elems = [k for (k, v) in m]
-            return self.distinct((bag_mask, bag_elems), e.type.t, env)
+            return self.distinct_bag_elems((bag_mask, bag_elems), e.type.t, env)
         return fmap(self.visit(e.e, env), e.type, go)
     def visit_EMakeRecord(self, e, env):
         return { f:self.visit(v, env) for (f, v) in e.fields }
