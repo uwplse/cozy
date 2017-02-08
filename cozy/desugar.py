@@ -127,7 +127,7 @@ def desugar_exp(e : Exp) -> Exp:
             else:
                 return EBinOp(e1, op, e2).with_type(e.type)
         def visit_EFlatMap(self, e):
-            return EFlatten(EMap(e.e, e.f))
+            return EFlatten(EMap(e.e, e.f).with_type(TBag(e.type))).with_type(e.type)
     return V().visit(e)
 
 @typechecked
