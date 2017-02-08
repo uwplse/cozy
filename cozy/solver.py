@@ -366,8 +366,9 @@ class ToZ3(Visitor):
         return fmap(self.visit(e.e, env), e.type, go)
     def visit_EMapKeys(self, e, env):
         def go(m):
+            d = m["default"]
             m = m["mapping"]
-            bag_mask = [self.true] * len(m)
+            bag_mask = [z3.Not(self.eq(e.e.type.v, v, d, env), self.ctx) for (k, v) in m]
             bag_elems = [k for (k, v) in m]
             return self.distinct_bag_elems((bag_mask, bag_elems), e.type.t, env)
         return fmap(self.visit(e.e, env), e.type, go)
