@@ -145,7 +145,8 @@ def derivative(
         e     : syntax.Exp,
         var   : syntax.EVar,
         delta : Delta,
-        ctx   : [syntax.EVar]) -> (Delta, [syntax.Query]):
+        ctx   : [syntax.EVar],
+        assumptions : [syntax.Exp] = []) -> (Delta, [syntax.Query]):
     """
     How does `e` change when `var` changes by `delta`?
     The answer may require some additional sub-queries to implement.
@@ -161,9 +162,7 @@ def derivative(
 
     subgoals = []
 
-    def make_subgoal(e, assumptions=None):
-        if assumptions is None:
-            assumptions = []
+    def make_subgoal(e):
         fvs = free_vars(e)
         if not any(v in ctx for v in fvs):
             return e
@@ -196,11 +195,24 @@ def derivative(
     elif isinstance(e.type, syntax.TBool):
         change = Become(make_subgoal(e_post_delta))
     elif isinstance(e.type, syntax.TMap):
-        change = NoDelta()
-        # TODO:
-        #    altered_keys = make_subgoal(keys_that_changed)
-        #    value_delta    = derivative(my_value_func, ...)
-        #    return ForEachDelta(altered_keys, value_delta)
+        k = fresh_var(e.type.k)
+        value_at     = lambda k: target_syntax.EMapGet(e, k).with_type(e.type.v)
+        new_value_at = lambda k: target_syntax.EMapGet(e_post_delta, k).with_type(e.type.v)
+
+        # altered_keys = [k | k <- e.keys(), value_at(k) != new_value_at(k))]
+        altered_keys = make_subgoal(
+            syntax.EUnaryOp(syntax.UOp.Distinct,
+                target_syntax.EFilter(
+                    target_syntax.EMapKeys(e).with_type(syntax.TBag(e.type.k)),
+                    target_syntax.ELambda(k, syntax.ENot(equal(value_at(k), new_value_at(k)))))
+                .with_type(syntax.TBag(e.type.k)))
+            .with_type(syntax.TBag(e.type.k)))
+
+        # value_delta = update for value at K (given that K is an altered key)
+        value_delta = recurse(target_syntax.EMapGet(e, k).with_type(e.type.v), var, delta, ctx,
+            assumptions = assumptions + [syntax.ENot(equal(value_at(k), new_value_at(k)))])
+
+        change = ForEachDelta(altered_keys, k, MapUpdate(k, value_delta))
     else:
         raise NotImplementedError("{} of type {}".format(pprint(e), e.type))
 
@@ -237,14 +249,6 @@ def apply_delta(
                 multi_delta([
                     BagRemoveAll(present),
                     BagAddAll(target_syntax.EMap(present, mk_lambda(x.type.t, lambda elem: apply_delta(delta.elem, delta.delta))).with_type(x.type))]))
-            # return apply_delta(x,
-            #     mk_conditional(syntax.EBinOp(delta.elem, "in", x).with_type(syntax.BOOL),
-            #         multi_delta([
-            #             BagRemove(delta.elem),
-            #             BagAdd(apply_delta(delta.elem, delta.delta))])))
-            # bag_minus_old = apply_delta(x, BagRemove(delta.elem))
-            # return apply_delta(bag_minus_old,
-            #     mk_conditional(syntax.EBinOp(delta.elem, "in", x).with_type(syntax.BOOL), BagAdd(apply_delta(delta.elem, delta.delta))))
         def visit_Conditional(self, delta):
             return syntax.ECond(delta.cond, self.visit(delta.delta), x).with_type(x.type)
         def visit_MultiDelta(self, delta):

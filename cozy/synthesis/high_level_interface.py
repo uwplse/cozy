@@ -238,16 +238,11 @@ def synthesize(
                 (member, delta) = op_deltas[op.name]
                 # print(member, delta)
                 for new_member, projection in rep:
-                    (state_update, subqueries) = inc.derivative(projection, member, delta, state_vars)
+                    (state_update, subqueries) = inc.derivative(projection, member, delta, state_vars, list(op.assumptions))
                     # print(state_update, subqueries)
                     state_update_stm = inc.apply_delta_in_place(new_member, state_update)
                     # print(pprint(state_update_stm))
                     for sub_q in subqueries:
-                        sub_q = Query(
-                            sub_q.name,
-                            sub_q.args,
-                            list(op.assumptions) + list(sub_q.assumptions), # TODO: filter down to assumptions that are legal in this subquery
-                            sub_q.ret)
                         qq = [qq for qq in specs if equivalent(qq, sub_q)]
                         if qq:
                             assert len(qq) == 1
