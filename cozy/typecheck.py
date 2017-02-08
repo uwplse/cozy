@@ -198,7 +198,7 @@ class Typechecker(Visitor):
             e.type = BOOL
         elif e.op == syntax.UOp.Distinct:
             t = self.get_collection_type(e.e)
-            e.type = syntax.TSet(t)
+            e.type = e.e.type
         elif e.op == syntax.UOp.The:
             t = self.get_collection_type(e.e)
             e.type = syntax.TMaybe(t)
