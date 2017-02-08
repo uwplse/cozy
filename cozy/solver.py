@@ -9,6 +9,9 @@ from cozy.target_syntax import *
 from cozy.syntax_tools import pprint, free_vars
 from cozy.common import declare_case, fresh_name, Visitor, FrozenDict, typechecked, memoize
 from cozy import evaluation
+from cozy.opts import Option
+
+save_solver_testcases = Option("save-solver-testcases", str, "", metavar="PATH")
 
 class _SymbolicUnion(object):
     """
@@ -632,6 +635,13 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
                         vars=repr(vars),
                         collection_depth=repr(collection_depth),
                         validate_model=repr(validate_model)))
+                    if save_solver_testcases.value:
+                        with open(save_solver_testcases.value, "a") as f:
+                            f.write("satisfy({e}, vars={vars}, collection_depth={collection_depth}, validate_model={validate_model})".format(
+                                e=repr(e),
+                                vars=repr(vars),
+                                collection_depth=repr(collection_depth),
+                                validate_model=repr(validate_model)))
                     raise Exception("model validation failed")
             return res
 
