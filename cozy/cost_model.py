@@ -43,10 +43,14 @@ class CardinalityVisitor(BottomUpExplorer):
     def visit_EUnaryOp(self, e):
         if e.op == UOp.The:
             return 1000 # TODO???
+        elif e.op == UOp.Distinct:
+            return self.visit(e.e) * 0.9
         else:
             raise NotImplementedError(e)
     def visit_EMap(self, e):
         return self.visit(e.e)
+    def visit_EMapKeys(self, e):
+        return self.visit(e.e) * 0.9
     def visit_EFlatMap(self, e):
         return self.visit(e.e) * self.visit(e.f.body)
     def visit_ECond(self, e):
@@ -130,7 +134,7 @@ class RunTimeCostModel(CostModel, BottomUpExplorer):
         return 1
     def visit_EUnaryOp(self, e):
         cost = self.visit(e.e)
-        if e.op == UOp.Sum:
+        if e.op in (UOp.Sum, UOp.Distinct):
             cost += cardinality(e.e)
         return cost + 0.01
     def visit_EBinOp(self, e):
