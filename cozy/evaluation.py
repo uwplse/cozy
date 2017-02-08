@@ -169,6 +169,8 @@ class Evaluator(Visitor):
         return res
     def visit_EMapGet(self, e, env):
         return self.visit(e.map, env)[self.visit(e.key, env)]
+    def visit_EMapKeys(self, e, env):
+        return Bag(self.visit(e.e, env).keys())
     def visit_EMap(self, e, env):
         return Bag(self.eval_lambda(e.f, x, env) for x in self.visit(e.e, env))
     def visit_EFilter(self, e, env):
