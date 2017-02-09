@@ -3,13 +3,13 @@ from cozy import syntax
 from cozy import target_syntax
 from cozy.syntax_tools import pprint
 
-def typecheck(ast, env=None, handleize=True):
+def typecheck(ast, env=None):
     """
     Typecheck the syntax tree.
     This procedure attaches a .type attribute to every expression, and returns
     a list of type errors (or an empty list if everything typechecks properly).
     """
-    typechecker = Typechecker(env or (), handleize)
+    typechecker = Typechecker(env or ())
     typechecker.visit(ast)
     return typechecker.errors
 
@@ -17,7 +17,7 @@ def retypecheck(exp, env=None):
     from cozy.syntax_tools import free_vars
     if env is None:
         env = { v.id:v.type for v in free_vars(exp) }
-    errs = typecheck(exp, env=env, handleize=False)
+    errs = typecheck(exp, env=env)
     if errs:
         print("errors")
         for e in errs:
@@ -32,7 +32,7 @@ DEFAULT_TYPE = object()
 
 class Typechecker(Visitor):
 
-    def __init__(self, env, handleize):
+    def __init__(self, env):
         self.tenv = {
             "Int": INT,
             "Bound": INT, # TODO?
@@ -43,7 +43,6 @@ class Typechecker(Visitor):
         self.env = dict(env)
         self.funcs = dict()
         self.queries = dict()
-        self.should_handleize = handleize
         self.oldenv = []
         self.errors = []
 
@@ -70,7 +69,7 @@ class Typechecker(Visitor):
         spec.types = [(name, self.tenv[name]) for (name, t) in spec.types]
         spec.extern_funcs = [self.visit(f) for f in spec.extern_funcs]
         for name, t in spec.statevars:
-            self.env[name] = self.handleize(self.visit(t), name)
+            self.env[name] = self.visit(t)
         spec.statevars = [(name, self.env[name]) for (name, t) in spec.statevars]
         for e in spec.assumptions:
             self.visit(e)
@@ -86,12 +85,6 @@ class Typechecker(Visitor):
             f.body_string)
         self.funcs[f.name] = f
         return f
-
-    def handleize(self, statevar_type, statevar_name):
-        if self.should_handleize and isinstance(statevar_type, syntax.TBag):
-            ht = syntax.THandle(statevar_name, statevar_type.t)
-            return syntax.TBag(ht)
-        return statevar_type
 
     def report_err(self, source, msg):
         self.errors.append("At {}: {}".format(pprint(source), msg))
@@ -123,10 +116,6 @@ class Typechecker(Visitor):
         return syntax.TTuple(tuple(self.visit(tt) for tt in t.ts))
 
     def visit_THandle(self, t):
-        if t.value_type is None:
-            assert self.handleize
-            elem = self.env[t.statevar]
-            return elem.t
         return syntax.THandle(t.statevar, self.visit(t.value_type))
 
     def visit_TBool(self, t):

@@ -43,7 +43,7 @@ def run():
     input_text = sys.stdin.read() if args.file is None else common.read_file(args.file)
     ast = parse.parse(input_text)
 
-    errors = typecheck.typecheck(ast, handleize=False)
+    errors = typecheck.typecheck(ast)
     if errors:
         for e in errors:
             print("Error: {}".format(e))

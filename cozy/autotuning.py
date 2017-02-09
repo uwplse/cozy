@@ -21,7 +21,7 @@ def apply_rewrite(statevar, new_type, ast):
         [v for v in ast.statevars if v[0] != statevar] + [(statevar, new_type)],
         deep_copy(ast.assumptions),
         deep_copy(ast.methods))
-    errs = typecheck(new_ast, handleize=False)
+    errs = typecheck(new_ast)
     for e in errs:
         print(e)
     if errs:
