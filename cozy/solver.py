@@ -61,6 +61,12 @@ def SymbolicUnion(ty : Type, cond : z3.AstRef, then_branch, else_branch):
                 mask.append(z3.And(ncond, else_mask[i], ctx))
                 elems.append(else_elems[i])
         return (mask, elems)
+    elif isinstance(ty, THandle):
+        h1, v1 = then_branch
+        h2, v2 = else_branch
+        return (z3.If(cond, h1, h2, ctx), SymbolicUnion(ty.value_type, cond, v1, v2))
+    elif isinstance(ty, TRecord):
+        return { f : SymbolicUnion(t, cond, then_branch[f], else_branch[f]) for (f, t) in ty.fields }
     else:
         return _SymbolicUnion(cond, then_branch, else_branch)
 
