@@ -1,4 +1,4 @@
-from collections import UserDict, defaultdict
+from collections import UserDict, defaultdict, namedtuple
 from functools import total_ordering
 
 from cozy.target_syntax import *
@@ -69,17 +69,7 @@ class Bag(object):
     def __iter__(self):
         return iter(self.elems)
 
-@total_ordering
-class Handle(object):
-    def __init__(self, addr, val):
-        self.address = addr
-        self.value = val
-    def __eq__(self, other):
-        return self.address == other.address
-    def __lt__(self, other):
-        return self.address < other.address
-    def __hash__(self):
-        return hash(self.address)
+Handle = namedtuple("Handle", ["address", "value"])
 
 class Evaluator(Visitor):
     def __init__(self):
@@ -144,19 +134,29 @@ class Evaluator(Visitor):
             return v1 and v2
         elif e.op == BOp.Or:
             return v1 or v2
-        elif e.op == "==":
-            return v1 == v2
         elif e.op == "+":
             return v1 + v2
         elif e.op == "-":
             return v1 - v2
+        elif e.op == "==":
+            if isinstance(e.e1.type, THandle):
+                return v1.address == v2.address
+            return v1 == v2
         elif e.op == "<":
+            if isinstance(e.e1.type, THandle):
+                return v1.address < v2.address
             return v1 < v2
         elif e.op == ">":
+            if isinstance(e.e1.type, THandle):
+                return v1.address > v2.address
             return v1 > v2
         elif e.op == "<=":
+            if isinstance(e.e1.type, THandle):
+                return v1.address <= v2.address
             return v1 <= v2
         elif e.op == ">=":
+            if isinstance(e.e1.type, THandle):
+                return v1.address >= v2.address
             return v1 >= v2
         elif e.op == BOp.In:
             return v1 in v2
