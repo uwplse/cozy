@@ -216,3 +216,11 @@ class TestCostModel(unittest.TestCase):
                 pprint_reps(infer_rep(costmodel.state_vars, x))
                 print("cost = {}".format(costmodel.cost(x)))
             assert False
+
+    def test_tuples(self):
+        sv = EVar("sv").with_type(THandle("T", INT))
+        x = EVar("x").with_type(sv.type)
+        e = ETupleGet(ETuple((sv, x)), 1)
+        assert retypecheck(e)
+        costmodel = CompositeCostModel([sv])
+        assert costmodel.cost(e) > costmodel.cost(x), "cost of {} = {}, cost of {} = {}".format(pprint(e), costmodel.cost(e), pprint(x), costmodel.cost(x))

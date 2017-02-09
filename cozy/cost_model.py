@@ -154,6 +154,8 @@ class RunTimeCostModel(CostModel, BottomUpExplorer):
         return float("inf")
         # return self.visit(e.e) + cardinality(e.e) * (self.visit(e.key.body) + self.visit(e.value.body))
     def join(self, x, child_costs):
+        if isinstance(x, list) or isinstance(x, tuple):
+            return sum(child_costs)
         if not isinstance(x, Exp):
             return 0
         return 0.01 + sum(child_costs)
