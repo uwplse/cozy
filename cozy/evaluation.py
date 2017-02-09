@@ -9,18 +9,22 @@ from cozy.common import Visitor, FrozenDict, all_distinct, unique, extend
 class Map(object):
     def __init__(self, type, default, items=()):
         self.type = type
-        self._items = list(items)
+        self._items = []
+        for (k, v) in items:
+            self[k] = v
         self.default = default
     def __setitem__(self, k, v):
         for i in range(len(self._items)):
             (kk, vv) = self._items[i]
             if eq(self.type.k, k, kk):
-                if v == self.default:
+                if eq(self.type.v, v, self.default):
                     del self._items[i]
                 else:
                     self._items[i] = (kk, v)
                 return
-        self._items.append((k, v))
+        if not eq(self.type.v, v, self.default):
+            self._items.append((k, v))
+        # assert all(not eq(self.type.v, v, self.default) for (k, v) in self.items())
     def __getitem__(self, k):
         for i in range(len(self._items)):
             (kk, vv) = self._items[i]
