@@ -556,7 +556,7 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
                 id, val = value
                 id = reconstruct(model, id, TInt())
                 val = reconstruct(model, val, type.value_type)
-                return (id, val)
+                return evaluation.Handle(id, val)
             elif isinstance(type, TRecord):
                 res = defaultdict(lambda: None)
                 for (field, t) in type.fields:

@@ -69,6 +69,18 @@ class Bag(object):
     def __iter__(self):
         return iter(self.elems)
 
+@total_ordering
+class Handle(object):
+    def __init__(self, addr, val):
+        self.address = addr
+        self.value = val
+    def __eq__(self, other):
+        return self.address == other.address
+    def __lt__(self, other):
+        return self.address < other.address
+    def __hash__(self):
+        return hash(self.address)
+
 class Evaluator(Visitor):
     def __init__(self):
         self.work_done = 0
@@ -97,14 +109,14 @@ class Evaluator(Visitor):
         # return val.type.cases.index(val.name)
         return val.name
     def visit_EWithAlteredValue(self, e, env):
-        h, val = self.visit(e.handle, env)
+        h = self.visit(e.handle, env)
         new_val = self.visit(e.new_value, env)
-        return (h, new_val)
+        return Handle(h.address, new_val)
     def visit_EGetField(self, e, env):
         lhs = self.visit(e.e, env)
         if isinstance(e.e.type, THandle):
             assert e.f == "val"
-            return lhs[1]
+            return lhs.value
         return lhs[e.f]
     def visit_EUnaryOp(self, e, env):
         if e.op == UOp.Not:
@@ -248,7 +260,7 @@ def mkval(type):
     if isinstance(type, TRecord):
         return FrozenDict({ f:mkval(t) for (f, t) in type.fields })
     if isinstance(type, THandle):
-        return (0, mkval(type.value_type))
+        return Handle(0, mkval(type.value_type))
     if isinstance(type, TTuple):
         return tuple(mkval(t) for t in type.ts)
     raise NotImplementedError(type)
