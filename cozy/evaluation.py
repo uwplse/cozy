@@ -138,26 +138,28 @@ class Evaluator(Visitor):
         else:
             raise NotImplementedError(e.op)
     def visit_EBinOp(self, e, env):
+        v1 = self.visit(e.e1, env)
+        v2 = self.visit(e.e2, env)
         if e.op == BOp.And:
-            return self.visit(e.e1, env) and self.visit(e.e2, env)
+            return v1 and v2
         elif e.op == BOp.Or:
-            return self.visit(e.e1, env) or self.visit(e.e2, env)
+            return v1 or v2
         elif e.op == "==":
-            return self.visit(e.e1, env) == self.visit(e.e2, env)
+            return v1 == v2
         elif e.op == "+":
-            return self.visit(e.e1, env) + self.visit(e.e2, env)
+            return v1 + v2
         elif e.op == "-":
-            return self.visit(e.e1, env) - self.visit(e.e2, env)
+            return v1 - v2
         elif e.op == "<":
-            return self.visit(e.e1, env) < self.visit(e.e2, env)
+            return v1 < v2
         elif e.op == ">":
-            return self.visit(e.e1, env) > self.visit(e.e2, env)
+            return v1 > v2
         elif e.op == "<=":
-            return self.visit(e.e1, env) <= self.visit(e.e2, env)
+            return v1 <= v2
         elif e.op == ">=":
-            return self.visit(e.e1, env) >= self.visit(e.e2, env)
+            return v1 >= v2
         elif e.op == BOp.In:
-            return self.visit(e.e1, env) in self.visit(e.e2, env)
+            return v1 in v2
         else:
             raise NotImplementedError(e.op)
     def visit_ETuple(self, e, env):
