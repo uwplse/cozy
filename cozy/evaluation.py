@@ -240,9 +240,8 @@ class Evaluator(Visitor):
     def visit_EListComprehension(self, e, env):
         return Bag(self.visit_clauses(e.clauses, e.e, env))
     def eval_lambda(self, lam, arg, env):
-        env2 = dict(env)
-        env2[lam.arg.id] = arg
-        return self.visit(lam.body, env2)
+        with extend(env, lam.arg.id, arg):
+            return self.visit(lam.body, env)
     def visit_EAlterMaybe(self, e, env):
         x = self.visit(e.e, env)
         if x.obj is not None:
