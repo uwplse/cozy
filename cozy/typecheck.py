@@ -187,6 +187,13 @@ class Typechecker(Visitor):
         self.report_err(e, "expression has non-map type {}".format(e.type))
         return DEFAULT_TYPE, DEFAULT_TYPE
 
+    def get_handle_type(self, e):
+        if e.type is DEFAULT_TYPE: return DEFAULT_TYPE
+        if isinstance(e.type, syntax.THandle):
+            return e.type.value_type
+        self.report_err(e, "expression has non-handle type {}".format(e.type))
+        return DEFAULT_TYPE
+
     def visit_EUnaryOp(self, e):
         self.visit(e.e)
         if e.op == syntax.UOp.Sum:
@@ -377,6 +384,13 @@ class Typechecker(Visitor):
         else:
             self.report_err(e, "cannot get field {} from non-record {}".format(e.f, e.e.type))
             e.type = DEFAULT_TYPE
+
+    def visit_EWithAlteredValue(self, e):
+        self.visit(e.handle)
+        self.visit(e.new_value)
+        t = self.get_handle_type(e.handle)
+        self.check_assignment(e, t, e.new_value.type)
+        e.type = e.handle.type
 
     def visit_EVar(self, e):
         if e.id in self.env:
