@@ -54,6 +54,9 @@ class CxxPrinter(common.Visitor):
     def visit_TMap(self, t, name):
         return self.visit(t.rep_type(), name)
 
+    def visit_TNativeList(self, t, name):
+        return "std::vector< {} > {}".format(self.visit(t.t, ""), name)
+
     def visit_TBag(self, t, name):
         return self.visit(t.rep_type(), name)
 
@@ -218,6 +221,32 @@ class CxxPrinter(common.Visitor):
         else:
             return self.visit(update.map.type.update_key(update.map, update.key, update.val_var, update.change), indent)
 
+    def visit_SMapPut(self, update, indent=""):
+        if isinstance(update.map.type, library.TNativeMap):
+            msetup, map = self.visit(update.map, indent)
+            ksetup, key = self.visit(update.key, indent)
+            ref = fresh_var(update.map.type.v)
+            s = "{indent}{decl} = {map}[{key}];\n".format(
+                indent=indent,
+                map=map,
+                key=key,
+                decl=self.visit(TRef(ref.type), ref.id))
+            return msetup + ksetup + s + self.copy_to(ref, update.value, indent)
+        else:
+            raise NotImplementedError()
+
+    def visit_SMapDel(self, update, indent=""):
+        if isinstance(update.map.type, library.TNativeMap):
+            msetup, map = self.visit(update.map, indent)
+            ksetup, key = self.visit(update.key, indent)
+            s = "{indent}{map}.erase({key});\n".format(
+                indent=indent,
+                map=map,
+                key=key)
+            return msetup + ksetup + s
+        else:
+            raise NotImplementedError()
+
     def visit_EVar(self, e, indent=""):
         return ("", e.id)
 
@@ -287,9 +316,18 @@ class CxxPrinter(common.Visitor):
             return self.for_each(subst(q.ret, { a : v for ((a, t), v) in zip(q.args, iterable.args) }), body, indent=indent)
         else:
             x = fresh_var(iterable.type.t)
-            if type(iterable.type) is TBag:
+            if type(iterable.type) is TBag or type(iterable.type) is library.TNativeList:
                 return self.for_each_native(x, iterable, body(x), indent)
             return self.visit(iterable.type.for_each(x, iterable, body(x)), indent=indent)
+
+    def for_each_native(self, x, iterable, body, indent):
+        setup, iterable = self.visit(iterable, indent)
+        return "{setup}{indent}for ({decl} : {iterable}) {{\n{body}{indent}}}\n".format(
+            indent=indent,
+            setup=setup,
+            decl=self.visit(x.type, x.id),
+            iterable=iterable,
+            body=self.visit(body, indent+INDENT))
 
     def visit_SForEach(self, for_each, indent):
         id = for_each.id
@@ -353,6 +391,15 @@ class CxxPrinter(common.Visitor):
 
     def visit_SNoOp(self, s, indent=""):
         return ""
+
+    def copy_to(self, lhs, rhs, indent=""):
+        if isinstance(lhs.type, TBag):
+            cl, el = self.visit(lhs, indent)
+            x = fresh_var(lhs.type.t)
+            # TODO: hacky use of EVar ahead! We need an EEscape, like SEscape
+            return cl + self.visit(SForEach(x, rhs, SCall(EVar(el).with_type(lhs.type), "add", [x])), indent=indent)
+        else:
+            return self.visit(SAssign(lhs, rhs), indent)
 
     def visit_SAssign(self, s, indent=""):
         cl, el = self.visit(s.lhs, indent)
@@ -677,15 +724,6 @@ class JavaPrinter(CxxPrinter):
     def visit_EGetField(self, e, indent):
         setup, ee = self.visit(e.e, indent)
         return (setup, "({}).{}".format(ee, e.f))
-
-    def for_each_native(self, x, iterable, body, indent):
-        setup, iterable = self.visit(iterable, indent)
-        return "{setup}{indent}for ({decl} : {iterable}) {{\n{body}{indent}}}\n".format(
-            indent=indent,
-            setup=setup,
-            decl=self.visit(x.type, x.id),
-            iterable=iterable,
-            body=self.visit(body, indent+INDENT))
 
     def find_one_native(self, iterable, indent):
         it = fresh_name("iterator")

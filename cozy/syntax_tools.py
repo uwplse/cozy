@@ -296,6 +296,17 @@ class PrettyPrinter(common.Visitor):
             self.visit(s.change, indent + "  "),
             indent=indent)
 
+    def visit_SMapPut(self, s, indent=""):
+        return "{indent}{} = {}".format(
+            self.visit(target_syntax.EMapGet(s.map, s.key)),
+            self.visit(s.value),
+            indent=indent)
+
+    def visit_SMapDel(self, s, indent=""):
+        return "{indent}del {}".format(
+            self.visit(target_syntax.EMapGet(s.map, s.key)),
+            indent=indent)
+
     def visit_SForEach(self, s, indent=""):
         return "{}for {} in {}:\n{}".format(indent, s.id.id, self.visit(s.iter), self.visit(s.body, indent + "  "))
 

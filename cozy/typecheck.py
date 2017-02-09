@@ -151,6 +151,13 @@ class Typechecker(Visitor):
         if t is not DEFAULT_TYPE and e.type is not DEFAULT_TYPE and e.type != t:
             self.report_err(e, msg.format(pprint(e.type), pprint(t)))
 
+    def check_assignment(self, node, ltype, rtype):
+        if ltype == rtype or ltype is DEFAULT_TYPE or rtype is DEFAULT_TYPE:
+            return
+        if isinstance(ltype, syntax.TBag) and isinstance(rtype, syntax.TBag):
+            return
+        self.report_err(node, "cannot assign {} to a {}".format(pprint(ltype), pprint(rtype)))
+
     def is_numeric(self, t):
         return t in [INT, LONG]
 
@@ -172,6 +179,13 @@ class Typechecker(Visitor):
         if isinstance(e.type, syntax.TSet):  return e.type.t
         self.report_err(e, "expression has non-collection type {}".format(e.type))
         return DEFAULT_TYPE
+
+    def get_map_type(self, e):
+        if e.type is DEFAULT_TYPE: return DEFAULT_TYPE
+        if isinstance(e.type, syntax.TMap):
+            return e.type.k, e.type.v
+        self.report_err(e, "expression has non-map type {}".format(e.type))
+        return DEFAULT_TYPE, DEFAULT_TYPE
 
     def visit_EUnaryOp(self, e):
         self.visit(e.e)
@@ -420,6 +434,11 @@ class Typechecker(Visitor):
         self.ensure_type(e.value.arg, e.e.type)
         e.type = syntax.TMap(e.key.body.type, e.value.body.type)
 
+    def visit_EMapKeys(self, e):
+        self.visit(e.e)
+        k, v = self.get_map_type(e.e)
+        e.type = syntax.TBag(k)
+
     def visit_EMapGet(self, e):
         self.visit(e.map)
         self.visit(e.key)
@@ -439,6 +458,20 @@ class Typechecker(Visitor):
             self.env[s.val_var.id] = s.map.type.v
             s.val_var.type = s.map.type.v
             self.visit(s.change)
+
+    def visit_SMapPut(self, s):
+        self.visit(s.map)
+        self.visit(s.key)
+        self.visit(s.value)
+        k, v = self.get_map_type(s.map)
+        self.ensure_type(s.key, k)
+        self.check_assignment(s, v, s.value.type)
+
+    def visit_SMapDel(self, s):
+        self.visit(s.map)
+        self.visit(s.key)
+        k, v = self.get_map_type(s.map)
+        self.ensure_type(s.key, k)
 
     def visit_Op(self, op):
         op.args = [(name, self.visit(t)) for (name, t) in op.args]
@@ -505,7 +538,7 @@ class Typechecker(Visitor):
     def visit_SAssign(self, s):
         self.visit(s.lhs)
         self.visit(s.rhs)
-        self.ensure_type(s.rhs, s.lhs.type)
+        self.check_assignment(s, s.lhs.type, s.rhs.type)
 
     def visit_SForEach(self, s):
         assert isinstance(s.id, syntax.EVar)

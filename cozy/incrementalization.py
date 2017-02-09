@@ -23,6 +23,8 @@ BagElemUpdated    = declare_case(Delta, "BagElemUpdated",  ["elem", "delta"])
 AddNum            = declare_case(Delta, "AddNum", ["e"])
 
 # Maps
+MapInsert         = declare_case(Delta, "MapInsert", ["key", "value"])
+MapDelKey         = declare_case(Delta, "MapDelKey", ["key"])
 MapUpdate         = declare_case(Delta, "MapUpdate", ["key", "delta"])
 
 # Records
@@ -162,14 +164,14 @@ def derivative(
 
     subgoals = []
 
-    def make_subgoal(e):
+    def make_subgoal(e, a=[]):
         fvs = free_vars(e)
         if not any(v in ctx for v in fvs):
             return e
         e = desugar_exp(e)
         query_name = fresh_name()
         query_vars = [v for v in fvs if v not in ctx]
-        query = syntax.Query(query_name, [(arg.id, arg.type) for arg in query_vars], assumptions, e)
+        query = syntax.Query(query_name, [(arg.id, arg.type) for arg in query_vars], assumptions + a, e)
         subgoals.append(query)
         return syntax.ECall(query_name, query_vars).with_type(e.type)
 
@@ -198,21 +200,45 @@ def derivative(
         k = fresh_var(e.type.k)
         value_at     = lambda k: target_syntax.EMapGet(e, k).with_type(e.type.v)
         new_value_at = lambda k: target_syntax.EMapGet(e_post_delta, k).with_type(e.type.v)
+        key_bag = syntax.TBag(e.type.k)
 
-        # altered_keys = [k | k <- e.keys(), value_at(k) != new_value_at(k))]
+        # new_keys = [k | k <- e_post_delta.keys(), k not in e.keys()]
+        new_keys_spec = target_syntax.EFilter(
+                target_syntax.EMapKeys(e_post_delta).with_type(key_bag),
+                target_syntax.ELambda(k, syntax.ENot(syntax.EBinOp(k, syntax.BOp.In, target_syntax.EMapKeys(e).with_type(key_bag)).with_type(syntax.BOOL)))
+            ).with_type(key_bag)
+        new_keys = make_subgoal(new_keys_spec)
+
+        # altered_keys = [k | k <- e.keys(), k in e_post_delta.keys(), value_at(k) != new_value_at(k))]
         altered_keys = make_subgoal(
-            syntax.EUnaryOp(syntax.UOp.Distinct,
-                target_syntax.EFilter(
-                    target_syntax.EMapKeys(e).with_type(syntax.TBag(e.type.k)),
-                    target_syntax.ELambda(k, syntax.ENot(equal(value_at(k), new_value_at(k)))))
-                .with_type(syntax.TBag(e.type.k)))
-            .with_type(syntax.TBag(e.type.k)))
+            target_syntax.EFilter(
+                target_syntax.EMapKeys(e).with_type(key_bag),
+                target_syntax.ELambda(k, syntax.EAll([
+                    syntax.ENot(equal(value_at(k), new_value_at(k))),
+                    syntax.EBinOp(k, syntax.BOp.In, target_syntax.EMapKeys(e_post_delta).with_type(key_bag)).with_type(syntax.BOOL)]))
+            ).with_type(key_bag))
 
-        # value_delta = update for value at K (given that K is an altered key)
-        value_delta = recurse(target_syntax.EMapGet(e, k).with_type(e.type.v), var, delta, ctx,
+        # dead_keys = [k | k <- e.keys(), k not in e_post_delta.keys()]
+        dead_keys = make_subgoal(
+            target_syntax.EFilter(
+                target_syntax.EMapKeys(e).with_type(key_bag),
+                target_syntax.ELambda(k, syntax.ENot(syntax.EBinOp(k, syntax.BOp.In, target_syntax.EMapKeys(e_post_delta).with_type(key_bag)).with_type(syntax.BOOL)))
+            ).with_type(key_bag))
+
+        # new_value = new value to insert for new keys
+        new_value = make_subgoal(
+            target_syntax.EMapGet(e_post_delta, k).with_type(e.type.v),
+            assumptions + [syntax.EBinOp(k, syntax.BOp.In, new_keys_spec).with_type(syntax.BOOL)])
+
+        # value_update = update for value at K (given that K is an altered key)
+        value_update = recurse(target_syntax.EMapGet(e, k).with_type(e.type.v), var, delta, ctx,
             assumptions = assumptions + [syntax.ENot(equal(value_at(k), new_value_at(k)))])
 
-        change = ForEachDelta(altered_keys, k, MapUpdate(k, value_delta))
+        change = multi_delta([
+                ForEachDelta(dead_keys,    k, MapDelKey(k)),
+                ForEachDelta(new_keys,     k, MapInsert(k, new_value)),
+                ForEachDelta(altered_keys, k, MapUpdate(k, value_update)),
+            ])
     else:
         raise NotImplementedError("{} of type {}".format(pprint(e), e.type))
 
@@ -301,6 +327,10 @@ def apply_delta_in_place(
             return syntax.SNoOp()
         def visit_ForEachDelta(self, delta):
             return target_syntax.SForEach(delta.x, delta.elems, self.visit(delta.delta))
+        def visit_MapInsert(self, delta):
+            return target_syntax.SMapPut(x, delta.key, delta.value)
+        def visit_MapDelKey(self, delta):
+            return target_syntax.SMapDel(x, delta.key)
         def visit_MapUpdate(self, delta):
             v = fresh_var(x.type.v)
             return target_syntax.SMapUpdate(x, delta.key, v, apply_delta_in_place(v, delta.delta))
