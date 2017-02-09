@@ -35,3 +35,8 @@ class TestAlphaEquivalent(unittest.TestCase):
         one = ENum(1)
         e = ETuple((one, one))
         assert alpha_equivalent(e, e)
+
+    def test_tuple_nontuple(self):
+        one = ENum(1)
+        e = ETuple((one, one))
+        assert not alpha_equivalent(e, one)
