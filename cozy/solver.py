@@ -100,6 +100,8 @@ class ToZ3(Visitor):
                self._eq(t, v1, v2, env)))
     def _eq(self, t, e1, e2, env):
         if type(t) in [TInt, TLong, TBool, TEnum, TNative, TString]:
+            assert isinstance(e1, z3.AstRef), "{}".format(repr(e1))
+            assert isinstance(e2, z3.AstRef), "{}".format(repr(e2))
             return e1 == e2
         elif isinstance(t, TMaybe):
             if (e1 is None) and (e2 is None):
@@ -208,7 +210,7 @@ class ToZ3(Visitor):
             self.funcs[key] = f
         return f(*[v for (v, t) in args])
     def visit_EEnumEntry(self, e, env):
-        return e.type.cases.index(e.name)
+        return z3.IntVal(e.type.cases.index(e.name), self.ctx)
     def visit_ETuple(self, e, env):
         return tuple(self.visit(ee, env) for ee in e.es)
     def visit_ETupleGet(self, e, env):
