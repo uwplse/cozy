@@ -652,6 +652,34 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
                                 collection_depth=repr(collection_depth),
                                 validate_model=repr(validate_model)))
                             f.write("\n")
+                    from cozy.syntax_tools import all_exps, equal
+                    wq = [(e, _env, res)]
+                    while wq:
+                        x, solver_env, eval_env = wq.pop()
+                        for x in sorted(all_exps(e), key=lambda xx: xx.size()):
+                            if all(v.id in eval_env for v in free_vars(x)) and not isinstance(x, ELambda):
+                                solver_val = reconstruct(model, visitor.visit(x, solver_env), x.type)
+                                v = fresh_name("tmp")
+                                eval_env[v] = solver_val
+                                eval_val = evaluation.eval(equal(x, EVar(v).with_type(x.type)), eval_env)
+                                if not eval_val:
+                                    print(" ---> disagreement on {}".format(pprint(x)))
+                                    print(" ---> Solver: {}".format(solver_val))
+                                    print(" ---> Eval'r: {}".format(evaluation.eval(x, eval_env)))
+                                    for v in free_vars(x):
+                                        print(" ---> s[{}] = {}".format(v.id, solver_env[v.id]))
+                                        print(" ---> e[{}] = {}".format(v.id, eval_env[v.id]))
+                                    if isinstance(x, EFilter):
+                                        smask, selems = visitor.visit(x.e, solver_env)
+                                        for (mask, elem) in zip(smask, selems):
+                                            if reconstruct(model, mask, BOOL):
+                                                # print("recursing on {}".format(elem))
+                                                senv = dict(solver_env)
+                                                eenv = dict(eval_env)
+                                                senv[x.p.arg.id] = elem
+                                                eenv[x.p.arg.id] = reconstruct(model, elem, x.type.t)
+                                                wq.append((x.p.body, senv, eenv))
+                                    break
                     raise Exception("model validation failed")
             return res
 
