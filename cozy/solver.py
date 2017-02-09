@@ -537,17 +537,13 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
                 return evaluation.Bag(real_val)
             elif isinstance(type, TMap):
                 default = reconstruct(model, value["default"], type.v)
-                res = evaluation.hashable_defaultdict(default)
+                res = evaluation.Map(type, default)
                 for (k, v) in value["mapping"]:
                     # K/V pairs appearing later in value["mapping"] have precedence,
                     # so overwriting here is the correct move.
                     k = reconstruct(model, k, type.k)
                     v = reconstruct(model, v, type.v)
-                    if v == default:
-                        if k in res:
-                            del res[k]
-                    else:
-                        res[k] = v
+                    res[k] = v
                 return res
             elif isinstance(type, TEnum):
                 val = model.eval(value, model_completion=True).as_long()

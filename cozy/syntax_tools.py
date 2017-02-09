@@ -255,7 +255,7 @@ class PrettyPrinter(common.Visitor):
         return "({}).{}".format(self.visit(e.e), e.n)
 
     def visit_ELet(self, e):
-        return "let {} = {} in {}".format(e.id, self.visit(e.e1), self.visit(e.e2))
+        return "let {} = {} in {}".format(e.f.arg.id, self.visit(e.e), self.visit(e.f.body))
 
     def visit_CPull(self, c):
         return "{} <- {}".format(c.id, self.visit(c.e))
@@ -403,6 +403,10 @@ def replace(exp, old_exp, new_exp):
                 return new_exp
             return super().visit(e)
     return Replacer().visit(exp)
+
+@common.typechecked
+def re_use(e : syntax.Exp, target):
+    return mk_lambda(e.type, target).apply_to(e)
 
 def subst(exp, replacements):
     """

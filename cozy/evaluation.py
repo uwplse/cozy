@@ -2,21 +2,45 @@ from collections import UserDict, defaultdict, namedtuple
 from functools import total_ordering
 
 from cozy.target_syntax import *
-from cozy.common import Visitor, FrozenDict, all_distinct, unique
+from cozy.syntax_tools import equal, re_use
+from cozy.common import Visitor, FrozenDict, all_distinct, unique, extend
 
 @total_ordering
-class hashable_defaultdict(UserDict):
-    def __init__(self, default):
-        super().__init__()
+class Map(object):
+    def __init__(self, type, default, items=()):
+        self.type = type
+        self._items = list(items)
         self.default = default
-    def __missing__(self, k):
+    def __setitem__(self, k, v):
+        for i in range(len(self._items)):
+            (kk, vv) = self._items[i]
+            if eq(self.type.k, k, kk):
+                if v == self.default:
+                    del self._items[i]
+                else:
+                    self._items[i] = (kk, v)
+                return
+        self._items.append((k, v))
+    def __getitem__(self, k):
+        for i in range(len(self._items)):
+            (kk, vv) = self._items[i]
+            if eq(self.type.k, k, kk):
+                return vv
         return self.default
+    def items(self):
+        yield from self._items
+    def keys(self):
+        for (k, v) in self._items:
+            yield k
+    def values(self):
+        for (k, v) in self._items:
+            yield v
     def _hashable(self):
-        return (self.default,) + tuple(sorted(self.items()))
+        return (self.default,) + tuple(sorted(self._items))
     def __hash__(self):
         return hash(self._hashable())
     def __repr__(self):
-        return repr(dict(self))
+        return "Map({}, {}, {})".format(repr(self.type), repr(self.default), repr(self._items))
     def __str__(self):
         return repr(self)
     def __lt__(self, other):
@@ -71,6 +95,52 @@ class Bag(object):
 
 Handle = namedtuple("Handle", ["address", "value"])
 
+def eq(t, v1, v2):
+    if isinstance(t, THandle):
+        return v1.address == v2.address
+    elif isinstance(t, TBag):
+        elems1 = list(sorted(v1))
+        elems2 = list(sorted(v2))
+        return len(elems1) == len(elems2) and all(eq(t.t, x1, x2) for (x1, x2) in zip(elems1, elems2))
+    elif isinstance(t, TSet):
+        return eq(TBag(t.t), v1, v2)
+    elif isinstance(t, TMap):
+        keys1 = Bag(v1.keys())
+        keys2 = Bag(v2.keys())
+        return eq(TBag(t.k), keys1, keys2) and all(eq(t.v, v1[k], v2[k]) for k in keys1)
+    elif isinstance(t, TMaybe):
+        if v1.obj is None and v2.obj is None:
+            return True
+        if v1.obj is None or v2.obj is None:
+            return False
+        return eq(t.t, v1.obj, v2.obj)
+    elif isinstance(t, TTuple):
+        return all(eq(tt, vv1, vv2) for (tt, vv1, vv2) in zip(t.ts, v1, v2))
+    elif isinstance(t, TRecord):
+        return all(eq(ft, v1[f], v2[f]) for (f, ft) in t.fields)
+    else:
+        return v1 == v2
+
+def lt(t, v1, v2):
+    if isinstance(t, THandle):
+        return v1.address < v2.address
+    elif isinstance(t, TBag):
+        raise NotImplementedError(t)
+    elif isinstance(t, TSet):
+        return lt(TBag(t.t), v1, v2)
+    elif isinstance(t, TMap):
+        raise NotImplementedError(t)
+    elif isinstance(t, TMaybe):
+        raise NotImplementedError(t)
+    elif isinstance(t, TTuple):
+        raise NotImplementedError(t)
+    elif isinstance(t, TRecord):
+        raise NotImplementedError(t)
+    elif isinstance(t, TEnum):
+        return t.cases.index(v1) < t.cases.index(v2)
+    else:
+        return v1 < v2
+
 class Evaluator(Visitor):
     def __init__(self):
         self.work_done = 0
@@ -90,6 +160,8 @@ class Evaluator(Visitor):
         return Maybe(None)
     def visit_ECall(self, call, env):
         return env[call.func](*[self.visit(arg, env) for arg in call.args])
+    def visit_ELet(self, e, env):
+        return self.eval_lambda(e.f, self.visit(e.e, env), env)
     def visit_ECond(self, e, env):
         if self.visit(e.cond, env):
             return self.visit(e.then_branch, env)
@@ -128,6 +200,18 @@ class Evaluator(Visitor):
         else:
             raise NotImplementedError(e.op)
     def visit_EBinOp(self, e, env):
+        if e.op == ">":
+            return self.visit(ENot(EBinOp(e.e1, "<=", e.e2).with_type(BOOL)), env)
+        elif e.op == "<=":
+            return self.visit(
+                re_use(e.e1, lambda v1:
+                re_use(e.e2, lambda v2:
+                    EAny([EBinOp(v1, "<", v2).with_type(BOOL), equal(v1, v2)]))))
+        elif e.op == ">=":
+            return self.visit(ENot(EBinOp(e.e1, "<", e.e2).with_type(BOOL)), env)
+        elif e.op == "!=":
+            return self.visit(ENot(equal(e1, e2)), env)
+
         v1 = self.visit(e.e1, env)
         v2 = self.visit(e.e2, env)
         if e.op == BOp.And:
@@ -139,25 +223,9 @@ class Evaluator(Visitor):
         elif e.op == "-":
             return v1 - v2
         elif e.op == "==":
-            if isinstance(e.e1.type, THandle):
-                return v1.address == v2.address
-            return v1 == v2
+            return eq(e.e1.type, v1, v2)
         elif e.op == "<":
-            if isinstance(e.e1.type, THandle):
-                return v1.address < v2.address
-            return v1 < v2
-        elif e.op == ">":
-            if isinstance(e.e1.type, THandle):
-                return v1.address > v2.address
-            return v1 > v2
-        elif e.op == "<=":
-            if isinstance(e.e1.type, THandle):
-                return v1.address <= v2.address
-            return v1 <= v2
-        elif e.op == ">=":
-            if isinstance(e.e1.type, THandle):
-                return v1.address >= v2.address
-            return v1 >= v2
+            return lt(e.e1.type, v1, v2)
         elif e.op == BOp.In:
             return v1 in v2
         else:
@@ -183,10 +251,11 @@ class Evaluator(Visitor):
     def visit_EMakeRecord(self, e, env):
         return FrozenDict({ f:self.visit(v, env) for (f, v) in e.fields })
     def visit_EMakeMap(self, e, env):
-        im = defaultdict(Bag)
+        default = self.eval_lambda(e.value, Bag(), env)
+        im = Map(e.type, Bag())
         for x in self.visit(e.e, env):
             im[self.eval_lambda(e.key, x, env)] += Bag((x,))
-        res = hashable_defaultdict(self.eval_lambda(e.value, Bag(), env))
+        res = Map(e.type, default)
         for (k, es) in im.items():
             res[k] = self.eval_lambda(e.value, es, env)
         return res
@@ -256,7 +325,7 @@ def mkval(type):
     if isinstance(type, TBag):
         return Bag()
     if isinstance(type, TMap):
-        return hashable_defaultdict(mkval(type.v))
+        return Map(type, mkval(type.v))
     if isinstance(type, TEnum):
         return type.cases[0]
     if isinstance(type, TRecord):
