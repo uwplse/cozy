@@ -643,6 +643,7 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
                                 vars=repr(vars),
                                 collection_depth=repr(collection_depth),
                                 validate_model=repr(validate_model)))
+                            f.write("\n")
                     raise Exception("model validation failed")
             return res
 
