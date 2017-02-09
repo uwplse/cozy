@@ -206,7 +206,7 @@ class Evaluator(Visitor):
             return self.visit(
                 re_use(e.e1, lambda v1:
                 re_use(e.e2, lambda v2:
-                    EAny([EBinOp(v1, "<", v2).with_type(BOOL), equal(v1, v2)]))))
+                    EAny([EBinOp(v1, "<", v2).with_type(BOOL), equal(v1, v2)]))), env)
         elif e.op == ">=":
             return self.visit(ENot(EBinOp(e.e1, "<", e.e2).with_type(BOOL)), env)
         elif e.op == "!=":
