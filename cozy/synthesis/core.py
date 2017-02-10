@@ -328,10 +328,23 @@ class FixedBuilder(ExpBuilder):
 
             yield e
 
+class VarElimBuilder(ExpBuilder):
+    def __init__(self, wrapped_builder, illegal_vars : [EVar]):
+        self.wrapped_builder = wrapped_builder
+        self.illegal_vars = set(illegal_vars)
+    def build(self, cache, size):
+        for e in self.wrapped_builder.build(cache, size):
+            if not any(v in self.illegal_vars for v in free_vars(e)):
+                yield e
+
 def truncate(s):
     if len(s) > 60:
         return s[:60] + "..."
     return s
+
+def can_elim_var(spec : Exp, assumptions : Exp, v : EVar):
+    vv = fresh_var(v.type)
+    return valid(implies(EAll([assumptions, subst(assumptions, {v.id:vv})]), equal(spec, subst(spec, {v.id:vv}))))
 
 @typechecked
 def improve(
@@ -348,6 +361,9 @@ def improve(
     builder = FixedBuilder(builder, binders, assumptions)
 
     vars = list(free_vars(target) | free_vars(assumptions))
+    illegal_vars = [v for v in vars if can_elim_var(target, assumptions, v)]
+    builder = VarElimBuilder(builder, illegal_vars)
+
     if examples is None:
         examples = []
     learner = Learner(target, vars + binders, instantiate_examples(examples, set(vars), binders), cost_model, builder, stop_callback)
