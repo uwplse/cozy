@@ -248,10 +248,12 @@ def synthesize(
                             assert len(qq) == 1
                             qq = qq[0]
                             print("########### subgoal {} is equivalent to {}".format(sub_q.name, qq.name))
+                            arg_reorder = [[x[0] for x in sub_q.args].index(a) for (a, t) in qq.args]
                             class Repl(BottomUpRewriter):
                                 def visit_ECall(self, e):
                                     args = tuple(self.visit(a) for a in e.args)
                                     if e.func == sub_q.name:
+                                        args = tuple(args[idx] for idx in arg_reorder)
                                         return ECall(qq.name, args).with_type(e.type)
                                     else:
                                         return ECall(e.func, args).with_type(e.type)
