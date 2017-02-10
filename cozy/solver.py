@@ -306,6 +306,22 @@ class ToZ3(Visitor):
             else:
                 return r[e.f]
         return fmap(self.visit(e.e, env), e.type, go)
+    def remove_one(self, bag_type, bag, elem, env):
+        masks, elems = bag
+        if not masks:
+            return bag
+        rest_masks, rest_elems = self.remove_one(bag_type, (masks[1:], elems[1:]), elem, env)
+        return SymbolicUnion(bag_type, z3.And(masks[0], self.eq(bag_type.t, elems[0], elem, env), self.ctx),
+            (masks[1:], elems[1:]),
+            ([masks[0]] + rest_masks, [elems[0]] + rest_elems))
+    def remove_all(self, bag_type, bag, to_remove, env):
+        masks, elems = to_remove
+        if not masks:
+            return bag
+        rest = masks[1:], elems[1:]
+        return SymbolicUnion(bag_type, masks[0],
+            self.remove_all(bag_type, self.remove_one(bag_type, bag, elems[0], env), rest, env),
+            self.remove_all(bag_type, bag, rest, env))
     def visit_EBinOp(self, e, env):
         v1 = self.visit(e.e1, env)
         v2 = self.visit(e.e2, env)
@@ -333,6 +349,8 @@ class ToZ3(Visitor):
             else:
                 raise NotImplementedError(e.type)
         elif e.op == "-":
+            if isinstance(e.type, TBag):
+                return self.remove_all(e.type, v1, v2, env)
             return v1 - v2
         elif e.op == BOp.In:
             return fmap(v2, e.type, lambda bag: self.count_in(e.e1.type, bag, v1, env) > self.int_zero)

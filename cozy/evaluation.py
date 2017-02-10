@@ -225,6 +225,14 @@ class Evaluator(Visitor):
         elif e.op == "+":
             return v1 + v2
         elif e.op == "-":
+            if isinstance(e.e1.type, TBag):
+                elems = list(v1)
+                for x in v2:
+                    for i in range(len(elems)):
+                        if eq(e.e1.type.t, x, elems[i]):
+                            del elems[i]
+                            break
+                return Bag(elems)
             return v1 - v2
         elif e.op == "==":
             return eq(e.e1.type, v1, v2)

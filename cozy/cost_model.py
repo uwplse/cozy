@@ -38,6 +38,8 @@ class CardinalityVisitor(BottomUpExplorer):
     def visit_EBinOp(self, e):
         if e.op == "+":
             return self.visit(e.e1) + self.visit(e.e2)
+        elif e.op == "-":
+            return self.visit(e.e1) - self.visit(e.e2)
         else:
             raise NotImplementedError(e)
     def visit_EUnaryOp(self, e):
@@ -88,7 +90,9 @@ class MemoryUsageCostModel(CostModel, BottomUpExplorer):
         return 1 # TODO: sizeof(bool)
     def visit_EBinOp(self, e):
         if e.op == "+" and isinstance(e.e1.type, TBag):
-            return cardinality(e.e1) + cardinality(e.e2)
+            return 0.01 + cardinality(e.e1) + cardinality(e.e2)
+        if e.op == "-" and isinstance(e.e1.type, TBag):
+            return 0.01 + cardinality(e.e1) + cardinality(e.e2)
         return 1 # TODO: sizeof(e.type)
     def visit_ESingleton(self, e):
         return self.visit(e.e)
