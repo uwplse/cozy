@@ -255,7 +255,7 @@ class Evaluator(Visitor):
         return FrozenDict({ f:self.visit(v, env) for (f, v) in e.fields })
     def visit_EMakeMap(self, e, env):
         default = self.eval_lambda(e.value, Bag(), env)
-        im = Map(e.type, Bag())
+        im = Map(TMap(e.type.k, e.e.type), Bag())
         for x in self.visit(e.e, env):
             im[self.eval_lambda(e.key, x, env)] += Bag((x,))
         res = Map(e.type, default)
