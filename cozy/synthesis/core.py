@@ -3,7 +3,7 @@ import sys
 
 from cozy.target_syntax import *
 from cozy.typecheck import INT, BOOL
-from cozy.syntax_tools import subst, replace, pprint, free_vars, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda
+from cozy.syntax_tools import subst, pprint, free_vars, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda, enumerate_fragments
 from cozy.common import Visitor, fresh_name, typechecked, unique, pick_to_sum, cross_product, OrderedDefaultDict, nested_dict
 from cozy.solver import satisfy, satisfiable, valid
 from cozy.evaluation import eval, mkval
@@ -187,17 +187,15 @@ class Learner(object):
         e = self.target
         self.cost_ceiling = self.cost_model.cost(e)
         # print(" --< cost ceiling is now {}".format(self.cost_ceiling))
-        self.watched_exps = {}
-        for e in all_exps(self.target):
+        self.watched_exps = []
+        for (a, e, r) in enumerate_fragments(self.target):
             if isinstance(e, ELambda) or any(v not in self.legal_free_vars for v in free_vars(e)):
                 continue
-            fp = self._fingerprint(e)
             cost = self.cost_model.cost(e)
-            prev = self.watched_exps.get(fp)
-            if prev is None or prev[1] < cost:
-                self.watched_exps[fp] = (e, cost)
-        # for (fp, (e, cost)) in self.watched_exps.items():
-        #     print("WATCHING {} (fp={}, cost={})".format(pprint(e), hash(fp), cost))
+            self.watched_exps.append((a, e, r, cost))
+        # for (a, e, r, cost) in sorted(self.watched_exps, key=lambda w: -w[1].size()):
+        #     assert r(e) == self.target, "r({}) = {} != {}".format(pprint(e), pprint(r(e)), pprint(self.target))
+        #     print("WATCHING {} (|a|={}, cost={})".format(pprint(e), sum(aa.size() for aa in a), cost))
 
     def _fingerprint(self, e):
         return fingerprint(e, self.examples)
@@ -245,12 +243,14 @@ class Learner(object):
                         _on_exp(e, "worse", prev_exp)
                         continue
 
-                watched = self.watched_exps.get(fp)
-                if watched is not None:
-                    watched_e, watched_cost = watched
-                    if cost < watched_cost or (cost == watched_cost and e != watched_e):
-                        print("Found potential improvement [{}] for [{}]".format(pprint(e), pprint(watched_e)))
-                        return (watched_e, e)
+                for (a, watched_e, r, watched_cost) in self.watched_exps:
+                    if watched_e.type != e.type or watched_cost < cost:
+                        continue
+                    if e == watched_e:
+                        continue
+                    examples = [ ex for ex in self.examples if all(eval(aa, ex) for aa in a) ]
+                    if fingerprint(watched_e, examples) == fingerprint(e, examples):
+                        return (watched_e, e, r)
 
             if self.last_progress < (self.current_size+1) // 2:
                 raise NoMoreImprovements("hit termination condition")
@@ -371,17 +371,18 @@ def improve(
         while True:
             # 1. find any potential improvement to any sub-exp of target
             try:
-                old_e, new_e = learner.next()
+                old_e, new_e, repl = learner.next()
             except NoMoreImprovements:
                 break
 
             # 2. substitute-in the improvement
-            new_target = replace(target, old_e, new_e)
+            new_target = repl(new_e)
 
             if (free_vars(new_target) - set(vars)):
                 print("oops, candidate {} has weird free vars".format(pprint(new_target)))
 
             # 3. check
+            print("Found candidate replacement [{}] for [{}]".format(pprint(new_e), pprint(old_e)))
             formula = EAll([assumptions, ENot(equal(target, new_target))])
             counterexample = satisfy(formula, vars=vars)
             if counterexample is not None:
@@ -405,7 +406,7 @@ def improve(
                             f.write("    old_e = {}\n".format(repr(old_e)))
                             f.write("    new_e = {}\n".format(repr(new_e)))
                             f.write("    target = {}\n".format(repr(target)))
-                            f.write("    new_target = replace(target, old_e, new_e)\n")
+                            f.write("    new_target = {}\n".format(repr(new_target)))
                             f.write("    if costmodel.cost(new_e) <= costmodel.cost(old_e) and costmodel.cost(new_target) > costmodel.cost(target):\n")
                             f.write("        for x in [old_e, new_e, target, new_target]:\n")
                             f.write("            pprint_reps(infer_rep(costmodel.state_vars, x))\n")

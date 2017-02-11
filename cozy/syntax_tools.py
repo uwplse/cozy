@@ -394,6 +394,74 @@ def all_exps(e):
                 yield x
     return V().visit(e)
 
+class FragmentEnumerator(common.Visitor):
+    # This visitor's methods use a weird pattern:
+    #     yield (lambda r: ...)(r)
+    # This is because lambdas are capture-by-reference in Python! Since r is
+    # overwritten at each loop iteration, that's a problem. Defining a fresh
+    # function and immediately calling it is a simple way to force
+    # capture-by-value for r instead.
+
+    def visit_ELambda(self, obj):
+        yield ([], obj, lambda x: x)
+
+    def visit_EFilter(self, e):
+        yield ([], e, lambda x: x)
+        t = e.type
+        for (a, x, r) in self.visit(e.e):
+            yield (lambda r: (a, x, lambda x: target_syntax.EFilter(r(x), e.p).with_type(t)))(r)
+        for (a, x, r) in self.visit(e.p.body):
+            yield (lambda r: (a + [syntax.EBinOp(e.p.arg, syntax.BOp.In, e.e).with_type(syntax.BOOL)], x, lambda x: target_syntax.EFilter(e.e, target_syntax.ELambda(e.p.arg, r(x))).with_type(t)))(r)
+
+    def visit_EMap(self, e):
+        yield ([], e, lambda x: x)
+        t = e.type
+        for (a, x, r) in self.visit(e.e):
+            yield (lambda r: (a, x, lambda x: target_syntax.EMap(r(x), e.f).with_type(t)))(r)
+        for (a, x, r) in self.visit(e.f.body):
+            yield (lambda r: (a + [syntax.EBinOp(e.f.arg, syntax.BOp.In, e.e).with_type(syntax.BOOL)], x, lambda x: target_syntax.EMap(e.e, target_syntax.ELambda(e.f.arg, r(x))).with_type(t)))(r)
+
+    def visit_EFlatMap(self, e):
+        yield ([], e, lambda x: x)
+        t = e.type
+        for (a, x, r) in self.visit(e.e):
+            yield (lambda r: (a, x, lambda x: target_syntax.EFlatMap(r(x), e.f).with_type(t)))(r)
+        for (a, x, r) in self.visit(e.f.body):
+            yield (lambda r: (a + [syntax.EBinOp(e.f.arg, syntax.BOp.In, e.e).with_type(syntax.BOOL)], x, lambda x: target_syntax.EFlatMap(e.e, target_syntax.ELambda(e.f.arg, r(x))).with_type(t)))(r)
+
+    def visit_Exp(self, obj):
+        yield ([], obj, lambda x: x)
+        t = obj.type
+        children = obj.children()
+        for i in range(len(children)):
+            for (a, x, r) in self.visit(children[i]):
+                yield (a, x, (lambda r, i: lambda x: type(obj)(*(children[:i] + (r(x),) + children[i+1:])).with_type(t))(r, i))
+
+    def visit_list(self, l):
+        return self.visit_tuple(l)
+
+    def visit_tuple(self, t):
+        yield ([], t, lambda x: x)
+        for i in range(len(t)):
+            for (a, x, r) in self.visit(t[i]):
+                yield (a, x, (lambda r, i: lambda x: t[:i] + (r(x),) + t[i+1:])(r, i))
+
+    def visit_object(self, obj):
+        yield ([], obj, lambda x: x)
+
+_ENUMERATOR = FragmentEnumerator()
+def enumerate_fragments(e : syntax.Exp):
+    """
+    Yields tuples (a : [Exp], x : Exp, r : Exp->Exp) such that:
+        x is a non-lambda subexpression of e
+        a are true assumptions whenever x is evaluated on any input to e
+        r(x) == e (in general, r can be used to replace x with a new subexpr)
+    """
+    for tup in _ENUMERATOR.visit(e):
+        (a, x, r) = tup
+        if isinstance(x, syntax.Exp) and not isinstance(x, target_syntax.ELambda):
+            yield tup
+
 def replace(exp, old_exp, new_exp):
     class Replacer(BottomUpRewriter):
         def visit_ELambda(self, e):

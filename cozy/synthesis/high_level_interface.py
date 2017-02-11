@@ -22,6 +22,7 @@ from .acceleration import AcceleratedBuilder
 
 accelerate = Option("acceleration-rules", bool, True)
 SynthCtx = namedtuple("SynthCtx", ["all_types", "basic_types"])
+LINE_BUFFER_MODE = 1 # see help for open() function
 
 @typechecked
 def pick_rep(q_ret : Exp, state : [EVar]) -> ([(EVar, Exp)], Exp):
@@ -50,7 +51,7 @@ class ImproveQueryJob(jobs.Job):
         return "ImproveQueryJob[{}]".format(self.q.name)
     def run(self):
         print("STARTING IMPROVEMENT JOB {} (|examples|={})".format(self.q.name, len(self.examples or ())))
-        with open("/tmp/{}.log".format(self.q.name), "w") as f:
+        with open("/tmp/{}.log".format(self.q.name), "w", buffering=LINE_BUFFER_MODE) as f:
             sys.stdout = f
             print("STARTING IMPROVEMENT JOB {} (|examples|={})".format(self.q.name, len(self.examples or ())))
 
