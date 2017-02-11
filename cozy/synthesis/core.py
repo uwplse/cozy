@@ -192,7 +192,9 @@ class Learner(object):
             if isinstance(e, ELambda) or any(v not in self.legal_free_vars for v in free_vars(e)):
                 continue
             cost = self.cost_model.cost(e)
-            self.watched_exps.append((a, e, r, cost))
+            fp = self._fingerprint(e)
+            mask = [True] + [all(eval(aa, ex) for aa in a) for ex in self.examples]
+            self.watched_exps.append((e, r, cost, fp, mask))
         # for (a, e, r, cost) in sorted(self.watched_exps, key=lambda w: -w[1].size()):
         #     assert r(e) == self.target, "r({}) = {} != {}".format(pprint(e), pprint(r(e)), pprint(self.target))
         #     print("WATCHING {} (|a|={}, cost={})".format(pprint(e), sum(aa.size() for aa in a), cost))
@@ -243,13 +245,12 @@ class Learner(object):
                         _on_exp(e, "worse", prev_exp)
                         continue
 
-                for (a, watched_e, r, watched_cost) in self.watched_exps:
+                for (watched_e, r, watched_cost, watched_fp, mask) in self.watched_exps:
                     if watched_e.type != e.type or watched_cost < cost:
                         continue
                     if e == watched_e:
                         continue
-                    examples = [ ex for ex in self.examples if all(eval(aa, ex) for aa in a) ]
-                    if fingerprint(watched_e, examples) == fingerprint(e, examples):
+                    if all((not incl or l==r) for (incl, l, r) in zip(mask, watched_fp, fp)):
                         return (watched_e, e, r)
 
             if self.last_progress < (self.current_size+1) // 2:
