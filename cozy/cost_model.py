@@ -39,7 +39,7 @@ class CardinalityVisitor(BottomUpExplorer):
         if e.op == "+":
             return self.visit(e.e1) + self.visit(e.e2)
         elif e.op == "-":
-            return self.visit(e.e1) - self.visit(e.e2)
+            return max(self.visit(e.e1) - self.visit(e.e2), 0)
         else:
             raise NotImplementedError(e)
     def visit_EUnaryOp(self, e):
