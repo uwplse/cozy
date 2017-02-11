@@ -336,6 +336,8 @@ class VarElimBuilder(ExpBuilder):
         for e in self.wrapped_builder.build(cache, size):
             if not any(v in self.illegal_vars for v in free_vars(e)):
                 yield e
+            else:
+                _on_exp(e, "contains illegal vars")
 
 def truncate(s):
     if len(s) > 60:
