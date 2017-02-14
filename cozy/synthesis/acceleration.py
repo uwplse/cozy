@@ -1,8 +1,9 @@
 import itertools
 
+from cozy.common import find_one
 from .core import ExpBuilder
 from cozy.target_syntax import *
-from cozy.syntax_tools import mk_lambda, free_vars, break_conj, all_exps, replace, pprint, enumerate_fragments
+from cozy.syntax_tools import free_vars, break_conj, all_exps, replace, pprint, enumerate_fragments
 from cozy.desugar import desugar_exp
 from cozy.typecheck import is_numeric
 
@@ -90,22 +91,22 @@ class AcceleratedBuilder(ExpBuilder):
                 inf = infer_map_lookup(bag.p.body, binder, set(self.state_vars))
                 if inf:
                     key_proj, key_lookup, remaining_filter = inf
+                    bag_binder = find_one(self.binders, lambda b: b.type == bag.type)
+                    if bag_binder:
+                        m = EMakeMap(
+                            bag.e,
+                            ELambda(binder, key_proj),
+                            ELambda(bag_binder, bag_binder)).with_type(TMap(key_proj.type, bag.type))
+                        yield m
+                        mg = EMapGet(m, key_lookup).with_type(bag.type)
+                        yield mg
+                        yield EFilter(mg, ELambda(binder, remaining_filter)).with_type(mg.type)
 
-                    m = EMakeMap(
-                        bag.e,
-                        ELambda(binder, key_proj),
-                        mk_lambda(bag.type, lambda xs: xs)).with_type(TMap(key_proj.type, bag.type))
-                    yield m
-                    mg = EMapGet(m, key_lookup).with_type(bag.type)
-                    yield mg
-                    yield EFilter(mg, ELambda(binder, remaining_filter)).with_type(mg.type)
-
-        # F(xs +/- ys) ---> F(xs), F(ys)
-        import sys
         for e in cache.find(size=size-1):
+            # F(xs +/- ys) ---> F(xs), F(ys)
             for z in break_plus_minus(e):
                 if z != e:
-                    # print("broke {} --> {}".format(pprint(e), pprint(z)), file=sys.stderr)
+                    # print("broke {} --> {}".format(pprint(e), pprint(z)))
                     yield z
 
         yield from self.wrapped.build(cache, size)
