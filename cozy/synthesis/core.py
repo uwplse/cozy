@@ -196,8 +196,12 @@ class Learner(object):
                 continue
             cost = self.cost_model.cost(e)
             fp = self._fingerprint(e)
-            mask = [True] + [all(eval(aa, ex) for aa in a) for ex in self.examples]
-            self.watched_exps.append((e, r, cost, fp, mask))
+            try:
+                mask = [True] + [all(eval(aa, ex) for aa in a) for ex in self.examples]
+                self.watched_exps.append((e, r, cost, fp, mask))
+            except Exception as exc:
+                print("unable to watch {} ({})".format(pprint(e), exc), file=sys.stderr)
+                continue
         # for (a, e, r, cost) in sorted(self.watched_exps, key=lambda w: -w[1].size()):
         #     assert r(e) == self.target, "r({}) = {} != {}".format(pprint(e), pprint(r(e)), pprint(self.target))
         #     print("WATCHING {} (|a|={}, cost={})".format(pprint(e), sum(aa.size() for aa in a), cost))
