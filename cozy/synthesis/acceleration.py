@@ -109,4 +109,12 @@ class AcceleratedBuilder(ExpBuilder):
                     # print("broke {} --> {}".format(pprint(e), pprint(z)))
                     yield z
 
+            # try reordering operations
+            for (_, e1, f) in enumerate_fragments(e):
+                if e1.type == e.type and e1 != e:
+                    for (_, e2, g) in enumerate_fragments(e1):
+                        if e2.type == e.type and e2 != e1:
+                            # e == f(g(e2))
+                            yield g(f(e2))
+
         yield from self.wrapped.build(cache, size)
