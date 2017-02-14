@@ -13,6 +13,7 @@ from cozy.opts import Option
 save_testcases = Option("save-testcases", str, "", metavar="PATH")
 hyperaggressive_eviction = Option("hyperaggressive-eviction", bool, True)
 reject_symmetric_binops = Option("reject-symmetric-binops", bool, True)
+eliminate_vars = Option("eliminate-vars", bool, True)
 
 class Cache(object):
     def __init__(self, items=None):
@@ -380,8 +381,9 @@ def improve(
     builder = FixedBuilder(builder, binders, assumptions)
 
     vars = list(free_vars(target) | free_vars(assumptions))
-    illegal_vars = [v for v in vars if can_elim_var(target, assumptions, v)]
-    builder = VarElimBuilder(builder, illegal_vars)
+    if eliminate_vars.value:
+        illegal_vars = [v for v in vars if can_elim_var(target, assumptions, v)]
+        builder = VarElimBuilder(builder, illegal_vars)
 
     if examples is None:
         examples = []
