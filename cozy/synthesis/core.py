@@ -11,6 +11,7 @@ from cozy.cost_model import CostModel
 from cozy.opts import Option
 
 save_testcases = Option("save-testcases", str, "", metavar="PATH")
+hyperaggressive_eviction = Option("hyperaggressive-eviction", bool, True)
 
 class Cache(object):
     def __init__(self, items=None):
@@ -237,11 +238,11 @@ class Learner(object):
                     elif cost < prev_cost:
                         for (prev_exp, prev_size) in prev_exps:
                             self.cache.evict(prev_exp, prev_size)
-                            # Experimental hyperaggressive eviction policy
-                            for (cached_e, size) in list(self.cache):
-                                if prev_exp in all_exps(cached_e):
-                                    # print("evicting {}".format(cached_e))
-                                    self.cache.evict(cached_e, size)
+                            if hyperaggressive_eviction.value:
+                                for (cached_e, size) in list(self.cache):
+                                    if prev_exp in all_exps(cached_e):
+                                        _on_exp(cached_e, "evicted since it contains", prev_exp)
+                                        self.cache.evict(cached_e, size)
                         self.cache.add(e, size=self.current_size)
                         self.seen[fp] = (cost, [(e, self.current_size)])
                         self.last_progress = self.current_size
