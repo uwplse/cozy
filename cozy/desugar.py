@@ -1,6 +1,6 @@
 from cozy.common import typechecked, fresh_name
 from cozy.target_syntax import *
-from cozy.typecheck import INT, BOOL, retypecheck
+from cozy.typecheck import INT, BOOL, retypecheck, is_numeric
 from cozy.syntax_tools import BottomUpRewriter, subst, fresh_var, all_types, all_exps, equal, implies, mk_lambda, compose, nnf, dnf, break_conj, pprint
 from cozy.solver import valid
 
@@ -112,8 +112,12 @@ def desugar_exp(e : Exp) -> Exp:
             elif e.op == UOp.All:
                 arg = fresh_var(BOOL)
                 return self.visit(EUnaryOp(UOp.Empty, EFilter(e.e, ELambda(arg, ENot(arg))).with_type(e.e.type)).with_type(e.type))
-            else:
-                return EUnaryOp(e.op, sub).with_type(e.type)
+            elif e.op == UOp.Sum:
+                if isinstance(sub, EBinOp) and sub.op == "+":
+                    return self.visit(EBinOp(
+                        EUnaryOp(UOp.Sum, sub.e1).with_type(e.type), "+",
+                        EUnaryOp(UOp.Sum, sub.e2).with_type(e.type)).with_type(e.type))
+            return EUnaryOp(e.op, sub).with_type(e.type)
         def visit_EBinOp(self, e):
             e1 = self.visit(e.e1)
             e2 = self.visit(e.e2)
@@ -124,6 +128,8 @@ def desugar_exp(e : Exp) -> Exp:
                 return self.visit(ENot(equal(
                     ENum(0).with_type(INT),
                     EUnaryOp(UOp.Sum, EMap(EFilter(e.e2, mk_lambda(e.e2.type.t, lambda x: equal(x, e.e1))).with_type(e.e2.type), mk_lambda(e.e2.type.t, lambda x: ENum(1).with_type(INT))).with_type(TBag(INT))).with_type(INT))))
+            elif op == "-" and is_numeric(e.type):
+                return self.visit(EBinOp(e1, "+", EUnaryOp("-", e2).with_type(e.type)).with_type(e.type))
             else:
                 return EBinOp(e1, op, e2).with_type(e.type)
         def visit_EFlatMap(self, e):
