@@ -222,11 +222,12 @@ def nested_dict(n, t):
         return t()
     return OrderedDefaultDict(lambda: nested_dict(n-1, t))
 
-_i = 0
+from multiprocessing import Value
+_i = Value("l", 0)
 def fresh_name(hint="name"):
-    global _i
-    _i += 1
-    return "_{}{}".format(hint, _i)
+    with _i.get_lock():
+        _i.value += 1
+        return "_{}{}".format(hint, _i.value)
 
 def capitalize(s):
     return (s[0].upper() + s[1:]) if s else s
