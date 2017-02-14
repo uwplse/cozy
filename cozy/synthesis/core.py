@@ -12,6 +12,7 @@ from cozy.opts import Option
 
 save_testcases = Option("save-testcases", str, "", metavar="PATH")
 hyperaggressive_eviction = Option("hyperaggressive-eviction", bool, True)
+reject_symmetric_binops = Option("reject-symmetric-binops", bool, True)
 
 class Cache(object):
     def __init__(self, items=None):
@@ -311,7 +312,7 @@ class FixedBuilder(ExpBuilder):
                 continue
                 print("WARNING: skipping built expression {}".format(pprint(e)), file=sys.stderr)
 
-            if size > 1 and isinstance(e, EBinOp) and e.op in COMMUTATIVE_OPERATORS and e.e2 < e.e1:
+            if reject_symmetric_binops.value and size > 1 and isinstance(e, EBinOp) and e.op in COMMUTATIVE_OPERATORS and e.e2 < e.e1:
                 _on_exp(e, "rejecting symmetric use of commutative operator")
                 continue
 
