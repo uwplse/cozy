@@ -1,7 +1,7 @@
 from cozy.common import Visitor
 from cozy import syntax
 from cozy import target_syntax
-from cozy.syntax_tools import pprint
+from cozy.syntax_tools import pprint, all_exps
 
 def typecheck(ast, env=None):
     """
@@ -17,6 +17,9 @@ def retypecheck(exp, env=None):
     from cozy.syntax_tools import free_vars
     if env is None:
         env = { v.id:v.type for v in free_vars(exp) }
+    for e in all_exps(exp):
+        if isinstance(e, syntax.EEnumEntry):
+            env[e.name] = e.type
     errs = typecheck(exp, env=env)
     if errs:
         print("errors")
