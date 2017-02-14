@@ -501,8 +501,6 @@ def subst(exp, replacements):
             if isinstance(c, syntax.CPull):
                 if c.id in replacements:
                     raise NotImplementedError()
-                if any(v.id == d.id for r in replacements.values() for v in free_vars(r)):
-                    raise NotImplementedError()
                 if c.id in allfvs:
                     name = common.fresh_name()
                     r = { c.id : syntax.EVar(name) }
@@ -510,6 +508,8 @@ def subst(exp, replacements):
                     for j in range(i + 1, len(clauses)):
                         d = clauses[j]
                         if isinstance(d, syntax.CPull):
+                            if any(v.id == d.id for r in replacements.values() for v in free_vars(r)):
+                                raise NotImplementedError()
                             clauses[j] = syntax.CPull(d.id, subst(d.e, r))
                         elif isinstance(d, syntax.CCond):
                             clauses[j] = syntax.CCond(subst(d.e, r))
