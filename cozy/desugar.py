@@ -3,6 +3,9 @@ from cozy.target_syntax import *
 from cozy.typecheck import INT, BOOL, retypecheck, is_numeric
 from cozy.syntax_tools import BottomUpRewriter, subst, fresh_var, all_types, all_exps, equal, implies, mk_lambda, compose, nnf, dnf, break_conj, pprint
 from cozy.solver import valid
+from cozy.opts import Option
+
+break_disjunctive_filters = Option("break-disjunctive-filters", bool, False)
 
 def predicate_is_normal(p):
     for part in break_conj(p):
@@ -31,7 +34,7 @@ def desugar_exp(e : Exp) -> Exp:
         def mk_filter_of_conjunction(self, bag : Exp, arg : EVar, conds : [Exp]) -> EFilter:
             return EFilter(bag, ELambda(arg, EAll(conds))).with_type(bag.type)
         def break_filter(self, e):
-            if predicate_is_normal(e.p.body):
+            if not break_disjunctive_filters.value or predicate_is_normal(e.p.body):
                 # print("breaking normal-form filter: {}".format(pprint(e)))
                 return e
             t = e.type
