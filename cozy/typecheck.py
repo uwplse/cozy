@@ -24,6 +24,9 @@ def retypecheck(exp, env=None):
             print(" --> {}".format(e))
     return not errs
 
+def is_numeric(t):
+    return t in [INT, LONG]
+
 BOOL = syntax.BOOL
 INT = syntax.INT
 LONG = syntax.LONG
@@ -158,13 +161,10 @@ class Typechecker(Visitor):
             return
         self.report_err(node, "cannot assign {} to a {}".format(pprint(ltype), pprint(rtype)))
 
-    def is_numeric(self, t):
-        return t in [INT, LONG]
-
     def ensure_numeric(self, e):
         if e.type is DEFAULT_TYPE:
             return
-        if not self.is_numeric(e.type):
+        if not is_numeric(e.type):
             self.report_err(e, "expression has non-numeric type {}".format(e.type))
 
     def numeric_lub(self, t1, t2):
@@ -198,7 +198,7 @@ class Typechecker(Visitor):
         self.visit(e.e)
         if e.op == syntax.UOp.Sum:
             tt = self.get_collection_type(e.e)
-            if self.is_numeric(tt) or tt is DEFAULT_TYPE:
+            if is_numeric(tt) or tt is DEFAULT_TYPE:
                 e.type = tt
             else:
                 self.report_err(e, "cannot sum {}".format(e.e.type))
