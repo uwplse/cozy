@@ -2,7 +2,7 @@ import itertools
 
 from .core import ExpBuilder
 from cozy.target_syntax import *
-from cozy.syntax_tools import mk_lambda, free_vars, break_conj, all_exps, replace, pprint
+from cozy.syntax_tools import mk_lambda, free_vars, break_conj, all_exps, replace, pprint, enumerate_fragments
 from cozy.desugar import desugar_exp
 
 def _as_conjunction_of_equalities(p):
@@ -56,6 +56,16 @@ def infer_map_lookup(filter, binder, state : {EVar}):
         return None
     assert False
 
+def break_plus_minus(e):
+    for (_, x, r) in enumerate_fragments(e):
+        if isinstance(x, EBinOp) and x.op in ("+", "-"):
+            # print("accel --> {}".format(pprint(r(x.e1))))
+            yield from break_plus_minus(r(x.e1))
+            # print("accel --> {}".format(pprint(r(x.e2))))
+            yield from break_plus_minus(r(x.e2))
+            return
+    yield e
+
 class AcceleratedBuilder(ExpBuilder):
     def __init__(self, wrapped : ExpBuilder, binders : [EVar], state_vars : [EVar]):
         super().__init__()
@@ -81,25 +91,10 @@ class AcceleratedBuilder(ExpBuilder):
                     yield mg
                     yield EFilter(mg, ELambda(binder, remaining_filter)).with_type(mg.type)
 
-        # F(filter {\x -> P and x != e} xs) ----> F(filter P [e])
+        # F(xs +/- ys) ---> F(xs), F(ys)
+        import sys
         for e in cache.find(size=size-1):
-            e = desugar_exp(e)
-            for filt in (x for x in all_exps(e) if isinstance(x, EFilter)):
-                for clause in break_conj(filt.p.body):
-                    if isinstance(clause, EUnaryOp) and clause.op == "not" and isinstance(clause.e, EBinOp) and clause.e.op == "==":
-                        v = None
-                        if clause.e.e1 == filt.p.arg and filt.p.arg not in free_vars(clause.e.e2):
-                            # print(" > {}".format(pprint(clause)))
-                            v = clause.e.e2
-                        elif clause.e.e2 == filt.p.arg and filt.p.arg not in free_vars(clause.e.e1):
-                            # print(" < {}".format(pprint(clause)))
-                            v = clause.e.e1
-                        if v:
-                            new_clauses = [c for c in break_conj(filt.p.body) if c != clause]
-                            if new_clauses:
-                                new_filt = EFilter(ESingleton(v).with_type(filt.type), ELambda(filt.p.arg, EAll(new_clauses))).with_type(filt.type)
-                                yield new_filt
-                            else:
-                                new_filt = ESingleton(v).with_type(filt.type)
-                            print("proposing acceleration: {}".format(pprint(replace(e, filt, new_filt))))
-                            yield replace(e, filt, new_filt)
+            for z in break_plus_minus(e):
+                if z != e:
+                    # print("broke {} --> {}".format(pprint(e), pprint(z)), file=sys.stderr)
+                    yield z
