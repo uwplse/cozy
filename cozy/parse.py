@@ -246,6 +246,7 @@ def make_parser():
                | KW_SUM exp
                | KW_ANY exp
                | KW_ALL exp
+               | KW_EXISTS exp
                | exp OP_DOT NUM
                | exp OP_DOT WORD
                | OP_OPEN_PAREN exp_list OP_CLOSE_PAREN

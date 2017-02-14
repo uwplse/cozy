@@ -206,7 +206,7 @@ class Typechecker(Visitor):
             else:
                 self.report_err(e, "cannot sum {}".format(e.e.type))
                 e.type = DEFAULT_TYPE
-        elif e.op in [syntax.UOp.AreUnique, syntax.UOp.Empty]:
+        elif e.op in [syntax.UOp.AreUnique, syntax.UOp.Empty, syntax.UOp.Exists]:
             self.get_collection_type(e.e)
             e.type = BOOL
         elif e.op == syntax.UOp.Distinct:

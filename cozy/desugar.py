@@ -115,6 +115,8 @@ def desugar_exp(e : Exp) -> Exp:
             elif e.op == UOp.All:
                 arg = fresh_var(BOOL)
                 return self.visit(EUnaryOp(UOp.Empty, EFilter(e.e, ELambda(arg, ENot(arg))).with_type(e.e.type)).with_type(e.type))
+            elif e.op == UOp.Exists:
+                return self.visit(EUnaryOp(UOp.Not, EUnaryOp(UOp.Empty, e.e).with_type(BOOL)).with_type(BOOL))
             elif e.op == UOp.Sum:
                 if isinstance(sub, EBinOp) and sub.op == "+":
                     return self.visit(EBinOp(
