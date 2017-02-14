@@ -144,7 +144,7 @@ class Learner(object):
         self.stop_callback = stop_callback
         self.cost_model = cost_model
         self.builder = builder
-        self.seen = { } # fingerprint:(cost, e, size) map
+        self.seen = { } # map of {fingerprint:(cost, [(e, size)])}
         self.reset(examples, update_watched_exps=False)
         self.watch(target)
 
@@ -175,11 +175,13 @@ class Learner(object):
         if self.cost_model.is_monotonic():
             seen = list(self.seen.items())
             n = 0
-            for (fp, (cost, e, size)) in seen:
+            for (fp, (cost, exps)) in seen:
                 if cost > self.cost_ceiling:
-                    self.cache.evict(e, size)
-                    del self.seen[fp]
-                    n += 1
+                    for (e, size) in exps:
+                        _on_exp(e, "evicted due to lowered cost ceiling [cost={}, ceiling={}]".format(cost, ceiling))
+                        self.cache.evict(e, size)
+                        del self.seen[fp]
+                        n += 1
             if n:
                 print("evicted {} elements".format(n))
 
@@ -218,19 +220,22 @@ class Learner(object):
                 prev = self.seen.get(fp)
 
                 if prev is None:
-                    self.overwritten = None
-                    self.most_recent = (e, self.current_size, fp)
-                    self.seen[fp] = (cost, e, self.current_size)
+                    self.seen[fp] = (cost, [(e, self.current_size)])
                     self.cache.add(e, size=self.current_size)
                     self.last_progress = self.current_size
                     _on_exp(e, "new")
                 else:
-                    prev_cost, prev_exp, prev_size = prev
-                    if cost < prev_cost or (cost == prev_cost and e != prev_exp):
-                        self.overwritten = prev
-                        self.most_recent = (e, self.current_size, fp)
-                        # print("cost ceiling lowered for {}: {} --> {}".format(fp, prev_cost, cost))
-                        if cost < prev_cost:
+                    prev_cost, prev_exps = prev
+                    if e in (ee for (ee, size) in prev_exps):
+                        _on_exp(e, "duplicate")
+                        continue
+                    elif cost == prev_cost:
+                        self.cache.add(e, size=self.current_size)
+                        self.seen[fp][1].append((e, self.current_size))
+                        self.last_progress = self.current_size
+                        _on_exp(e, "equivalent", [e for (e, cost) in prev_exps])
+                    elif cost < prev_cost:
+                        for (prev_exp, prev_size) in prev_exps:
                             self.cache.evict(prev_exp, prev_size)
                             # Experimental hyperaggressive eviction policy
                             for (cached_e, size) in list(self.cache):
@@ -238,11 +243,11 @@ class Learner(object):
                                     # print("evicting {}".format(cached_e))
                                     self.cache.evict(cached_e, size)
                         self.cache.add(e, size=self.current_size)
-                        self.seen[fp] = (cost, e, self.current_size)
+                        self.seen[fp] = (cost, [(e, self.current_size)])
                         self.last_progress = self.current_size
-                        _on_exp(e, "better", prev_exp)
+                        _on_exp(e, "better", [e for (e, cost) in prev_exps])
                     else:
-                        _on_exp(e, "worse", prev_exp)
+                        _on_exp(e, "worse", [e for (e, cost) in prev_exps])
                         continue
 
                 for (watched_e, r, watched_cost, watched_fp, mask) in self.watched_exps:
