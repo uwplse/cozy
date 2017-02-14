@@ -223,7 +223,8 @@ def nested_dict(n, t):
     return OrderedDefaultDict(lambda: nested_dict(n-1, t))
 
 from multiprocessing import Value
-_i = Value("l", 0)
+import ctypes
+_i = Value(ctypes.c_uint64, 0)
 def fresh_name(hint="name"):
     with _i.get_lock():
         _i.value += 1
