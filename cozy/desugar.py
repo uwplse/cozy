@@ -166,7 +166,7 @@ def desugar(spec : Spec) -> Spec:
             v = EVar(v).with_type(t)
             spec.assumptions.append(EUnaryOp("unique", v).with_type(BOOL))
 
-    assert retypecheck(spec, env=())
+    assert retypecheck(spec, env={})
 
     # organize queries by name
     queries = { q.name : q for q in spec.methods if isinstance(q, Query) }
