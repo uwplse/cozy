@@ -125,6 +125,7 @@ class StopException(Exception):
 class NoMoreImprovements(Exception):
     pass
 
+oracle = None
 def _on_exp(e, fate, *args):
     return
     # if (isinstance(e, EMapGet) or
@@ -136,8 +137,12 @@ def _on_exp(e, fate, *args):
     # if isinstance(e, EFilter):
     # if fate in ("better", "new"):
     # if isinstance(e, EEmptyList):
-    if "commutative" in fate:
-        print(" ---> [{}, {}] {}; {}".format(fate, pprint(e.type), pprint(e), ", ".join(pprint(e) for e in args)))
+    # if "commutative" in fate:
+    # if any(alpha_equivalent(e, ee) for ee in all_exps(_TARGET)):
+    # if isinstance(e, EBinOp) and e.op == "-" and isinstance(e.e1, EUnaryOp) and e.e1.op == "sum" and isinstance(e.e2, EUnaryOp) and e.e2.op == "sum":
+    if oracle is not None and any(alpha_equivalent(e, x) for x in all_exps(oracle)):
+    # if oracle is not None and any(e.type == x.type and valid(equal(e, x)) for x in all_exps(oracle) if not isinstance(x, ELambda)):
+        print(" ---> [{}, {}] {}; {}".format(fate, pprint(e.type), pprint(e), ", ".join((pprint(e) if isinstance(e, ADT) else str(e)) for e in args)))
 
 class Learner(object):
     def __init__(self, target, legal_free_vars, examples, cost_model, builder, stop_callback):
