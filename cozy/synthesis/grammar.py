@@ -56,7 +56,6 @@ class BinderBuilder(ExpBuilder):
             for a1 in cache.find(type=INT, size=sz1):
                 for a2 in cache.find(type=INT, size=sz2):
                     yield EBinOp(a1, "+", a2).with_type(INT)
-                    yield EBinOp(a1, "-", a2).with_type(INT)
                     yield EBinOp(a1, ">", a2).with_type(BOOL)
                     yield EBinOp(a1, "<", a2).with_type(BOOL)
                     yield EBinOp(a1, ">=", a2).with_type(BOOL)

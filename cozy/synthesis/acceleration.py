@@ -65,7 +65,11 @@ def break_plus_minus(e):
             # print("accel --> {}".format(pprint(r(x.e2))))
             yield from break_plus_minus(r(x.e2))
             if e.type == INT or isinstance(e.type, TBag):
-                yield EBinOp(r(x.e1), x.op, r(x.e2)).with_type(e.type)
+                ee = EBinOp(r(x.e1), x.op, r(x.e2)).with_type(e.type)
+                if e.type == INT and x.op == "-":
+                    ee.op = "+"
+                    ee.e2 = EUnaryOp("-", ee.e2).with_type(ee.e2.type)
+                yield ee
             return
     yield e
 
