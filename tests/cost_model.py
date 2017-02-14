@@ -224,3 +224,16 @@ class TestCostModel(unittest.TestCase):
         assert retypecheck(e)
         costmodel = CompositeCostModel([sv])
         assert costmodel.cost(e) > costmodel.cost(x), "cost of {} = {}, cost of {} = {}".format(pprint(e), costmodel.cost(e), pprint(x), costmodel.cost(x))
+
+    def test_sum_distribute_minus(self):
+        xs = EVar("xs").with_type(TBag(INT))
+        x = EVar("x").with_type(xs.type.t)
+        y = EVar("y").with_type(xs.type.t)
+        e1 = EUnaryOp(UOp.Sum, EBinOp(EFilter(xs, ELambda(x, equal(x, ENum(0).with_type(INT)))), "-", EFilter(ESingleton(y), ELambda(x, ENot(equal(x, ENum(1).with_type(INT)))))))
+        e2 = EBinOp(EUnaryOp(UOp.Sum, e1.e.e1), "-", EUnaryOp(UOp.Sum, e1.e.e2))
+        assert retypecheck(e1)
+        assert retypecheck(e2)
+        cost = CompositeCostModel([xs]).cost
+        pprint_reps(infer_rep([xs], e1))
+        pprint_reps(infer_rep([xs], e2))
+        assert cost(e1) > cost(e2), "cost(e1) == {}; cost(e2) == {}".format(cost(e1), cost(e2))
