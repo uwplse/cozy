@@ -1,10 +1,10 @@
 from collections import defaultdict, OrderedDict, MutableSet
 from functools import total_ordering, wraps
-import re
 import sys
 import os
-import io
 import inspect
+from multiprocessing import Value
+import ctypes
 
 def check_type(value, ty, value_name="value"):
     """
@@ -222,8 +222,6 @@ def nested_dict(n, t):
         return t()
     return OrderedDefaultDict(lambda: nested_dict(n-1, t))
 
-from multiprocessing import Value
-import ctypes
 _i = Value(ctypes.c_uint64, 0)
 def fresh_name(hint="name"):
     with _i.get_lock():
@@ -244,13 +242,7 @@ def all_distinct(iter):
     distinct_elems = set(elems)
     return len(elems) == len(distinct_elems)
 
-_START_OF_LINE = re.compile(r"^", re.MULTILINE)
-def indent(i, s):
-    return _START_OF_LINE.sub(i, s)
-
 def open_maybe_stdout(f):
-    if f is None:
-        return io.StringIO()
     if f == "-":
         return os.fdopen(os.dup(sys.stdout.fileno()), "w")
     return open(f, "w")
