@@ -4,6 +4,7 @@ from .core import ExpBuilder
 from cozy.target_syntax import *
 from cozy.syntax_tools import mk_lambda, free_vars, break_conj, all_exps, replace, pprint, enumerate_fragments
 from cozy.desugar import desugar_exp
+from cozy.typecheck import is_numeric
 
 def _as_conjunction_of_equalities(p):
     if isinstance(p, EBinOp) and p.op == "and":
@@ -63,17 +64,21 @@ def break_plus_minus(e):
             yield from break_plus_minus(r(x.e1))
             # print("accel --> {}".format(pprint(r(x.e2))))
             yield from break_plus_minus(r(x.e2))
+            if e.type == INT or isinstance(e.type, TBag):
+                yield EBinOp(r(x.e1), x.op, r(x.e2)).with_type(e.type)
             return
     yield e
 
 class AcceleratedBuilder(ExpBuilder):
+
     def __init__(self, wrapped : ExpBuilder, binders : [EVar], state_vars : [EVar]):
         super().__init__()
         self.wrapped = wrapped
         self.binders = binders
         self.state_vars = state_vars
+
     def build(self, cache, size):
-        yield from self.wrapped.build(cache, size)
+
         for bag in itertools.chain(cache.find(type=TBag, size=size-1), cache.find(type=TSet, size=size-1)):
             # construct map lookups
             if isinstance(bag, EFilter):
@@ -98,3 +103,5 @@ class AcceleratedBuilder(ExpBuilder):
                 if z != e:
                     # print("broke {} --> {}".format(pprint(e), pprint(z)), file=sys.stderr)
                     yield z
+
+        yield from self.wrapped.build(cache, size)
