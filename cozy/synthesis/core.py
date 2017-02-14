@@ -4,7 +4,7 @@ import sys
 from cozy.target_syntax import *
 from cozy.typecheck import INT, BOOL
 from cozy.syntax_tools import subst, pprint, free_vars, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda, enumerate_fragments
-from cozy.common import Visitor, fresh_name, typechecked, unique, pick_to_sum, cross_product, OrderedDefaultDict, nested_dict
+from cozy.common import Visitor, fresh_name, typechecked, unique, pick_to_sum, cross_product, OrderedDefaultDict, nested_dict, group_by
 from cozy.solver import satisfy, satisfiable, valid
 from cozy.evaluation import eval, mkval
 from cozy.cost_model import CostModel
@@ -280,21 +280,24 @@ class Learner(object):
             print("minor iteration {}, |cache|={}".format(self.current_size, len(self.cache)))
 
 @typechecked
-def fixup_binders(e : Exp, binders_to_use : [EVar]) -> Exp:
+def fixup_binders(e : Exp, binders_to_use : [EVar], allow_add=False) -> Exp:
+    binders_by_type = group_by(binders_to_use, lambda b: b.type)
     class V(BottomUpRewriter):
         def visit_ELambda(self, e):
-            body = self.visit(e.body)
-            if e.arg in binders_to_use:
-                return ELambda(e.arg, body)
-            if not any(b.type == e.arg.type for b in binders_to_use):
-                # print("WARNING: I am assuming that subexpressions of [{}] never appear in isolation".format(pprint(e)))
-                return ELambda(e.arg, body)
-            fvs = free_vars(body)
-            legal_repls = [ b for b in binders_to_use if b not in fvs and b.type == e.arg.type ]
+            if e.arg in binders_by_type[e.arg.type]:
+                return ELambda(e.arg, self.visit(e.body))
+            fvs = free_vars(e.body)
+            legal_repls = [ b for b in binders_by_type[e.arg.type] if b not in fvs ]
             if not legal_repls:
-                raise Exception("No legal binder to use for {}".format(e))
+                if allow_add:
+                    print("Adding aux binder {} and returning {}".format(e.arg, pprint(ELambda(e.arg, e.body))), file=sys.stderr)
+                    binders_to_use.append(e.arg)
+                    binders_by_type[e.arg.type].append(e.arg)
+                    return ELambda(e.arg, self.visit(e.body))
+                else:
+                    raise Exception("No legal binder to use for {}".format(e))
             b = legal_repls[0]
-            return ELambda(b, subst(body, { e.arg.id : b }))
+            return ELambda(b, self.visit(subst(e.body, { e.arg.id : b })))
     return V().visit(e)
 
 COMMUTATIVE_OPERATORS = set(("==", "and", "or", "+"))
@@ -377,7 +380,9 @@ def improve(
         hints : [Exp] = [],
         examples = None):
 
-    target = fixup_binders(target, binders)
+    binders = list(binders)
+    target = fixup_binders(target, binders, allow_add=True)
+    assumptions = fixup_binders(assumptions, binders, allow_add=True)
     builder = FixedBuilder(builder, binders, assumptions)
 
     vars = list(free_vars(target) | free_vars(assumptions))
