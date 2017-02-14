@@ -447,3 +447,9 @@ class extend(object):
 def read_file(filename):
     with open(filename, "r") as f:
         return f.read()
+
+def find_one(iter, p=lambda x: True):
+    for x in iter:
+        if p(x):
+            return x
+    return None
