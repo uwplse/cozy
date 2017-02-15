@@ -245,7 +245,7 @@ class Learner(object):
                         self.cache.add(e, size=self.current_size)
                         self.seen[fp][1].append((e, self.current_size))
                         self.last_progress = self.current_size
-                        _on_exp(e, "equivalent", [e for (e, cost) in prev_exps])
+                        _on_exp(e, "equivalent", *[e for (e, cost) in prev_exps])
                     elif cost < prev_cost:
                         for (prev_exp, prev_size) in prev_exps:
                             self.cache.evict(prev_exp, prev_size)
@@ -257,9 +257,9 @@ class Learner(object):
                         self.cache.add(e, size=self.current_size)
                         self.seen[fp] = (cost, [(e, self.current_size)])
                         self.last_progress = self.current_size
-                        _on_exp(e, "better", [e for (e, cost) in prev_exps])
+                        _on_exp(e, "better", *[e for (e, cost) in prev_exps])
                     else:
-                        _on_exp(e, "worse", [e for (e, cost) in prev_exps])
+                        _on_exp(e, "worse", *[e for (e, cost) in prev_exps])
                         continue
 
                 for (watched_e, r, watched_cost, watched_fp, mask) in self.watched_exps:
