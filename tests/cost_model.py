@@ -237,3 +237,24 @@ class TestCostModel(unittest.TestCase):
         pprint_reps(infer_rep([xs], e1))
         pprint_reps(infer_rep([xs], e2))
         assert cost(e1) > cost(e2), "cost(e1) == {}; cost(e2) == {}".format(cost(e1), cost(e2))
+
+    def test_pointless_filter(self):
+        Enum = TEnum(("A", "B", "C"))
+        A, B, C = [EEnumEntry(case).with_type(Enum) for case in Enum.cases]
+        Type = THandle("T", TRecord((("st", Enum),)))
+        entries = EVar("xs").with_type(TBag(Type))
+        entry = ESingleton(EVar("q").with_type(Type))
+        zero = ENum(0).with_type(INT)
+        one = ENum(1).with_type(INT)
+        zero_the_hard_way = EUnaryOp(UOp.Sum, EMap(EFilter(entries, mk_lambda(Type, lambda x: F)), mk_lambda(Type, lambda x: one)))
+        x = EVar("x").with_type(Type)
+        p1 = EBinOp(equal(EGetField(EGetField(x, "val"), "st"), A), BOp.Or, equal(EGetField(EGetField(x, "val"), "st"), B))
+        p2 = EBinOp(equal(zero, zero_the_hard_way), BOp.And, p1)
+        e1 = EFilter(entry, ELambda(x, p1))
+        e2 = EFilter(entry, ELambda(x, p2))
+        assert retypecheck(e1), pprint(e1)
+        assert retypecheck(e2), pprint(e2)
+        assert valid(equal(e1, e2))
+        cost = CompositeCostModel([entries]).cost
+        assert cost(p1) < cost(p2), "cost(p1) == {}; cost(p2) == {}".format(cost(p1), cost(p2))
+        assert cost(e1) < cost(e2), "cost(e1) == {}; cost(e2) == {}".format(cost(e1), cost(e2))
