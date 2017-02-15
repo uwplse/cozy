@@ -50,9 +50,7 @@ class BinderBuilder(ExpBuilder):
                 binders = free_vars(e1) & set(self.binders)
                 for b in binders:
                     for e2 in cache.find(type=b.type, size=sz2):
-                        e = subst(e1, { b.id: e2 })
-                        e._tag = True
-                        yield e
+                        yield subst(e1, { b.id: e2 })
             for a1 in cache.find(type=INT, size=sz1):
                 for a2 in cache.find(type=INT, size=sz2):
                     yield EBinOp(a1, "+", a2).with_type(INT)
