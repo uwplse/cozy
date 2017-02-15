@@ -146,8 +146,9 @@ def lt(t, v1, v2):
         return v1 < v2
 
 class Evaluator(Visitor):
-    def __init__(self):
+    def __init__(self, bind_callback):
         self.work_done = 0
+        self.bind_callback = bind_callback
     def visit_EVar(self, v, env):
         return env[v.id]
     def visit_ENum(self, n, env):
@@ -252,6 +253,7 @@ class Evaluator(Visitor):
     def visit_EListComprehension(self, e, env):
         return Bag(self.visit_clauses(e.clauses, e.e, env))
     def eval_lambda(self, lam, arg, env):
+        self.bind_callback(lam.arg, arg)
         with extend(env, lam.arg.id, arg):
             return self.visit(lam.body, env)
     def visit_EAlterMaybe(self, e, env):
@@ -309,9 +311,9 @@ class Evaluator(Visitor):
             raise
 
 _work = 0
-def eval(e, env):
+def eval(e, env, bind_callback=lambda arg, val: None):
     global _work
-    ev = Evaluator()
+    ev = Evaluator(bind_callback)
     res = ev.visit(e, env)
     _work = ev.work_done
     return res

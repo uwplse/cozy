@@ -1,10 +1,11 @@
+from collections import defaultdict
 import itertools
 import sys
 
 from cozy.target_syntax import *
 from cozy.typecheck import INT, BOOL
 from cozy.syntax_tools import subst, pprint, free_vars, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda, enumerate_fragments
-from cozy.common import Visitor, fresh_name, typechecked, unique, pick_to_sum, cross_product, OrderedDefaultDict, nested_dict, group_by
+from cozy.common import ADT, Visitor, fresh_name, typechecked, unique, pick_to_sum, cross_product, OrderedDefaultDict, OrderedSet, nested_dict, group_by
 from cozy.solver import satisfy, satisfiable, valid
 from cozy.evaluation import eval, mkval
 from cozy.cost_model import CostModel
@@ -70,40 +71,37 @@ class ExpBuilder(object):
     def build(self, cache, size):
         raise NotImplementedError()
 
-def values_of_type(value, value_type, desired_type):
-    # see evaluation.mkval for info on the structure of values
-    if value_type == desired_type:
-        yield value
-    elif isinstance(value_type, TSet) or isinstance(value_type, TBag):
-        for x in value:
-            yield from values_of_type(x, value_type.t, desired_type)
-    else:
-        # I think this is OK since all values for bound vars are pulled from
-        # bags or other collections.
-        pass
-
-def _instantiate_examples(examples, vars, binder):
+def _instantiate_examples(examples, vars, binder, possible_values):
     for e in examples:
         found = 0
         if binder.id in e:
             yield e
             found += 1
-        for v in vars:
-            for possible_value in unique(values_of_type(e[v.id], v.type, binder.type)):
-                # print("possible value for {}: {}".format(pprint(binder.type), repr(possible_value)))
-                e2 = dict(e)
-                e2[binder.id] = possible_value
-                yield e2
-                found += 1
-            # print("got {} ways to instantiate {}".format(found, binder.id))
+        for possible_value in possible_values:
+            # print("possible value for {}: {}".format(pprint(binder.type), repr(possible_value)))
+            e2 = dict(e)
+            e2[binder.id] = possible_value
+            yield e2
+            found += 1
+        # print("got {} ways to instantiate {}".format(found, binder.id))
         if not found:
             e2 = dict(e)
             e2[binder.id] = mkval(binder.type)
             yield e2
 
-def instantiate_examples(examples, vars : {EVar}, binders : [EVar]):
+def instantiate_examples(watched_targets, examples, vars : {EVar}, binders : [EVar]):
+    # collect all the values that flow into the binders
+    vals_by_binder = defaultdict(OrderedSet)
+    for e in watched_targets:
+        assert all(v in vars for v in free_vars(e)), "Watching expr {} which contains {}".format(pprint(e), [v.id for v in free_vars(e) if v not in vars])
+        for ex in examples:
+            eval(e, ex, bind_callback=lambda arg, val: vals_by_binder[arg].add(val))
+    # instantiate examples with each possible combination of values
     for v in binders:
-        examples = list(_instantiate_examples(examples, vars, v))
+        examples = list(_instantiate_examples(examples, vars, v, vals_by_binder.get(v, ())))
+    # print("Got {} instantiated examples".format(len(examples)), file=sys.stderr)
+    # for ex in examples:
+    #     print(" ---> " + repr(ex), file=sys.stderr)
     return examples
 
 def fingerprint(e, examples):
@@ -392,7 +390,7 @@ def improve(
 
     if examples is None:
         examples = []
-    learner = Learner(target, vars + binders, instantiate_examples(examples, set(vars), binders), cost_model, builder, stop_callback)
+    learner = Learner(target, vars + binders, instantiate_examples((target,), examples, set(vars), binders), cost_model, builder, stop_callback)
     try:
         while True:
             # 1. find any potential improvement to any sub-exp of target
@@ -416,7 +414,7 @@ def improve(
                 examples.append(counterexample)
                 print("new example: {}".format(truncate(repr(counterexample))))
                 print("restarting with {} examples".format(len(examples)))
-                instantiated_examples = instantiate_examples(examples, set(vars), binders)
+                instantiated_examples = instantiate_examples((target,), examples, set(vars), binders)
                 print("    ({} examples post-instantiation)".format(len(instantiated_examples)))
                 learner.reset(instantiated_examples)
             else:
@@ -443,7 +441,7 @@ def improve(
                     continue
                 print("found improvement: {} -----> {}".format(pprint(old_e), pprint(new_e)))
                 print("cost: {} -----> {}".format(old_cost, new_cost))
-                learner.reset(instantiate_examples(examples, set(vars), binders), update_watched_exps=False)
+                learner.reset(instantiate_examples((new_target,), examples, set(vars), binders), update_watched_exps=False)
                 learner.watch(new_target)
                 target = new_target
                 yield new_target
