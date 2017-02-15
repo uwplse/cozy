@@ -379,8 +379,8 @@ def improve(
         examples = None):
 
     binders = list(binders)
-    target = fixup_binders(target, binders, allow_add=True)
-    assumptions = fixup_binders(assumptions, binders, allow_add=True)
+    target = fixup_binders(target, binders, allow_add=False)
+    assumptions = fixup_binders(assumptions, binders, allow_add=False)
     builder = FixedBuilder(builder, binders, assumptions)
 
     vars = list(free_vars(target) | free_vars(assumptions))

@@ -56,15 +56,24 @@ class ImproveQueryJob(jobs.Job):
             print("STARTING IMPROVEMENT JOB {} (|examples|={})".format(self.q.name, len(self.examples or ())))
 
             all_types = self.ctx.all_types
-            binders = []
-            n_binders = 1 # TODO?
-            for t in all_types:
-                if isinstance(t, TBag):
-                    binders += [fresh_var(t.t) for i in range(n_binders)]
-                    for i in range(n_binders):
-                        b = fresh_var(t)
-                        binders.append(b)
+            n_binders = 1
+            done = False
+            expr = ETuple((EAll(self.assumptions), self.q.ret)).with_type(TTuple((BOOL, self.q.ret.type)))
+            while not done:
+                binders = []
+                for t in all_types:
+                    if isinstance(t, TBag):
+                        binders += [fresh_var(t.t) for i in range(n_binders)]
+                        for i in range(n_binders):
+                            b = fresh_var(t)
+                            binders.append(b)
+                try:
+                    core.fixup_binders(expr, binders)
+                    done = True
+                except:
+                    n_binders += 1
 
+            print("Using {} binders".format(n_binders))
             b = BinderBuilder(binders, self.state)
             if accelerate.value:
                 b = AcceleratedBuilder(b, binders, self.state)
