@@ -247,7 +247,7 @@ class Learner(object):
                     elif cost < prev_cost:
                         for (prev_exp, prev_size) in prev_exps:
                             self.cache.evict(prev_exp, prev_size)
-                            if hyperaggressive_eviction.value:
+                            if self.cost_model.is_monotonic() and hyperaggressive_eviction.value:
                                 for (cached_e, size) in list(self.cache):
                                     if prev_exp in all_exps(cached_e):
                                         _on_exp(cached_e, "evicted since it contains", prev_exp)
