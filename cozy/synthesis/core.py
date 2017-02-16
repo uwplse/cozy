@@ -14,7 +14,7 @@ from cozy.opts import Option
 save_testcases = Option("save-testcases", str, "", metavar="PATH")
 hyperaggressive_eviction = Option("hyperaggressive-eviction", bool, True)
 reject_symmetric_binops = Option("reject-symmetric-binops", bool, True)
-eliminate_vars = Option("eliminate-vars", bool, True)
+eliminate_vars = Option("eliminate-vars", bool, False)
 
 class Cache(object):
     def __init__(self, items=None):
