@@ -188,8 +188,8 @@ def derivative(
         change = AddNum(make_subgoal(syntax.EBinOp(e_post_delta, "-", e).with_type(syntax.INT)))
     elif isinstance(e.type, syntax.TBag):
         change = multi_delta([
-            BagAddAll   (make_subgoal(target_syntax.EFilter(e_post_delta, mk_lambda(e.type.t, lambda x: syntax.ENot(syntax.EBinOp(x, "in", e).with_type(syntax.BOOL)))).with_type(e.type))),
-            BagRemoveAll(make_subgoal(target_syntax.EFilter(e, mk_lambda(e.type.t, lambda x: syntax.ENot(syntax.EBinOp(x, "in", e_post_delta).with_type(syntax.BOOL)))).with_type(e.type)))])
+            BagAddAll   (make_subgoal(syntax.EBinOp(e_post_delta, "-", e).with_type(e.type))),
+            BagRemoveAll(make_subgoal(syntax.EBinOp(e, "-", e_post_delta).with_type(e.type)))])
     elif isinstance(e.type, syntax.TTuple):
         deltas = []
         for i in range(len(e.type.ts)):
