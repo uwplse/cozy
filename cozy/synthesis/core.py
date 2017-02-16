@@ -145,14 +145,14 @@ def _on_exp(e, fate, *args):
         print(" ---> [{}, {}] {}; {}".format(fate, pprint(e.type), pprint(e), ", ".join((pprint(e) if isinstance(e, ADT) else str(e)) for e in args)))
 
 class Learner(object):
-    def __init__(self, target, legal_free_vars, examples, cost_model, builder, stop_callback):
+    def __init__(self, target, assumptions, legal_free_vars, examples, cost_model, builder, stop_callback):
         self.legal_free_vars = legal_free_vars
         self.stop_callback = stop_callback
         self.cost_model = cost_model
         self.builder = builder
         self.seen = { } # map of {fingerprint:(cost, [(e, size)])}
         self.reset(examples, update_watched_exps=False)
-        self.watch(target)
+        self.watch(target, assumptions)
 
     def reset(self, examples, update_watched_exps=True):
         self.cache = Cache()
@@ -164,17 +164,14 @@ class Learner(object):
         if update_watched_exps:
             self.update_watched_exps()
 
-    def watch(self, new_target):
+    def watch(self, new_target, assumptions):
         new_roots = []
-        for e in all_exps(new_target):
+        for e in itertools.chain(all_exps(new_target), all_exps(assumptions)):
             if e in new_roots:
                 continue
             if not isinstance(e, ELambda) and all(v in self.legal_free_vars for v in free_vars(e)):
-                try:
-                    self._fingerprint(e)
-                    new_roots.append(e)
-                except Exception:
-                    pass
+                self._fingerprint(e)
+                new_roots.append(e)
         self.roots = new_roots
         self.target = new_target
         self.update_watched_exps()
@@ -390,7 +387,7 @@ def improve(
 
     if examples is None:
         examples = []
-    learner = Learner(target, vars + binders, instantiate_examples((target,), examples, set(vars), binders), cost_model, builder, stop_callback)
+    learner = Learner(target, assumptions, vars + binders, instantiate_examples((target,), examples, set(vars), binders), cost_model, builder, stop_callback)
     try:
         while True:
             # 1. find any potential improvement to any sub-exp of target
@@ -442,7 +439,7 @@ def improve(
                 print("found improvement: {} -----> {}".format(pprint(old_e), pprint(new_e)))
                 print("cost: {} -----> {}".format(old_cost, new_cost))
                 learner.reset(instantiate_examples((new_target,), examples, set(vars), binders), update_watched_exps=False)
-                learner.watch(new_target)
+                learner.watch(new_target, assumptions)
                 target = new_target
                 yield new_target
     except KeyboardInterrupt:
