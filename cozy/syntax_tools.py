@@ -467,7 +467,7 @@ class FragmentEnumerator(common.Visitor):
         return self.visit_tuple(l)
 
     def visit_tuple(self, t):
-        yield ([], t, lambda x: x)
+        yield ([], t, lambda x: x, set())
         for i in range(len(t)):
             for (a, x, r, bound) in self.visit(t[i]):
                 yield (a, x, (lambda r, i: lambda x: t[:i] + (r(x),) + t[i+1:])(r, i), bound)
