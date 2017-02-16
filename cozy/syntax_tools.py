@@ -402,39 +402,66 @@ class FragmentEnumerator(common.Visitor):
     # capture-by-value for r instead.
 
     def visit_ELambda(self, obj):
-        yield ([], obj, lambda x: x)
+        # raise NotImplementedError(obj)
+        return self.recurse_with_assumptions_about_bound_var(obj, [])
+
+    def recurse_with_assumptions_about_bound_var(self, e : target_syntax.ELambda, assume : [syntax.Exp]):
+        for (a, x, r, bound) in self.visit(e.body):
+            if assume and e.arg not in bound:
+                a = a + assume
+            yield (lambda r: (a, x, lambda x: target_syntax.ELambda(e.arg, r(x)), bound | {e.arg}))(r)
+
+    # def visit_EMakeMap(self, e):
+    #     yield ([], e, lambda x: x)
+    #     t = e.type
+    #     for (a, x, r) in self.visit(e.e):
+    #         yield (lambda r: (a, x, lambda x: target_syntax.EMakeMap(r(x), e.key, e.value).with_type(t)))(r)
+    #     for (a, x, r) in self.visit(e.key.body):
+    #         # keyfunc arg is in e.e
+    #         yield (lambda r: (
+    #             a + [syntax.EBinOp(e.key.arg, syntax.BOp.In, e.e).with_type(syntax.BOOL)],
+    #             x,
+    #             lambda x: target_syntax.EMakeMap(e.e, target_syntax.ELambda(e.key.arg, r(x)), e.value).with_type(t)))(r)
+    #     for (a, x, r) in self.visit(e.value.body):
+    #         # valuefunc arg is a subset of e.e
+    #         # keys of valuefunc arg are all the same
+    #         key_bag = syntax.TBag(e.key.body.type)
+    #         yield (lambda r: (
+    #             a + [], # syntax.EIsSubset(e.value.arg, e.e), target_syntax.EIsSingleton(syntax.EUnaryOp(syntax.UOp.Distinct, target_syntax.EMap(e.value.arg, e.key).with_type(key_bag)).with_type(key_bag))
+    #             x,
+    #             lambda x: target_syntax.EMakeMap(e.e, e.key, target_syntax.ELambda(e.value.arg, r(x))).with_type(t)))(r)
 
     def visit_EFilter(self, e):
-        yield ([], e, lambda x: x)
+        yield ([], e, lambda x: x, set())
         t = e.type
-        for (a, x, r) in self.visit(e.e):
-            yield (lambda r: (a, x, lambda x: target_syntax.EFilter(r(x), e.p).with_type(t)))(r)
-        for (a, x, r) in self.visit(e.p.body):
-            yield (lambda r: (a + [syntax.EBinOp(e.p.arg, syntax.BOp.In, e.e).with_type(syntax.BOOL)], x, lambda x: target_syntax.EFilter(e.e, target_syntax.ELambda(e.p.arg, r(x))).with_type(t)))(r)
+        for (a, x, r, bound) in self.visit(e.e):
+            yield (lambda r: (a, x, lambda x: target_syntax.EFilter(r(x), e.p).with_type(t), bound))(r)
+        for (a, x, r, bound) in self.recurse_with_assumptions_about_bound_var(e.p, [syntax.EBinOp(e.p.arg, syntax.BOp.In, e.e).with_type(syntax.BOOL)]):
+            yield (lambda r: (a, x, lambda x: target_syntax.EFilter(e.e, r(x)).with_type(t), bound))(r)
 
     def visit_EMap(self, e):
-        yield ([], e, lambda x: x)
+        yield ([], e, lambda x: x, set())
         t = e.type
-        for (a, x, r) in self.visit(e.e):
-            yield (lambda r: (a, x, lambda x: target_syntax.EMap(r(x), e.f).with_type(t)))(r)
-        for (a, x, r) in self.visit(e.f.body):
-            yield (lambda r: (a + [syntax.EBinOp(e.f.arg, syntax.BOp.In, e.e).with_type(syntax.BOOL)], x, lambda x: target_syntax.EMap(e.e, target_syntax.ELambda(e.f.arg, r(x))).with_type(t)))(r)
+        for (a, x, r, bound) in self.visit(e.e):
+            yield (lambda r: (a, x, lambda x: target_syntax.EMap(r(x), e.f).with_type(t), bound))(r)
+        for (a, x, r, bound) in self.recurse_with_assumptions_about_bound_var(e.f, [syntax.EBinOp(e.f.arg, syntax.BOp.In, e.e).with_type(syntax.BOOL)]):
+            yield (lambda r: (a, x, lambda x: target_syntax.EMap(e.e, r(x)).with_type(t), bound))(r)
 
     def visit_EFlatMap(self, e):
-        yield ([], e, lambda x: x)
+        yield ([], e, lambda x: x, set())
         t = e.type
-        for (a, x, r) in self.visit(e.e):
-            yield (lambda r: (a, x, lambda x: target_syntax.EFlatMap(r(x), e.f).with_type(t)))(r)
-        for (a, x, r) in self.visit(e.f.body):
-            yield (lambda r: (a + [syntax.EBinOp(e.f.arg, syntax.BOp.In, e.e).with_type(syntax.BOOL)], x, lambda x: target_syntax.EFlatMap(e.e, target_syntax.ELambda(e.f.arg, r(x))).with_type(t)))(r)
+        for (a, x, r, bound) in self.visit(e.e):
+            yield (lambda r: (a, x, lambda x: target_syntax.EFlatMap(r(x), e.f).with_type(t), bound))(r)
+        for (a, x, r, bound) in self.recurse_with_assumptions_about_bound_var(e.f, [syntax.EBinOp(e.f.arg, syntax.BOp.In, e.e).with_type(syntax.BOOL)]):
+            yield (lambda r: (a, x, lambda x: target_syntax.EFlatMap(e.e, r(x)).with_type(t), bound))(r)
 
     def visit_Exp(self, obj):
-        yield ([], obj, lambda x: x)
+        yield ([], obj, lambda x: x, set())
         t = obj.type
         children = obj.children()
         for i in range(len(children)):
-            for (a, x, r) in self.visit(children[i]):
-                yield (a, x, (lambda r, i: lambda x: type(obj)(*(children[:i] + (r(x),) + children[i+1:])).with_type(t))(r, i))
+            for (a, x, r, bound) in self.visit(children[i]):
+                yield (a, x, (lambda r, i: lambda x: type(obj)(*(children[:i] + (r(x),) + children[i+1:])).with_type(t))(r, i), bound)
 
     def visit_list(self, l):
         return self.visit_tuple(l)
@@ -442,11 +469,11 @@ class FragmentEnumerator(common.Visitor):
     def visit_tuple(self, t):
         yield ([], t, lambda x: x)
         for i in range(len(t)):
-            for (a, x, r) in self.visit(t[i]):
-                yield (a, x, (lambda r, i: lambda x: t[:i] + (r(x),) + t[i+1:])(r, i))
+            for (a, x, r, bound) in self.visit(t[i]):
+                yield (a, x, (lambda r, i: lambda x: t[:i] + (r(x),) + t[i+1:])(r, i), bound)
 
     def visit_object(self, obj):
-        yield ([], obj, lambda x: x)
+        yield ([], obj, lambda x: x, set())
 
 _ENUMERATOR = FragmentEnumerator()
 def enumerate_fragments(e : syntax.Exp):
@@ -456,10 +483,9 @@ def enumerate_fragments(e : syntax.Exp):
         a are true assumptions whenever x is evaluated on any input to e
         r(x) == e (in general, r can be used to replace x with a new subexpr)
     """
-    for tup in _ENUMERATOR.visit(e):
-        (a, x, r) = tup
+    for (a, x, r, bound) in _ENUMERATOR.visit(e):
         if isinstance(x, syntax.Exp) and not isinstance(x, target_syntax.ELambda):
-            yield tup
+            yield (a, x, r)
 
 def replace(exp, old_exp, new_exp):
     class Replacer(BottomUpRewriter):
