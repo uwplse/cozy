@@ -1,9 +1,10 @@
 import unittest
 
 from cozy.rep_inference import infer_rep, pprint_rep, pprint_reps
-from cozy.syntax_tools import mk_lambda, pprint, free_vars, all_exps
+from cozy.syntax_tools import mk_lambda, pprint, free_vars, all_exps, equal, subst
 from cozy.target_syntax import *
 from cozy.typecheck import typecheck, retypecheck
+from cozy.solver import valid
 
 class TestRepInference(unittest.TestCase):
 
@@ -82,3 +83,22 @@ class TestRepInference(unittest.TestCase):
             [EVar('ints').with_type(TBag(THandle('_HandleType12', TInt())))],
             EUnaryOp('not', EBinOp(ENum(0).with_type(TInt()), '==', EUnaryOp('sum', EMapGet(EVar('_var1141').with_type(TMap(TInt(), TBag(TInt()))), EVar('i').with_type(TInt())).with_type(TBag(TInt()))).with_type(TInt())).with_type(TBool())).with_type(TBool()),
             validate_types=True))
+
+    def test_preserves_equality(self):
+        Enum = TEnum(("A", "B", "C"))
+        A, B, C = [EEnumEntry(case).with_type(Enum) for case in Enum.cases]
+        Type = THandle("T", TRecord((("st", Enum),)))
+        entries = EVar("xs").with_type(TBag(Type))
+        entry = ESingleton(EVar("q").with_type(Type))
+        zero = ENum(0).with_type(INT)
+        one = ENum(1).with_type(INT)
+        zero_the_hard_way = EUnaryOp(UOp.Sum, EMap(EFilter(entries, mk_lambda(Type, lambda x: F)), mk_lambda(Type, lambda x: one)))
+        x = EVar("x").with_type(Type)
+        p1 = EBinOp(equal(EGetField(EGetField(x, "val"), "st"), A), BOp.Or, equal(EGetField(EGetField(x, "val"), "st"), B))
+        p2 = EBinOp(equal(zero, zero_the_hard_way), BOp.And, p1)
+        expr = EFilter(entry, ELambda(x, p2))
+        assert retypecheck(expr), pprint(expr)
+        pprint_reps(infer_rep([entries], expr, validate_types=True))
+        for (st, ret) in infer_rep([entries], expr):
+            e = subst(ret, { v.id:proj for (v, proj) in st })
+            assert valid(equal(e, expr))
