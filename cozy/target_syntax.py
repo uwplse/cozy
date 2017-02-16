@@ -5,7 +5,7 @@ primitives the tool can output and use during synthesis.
 """
 
 from cozy.syntax import *
-from cozy.common import declare_case, typechecked
+from cozy.common import declare_case, typechecked, fresh_name
 
 # Lambdas
 EApp = declare_case(Exp, "EApp", ["f", "arg"])
@@ -27,6 +27,10 @@ TRef       = declare_case(Type, "TRef", ["t"])
 EEnumToInt = declare_case(Exp, "EEnumToInt", ["e"])
 EBoolToInt = declare_case(Exp, "EBoolToInt", ["e"])
 EStm       = declare_case(Exp, "EStm", ["stm", "e"])
+
+def EIsSingleton(e):
+    arg = EVar(fresh_name()).with_type(e.type.t)
+    return EBinOp(EUnaryOp(UOp.Sum, EMap(e, ELambda(arg, ONE)).with_type(TBag(INT))).with_type(INT), "<=", ONE).with_type(BOOL)
 
 # Maybe
 EAlterMaybe = declare_case(Exp, "EAlterMaybe", ["e", "f"])
