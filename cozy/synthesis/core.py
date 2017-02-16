@@ -140,9 +140,10 @@ def _on_exp(e, fate, *args):
     # if "commutative" in fate:
     # if any(alpha_equivalent(e, ee) for ee in all_exps(_TARGET)):
     # if isinstance(e, EBinOp) and e.op == "-" and isinstance(e.e1, EUnaryOp) and e.e1.op == "sum" and isinstance(e.e2, EUnaryOp) and e.e2.op == "sum":
-    if oracle is not None and any(alpha_equivalent(e, x) for x in all_exps(oracle)):
+    # if oracle is not None and any(alpha_equivalent(e, x) for x in all_exps(oracle)):
     # if oracle is not None and any(e.type == x.type and valid(equal(e, x)) for x in all_exps(oracle) if not isinstance(x, ELambda)):
-        print(" ---> [{}, {}] {}; {}".format(fate, pprint(e.type), pprint(e), ", ".join((pprint(e) if isinstance(e, ADT) else str(e)) for e in args)))
+    if hasattr(e, "_tag"):
+        print(" ---> [{}, {}] {}; {}".format(fate, pprint(e.type), pprint(e), ", ".join((pprint(e) if isinstance(e, ADT) else str(e)) for e in args)), file=sys.stderr)
 
 class Learner(object):
     def __init__(self, target, assumptions, legal_free_vars, examples, cost_model, builder, stop_callback):
@@ -258,12 +259,14 @@ class Learner(object):
                         continue
 
                 for (watched_e, r, watched_cost, watched_fp, mask) in self.watched_exps:
+                    assert len(watched_fp) == len(fp)
+                    assert len(mask) == len(fp)
                     if watched_e.type != e.type or watched_cost < cost:
                         continue
                     if e == watched_e:
                         continue
                     if all((not incl or l==r) for (incl, l, r) in zip(mask, watched_fp, fp)):
-                        return (watched_e, e, r)
+                        return (watched_e, e, r, mask)
 
             if self.last_progress < (self.current_size+1) // 2:
                 raise NoMoreImprovements("hit termination condition")
@@ -305,7 +308,11 @@ class FixedBuilder(ExpBuilder):
     def build(self, cache, size):
         for e in self.wrapped_builder.build(cache, size):
             try:
+                orig = e
+                # print(hasattr(orig, "_tag"), file=sys.stderr)
                 e = fixup_binders(e, self.binders_to_use)
+                if hasattr(orig, "_tag"):
+                    e._tag = orig._tag
             except Exception:
                 _on_exp(e, "unable to rename binders")
                 continue
@@ -412,7 +419,7 @@ def improve(
         while True:
             # 1. find any potential improvement to any sub-exp of target
             try:
-                old_e, new_e, repl = learner.next()
+                old_e, new_e, repl, mask = learner.next()
             except NoMoreImprovements:
                 break
 
@@ -428,6 +435,17 @@ def improve(
             formula = EAll([assumptions, ENot(equal(target, new_target))])
             counterexample = satisfy(formula, vars=vars)
             if counterexample is not None:
+                if counterexample in examples:
+                    print("duplicate example: {}".format(repr(counterexample)))
+                    print("old target = {}".format(pprint(target)))
+                    print("new target = {}".format(pprint(new_target)))
+                    instantiated_examples = instantiate_examples((target,), examples, set(vars), binders)
+                    print("mask = {}".format(mask))
+                    print("old fp = {}".format(fingerprint(old_e, instantiated_examples)))
+                    print("new fp = {}".format(fingerprint(new_e, instantiated_examples)))
+                    print("old target fp = {}".format(fingerprint(target, instantiated_examples)))
+                    print("new target fp = {}".format(fingerprint(new_target, instantiated_examples)))
+                    raise Exception("got a duplicate example")
                 # a. if incorrect: add example, reset the learner
                 examples.append(counterexample)
                 print("new example: {}".format(truncate(repr(counterexample))))
