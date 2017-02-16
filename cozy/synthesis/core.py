@@ -3,9 +3,9 @@ import itertools
 import sys
 
 from cozy.target_syntax import *
-from cozy.typecheck import INT, BOOL
+from cozy.typecheck import INT, BOOL, is_numeric
 from cozy.syntax_tools import subst, pprint, free_vars, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda, enumerate_fragments
-from cozy.common import ADT, Visitor, fresh_name, typechecked, unique, pick_to_sum, cross_product, OrderedDefaultDict, OrderedSet, nested_dict, group_by
+from cozy.common import ADT, Visitor, fresh_name, typechecked, unique, pick_to_sum, cross_product, OrderedDefaultDict, OrderedSet, nested_dict, group_by, find_one
 from cozy.solver import satisfy, satisfiable, valid
 from cozy.evaluation import eval, mkval
 from cozy.cost_model import CostModel
@@ -365,6 +365,26 @@ def can_elim_var(spec : Exp, assumptions : Exp, v : EVar):
     return valid(implies(EAll([assumptions, subst(assumptions, {v.id:vv})]), equal(spec, subst(spec, {v.id:vv}))))
 
 @typechecked
+def construct_value(t : Type) -> Exp:
+    if is_numeric(t):
+        e = ENum(0)
+    elif t == BOOL:
+        e = F
+    elif isinstance(t, TBag):
+        e = EEmptyList()
+    elif isinstance(t, TTuple):
+        e = ETuple(tuple(construct_value(tt) for tt in t.ts))
+    elif isinstance(t, TRecord):
+        e = ERecord(tuple((f, construct_value(tt)) for (f, tt) in t.fields))
+    elif isinstance(t, TEnum):
+        e = EEnumEntry(t.cases[0])
+    else:
+        raise NotImplementedError(pprint(t))
+    e = e.with_type(t)
+    assert eval(e, {}) == mkval(t)
+    return e
+
+@typechecked
 def improve(
         target : Exp,
         assumptions : Exp,
@@ -399,8 +419,9 @@ def improve(
             # 2. substitute-in the improvement
             new_target = repl(new_e)
 
-            if (free_vars(new_target) - set(vars)):
-                print("oops, candidate {} has weird free vars".format(pprint(new_target)))
+            bad_var = find_one(free_vars(new_target), lambda v: v not in vars)
+            if bad_var is not None:
+                print("oops")
 
             # 3. check
             print("Found candidate replacement [{}] for [{}]".format(pprint(new_e), pprint(old_e)))
@@ -415,7 +436,16 @@ def improve(
                 print("    ({} examples post-instantiation)".format(len(instantiated_examples)))
                 learner.reset(instantiated_examples)
             else:
-                # b. if correct: yield it, watch the new target, goto 2
+                # b. if correct: yield it, watch the new target, goto 1
+
+                while bad_var:
+                    print("Eliminating bad free var {}".format(pprint(bad_var)))
+                    new_value = construct_value(bad_var.type)
+                    subst_repl = { bad_var.id: new_value }
+                    new_target = subst(new_target, subst_repl)
+                    new_e = subst(new_e, subst_repl)
+                    bad_var = find_one(free_vars(new_target), lambda v: v not in vars)
+
                 old_cost = cost_model.cost(target)
                 new_cost = cost_model.cost(new_target)
                 if new_cost > old_cost:
