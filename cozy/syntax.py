@@ -115,12 +115,14 @@ SIf                 = declare_case(Stm, "SIf",      ["cond", "then_branch", "els
 # Various utilities
 
 BOOL = TBool()
-T = EBool(True) .with_type(BOOL)
-F = EBool(False).with_type(BOOL)
-
 INT = TInt()
 LONG = TLong()
 STRING = TString()
+
+T = EBool(True) .with_type(BOOL)
+F = EBool(False).with_type(BOOL)
+ZERO = ENum(0).with_type(INT)
+ONE = ENum(1).with_type(INT)
 
 def seq(stms):
     stms = [s for s in stms if not isinstance(s, SNoOp)]
@@ -155,3 +157,8 @@ def ENot(e):
     if isinstance(e, EUnaryOp) and e.op == "not":
         return e.e
     return EUnaryOp("not", e).with_type(BOOL)
+
+def EIsSubset(e1, e2):
+    return EBinOp(
+        EBinOp(e1, "-", e2).with_type(e1.type), "==",
+        EEmptyList().with_type(e1.type)).with_type(BOOL)
