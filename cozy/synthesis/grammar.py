@@ -2,7 +2,7 @@ import itertools
 
 from cozy.common import pick_to_sum, cross_product, group_by
 from cozy.target_syntax import *
-from cozy.syntax_tools import subst, mk_lambda, free_vars, is_scalar
+from cozy.syntax_tools import subst, mk_lambda, free_vars, is_scalar, equal
 from .core import ExpBuilder
 
 class BinderBuilder(ExpBuilder):
@@ -79,10 +79,12 @@ class BinderBuilder(ExpBuilder):
             count = EUnaryOp(UOp.Sum, EMap(bag, mk_lambda(bag.type.t, lambda x: ENum(1).with_type(INT))).with_type(TBag(INT))).with_type(INT)
             yield count
             # empty?
-            empty = EBinOp(count, "==", ENum(0).with_type(INT)).with_type(BOOL)
+            empty = equal(count, ENum(0).with_type(INT)).with_type(BOOL)
             yield empty
             # exists?
             yield ENot(empty)
+            # is-singleton?
+            yield equal(count, ENum(1).with_type(INT)).with_type(BOOL)
 
         binders_by_type = group_by(self.binders, lambda b: b.type)
         for (sz1, sz2, sz3) in pick_to_sum(3, size - 1):
