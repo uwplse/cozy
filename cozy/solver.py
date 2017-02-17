@@ -164,6 +164,20 @@ class ToZ3(Visitor):
         for i in range(len(bag_elems)):
             l = z3.If(z3.And(bag_mask[i], self.eq(t, x, bag_elems[i], env), self.ctx), self.int_one, self.int_zero, ctx=self.ctx) + l
         return l
+    def is_in(self, t, bag, x, env):
+        """
+        t - type of elems in bag
+        bag - concrete (non-SymbolicUnion) bag
+        x - elem
+        env - environment
+
+        returns true if x is in the bag
+        """
+        bag_mask, bag_elems = bag
+        conds = [
+            z3.And(mask, self.eq(t, x, elem, env), self.ctx)
+            for (mask, elem) in zip(bag_mask, bag_elems)]
+        return z3.Or(*conds, self.ctx)
     def len_of(self, val):
         bag_mask, bag_elems = val
         l = self.int_zero
@@ -267,7 +281,7 @@ class ToZ3(Visitor):
                 rest = (bag_mask[1:], bag_elems[1:])
                 if bag_elems:
                     return z3.And(
-                        z3.Implies(bag_mask[0], self.count_in(e.e.type.t, rest, bag_elems[0], env) ==  self.int_zero, self.ctx),
+                        z3.Implies(bag_mask[0], z3.Not(self.is_in(e.e.type.t, rest, bag_elems[0], env), self.ctx), self.ctx),
                         is_unique(rest),
                         self.ctx)
                 else:
@@ -359,7 +373,7 @@ class ToZ3(Visitor):
                 return self.remove_all(e.type, v1, v2, env)
             return v1 - v2
         elif e.op == BOp.In:
-            return fmap(v2, e.type, lambda bag: self.count_in(e.e1.type, bag, v1, env) > self.int_zero)
+            return fmap(v2, e.type, lambda bag: self.is_in(e.e1.type, bag, v1, env))
         else:
             raise NotImplementedError(e.op)
     def visit_EListComprehension(self, e, env):
