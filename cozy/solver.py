@@ -273,6 +273,12 @@ class ToZ3(Visitor):
                 else:
                     return z3.BoolVal(True, self.ctx)
             return fmap(self.visit(e.e, env), e.type, is_unique)
+        elif e.op == UOp.Empty:
+            mask, elems = self.visit(e.e, env)
+            return z3.Not(z3.Or(*mask, self.ctx), self.ctx)
+        elif e.op == UOp.Exists:
+            mask, elems = self.visit(e.e, env)
+            return z3.Or(*mask, self.ctx)
         elif e.op == UOp.Distinct:
             elem_type = e.type.t
             return fmap(self.visit(e.e, env), e.type, lambda b: self.distinct_bag_elems(b, elem_type, env))

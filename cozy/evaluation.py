@@ -190,6 +190,10 @@ class Evaluator(Visitor):
             return not self.visit(e.e, env)
         elif e.op == UOp.Sum:
             return sum(self.visit(e.e, env))
+        elif e.op == UOp.Exists:
+            return bool(self.visit(e.e, env))
+        elif e.op == UOp.Empty:
+            return not bool(self.visit(e.e, env))
         elif e.op == UOp.AreUnique:
             return all_distinct(self.visit(e.e, env))
         elif e.op == UOp.Distinct:

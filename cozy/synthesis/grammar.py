@@ -62,6 +62,8 @@ class BinderBuilder(ExpBuilder):
                 for a2 in cache.find(type=a1.type, size=sz2):
                     yield EBinOp(a1, "+", a2).with_type(a1.type)
                     yield EBinOp(a1, "-", a2).with_type(a1.type)
+                for a2 in cache.find(type=a1.type.t, size=sz2):
+                    yield EBinOp(a2, BOp.In, a1).with_type(BOOL)
             for a1 in cache.find(type=BOOL, size=sz1):
                 for a2 in cache.find(type=BOOL, size=sz2):
                     yield EBinOp(a1, BOp.And, a2).with_type(BOOL)
@@ -79,10 +81,9 @@ class BinderBuilder(ExpBuilder):
             count = EUnaryOp(UOp.Sum, EMap(bag, mk_lambda(bag.type.t, lambda x: ENum(1).with_type(INT))).with_type(TBag(INT))).with_type(INT)
             yield count
             # empty?
-            empty = equal(count, ENum(0).with_type(INT)).with_type(BOOL)
-            yield empty
+            yield EUnaryOp(UOp.Empty, bag).with_type(BOOL)
             # exists?
-            yield ENot(empty)
+            yield EUnaryOp(UOp.Exists, bag).with_type(BOOL)
             # is-singleton?
             yield equal(count, ENum(1).with_type(INT)).with_type(BOOL)
 
