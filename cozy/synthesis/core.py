@@ -384,7 +384,7 @@ def construct_value(t : Type) -> Exp:
     elif isinstance(t, TTuple):
         e = ETuple(tuple(construct_value(tt) for tt in t.ts))
     elif isinstance(t, TRecord):
-        e = ERecord(tuple((f, construct_value(tt)) for (f, tt) in t.fields))
+        e = EMakeRecord(tuple((f, construct_value(tt)) for (f, tt) in t.fields))
     elif isinstance(t, TEnum):
         e = EEnumEntry(t.cases[0])
     else:
