@@ -212,6 +212,8 @@ class ToZ3(Visitor):
         return ([], [])
     def visit_ESingleton(self, e, env):
         return ([z3.BoolVal(True, self.ctx)], [self.visit(e.e, env)])
+    def visit_EHandle(self, e, env):
+        return (self.visit(e.addr, env), self.visit(e.value, env))
     def visit_EJust(self, e, env):
         return self.visit(e.e, env)
     def flatten(self, e, env):

@@ -387,6 +387,8 @@ def construct_value(t : Type) -> Exp:
         e = EMakeRecord(tuple((f, construct_value(tt)) for (f, tt) in t.fields))
     elif isinstance(t, TEnum):
         e = EEnumEntry(t.cases[0])
+    elif isinstance(t, THandle):
+        e = EHandle(construct_value(INT), construct_value(t.value_type))
     else:
         raise NotImplementedError(pprint(t))
     e = e.with_type(t)
