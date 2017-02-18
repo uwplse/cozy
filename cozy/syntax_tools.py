@@ -177,6 +177,9 @@ class PrettyPrinter(common.Visitor):
     def visit_EBool(self, e):
         return "true" if e.val else "false"
 
+    def visit_EStr(self, e):
+        return repr(e.val)
+
     def visit_ENum(self, e):
         return str(e.val)
 

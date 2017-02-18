@@ -377,6 +377,8 @@ def construct_value(t : Type) -> Exp:
         e = ENum(0)
     elif t == BOOL:
         e = F
+    elif t == STRING:
+        e = EStr("")
     elif isinstance(t, TBag):
         e = EEmptyList()
     elif isinstance(t, TTuple):

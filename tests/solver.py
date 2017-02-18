@@ -213,3 +213,19 @@ class TestSolver(unittest.TestCase):
         e = equal(EBinOp(xs, "-", ESingleton(foo)), EEmptyList().with_type(xs.type))
         assert retypecheck(e)
         assert not valid(e, collection_depth=2)
+
+    def test_str_literal_cmp(self):
+        v = EVar("s").with_type(STRING)
+        s = EStr("").with_type(STRING)
+        assert not satisfiable(EBinOp(v, "<", s).with_type(BOOL))
+        for op in ("==", "<=", ">", ">="):
+            e = EBinOp(v, op, s).with_type(BOOL)
+            model = satisfy(e)
+            assert model is not None
+            assert {
+                "==": model[v.id] == s.val,
+                ">" : model[v.id] >  s.val,
+                ">=": model[v.id] >= s.val,
+                "<" : model[v.id] <  s.val,
+                "<=": model[v.id] <= s.val,
+                }[op], "{} {} {}".format(repr(model[v.id]), op, repr(s.val))

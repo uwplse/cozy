@@ -202,6 +202,10 @@ class ToZ3(Visitor):
         if n.type == TInt():
             return z3.IntVal(n.val, self.ctx)
         raise NotImplementedError(n.type)
+    def visit_EStr(self, s, env):
+        if s.val == "":
+            return self.int_zero
+        raise NotImplementedError("cannot encode string literal {}".format(repr(s.val)))
     def visit_EBool(self, b, env):
         return z3.BoolVal(b.val, self.ctx)
     def visit_EEmptyList(self, e, env):
@@ -478,9 +482,13 @@ class ToZ3(Visitor):
             raise
 
     def mkvar(self, ctx, solver, collection_depth, type):
-        if type == TInt() or type == TLong() or isinstance(type, TNative) or type == TString():
+        if type == INT or type == LONG or isinstance(type, TNative):
             return z3.Int(fresh_name(), ctx=ctx)
-        elif type == TBool():
+        elif type == STRING:
+            i = z3.Int(fresh_name(), ctx=ctx)
+            solver.add(i >= 0)
+            return i
+        elif type == BOOL:
             return z3.Bool(fresh_name(), ctx=ctx)
         elif isinstance(type, TEnum):
             ncases = len(type.cases)
@@ -558,12 +566,7 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
                 return (type.name, model.eval(value, model_completion=True).as_long())
             elif type == TString():
                 i = model.eval(value, model_completion=True).as_long()
-                s = "b"
-                if i >= 0:
-                    s += "b" * i
-                else:
-                    s = "a" * (-i) + s
-                return s
+                return "a" * i
             elif type == TBool():
                 return bool(model.eval(value, model_completion=True))
             elif isinstance(type, TBag) or isinstance(type, TSet):

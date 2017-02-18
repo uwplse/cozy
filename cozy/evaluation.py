@@ -155,6 +155,8 @@ class Evaluator(Visitor):
         return n.val
     def visit_EBool(self, b, env):
         return b.val
+    def visit_EStr(self, e, env):
+        return e.val
     def visit_EEmptyList(self, e, env):
         return Bag()
     def visit_ESingleton(self, e, env):
