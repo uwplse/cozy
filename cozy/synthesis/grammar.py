@@ -92,13 +92,13 @@ class BinderBuilder(ExpBuilder):
             for bag in cache.find(type=TBag, size=sz1):
                 if not all((v in self.binders or v in self.state_vars) for v in free_vars(bag)):
                     continue
-                for k in cache.find(size=sz2):
+                for k in itertools.chain(cache.find(size=sz2), self.binders):
                     if not is_scalar(k.type):
                         continue
                     kfvs = free_vars(k)
                     if not all((v in self.binders or v in self.state_vars) for v in kfvs):
                         continue
-                    for val in cache.find(size=sz3):
+                    for val in itertools.chain(cache.find(size=sz3), self.binders):
                         valfvs = free_vars(val)
                         if not all((v in self.binders or v in self.state_vars) for v in valfvs):
                             continue
