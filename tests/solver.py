@@ -68,6 +68,15 @@ class TestSolver(unittest.TestCase):
         e = ENot(equal(x, x))
         assert not satisfiable(e, validate_model=True)
 
+    def test_symbolic_maps3(self):
+        b = EVar("b").with_type(BOOL)
+        x = EVar("x").with_type(TMap(INT, INT))
+        y = EVar("y").with_type(TMap(INT, INT))
+        z = EVar("z").with_type(INT)
+        e = equal(EMapGet(ECond(b, x, y), z), z)
+        assert retypecheck(e)
+        assert satisfiable(e, validate_model=True)
+
     def test_make_map(self):
         x = EVar("x").with_type(TBag(THandle("Foo", INT)))
         mkm = EMakeMap(x, mk_lambda(x.type.t, lambda x: EGetField(x, "val")), mk_lambda(x.type, lambda xs: xs))
