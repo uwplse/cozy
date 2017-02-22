@@ -182,10 +182,10 @@ class Learner(object):
             for (fp, (cost, exps)) in seen:
                 if cost > self.cost_ceiling:
                     for (e, size) in exps:
-                        _on_exp(e, "evicted due to lowered cost ceiling [cost={}, ceiling={}]".format(cost, ceiling))
+                        _on_exp(e, "evicted due to lowered cost ceiling [cost={}, ceiling={}]".format(cost, self.cost_ceiling))
                         self.cache.evict(e, size)
-                        del self.seen[fp]
                         n += 1
+                    del self.seen[fp]
             if n:
                 print("evicted {} elements".format(n))
 
