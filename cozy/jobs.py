@@ -4,6 +4,9 @@ import time
 import threading
 
 from cozy.timeouts import Timeout
+from cozy.opts import Option
+
+do_profiling = Option("profile", bool, False, description="Profile Cozy itself")
 
 class Job(object):
     def __init__(self):
@@ -16,7 +19,14 @@ class Job(object):
         self._thread.start()
     def _run(self):
         try:
-            self.run()
+            if do_profiling.value:
+                import cProfile
+                import tempfile
+                (fd, filename) = tempfile.mkstemp(suffix=".prof")
+                print("Profile info: {}".format(filename))
+                cProfile.runctx("self.run()", globals(), locals(), filename=filename)
+            else:
+                self.run()
             self._flags[2] = True
         except Exception as e:
             import traceback
