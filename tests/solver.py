@@ -12,6 +12,22 @@ one  = ENum(1).with_type(TInt())
 
 class TestSolver(unittest.TestCase):
 
+    def test_maybe(self):
+        x = EVar("x").with_type(INT)
+        t = TMaybe(x.type)
+        e = equal(ENull().with_type(t), EJust(x).with_type(t))
+        assert not satisfiable(e, validate_model=True)
+
+    def test_symbolic_maybe(self):
+        b = EVar("b").with_type(BOOL)
+        x = EVar("x").with_type(TMaybe(INT))
+        y = EVar("y").with_type(TMaybe(INT))
+        e = EAll([
+            equal(ECond(b, x, y), EJust(one)),
+            equal(y, ENull().with_type(y.type))])
+        assert retypecheck(e)
+        assert satisfiable(e, validate_model=True)
+
     def test_the_empty(self):
         x = EEmptyList().with_type(TBag(TInt()))
         assert satisfy(EBinOp(EUnaryOp("the", x).with_type(TMaybe(TInt())), "==", EJust(one)).with_type(TBool())) is None

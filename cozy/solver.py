@@ -81,6 +81,12 @@ def ite(ty : Type, cond : z3.AstRef, then_branch, else_branch):
         return {
             "default": ite(ty.v, cond, def1, def2),
             "mapping": mapping }
+    elif isinstance(ty, TMaybe):
+        p1, v1 = then_branch
+        p2, v2 = else_branch
+        return (
+            z3.If(cond, p1, p2),
+            ite(ty.t, cond, v1, v2))
     else:
         raise NotImplementedError(pprint(ty))
 
@@ -205,7 +211,7 @@ class ToZ3(Visitor):
     def visit_EVar(self, v, env):
         return env[v.id]
     def visit_ENum(self, n, env):
-        if n.type == TInt():
+        if n.type == INT:
             return z3.IntVal(n.val, self.ctx)
         raise NotImplementedError(n.type)
     def visit_EStr(self, s, env):
@@ -220,6 +226,8 @@ class ToZ3(Visitor):
         return ([z3.BoolVal(True, self.ctx)], [self.visit(e.e, env)])
     def visit_EHandle(self, e, env):
         return (self.visit(e.addr, env), self.visit(e.value, env))
+    def visit_ENull(self, e, env):
+        return (self.false, self.mkval(e.type.t))
     def visit_EJust(self, e, env):
         return (self.true, self.visit(e.e, env))
     def flatten(self, e, env):
@@ -316,7 +324,7 @@ class ToZ3(Visitor):
                 else:
                     elem = ite(t, m, e, elem)
             if elem is None:
-                elem = self.mkvar(0, t)
+                elem = self.mkval(t)
             return (exists, elem)
         elif e.op == "-":
             return -self.visit(e.e, env)
@@ -477,6 +485,14 @@ class ToZ3(Visitor):
             print("failed to convert {}".format(pprint(e)))
             raise
 
+    def mkval(self, type):
+        """
+        Create an arbitrary value of the given type.
+        """
+        # TODO: Z3 might like it better if we used an arbitrary constant
+        # instead of a variable, but it shouldn't matter too much.
+        return self.mkvar(0, type)
+
     def mkvar(self, collection_depth, type):
         ctx = self.ctx
         solver = self.solver
@@ -494,6 +510,8 @@ class ToZ3(Visitor):
             solver.add(n >= 0)
             solver.add(n < ncases)
             return n
+        elif isinstance(type, TMaybe):
+            return (self.mkvar(collection_depth, BOOL), self.mkvar(collection_depth, type.t))
         elif isinstance(type, TSet):
             res = self.mkvar(collection_depth, TBag(type.t))
             mask, elems = res
@@ -501,7 +519,7 @@ class ToZ3(Visitor):
                 solver.add(z3.Implies(mask[i], self.distinct(type.t, *(elems[:(i+1)])), ctx))
             return res
         elif isinstance(type, TBag):
-            mask = [self.mkvar(collection_depth, TBool()) for i in range(collection_depth)]
+            mask = [self.mkvar(collection_depth, BOOL) for i in range(collection_depth)]
             elems = [self.mkvar(collection_depth, type.t) for i in range(collection_depth)]
             # symmetry breaking
             for i in range(len(mask) - 1):
@@ -550,7 +568,7 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
         # print("Checking sat (|e|={}); time to acquire lock = {}".format(e.size(), datetime.now() - start))
         start = datetime.now()
         # print("sat? {}".format(pprint(e)))
-        assert e.type == TBool()
+        assert e.type == BOOL
 
         ctx = z3.Context()
         solver = z3.Solver(ctx=ctx)
@@ -558,20 +576,25 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
         visitor = ToZ3(ctx, solver)
 
         def reconstruct(model, value, type):
-            if type == TInt() or type == TLong():
+            if type == INT or type == LONG:
                 return model.eval(value, model_completion=True).as_long()
             elif isinstance(type, TNative):
                 return (type.name, model.eval(value, model_completion=True).as_long())
-            elif type == TString():
+            elif type == STRING:
                 i = model.eval(value, model_completion=True).as_long()
                 return "a" * i
-            elif type == TBool():
+            elif type == BOOL:
                 return bool(model.eval(value, model_completion=True))
+            elif isinstance(type, TMaybe):
+                mask, value = value
+                mask = reconstruct(model, mask, BOOL)
+                value = reconstruct(model, value, type.t)
+                return evaluation.Maybe(value if mask else None)
             elif isinstance(type, TBag) or isinstance(type, TSet):
                 mask, elems = value
                 real_val = []
                 for i in range(len(elems)):
-                    if reconstruct(model, mask[i], TBool()):
+                    if reconstruct(model, mask[i], BOOL):
                         real_val.append(reconstruct(model, elems[i], type.t))
                 return evaluation.Bag(real_val)
             elif isinstance(type, TMap):
@@ -589,7 +612,7 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
                 return type.cases[val]
             elif isinstance(type, THandle):
                 id, val = value
-                id = reconstruct(model, id, TInt())
+                id = reconstruct(model, id, INT)
                 val = reconstruct(model, val, type.value_type)
                 return evaluation.Handle(id, val)
             elif isinstance(type, TRecord):
@@ -604,7 +627,7 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
 
         def unreconstruct(value, type):
             """Converts reconstructed value back to a Z3 value"""
-            if type == TInt() or type == TLong():
+            if type == INT or type == LONG:
                 return z3.IntVal(value, ctx)
             elif isinstance(type, TNative):
                 return z3.IntVal(value[1], ctx)
@@ -722,4 +745,4 @@ def satisfiable(e, **opts):
     return satisfy(e, **opts) is not None
 
 def valid(e, **opts):
-    return satisfy(EUnaryOp("not", e).with_type(TBool()), **opts) is None
+    return satisfy(EUnaryOp("not", e).with_type(BOOL), **opts) is None
