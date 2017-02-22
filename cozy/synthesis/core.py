@@ -15,6 +15,7 @@ save_testcases = Option("save-testcases", str, "", metavar="PATH")
 hyperaggressive_eviction = Option("hyperaggressive-eviction", bool, True)
 reject_symmetric_binops = Option("reject-symmetric-binops", bool, True)
 eliminate_vars = Option("eliminate-vars", bool, False)
+reset_on_success = Option("reset-on-success", bool, False)
 
 class Cache(object):
     def __init__(self, items=None):
@@ -490,7 +491,8 @@ def improve(
                     continue
                 print("found improvement: {} -----> {}".format(pprint(old_e), pprint(new_e)))
                 print("cost: {} -----> {}".format(old_cost, new_cost))
-                learner.reset(instantiate_examples((new_target,), examples, set(vars), binders), update_watched_exps=False)
+                if reset_on_success.value:
+                    learner.reset(instantiate_examples((new_target,), examples, set(vars), binders), update_watched_exps=False)
                 learner.watch(new_target, assumptions)
                 target = new_target
                 yield new_target
