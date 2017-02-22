@@ -53,7 +53,7 @@ def ite(ty : Type, cond : z3.AstRef, then_branch, else_branch):
     elif isinstance(ty, TRecord):
         return { f : ite(t, cond, then_branch[f], else_branch[f]) for (f, t) in ty.fields }
     elif isinstance(ty, TTuple):
-        return (ite(t, cond, v1, v2) for (v1, v2, t) in zip(then_branch, else_branch, ty.ts))
+        return tuple(ite(t, cond, v1, v2) for (v1, v2, t) in zip(then_branch, else_branch, ty.ts))
     elif isinstance(ty, TMap):
         def1, map1 = then_branch["default"], then_branch["mapping"]
         def2, map2 = else_branch["default"], else_branch["mapping"]

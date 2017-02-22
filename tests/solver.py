@@ -28,6 +28,14 @@ class TestSolver(unittest.TestCase):
         assert retypecheck(e)
         assert satisfiable(e, validate_model=True)
 
+    def test_symbolic_tuple(self):
+        b = EVar("b").with_type(BOOL)
+        x = EVar("x").with_type(TTuple((INT, INT)))
+        y = EVar("y").with_type(TTuple((INT, INT)))
+        e = equal(ETupleGet(ECond(b, x, y), 0), one)
+        assert retypecheck(e)
+        assert satisfiable(e, validate_model=True)
+
     def test_the_empty(self):
         x = EEmptyList().with_type(TBag(TInt()))
         assert satisfy(EBinOp(EUnaryOp("the", x).with_type(TMaybe(TInt())), "==", EJust(one)).with_type(TBool())) is None
