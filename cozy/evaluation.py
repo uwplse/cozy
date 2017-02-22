@@ -147,7 +147,6 @@ def lt(t, v1, v2):
 
 class Evaluator(Visitor):
     def __init__(self, bind_callback):
-        self.work_done = 0
         self.bind_callback = bind_callback
     def visit_EVar(self, v, env):
         return env[v.id]
@@ -213,7 +212,11 @@ class Evaluator(Visitor):
         else:
             raise NotImplementedError(e.op)
     def visit_EBinOp(self, e, env):
-        if e.op == ">":
+        if e.op == BOp.And:
+            return self.visit(e.e1, env) and self.visit(e.e2, env)
+        elif e.op == BOp.Or:
+            return self.visit(e.e1, env) or self.visit(e.e2, env)
+        elif e.op == ">":
             return self.visit(ENot(EBinOp(e.e1, "<=", e.e2).with_type(BOOL)), env)
         elif e.op == "<=":
             return self.visit(
@@ -227,11 +230,7 @@ class Evaluator(Visitor):
 
         v1 = self.visit(e.e1, env)
         v2 = self.visit(e.e2, env)
-        if e.op == BOp.And:
-            return v1 and v2
-        elif e.op == BOp.Or:
-            return v1 or v2
-        elif e.op == "+":
+        if e.op == "+":
             return v1 + v2
         elif e.op == "-":
             if isinstance(e.e1.type, TBag):
@@ -310,24 +309,9 @@ class Evaluator(Visitor):
         raise NotImplementedError("eval({})".format(e))
     def visit_object(self, o, *args):
         raise Exception("cannot eval {}".format(repr(o)))
-    def visit(self, o, *args):
-        self.work_done += 1
-        try:
-            return super().visit(o, *args)
-        except:
-            print("evaluation of {} failed".format(repr(o)))
-            raise
 
-_work = 0
 def eval(e, env, bind_callback=lambda arg, val: None):
-    global _work
-    ev = Evaluator(bind_callback)
-    res = ev.visit(e, env)
-    _work = ev.work_done
-    return res
-
-def work_done():
-    return _work
+    return Evaluator(bind_callback).visit(e, env)
 
 def mkval(type):
     """
