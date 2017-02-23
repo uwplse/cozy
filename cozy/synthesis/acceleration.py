@@ -114,6 +114,18 @@ def as_aggregation_of_filter(e):
 #         others.append(p)
 #     return ???
 
+def map_accelerate(e, state_vars, binders, cache, size):
+    for (_, arg, f) in enumerate_fragments(e):
+        if any(v in state_vars or v in binders for v in free_vars(arg)):
+            continue
+        for binder in (b for b in binders if b.type == arg.type):
+            for bag in cache.find(size=size, type=TBag(arg.type)):
+                m = EMakeMap2(bag,
+                    ELambda(binder, f(binder))).with_type(TMap(arg.type, e.type))
+                # m._tag = True
+                yield m
+                yield EMapGet(m, arg).with_type(e.type)
+
 class AcceleratedBuilder(ExpBuilder):
 
     def __init__(self, wrapped : ExpBuilder, binders : [EVar], state_vars : [EVar]):
@@ -126,23 +138,10 @@ class AcceleratedBuilder(ExpBuilder):
 
         for (sz1, sz2) in pick_to_sum(2, size-1):
             for e in cache.find(size=sz1):
-                for (_, arg, f) in enumerate_fragments(e):
-                    if any(v in self.state_vars or v in self.binders for v in free_vars(arg)):
-                        continue
-                    for binder in (b for b in self.binders if b.type == arg.type):
-                        for bag in cache.find(size=sz2, type=TBag(arg.type)):
-                            m = EMakeMap2(bag,
-                                ELambda(binder, f(binder))).with_type(TMap(arg.type, e.type))
-                            # m._tag = True
-                            yield m
-                            yield EMapGet(m, arg).with_type(e.type)
+                yield from map_accelerate(e, self.state_vars, self.binders, cache, sz2)
 
         for bag in itertools.chain(cache.find(type=TBag, size=size-1), cache.find(type=TSet, size=size-1)):
             if isinstance(bag, EFilter):
-
-                if isinstance(bag.p.body, EBinOp) and bag.p.body.op in (BOp.Or, BOp.And):
-                    yield EFilter(bag.e, ELambda(bag.p.arg, bag.p.body.e1)).with_type(bag.type)
-                    yield EFilter(bag.e, ELambda(bag.p.arg, bag.p.body.e2)).with_type(bag.type)
 
         #         # separate filter conds
         #         const_parts, other_parts = partition(break_conj(bag.p.body), lambda e:
@@ -152,21 +151,20 @@ class AcceleratedBuilder(ExpBuilder):
         #             yield inner_filter
         #             yield EFilter(inner_filter, ELambda(bag.p.arg, EAll(other_parts))).with_type(bag.type)
 
-        #         # construct map lookups
-        #         binder = bag.p.arg
-        #         inf = infer_map_lookup(bag.p.body, binder, set(self.state_vars))
-        #         if inf:
-        #             key_proj, key_lookup, remaining_filter = inf
-        #             bag_binder = find_one(self.binders, lambda b: b.type == bag.type)
-        #             if bag_binder:
-        #                 m = EMakeMap(
-        #                     bag.e,
-        #                     ELambda(binder, key_proj),
-        #                     ELambda(bag_binder, bag_binder)).with_type(TMap(key_proj.type, bag.type))
-        #                 yield m
-        #                 mg = EMapGet(m, key_lookup).with_type(bag.type)
-        #                 yield mg
-        #                 yield EFilter(mg, ELambda(binder, remaining_filter)).with_type(mg.type)
+                # construct map lookups
+                binder = bag.p.arg
+                inf = infer_map_lookup(bag.p.body, binder, set(self.state_vars))
+                if inf:
+                    key_proj, key_lookup, remaining_filter = inf
+                    bag_binder = find_one(self.binders, lambda b: b.type == key_proj.type and b != binder)
+                    if bag_binder:
+                        m = EMakeMap2(
+                            EMap(bag.e, ELambda(binder, key_proj)).with_type(TBag(key_proj.type)),
+                            ELambda(bag_binder, EFilter(bag.e, ELambda(binder, EEq(key_proj, bag_binder))).with_type(bag.type))).with_type(TMap(key_proj.type, bag.type))
+                        yield m
+                        mg = EMapGet(m, key_lookup).with_type(bag.type)
+                        yield mg
+                        yield EFilter(mg, ELambda(binder, remaining_filter)).with_type(mg.type)
 
         # for e in cache.find(size=size-1):
         #     # F(xs +/- ys) ---> F(xs), F(ys)
