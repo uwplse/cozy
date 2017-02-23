@@ -92,14 +92,14 @@ def _instantiate_examples(examples, vars, binder, possible_values):
 
 def instantiate_examples(watched_targets, examples, vars : {EVar}, binders : [EVar]):
     # collect all the values that flow into the binders
-    vals_by_binder = defaultdict(OrderedSet)
+    vals_by_type = defaultdict(OrderedSet)
     for e in watched_targets:
         assert all(v in vars for v in free_vars(e)), "Watching expr {} which contains {}".format(pprint(e), [v.id for v in free_vars(e) if v not in vars])
         for ex in examples:
-            eval(e, ex, bind_callback=lambda arg, val: vals_by_binder[arg].add(val))
+            eval(e, ex, bind_callback=lambda arg, val: vals_by_type[arg.type].add(val))
     # instantiate examples with each possible combination of values
     for v in binders:
-        examples = list(_instantiate_examples(examples, vars, v, vals_by_binder.get(v, ())))
+        examples = list(_instantiate_examples(examples, vars, v, vals_by_type.get(v.type, ())))
     # print("Got {} instantiated examples".format(len(examples)), file=sys.stderr)
     # for ex in examples:
     #     print(" ---> " + repr(ex), file=sys.stderr)
