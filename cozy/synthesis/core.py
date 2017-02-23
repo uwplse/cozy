@@ -77,6 +77,7 @@ def _instantiate_examples(examples, vars, binder, possible_values):
         found = 0
         if binder.id in e:
             yield e
+            continue
             found += 1
         for possible_value in possible_values:
             # print("possible value for {}: {}".format(pprint(binder.type), repr(possible_value)))
