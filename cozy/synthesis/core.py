@@ -5,7 +5,7 @@ import sys
 from cozy.target_syntax import *
 from cozy.typecheck import INT, BOOL, is_numeric
 from cozy.syntax_tools import subst, pprint, free_vars, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda, enumerate_fragments
-from cozy.common import ADT, Visitor, fresh_name, typechecked, unique, pick_to_sum, cross_product, OrderedDefaultDict, OrderedSet, nested_dict, group_by, find_one
+from cozy.common import OrderedSet, ADT, Visitor, fresh_name, typechecked, unique, pick_to_sum, cross_product, OrderedDefaultDict, OrderedSet, nested_dict, group_by, find_one
 from cozy.solver import satisfy, satisfiable, valid
 from cozy.evaluation import eval, mkval
 from cozy.cost_model import CostModel
@@ -147,7 +147,8 @@ def _on_exp(e, fate, *args):
         print(" ---> [{}, {}] {}; {}".format(fate, pprint(e.type), pprint(e), ", ".join((pprint(e) if isinstance(e, ADT) else str(e)) for e in args)), file=sys.stderr)
 
 class Learner(object):
-    def __init__(self, target, assumptions, legal_free_vars, examples, cost_model, builder, stop_callback):
+    def __init__(self, target, assumptions, binders, legal_free_vars, examples, cost_model, builder, stop_callback):
+        self.binders = OrderedSet(binders)
         self.legal_free_vars = legal_free_vars
         self.stop_callback = stop_callback
         self.cost_model = cost_model
@@ -167,6 +168,7 @@ class Learner(object):
             self.update_watched_exps()
 
     def watch(self, new_target, assumptions):
+        self.target = new_target
         new_roots = []
         for e in itertools.chain(all_exps(new_target), all_exps(assumptions)):
             if e in new_roots:
@@ -175,7 +177,6 @@ class Learner(object):
                 self._fingerprint(e)
                 new_roots.append(e)
         self.roots = new_roots
-        self.target = new_target
         self.update_watched_exps()
         if self.cost_model.is_monotonic():
             seen = list(self.seen.items())
@@ -191,27 +192,20 @@ class Learner(object):
                 print("evicted {} elements".format(n))
 
     def update_watched_exps(self):
-        e = self.target
-        self.cost_ceiling = self.cost_model.cost(e)
-        # print(" --< cost ceiling is now {}".format(self.cost_ceiling))
+        self.cost_ceiling = self.cost_model.cost(self.target)
         self.watched_exps = []
         for (a, e, r) in enumerate_fragments(self.target):
             if isinstance(e, ELambda) or any(v not in self.legal_free_vars for v in free_vars(e)):
                 continue
             cost = self.cost_model.cost(e)
-            fp = self._fingerprint(e)
-            try:
-                mask = [True] + [all(eval(aa, ex) for aa in a) for ex in self.examples]
-                self.watched_exps.append((e, r, cost, fp, mask))
-            except Exception as exc:
-                print("unable to watch {} ({})".format(pprint(e), exc), file=sys.stderr)
-                continue
-        # for (a, e, r, cost) in sorted(self.watched_exps, key=lambda w: -w[1].size()):
-        #     assert r(e) == self.target, "r({}) = {} != {}".format(pprint(e), pprint(r(e)), pprint(self.target))
-        #     print("WATCHING {} (|a|={}, cost={})".format(pprint(e), sum(aa.size() for aa in a), cost))
+            self.watched_exps.append((e, r, cost, EAll(a)))
 
-    def _fingerprint(self, e):
-        return fingerprint(e, self.examples)
+    def _examples_for(self, e):
+        binders = [b for b in free_vars(e) if b in self.binders]
+        return instantiate_examples((self.target,), self.examples, binders)
+
+    def _fingerprint(self, e, examples=None):
+        return fingerprint(e, self._examples_for(e))
 
     def next(self):
         while True:
@@ -259,15 +253,14 @@ class Learner(object):
                         _on_exp(e, "worse", *[e for (e, cost) in prev_exps])
                         continue
 
-                for (watched_e, r, watched_cost, watched_fp, mask) in self.watched_exps:
-                    assert len(watched_fp) == len(fp)
-                    assert len(mask) == len(fp)
+                for (watched_e, r, watched_cost, assumptions) in self.watched_exps:
                     if watched_e.type != e.type or watched_cost < cost:
                         continue
                     if e == watched_e:
                         continue
-                    if all((not incl or l==r) for (incl, l, r) in zip(mask, watched_fp, fp)):
-                        return (watched_e, e, r, mask)
+                    eqfp = self._fingerprint(implies(assumptions, EEq(e, watched_e)))
+                    if all(eqfp[i] for i in range(1, len(eqfp))):
+                        return (watched_e, e, r)
 
             if self.last_progress < (self.current_size+1) // 2:
                 raise NoMoreImprovements("hit termination condition")
@@ -431,12 +424,12 @@ def improve(
 
     if examples is None:
         examples = []
-    learner = Learner(target, assumptions, vars + binders, instantiate_examples((target,), examples, binders), cost_model, builder, stop_callback)
+    learner = Learner(target, assumptions, binders, vars + binders, examples, cost_model, builder, stop_callback)
     try:
         while True:
             # 1. find any potential improvement to any sub-exp of target
             try:
-                old_e, new_e, repl, mask = learner.next()
+                old_e, new_e, repl = learner.next()
             except NoMoreImprovements:
                 break
 
@@ -456,7 +449,6 @@ def improve(
                     print("duplicate example: {}".format(repr(counterexample)))
                     print("old target = {}".format(pprint(target)))
                     print("new target = {}".format(pprint(new_target)))
-                    print("mask = {}".format(mask))
                     print("old fp = {}".format(learner._fingerprint(old_e)))
                     print("new fp = {}".format(learner._fingerprint(new_e)))
                     print("old target fp = {}".format(learner._fingerprint(target)))
@@ -466,9 +458,7 @@ def improve(
                 examples.append(counterexample)
                 print("new example: {}".format(truncate(repr(counterexample))))
                 print("restarting with {} examples".format(len(examples)))
-                instantiated_examples = instantiate_examples((target,), examples, binders)
-                print("    ({} examples post-instantiation)".format(len(instantiated_examples)))
-                learner.reset(instantiated_examples)
+                learner.reset(examples)
             else:
                 # b. if correct: yield it, watch the new target, goto 1
 
@@ -503,7 +493,7 @@ def improve(
                 print("found improvement: {} -----> {}".format(pprint(old_e), pprint(new_e)))
                 print("cost: {} -----> {}".format(old_cost, new_cost))
                 if reset_on_success.value:
-                    learner.reset(instantiate_examples((new_target,), examples, binders), update_watched_exps=False)
+                    learner.reset(examples, update_watched_exps=False)
                 learner.watch(new_target, assumptions)
                 target = new_target
                 yield new_target
