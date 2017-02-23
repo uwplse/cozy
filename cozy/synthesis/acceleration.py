@@ -1,6 +1,6 @@
 import itertools
 
-from cozy.common import find_one
+from cozy.common import find_one, partition, pick_to_sum
 from .core import ExpBuilder
 from cozy.target_syntax import *
 from cozy.syntax_tools import free_vars, break_conj, all_exps, replace, pprint, enumerate_fragments
@@ -76,6 +76,44 @@ def break_plus_minus(e):
             return
     yield e
 
+def break_or(e):
+    for (_, x, r) in enumerate_fragments(e):
+        if isinstance(x, EBinOp) and x.op == BOp.Or:
+            yield from break_or(r(x.e1))
+            yield from break_or(r(x.e2))
+            return
+    yield e
+
+class Aggregation(object):
+    def __init__(self, op=None, f=None):
+        self.op = op
+        self.f = f
+
+def as_aggregation_of_filter(e):
+    if isinstance(e, EFilter):
+        yield (Aggregation(), e.p, e.e)
+    elif isinstance(e, EMap):
+        for (agg, p, res) in as_aggregation_of_filter(e.e):
+            if agg.op is None:
+                yield (Aggregation(f=compose(e.f, agg.f) if agg.f else e.f), p, res)
+    elif isinstance(e, EUnaryOp) and e.op in (UOp.Sum, UOp.Distinct, UOp.AreUnique, UOp.All, UOp.Any, UOp.Exists, UOp.Length, UOp.Empty):
+        for (agg, p, res) in as_aggregation_of_filter(e.e):
+            if agg.op is None:
+                yield (Aggregation(op=e.op, f=agg.f), p, res)
+    elif isinstance(e.type, TBag):
+        yield (Aggregation(), mk_lambda(e.type.t, lambda x: T), e)
+
+# def accelerate_filter(agg, p, bag):
+#     print(pprint(p), file=sys.stderr)
+#     parts = list(break_conj(p))
+#     guards = []
+#     map_conds = []
+#     in_conds = []
+#     others = []
+#     for p in parts:
+#         others.append(p)
+#     return ???
+
 class AcceleratedBuilder(ExpBuilder):
 
     def __init__(self, wrapped : ExpBuilder, binders : [EVar], state_vars : [EVar]):
@@ -86,37 +124,63 @@ class AcceleratedBuilder(ExpBuilder):
 
     def build(self, cache, size):
 
+        for (sz1, sz2) in pick_to_sum(2, size-1):
+            for e in cache.find(size=sz1):
+                for (_, arg, f) in enumerate_fragments(e):
+                    if any(v in self.state_vars or v in self.binders for v in free_vars(arg)):
+                        continue
+                    for binder in (b for b in self.binders if b.type == arg.type):
+                        for bag in cache.find(size=sz2, type=TBag(arg.type)):
+                            m = EMakeMap2(bag,
+                                ELambda(binder, f(binder))).with_type(TMap(arg.type, e.type))
+                            # m._tag = True
+                            yield m
+                            yield EMapGet(m, arg).with_type(e.type)
+
         for bag in itertools.chain(cache.find(type=TBag, size=size-1), cache.find(type=TSet, size=size-1)):
-            # construct map lookups
             if isinstance(bag, EFilter):
-                binder = bag.p.arg
-                inf = infer_map_lookup(bag.p.body, binder, set(self.state_vars))
-                if inf:
-                    key_proj, key_lookup, remaining_filter = inf
-                    bag_binder = find_one(self.binders, lambda b: b.type == bag.type)
-                    if bag_binder:
-                        m = EMakeMap(
-                            bag.e,
-                            ELambda(binder, key_proj),
-                            ELambda(bag_binder, bag_binder)).with_type(TMap(key_proj.type, bag.type))
-                        yield m
-                        mg = EMapGet(m, key_lookup).with_type(bag.type)
-                        yield mg
-                        yield EFilter(mg, ELambda(binder, remaining_filter)).with_type(mg.type)
 
-        for e in cache.find(size=size-1):
-            # F(xs +/- ys) ---> F(xs), F(ys)
-            for z in break_plus_minus(e):
-                if z != e:
-                    # print("broke {} --> {}".format(pprint(e), pprint(z)))
-                    yield z
+                if isinstance(bag.p.body, EBinOp) and bag.p.body.op in (BOp.Or, BOp.And):
+                    yield EFilter(bag.e, ELambda(bag.p.arg, bag.p.body.e1)).with_type(bag.type)
+                    yield EFilter(bag.e, ELambda(bag.p.arg, bag.p.body.e2)).with_type(bag.type)
 
-            # try reordering operations
-            for (_, e1, f) in enumerate_fragments(e):
-                if e1.type == e.type and e1 != e:
-                    for (_, e2, g) in enumerate_fragments(e1):
-                        if e2.type == e.type and e2 != e1:
-                            # e == f(g(e2))
-                            yield g(f(e2))
+        #         # separate filter conds
+        #         const_parts, other_parts = partition(break_conj(bag.p.body), lambda e:
+        #             all((v == bag.p.arg or v in self.state_vars) for v in free_vars(e)))
+        #         if const_parts and other_parts:
+        #             inner_filter = EFilter(bag.e, ELambda(bag.p.arg, EAll(const_parts))).with_type(bag.type)
+        #             yield inner_filter
+        #             yield EFilter(inner_filter, ELambda(bag.p.arg, EAll(other_parts))).with_type(bag.type)
+
+        #         # construct map lookups
+        #         binder = bag.p.arg
+        #         inf = infer_map_lookup(bag.p.body, binder, set(self.state_vars))
+        #         if inf:
+        #             key_proj, key_lookup, remaining_filter = inf
+        #             bag_binder = find_one(self.binders, lambda b: b.type == bag.type)
+        #             if bag_binder:
+        #                 m = EMakeMap(
+        #                     bag.e,
+        #                     ELambda(binder, key_proj),
+        #                     ELambda(bag_binder, bag_binder)).with_type(TMap(key_proj.type, bag.type))
+        #                 yield m
+        #                 mg = EMapGet(m, key_lookup).with_type(bag.type)
+        #                 yield mg
+        #                 yield EFilter(mg, ELambda(binder, remaining_filter)).with_type(mg.type)
+
+        # for e in cache.find(size=size-1):
+        #     # F(xs +/- ys) ---> F(xs), F(ys)
+        #     for z in break_plus_minus(e):
+        #         if z != e:
+        #             # print("broke {} --> {}".format(pprint(e), pprint(z)))
+        #             yield z
+
+        #     # try reordering operations
+        #     for (_, e1, f) in enumerate_fragments(e):
+        #         if e1.type == e.type and e1 != e:
+        #             for (_, e2, g) in enumerate_fragments(e1):
+        #                 if e2.type == e.type and e2 != e1:
+        #                     # e == f(g(e2))
+        #                     yield g(f(e2))
 
         yield from self.wrapped.build(cache, size)

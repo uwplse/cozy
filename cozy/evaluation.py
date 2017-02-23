@@ -17,13 +17,10 @@ class Map(object):
         for i in range(len(self._items)):
             (kk, vv) = self._items[i]
             if eq(self.type.k, k, kk):
-                if eq(self.type.v, v, self.default):
-                    del self._items[i]
-                else:
-                    self._items[i] = (kk, v)
+                self._items[i] = (kk, v)
                 return
-        if not eq(self.type.v, v, self.default):
-            self._items.append((k, v))
+        # if not eq(self.type.v, v, self.default):
+        self._items.append((k, v))
         # assert all(not eq(self.type.v, v, self.default) for (k, v) in self.items())
     def __getitem__(self, k):
         for i in range(len(self._items)):
@@ -111,7 +108,7 @@ def eq(t, v1, v2):
     elif isinstance(t, TMap):
         keys1 = Bag(v1.keys())
         keys2 = Bag(v2.keys())
-        return eq(TBag(t.k), keys1, keys2) and all(eq(t.v, v1[k], v2[k]) for k in keys1)
+        return eq(TBag(t.k), keys1, keys2) and all(eq(t.v, v1[k], v2[k]) for k in keys1) and eq(t.v, v1.default, v2.default)
     elif isinstance(t, TMaybe):
         if v1.obj is None and v2.obj is None:
             return True
@@ -278,6 +275,12 @@ class Evaluator(Visitor):
         res = Map(e.type, default)
         for (k, es) in im.items():
             res[k] = self.eval_lambda(e.value, es, env)
+        return res
+    def visit_EMakeMap2(self, e, env):
+        default = mkval(e.type.v)
+        res = Map(e.type, default)
+        for x in self.visit(e.e, env):
+            res[x] = self.eval_lambda(e.value, x, env)
         return res
     def visit_EMapGet(self, e, env):
         return self.visit(e.map, env)[self.visit(e.key, env)]

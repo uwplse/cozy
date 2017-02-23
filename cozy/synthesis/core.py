@@ -350,6 +350,18 @@ class FixedBuilder(ExpBuilder):
                     _on_exp(e, "rejecting no-op filter")
                     continue
 
+            # # map gets must be provably in the map
+            # if isinstance(e, EMapGet):
+            #     if not valid(implies(self.assumptions, EBinOp(e.key, BOp.In, EMapKeys(e.map).with_type(TBag(e.map.type.k))).with_type(BOOL))):
+            #         _on_exp(e, "rejecting potential map lookup miss")
+            #         continue
+
+            # # constructed maps cannot always be empty
+            # if isinstance(e, EMakeMap):
+            #     if not satisfiable(EAll([self.assumptions, EUnaryOp(UOp.Exists, e.e).with_type(BOOL)])):
+            #         _on_exp(e, "rejecting empty map")
+            #         continue
+
             yield e
 
 class VarElimBuilder(ExpBuilder):

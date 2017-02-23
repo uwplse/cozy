@@ -62,17 +62,19 @@ class ImproveQueryJob(jobs.Job):
             while not done:
                 binders = []
                 for t in all_types:
-                    if isinstance(t, TBag):
-                        binders += [fresh_var(t.t) for i in range(n_binders)]
-                        for i in range(n_binders):
-                            b = fresh_var(t)
-                            binders.append(b)
+                    # if isinstance(t, TBag):
+                    #     binders += [fresh_var(t.t) for i in range(n_binders)]
+                    for i in range(n_binders):
+                        b = fresh_var(t)
+                        binders.append(b)
                 try:
                     core.fixup_binders(expr, binders)
                     done = True
                 except:
-                    n_binders += 1
+                    pass
+                n_binders += 1
 
+            binders = [fresh_var(t) for t in all_types for i in range(n_binders)]
             print("Using {} binders".format(n_binders))
             b = BinderBuilder(binders, self.state)
             if accelerate.value:

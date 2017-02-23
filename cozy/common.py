@@ -345,6 +345,13 @@ def unique(iter, key=lambda x: x):
     """
     yield from OrderedSet(iter)
 
+def partition(iter, p):
+    t = []
+    f = []
+    for x in iter:
+        (t if p(x) else f).append(x)
+    return (t, f)
+
 def pick_to_sum(n, total_size):
     """
     Enumerate all the ways to pick N integers greater than zero that sum to

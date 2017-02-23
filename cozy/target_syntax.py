@@ -54,6 +54,7 @@ EWithAlteredValue = declare_case(Exp, "EWithAlteredValue", ["handle", "new_value
 
 # Maps
 EMakeMap   = declare_case(Exp, "EMakeMap", ["e", "key", "value"])
+EMakeMap2  = declare_case(Exp, "EMakeMap2", ["e", "value"])
 EMapGet    = declare_case(Exp, "EMapGet", ["map", "key"])
 EMapKeys   = declare_case(Exp, "EMapKeys", ["e"])
 SMapPut    = declare_case(Stm, "SMapPut", ["map", "key", "value"])

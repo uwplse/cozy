@@ -61,20 +61,23 @@ def ite(ty : Type, cond : z3.AstRef, then_branch, else_branch):
         maxlen = max(len(map1), len(map2))
         for i in range(maxlen):
             if i < len(map1) and i < len(map2):
-                k1, v1 = map1[i]
-                k2, v2 = map2[i]
+                m1, k1, v1 = map1[i]
+                m2, k2, v2 = map2[i]
                 mapping.append((
+                    ite(BOOL, cond, m1, m2),
                     ite(ty.k, cond, k1, k2),
                     ite(ty.v, cond, v1, v2)))
             elif i < len(map1):
-                k1, v1 = map1[i]
+                m1, k1, v1 = map1[i]
                 mapping.append((
+                    m1,
                     k1,
                     ite(ty.v, cond, v1, def2)))
             else:
                 assert i < len(map2)
-                k2, v2 = map2[i]
+                m2, k2, v2 = map2[i]
                 mapping.append((
+                    m2,
                     k2,
                     ite(ty.v, cond, def1, v2)))
 
@@ -145,10 +148,10 @@ class ToZ3(Visitor):
             return z3.And(*conds, self.ctx)
         elif isinstance(t, TMap):
             conds = [self.eq(t.v, e1["default"], e2["default"], env)]
-            for (k, v) in e1["mapping"]:
-                conds.append(self.eq(t.v, self._map_get(t, e1, k, env), self._map_get(t, e2, k, env), env))
-            for (k, v) in e2["mapping"]:
-                conds.append(self.eq(t.v, self._map_get(t, e1, k, env), self._map_get(t, e2, k, env), env))
+            for (mask, k, v) in e1["mapping"]:
+                conds.append(z3.Implies(mask, self.eq(t.v, self._map_get(t, e1, k, env), self._map_get(t, e2, k, env), env), self.ctx))
+            for (mask, k, v) in e2["mapping"]:
+                conds.append(z3.Implies(mask, self.eq(t.v, self._map_get(t, e1, k, env), self._map_get(t, e2, k, env), env), self.ctx))
             return z3.And(*conds, self.ctx)
         elif isinstance(t, THandle):
             h1, val1 = e1
@@ -414,30 +417,36 @@ class ToZ3(Visitor):
         bag_mask, bag_elems = bag
         ks = [ self.apply(e.key, x, env) for x in bag_elems ]
         x = EVar(fresh_name()).with_type(e.e.type.t)
-        m = {"mapping": [(k, self.apply(
+        m = {"mapping": [(self.true, k, self.apply(
                 e.value,
                 self.raw_filter(bag, lambda x: self.eq(e.key.body.type, self.apply(e.key, x, env), k, env)),
                 env)) for k in ks],
             "default": self.apply(e.value, ([], []), env)}
         return m
+    def visit_EMakeMap2(self, e, env):
+        bag_mask, bag_elems = self.visit(e.e, env)
+        keys = zip(bag_mask, bag_elems)
+        return {
+            "mapping": [(mask, key, self.apply(e.value, key, env)) for (mask, key) in keys],
+            "default": self.mkval(e.type.v) }
     def visit_EMapKeys(self, e, env):
         m = self.visit(e.e, env)
         d = m["default"]
         m = m["mapping"]
-        bag_mask = [z3.Not(self.eq(e.e.type.v, v, d, env), self.ctx) for (k, v) in m]
-        bag_elems = [k for (k, v) in m]
+        bag_mask = [mask for (mask, k, v) in m]
+        bag_elems = [k for (mask, k, v) in m]
         return self.distinct_bag_elems((bag_mask, bag_elems), e.type.t, env)
     def visit_EMakeRecord(self, e, env):
         return { f:self.visit(v, env) for (f, v) in e.fields }
     def _map_get(self, map_type, map, key, env):
         res = map["default"]
         # print("map get {} on {}".format(key, map))
-        for (k, v) in map["mapping"]:
+        for (mask, k, v) in map["mapping"]:
             # print("   k   = {}".format(repr(k)))
             # print("   key = {}".format(repr(key)))
             # print("   v   = {}".format(repr(v)))
             # print("   res = {}".format(repr(res)))
-            res = ite(map_type.v, self.eq(map_type.k, k, key, env), v, res)
+            res = ite(map_type.v, z3.And(mask, self.eq(map_type.k, k, key, env), self.ctx), v, res)
         return res
     def visit_EMapGet(self, e, env):
         map = self.visit(e.map, env)
@@ -487,11 +496,37 @@ class ToZ3(Visitor):
 
     def mkval(self, type):
         """
-        Create an arbitrary value of the given type.
+        Create an arbitrary value of the given type. Guaranteed to agree with
+        cozy.evaluation.mkval(type).
         """
-        # TODO: Z3 might like it better if we used an arbitrary constant
-        # instead of a variable, but it shouldn't matter too much.
-        return self.mkvar(0, type)
+        return self.unreconstruct(evaluation.mkval(type), type)
+
+    def unreconstruct(self, value, type):
+        """Converts reconstructed value back to a Z3 value"""
+        ctx = self.ctx
+        if type == INT or type == LONG:
+            return z3.IntVal(value, ctx)
+        elif isinstance(type, TBool):
+            return self.true if value else self.false
+        elif isinstance(type, TBag):
+            masks = [self.true for v in value]
+            values = [self.unreconstruct(v, type.t) for v in value]
+            return (masks, values)
+        elif isinstance(type, TEnum):
+            return z3.IntVal(type.cases.index(value), ctx)
+        elif isinstance(type, TNative):
+            return z3.IntVal(value[1], ctx)
+        elif isinstance(type, THandle):
+            return (z3.IntVal(value[0], ctx), self.unreconstruct(value[1], type.value_type))
+        elif isinstance(type, TTuple):
+            return tuple(self.unreconstruct(v, t) for (v, t) in zip(value, type.ts))
+        elif isinstance(type, TRecord):
+            return { f:self.unreconstruct(value[f], t) for (f, t) in type.fields }
+        elif isinstance(type, TMaybe):
+            exists = type.obj is not None
+            return (self.unreconstruct(exists, BOOL), self.unreconstruct(type.obj, type.t) if exists else self.mkval(type.t))
+        else:
+            raise NotImplementedError(type)
 
     def mkvar(self, collection_depth, type):
         ctx = self.ctx
@@ -526,9 +561,14 @@ class ToZ3(Visitor):
                 solver.add(z3.Implies(mask[i], mask[i+1], ctx))
             return (mask, elems)
         elif isinstance(type, TMap):
-            default = self.mkvar(collection_depth, type.v)
+            default = self.mkval(type.v)
+            mask = [self.mkvar(collection_depth, BOOL) for i in range(collection_depth)]
+            # symmetry breaking
+            for i in range(len(mask) - 1):
+                solver.add(z3.Implies(mask[i], mask[i+1], ctx))
             return {
                 "mapping": [(
+                    mask[i],
                     self.mkvar(collection_depth, type.k),
                     self.mkvar(collection_depth, type.v))
                     for i in range(collection_depth)],
@@ -600,12 +640,13 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
             elif isinstance(type, TMap):
                 default = reconstruct(model, value["default"], type.v)
                 res = evaluation.Map(type, default)
-                for (k, v) in value["mapping"]:
+                for (mask, k, v) in value["mapping"]:
                     # K/V pairs appearing later in value["mapping"] have precedence,
                     # so overwriting here is the correct move.
-                    k = reconstruct(model, k, type.k)
-                    v = reconstruct(model, v, type.v)
-                    res[k] = v
+                    if reconstruct(model, mask, BOOL):
+                        k = reconstruct(model, k, type.k)
+                        v = reconstruct(model, v, type.v)
+                        res[k] = v
                 return res
             elif isinstance(type, TEnum):
                 val = model.eval(value, model_completion=True).as_long()
@@ -622,15 +663,6 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
                 return FrozenDict(res)
             elif isinstance(type, TTuple):
                 return tuple(reconstruct(model, v, t) for (v, t) in zip(value, type.ts))
-            else:
-                raise NotImplementedError(type)
-
-        def unreconstruct(value, type):
-            """Converts reconstructed value back to a Z3 value"""
-            if type == INT or type == LONG:
-                return z3.IntVal(value, ctx)
-            elif isinstance(type, TNative):
-                return z3.IntVal(value[1], ctx)
             else:
                 raise NotImplementedError(type)
 
@@ -686,7 +718,7 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
                 arg_types = k[2]
                 @memoize
                 def extracted_func(*args):
-                    return reconstruct(model, f(*[unreconstruct(v, t) for (v, t) in zip(args, arg_types)]), out_type)
+                    return reconstruct(model, f(*[visitor.unreconstruct(v, t) for (v, t) in zip(args, arg_types)]), out_type)
                 res[name] = extracted_func
             # print(res)
             if validate_model:

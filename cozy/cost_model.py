@@ -47,10 +47,21 @@ class CardinalityVisitor(BottomUpExplorer):
         return 1
     def visit_EMakeMap(self, e):
         return self.visit(e.e)
-    def visit_EMapGet(self, e):
+    def visit_EMakeMap2(self, e):
+        return self.visit(e.e)
+    def visit_EMapGet(self, e, k=None):
+        # return self.visit(e.map) / 3
+        if not k:
+            k = lambda x: x
         if isinstance(e.map, EMakeMap):
             # return self.visit(e.map) / 3
-            return self.visit(e.map.value.apply_to(EFilter(e.map.e, ELambda(e.map.key.arg, equal(e.map.key.body, e.key)))))
+            return self.visit(k(e.map.value.apply_to(EFilter(e.map.e, ELambda(e.map.key.arg, equal(e.map.key.body, e.key))))))
+        elif isinstance(e.map, EMakeMap2):
+            return self.visit(k(e.map.value.apply_to(e.key)))
+        elif isinstance(e.map, EVar) and e.map in self.st:
+            return self.visit(k(EMapGet(self.st[e.map], e.key)))
+        elif isinstance(e.map, EMapGet):
+            return self.visit_EMapGet(e.map, k=lambda x: EMapGet(x, e.key))
         else:
             raise NotImplementedError(pprint(e))
     def visit_EFilter(self, e):
@@ -141,6 +152,8 @@ class RunTimeCostModel(CostModel, BottomUpExplorer):
     def visit_EMakeMap(self, e):
         return float("inf")
         # return self.visit(e.e) + self.cardinality(e.e) * (self.visit(e.key.body) + self.visit(e.value.body))
+    def visit_EMakeMap2(self, e):
+        return float("inf")
     def join(self, x, child_costs):
         if isinstance(x, list) or isinstance(x, tuple):
             return sum(child_costs)

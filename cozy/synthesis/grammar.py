@@ -1,6 +1,6 @@
 import itertools
 
-from cozy.common import pick_to_sum, cross_product, group_by
+from cozy.common import pick_to_sum, cross_product, group_by, find_one
 from cozy.target_syntax import *
 from cozy.syntax_tools import subst, mk_lambda, free_vars, is_scalar, equal
 from .core import ExpBuilder
@@ -88,29 +88,40 @@ class BinderBuilder(ExpBuilder):
             yield equal(count, ENum(1).with_type(INT)).with_type(BOOL)
 
         binders_by_type = group_by(self.binders, lambda b: b.type)
-        for (sz1, sz2, sz3) in pick_to_sum(3, size - 1):
+        for (sz1, sz2) in pick_to_sum(2, size - 1):
             for bag in cache.find(type=TBag, size=sz1):
-                if not all((v in self.binders or v in self.state_vars) for v in free_vars(bag)):
+                if not is_scalar(bag.type.t):
                     continue
-                for k in itertools.chain(cache.find(size=sz2), self.binders):
-                    if not is_scalar(k.type):
-                        continue
-                    kfvs = free_vars(k)
-                    if not all((v in self.binders or v in self.state_vars) for v in kfvs):
-                        continue
-                    for val in itertools.chain(cache.find(size=sz3), self.binders):
-                        valfvs = free_vars(val)
-                        if not all((v in self.binders or v in self.state_vars) for v in valfvs):
-                            continue
-                        for (b1, b2) in cross_product([binders_by_type[bag.type.t], binders_by_type[bag.type]]):
-                            if not (b1 in kfvs and b2 in valfvs):
-                                continue
-                            yield EMakeMap(bag, ELambda(b1, k), ELambda(b2, val)).with_type(TMap(k.type, val.type))
+                for b in binders_by_type.get(bag.type.t, ()):
+                    for val in cache.find(size=sz2):
+                        m = EMakeMap2(bag, ELambda(b, val)).with_type(TMap(bag.type.t, val.type))
+                        m._tag = True
+                        yield m
+
+        # binders_by_type = group_by(self.binders, lambda b: b.type)
+        # for (sz1, sz2, sz3) in pick_to_sum(3, size - 1):
+        #     for bag in cache.find(type=TBag, size=sz1):
+        #         if not all((v in self.binders or v in self.state_vars) for v in free_vars(bag)):
+        #             continue
+        #         for k in itertools.chain(cache.find(size=sz2), self.binders):
+        #             if not is_scalar(k.type):
+        #                 continue
+        #             kfvs = free_vars(k)
+        #             if not all((v in self.binders or v in self.state_vars) for v in kfvs):
+        #                 continue
+        #             for val in itertools.chain(cache.find(size=sz3), self.binders):
+        #                 valfvs = free_vars(val)
+        #                 if not all((v in self.binders or v in self.state_vars) for v in valfvs):
+        #                     continue
+        #                 for (b1, b2) in cross_product([binders_by_type[bag.type.t], binders_by_type[bag.type]]):
+        #                     if not (b1 in kfvs and b2 in valfvs):
+        #                         continue
+        #                     yield EMakeMap(bag, ELambda(b1, k), ELambda(b2, val)).with_type(TMap(k.type, val.type))
 
         for (sz1, sz2) in pick_to_sum(2, size - 1):
             for bag in cache.find(type=TBag, size=sz1):
                 for binder in binders_by_type[bag.type.t]:
-                    for body in cache.find(size=sz2):
+                    for body in itertools.chain(cache.find(size=sz2), (binder,)):
                         # experimental filter
                         if binder not in free_vars(body):
                             continue
