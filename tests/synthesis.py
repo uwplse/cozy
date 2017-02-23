@@ -17,10 +17,10 @@ class TestSynthesisCore(unittest.TestCase):
     def test_instantiate_examples(self):
         bag = Bag((handle1, handle2, handle3))
         examples = [{ "x": bag }]
-        vars = [EVar("x").with_type(TBag(handle_type))]
+        x = EVar("x").with_type(TBag(handle_type))
         binder = EVar("binder").with_type(handle_type)
-        target = EFilter(vars[0], ELambda(binder, T)).with_type(vars[0].type)
-        new_examples = list(instantiate_examples((target,), examples, vars, [binder]))
+        target = EFilter(x, ELambda(binder, T)).with_type(x.type)
+        new_examples = list(instantiate_examples((target,), examples, [binder]))
         assert new_examples == [
             { "x": bag, "binder": handle1 },
             { "x": bag, "binder": handle2 },
@@ -29,8 +29,7 @@ class TestSynthesisCore(unittest.TestCase):
     def test_instantiate_examples_empty(self):
         bag = Bag((handle1, handle2, handle3))
         examples = [{ "x": bag }]
-        vars = [EVar("x").with_type(TBag(handle_type))]
         binder = EVar("binder").with_type(BOOL)
-        new_examples = list(instantiate_examples((zero,), examples, vars, [binder]))
+        new_examples = list(instantiate_examples((zero,), examples, [binder]))
         assert new_examples == [
             { "x": bag, "binder": False }]

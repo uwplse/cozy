@@ -72,7 +72,7 @@ class ExpBuilder(object):
     def build(self, cache, size):
         raise NotImplementedError()
 
-def _instantiate_examples(examples, vars, binder, possible_values):
+def _instantiate_examples(examples, binder, possible_values):
     for e in examples:
         found = 0
         if binder.id in e:
@@ -91,16 +91,15 @@ def _instantiate_examples(examples, vars, binder, possible_values):
             e2[binder.id] = mkval(binder.type)
             yield e2
 
-def instantiate_examples(watched_targets, examples, vars : {EVar}, binders : [EVar]):
+def instantiate_examples(watched_targets, examples, binders : [EVar]):
     # collect all the values that flow into the binders
     vals_by_type = defaultdict(OrderedSet)
     for e in watched_targets:
-        assert all(v in vars for v in free_vars(e)), "Watching expr {} which contains {}".format(pprint(e), [v.id for v in free_vars(e) if v not in vars])
         for ex in examples:
             eval(e, ex, bind_callback=lambda arg, val: vals_by_type[arg.type].add(val))
     # instantiate examples with each possible combination of values
     for v in binders:
-        examples = list(_instantiate_examples(examples, vars, v, vals_by_type.get(v.type, ())))
+        examples = list(_instantiate_examples(examples, v, vals_by_type.get(v.type, ())))
     # print("Got {} instantiated examples".format(len(examples)), file=sys.stderr)
     # for ex in examples:
     #     print(" ---> " + repr(ex), file=sys.stderr)
@@ -432,7 +431,7 @@ def improve(
 
     if examples is None:
         examples = []
-    learner = Learner(target, assumptions, vars + binders, instantiate_examples((target,), examples, set(vars), binders), cost_model, builder, stop_callback)
+    learner = Learner(target, assumptions, vars + binders, instantiate_examples((target,), examples, binders), cost_model, builder, stop_callback)
     try:
         while True:
             # 1. find any potential improvement to any sub-exp of target
@@ -467,7 +466,7 @@ def improve(
                 examples.append(counterexample)
                 print("new example: {}".format(truncate(repr(counterexample))))
                 print("restarting with {} examples".format(len(examples)))
-                instantiated_examples = instantiate_examples((target,), examples, set(vars), binders)
+                instantiated_examples = instantiate_examples((target,), examples, binders)
                 print("    ({} examples post-instantiation)".format(len(instantiated_examples)))
                 learner.reset(instantiated_examples)
             else:
@@ -504,7 +503,7 @@ def improve(
                 print("found improvement: {} -----> {}".format(pprint(old_e), pprint(new_e)))
                 print("cost: {} -----> {}".format(old_cost, new_cost))
                 if reset_on_success.value:
-                    learner.reset(instantiate_examples((new_target,), examples, set(vars), binders), update_watched_exps=False)
+                    learner.reset(instantiate_examples((new_target,), examples, binders), update_watched_exps=False)
                 learner.watch(new_target, assumptions)
                 target = new_target
                 yield new_target
