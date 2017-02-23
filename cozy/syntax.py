@@ -163,3 +163,6 @@ def EIsSubset(e1, e2):
     return EBinOp(
         EBinOp(e1, "-", e2).with_type(e1.type), "==",
         EEmptyList().with_type(e1.type)).with_type(BOOL)
+
+def EEq(e1, e2):
+    return EBinOp(e1, "==", e2).with_type(BOOL)

@@ -696,7 +696,7 @@ def implies(e1, e2):
         e2).with_type(BOOL)
 
 def equal(e1, e2):
-    return syntax.EBinOp(e1, "==", e2).with_type(BOOL)
+    return syntax.EEq(e1, e2)
 
 @common.typechecked
 def nnf(e : syntax.Exp, negate=False) -> syntax.Exp:
