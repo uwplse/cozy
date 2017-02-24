@@ -74,7 +74,7 @@ class ImproveQueryJob(jobs.Job):
                     pass
                 n_binders += 1
 
-            binders = [fresh_var(t) for t in all_types for i in range(n_binders)]
+            binders = [fresh_var(t) for t in all_types if is_scalar(t) for i in range(n_binders)]
             print("Using {} binders".format(n_binders))
             b = BinderBuilder(binders, self.state)
             if accelerate.value:
