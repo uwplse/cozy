@@ -2,7 +2,7 @@ import itertools
 
 from cozy.common import pick_to_sum, cross_product, group_by, find_one
 from cozy.target_syntax import *
-from cozy.syntax_tools import subst, mk_lambda, free_vars, is_scalar, equal
+from cozy.syntax_tools import subst, mk_lambda, free_vars, is_scalar
 from .core import ExpBuilder
 
 class BinderBuilder(ExpBuilder):
@@ -20,6 +20,10 @@ class BinderBuilder(ExpBuilder):
             yield F
             yield ENum(0).with_type(INT)
             yield from self.binders
+
+        for e in cache.find(size=size-1):
+            if all(v in self.state_vars for v in free_vars(e)):
+                yield EStateVar(e).with_type(e.type)
 
         for t in list(cache.types()):
             if isinstance(t, TBag):
@@ -85,7 +89,7 @@ class BinderBuilder(ExpBuilder):
             # exists?
             yield EUnaryOp(UOp.Exists, bag).with_type(BOOL)
             # is-singleton?
-            yield equal(count, ENum(1).with_type(INT)).with_type(BOOL)
+            yield EEq(count, ENum(1).with_type(INT)).with_type(BOOL)
 
         binders_by_type = group_by(self.binders, lambda b: b.type)
         for (sz1, sz2) in pick_to_sum(2, size - 1):
@@ -94,7 +98,8 @@ class BinderBuilder(ExpBuilder):
                     continue
                 for b in binders_by_type.get(bag.type.t, ()):
                     for val in cache.find(size=sz2):
-                        m = EMakeMap2(bag, ELambda(b, val)).with_type(TMap(bag.type.t, val.type))
+                        t = TMap(bag.type.t, val.type)
+                        m = EStateVar(EMakeMap2(bag, ELambda(b, val)).with_type(t)).with_type(t)
                         m._tag = True
                         yield m
 

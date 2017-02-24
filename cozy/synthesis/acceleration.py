@@ -143,13 +143,13 @@ class AcceleratedBuilder(ExpBuilder):
         for bag in itertools.chain(cache.find(type=TBag, size=size-1), cache.find(type=TSet, size=size-1)):
             if isinstance(bag, EFilter):
 
-        #         # separate filter conds
-        #         const_parts, other_parts = partition(break_conj(bag.p.body), lambda e:
-        #             all((v == bag.p.arg or v in self.state_vars) for v in free_vars(e)))
-        #         if const_parts and other_parts:
-        #             inner_filter = EFilter(bag.e, ELambda(bag.p.arg, EAll(const_parts))).with_type(bag.type)
-        #             yield inner_filter
-        #             yield EFilter(inner_filter, ELambda(bag.p.arg, EAll(other_parts))).with_type(bag.type)
+                # separate filter conds
+                const_parts, other_parts = partition(break_conj(bag.p.body), lambda e:
+                    all((v == bag.p.arg or v in self.state_vars) for v in free_vars(e)))
+                if const_parts and other_parts:
+                    inner_filter = EStateVar(EFilter(bag.e, ELambda(bag.p.arg, EAll(const_parts))).with_type(bag.type)).with_type(bag.type)
+                    yield inner_filter
+                    yield EFilter(inner_filter, ELambda(bag.p.arg, EAll(other_parts))).with_type(bag.type)
 
                 # construct map lookups
                 binder = bag.p.arg
@@ -161,6 +161,7 @@ class AcceleratedBuilder(ExpBuilder):
                         m = EMakeMap2(
                             EMap(bag.e, ELambda(binder, key_proj)).with_type(TBag(key_proj.type)),
                             ELambda(bag_binder, EFilter(bag.e, ELambda(binder, EEq(key_proj, bag_binder))).with_type(bag.type))).with_type(TMap(key_proj.type, bag.type))
+                        m = EStateVar(m).with_type(m.type)
                         yield m
                         mg = EMapGet(m, key_lookup).with_type(bag.type)
                         yield mg

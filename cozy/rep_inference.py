@@ -1,6 +1,6 @@
-from cozy.common import Visitor, declare_case, cross_product
+from cozy.common import OrderedSet
 from cozy.target_syntax import *
-from cozy.syntax_tools import fresh_var, free_vars, mk_lambda, subst, pprint, BottomUpRewriter, alpha_equivalent, compose
+from cozy.syntax_tools import pprint, alpha_equivalent, subst, enumerate_fragments, fresh_var
 
 def _check_wt(state, input, output):
     from cozy.typecheck import retypecheck
@@ -53,42 +53,35 @@ def pprint_reps(r):
 
 def infer_rep(state : [EVar], qexp : Exp, validate_types : bool = False) -> [([(EVar, Exp)], Exp)]:
     """
-    Given state vars and an expression, infer suitable representations for
-    fast execution.
+    Separate an expression into the concrete-state component and the runtime
+    component.
     """
-    class V(Visitor):
-        def visit_Exp(self, e):
-            fvs = free_vars(e)
-            assert fvs
-            if all(v in state for v in fvs) and not isinstance(e, ELambda):
+
+    state = OrderedSet(state)
+    new_state = []
+    dirty = True
+    while dirty:
+        dirty = False
+        for (_, e, r) in enumerate_fragments(qexp):
+            needs_rewrite = False
+            if isinstance(e, EStateVar):
+                needs_rewrite = True
+                e = e.e
+            elif isinstance(e, EVar) and e in state:
+                needs_rewrite = True
+            if needs_rewrite:
                 v = fresh_var(e.type)
-                yield ([(v, e)], v)
-            else:
-                children = e.children()
-                expr_children = [i for i in range(len(children)) if isinstance(children[i], Exp)]
-                for reps in cross_product([(self.visit(child) if isinstance(child, Exp) else (child,)) for child in e.children()]):
-                    vs = sum((r[0] for (r, child) in zip(reps, e.children()) if isinstance(child, Exp)), [])
-                    args = [r[1] if isinstance(child, Exp) else r for (r, child) in zip(reps, e.children())]
-                    ee = type(e)(*args) #.with_type(e.type)
-                    if hasattr(e, "type"):
-                        ee = ee.with_type(e.type)
-                    yield (vs, ee)
-        def visit(self, e):
-            fvs = free_vars(e)
-            if fvs:
-                yield from super().visit(e)
-            else:
-                yield ([], e)
+                new_state.append((v, e))
+                qexp = r(v)
+                dirty = True
+                break
 
     try:
-        it = V().visit(qexp)
         if validate_types:
-            it = list(it)
-            _check_wt(state, qexp, it)
-        for (st, e) in it:
-            st, remap = dedup(st)
-            e = subst(e, { v1.id : v2 for (v1, v2) in remap.items() })
-            yield (st, e)
+            _check_wt(state, qexp, [(new_state, qexp)])
+        st, remap = dedup(new_state)
+        qexp = subst(qexp, { v1.id : v2 for (v1, v2) in remap.items() })
+        yield (st, qexp)
     except Exception:
         print("Test case:")
         print("    infer_rep({}, {})".format(repr(state), repr(qexp)))

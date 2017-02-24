@@ -480,6 +480,9 @@ def enumerate_fragments(e : syntax.Exp):
         x is a non-lambda subexpression of e
         a are true assumptions whenever x is evaluated on any input to e
         r(x) == e (in general, r can be used to replace x with a new subexpr)
+
+    Fragments are enumerated top-down (i.e. every expression comes before any
+    of its subexpressions).
     """
     for (a, x, r, bound) in _ENUMERATOR.visit(e):
         if isinstance(x, syntax.Exp) and not isinstance(x, target_syntax.ELambda):

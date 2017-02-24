@@ -1,6 +1,5 @@
 from cozy.target_syntax import *
 from cozy.syntax_tools import BottomUpExplorer, pprint, equal, fresh_var, mk_lambda
-from cozy.rep_inference import infer_rep
 
 def P(e):
     """
@@ -30,7 +29,7 @@ class ConstantCost(CostModel):
         return True
 
 class CardinalityVisitor(BottomUpExplorer):
-    def __init__(self, st):
+    def __init__(self, st={}):
         self.st = st
     def visit_EVar(self, v):
         mapping = self.st.get(v)
@@ -62,6 +61,8 @@ class CardinalityVisitor(BottomUpExplorer):
             return self.visit(k(EMapGet(self.st[e.map], e.key)))
         elif isinstance(e.map, EMapGet):
             return self.visit_EMapGet(e.map, k=lambda x: EMapGet(x, e.key))
+        elif isinstance(e.map, EStateVar):
+            return self.visit(k(EMapGet(e.map.e, e.key)))
         else:
             raise NotImplementedError(pprint(e))
     def visit_EFilter(self, e):
@@ -91,16 +92,15 @@ class CardinalityVisitor(BottomUpExplorer):
     def visit_ECond(self, e):
         # This rule is strange, but it has to work this way to preserve monotonicity
         return self.visit(e.then_branch) + self.visit(e.else_branch)
+    def visit_EStateVar(self, e):
+        return self.visit(e.e)
     def visit_Exp(self, e):
         raise NotImplementedError(e)
-    def __call__(self, e):
-        return self.visit(e)
 
 class MemoryUsageCostModel(CostModel, BottomUpExplorer):
     def __init__(self):
-        self.cardinality = CardinalityVisitor({})
+        self.cardinality = CardinalityVisitor().visit
     def cost(self, e):
-        # return e.size()
         cost = self.cardinality(e) / 100 if isinstance(e.type, TBag) or isinstance(e.type, TMap) or isinstance(e.type, TSet) else 0
         cost += e.size() / 100
         return cost
@@ -109,7 +109,8 @@ class MemoryUsageCostModel(CostModel, BottomUpExplorer):
 
 class RunTimeCostModel(CostModel, BottomUpExplorer):
     def __init__(self):
-        self.cardinality = lambda e: 0
+        self.memcm = MemoryUsageCostModel()
+        self.cardinality = CardinalityVisitor().visit
     def cost(self, e):
         return self.visit(e)
     def is_monotonic(self):
@@ -154,6 +155,8 @@ class RunTimeCostModel(CostModel, BottomUpExplorer):
         # return self.visit(e.e) + self.cardinality(e.e) * (self.visit(e.key.body) + self.visit(e.value.body))
     def visit_EMakeMap2(self, e):
         return float("inf")
+    def visit_EStateVar(self, e):
+        return self.memcm.cost(e)
     def join(self, x, child_costs):
         if isinstance(x, list) or isinstance(x, tuple):
             return sum(child_costs)
@@ -161,32 +164,6 @@ class RunTimeCostModel(CostModel, BottomUpExplorer):
             return 0
         return 0.01 + sum(child_costs)
 
-class CompositeCostModel(CostModel):
+class CompositeCostModel(RunTimeCostModel):
     def __init__(self, state_vars : [EVar]):
-        self.state_vars = state_vars
-        self.rtcm = RunTimeCostModel()
-        self.memcm = MemoryUsageCostModel()
-        self.factor = 0.001 # 0 = only care about runtime, 1 = only care about memory
-    def __repr__(self):
-        return "CompositeCostModel({})".format(repr(self.state_vars))
-    def is_monotonic(self):
-        return self.rtcm.is_monotonic() and self.memcm.is_monotonic()
-    def split_cost(self, st, e):
-        self.rtcm.cardinality = CardinalityVisitor(dict(st))
-        return (1-self.factor) * self.rtcm.cost(e) + self.factor * sum(self.memcm.cost(proj) for (v, proj) in st)
-    def cost(self, e):
-        try:
-            return min((self.split_cost(rep, e2) for (rep, e2) in infer_rep(self.state_vars, e)),
-                default=float("inf"))
-        except:
-            print("cost evaluation failed for {}".format(pprint(e)))
-            print(repr(e))
-            for (rep, e2) in infer_rep(self.state_vars, e):
-                try:
-                    self.split_cost(rep, e2)
-                except Exception as exc:
-                    print("-" * 20 + " EXCEPTION: {}".format(repr(exc)))
-                    for (v, proj) in rep:
-                        print("  {} : {} = {}".format(v.id, pprint(v.type), pprint(proj)))
-                    print("  return {}".format(repr(e2)))
-            raise
+        super().__init__()

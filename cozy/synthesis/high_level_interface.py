@@ -3,7 +3,7 @@ import datetime
 import itertools
 import sys
 
-from cozy.common import typechecked, fresh_name, pick_to_sum, nested_dict
+from cozy.common import typechecked, fresh_name, pick_to_sum, nested_dict, find_one
 from cozy.target_syntax import *
 import cozy.syntax_tools
 from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, BottomUpRewriter, free_vars, pprint, subst, implies, fresh_var, mk_lambda, all_exps, equal, is_scalar
@@ -26,8 +26,7 @@ LINE_BUFFER_MODE = 1 # see help for open() function
 
 @typechecked
 def pick_rep(q_ret : Exp, state : [EVar]) -> ([(EVar, Exp)], Exp):
-    cm = CompositeCostModel(state)
-    return min(infer_rep(state, q_ret), key=lambda r: cm.split_cost(*r), default=None)
+    return find_one(infer_rep(state, q_ret))
 
 class ImproveQueryJob(jobs.Job):
     def __init__(self,

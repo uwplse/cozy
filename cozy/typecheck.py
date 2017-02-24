@@ -463,6 +463,10 @@ class Typechecker(Visitor):
         self.ensure_type(e.key, e.map.type.k)
         e.type = e.map.type.v
 
+    def visit_EStateVar(self, e):
+        self.visit(e.e)
+        e.type = e.e.type
+
     def visit_SMapUpdate(self, s):
         self.visit(s.map)
         if not isinstance(s.map.type, syntax.TMap):

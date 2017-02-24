@@ -306,6 +306,8 @@ class Evaluator(Visitor):
                 env2 = dict(env)
                 env2[c.id] = x
                 yield from self.visit_clauses(clauses[1:], e, env2)
+    def visit_EStateVar(self, e, env):
+        return self.visit(e.e, env)
     def visit_Exp(self, e, env):
         raise NotImplementedError("eval({})".format(e))
     def visit_object(self, o, *args):

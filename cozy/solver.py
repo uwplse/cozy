@@ -478,6 +478,8 @@ class ToZ3(Visitor):
                 res_mask += [z3.And(incl_this, bit, self.ctx) for bit in bag2_mask]
                 res_elems += bag2_elems
             return res_mask, res_elems
+    def visit_EStateVar(self, e, env):
+        return self.visit(e.e, env)
     def visit_Exp(self, e, *args):
         raise NotImplementedError("toZ3({})".format(e))
     def visit_AstRef(self, e, env):

@@ -17,9 +17,9 @@ class TestCostModel(unittest.TestCase):
         e1 = EFilter(EBinOp(xs, "+", EEmptyList().with_type(xs.type)),
             ELambda(x, equal(x, z)))
         e2 = EMapGet(
-            EMakeMap(xs,
+            EStateVar(EMakeMap(xs,
                 ELambda(x, x),
-                ELambda(xs, xs)),
+                ELambda(xs, xs))),
             z)
         assert retypecheck(e1)
         assert retypecheck(e2)
@@ -63,7 +63,6 @@ class TestCostModel(unittest.TestCase):
         for ex in [e1, e2]:
             print("="*50 + " " + pprint(ex))
             for (st, e) in infer_rep([ys], ex):
-                print("COST={} (mem={}, cpu={}, split={})".format(cm.cost(ex), sum(cm.memcm.cost(p) for (v,p) in st), cm.rtcm.cost(e), cm.split_cost(st, e)))
                 for (v, p) in st:
                     print("  {} : {} = {}".format(v.id, pprint(v.type), pprint(p)))
                 print("  return {} : {}".format(pprint(e), pprint(e.type)))
