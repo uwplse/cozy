@@ -5,68 +5,19 @@ import sys
 from cozy.target_syntax import *
 from cozy.typecheck import INT, BOOL, is_numeric
 from cozy.syntax_tools import subst, pprint, free_vars, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda, enumerate_fragments
-from cozy.common import OrderedSet, ADT, Visitor, fresh_name, typechecked, unique, pick_to_sum, cross_product, OrderedDefaultDict, OrderedSet, nested_dict, group_by, find_one
+from cozy.common import OrderedSet, ADT, Visitor, fresh_name, typechecked, unique, pick_to_sum, cross_product, OrderedDefaultDict, OrderedSet, group_by, find_one
 from cozy.solver import satisfy, satisfiable, valid
 from cozy.evaluation import eval, mkval
 from cozy.cost_model import CostModel
 from cozy.opts import Option
+
+from .cache import Cache
 
 save_testcases = Option("save-testcases", str, "", metavar="PATH")
 hyperaggressive_eviction = Option("hyperaggressive-eviction", bool, True)
 reject_symmetric_binops = Option("reject-symmetric-binops", bool, True)
 eliminate_vars = Option("eliminate-vars", bool, False)
 reset_on_success = Option("reset-on-success", bool, False)
-
-class Cache(object):
-    def __init__(self, items=None):
-        self.data = nested_dict(3, list) # data[type_tag][type][size] is list of exprs
-        self.size = 0
-        if items:
-            for (e, size) in items:
-                self.add(e, size)
-    def tag(self, t):
-        return type(t)
-    def is_tag(self, t):
-        return isinstance(t, type)
-    def add(self, e, size):
-        self.data[self.tag(e.type)][e.type][size].append(e)
-        self.size += 1
-    def evict(self, e, size):
-        try:
-            self.data[self.tag(e.type)][e.type][size].remove(e)
-            self.size -= 1
-        except ValueError:
-            # this happens if e is not in the list, which is fine
-            pass
-    def find(self, type=None, size=None):
-        type_tag = None
-        if type is not None:
-            if self.is_tag(type):
-                type_tag = type
-                type = None
-            else:
-                type_tag = self.tag(type)
-        res = []
-        for x in (self.data.values() if type_tag is None else [self.data.get(type_tag, {})]):
-            for y in (x.values() if type is None else [x.get(type, {})]):
-                for z in (y.values() if size is None else [y.get(size, [])]):
-                    res += z
-        return res
-    def types(self):
-        for d in self.data.values():
-            yield from d.keys()
-    def __iter__(self):
-        for x in self.data.values():
-            for y in x.values():
-                for (size, es) in y.items():
-                    for e in es:
-                        yield (e, size)
-    def __len__(self):
-        return self.size
-    def random_sample(self, n):
-        import random
-        es = [ e for (e, size) in self ]
-        return random.sample(es, min(n, len(es)))
 
 class ExpBuilder(object):
     def build(self, cache, size):
