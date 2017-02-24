@@ -193,8 +193,6 @@ class PrettyPrinter(common.Visitor):
         return "NULL"
 
     def visit_ELambda(self, e):
-        if hasattr(e.arg, "type"):
-            return "(\\{} : {} -> {})".format(e.arg.id, self.visit(e.arg.type), self.visit(e.body))
         return "(\\{} -> {})".format(e.arg.id, self.visit(e.body))
 
     def visit_EApp(self, e):
