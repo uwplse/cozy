@@ -198,7 +198,7 @@ class Learner(object):
             if isinstance(e, ELambda) or any(v not in self.legal_free_vars for v in free_vars(e)):
                 continue
             cost = self.cost_model.cost(e)
-            self.watched_exps.append((e, r, cost, EAll(a)))
+            self.watched_exps.append((e, r, cost, a))
 
     def _examples_for(self, e):
         binders = [b for b in free_vars(e) if b in self.binders]
@@ -258,7 +258,11 @@ class Learner(object):
                         continue
                     if e == watched_e:
                         continue
-                    eqfp = self._fingerprint(implies(assumptions, EEq(e, watched_e)))
+                    equality = EEq(e, watched_e)
+                    efvs = free_vars(equality)
+                    # remove assumptions that talk about binders not in either expression
+                    assumptions = EAll([a for a in assumptions if all((v in efvs or v not in self.binders) for v in free_vars(a))])
+                    eqfp = self._fingerprint(implies(assumptions, equality))
                     if all(eqfp[i] for i in range(1, len(eqfp))):
                         return (watched_e, e, r)
 
