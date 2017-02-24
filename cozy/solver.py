@@ -255,8 +255,8 @@ class ToZ3(Visitor):
     def visit_EAlterMaybe(self, e, env):
         mask, val = self.visit(e.e, env)
         return mask, self.apply(e.f, val, env)
-    def visit_EFlatten(self, e, env):
-        mask, elems = self.visit(e.e, env)
+    def visit_EFlatMap(self, e, env):
+        mask, elems = self.visit(EMap(e.e, e.f).with_type(TBag(e.f.body.type)), env)
         res_mask = []
         res_elems = []
         for m, es in zip(mask, elems):
@@ -265,8 +265,6 @@ class ToZ3(Visitor):
                 res_mask.append(z3.And(m, mm, self.ctx))
                 res_elems.append(ee)
         return (res_mask, res_elems)
-    def visit_EFlatMap(self, e, env):
-        return self.visit(EFlatten(EMap(e.e, e.f).with_type(TBag(e.f.body.type))).with_type(e.type), env)
     def visit_ECond(self, e, env):
         cond = self.visit(e.cond, env)
         then_branch = self.visit(e.then_branch, env)

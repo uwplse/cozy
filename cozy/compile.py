@@ -302,14 +302,9 @@ class CxxPrinter(common.Visitor):
             return self.for_each(iterable.e, lambda x: SIf(iterable.p.apply_to(x), body(x), SNoOp()), indent=indent)
         elif isinstance(iterable, EBinOp) and iterable.op == "+":
             return self.for_each(iterable.e1, body, indent=indent) + self.for_each(iterable.e2, body, indent=indent)
-        elif isinstance(iterable, EFlatten):
+        elif isinstance(iterable, EFlatMap):
             # TODO: properly handle breaks inside body
             # TODO: indents get messed up here
-            v = fresh_var(iterable.type.t)
-            return self.for_each(iterable.e,
-                lambda bag: SForEach(v, bag, body(v)),
-                indent=indent)
-        elif isinstance(iterable, EFlatMap):
             return self.for_each(EFlatten(EMap(iterable.e, iterable.f).with_type(TBag(iterable.type))).with_type(iterable.type), body, indent)
         elif isinstance(iterable, ECall) and iterable.func in self.queries:
             q = self.queries[iterable.func]

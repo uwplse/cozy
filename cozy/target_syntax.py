@@ -44,10 +44,9 @@ SWhile   = declare_case(Stm, "SWhile", ["e", "body"])
 SBreak   = declare_case(Stm, "SBreak")
 
 # Bag transformations
-EMap     = declare_case(Exp, "EMap", ["e", "f"])
-EFilter  = declare_case(Exp, "EFilter", ["e", "p"])
-EFlatten = declare_case(Exp, "EFlatten", ["e"]) # aka concat: Bag<Bag<T>> -> Bag<T>
-EFlatMap = declare_case(Exp, "EFlatMap", ["e", "f"]) # EFlatMap(e, f) == EFlatten(EMap(e, f))
+EFilter  = declare_case(Exp, "EFilter",  ["e", "p"])
+EMap     = declare_case(Exp, "EMap",     ["e", "f"])
+EFlatMap = declare_case(Exp, "EFlatMap", ["e", "f"])
 
 # Handle transformations
 EWithAlteredValue = declare_case(Exp, "EWithAlteredValue", ["handle", "new_value"])

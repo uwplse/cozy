@@ -146,7 +146,7 @@ class RunTimeCostModel(CostModel, BottomUpExplorer):
     def visit_EMap(self, e):
         return 0.01 + self.visit(e.e) + self.cardinality(e.e) * self.visit(e.f.body)
     def visit_EFlatMap(self, e):
-        return 0.01 + self.visit(EFlatten(EMap(e.e, e.f)))
+        return 0.01 + self.visit(EMap(e.e, e.f))
     def visit_EFilter(self, e):
         return 0.01 + self.visit(e.e) + self.cardinality(e.e) * self.visit(e.p.body)
     def visit_EMakeMap(self, e):

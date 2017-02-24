@@ -290,11 +290,9 @@ class Evaluator(Visitor):
         return Bag(self.eval_lambda(e.f, x, env) for x in self.visit(e.e, env))
     def visit_EFilter(self, e, env):
         return Bag(x for x in self.visit(e.e, env) if self.eval_lambda(e.p, x, env))
-    def visit_EFlatten(self, e, env):
-        res = self.visit(e.e, env)
-        return Bag(elem for bag in res for elem in bag)
     def visit_EFlatMap(self, e, env):
-        return self.visit(EFlatten(EMap(e.e, e.f)), env)
+        res = self.visit(EMap(e.e, e.f).with_type(TBag(e.type.t)), env)
+        return Bag(elem for bag in res for elem in bag)
     def visit_clauses(self, clauses, e, env):
         if not clauses:
             yield self.visit(e, env)

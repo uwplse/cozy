@@ -297,15 +297,6 @@ class Typechecker(Visitor):
         else:
             raise NotImplementedError(e.op)
 
-    def visit_EFlatten(self, e):
-        self.visit(e.e)
-        t = self.get_collection_type(e.e)
-        if isinstance(t, syntax.TBag):
-            e.type = t
-        else:
-            self.report_err("cannot flatten {}".format(e.e.type))
-            e.type = DEFAULT_TYPE
-
     def visit_EFlatMap(self, e):
         self.visit(e.e)
         t1 = self.get_collection_type(e.e)
