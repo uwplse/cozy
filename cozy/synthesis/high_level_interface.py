@@ -75,9 +75,10 @@ class ImproveQueryJob(jobs.Job):
 
             binders = [fresh_var(t) for t in all_types if is_scalar(t) for i in range(n_binders)]
             print("Using {} binders".format(n_binders))
-            b = BinderBuilder(binders, self.state)
+            relevant_state_vars = [v for v in self.state if v in free_vars(EAll(self.assumptions)) | free_vars(self.q.ret)]
+            b = BinderBuilder(binders, relevant_state_vars)
             if accelerate.value:
-                b = AcceleratedBuilder(b, binders, self.state)
+                b = AcceleratedBuilder(b, binders, relevant_state_vars)
 
             try:
                 for expr in itertools.chain((self.q.ret,), core.improve(
