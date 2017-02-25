@@ -115,7 +115,7 @@ class RunTimeCostModel(CostModel, BottomUpExplorer):
     def cost(self, e, pool):
         return self.visit(e)
     def is_monotonic(self):
-        return True
+        return False
 
     def visit_EVar(self, e):
         return 1
