@@ -7,7 +7,7 @@ import z3
 
 from cozy.target_syntax import *
 from cozy.syntax_tools import pprint, free_vars
-from cozy.common import declare_case, fresh_name, Visitor, FrozenDict, typechecked, memoize
+from cozy.common import declare_case, fresh_name, Visitor, FrozenDict, typechecked, memoize, extend
 from cozy import evaluation
 from cozy.opts import Option
 
@@ -453,9 +453,8 @@ class ToZ3(Visitor):
     def visit_EApp(self, e, env):
         return self.apply(e.f, self.visit(e.arg, env), env)
     def apply(self, lam, arg, env):
-        env2 = dict(env)
-        env2[lam.arg.id] = arg
-        return self.visit(lam.body, env2)
+        with extend(env, lam.arg.id, arg):
+            return self.visit(lam.body, env)
     def visit_clauses(self, clauses, e, env):
         if not clauses:
             return [True], [self.visit(e, env)]
