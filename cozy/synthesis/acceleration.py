@@ -126,7 +126,8 @@ def map_accelerate(e, state_vars, binders, cache, size):
             for bag in cache.find(pool=STATE_POOL, size=size, type=TBag(arg.type)):
                 m = EMakeMap2(bag,
                     ELambda(binder, value)).with_type(TMap(arg.type, e.type))
-                # m._tag = True
+                if any(v in binders for v in free_vars(m)):
+                    continue
                 yield (m, STATE_POOL)
                 yield (EMapGet(EStateVar(m).with_type(m.type), arg).with_type(e.type), RUNTIME_POOL)
 
@@ -146,6 +147,8 @@ class AcceleratedBuilder(ExpBuilder):
 
         for bag in itertools.chain(cache.find(pool=RUNTIME_POOL, type=TBag, size=size-1), cache.find(pool=RUNTIME_POOL, type=TSet, size=size-1)):
             if isinstance(bag, EFilter):
+                if any(v in self.binders for v in free_vars(bag)):
+                    continue
 
                 # separate filter conds
                 const_parts, other_parts = partition(break_conj(bag.p.body), lambda e:

@@ -149,22 +149,24 @@ class Learner(object):
     def update_watched_exps(self):
         self.cost_ceiling = self.cost_model.cost(self.target, RUNTIME_POOL)
         self.watched_exps = []
-        pool = RUNTIME_POOL
+        sv_depth = 0
         def pre_visit(obj):
-            nonlocal pool
+            nonlocal sv_depth
             if isinstance(obj, EStateVar):
-                pool = STATE_POOL
+                sv_depth += 1
             return True
         def post_visit(obj, res):
-            nonlocal pool
+            nonlocal sv_depth
             if isinstance(obj, EStateVar):
-                pool = RUNTIME_POOL
+                sv_depth -= 1
             return res
         for (a, e, r) in enumerate_fragments(self.target, pre_visit=pre_visit, post_visit=post_visit):
-            if isinstance(e, ELambda) or isinstance(e, EStateVar) or any(v not in self.legal_free_vars for v in free_vars(e)):
+            if isinstance(e, ELambda) or any(v not in self.legal_free_vars for v in free_vars(e)):
                 continue
-            cost = self.cost_model.cost(e, RUNTIME_POOL)
-            self.watched_exps.append((e, r, cost, a, RUNTIME_POOL))
+            depth = (sv_depth - 1) if isinstance(e, EStateVar) else sv_depth
+            pool = STATE_POOL if depth else RUNTIME_POOL
+            cost = self.cost_model.cost(e, pool)
+            self.watched_exps.append((e, r, cost, a, pool))
 
     def _examples_for(self, e):
         binders = [b for b in free_vars(e) if b in self.binders]
