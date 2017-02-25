@@ -6,6 +6,7 @@ from cozy.target_syntax import *
 from cozy.syntax_tools import free_vars, break_conj, all_exps, replace, pprint, enumerate_fragments
 from cozy.desugar import desugar_exp
 from cozy.typecheck import is_numeric
+from cozy.pools import RUNTIME_POOL, STATE_POOL
 
 def _as_conjunction_of_equalities(p):
     if isinstance(p, EBinOp) and p.op == "and":
@@ -119,12 +120,15 @@ def map_accelerate(e, state_vars, binders, cache, size):
         if any(v in state_vars or v in binders for v in free_vars(arg)):
             continue
         for binder in (b for b in binders if b.type == arg.type):
-            for bag in cache.find(size=size, type=TBag(arg.type)):
+            value = f(binder)
+            if any(v not in state_vars and v not in binders for v in free_vars(value)):
+                continue
+            for bag in cache.find(pool=STATE_POOL, size=size, type=TBag(arg.type)):
                 m = EMakeMap2(bag,
-                    ELambda(binder, f(binder))).with_type(TMap(arg.type, e.type))
+                    ELambda(binder, value)).with_type(TMap(arg.type, e.type))
                 # m._tag = True
-                yield m
-                yield EMapGet(m, arg).with_type(e.type)
+                yield (m, STATE_POOL)
+                yield (EMapGet(EStateVar(m).with_type(m.type), arg).with_type(e.type), RUNTIME_POOL)
 
 class AcceleratedBuilder(ExpBuilder):
 
@@ -137,19 +141,19 @@ class AcceleratedBuilder(ExpBuilder):
     def build(self, cache, size):
 
         for (sz1, sz2) in pick_to_sum(2, size-1):
-            for e in cache.find(size=sz1):
+            for e in cache.find(pool=RUNTIME_POOL, size=sz1):
                 yield from map_accelerate(e, self.state_vars, self.binders, cache, sz2)
 
-        for bag in itertools.chain(cache.find(type=TBag, size=size-1), cache.find(type=TSet, size=size-1)):
+        for bag in itertools.chain(cache.find(pool=RUNTIME_POOL, type=TBag, size=size-1), cache.find(pool=RUNTIME_POOL, type=TSet, size=size-1)):
             if isinstance(bag, EFilter):
 
                 # separate filter conds
                 const_parts, other_parts = partition(break_conj(bag.p.body), lambda e:
                     all((v == bag.p.arg or v in self.state_vars) for v in free_vars(e)))
                 if const_parts and other_parts:
-                    inner_filter = EStateVar(EFilter(bag.e, ELambda(bag.p.arg, EAll(const_parts))).with_type(bag.type)).with_type(bag.type)
-                    yield inner_filter
-                    yield EFilter(inner_filter, ELambda(bag.p.arg, EAll(other_parts))).with_type(bag.type)
+                    inner_filter = EFilter(bag.e, ELambda(bag.p.arg, EAll(const_parts))).with_type(bag.type)
+                    yield (inner_filter, STATE_POOL)
+                    yield (EFilter(EStateVar(inner_filter).with_type(inner_filter.type), ELambda(bag.p.arg, EAll(other_parts))).with_type(bag.type), RUNTIME_POOL)
 
                 # construct map lookups
                 binder = bag.p.arg
@@ -161,11 +165,12 @@ class AcceleratedBuilder(ExpBuilder):
                         m = EMakeMap2(
                             EMap(bag.e, ELambda(binder, key_proj)).with_type(TBag(key_proj.type)),
                             ELambda(bag_binder, EFilter(bag.e, ELambda(binder, EEq(key_proj, bag_binder))).with_type(bag.type))).with_type(TMap(key_proj.type, bag.type))
+                        yield (m, STATE_POOL)
                         m = EStateVar(m).with_type(m.type)
-                        yield m
                         mg = EMapGet(m, key_lookup).with_type(bag.type)
-                        yield mg
-                        yield EFilter(mg, ELambda(binder, remaining_filter)).with_type(mg.type)
+                        from cozy.typecheck import retypecheck
+                        yield (mg, RUNTIME_POOL)
+                        yield (EFilter(mg, ELambda(binder, remaining_filter)).with_type(mg.type), RUNTIME_POOL)
 
         # for e in cache.find(size=size-1):
         #     # F(xs +/- ys) ---> F(xs), F(ys)

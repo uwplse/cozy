@@ -3,6 +3,7 @@ import itertools
 from cozy.common import pick_to_sum, cross_product, group_by, find_one
 from cozy.target_syntax import *
 from cozy.syntax_tools import subst, mk_lambda, free_vars, is_scalar
+from cozy.pools import STATE_POOL, RUNTIME_POOL
 from .core import ExpBuilder
 
 class BinderBuilder(ExpBuilder):
@@ -12,126 +13,107 @@ class BinderBuilder(ExpBuilder):
         self.state_vars = state_vars
     def build(self, cache, size):
         # print("Cache:")
-        # for (e, sz) in cache:
+        # for (e, sz, pool) in cache:
         #     from cozy.syntax_tools import pprint
-        #     print("    @{}\t:\t{}".format(sz, pprint(e)))
-        if size == 1:
-            yield T
-            yield F
-            yield ENum(0).with_type(INT)
-            yield from self.binders
-
-        for e in cache.find(size=size-1):
-            if all(v in self.state_vars for v in free_vars(e)):
-                yield EStateVar(e).with_type(e.type)
-
-        for t in list(cache.types()):
-            if isinstance(t, TBag):
-                yield EEmptyList().with_type(t)
-                for e in cache.find(type=t.t, size=size-1):
-                    yield ESingleton(e).with_type(t)
-
-        for e in cache.find(type=TRecord, size=size-1):
-            for (f,t) in e.type.fields:
-                yield EGetField(e, f).with_type(t)
-        for e in cache.find(type=TBag(INT), size=size-1):
-            yield EUnaryOp(UOp.Sum, e).with_type(INT)
-        for e in cache.find(type=TBag, size=size-1):
-            yield EUnaryOp(UOp.The, e).with_type(TMaybe(e.type.t))
-        for e in cache.find(type=THandle, size=size-1):
-            yield EGetField(e, "val").with_type(e.type.value_type)
-        for e in cache.find(type=TTuple, size=size-1):
-            for n in range(len(e.type.ts)):
-                yield ETupleGet(e, n).with_type(e.type.ts[n])
-        for e in cache.find(type=BOOL, size=size-1):
-            yield EUnaryOp(UOp.Not, e).with_type(BOOL)
-        for e in cache.find(type=INT, size=size-1):
-            yield EUnaryOp("-", e).with_type(INT)
-
-        for (sz1, sz2) in pick_to_sum(2, size - 1):
-            # Try instantiating bound expressions
-            for e1 in cache.find(size=sz1):
-                binders = free_vars(e1) & set(self.binders)
-                for b in binders:
-                    for e2 in cache.find(type=b.type, size=sz2):
-                        yield subst(e1, { b.id: e2 })
-            for a1 in cache.find(type=INT, size=sz1):
-                for a2 in cache.find(type=INT, size=sz2):
-                    yield EBinOp(a1, "+", a2).with_type(INT)
-                    yield EBinOp(a1, ">", a2).with_type(BOOL)
-                    yield EBinOp(a1, "<", a2).with_type(BOOL)
-                    yield EBinOp(a1, ">=", a2).with_type(BOOL)
-                    yield EBinOp(a1, "<=", a2).with_type(BOOL)
-            for a1 in cache.find(type=TBag, size=sz1):
-                for a2 in cache.find(type=a1.type, size=sz2):
-                    yield EBinOp(a1, "+", a2).with_type(a1.type)
-                    yield EBinOp(a1, "-", a2).with_type(a1.type)
-                for a2 in cache.find(type=a1.type.t, size=sz2):
-                    yield EBinOp(a2, BOp.In, a1).with_type(BOOL)
-            for a1 in cache.find(type=BOOL, size=sz1):
-                for a2 in cache.find(type=BOOL, size=sz2):
-                    yield EBinOp(a1, BOp.And, a2).with_type(BOOL)
-                    yield EBinOp(a1, BOp.Or, a2).with_type(BOOL)
-            for a1 in cache.find(size=sz1):
-                if not isinstance(a1.type, TMap):
-                    for a2 in cache.find(type=a1.type, size=sz2):
-                        yield EBinOp(a1, "==", a2).with_type(BOOL)
-            for m in cache.find(type=TMap, size=sz1):
-                for k in cache.find(type=m.type.k, size=sz2):
-                    yield EMapGet(m, k).with_type(m.type.v)
-
-        for bag in cache.find(type=TBag, size=size-1):
-            # len of bag
-            count = EUnaryOp(UOp.Sum, EMap(bag, mk_lambda(bag.type.t, lambda x: ENum(1).with_type(INT))).with_type(TBag(INT))).with_type(INT)
-            yield count
-            # empty?
-            yield EUnaryOp(UOp.Empty, bag).with_type(BOOL)
-            # exists?
-            yield EUnaryOp(UOp.Exists, bag).with_type(BOOL)
-            # is-singleton?
-            yield EEq(count, ENum(1).with_type(INT)).with_type(BOOL)
-
+        #     print("    @size={}, pool={}\t:\t{}".format(sz, pool, pprint(e)))
         binders_by_type = group_by(self.binders, lambda b: b.type)
+
+        for pool in (STATE_POOL, RUNTIME_POOL):
+            if size == 1:
+                yield (T, pool)
+                yield (F, pool)
+                yield (ENum(0).with_type(INT), pool)
+                for b in self.binders:
+                    yield (b, pool)
+                for v in self.state_vars:
+                    yield (v, pool)
+
+            for t in list(cache.types()):
+                if isinstance(t, TBag):
+                    yield (EEmptyList().with_type(t), pool)
+                    for e in cache.find(pool=pool, type=t.t, size=size-1):
+                        yield (ESingleton(e).with_type(t), pool)
+
+            for e in cache.find(pool=pool, type=TRecord, size=size-1):
+                for (f,t) in e.type.fields:
+                    yield (EGetField(e, f).with_type(t), pool)
+            for e in cache.find(pool=pool, type=TBag(INT), size=size-1):
+                yield (EUnaryOp(UOp.Sum, e).with_type(INT), pool)
+            for e in cache.find(pool=pool, type=TBag, size=size-1):
+                yield (EUnaryOp(UOp.The, e).with_type(TMaybe(e.type.t)), pool)
+            for e in cache.find(pool=pool, type=THandle, size=size-1):
+                yield (EGetField(e, "val").with_type(e.type.value_type), pool)
+            for e in cache.find(pool=pool, type=TTuple, size=size-1):
+                for n in range(len(e.type.ts)):
+                    yield (ETupleGet(e, n).with_type(e.type.ts[n]), pool)
+            for e in cache.find(pool=pool, type=BOOL, size=size-1):
+                yield (EUnaryOp(UOp.Not, e).with_type(BOOL), pool)
+            for e in cache.find(pool=pool, type=INT, size=size-1):
+                yield (EUnaryOp("-", e).with_type(INT), pool)
+
+            for (sz1, sz2) in pick_to_sum(2, size - 1):
+                # Try instantiating bound expressions
+                for e1 in cache.find(pool=pool, size=sz1):
+                    binders = free_vars(e1) & set(self.binders)
+                    for b in binders:
+                        for e2 in cache.find(pool=pool, type=b.type, size=sz2):
+                            yield (subst(e1, { b.id: e2 }), pool)
+                for a1 in cache.find(pool=pool, type=INT, size=sz1):
+                    for a2 in cache.find(pool=pool, type=INT, size=sz2):
+                        yield (EBinOp(a1, "+", a2).with_type(INT), pool)
+                        yield (EBinOp(a1, ">", a2).with_type(BOOL), pool)
+                        yield (EBinOp(a1, "<", a2).with_type(BOOL), pool)
+                        yield (EBinOp(a1, ">=", a2).with_type(BOOL), pool)
+                        yield (EBinOp(a1, "<=", a2).with_type(BOOL), pool)
+                for a1 in cache.find(pool=pool, type=TBag, size=sz1):
+                    for a2 in cache.find(pool=pool, type=a1.type, size=sz2):
+                        yield (EBinOp(a1, "+", a2).with_type(a1.type), pool)
+                        yield (EBinOp(a1, "-", a2).with_type(a1.type), pool)
+                    for a2 in cache.find(pool=pool, type=a1.type.t, size=sz2):
+                        yield (EBinOp(a2, BOp.In, a1).with_type(BOOL), pool)
+                for a1 in cache.find(pool=pool, type=BOOL, size=sz1):
+                    for a2 in cache.find(pool=pool, type=BOOL, size=sz2):
+                        yield (EBinOp(a1, BOp.And, a2).with_type(BOOL), pool)
+                        yield (EBinOp(a1, BOp.Or, a2).with_type(BOOL), pool)
+                for a1 in cache.find(pool=pool, size=sz1):
+                    if not isinstance(a1.type, TMap):
+                        for a2 in cache.find(pool=pool, type=a1.type, size=sz2):
+                            yield (EEq(a1, a2), pool)
+                for m in cache.find(pool=pool, type=TMap, size=sz1):
+                    for k in cache.find(pool=pool, type=m.type.k, size=sz2):
+                        yield (EMapGet(m, k).with_type(m.type.v), pool)
+
+            for bag in cache.find(pool=pool, type=TBag, size=size-1):
+                # len of bag
+                count = EUnaryOp(UOp.Sum, EMap(bag, mk_lambda(bag.type.t, lambda x: ENum(1).with_type(INT))).with_type(TBag(INT))).with_type(INT)
+                yield (count, pool)
+                # empty?
+                yield (EUnaryOp(UOp.Empty, bag).with_type(BOOL), pool)
+                # exists?
+                yield (EUnaryOp(UOp.Exists, bag).with_type(BOOL), pool)
+                # is-singleton?
+                yield (EEq(count, ENum(1).with_type(INT)).with_type(BOOL), pool)
+
+            for (sz1, sz2) in pick_to_sum(2, size - 1):
+                for bag in cache.find(pool=pool, type=TBag, size=sz1):
+                    for binder in binders_by_type[bag.type.t]:
+                        for body in itertools.chain(cache.find(pool=pool, size=sz2), (binder,)):
+                            # experimental filter
+                            if binder not in free_vars(body):
+                                continue
+                            yield (EMap(bag, ELambda(binder, body)).with_type(TBag(body.type)), pool)
+                            if body.type == BOOL:
+                                yield (EFilter(bag, ELambda(binder, body)).with_type(bag.type), pool)
+                            if pool == RUNTIME_POOL and isinstance(body.type, TBag):
+                                yield (EFlatMap(bag, ELambda(binder, body)).with_type(TBag(body.type.t)), pool)
+
         for (sz1, sz2) in pick_to_sum(2, size - 1):
-            for bag in cache.find(type=TBag, size=sz1):
+            for bag in cache.find(pool=STATE_POOL, type=TBag, size=sz1):
                 if not is_scalar(bag.type.t):
                     continue
                 for b in binders_by_type.get(bag.type.t, ()):
-                    for val in cache.find(size=sz2):
+                    for val in cache.find(pool=STATE_POOL, size=sz2):
                         t = TMap(bag.type.t, val.type)
-                        m = EStateVar(EMakeMap2(bag, ELambda(b, val)).with_type(t)).with_type(t)
+                        m = EMakeMap2(bag, ELambda(b, val)).with_type(t)
                         m._tag = True
-                        yield m
-
-        # binders_by_type = group_by(self.binders, lambda b: b.type)
-        # for (sz1, sz2, sz3) in pick_to_sum(3, size - 1):
-        #     for bag in cache.find(type=TBag, size=sz1):
-        #         if not all((v in self.binders or v in self.state_vars) for v in free_vars(bag)):
-        #             continue
-        #         for k in itertools.chain(cache.find(size=sz2), self.binders):
-        #             if not is_scalar(k.type):
-        #                 continue
-        #             kfvs = free_vars(k)
-        #             if not all((v in self.binders or v in self.state_vars) for v in kfvs):
-        #                 continue
-        #             for val in itertools.chain(cache.find(size=sz3), self.binders):
-        #                 valfvs = free_vars(val)
-        #                 if not all((v in self.binders or v in self.state_vars) for v in valfvs):
-        #                     continue
-        #                 for (b1, b2) in cross_product([binders_by_type[bag.type.t], binders_by_type[bag.type]]):
-        #                     if not (b1 in kfvs and b2 in valfvs):
-        #                         continue
-        #                     yield EMakeMap(bag, ELambda(b1, k), ELambda(b2, val)).with_type(TMap(k.type, val.type))
-
-        for (sz1, sz2) in pick_to_sum(2, size - 1):
-            for bag in cache.find(type=TBag, size=sz1):
-                for binder in binders_by_type[bag.type.t]:
-                    for body in itertools.chain(cache.find(size=sz2), (binder,)):
-                        # experimental filter
-                        if binder not in free_vars(body):
-                            continue
-                        yield EMap(bag, ELambda(binder, body)).with_type(TBag(body.type))
-                        if body.type == BOOL:
-                            yield EFilter(bag, ELambda(binder, body)).with_type(bag.type)
-                        if isinstance(body.type, TBag):
-                            yield EFlatMap(bag, ELambda(binder, body)).with_type(TBag(body.type.t))
+                        yield (m, STATE_POOL)

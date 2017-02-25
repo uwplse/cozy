@@ -1,5 +1,6 @@
 from cozy.target_syntax import *
-from cozy.syntax_tools import BottomUpExplorer, pprint, equal, fresh_var, mk_lambda
+from cozy.syntax_tools import BottomUpExplorer, pprint, equal, fresh_var, mk_lambda, free_vars
+from cozy.pools import RUNTIME_POOL, STATE_POOL
 
 def P(e):
     """
@@ -17,7 +18,7 @@ def P(e):
     return 0.5
 
 class CostModel(object):
-    def cost(self, e):
+    def cost(self, e, pool):
         raise NotImplementedError()
     def is_monotonic(self):
         raise NotImplementedError()
@@ -100,7 +101,7 @@ class CardinalityVisitor(BottomUpExplorer):
 class MemoryUsageCostModel(CostModel, BottomUpExplorer):
     def __init__(self):
         self.cardinality = CardinalityVisitor().visit
-    def cost(self, e):
+    def cost(self, e, pool):
         cost = self.cardinality(e) / 100 if isinstance(e.type, TBag) or isinstance(e.type, TMap) or isinstance(e.type, TSet) else 0
         cost += e.size() / 100
         return cost
@@ -111,7 +112,7 @@ class RunTimeCostModel(CostModel, BottomUpExplorer):
     def __init__(self):
         self.memcm = MemoryUsageCostModel()
         self.cardinality = CardinalityVisitor().visit
-    def cost(self, e):
+    def cost(self, e, pool):
         return self.visit(e)
     def is_monotonic(self):
         return True
@@ -156,7 +157,11 @@ class RunTimeCostModel(CostModel, BottomUpExplorer):
     def visit_EMakeMap2(self, e):
         return float("inf")
     def visit_EStateVar(self, e):
-        return self.memcm.cost(e)
+        return self.memcm.cost(e.e, STATE_POOL)
+    def visit(self, x):
+        if isinstance(x, Exp) and not free_vars(x):
+            return x.size() / 100
+        return super().visit(x)
     def join(self, x, child_costs):
         if isinstance(x, list) or isinstance(x, tuple):
             return sum(child_costs)
@@ -167,3 +172,8 @@ class RunTimeCostModel(CostModel, BottomUpExplorer):
 class CompositeCostModel(RunTimeCostModel):
     def __init__(self, state_vars : [EVar]):
         super().__init__()
+    def cost(self, e, pool):
+        if pool == RUNTIME_POOL:
+            return super().cost(e, pool)
+        else:
+            return self.memcm.cost(e, pool)

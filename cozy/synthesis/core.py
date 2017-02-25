@@ -10,6 +10,7 @@ from cozy.solver import satisfy, satisfiable, valid
 from cozy.evaluation import eval, mkval
 from cozy.cost_model import CostModel
 from cozy.opts import Option
+from cozy.pools import RUNTIME_POOL, STATE_POOL
 
 from .cache import Cache
 
@@ -104,12 +105,12 @@ class Learner(object):
         self.stop_callback = stop_callback
         self.cost_model = cost_model
         self.builder = builder
-        self.seen = { } # map of {fingerprint:(cost, [(e, size)])}
+        self.seen = { } # map of { (pool, fingerprint) : (cost, [(e, size)]) }
         self.reset(examples, update_watched_exps=False)
         self.watch(target, assumptions)
 
     def reset(self, examples, update_watched_exps=True):
-        self.cache = Cache()
+        self.cache = Cache(self.binders)
         self.current_size = 0
         self.examples = examples
         self.seen.clear()
@@ -120,36 +121,50 @@ class Learner(object):
 
     def watch(self, new_target, assumptions):
         self.target = new_target
-        new_roots = []
-        for e in itertools.chain(all_exps(new_target), all_exps(assumptions)):
-            if e in new_roots:
-                continue
-            if not isinstance(e, ELambda) and all(v in self.legal_free_vars for v in free_vars(e)):
-                self._fingerprint(e)
-                new_roots.append(e)
-        self.roots = new_roots
         self.update_watched_exps()
+        self.roots = []
+        for (e, r, cost, a, pool) in self.watched_exps:
+            self.roots.append((e, pool))
+        # new_roots = []
+        # for e in itertools.chain(all_exps(new_target), all_exps(assumptions)):
+        #     if e in new_roots:
+        #         continue
+        #     if not isinstance(e, ELambda) and all(v in self.legal_free_vars for v in free_vars(e)):
+        #         self._fingerprint(e)
+        #         new_roots.append(e)
+        # self.roots = new_roots
         if self.cost_model.is_monotonic():
             seen = list(self.seen.items())
             n = 0
-            for (fp, (cost, exps)) in seen:
+            for ((pool, fp), (cost, exps)) in seen:
                 if cost > self.cost_ceiling:
                     for (e, size) in exps:
                         _on_exp(e, "evicted due to lowered cost ceiling [cost={}, ceiling={}]".format(cost, self.cost_ceiling))
-                        self.cache.evict(e, size)
+                        self.cache.evict(e, size=size, pool=pool)
                         n += 1
-                    del self.seen[fp]
+                    del self.seen[(pool, fp)]
             if n:
                 print("evicted {} elements".format(n))
 
     def update_watched_exps(self):
-        self.cost_ceiling = self.cost_model.cost(self.target)
+        self.cost_ceiling = self.cost_model.cost(self.target, RUNTIME_POOL)
         self.watched_exps = []
-        for (a, e, r) in enumerate_fragments(self.target):
-            if isinstance(e, ELambda) or any(v not in self.legal_free_vars for v in free_vars(e)):
+        pool = RUNTIME_POOL
+        def pre_visit(obj):
+            nonlocal pool
+            if isinstance(obj, EStateVar):
+                pool = STATE_POOL
+            return True
+        def post_visit(obj, res):
+            nonlocal pool
+            if isinstance(obj, EStateVar):
+                pool = RUNTIME_POOL
+            return res
+        for (a, e, r) in enumerate_fragments(self.target, pre_visit=pre_visit, post_visit=post_visit):
+            if isinstance(e, ELambda) or isinstance(e, EStateVar) or any(v not in self.legal_free_vars for v in free_vars(e)):
                 continue
-            cost = self.cost_model.cost(e)
-            self.watched_exps.append((e, r, cost, a))
+            cost = self.cost_model.cost(e, RUNTIME_POOL)
+            self.watched_exps.append((e, r, cost, a, RUNTIME_POOL))
 
     def _examples_for(self, e):
         binders = [b for b in free_vars(e) if b in self.binders]
@@ -160,22 +175,22 @@ class Learner(object):
 
     def next(self):
         while True:
-            for e in self.builder_iter:
+            for (e, pool) in self.builder_iter:
                 if self.stop_callback():
                     raise StopException()
 
-                cost = self.cost_model.cost(e)
+                cost = self.cost_model.cost(e, pool)
 
                 if self.cost_model.is_monotonic() and cost > self.cost_ceiling:
                     _on_exp(e, "too expensive", cost, self.cost_ceiling)
                     continue
 
                 fp = self._fingerprint(e)
-                prev = self.seen.get(fp)
+                prev = self.seen.get((pool, fp))
 
                 if prev is None:
-                    self.seen[fp] = (cost, [(e, self.current_size)])
-                    self.cache.add(e, size=self.current_size)
+                    self.seen[(pool, fp)] = (cost, [(e, self.current_size)])
+                    self.cache.add(e, pool=pool, size=self.current_size)
                     self.last_progress = self.current_size
                     _on_exp(e, "new")
                 else:
@@ -184,27 +199,31 @@ class Learner(object):
                         _on_exp(e, "duplicate")
                         continue
                     elif cost == prev_cost:
-                        self.cache.add(e, size=self.current_size)
-                        self.seen[fp][1].append((e, self.current_size))
+                        self.cache.add(e, pool=pool, size=self.current_size)
+                        self.seen[(pool, fp)][1].append((e, self.current_size))
                         self.last_progress = self.current_size
                         _on_exp(e, "equivalent", *[e for (e, cost) in prev_exps])
                     elif cost < prev_cost:
                         for (prev_exp, prev_size) in prev_exps:
-                            self.cache.evict(prev_exp, prev_size)
+                            self.cache.evict(prev_exp, size=prev_size, pool=pool)
                             if self.cost_model.is_monotonic() and hyperaggressive_eviction.value:
-                                for (cached_e, size) in list(self.cache):
+                                for (cached_e, size, p) in list(self.cache):
+                                    if p != pool:
+                                        continue
                                     if prev_exp in all_exps(cached_e):
                                         _on_exp(cached_e, "evicted since it contains", prev_exp)
-                                        self.cache.evict(cached_e, size)
-                        self.cache.add(e, size=self.current_size)
-                        self.seen[fp] = (cost, [(e, self.current_size)])
+                                        self.cache.evict(cached_e, size=size, pool=pool)
+                        self.cache.add(e, pool=pool, size=self.current_size)
+                        self.seen[(pool, fp)] = (cost, [(e, self.current_size)])
                         self.last_progress = self.current_size
                         _on_exp(e, "better", *[e for (e, cost) in prev_exps])
                     else:
                         _on_exp(e, "worse", *[e for (e, cost) in prev_exps])
                         continue
 
-                for (watched_e, r, watched_cost, assumptions) in self.watched_exps:
+                for (watched_e, r, watched_cost, assumptions, p) in self.watched_exps:
+                    if p != pool:
+                        continue
                     if watched_e.type != e.type or watched_cost < cost:
                         continue
                     if e == watched_e:
@@ -255,7 +274,7 @@ class FixedBuilder(ExpBuilder):
         self.binders_to_use = binders_to_use
         self.assumptions = assumptions
     def build(self, cache, size):
-        for e in self.wrapped_builder.build(cache, size):
+        for (e, pool) in self.wrapped_builder.build(cache, size):
             try:
                 orig = e
                 # print(hasattr(orig, "_tag"), file=sys.stderr)
@@ -310,7 +329,7 @@ class FixedBuilder(ExpBuilder):
             #         _on_exp(e, "rejecting empty map")
             #         continue
 
-            yield e
+            yield (e, pool)
 
 class VarElimBuilder(ExpBuilder):
     def __init__(self, wrapped_builder, illegal_vars : [EVar]):
@@ -364,7 +383,7 @@ def improve(
         cost_model : CostModel,
         builder : ExpBuilder,
         stop_callback,
-        hints : [Exp] = [],
+        hints : [Exp] = None,
         examples = None):
 
     binders = list(binders)
@@ -425,8 +444,8 @@ def improve(
                     new_e = subst(new_e, subst_repl)
                     bad_var = find_one(free_vars(new_target), lambda v: v not in vars)
 
-                old_cost = cost_model.cost(target)
-                new_cost = cost_model.cost(new_target)
+                old_cost = cost_model.cost(target, RUNTIME_POOL)
+                new_cost = cost_model.cost(new_target, RUNTIME_POOL)
                 if new_cost > old_cost:
                     print("WHOOPS! COST GOT WORSE!")
                     if save_testcases.value:

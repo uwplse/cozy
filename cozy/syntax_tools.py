@@ -398,6 +398,13 @@ class FragmentEnumerator(common.Visitor):
     # overwritten at each loop iteration, that's a problem. Defining a fresh
     # function and immediately calling it is a simple way to force
     # capture-by-value for r instead.
+    def __init__(self, pre_visit=None, post_visit=None):
+        if not pre_visit:
+            pre_visit = lambda obj: True
+        if not post_visit:
+            post_visit = lambda obj, res: res
+        self.pre_visit = pre_visit
+        self.post_visit = post_visit
 
     def visit_ELambda(self, obj):
         # raise NotImplementedError(obj)
@@ -473,8 +480,13 @@ class FragmentEnumerator(common.Visitor):
     def visit_object(self, obj):
         yield ([], obj, lambda x: x, set())
 
-_ENUMERATOR = FragmentEnumerator()
-def enumerate_fragments(e : syntax.Exp):
+    def visit(self, obj):
+        if self.pre_visit(obj):
+            return self.post_visit(obj, super().visit(obj))
+        else:
+            return ()
+
+def enumerate_fragments(e : syntax.Exp, pre_visit=None, post_visit=None):
     """
     Yields tuples (a : [Exp], x : Exp, r : Exp->Exp) such that:
         x is a non-lambda subexpression of e
@@ -484,7 +496,8 @@ def enumerate_fragments(e : syntax.Exp):
     Fragments are enumerated top-down (i.e. every expression comes before any
     of its subexpressions).
     """
-    for (a, x, r, bound) in _ENUMERATOR.visit(e):
+    enumerator = FragmentEnumerator(pre_visit, post_visit)
+    for (a, x, r, bound) in enumerator.visit(e):
         if isinstance(x, syntax.Exp) and not isinstance(x, target_syntax.ELambda):
             yield (a, x, r)
 

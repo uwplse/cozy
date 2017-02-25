@@ -1,4 +1,7 @@
 from cozy.common import nested_dict
+from cozy.target_syntax import Exp, EVar, EStateVar
+from cozy.syntax_tools import free_vars
+from cozy.pools import RUNTIME_POOL, STATE_POOL, ALL_POOLS
 
 class NatDict(object):
     def __init__(self, factory):
@@ -31,10 +34,11 @@ class NatDict(object):
         data.extend(factory() for i in range(len(data), n + 1))
 
 class Cache(object):
-    def __init__(self, items=None):
-        # self.data[type_tag][type][size] is list of exprs
-        self.data = nested_dict(2, lambda: NatDict(list))
+    def __init__(self, binders : [EVar], items : [(Exp, int)]=None):
+        # self.data[pool][type_tag][type][size] is list of exprs
+        self.data = [nested_dict(2, lambda: NatDict(list)) for i in range(len(ALL_POOLS))]
         self.size = 0
+        self.binders = set(binders)
         if items:
             for (e, size) in items:
                 self.add(e, size)
@@ -42,17 +46,17 @@ class Cache(object):
         return type(t)
     def is_tag(self, t):
         return isinstance(t, type)
-    def add(self, e, size):
-        self.data[self.tag(e.type)][e.type][size].append(e)
+    def add(self, e, size, pool):
+        self.data[pool][self.tag(e.type)][e.type][size].append(e)
         self.size += 1
-    def evict(self, e, size):
+    def evict(self, e, size, pool):
         try:
-            self.data[self.tag(e.type)][e.type][size].remove(e)
+            self.data[pool][self.tag(e.type)][e.type][size].remove(e)
             self.size -= 1
         except ValueError:
             # this happens if e is not in the list, which is fine
             pass
-    def find(self, type=None, size=None):
+    def _raw_find(self, pool, type=None, size=None):
         type_tag = None
         if type is not None:
             if self.is_tag(type):
@@ -60,24 +64,32 @@ class Cache(object):
                 type = None
             else:
                 type_tag = self.tag(type)
-        res = []
-        for x in (self.data.values() if type_tag is None else [self.data.get(type_tag, {})]):
+        for x in (self.data[pool].values() if type_tag is None else [self.data[pool].get(type_tag, {})]):
             for y in (x.values() if type is None else [x.get(type, {})]):
                 for z in (y.values() if size is None else [y.get(size, [])]):
-                    res += z
+                    yield from z
+    def find(self, pool, type=None, size=None):
+        res = []
+        res.extend(self._raw_find(pool, type, size))
+        if pool == RUNTIME_POOL:
+            for e in self._raw_find(STATE_POOL, type, size):
+                if all(v not in self.binders for v in free_vars(e)):
+                    res.append(EStateVar(e).with_type(e.type))
         return res
     def types(self):
-        for d in self.data.values():
-            yield from d.keys()
+        for p in ALL_POOLS:
+            for y in self.data[p].values():
+                yield from y.keys()
     def __iter__(self):
-        for x in self.data.values():
-            for y in x.values():
-                for (size, es) in y.items():
-                    for e in es:
-                        yield (e, size)
+        for p in ALL_POOLS:
+            for x in self.data[p].values():
+                for y in x.values():
+                    for (size, es) in y.items():
+                        for e in es:
+                            yield (e, size, p)
     def __len__(self):
         return self.size
     def random_sample(self, n):
         import random
-        es = [ e for (e, size) in self ]
+        es = [ e for (e, size, pool) in self ]
         return random.sample(es, min(n, len(es)))
