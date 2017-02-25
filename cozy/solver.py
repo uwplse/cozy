@@ -513,6 +513,10 @@ class ToZ3(Visitor):
             masks = [self.true for v in value]
             values = [self.unreconstruct(v, type.t) for v in value]
             return (masks, values)
+        elif isinstance(type, TMap):
+            return {
+                "mapping": [(self.true, self.unreconstruct(k, type.k), self.unreconstruct(v, type.v)) for (k, v) in value.items()],
+                "default": self.unreconstruct(value.default, type.v) }
         elif isinstance(type, TEnum):
             return z3.IntVal(type.cases.index(value), ctx)
         elif isinstance(type, TNative):
