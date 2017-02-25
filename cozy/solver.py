@@ -248,6 +248,8 @@ class ToZ3(Visitor):
         return f(*[v for (v, t) in args])
     def visit_EEnumEntry(self, e, env):
         return z3.IntVal(e.type.cases.index(e.name), self.ctx)
+    def visit_ENative(self, e, env):
+        return self.visit(e.e, env)
     def visit_ETuple(self, e, env):
         return tuple(self.visit(ee, env) for ee in e.es)
     def visit_ETupleGet(self, e, env):

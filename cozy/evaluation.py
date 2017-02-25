@@ -175,6 +175,8 @@ class Evaluator(Visitor):
     def visit_EEnumEntry(self, val, env):
         # return val.type.cases.index(val.name)
         return val.name
+    def visit_ENative(self, val, env):
+        return (val.type.name, self.visit(val.e, env))
     def visit_EWithAlteredValue(self, e, env):
         h = self.visit(e.handle, env)
         new_val = self.visit(e.new_value, env)

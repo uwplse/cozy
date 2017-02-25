@@ -369,6 +369,8 @@ def construct_value(t : Type) -> Exp:
         e = EEnumEntry(t.cases[0])
     elif isinstance(t, THandle):
         e = EHandle(construct_value(INT), construct_value(t.value_type))
+    elif isinstance(t, TNative):
+        e = ENative(construct_value(INT))
     else:
         raise NotImplementedError(pprint(t))
     e = e.with_type(t)
