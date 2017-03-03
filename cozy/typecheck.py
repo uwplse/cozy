@@ -111,6 +111,8 @@ class Typechecker(Visitor):
             return syntax.TSet(self.visit(t.args))
         elif t.t == "Bag":
             return syntax.TBag(self.visit(t.args))
+        elif t.t == "Maybe":
+            return syntax.TMaybe(self.visit(t.args))
         else:
             self.report_err(t, "unknown type {}".format(t.t))
             return t
