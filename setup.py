@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import os
-import shutil
 import sys
 from setuptools import setup, find_packages
 
@@ -19,10 +18,7 @@ try:
 except ImportError:
     die("Z3 Python module was not found")
 
-os.makedirs("build/exes", exist_ok=True)
-shutil.copy("cozy.py", "build/exes/cozy")
-
-with open("requirements.txt") as f:
+with open(os.path.join(os.path.dirname(__file__), "requirements.txt")) as f:
     reqs = [line.strip() for line in f]
 
 setup(
@@ -34,5 +30,5 @@ setup(
     url='https://cozy.uwplse.org/',
     packages=find_packages(),
     entry_points = { "console_scripts": "cozy=cozy.main:run" },
-    requires=reqs,
+    install_requires=reqs,
     )
