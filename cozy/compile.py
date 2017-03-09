@@ -5,7 +5,7 @@ from cozy import common
 from cozy.common import fresh_name
 from cozy.target_syntax import *
 from cozy import library
-from cozy.syntax_tools import all_types, fresh_var, subst
+from cozy.syntax_tools import all_types, fresh_var, subst, free_vars
 
 INDENT = "  "
 
@@ -80,12 +80,18 @@ class CxxPrinter(common.Visitor):
     def visit_SWhile(self, w, indent):
         cond_setup, cond = self.visit(ENot(w.e), indent+INDENT)
         body = self.visit(w.body, indent=indent+INDENT)
-        return "{indent0}for (;;) {{\n{cond_setup}{indent}if ({cond}) break;\n{body}{indent0}}}\n".format(
-            indent0=indent,
-            indent=indent+INDENT,
-            cond_setup=cond_setup,
-            cond=cond,
-            body=body)
+        if cond_setup:
+            return "{indent0}for (;;) {{\n{cond_setup}{indent}if ({cond}) break;\n{body}{indent0}}}\n".format(
+                indent0=indent,
+                indent=indent+INDENT,
+                cond_setup=cond_setup,
+                cond=cond,
+                body=body)
+        else:
+            return "{indent0}while (!{cond}) {{\n{body}{indent0}}}\n".format(
+                indent0=indent,
+                cond=cond,
+                body=body)
 
     def visit_SBreak(self, s, indent):
         return "{indent}break;\n".format(indent=indent)
@@ -179,9 +185,17 @@ class CxxPrinter(common.Visitor):
         """
         if isinstance(t, library.TIntrusiveLinkedList):
             return t.construct_concrete(e, out)
+        elif isinstance(t, library.TNativeList):
+            x = fresh_var(t.t)
+            return SSeq(
+                self.initialize_native_list(out),
+                SForEach(x, e, SCall(out, "add", [x])))
         elif type(t) in [TBool, TInt, TNative, TMaybe, TLong, TString]:
             return SAssign(out, e)
-        raise NotImplementedError(type)
+        raise NotImplementedError(t)
+
+    def initialize_native_list(self, e) -> Stm:
+        return SNoOp() # C++ does default-initialization
 
     def state_exp(self, lval):
         if isinstance(lval, EVar):
@@ -348,8 +362,16 @@ class CxxPrinter(common.Visitor):
                 SDecl(res.id, ENum(0).with_type(type)),
                 SForEach(x, e.e, SAssign(res, EBinOp(res, "+", x)))]), indent)
             return (setup, res.id)
-        ce, ee = self.visit(e.e, indent)
-        return (ce, "({op} {ee})".format(op=op, ee=ee))
+        elif op == UOp.Empty:
+            t = TMaybe(e.e.type.t)
+            return self.visit(EEq(EUnaryOp(UOp.The, e.e).with_type(t), ENull().with_type(t)), indent)
+        elif op == UOp.Exists:
+            return self.visit(ENot(EUnaryOp(UOp.Empty, e.e).with_type(BOOL)), indent)
+        elif op in ("-", UOp.Not):
+            ce, ee = self.visit(e.e, indent)
+            return (ce, "({op} {ee})".format(op=op, ee=ee))
+        else:
+            raise NotImplementedError(op)
 
     def visit_EGetField(self, e, indent=""):
         ce, ee = self.visit(e.e, indent)
@@ -357,6 +379,11 @@ class CxxPrinter(common.Visitor):
         if isinstance(e.e.type, THandle) or isinstance(e.e.type, library.TIntrusiveLinkedList):
             op = "->"
         return (ce, "({ee}{op}{f})".format(ee=ee, op=op, f=e.f))
+
+    def visit_ETuple(self, e, indent=""):
+        name = self.typename(e.type)
+        setups, args = zip(*[self.visit(arg, indent) for arg in e.es])
+        return ("".join(setups), "{}({})".format(name, ", ".join(args)))
 
     def visit_ETupleGet(self, e, indent=""):
         return self.visit_EGetField(EGetField(e.e, "_{}".format(e.n)), indent)
@@ -429,6 +456,17 @@ class CxxPrinter(common.Visitor):
             v.id)
 
     def visit_SCall(self, call, indent=""):
+        if isinstance(call.target.type, library.TNativeList) or type(call.target.type) == TBag:
+            if call.func == "add":
+                setup1, target = self.visit(call.target, indent)
+                setup2, arg = self.visit(call.args[0], indent)
+                return setup1 + setup2 + "{}{}.push_back({});\n".format(indent, target, arg)
+            elif call.func == "remove":
+                setup1, target = self.visit(call.target, indent)
+                setup2, arg = self.visit(call.args[0], indent)
+                return setup1 + setup2 + "{}{target}.remove({target}.find({}));\n".format(indent, arg, target=target)
+            else:
+                raise NotImplementedError(call.func)
         f = getattr(call.target.type, "implement_{}".format(call.func))
         stm = f(call.target, call.args)
         return self.visit(stm, indent)
@@ -499,6 +537,7 @@ class CxxPrinter(common.Visitor):
 
         s = "#pragma once\n"
         s += "#include <unordered_map>\n"
+        s += "#include <vector>\n"
         s += "class {} {{\n".format(spec.name)
         s += "public:\n"
 
@@ -510,7 +549,11 @@ class CxxPrinter(common.Visitor):
             self.statevar_name = name
             s += "{}{};\n".format(INDENT, self.visit(t, name))
         s += "public:\n"
-        s += INDENT + "inline {name}() : {inits} {{ }}\n".format(name=spec.name, inits=", ".join("{} {}".format(name, self.initial_value(t)) for (name, t) in spec.statevars))
+        s += INDENT + "inline {name}() : {inits} {{ }}\n".format(
+            name=spec.name,
+            inits=", ".join(
+                "{} {}".format(name, self.initial_value(t))
+                for (name, t) in spec.statevars))
         s += INDENT + "{name}(const {name}& other) = delete;\n".format(name=spec.name)
         for op in spec.methods:
             s += self.visit(op, INDENT)
@@ -532,8 +575,23 @@ class JavaPrinter(CxxPrinter):
         s += "public class {} implements java.io.Serializable {{\n".format(spec.name)
         for name, t in spec.types:
             self.types[t] = name
+
+        # member variables
         for name, t in spec.statevars:
             s += "{}protected {};\n".format(INDENT, self.visit(t, name))
+
+        # constructor
+        s += "{}public {}() {{\n".format(INDENT, spec.name)
+        for name, t in spec.statevars:
+            initial_value = state_exps[name]
+            fvs = free_vars(initial_value)
+            from cozy.synthesis.core import construct_value
+            initial_value = subst(initial_value, {v.id : construct_value(v.type) for v in fvs})
+            setup = self.construct_concrete(t, initial_value, EVar(name).with_type(t))
+            s += self.visit(setup, INDENT + INDENT)
+        s += "{}}}\n".format(INDENT)
+
+        # methods
         for op in spec.methods:
             s += str(self.visit(op, INDENT))
 
@@ -575,10 +633,18 @@ class JavaPrinter(CxxPrinter):
                 out=out,
                 body=body)
 
+    def initialize_native_list(self, e):
+        return SEscape("{indent}{e} = new java.util.ArrayList<>();\n", ["e"], [e])
+
     def visit_EMakeRecord(self, e, indent=""):
         setups, args = zip(*[self.visit(v, indent) for (f, v) in e.fields])
         tname = self.typename(e.type)
         return ("".join(setups), "new {}({})".format(tname, ", ".join(args)))
+
+    def visit_ETuple(self, e, indent=""):
+        name = self.typename(e.type)
+        setups, args = zip(*[self.visit(arg, indent) for arg in e.es])
+        return ("".join(setups), "new {}({})".format(name, ", ".join(args)))
 
     def visit_ENull(self, e, indent=""):
         return ("", "null")
@@ -688,10 +754,7 @@ class JavaPrinter(CxxPrinter):
     def visit_TString(self, t, name):
         return "String {}".format(name)
 
-    def visit_TLinkedList(self, t, name):
-        return "java.util.LinkedList<{}> {}".format(self.visit(t.t, ""), name)
-
-    def visit_TArrayList(self, t, name):
+    def visit_TNativeList(self, t, name):
         return "java.util.ArrayList<{}> {}".format(self.visit(t.t, ""), name)
 
     def visit_TBag(self, t, name):
@@ -700,7 +763,7 @@ class JavaPrinter(CxxPrinter):
         return "java.util.Collection<{}> {}".format(self.visit(t.t, ""), name)
 
     def visit_SCall(self, call, indent=""):
-        if isinstance(call.target.type, library.TLinkedList) or isinstance(call.target.type, library.TArrayList) or type(call.target.type) == TBag:
+        if isinstance(call.target.type, library.TNativeList) or type(call.target.type) == TBag:
             if call.func == "add":
                 setup1, target = self.visit(call.target, indent)
                 setup2, arg = self.visit(call.args[0], indent)
@@ -714,7 +777,7 @@ class JavaPrinter(CxxPrinter):
         return super().visit_SCall(call, indent)
 
     def visit_EJust(self, e, indent):
-        return self.visit(e.e)
+        return self.visit(e.e, indent)
 
     def visit_EGetField(self, e, indent):
         setup, ee = self.visit(e.e, indent)
