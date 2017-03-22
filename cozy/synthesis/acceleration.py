@@ -104,32 +104,50 @@ def as_aggregation_of_filter(e):
     elif isinstance(e.type, TBag):
         yield (Aggregation(), mk_lambda(e.type.t, lambda x: T), e)
 
-# def accelerate_filter(agg, p, bag):
-#     print(pprint(p), file=sys.stderr)
-#     parts = list(break_conj(p))
-#     guards = []
-#     map_conds = []
-#     in_conds = []
-#     others = []
-#     for p in parts:
-#         others.append(p)
-#     return ???
-
 def map_accelerate(e, state_vars, binders, cache, size):
     for (_, arg, f) in enumerate_fragments(e):
-        if any(v in state_vars or v in binders for v in free_vars(arg)):
+        if any(v in state_vars for v in free_vars(arg)):
             continue
         for binder in (b for b in binders if b.type == arg.type):
             value = f(binder)
             if any(v not in state_vars and v not in binders for v in free_vars(value)):
                 continue
             for bag in cache.find(pool=STATE_POOL, size=size, type=TBag(arg.type)):
+                if isinstance(bag, EEmptyList):
+                    continue
                 m = EMakeMap2(bag,
                     ELambda(binder, value)).with_type(TMap(arg.type, e.type))
                 if any(v in binders for v in free_vars(m)):
                     continue
                 yield (m, STATE_POOL)
                 yield (EMapGet(EStateVar(m).with_type(m.type), arg).with_type(e.type), RUNTIME_POOL)
+
+def accelerate_filter(bag, p, state_vars, binders, cache, size):
+    parts = list(break_conj(p.body))
+    guards = []
+    map_conds = []
+    in_conds = []
+    others = []
+    for part in parts:
+        if p.arg not in free_vars(part):
+            others.append(part)
+        elif all((v == p.arg or v in state_vars) for v in free_vars(part)):
+            guards.append(part)
+        elif infer_map_lookup(part, p.arg, state_vars):
+            map_conds.append(part)
+        elif isinstance(part, EBinOp) and part.op == BOp.In and all(v in state_vars for v in free_vars(part.e2)):
+            in_conds.append(part)
+        else:
+            others.append(part)
+
+    if in_conds:
+        for i in range(len(in_conds)):
+            rest = others + in_conds[:i] + in_conds[i+1:] + map_conds
+            for tup in map_accelerate(EFilter(EFilter(bag, ELambda(p.arg, EAll(guards))).with_type(bag.type), ELambda(p.arg, in_conds[i])).with_type(bag.type), state_vars, binders, cache, size):
+                (e, pool) = tup
+                yield tup
+                if e.type == bag.type and pool == RUNTIME_POOL:
+                    yield (EFilter(e, ELambda(p.arg, EAll(rest))).with_type(bag.type), RUNTIME_POOL)
 
 class AcceleratedBuilder(ExpBuilder):
 
@@ -144,6 +162,8 @@ class AcceleratedBuilder(ExpBuilder):
         for (sz1, sz2) in pick_to_sum(2, size-1):
             for e in cache.find(pool=RUNTIME_POOL, size=sz1):
                 yield from map_accelerate(e, self.state_vars, self.binders, cache, sz2)
+                if isinstance(e, EFilter) and not any(v in self.binders for v in free_vars(e)):
+                    yield from accelerate_filter(e.e, e.p, self.state_vars, self.binders, cache, sz2)
 
         for bag in itertools.chain(cache.find(pool=RUNTIME_POOL, type=TBag, size=size-1), cache.find(pool=RUNTIME_POOL, type=TSet, size=size-1)):
             if isinstance(bag, EFilter):
