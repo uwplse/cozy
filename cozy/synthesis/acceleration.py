@@ -167,6 +167,12 @@ class AcceleratedBuilder(ExpBuilder):
                     yield from accelerate_filter(e.e, e.p, self.state_vars, self.binders, cache, sz2)
 
         for bag in itertools.chain(cache.find(pool=RUNTIME_POOL, type=TBag, size=size-1), cache.find(pool=RUNTIME_POOL, type=TSet, size=size-1)):
+            for a in self.args:
+                for v in self.state_vars:
+                    if TBag(a.type) == v.type:
+                        yield (EFilter(bag, mk_lambda(bag.type.t, lambda _: EBinOp(a, BOp.In, v).with_type(BOOL))).with_type(bag.type), RUNTIME_POOL)
+                        yield (EFilter(bag, mk_lambda(bag.type.t, lambda _: ENot(EBinOp(a, BOp.In, v).with_type(BOOL)))).with_type(bag.type), RUNTIME_POOL)
+
             if isinstance(bag, EFilter):
                 if any(v in self.binders for v in free_vars(bag)):
                     continue
