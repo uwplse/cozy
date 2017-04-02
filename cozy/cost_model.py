@@ -1,20 +1,34 @@
+from functools import lru_cache
+
 from cozy.target_syntax import *
 from cozy.syntax_tools import BottomUpExplorer, pprint, equal, fresh_var, mk_lambda, free_vars
 from cozy.pools import RUNTIME_POOL, STATE_POOL
+from cozy.solver import satisfiable, valid
 
-def P(e):
+@lru_cache(maxsize=2**16)
+def P(e, assumptions=T, sat=None):
     """
     Estimate probability that e evaluates to true.
     """
+    if sat is None:
+        sat = satisfiable(EAll([assumptions, e]))
+        return P(e, assumptions, sat)
+    if not sat:
+        return 0
     if isinstance(e, EUnaryOp) and e.op == UOp.Not:
-        return 1 - P(e.e)
+        return 1 - P(e.e, assumptions)
     elif isinstance(e, EBool):
         return 1 if e.val else 0
     elif isinstance(e, EBinOp):
         if e.op == BOp.And:
-            return P(e.e1) * P(e.e2)
+            if valid(EImplies(assumptions, EImplies(e.e1, e.e2))):
+                return P(e.e2)
+            elif valid(EImplies(assumptions, EImplies(e.e2, e.e1))):
+                return P(e.e1)
+            else:
+                return P(e.e1, assumptions, sat=True) * P(e.e2, assumptions, sat=True)
         elif e.op == BOp.Or:
-            return 1 - (1 - P(e.e1)) * (1 - P(e.e2))
+            return P(ENot(EAll([ENot(e.e1), ENot(e.e2)])), assumptions)
     return 0.5
 
 class CostModel(object):
@@ -69,7 +83,7 @@ class CardinalityVisitor(BottomUpExplorer):
     def visit_EFilter(self, e):
         if isinstance(e.e, EFilter):
             return self.visit(EFilter(e.e.e, ELambda(e.p.arg, EAll([e.p.body, e.e.p.apply_to(e.p.arg)]))))
-        return self.visit(e.e) * P(e.p.body)
+        return self.visit(e.e) * P(e.p.body, assumptions=EBinOp(e.p.arg, BOp.In, e.e).with_type(BOOL))
     def visit_EBinOp(self, e):
         if e.op == "+":
             return self.visit(e.e1) + self.visit(e.e2)
