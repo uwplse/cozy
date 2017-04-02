@@ -3,7 +3,7 @@ import itertools
 from cozy.common import find_one, partition, pick_to_sum
 from .core import ExpBuilder
 from cozy.target_syntax import *
-from cozy.syntax_tools import free_vars, break_conj, all_exps, replace, pprint, enumerate_fragments
+from cozy.syntax_tools import free_vars, break_conj, all_exps, replace, pprint, enumerate_fragments, mk_lambda
 from cozy.desugar import desugar_exp
 from cozy.typecheck import is_numeric
 from cozy.pools import RUNTIME_POOL, STATE_POOL
@@ -151,11 +151,12 @@ def accelerate_filter(bag, p, state_vars, binders, cache, size):
 
 class AcceleratedBuilder(ExpBuilder):
 
-    def __init__(self, wrapped : ExpBuilder, binders : [EVar], state_vars : [EVar]):
+    def __init__(self, wrapped : ExpBuilder, binders : [EVar], state_vars : [EVar], args : [EVar]):
         super().__init__()
         self.wrapped = wrapped
         self.binders = binders
         self.state_vars = state_vars
+        self.args = args
 
     def build(self, cache, size):
 

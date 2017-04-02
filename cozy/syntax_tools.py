@@ -701,10 +701,7 @@ def alpha_equivalent(e1, e2, allow_rename=lambda v1, v2: False):
 BOOL = syntax.TBool()
 
 def implies(e1, e2):
-    return syntax.EBinOp(
-        syntax.EUnaryOp("not", e1).with_type(BOOL),
-        "or",
-        e2).with_type(BOOL)
+    return syntax.EImplies(e1, e2)
 
 def equal(e1, e2):
     return syntax.EEq(e1, e2)
