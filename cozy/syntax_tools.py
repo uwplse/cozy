@@ -124,8 +124,8 @@ class PrettyPrinter(common.Visitor):
     def visit_THeap(self, h):
         return "Heap<{}>".format(self.visit(h.t))
 
-    def visit_TLinkedList(self, h):
-        return "LinkedList<{}>".format(self.visit(h.t))
+    def visit_TIntrusiveLinkedList(self, h):
+        return "IntrusiveLinkedList<{}>".format(self.visit(h.t))
 
     def visit_THashMap(self, h):
         return "HashMap<{}, {}>".format(self.visit(h.k), self.visit(h.v))
