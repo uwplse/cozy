@@ -10,6 +10,8 @@ def P(e, assumptions=T, sat=None):
     """
     Estimate probability that e evaluates to true.
     """
+    if isinstance(e, EBool):
+        return 1 if e.val else 0
     if sat is None:
         sat = satisfiable(EAll([assumptions, e]))
         return P(e, assumptions, sat)
@@ -17,8 +19,6 @@ def P(e, assumptions=T, sat=None):
         return 0
     if isinstance(e, EUnaryOp) and e.op == UOp.Not:
         return 1 - P(e.e, assumptions)
-    elif isinstance(e, EBool):
-        return 1 if e.val else 0
     elif isinstance(e, EBinOp):
         if e.op == BOp.And:
             if valid(EImplies(assumptions, EImplies(e.e1, e.e2))):
