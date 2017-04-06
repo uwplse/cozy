@@ -115,8 +115,12 @@ class MemoryUsageCostModel(CostModel, BottomUpExplorer):
     def __init__(self):
         self.cardinality = CardinalityVisitor().visit
     def cost(self, e, pool):
-        cost = self.cardinality(e) / 100 if isinstance(e.type, TBag) or isinstance(e.type, TMap) or isinstance(e.type, TSet) else 0
-        cost += e.size() / 100
+        cost = 0
+        if isinstance(e.type, TBag) or isinstance(e.type, TMap) or isinstance(e.type, TSet):
+            cost += self.cardinality(e)
+        elif e.type == BOOL:
+            cost += P(e)
+        cost += e.size()
         return cost
     def is_monotonic(self):
         return False
@@ -165,12 +169,12 @@ class RunTimeCostModel(CostModel, BottomUpExplorer):
     def visit_EFilter(self, e):
         return 0.01 + self.visit(e.e) + self.cardinality(e.e) * self.visit(e.p.body)
     def visit_EMakeMap(self, e):
-        return float("inf")
+        return 100000000
         # return self.visit(e.e) + self.cardinality(e.e) * (self.visit(e.key.body) + self.visit(e.value.body))
     def visit_EMakeMap2(self, e):
-        return float("inf")
+        return 100000000
     def visit_EStateVar(self, e):
-        return self.memcm.cost(e.e, STATE_POOL)
+        return self.memcm.cost(e.e, STATE_POOL) / 100
     def visit(self, x):
         if isinstance(x, Exp) and not free_vars(x):
             return x.size() / 100
