@@ -246,7 +246,7 @@ class Evaluator(Visitor):
         elif e.op == "<":
             return lt(e.e1.type, v1, v2)
         elif e.op == BOp.In:
-            return v1 in v2
+            return any(eq(e.e1.type, v1, v2elem) for v2elem in v2)
         else:
             raise NotImplementedError(e.op)
     def visit_ETuple(self, e, env):
