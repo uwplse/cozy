@@ -454,7 +454,7 @@ class ToZ3(Visitor):
         return self._map_get(e.map.type, map, key, env)
     def visit_EApp(self, e, env):
         return self.apply(e.f, self.visit(e.arg, env), env)
-    def apply(self, lam, arg, env):
+    def apply(self, lam : ELambda, arg : object, env):
         with extend(env, lam.arg.id, arg):
             return self.visit(lam.body, env)
     def visit_clauses(self, clauses, e, env):
@@ -768,6 +768,9 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
                                     for v in free_vars(x):
                                         print(" ---> s[{}] = {}".format(v.id, solver_env[v.id]))
                                         print(" ---> e[{}] = {}".format(v.id, eval_env[v.id]))
+                                    if isinstance(x, EBinOp):
+                                        print(" ---> lhs = {}".format(evaluation.eval(x.e1, eval_env)))
+                                        print(" ---> rhs = {}".format(evaluation.eval(x.e2, eval_env)))
                                     if isinstance(x, EFilter):
                                         smask, selems = visitor.visit(x.e, solver_env)
                                         for (mask, elem) in zip(smask, selems):
