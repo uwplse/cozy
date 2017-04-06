@@ -147,10 +147,15 @@ def synthesize(
 
         def push_goal(q : Query):
             specs.append(q)
+            fvs = free_vars(q)
+            # initial rep
             qargs = set(EVar(a).with_type(t) for (a, t) in q.args)
-            rep = [(fresh_var(v.type), v) for v in free_vars(q) if v not in qargs]
+            rep = [(fresh_var(v.type), v) for v in fvs if v not in qargs]
             ret = subst(q.ret, { sv.id:v for (v, sv) in rep })
             set_impl(q, rep, ret)
+            # wrap state vars
+            q = rewrite_ret(q, lambda e: subst(e, { v.id : EStateVar(v).with_type(v.type) for v in fvs if v not in qargs }))
+            # create job
             j = ImproveQueryJob(
                 ctx,
                 state_vars,
