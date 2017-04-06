@@ -6,17 +6,16 @@ from cozy.pools import RUNTIME_POOL, STATE_POOL
 from cozy.solver import satisfiable, valid
 
 @lru_cache(maxsize=2**16)
-def P(e, assumptions=T, sat=None):
+def P(e, assumptions=T):
     """
     Estimate probability that e evaluates to true.
     """
     if isinstance(e, EBool):
         return 1 if e.val else 0
-    if sat is None:
-        sat = satisfiable(EAll([assumptions, e]))
-        return P(e, assumptions, sat)
-    if not sat:
+    if not satisfiable(EAll([assumptions, e])):
         return 0
+    if not satisfiable(EAll([assumptions, ENot(e)])):
+        return 1
     if isinstance(e, EUnaryOp) and e.op == UOp.Not:
         return 1 - P(e.e, assumptions)
     elif isinstance(e, EBinOp):
@@ -26,7 +25,7 @@ def P(e, assumptions=T, sat=None):
             elif valid(EImplies(assumptions, EImplies(e.e2, e.e1))):
                 return P(e.e1)
             else:
-                return P(e.e1, assumptions, sat=True) * P(e.e2, assumptions, sat=True)
+                return P(e.e1, assumptions) * P(e.e2, assumptions)
         elif e.op == BOp.Or:
             return P(ENot(EAll([ENot(e.e1), ENot(e.e2)])), assumptions)
     return 0.5
