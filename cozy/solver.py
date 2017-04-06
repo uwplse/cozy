@@ -530,6 +530,10 @@ class ToZ3(Visitor):
         elif isinstance(type, TMaybe):
             exists = type.obj is not None
             return (self.unreconstruct(exists, BOOL), self.unreconstruct(type.obj, type.t) if exists else self.mkval(type.t))
+        elif isinstance(type, TString):
+            if all(c == "a" for c in value):
+                return z3.IntVal(len(value), ctx)
+            raise NotImplementedError((type, value))
         else:
             raise NotImplementedError(type)
 
