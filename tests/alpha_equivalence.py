@@ -40,3 +40,26 @@ class TestAlphaEquivalent(unittest.TestCase):
         one = ENum(1)
         e = ETuple((one, one))
         assert not alpha_equivalent(e, one)
+
+    def test_make_record_other(self):
+        assert not alpha_equivalent(
+            EMakeRecord((("x", ENum(0)), ("y", T))),
+            T)
+        assert not alpha_equivalent(
+            T,
+            EMakeRecord((("x", ENum(0)), ("y", T))))
+
+    def test_make_record_yes(self):
+        assert alpha_equivalent(
+            EMakeRecord((("x", ENum(0)), ("y", T))),
+            EMakeRecord((("x", ENum(0)), ("y", T))))
+
+    def test_make_record_no(self):
+        assert not alpha_equivalent(
+            EMakeRecord((("x", ENum(0)), ("y", T))),
+            EMakeRecord((("z", ENum(0)), ("y", T))))
+
+    def test_make_record_order_dependent(self):
+        assert not alpha_equivalent(
+            EMakeRecord((("x", ENum(0)), ("y", T))),
+            EMakeRecord((("y", T), ("x", ENum(0)))))

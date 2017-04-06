@@ -648,6 +648,9 @@ def alpha_equivalent(e1, e2, allow_rename=lambda v1, v2: False):
             if not isinstance(e2, syntax.ETuple):
                 return False
             return all(self.visit(ee1, ee2) for (ee1, ee2) in zip(e1.es, e2.es))
+        def visit_EMakeRecord(self, e1, e2):
+            return (isinstance(e2, syntax.EMakeRecord) and
+                all(k1 == k2 and self.visit(v1, v2) for ((k1, v1), (k2, v2)) in zip(e1.fields, e2.fields)))
         def visit_ELambda(self, e1, e2):
             if not isinstance(e2, target_syntax.ELambda):
                 return False
