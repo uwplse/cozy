@@ -15,6 +15,7 @@ from cozy import typecheck
 from cozy import desugar
 from cozy import target_syntax
 from cozy import syntax_tools
+from cozy import invariant_preservation
 from cozy import synthesis
 from cozy import library
 from cozy import autotuning
@@ -54,6 +55,12 @@ def run():
 
     ast = desugar.desugar(ast)
     print(syntax_tools.pprint(ast))
+
+    errors = invariant_preservation.check_ops_preserve_invariants(ast)
+    if errors:
+        for e in errors:
+            print("Error: {}".format(e))
+        sys.exit(1)
 
     if not args.simple:
         ast, state_map = synthesis.synthesize(

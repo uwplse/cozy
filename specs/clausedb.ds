@@ -12,6 +12,7 @@ ClauseDB:
 
     op falsify(l : Bound)
         assume not (l in falselits);
+        assume l < N;
         falselits.add(l)
 
     op unfalsify(l : Bound)
