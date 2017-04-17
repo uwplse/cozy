@@ -423,32 +423,32 @@ class Typechecker(Visitor):
     def visit_EMap(self, e):
         self.visit(e.e)
         elem_type = self.get_collection_type(e.e)
+        e.f.arg.type = elem_type
         self.visit(e.f)
-        self.ensure_type(e.f.arg, elem_type)
         e.type = syntax.TBag(e.f.body.type)
 
     def visit_EFilter(self, e):
         self.visit(e.e)
         elem_type = self.get_collection_type(e.e)
+        e.p.arg.type = elem_type
         self.visit(e.p)
-        self.ensure_type(e.p.arg, elem_type)
         self.ensure_type(e.p.body, BOOL)
         e.type = e.e.type
 
     def visit_EMakeMap(self, e):
         self.visit(e.e)
         t = self.get_collection_type(e.e)
+        e.key.arg.type = t
+        e.value.arg.type = e.e.type
         self.visit(e.key)
-        self.ensure_type(e.key.arg, t)
         self.visit(e.value)
-        self.ensure_type(e.value.arg, e.e.type)
         e.type = syntax.TMap(e.key.body.type, e.value.body.type)
 
     def visit_EMakeMap2(self, e):
         self.visit(e.e)
         t = self.get_collection_type(e.e)
+        e.value.arg.type = t
         self.visit(e.value)
-        self.ensure_type(e.value.arg, t)
         e.type = syntax.TMap(t, e.value.body.type)
 
     def visit_EMapKeys(self, e):

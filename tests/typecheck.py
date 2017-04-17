@@ -12,21 +12,9 @@ class TestTypechecking(unittest.TestCase):
         errs = typecheck(e, { x.id : x.type })
         assert errs
 
-    def test_map_incorrect_key_type(self):
-        x = EVar("x").with_type(TBag(TInt()))
-        e = EMap(x, mk_lambda(TBool(), lambda elem: EBool(True)))
-        errs = typecheck(e, { x.id : x.type })
-        assert errs
-
     def test_filter_over_noncollection(self):
         x = EVar("x").with_type(TInt())
         e = EFilter(x, mk_lambda(TInt(), lambda elem: EBool(True)))
-        errs = typecheck(e, { x.id : x.type })
-        assert errs
-
-    def test_filter_incorrect_key_type(self):
-        x = EVar("x").with_type(TBag(TInt()))
-        e = EFilter(x, mk_lambda(TBool(), lambda elem: EBool(True)))
         errs = typecheck(e, { x.id : x.type })
         assert errs
 
@@ -56,3 +44,10 @@ class TestTypechecking(unittest.TestCase):
     def test_ECond_4(self):
         x = ENum(1).with_type(INT)
         assert not retypecheck(ECond(x, x, x))
+
+    def test_lambda_arg_inference(self):
+        s = ESingleton(T)
+        x = EVar("x")
+        assert retypecheck(EFilter(s, ELambda(x, x)))
+        assert retypecheck(EMap(s, ELambda(x, x)))
+        assert retypecheck(EMakeMap2(s, ELambda(x, x)))
