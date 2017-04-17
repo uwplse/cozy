@@ -127,6 +127,12 @@ class PrettyPrinter(common.Visitor):
     def visit_TIntrusiveLinkedList(self, h):
         return "IntrusiveLinkedList<{}>".format(self.visit(h.t))
 
+    def visit_TNativeSet(self, h):
+        return "NativeSet<{}>".format(self.visit(h.t))
+
+    def visit_TNativeList(self, h):
+        return "NativeList<{}>".format(self.visit(h.t))
+
     def visit_THashMap(self, h):
         return "HashMap<{}, {}>".format(self.visit(h.k), self.visit(h.v))
 
