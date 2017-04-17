@@ -106,8 +106,6 @@ class ToZ3(Visitor):
     def distinct(self, t, *values):
         if len(values) <= 1:
             return z3.BoolVal(True, self.ctx)
-        if decideable(t):
-            return z3.Distinct(*values, self.ctx)
         return z3.And(
             self.distinct(t, values[1:]),
             *[z3.Not(self.eq(t, values[0], v1, {}), self.ctx) for v1 in values[1:]],
@@ -380,12 +378,14 @@ class ToZ3(Visitor):
         elif e.op == "+":
             if isinstance(e.type, TBag):
                 return (v1[0] + v2[0], v1[1] + v2[1])
+            elif isinstance(e.type, TSet):
+                return self.visit(EUnaryOp(UOp.Distinct, EBinOp(e.e1, "+", e.e2).with_type(TBag(e.type.t))).with_type(TBag(e.type.t)), env)
             elif isinstance(e.type, TInt):
                 return v1 + v2
             else:
                 raise NotImplementedError(e.type)
         elif e.op == "-":
-            if isinstance(e.type, TBag):
+            if isinstance(e.type, TBag) or isinstance(e.type, TSet):
                 return self.remove_all(e.type, v1, v2, env)
             return v1 - v2
         elif e.op == BOp.In:
