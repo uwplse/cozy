@@ -116,6 +116,7 @@ class Learner(object):
         self.seen.clear()
         self.builder_iter = ()
         self.last_progress = 0
+        self.backlog = None
         if update_watched_exps:
             self.update_watched_exps()
 
@@ -175,8 +176,34 @@ class Learner(object):
     def _fingerprint(self, e, examples=None):
         return fingerprint(e, self._examples_for(e))
 
+    def _possible_replacements(self, e, pool, cost):
+        """
+        Yields watched expressions that appear as worse versions of the given
+        expression. There may be more than one.
+        """
+        for (watched_e, r, watched_cost, assumptions, p) in self.watched_exps:
+            if p != pool:
+                continue
+            if watched_e.type != e.type or watched_cost < cost:
+                continue
+            if e == watched_e:
+                continue
+            equality = EEq(e, watched_e)
+            efvs = free_vars(equality)
+            # remove assumptions that talk about binders not in either expression
+            assumptions = EAll([a for a in assumptions if all((v in efvs or v not in self.binders) for v in free_vars(a))])
+            eqfp = self._fingerprint(implies(assumptions, equality))
+            if all(eqfp[i] for i in range(1, len(eqfp))):
+                yield (watched_e, e, r)
+
     def next(self):
         while True:
+            if self.backlog is not None:
+                improvements = list(self._possible_replacements(*self.backlog))
+                if improvements:
+                    return improvements[0]
+                else:
+                    self.backlog = None
             for (e, pool) in self.builder_iter:
                 if self.stop_callback():
                     raise StopException()
@@ -223,20 +250,10 @@ class Learner(object):
                         _on_exp(e, "worse", *[e for (e, cost) in prev_exps])
                         continue
 
-                for (watched_e, r, watched_cost, assumptions, p) in self.watched_exps:
-                    if p != pool:
-                        continue
-                    if watched_e.type != e.type or watched_cost < cost:
-                        continue
-                    if e == watched_e:
-                        continue
-                    equality = EEq(e, watched_e)
-                    efvs = free_vars(equality)
-                    # remove assumptions that talk about binders not in either expression
-                    assumptions = EAll([a for a in assumptions if all((v in efvs or v not in self.binders) for v in free_vars(a))])
-                    eqfp = self._fingerprint(implies(assumptions, equality))
-                    if all(eqfp[i] for i in range(1, len(eqfp))):
-                        return (watched_e, e, r)
+                improvements = list(self._possible_replacements(e, pool, cost))
+                if improvements:
+                    self.backlog = (e, pool, cost)
+                    return improvements[0]
 
             if self.last_progress < (self.current_size+1) // 2:
                 raise NoMoreImprovements("hit termination condition")
