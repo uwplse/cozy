@@ -135,7 +135,7 @@ def synthesize(
 
     # transform ops to delta objects
     ops = [op for op in spec.methods if isinstance(op, Op)]
-    op_deltas = { op.name : inc.to_delta(spec.statevars, op) for op in spec.methods if isinstance(op, Op) }
+    op_deltas = { op.name : inc.delta_form(spec.statevars, op) for op in spec.methods if isinstance(op, Op) }
 
     # op_stms[var][op_name] gives the statement necessary to update
     # `var` when `op_name` is called
@@ -254,13 +254,9 @@ def synthesize(
 
             for op in ops:
                 print("###### INCREMENTALIZING: {}".format(op.name))
-                (member, delta) = op_deltas[op.name]
-                # print(member, delta)
+                delta = op_deltas[op.name]
                 for new_member, projection in rep:
-                    (state_update, subqueries) = inc.derivative(projection, member, delta, state_vars, list(op.assumptions))
-                    # print(state_update, subqueries)
-                    state_update_stm = inc.apply_delta_in_place(new_member, state_update)
-                    # print(pprint(state_update_stm))
+                    (state_update_stm, subqueries) = inc.sketch_update(new_member, projection, subst(projection, delta), state_vars, list(op.assumptions))
                     for sub_q in subqueries:
                         qq = [qq for qq in specs if equivalent(qq, sub_q)]
                         if qq:
@@ -317,8 +313,9 @@ def synthesize(
         new_ops = []
         for op in ops:
             stms = [ ss[op.name] for ss in op_stms.values() ]
-            if isinstance(op_deltas[op.name][1], inc.BagElemUpdated):
-                stms.append(op.body)
+            # TODO: changes in concrete land!
+            # if isinstance(op_deltas[op.name][1], inc.BagElemUpdated):
+            #     stms.append(op.body)
             new_stms = seq(stms)
             new_ops.append(Op(
                 op.name,

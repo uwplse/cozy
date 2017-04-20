@@ -1,107 +1,9 @@
-from cozy.common import ADT, declare_case, Visitor, typechecked, fresh_name
+from cozy.common import fresh_name
 from cozy import syntax
 from cozy import target_syntax
-from cozy.syntax_tools import subst, free_vars, pprint, equal, fresh_var, mk_lambda
+from cozy.syntax_tools import free_vars, pprint, fresh_var, mk_lambda
 from cozy.desugar import desugar_exp
-from cozy.opts import Option
-
-explicit_map_puts_and_deletes = Option("explicit-map-ops", bool, False)
-
-# General deltas
-class Delta(ADT): pass
-NoDelta           = declare_case(Delta, "NoDelta")
-Conditional       = declare_case(Delta, "Conditional",     ["cond", "delta"])
-MultiDelta        = declare_case(Delta, "MultiDelta",      ["delta1", "delta2"])
-ForEachDelta      = declare_case(Delta, "ForEachDelta",    ["elems", "x", "delta"])
-Become            = declare_case(Delta, "Become", ["e"])
-
-# Bags
-BagAdd            = declare_case(Delta, "BagAdd",          ["e"])
-BagAddAll         = declare_case(Delta, "BagAddAll",       ["e"])
-BagRemove         = declare_case(Delta, "BagRemove",       ["e"])
-BagRemoveAll      = declare_case(Delta, "BagRemoveAll",    ["e"])
-BagElemUpdated    = declare_case(Delta, "BagElemUpdated",  ["elem", "delta"])
-
-# Numbers
-AddNum            = declare_case(Delta, "AddNum", ["e"])
-
-# Maps
-MapInsert         = declare_case(Delta, "MapInsert", ["key", "value"])
-MapDelKey         = declare_case(Delta, "MapDelKey", ["key"])
-MapUpdate         = declare_case(Delta, "MapUpdate", ["key", "delta"])
-
-# Records
-RecordFieldUpdate = declare_case(Delta, "RecordFieldUpdate", ["f", "delta"])
-
-# Tuples
-TupleEntryUpdate  = declare_case(Delta, "TupleEntryUpdate", ["n", "delta"])
-
-def fmap(f, delta):
-    if isinstance(delta, NoDelta):
-        return delta
-    elif isinstance(delta, Conditional):
-        return Conditional(f(delta.cond), fmap(f, delta.delta))
-    elif isinstance(delta, MultiDelta):
-        return MultiDelta(fmap(f, delta.delta1), fmap(f, delta.delta2))
-    elif isinstance(delta, ForEachDelta):
-        return ForEachDelta(f(elems), delta.x, fmap(f, delta.delta))
-    elif isinstance(delta, Become):
-        return Become(f(delta.e))
-    elif isinstance(delta, BagAdd):
-        return BagAdd(f(delta.e))
-    elif isinstance(delta, BagAddAll):
-        return BagAddAll(f(delta.e))
-    elif isinstance(delta, BagRemove):
-        return BagRemove(f(delta.e))
-    elif isinstance(delta, BagRemoveAll):
-        return BagRemoveAll(f(delta.e))
-    elif isinstance(delta, AddNum):
-        return AddNum(f(delta.e))
-    elif isinstance(delta, BagElemUpdated):
-        return BagElemUpdated(delta.elem, fmap(f, delta.delta))
-    elif isinstance(delta, RecordFieldUpdate):
-        return RecordFieldUpdate(delta.f, fmap(f, delta.delta))
-    else:
-        raise NotImplementedError(delta)
-
-def multi_delta(deltas):
-    deltas = [d for d in deltas if not isinstance(d, NoDelta)]
-    if len(deltas) == 0:
-        return NoDelta()
-    d = deltas[0]
-    for i in range(1, len(deltas)):
-        d = MultiDelta(d, deltas[i])
-    return d
-
-def mk_TupleEntryUpdate(n, delta):
-    if isinstance(delta, NoDelta):
-        return delta
-    return TupleEntryUpdate(n, delta)
-
-def rewrite_becomes(delta, f):
-    class V(Visitor):
-        def visit_Become(self, d):
-            return Become(f(d.e))
-        def visit_Delta(self, d):
-            return d
-    return map_cond(delta, V().visit)
-
-def mk_conditional(cond, delta):
-    # if isinstance(delta, NoDelta):
-    #     return delta
-    return Conditional(cond, delta)
-
-def map_cond(delta, f):
-    class V(Visitor):
-        def visit_Conditional(self, d):
-            return mk_conditional(d.cond, self.visit(d.delta))
-        def visit_MultiDelta(self, d):
-            return multi_delta([
-                self.visit(d.delta1),
-                self.visit(d.delta2)])
-        def visit_Delta(self, d):
-            return f(d)
-    return V().visit(delta)
+from cozy.typecheck import is_numeric
 
 def delta_form(members : [(str, syntax.Type)], op : syntax.Op) -> { str : syntax.Exp }:
     """
@@ -171,65 +73,20 @@ def _rewriter(lval : syntax.Exp):
         raise Exception("not an lvalue: {}".format(pprint(lval)))
     return f
 
-def _push_delta_through_field_access(members : { str : syntax.Type }, lhs, delta):
-    if isinstance(lhs, syntax.EVar):
-        if isinstance(lhs.type, syntax.THandle):
-            bags = [ m for (m, ty) in members.items() if type(ty) is syntax.TBag and ty.t == lhs.type ]
-            if len(bags) == 0:
-                return (lhs, NoDelta())
-            if len(bags) != 1:
-                raise NotImplementedError("TODO: handle the case where >1 members change in response to op")
-            bag_id = bags[0]
-            bag = syntax.EVar(bag_id).with_type(members[bag_id])
-            return (bag, BagElemUpdated(lhs, delta))
-        elif isinstance(lhs, syntax.EVar) and lhs.id in members:
-            return (lhs, delta)
-    elif isinstance(lhs, syntax.EGetField):
-        return _push_delta_through_field_access(members, lhs.e, RecordFieldUpdate(lhs.f, delta))
-    raise Exception("not sure how to incrementalize change to {}".format(pprint(lhs)))
-
-@typechecked
-def to_delta(members : [(str, syntax.Type)], op : syntax.Op) -> (syntax.EVar, Delta):
+def sketch_update(
+        lval        : syntax.Exp,
+        old_value   : syntax.Exp,
+        new_value   : syntax.Exp,
+        ctx         : [syntax.EVar],
+        assumptions : [syntax.Exp] = []) -> (syntax.Stm, [syntax.Query]):
     """
-    Input: synax.Op
-    Output: (member, delta) indicating that op transforms member by delta
-    """
-    name = op.name
-    args = op.args
-    members = dict(members)
-    if isinstance(op.body, syntax.SCall):
-        target = op.body.target
-        if   op.body.func == "add":        delta = BagAdd(op.body.args[0])
-        elif op.body.func == "remove":     delta = BagRemove(op.body.args[0])
-        elif op.body.func == "remove_all": delta = BagRemoveAll(op.body.args[0])
-        else: raise Exception("Unknown func: {}".format(op.body.func))
-    elif isinstance(op.body, syntax.SAssign):
-        target = op.body.lhs
-        delta = Become(op.body.rhs)
-    else:
-        raise NotImplementedError(str(op.body))
-    member, new_delta = _push_delta_through_field_access(members, target, delta)
-    return (member, new_delta)
+    Write code to update `lval` when it changes from `old_value` to `new_value`.
+    Variables in `ctx` are assumed to be part of the data structure abstract
+    state, and `assumptions` will be appended to all generated subgoals.
 
-@typechecked
-def derivative(
-        e     : syntax.Exp,
-        var   : syntax.EVar,
-        delta : Delta,
-        ctx   : [syntax.EVar],
-        assumptions : [syntax.Exp] = []) -> (Delta, [syntax.Query]):
+    This function returns a statement (code to update `lval`) and a list of
+    subgoals (new queries that appear in the code).
     """
-    How does `e` change when `var` changes by `delta`?
-    The answer may require some additional sub-queries to implement.
-    If subqueries are generated, vars in `ctx` are assumed to be part
-    of the data structure state.
-    """
-
-    if var not in free_vars(e):
-        return (NoDelta(), [])
-
-    if e == var:
-        return (delta, [])
 
     subgoals = []
 
@@ -245,195 +102,55 @@ def derivative(
         return syntax.ECall(query_name, query_vars).with_type(e.type)
 
     def recurse(*args, **kwargs):
-        (res, sgs) = derivative(*args, **kwargs)
+        (code, sgs) = sketch_update(*args, **kwargs)
         subgoals.extend(sgs)
-        return res
+        return code
 
-    e_post_delta = subst(e, { var.id : apply_delta(var, delta) })
-    if e.type == syntax.INT:
-        change = AddNum(make_subgoal(syntax.EBinOp(e_post_delta, "-", e).with_type(syntax.INT)))
-    elif isinstance(e.type, syntax.TBag):
-        change = multi_delta([
-            BagAddAll   (make_subgoal(syntax.EBinOp(e_post_delta, "-", e).with_type(e.type))),
-            BagRemoveAll(make_subgoal(syntax.EBinOp(e, "-", e_post_delta).with_type(e.type)))])
-    elif isinstance(e.type, syntax.TTuple):
-        deltas = []
-        for i in range(len(e.type.ts)):
-            d = recurse(syntax.ETupleGet(e, i).with_type(e.type.ts[i]), var, delta, ctx)
-            if not isinstance(d, NoDelta):
-                deltas.append(TupleEntryUpdate(i, d))
-        change = multi_delta(deltas)
-    elif isinstance(e.type, syntax.TBool):
-        change = Become(make_subgoal(e_post_delta))
-    elif isinstance(e.type, syntax.TMap):
-        k = fresh_var(e.type.k)
-        value_at     = lambda k: target_syntax.EMapGet(e, k).with_type(e.type.v)
-        new_value_at = lambda k: target_syntax.EMapGet(e_post_delta, k).with_type(e.type.v)
-        key_bag = syntax.TBag(e.type.k)
+    t = lval.type
+    if isinstance(t, syntax.TBag):
+        to_add = make_subgoal(syntax.EBinOp(new_value, "-", old_value).with_type(t))
+        to_del = make_subgoal(syntax.EBinOp(old_value, "-", new_value).with_type(t))
+        v = fresh_var(t.t)
+        stm = syntax.seq([
+            syntax.SForEach(v, to_del, syntax.SCall(lval, "remove", [v])),
+            syntax.SForEach(v, to_add, syntax.SCall(lval, "add", [v]))])
+    elif is_numeric(t):
+        change = make_subgoal(syntax.EBinOp(new_value, "-", old_value).with_type(t))
+        stm = syntax.SAssign(lval, syntax.EBinOp(lval, "+", change).with_type(t))
+    elif t == syntax.BOOL:
+        stm = syntax.SAssign(lval, make_subgoal(new_value))
+    elif isinstance(t, syntax.TTuple):
+        get = lambda val, i: syntax.ETupleGet(val, i).with_type(t.ts[i])
+        stm = syntax.seq([
+            recurse(get(lval, i), get(old_value, i), get(new_value, i), ctx, assumptions)
+            for i in range(len(t.ts))])
+    elif isinstance(t, syntax.TMap):
+        value_at = lambda m, k: target_syntax.EMapGet(m, k).with_type(lval.type.v)
 
-        # value_update = update for value at K (given that K is an altered key)
-        value_update = recurse(target_syntax.EMapGet(e, k).with_type(e.type.v), var, delta, ctx,
-            assumptions = assumptions + [syntax.ENot(equal(value_at(k), new_value_at(k)))])
+        k = fresh_var(lval.type.k)
+        v = fresh_var(lval.type.v)
+        key_bag = syntax.TBag(lval.type.k)
 
-        if explicit_map_puts_and_deletes.value:
-            # new_keys = [k | k <- e_post_delta.keys(), k not in e.keys()]
-            new_keys_spec = target_syntax.EFilter(
-                    target_syntax.EMapKeys(e_post_delta).with_type(key_bag),
-                    target_syntax.ELambda(k, syntax.ENot(syntax.EBinOp(k, syntax.BOp.In, target_syntax.EMapKeys(e).with_type(key_bag)).with_type(syntax.BOOL)))
-                ).with_type(key_bag)
-            new_keys = make_subgoal(new_keys_spec)
+        # update_value = code to update for value v at key k (given that k is an altered key)
+        update_value = recurse(
+            v,
+            value_at(old_value, k),
+            value_at(new_value, k),
+            ctx = ctx,
+            assumptions = assumptions + [syntax.ENot(syntax.EEq(value_at(old_value, k), value_at(new_value, k)))])
 
-            # altered_keys = [k | k <- e.keys(), k in e_post_delta.keys(), value_at(k) != new_value_at(k))]
-            altered_keys = make_subgoal(
-                target_syntax.EFilter(
-                    target_syntax.EMapKeys(e).with_type(key_bag),
-                    target_syntax.ELambda(k, syntax.EAll([
-                        syntax.ENot(equal(value_at(k), new_value_at(k))),
-                        syntax.EBinOp(k, syntax.BOp.In, target_syntax.EMapKeys(e_post_delta).with_type(key_bag)).with_type(syntax.BOOL)]))
-                ).with_type(key_bag))
-
-            # dead_keys = [k | k <- e.keys(), k not in e_post_delta.keys()]
-            dead_keys = make_subgoal(
-                target_syntax.EFilter(
-                    target_syntax.EMapKeys(e).with_type(key_bag),
-                    target_syntax.ELambda(k, syntax.ENot(syntax.EBinOp(k, syntax.BOp.In, target_syntax.EMapKeys(e_post_delta).with_type(key_bag)).with_type(syntax.BOOL)))
-                ).with_type(key_bag))
-
-            # new_value = new value to insert for new keys
-            new_value = make_subgoal(
-                target_syntax.EMapGet(e_post_delta, k).with_type(e.type.v),
-                assumptions + [syntax.EBinOp(k, syntax.BOp.In, new_keys_spec).with_type(syntax.BOOL)])
-
-            change = multi_delta([
-                    ForEachDelta(dead_keys,    k, MapDelKey(k)),
-                    ForEachDelta(new_keys,     k, MapInsert(k, new_value)),
-                    ForEachDelta(altered_keys, k, MapUpdate(k, value_update)),
-                ])
-        else:
-            # altered_keys = [k | k <- distinct(e.keys() + e_post_delta.keys()), value_at(k) != new_value_at(k))]
-            altered_keys = make_subgoal(
-                target_syntax.EFilter(
-                    syntax.EUnaryOp(syntax.UOp.Distinct, syntax.EBinOp(
-                        target_syntax.EMapKeys(e).with_type(key_bag), "+",
-                        target_syntax.EMapKeys(e_post_delta).with_type(key_bag)).with_type(key_bag)).with_type(key_bag),
-                    target_syntax.ELambda(k,
-                        syntax.ENot(equal(value_at(k), new_value_at(k))))
-                ).with_type(key_bag))
-
-            change = ForEachDelta(altered_keys, k, MapUpdate(k, value_update))
+        # altered_keys = [k | k <- distinct(lval.keys() + new_value.keys()), value_at(old_value, k) != value_at(new_value, k))]
+        altered_keys = make_subgoal(
+            target_syntax.EFilter(
+                syntax.EUnaryOp(syntax.UOp.Distinct, syntax.EBinOp(
+                    target_syntax.EMapKeys(old_value).with_type(key_bag), "+",
+                    target_syntax.EMapKeys(new_value).with_type(key_bag)).with_type(key_bag)).with_type(key_bag),
+                target_syntax.ELambda(k,
+                    syntax.ENot(syntax.EEq(value_at(old_value, k), value_at(new_value, k))))
+            ).with_type(key_bag))
+        stm = syntax.SForEach(k, altered_keys,
+            target_syntax.SMapUpdate(lval, k, v, update_value))
     else:
-        raise NotImplementedError("{} of type {}".format(pprint(e), e.type))
+        raise NotImplementedError("{} of type {}".format(pprint(lval), lval.type))
 
-    return (change, subgoals)
-
-@typechecked
-def apply_delta(
-        x      : syntax.Exp,
-        delta  : Delta) -> syntax.Exp:
-    """
-    Apply the given change to the given expression.
-    """
-
-    class V(Visitor):
-        def visit_NoDelta(self, delta):
-            return x
-        def visit_Become(self, delta):
-            return delta.e
-        def visit_AddNum(self, delta):
-            return syntax.EBinOp(x, "+", delta.e).with_type(x.type)
-        def visit_BagAdd(self, delta):
-            return syntax.EBinOp(x, "+", syntax.ESingleton(delta.e).with_type(x.type)).with_type(x.type)
-        def visit_BagAddAll(self, delta):
-            return syntax.EBinOp(x, "+", delta.e).with_type(x.type)
-        def visit_BagRemove(self, delta):
-            return self.visit(BagRemoveAll(syntax.ESingleton(delta.e).with_type(x.type)))
-        def visit_BagRemoveAll(self, delta):
-            return syntax.EBinOp(x, "-", delta.e).with_type(x.type)
-        def visit_BagElemUpdated(self, delta):
-            # Remove the old elements
-            # Add the new one with the same multiplicity
-            present = target_syntax.EFilter(x, mk_lambda(x.type.t, lambda elem: equal(elem, delta.elem))).with_type(x.type)
-            return apply_delta(x,
-                multi_delta([
-                    BagRemoveAll(present),
-                    BagAddAll(target_syntax.EMap(present, mk_lambda(x.type.t, lambda elem: apply_delta(delta.elem, delta.delta))).with_type(x.type))]))
-        def visit_Conditional(self, delta):
-            return syntax.ECond(delta.cond, self.visit(delta.delta), x).with_type(x.type)
-        def visit_MultiDelta(self, delta):
-            return apply_delta(apply_delta(x, delta.delta1), delta.delta2)
-        def visit_RecordFieldUpdate(self, delta):
-            if isinstance(x.type, syntax.THandle):
-                assert delta.f == "val"
-                return target_syntax.EWithAlteredValue(x, apply_delta(syntax.EGetField(x, "val").with_type(x.type.value_type), delta.delta)).with_type(x.type)
-            else:
-                assert isinstance(x.type, syntax.TRecord)
-                return syntax.EMakeRecord(tuple(
-                    (f, syntax.EGetField(x, f).with_type(t) if f != delta.f else apply_delta(syntax.EGetField(x, f).with_type(t), delta.delta))
-                    for (f, t) in x.type.fields)).with_type(x.type)
-        def visit_TupleEntryUpdate(self, delta):
-            if isinstance(x, syntax.ETuple):
-                return syntax.ETuple(tuple(
-                    apply_delta(x.es[i], delta.delta) if i == delta.n else x.es[i]
-                    for i in range(len(x.es)))).with_type(x.type)
-            else:
-                raise NotImplementedError(x)
-        def visit_Delta(self, d):
-            raise NotImplementedError("apply {} to {}".format(d, x))
-
-    return V().visit(delta)
-
-@typechecked
-def apply_delta_in_place(
-        x      : syntax.Exp,
-        delta  : Delta) -> syntax.Stm:
-    """
-    Apply the given change in-place to the given L-value.
-    """
-
-    class V(Visitor):
-        def visit_NoDelta(self, delta):
-            return syntax.SNoOp()
-        def visit_Become(self, delta):
-            return syntax.SAssign(x, delta.e)
-        def visit_BagAdd(self, delta):
-            return syntax.SCall(x, "add", [delta.e])
-        def visit_BagAddAll(self, delta):
-            elem = fresh_var(x.type.t)
-            return target_syntax.SForEach(elem, delta.e, apply_delta_in_place(x, BagAdd(elem)))
-        def visit_BagRemove(self, delta):
-            return syntax.SCall(x, "remove", [delta.e])
-        def visit_BagRemoveAll(self, delta):
-            elem = fresh_var(x.type.t)
-            return target_syntax.SForEach(elem, delta.e, apply_delta_in_place(x, BagRemove(elem)))
-        def visit_BagElemUpdated(self, delta):
-            return syntax.SNoOp()
-        def visit_ForEachDelta(self, delta):
-            return target_syntax.SForEach(delta.x, delta.elems, self.visit(delta.delta))
-        def visit_MapInsert(self, delta):
-            return target_syntax.SMapPut(x, delta.key, delta.value)
-        def visit_MapDelKey(self, delta):
-            return target_syntax.SMapDel(x, delta.key)
-        def visit_MapUpdate(self, delta):
-            v = fresh_var(x.type.v)
-            return target_syntax.SMapUpdate(x, delta.key, v, apply_delta_in_place(v, delta.delta))
-        def visit_AddNum(self, delta):
-            return syntax.SAssign(x, syntax.EBinOp(x, "+", delta.e))
-        def visit_Conditional(self, delta):
-            substm = self.visit(delta.delta)
-            return syntax.SIf(delta.cond, substm, syntax.SNoOp())
-        def visit_RecordFieldUpdate(self, delta):
-            if not (isinstance(x.type, syntax.TRecord) or isinstance(x.type, syntax.THandle)):
-                raise Exception("ill-typed expression for update: " + repr(x) + " [type={}]".format(repr(x.type)))
-            field_type = dict(x.type.fields)[delta.f] if isinstance(x.type, syntax.TRecord) else x.type.value_type
-            return apply_delta_in_place(syntax.EGetField(x, delta.f).with_type(field_type), delta.delta)
-        def visit_TupleEntryUpdate(self, delta):
-            elem_type = x.type.ts[delta.n]
-            return apply_delta_in_place(syntax.ETupleGet(x, delta.n).with_type(elem_type), delta.delta)
-        def visit_MultiDelta(self, delta):
-            return syntax.SSeq(
-                self.visit(delta.delta1),
-                self.visit(delta.delta2))
-        def visit_Delta(self, d):
-            raise NotImplementedError(str(d))
-
-    return V().visit(delta)
+    return (stm, subgoals)
