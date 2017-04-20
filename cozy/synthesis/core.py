@@ -483,8 +483,8 @@ def improve(
                             f.write('            print("cost = {}".format(costmodel.cost(x)))\n')
                             f.write("        assert False\n")
                     continue
-                if new_cost == old_cost:
-                    continue
+                # if new_cost == old_cost:
+                #     continue
                 print("found improvement: {} -----> {}".format(pprint(old_e), pprint(new_e)))
                 print("cost: {} -----> {}".format(old_cost, new_cost))
                 if reset_on_success.value:
