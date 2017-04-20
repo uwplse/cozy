@@ -19,8 +19,11 @@ ClauseDB:
         assume l in falselits;
         falselits.remove(l)
 
+    private query nonfalse(c : Set<Bound>)
+        [l | l <- c, not (l in falselits)]
+
     query unsat()
-        not empty [c | c <- clauses, empty [l | l <- c, not (l in falselits)]]
+        not empty [c | c <- clauses, empty nonfalse(c)]
 
     query unit()
         [c | c <- clauses, sum [1 | l <- c, not (l in falselits)] == 1]

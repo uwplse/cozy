@@ -24,6 +24,7 @@ _KEYWORDS = ([
     "type",
     "handletype",
     "enum",
+    "private",
     "op",
     "query",
     "state",
@@ -320,13 +321,21 @@ def make_parser():
         else:
             p[0] = syntax.EVar(p[1])
 
-    def p_method(p):
-        """method : KW_OP    WORD OP_OPEN_PAREN typednames OP_CLOSE_PAREN assumes stm
-                  | KW_QUERY WORD OP_OPEN_PAREN typednames OP_CLOSE_PAREN assumes exp"""
-        if p[1] == "op":
-            p[0] = syntax.Op(p[2], p[4], p[6], p[7])
+    def p_visibility(p):
+        """visibility :
+                      | KW_PRIVATE"""
+        if len(p) > 1:
+            p[0] = syntax.Visibility.Private
         else:
-            p[0] = syntax.Query(p[2], p[4], p[6], p[7])
+            p[0] = syntax.Visibility.Public
+
+    def p_method(p):
+        """method : empty      KW_OP    WORD OP_OPEN_PAREN typednames OP_CLOSE_PAREN assumes stm
+                  | visibility KW_QUERY WORD OP_OPEN_PAREN typednames OP_CLOSE_PAREN assumes exp"""
+        if p[2] == "op":
+            p[0] = syntax.Op(p[3], p[5], p[7], p[8])
+        else:
+            p[0] = syntax.Query(p[3], p[1], p[5], p[7], p[8])
 
     parsetools.multi(locals(), "methods", "method")
 

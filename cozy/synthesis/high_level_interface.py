@@ -104,6 +104,7 @@ class ImproveQueryJob(jobs.Job):
 def rewrite_ret(q : Query, repl, keep_assumptions=True) -> Query:
     return Query(
         q.name,
+        q.visibility,
         q.args,
         q.assumptions if keep_assumptions else (),
         repl(q.ret))

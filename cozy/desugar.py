@@ -167,6 +167,7 @@ def desugar(spec : Spec) -> Spec:
             else:
                 return ECall(e.func, tuple(self.visit(a) for a in e.args)).with_type(e.type)
     spec = V().visit(spec)
+    spec.methods = [m for m in spec.methods if not (isinstance(m, Query) and m.visibility == Visibility.Private)]
 
     class V(BottomUpRewriter):
         def visit_Exp(self, e):

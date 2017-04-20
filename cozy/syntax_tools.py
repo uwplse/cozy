@@ -600,6 +600,7 @@ def subst(exp, replacements):
                         raise NotImplementedError("need to rename query argument {} in {}".format(a, pprint(q)))
             return syntax.Query(
                 q.name,
+                q.visibility,
                 q.args,
                 [subst(a, m) for a in q.assumptions],
                 subst(q.ret, m))

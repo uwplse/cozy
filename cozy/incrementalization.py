@@ -121,7 +121,7 @@ def _push_delta_through_field_access(members : { str : syntax.Type }, lhs, delta
     raise Exception("not sure how to incrementalize change to {}".format(pprint(lhs)))
 
 @typechecked
-def to_delta(members : [(str, syntax.Type)], op : syntax.Op) -> (syntax.Exp, Delta):
+def to_delta(members : [(str, syntax.Type)], op : syntax.Op) -> (syntax.EVar, Delta):
     """
     Input: synax.Op
     Output: (member, delta) indicating that op transforms member by delta
@@ -174,7 +174,7 @@ def derivative(
         e = desugar_exp(e)
         query_name = fresh_name()
         query_vars = [v for v in fvs if v not in ctx]
-        query = syntax.Query(query_name, [(arg.id, arg.type) for arg in query_vars], assumptions + a, e)
+        query = syntax.Query(query_name, syntax.Visibility.Internal, [(arg.id, arg.type) for arg in query_vars], assumptions + a, e)
         subgoals.append(query)
         return syntax.ECall(query_name, query_vars).with_type(e.type)
 
