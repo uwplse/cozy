@@ -186,8 +186,10 @@ class RunTimeCostModel(CostModel, BottomUpExplorer):
         return 0.01 + sum(child_costs)
 
 class CompositeCostModel(RunTimeCostModel):
-    def __init__(self, state_vars : [EVar]):
+    def __init__(self, state_vars : [EVar] = []):
         super().__init__()
+    def __repr__(self):
+        return "CompositeCostModel()"
     def cost(self, e, pool):
         if pool == RUNTIME_POOL:
             return super().cost(e, pool)

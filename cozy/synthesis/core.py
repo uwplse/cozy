@@ -477,11 +477,12 @@ def improve(
                             f.write("    new_e = {}\n".format(repr(new_e)))
                             f.write("    target = {}\n".format(repr(target)))
                             f.write("    new_target = {}\n".format(repr(new_target)))
-                            f.write("    if costmodel.cost(new_e) <= costmodel.cost(old_e) and costmodel.cost(new_target) > costmodel.cost(target):\n")
-                            f.write("        for x in [old_e, new_e, target, new_target]:\n")
-                            f.write("            pprint_reps(infer_rep(costmodel.state_vars, x))\n")
-                            f.write('            print("cost = {}".format(costmodel.cost(x)))\n')
+                            f.write("    if costmodel.cost(new_e, RUNTIME_POOL) <= costmodel.cost(old_e, RUNTIME_POOL) and costmodel.cost(new_target, RUNTIME_POOL) > costmodel.cost(target, RUNTIME_POOL):\n")
+                            f.write('        for name, x in zip(["old_e", "new_e", "target", "new_target"], [old_e, new_e, target, new_target]):\n')
+                            f.write('            print("{}: {}".format(name, pprint(x)))\n')
+                            f.write('            print("    cost = {}".format(costmodel.cost(x, RUNTIME_POOL)))\n')
                             f.write("        assert False\n")
+                    raise Exception("detected nonmonotonicity")
                     continue
                 # if new_cost == old_cost:
                 #     continue
