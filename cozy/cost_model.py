@@ -169,10 +169,9 @@ class RunTimeCostModel(CostModel, BottomUpExplorer):
     def visit_EFilter(self, e):
         return 0.01 + self.visit(e.e) + self.cardinality(e.e) * self.visit(e.p.body)
     def visit_EMakeMap(self, e):
-        return 100000000
-        # return self.visit(e.e) + self.cardinality(e.e) * (self.visit(e.key.body) + self.visit(e.value.body))
+        return 100000000 + self.visit(e.e) + self.cardinality(e.e) * (self.visit(e.key.body) + self.visit(e.value.body))
     def visit_EMakeMap2(self, e):
-        return 100000000
+        return 100000000 + self.visit(e.e) + self.cardinality(e.e) * self.visit(e.value.body)
     def visit_EStateVar(self, e):
         return self.memcm.cost(e.e, STATE_POOL) / 100
     def visit(self, x):
