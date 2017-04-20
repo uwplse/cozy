@@ -103,6 +103,74 @@ def map_cond(delta, f):
             return f(d)
     return V().visit(delta)
 
+def delta_form(members : [(str, syntax.Type)], op : syntax.Op) -> { str : syntax.Exp }:
+    """
+    Given the abstract state of a data structure and an imperative operation
+    that modifies it, return new values for the abstract state in terms of the
+    old values.
+
+    Input:
+        members - a list of (id, type) tuples specifying the abstract state
+        op      - an imperative operation
+
+    Output:
+        dictionary mapping id->new_exp (suitable for use by syntax_tools.subst)
+    """
+    res = { v : syntax.EVar(v).with_type(t) for (v, t) in members }
+    return _delta_form(res, op.body)
+
+def _delta_form(res : { str : syntax.Exp }, op : syntax.Stm) -> { str : syntax.Exp }:
+    if isinstance(op, syntax.SNoOp):
+        pass
+    elif isinstance(op, syntax.SCall):
+        update = _rewriter(op.target)
+        if op.func == "add":
+            update(res, lambda old: syntax.EBinOp(old, "+", syntax.ESingleton(op.args[0]).with_type(old.type)).with_type(old.type))
+        elif op.func == "remove":
+            update(res, lambda old: syntax.EBinOp(old, "-", syntax.ESingleton(op.args[0]).with_type(old.type)).with_type(old.type))
+        else:
+            raise Exception("Unknown func: {}".format(op.func))
+    elif isinstance(op, syntax.SAssign):
+        update = _rewriter(op.lhs)
+        update(res, lambda old: op.rhs)
+    else:
+        raise NotImplementedError(type(op.body))
+
+    return res
+
+def _update_handle(e : syntax.Exp, handle : syntax.EVar, change):
+    if isinstance(e.type, syntax.TBag):
+        return target_syntax.EMap(e, mk_lambda(e.type.t, lambda x: _update_handle(x, handle, change))).with_type(e.type)
+    elif isinstance(e.type, syntax.THandle):
+        if e.type == handle.type:
+            return syntax.ECond(syntax.EEq(e, handle), change(e), e).with_type(e.type)
+        else:
+            return e
+    elif isinstance(e.type, syntax.TTuple):
+        return syntax.ETuple(tuple(_update_handle(syntax.ETupleGet(e, i).with_type(e.type.ts[i]), handle, change) for i in range(len(e.type.ts)))).with_type(e.type)
+    else:
+        raise NotImplementedError(repr(e.type))
+
+def _rewriter(lval : syntax.Exp):
+    if isinstance(lval, syntax.EVar):
+        def f(env, change):
+            if isinstance(lval.type, syntax.THandle):
+                new_values = {id : _update_handle(e, lval, change) for (id, e) in env.items()}
+                for id in env.keys():
+                    env[id] = new_values[id]
+            elif lval.id in env:
+                env[lval.id] = change(env[lval.id])
+    elif isinstance(lval, syntax.EGetField):
+        g = _rewriter(lval.e)
+        def f(env, change):
+            if isinstance(lval.e.type, syntax.THandle):
+                g(env, lambda old: target_syntax.EWithAlteredValue(old, change(syntax.EGetField(old, "val").with_type(lval.e.type.value_type))).with_type(old.type))
+            else:
+                g(env, lambda old: syntax.EMakeRecord(tuple(((f, syntax.EGetField(old, f).with_type(t)) if f != lval.f else (f, change(syntax.EGetField(old, f)))) for (f, t) in lval.e.type.fields)).with_type(old.type))
+    else:
+        raise Exception("not an lvalue: {}".format(pprint(lval)))
+    return f
+
 def _push_delta_through_field_access(members : { str : syntax.Type }, lhs, delta):
     if isinstance(lhs, syntax.EVar):
         if isinstance(lhs.type, syntax.THandle):

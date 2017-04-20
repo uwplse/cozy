@@ -1,7 +1,7 @@
 from cozy.syntax import *
 from cozy.solver import valid
-from cozy.syntax_tools import pprint
-from cozy.incrementalization import to_delta, derivative, apply_delta
+from cozy.syntax_tools import pprint, subst
+from cozy.incrementalization import delta_form
 from cozy.opts import Option
 
 invariant_preservation_check = Option("invariant-preservation-check", bool, True)
@@ -13,10 +13,12 @@ def check_ops_preserve_invariants(spec : Spec):
     for m in spec.methods:
         if not isinstance(m, Op):
             continue
-        var, delta = to_delta(spec.statevars, m)
+        remap = delta_form(spec.statevars, m)
+        # print(m.name)
+        # for id, e in remap.items():
+        #     print("  {id} ---> {e}".format(id=id, e=pprint(e)))
         for a in spec.assumptions:
-            deriv, _ = derivative(a, var, delta, [], [])
-            a_post_delta = apply_delta(a, deriv)
+            a_post_delta = subst(a, remap)
             assumptions = list(m.assumptions) + list(spec.assumptions)
             if not valid(EImplies(EAll(assumptions), a_post_delta)):
                 res.append("{.name!r} may not preserve invariant {}".format(m, pprint(a)))
