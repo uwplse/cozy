@@ -117,10 +117,12 @@ class Learner(object):
         self.builder_iter = ()
         self.last_progress = 0
         self.backlog = None
+        self.backlog_counter = 0
         if update_watched_exps:
             self.update_watched_exps()
 
     def watch(self, new_target, assumptions):
+        self.backlog_counter = 0
         self.target = new_target
         self.update_watched_exps()
         self.roots = []
@@ -200,10 +202,13 @@ class Learner(object):
         while True:
             if self.backlog is not None:
                 improvements = list(self._possible_replacements(*self.backlog))
-                if improvements:
-                    return improvements[0]
+                if self.backlog_counter < len(improvements):
+                    i = improvements[self.backlog_counter]
+                    self.backlog_counter += 1
+                    return i
                 else:
                     self.backlog = None
+                    self.backlog_counter = 0
             for (e, pool) in self.builder_iter:
                 if self.stop_callback():
                     raise StopException()
@@ -253,6 +258,7 @@ class Learner(object):
                 improvements = list(self._possible_replacements(e, pool, cost))
                 if improvements:
                     self.backlog = (e, pool, cost)
+                    self.backlog_counter = 1
                     return improvements[0]
 
             if self.last_progress < (self.current_size+1) // 2:
@@ -482,10 +488,10 @@ def improve(
                             f.write('            print("{}: {}".format(name, pprint(x)))\n')
                             f.write('            print("    cost = {}".format(costmodel.cost(x, RUNTIME_POOL)))\n')
                             f.write("        assert False\n")
-                    raise Exception("detected nonmonotonicity")
+                    # raise Exception("detected nonmonotonicity")
                     continue
-                # if new_cost == old_cost:
-                #     continue
+                if new_cost == old_cost:
+                    continue
                 print("found improvement: {} -----> {}".format(pprint(old_e), pprint(new_e)))
                 print("cost: {} -----> {}".format(old_cost, new_cost))
                 if reset_on_success.value:
