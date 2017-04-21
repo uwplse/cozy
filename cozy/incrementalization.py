@@ -50,6 +50,8 @@ def _update_handle(e : syntax.Exp, handle : syntax.EVar, change):
             return e
     elif isinstance(e.type, syntax.TTuple):
         return syntax.ETuple(tuple(_update_handle(syntax.ETupleGet(e, i).with_type(e.type.ts[i]), handle, change) for i in range(len(e.type.ts)))).with_type(e.type)
+    elif e.type == syntax.INT or e.type == syntax.BOOL:
+        return e
     else:
         raise NotImplementedError(repr(e.type))
 
@@ -127,6 +129,14 @@ def sketch_update(
         stm = syntax.seq([
             recurse(get(lval, i), get(old_value, i), get(new_value, i), ctx, assumptions)
             for i in range(len(t.ts))])
+    elif isinstance(t, syntax.TRecord):
+        get = lambda val, i: syntax.EGetField(val, t.fields[i][0]).with_type(t.fields[i][1])
+        stm = syntax.seq([
+            recurse(get(lval, i), get(old_value, i), get(new_value, i), ctx, assumptions)
+            for i in range(len(t.fields))])
+    elif isinstance(t, syntax.THandle):
+        get_val = lambda val: syntax.EGetField(val, "val").with_type(t.value_type)
+        stm = recurse(get_val(lval), get_val(old_value), get_val(new_value), ctx, assumptions)
     elif isinstance(t, syntax.TMap):
         value_at = lambda m, k: target_syntax.EMapGet(m, k).with_type(lval.type.v)
 
