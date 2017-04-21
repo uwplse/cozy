@@ -313,9 +313,18 @@ def synthesize(
         new_ops = []
         for op in ops:
             stms = [ ss[op.name] for ss in op_stms.values() ]
-            # TODO: changes in concrete land!
-            # if isinstance(op_deltas[op.name][1], inc.BagElemUpdated):
-            #     stms.append(op.body)
+
+            # append changes to op. arguments
+            # TODO: detect pointer aliasing between op arguments and state vars?
+            arg_changes = inc.delta_form(op.args, op)
+            for v, t in op.args:
+                v = EVar(v).with_type(t)
+                (stm, subqueries) = inc.sketch_update(v, v, subst(v, arg_changes), [], [])
+                if subqueries:
+                    raise NotImplementedError("update to {} in {} is too complex".format(v.id, op.name))
+                stms.append(stm)
+
+            # construct new op. implementation
             new_stms = seq(stms)
             new_ops.append(Op(
                 op.name,
