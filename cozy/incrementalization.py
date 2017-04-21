@@ -1,7 +1,7 @@
 from cozy.common import fresh_name
 from cozy import syntax
 from cozy import target_syntax
-from cozy.syntax_tools import free_vars, pprint, fresh_var, mk_lambda
+from cozy.syntax_tools import free_vars, pprint, fresh_var, mk_lambda, alpha_equivalent
 from cozy.desugar import desugar_exp
 from cozy.typecheck import is_numeric
 
@@ -87,6 +87,9 @@ def sketch_update(
     This function returns a statement (code to update `lval`) and a list of
     subgoals (new queries that appear in the code).
     """
+
+    if alpha_equivalent(old_value, new_value):
+        return (syntax.SNoOp(), [])
 
     subgoals = []
 
