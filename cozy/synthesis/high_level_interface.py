@@ -53,6 +53,7 @@ class ImproveQueryJob(jobs.Job):
         with open("/tmp/{}.log".format(self.q.name), "w", buffering=LINE_BUFFER_MODE) as f:
             sys.stdout = f
             print("STARTING IMPROVEMENT JOB {} (|examples|={})".format(self.q.name, len(self.examples or ())))
+            print(pprint(self.q))
 
             all_types = self.ctx.all_types
             n_binders = 1
@@ -147,6 +148,7 @@ def synthesize(
     with jobs.SafeQueue() as solutions_q:
 
         def push_goal(q : Query):
+            print("########### NEW SUBGOAL: {}".format(pprint(q)))
             specs.append(q)
             fvs = free_vars(q)
             # initial rep
@@ -274,7 +276,6 @@ def synthesize(
                                         return ECall(e.func, args).with_type(e.type)
                             state_update_stm = Repl().visit(state_update_stm)
                         else:
-                            print("########### NEW SUBGOAL: {}".format(pprint(sub_q)))
                             push_goal(sub_q)
                     op_stms[new_member][op.name] = state_update_stm
 
