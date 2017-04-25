@@ -122,8 +122,6 @@ def sketch_update(
     elif is_numeric(t):
         change = make_subgoal(syntax.EBinOp(new_value, "-", old_value).with_type(t))
         stm = syntax.SAssign(lval, syntax.EBinOp(lval, "+", change).with_type(t))
-    elif t == syntax.BOOL:
-        stm = syntax.SAssign(lval, make_subgoal(new_value))
     elif isinstance(t, syntax.TTuple):
         get = lambda val, i: syntax.ETupleGet(val, i).with_type(t.ts[i])
         stm = syntax.seq([
@@ -164,6 +162,7 @@ def sketch_update(
         stm = syntax.SForEach(k, altered_keys,
             target_syntax.SMapUpdate(lval, k, v, update_value))
     else:
-        raise NotImplementedError("{} of type {}".format(pprint(lval), lval.type))
+        # Fallback rule: just compute a new value from scratch
+        stm = syntax.SAssign(lval, make_subgoal(new_value))
 
     return (stm, subgoals)
