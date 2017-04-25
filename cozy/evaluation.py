@@ -4,6 +4,7 @@ from functools import total_ordering
 from cozy.target_syntax import *
 from cozy.syntax_tools import equal, re_use
 from cozy.common import Visitor, FrozenDict, all_distinct, unique, extend
+from cozy.typecheck import is_numeric
 
 @total_ordering
 class Map(object):
@@ -318,7 +319,7 @@ class Evaluator(Visitor):
 def eval(e, env, bind_callback=lambda arg, val: None):
     return Evaluator(bind_callback).visit(e, env)
 
-def mkval(type):
+def mkval(type : Type):
     """
     Produce an arbitrary value of the given type.
     """
@@ -345,3 +346,33 @@ def mkval(type):
     if isinstance(type, TTuple):
         return tuple(mkval(t) for t in type.ts)
     raise NotImplementedError(type)
+
+@typechecked
+def construct_value(t : Type) -> Exp:
+    """
+    Construct an expression e such that
+    eval(construct_value(t), {}) == mkval(t)
+    """
+    if is_numeric(t):
+        e = ENum(0)
+    elif t == BOOL:
+        e = F
+    elif t == STRING:
+        e = EStr("")
+    elif isinstance(t, TBag):
+        e = EEmptyList()
+    elif isinstance(t, TTuple):
+        e = ETuple(tuple(construct_value(tt) for tt in t.ts))
+    elif isinstance(t, TRecord):
+        e = EMakeRecord(tuple((f, construct_value(tt)) for (f, tt) in t.fields))
+    elif isinstance(t, TEnum):
+        e = EEnumEntry(t.cases[0])
+    elif isinstance(t, THandle):
+        e = EHandle(construct_value(INT), construct_value(t.value_type))
+    elif isinstance(t, TNative):
+        e = ENative(construct_value(INT))
+    else:
+        raise NotImplementedError(pprint(t))
+    e = e.with_type(t)
+    assert eval(e, {}) == mkval(t)
+    return e

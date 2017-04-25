@@ -4,6 +4,7 @@ from cozy.typecheck import INT, BOOL, retypecheck, is_numeric
 from cozy.syntax_tools import BottomUpRewriter, subst, fresh_var, all_types, all_exps, equal, implies, mk_lambda, compose, nnf, dnf, break_conj, pprint
 from cozy.solver import valid
 from cozy.opts import Option
+from cozy.evaluation import construct_value
 
 break_disjunctive_filters = Option("break-disjunctive-filters", bool, False)
 
@@ -120,11 +121,53 @@ def desugar_exp(e : Exp) -> Exp:
             e2 = self.visit(e.e2)
             op = e.op
             if op == "!=":
-                return self.visit(ENot(EBinOp(e1, "==", e2).with_type(e.type)))
+                return self.visit(ENot(EEq(e1, "==", e2)))
             elif op == "-" and is_numeric(e.type):
                 return self.visit(EBinOp(e1, "+", EUnaryOp("-", e2).with_type(e.type)).with_type(e.type))
             else:
                 return EBinOp(e1, op, e2).with_type(e.type)
+
+        # recognize immediate construction-destruction
+
+        def visit_EMapGet(self, e):
+            m = self.visit(e.map)
+            k = self.visit(e.key)
+            if isinstance(m, ECond):
+                return self.visit(ECond(m.cond,
+                    EMapGet(m.then_branch, k).with_type(e.type),
+                    EMapGet(m.else_branch, k).with_type(e.type)).with_type(e.type))
+            elif isinstance(m, EMakeMap2):
+                return self.visit(ECond(
+                    EBinOp(k, BOp.In, m.e).with_type(BOOL),
+                    m.value.apply_to(k),
+                    construct_value(e.type)).with_type(e.type))
+            else:
+                return EMapGet(m, k).with_type(e.type)
+
+        def visit_EMapKeys(self, e):
+            ee = self.visit(e.e)
+            if isinstance(ee, ECond):
+                return self.visit(ECond(ee.cond,
+                    EMapKeys(ee.then_branch).with_type(e.type),
+                    EMapKeys(ee.else_branch).with_type(e.type)).with_type(e.type))
+            elif isinstance(ee, EMakeMap2):
+                return EUnaryOp(UOp.Distinct, ee.e).with_type(e.type)
+            else:
+                return EMapKeys(ee).with_type(e.type)
+
+        def visit_EGetField(self, e):
+            ee = self.visit(e.e)
+            if isinstance(ee, ECond):
+                return self.visit(ECond(ee.cond,
+                    EGetField(ee.then_branch, e.f).with_type(e.type),
+                    EGetField(ee.else_branch, e.f).with_type(e.type)).with_type(e.type))
+            elif isinstance(ee, EMakeRecord):
+                return dict(ee.fields)[e.f]
+            elif isinstance(ee, EWithAlteredValue) and e.f == "val":
+                return ee.new_value
+            else:
+                return EGetField(ee, e.f).with_type(e.type)
+
     return V().visit(e)
 
 @typechecked

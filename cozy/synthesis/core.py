@@ -3,11 +3,11 @@ import itertools
 import sys
 
 from cozy.target_syntax import *
-from cozy.typecheck import INT, BOOL, is_numeric
+from cozy.typecheck import INT, BOOL
 from cozy.syntax_tools import subst, pprint, free_vars, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda, enumerate_fragments
 from cozy.common import OrderedSet, ADT, Visitor, fresh_name, typechecked, unique, pick_to_sum, cross_product, OrderedDefaultDict, OrderedSet, group_by, find_one
 from cozy.solver import satisfy, satisfiable, valid
-from cozy.evaluation import eval, mkval
+from cozy.evaluation import eval, mkval, construct_value
 from cozy.cost_model import CostModel
 from cozy.opts import Option
 from cozy.pools import RUNTIME_POOL, STATE_POOL
@@ -375,32 +375,6 @@ def truncate(s):
 def can_elim_var(spec : Exp, assumptions : Exp, v : EVar):
     vv = fresh_var(v.type)
     return valid(implies(EAll([assumptions, subst(assumptions, {v.id:vv})]), equal(spec, subst(spec, {v.id:vv}))))
-
-@typechecked
-def construct_value(t : Type) -> Exp:
-    if is_numeric(t):
-        e = ENum(0)
-    elif t == BOOL:
-        e = F
-    elif t == STRING:
-        e = EStr("")
-    elif isinstance(t, TBag):
-        e = EEmptyList()
-    elif isinstance(t, TTuple):
-        e = ETuple(tuple(construct_value(tt) for tt in t.ts))
-    elif isinstance(t, TRecord):
-        e = EMakeRecord(tuple((f, construct_value(tt)) for (f, tt) in t.fields))
-    elif isinstance(t, TEnum):
-        e = EEnumEntry(t.cases[0])
-    elif isinstance(t, THandle):
-        e = EHandle(construct_value(INT), construct_value(t.value_type))
-    elif isinstance(t, TNative):
-        e = ENative(construct_value(INT))
-    else:
-        raise NotImplementedError(pprint(t))
-    e = e.with_type(t)
-    assert eval(e, {}) == mkval(t)
-    return e
 
 @typechecked
 def improve(
