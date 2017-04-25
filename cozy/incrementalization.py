@@ -50,7 +50,7 @@ def _update_handle(e : syntax.Exp, handle : syntax.EVar, change):
             return e
     elif isinstance(e.type, syntax.TTuple):
         return syntax.ETuple(tuple(_update_handle(syntax.ETupleGet(e, i).with_type(e.type.ts[i]), handle, change) for i in range(len(e.type.ts)))).with_type(e.type)
-    elif e.type == syntax.INT or e.type == syntax.BOOL:
+    elif e.type == syntax.INT or e.type == syntax.LONG or e.type == syntax.BOOL or e.type == syntax.STRING or isinstance(e.type, syntax.TNative) or isinstance(e.type, syntax.TEnum):
         return e
     else:
         raise NotImplementedError(repr(e.type))
