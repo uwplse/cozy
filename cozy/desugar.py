@@ -121,7 +121,7 @@ def desugar_exp(e : Exp) -> Exp:
             e2 = self.visit(e.e2)
             op = e.op
             if op == "!=":
-                return self.visit(ENot(EEq(e1, "==", e2)))
+                return self.visit(ENot(EEq(e1, e2)))
             elif op == "-" and is_numeric(e.type):
                 return self.visit(EBinOp(e1, "+", EUnaryOp("-", e2).with_type(e.type)).with_type(e.type))
             else:
