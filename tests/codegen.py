@@ -7,7 +7,7 @@ import unittest
 from cozy.target_syntax import *
 from cozy.syntax_tools import pprint, mk_lambda, fresh_var
 from cozy.compile import CxxPrinter, JavaPrinter
-from cozy.library import Library, TNativeList, TNativeMap
+from cozy.library import Library, TNativeList, TNativeMap, TNativeSet
 from cozy.autotuning import enumerate_impls
 from cozy.sharing import compute_sharing
 
@@ -56,10 +56,17 @@ class TestCodegen(unittest.TestCase):
             stm = codgen.construct_concrete(TNativeMap(INT, INT), map, EVar("out").with_type(TNativeMap(INT, INT)))
             print(codgen.visit(stm, indent=""))
 
-    def test_distinct(self):
+    def test_distinct_foreach(self):
         for codgen in (CxxPrinter(), JavaPrinter()):
             bag = EFilter(EVar("v").with_type(TBag(INT)), mk_lambda(INT, lambda x: EBinOp(x, ">", ZERO))).with_type(TBag(INT))
             x = fresh_var(INT)
             v = fresh_var(INT)
             stm = SForEach(x, EUnaryOp(UOp.Distinct, bag).with_type(TSet(INT)), SAssign(v, x))
             print(codgen.visit(stm, indent=""))
+
+    def test_distinct(self):
+        for codgen in (CxxPrinter(), JavaPrinter()):
+            bag = EFilter(EVar("v").with_type(TBag(INT)), mk_lambda(INT, lambda x: EBinOp(x, ">", ZERO))).with_type(TBag(INT))
+            code, res = codgen.visit(EUnaryOp(UOp.Distinct, bag).with_type(TNativeSet(INT)), indent="")
+            print(code)
+            print("return {}".format(res))

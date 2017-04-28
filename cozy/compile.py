@@ -194,6 +194,13 @@ class CxxPrinter(common.Visitor):
             return SSeq(
                 self.initialize_native_list(out),
                 SForEach(x, e, SCall(out, "add", [x])))
+        elif isinstance(t, library.TNativeSet):
+            if isinstance(e, EUnaryOp) and e.op == UOp.Distinct:
+                return self.construct_concrete(t, e.e, out)
+            x = fresh_var(t.t)
+            return SSeq(
+                self.initialize_native_set(out),
+                SForEach(x, e, SCall(out, "add", [x])))
         elif isinstance(t, library.TNativeMap):
             return SSeq(
                 self.initialize_native_map(out),
@@ -422,6 +429,10 @@ class CxxPrinter(common.Visitor):
         elif op in ("-", UOp.Not):
             ce, ee = self.visit(e.e, indent)
             return (ce, "({op} {ee})".format(op=op, ee=ee))
+        elif op == UOp.Distinct:
+            v = fresh_var(e.type)
+            stm = self.construct_concrete(e.type, e, v)
+            return ("{}{};\n".format(indent, self.visit(e.type, v.id)) + self.visit(stm, indent), v.id)
         else:
             raise NotImplementedError(op)
 
