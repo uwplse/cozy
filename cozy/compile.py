@@ -4,7 +4,7 @@ import json
 from cozy import common
 from cozy.common import fresh_name
 from cozy.target_syntax import *
-from cozy import library
+from cozy import library, evaluation
 from cozy.syntax_tools import all_types, fresh_var, subst, free_vars
 
 INDENT = "  "
@@ -190,11 +190,32 @@ class CxxPrinter(common.Visitor):
             return SSeq(
                 self.initialize_native_list(out),
                 SForEach(x, e, SCall(out, "add", [x])))
+        elif isinstance(t, library.TNativeMap):
+            return SSeq(
+                self.initialize_native_map(out),
+                self.construct_map(t, e, out))
         elif type(t) in [TBool, TInt, TNative, TMaybe, TLong, TString]:
             return SAssign(out, e)
         raise NotImplementedError(t)
 
+    def construct_map(self, t, e, out):
+        if isinstance(e, ECond):
+            return SIf(e.cond,
+                construct_map(t, e.then_branch, out),
+                construct_map(t, e.else_branch, out))
+        elif isinstance(e, EMakeMap2):
+            k = fresh_var(t.k)
+            v = fresh_var(t.v)
+            return SForEach(k, e.e,
+                SMapUpdate(out, k, v,
+                    self.construct_concrete(t.v, e.value.apply_to(k), v)))
+        else:
+            raise NotImplementedError(e)
+
     def initialize_native_list(self, e) -> Stm:
+        return SNoOp() # C++ does default-initialization
+
+    def initialize_native_map(self, e) -> Stm:
         return SNoOp() # C++ does default-initialization
 
     def state_exp(self, lval):
@@ -208,13 +229,12 @@ class CxxPrinter(common.Visitor):
             raise NotImplementedError(repr(lval))
 
     def visit_EMapGet(self, e, indent=""):
-        value_constructor = self.state_exp(e.map).value
         if isinstance(e.map.type, library.TNativeMap):
             return self.native_map_get(
                 e,
                 lambda out: self.construct_concrete(
                     e.map.type.v,
-                    value_constructor.apply_to(EEmptyList().with_type(value_constructor.arg.type)),
+                    evaluation.construct_value(e.map.type.v),
                     out),
                 indent)
         else:
@@ -632,6 +652,9 @@ class JavaPrinter(CxxPrinter):
                 args=", ".join(self.visit(t, name) for name, t in q.args),
                 out=out,
                 body=body)
+
+    def initialize_native_map(self, e):
+        return SEscape("{indent}{e} = new java.util.HashMap<>();\n", ["e"], [e])
 
     def initialize_native_list(self, e):
         return SEscape("{indent}{e} = new java.util.ArrayList<>();\n", ["e"], [e])

@@ -5,9 +5,9 @@ import tempfile
 import unittest
 
 from cozy.target_syntax import *
-from cozy.syntax_tools import pprint
-from cozy.compile import CxxPrinter
-from cozy.library import Library
+from cozy.syntax_tools import pprint, mk_lambda
+from cozy.compile import CxxPrinter, JavaPrinter
+from cozy.library import Library, TNativeList, TNativeMap
 from cozy.autotuning import enumerate_impls
 from cozy.sharing import compute_sharing
 
@@ -42,3 +42,16 @@ class TestCodegen(unittest.TestCase):
             print(res.stderr.decode("UTF-8"))
             assert res.returncode == 0
         shutil.rmtree(dir)
+
+    def test_construct_concrete_list(self):
+        for codgen in (CxxPrinter(), JavaPrinter()):
+            bag = EFilter(EVar("v").with_type(TBag(INT)), mk_lambda(INT, lambda x: EBinOp(x, ">", ZERO))).with_type(TBag(INT))
+            stm = codgen.construct_concrete(TNativeList(INT), bag, EVar("out").with_type(TNativeList(INT)))
+            print(codgen.visit(stm))
+
+    def test_construct_concrete_map(self):
+        for codgen in (CxxPrinter(), JavaPrinter()):
+            bag = EFilter(EVar("v").with_type(TBag(INT)), mk_lambda(INT, lambda x: EBinOp(x, ">", ZERO))).with_type(TBag(INT))
+            map = EMakeMap2(bag, mk_lambda(INT, lambda k: k)).with_type(TMap(INT, INT))
+            stm = codgen.construct_concrete(TNativeMap(INT, INT), map, EVar("out").with_type(TNativeMap(INT, INT)))
+            print(codgen.visit(stm))
