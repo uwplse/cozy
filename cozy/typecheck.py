@@ -153,10 +153,20 @@ class Typechecker(Visitor):
     def visit_TMap(self, t):
         return type(t)(self.visit(t.k), self.visit(t.v))
 
+    def types_equivalent(self, t1, t2):
+        if isinstance(t1, syntax.TMap) and isinstance(t2, syntax.TMap):
+            return self.types_equivalent(t1.k, t2.k) and self.types_equivalent(t1.v, t2.v)
+        elif isinstance(t1, syntax.TBag) and isinstance(t2, syntax.TBag):
+            return self.types_equivalent(t1.t, t2.t)
+        elif isinstance(t1, syntax.TSet) and isinstance(t2, syntax.TSet):
+            return self.types_equivalent(t1.t, t2.t)
+        else:
+            return t1 == t2
+
     def ensure_type(self, e, t, msg="expression has type {} instead of {}"):
         if not hasattr(e, "type"):
             self.visit(e)
-        if t is not DEFAULT_TYPE and e.type is not DEFAULT_TYPE and e.type != t:
+        if t is not DEFAULT_TYPE and e.type is not DEFAULT_TYPE and not self.types_equivalent(e.type, t):
             self.report_err(e, msg.format(pprint(e.type), pprint(t)))
 
     def check_assignment(self, node, ltype, rtype):
