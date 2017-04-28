@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 from cozy.target_syntax import *
-from cozy.syntax_tools import pprint, mk_lambda
+from cozy.syntax_tools import pprint, mk_lambda, fresh_var
 from cozy.compile import CxxPrinter, JavaPrinter
 from cozy.library import Library, TNativeList, TNativeMap
 from cozy.autotuning import enumerate_impls
@@ -47,11 +47,19 @@ class TestCodegen(unittest.TestCase):
         for codgen in (CxxPrinter(), JavaPrinter()):
             bag = EFilter(EVar("v").with_type(TBag(INT)), mk_lambda(INT, lambda x: EBinOp(x, ">", ZERO))).with_type(TBag(INT))
             stm = codgen.construct_concrete(TNativeList(INT), bag, EVar("out").with_type(TNativeList(INT)))
-            print(codgen.visit(stm))
+            print(codgen.visit(stm, indent=""))
 
     def test_construct_concrete_map(self):
         for codgen in (CxxPrinter(), JavaPrinter()):
             bag = EFilter(EVar("v").with_type(TBag(INT)), mk_lambda(INT, lambda x: EBinOp(x, ">", ZERO))).with_type(TBag(INT))
             map = EMakeMap2(bag, mk_lambda(INT, lambda k: k)).with_type(TMap(INT, INT))
             stm = codgen.construct_concrete(TNativeMap(INT, INT), map, EVar("out").with_type(TNativeMap(INT, INT)))
-            print(codgen.visit(stm))
+            print(codgen.visit(stm, indent=""))
+
+    def test_distinct(self):
+        for codgen in (CxxPrinter(), JavaPrinter()):
+            bag = EFilter(EVar("v").with_type(TBag(INT)), mk_lambda(INT, lambda x: EBinOp(x, ">", ZERO))).with_type(TBag(INT))
+            x = fresh_var(INT)
+            v = fresh_var(INT)
+            stm = SForEach(x, EUnaryOp(UOp.Distinct, bag).with_type(TSet(INT)), SAssign(v, x))
+            print(codgen.visit(stm, indent=""))

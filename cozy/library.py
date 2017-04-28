@@ -149,6 +149,6 @@ class TNativeList(TBag):
     def __init__(self, t):
         super().__init__(t)
 
-class TNativeSet(TBag):
+class TNativeSet(TSet):
     def __init__(self, t):
         super().__init__(t)

@@ -10,6 +10,7 @@ from cozy.syntax_tools import all_types, fresh_var, subst, free_vars
 INDENT = "  "
 
 SEscape = declare_case(Stm, "SEscape", ["body_string", "arg_names", "args"])
+EEscape = declare_case(Exp, "EEscape", ["body_string", "arg_names", "args"])
 
 class CxxPrinter(common.Visitor):
 
@@ -56,6 +57,9 @@ class CxxPrinter(common.Visitor):
 
     def visit_TNativeList(self, t, name):
         return "std::vector< {} > {}".format(self.visit(t.t, ""), name)
+
+    def visit_TNativeSet(self, t, name):
+        return "std::unordered_set< {} > {}".format(self.visit(t.t, ""), name)
 
     def visit_TBag(self, t, name):
         return self.visit(t.rep_type(), name)
@@ -215,6 +219,9 @@ class CxxPrinter(common.Visitor):
     def initialize_native_list(self, e) -> Stm:
         return SNoOp() # C++ does default-initialization
 
+    def initialize_native_set(self, e) -> Stm:
+        return SNoOp() # C++ does default-initialization
+
     def initialize_native_map(self, e) -> Stm:
         return SNoOp() # C++ does default-initialization
 
@@ -303,16 +310,22 @@ class CxxPrinter(common.Visitor):
         if op == "+" and isinstance(e.e1.type, TBag):
             raise NotImplementedError("adding bags: {}".format(e))
         elif op == BOp.In:
-            type = TBool()
-            res = fresh_var(type, "found")
-            x = fresh_var(e.e1.type, "x")
-            setup = self.visit(seq([
-                SDecl(res.id, EBool(False).with_type(type)),
-                SForEach(x, e.e2, SIf(
-                    EBinOp(x, "==", e.e1),
-                    seq([SAssign(res, EBool(True).with_type(type)), SBreak()]),
-                    SNoOp()))]), indent)
-            return (setup, res.id)
+            if isinstance(e.e2.type, TSet):
+                if type(e.e2.type) in (TSet, library.TNativeSet):
+                    return self.test_set_containment_native(e.e2, e.e1, indent)
+                else:
+                    return self.visit(e.e2.type.contains(e.e1), indent)
+            else:
+                t = TBool()
+                res = fresh_var(t, "found")
+                x = fresh_var(e.e1.type, "x")
+                setup = self.visit(seq([
+                    SDecl(res.id, EBool(False).with_type(t)),
+                    SForEach(x, e.e2, SIf(
+                        EBinOp(x, "==", e.e1),
+                        seq([SAssign(res, EBool(True).with_type(t)), SBreak()]),
+                        SNoOp()))]), indent)
+                return (setup, res.id)
         elif op == BOp.Or:
             return self.visit(ECond(e.e1, EBool(True), e.e2).with_type(TBool()), indent)
         elif op == BOp.And:
@@ -321,17 +334,36 @@ class CxxPrinter(common.Visitor):
         ce2, e2 = self.visit(e.e2, indent)
         return (ce1 + ce2, "({e1} {op} {e2})".format(e1=e1, op=op, e2=e2))
 
+    def test_set_containment_native(self, set : Exp, elem : Exp, indent) -> (str, str):
+        return self.visit(EEscape("{set}.find({elem}) != {set}.end()", ["set", "elem"], [set, elem]), indent)
+
     def for_each(self, iterable : Exp, body, indent="") -> str:
         """Body is function: exp -> stm"""
         if isinstance(iterable, EEmptyList):
             return ""
         elif isinstance(iterable, ESingleton):
             return self.visit(body(iterable.e), indent=indent)
+        elif isinstance(iterable, ECond):
+            v = fresh_var(iterable.type.t)
+            new_body = body(v)
+            return self.visit(SIf(iterable.cond,
+                SForEach(v, iterable.then_branch, new_body),
+                SForEach(v, iterable.else_branch, new_body)))
         elif isinstance(iterable, EMap):
             return self.for_each(
                 iterable.e,
                 lambda v: body(iterable.f.apply_to(v)),
                 indent=indent)
+        elif isinstance(iterable, EUnaryOp) and iterable.op == UOp.Distinct:
+            tmp = fresh_var(library.TNativeSet(iterable.type.t))
+            return "".join((
+                "{indent}{decl};\n".format(indent=indent, decl=self.visit(tmp.type, tmp.id)),
+                self.visit(self.initialize_native_set(tmp), indent),
+                # TODO: could get better performance out of single "find or insert" primitive
+                self.for_each(iterable.e, lambda x: SIf(
+                    ENot(EBinOp(x, BOp.In, tmp).with_type(BOOL)),
+                    seq([body(x), SCall(tmp, "add", [x])]),
+                    SNoOp()), indent)))
         elif isinstance(iterable, EFilter):
             return self.for_each(iterable.e, lambda x: SIf(iterable.p.apply_to(x), body(x), SNoOp()), indent=indent)
         elif isinstance(iterable, EBinOp) and iterable.op == "+":
@@ -345,7 +377,7 @@ class CxxPrinter(common.Visitor):
             return self.for_each(subst(q.ret, { a : v for ((a, t), v) in zip(q.args, iterable.args) }), body, indent=indent)
         else:
             x = fresh_var(iterable.type.t)
-            if type(iterable.type) is TBag or type(iterable.type) is library.TNativeList:
+            if type(iterable.type) in (TBag, library.TNativeList, TSet, library.TNativeSet):
                 return self.for_each_native(x, iterable, body(x), indent)
             return self.visit(iterable.type.for_each(x, iterable, body(x)), indent=indent)
 
@@ -431,6 +463,12 @@ class CxxPrinter(common.Visitor):
         setups, args = zip(*[self.visit(arg, indent) for arg in args])
         return "".join(setups) + body.format(indent=indent, **dict(zip(s.arg_names, args)))
 
+    def visit_EEscape(self, e, indent=""):
+        body = e.body_string
+        args = e.args
+        setups, args = zip(*[self.visit(arg, indent) for arg in args])
+        return ("".join(setups), "(" + body.format(**dict(zip(e.arg_names, args))) + ")")
+
     def visit_SNoOp(self, s, indent=""):
         return ""
 
@@ -476,7 +514,7 @@ class CxxPrinter(common.Visitor):
             v.id)
 
     def visit_SCall(self, call, indent=""):
-        if isinstance(call.target.type, library.TNativeList) or type(call.target.type) == TBag:
+        if type(call.target.type) in (library.TNativeList, TBag):
             if call.func == "add":
                 setup1, target = self.visit(call.target, indent)
                 setup2, arg = self.visit(call.args[0], indent)
@@ -485,6 +523,17 @@ class CxxPrinter(common.Visitor):
                 setup1, target = self.visit(call.target, indent)
                 setup2, arg = self.visit(call.args[0], indent)
                 return setup1 + setup2 + "{}{target}.remove({target}.find({}));\n".format(indent, arg, target=target)
+            else:
+                raise NotImplementedError(call.func)
+        elif type(call.target.type) in (library.TNativeSet, TSet):
+            if call.func == "add":
+                setup1, target = self.visit(call.target, indent)
+                setup2, arg = self.visit(call.args[0], indent)
+                return setup1 + setup2 + "{}{}.insert({});\n".format(indent, target, arg)
+            elif call.func == "remove":
+                setup1, target = self.visit(call.target, indent)
+                setup2, arg = self.visit(call.args[0], indent)
+                return setup1 + setup2 + "{}{target}.erase({target}.find({}));\n".format(indent, arg, target=target)
             else:
                 raise NotImplementedError(call.func)
         f = getattr(call.target.type, "implement_{}".format(call.func))
@@ -556,8 +605,9 @@ class CxxPrinter(common.Visitor):
         self.queries = { q.name: q for q in spec.methods if isinstance(q, Query) }
 
         s = "#pragma once\n"
-        s += "#include <unordered_map>\n"
         s += "#include <vector>\n"
+        s += "#include <unordered_set>\n"
+        s += "#include <unordered_map>\n"
         s += "class {} {{\n".format(spec.name)
         s += "public:\n"
 
@@ -653,11 +703,14 @@ class JavaPrinter(CxxPrinter):
                 out=out,
                 body=body)
 
-    def initialize_native_map(self, e):
-        return SEscape("{indent}{e} = new java.util.HashMap<>();\n", ["e"], [e])
+    def initialize_native_list(self, out):
+        return SEscape("{indent}{e} = new java.util.ArrayList<>();\n", ["e"], [out])
 
-    def initialize_native_list(self, e):
-        return SEscape("{indent}{e} = new java.util.ArrayList<>();\n", ["e"], [e])
+    def initialize_native_set(self, out):
+        return SEscape("{indent}{e} = new java.util.HashSet<>();\n", ["e"], [out])
+
+    def initialize_native_map(self, out):
+        return SEscape("{indent}{e} = new java.util.HashMap<>();\n", ["e"], [out])
 
     def visit_EMakeRecord(self, e, indent=""):
         setups, args = zip(*[self.visit(v, indent) for (f, v) in e.fields])
@@ -698,6 +751,9 @@ class JavaPrinter(CxxPrinter):
                 return (setup1 + setup2, "({} == {})".format(e1, e2))
             return (setup1 + setup2, "java.util.Objects.equals({}, {})".format(e1, e2))
         return super().visit_EBinOp(e, indent)
+
+    def test_set_containment_native(self, set : Exp, elem : Exp, indent) -> (str, str):
+        return self.visit(EEscape("{set}.contains({elem})", ["set", "elem"], [set, elem]), indent)
 
     def define_type(self, toplevel_name, t, name, indent, sharing):
         if isinstance(t, TEnum):
@@ -780,13 +836,16 @@ class JavaPrinter(CxxPrinter):
     def visit_TNativeList(self, t, name):
         return "java.util.ArrayList<{}> {}".format(self.visit(t.t, ""), name)
 
+    def visit_TNativeSet(self, t, name):
+        return "java.util.HashSet< {} > {}".format(self.visit(t.t, ""), name)
+
     def visit_TBag(self, t, name):
         if hasattr(t, "rep_type"):
             return self.visit(t.rep_type(), name)
         return "java.util.Collection<{}> {}".format(self.visit(t.t, ""), name)
 
     def visit_SCall(self, call, indent=""):
-        if isinstance(call.target.type, library.TNativeList) or type(call.target.type) == TBag:
+        if type(call.target.type) in (library.TNativeList, TBag, library.TNativeSet, TSet):
             if call.func == "add":
                 setup1, target = self.visit(call.target, indent)
                 setup2, arg = self.visit(call.args[0], indent)
