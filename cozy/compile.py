@@ -181,20 +181,18 @@ class CxxPrinter(common.Visitor):
 
     def construct_concrete(self, t, e, out):
         """
-        Convert an expression of an abstract type (e.g. TBag) to one of a
-        concrete type (e.g. TIntrusiveLinkedList) and write the result into
+        Construct a value of type `t` from the expression `e` and store it in
         lvalue `out`.
-
-        TODO: this should be a property of the library implementation
         """
-        if isinstance(t, library.TIntrusiveLinkedList):
+        if hasattr(t, "construct_concrete"):
+            out = type(out)(*out.children()).with_type(t.rep_type())
             return t.construct_concrete(e, out)
-        elif isinstance(t, library.TNativeList):
+        elif isinstance(t, library.TNativeList) or type(t) is TBag:
             x = fresh_var(t.t)
             return SSeq(
                 self.initialize_native_list(out),
                 SForEach(x, e, SCall(out, "add", [x])))
-        elif isinstance(t, library.TNativeSet):
+        elif isinstance(t, library.TNativeSet) or type(t) is TSet:
             if isinstance(e, EUnaryOp) and e.op == UOp.Distinct:
                 return self.construct_concrete(t, e.e, out)
             x = fresh_var(t.t)
@@ -205,8 +203,8 @@ class CxxPrinter(common.Visitor):
             return SSeq(
                 self.initialize_native_map(out),
                 self.construct_map(t, e, out))
-        elif type(t) in [TBool, TInt, TNative, TMaybe, TLong, TString]:
-            return SAssign(out, e)
+        elif type(t) in [TBool, TInt, TNative, THandle, TMaybe, TLong, TString]:
+            return SEscape("{indent}{lhs} = {rhs};\n", ["lhs", "rhs"], [out, e])
         raise NotImplementedError(t)
 
     def construct_map(self, t, e, out):
@@ -493,13 +491,15 @@ class CxxPrinter(common.Visitor):
             return self.visit(SAssign(lhs, rhs), indent)
 
     def visit_SAssign(self, s, indent=""):
-        cl, el = self.visit(s.lhs, indent)
-        cr, er = self.visit(s.rhs, indent)
-        return cl + cr + indent + "{} = {};\n".format(el, er)
+        stm = self.construct_concrete(s.lhs.type, s.rhs, s.lhs)
+        return self.visit(stm, indent)
 
     def visit_SDecl(self, s, indent=""):
-        cv, ev = self.visit(s.val, indent)
-        return cv + indent + "{decl} = {ev};\n".format(decl=self.visit(s.val.type, s.id), ev=ev)
+        t = s.val.type
+        decl = self.visit(t, s.id)
+        return self.visit(seq([
+            SEscape("{{indent}}{};\n".format(decl), [], []),
+            SAssign(EVar(s.id).with_type(t), s.val)]), indent)
 
     def visit_SSeq(self, s, indent=""):
         return self.visit(s.s1, indent) + self.visit(s.s2, indent)
