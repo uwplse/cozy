@@ -104,6 +104,7 @@ class TIntrusiveLinkedList(TBag):
                 (self.prev_ptr, self.t)]
         return []
     def implement_add(self, target, args):
+        assert target.type == self.rep_type()
         new_elem, = args
         return seq([
             SAssign(EGetField(new_elem, self.next_ptr).with_type(self.t), target),
@@ -111,6 +112,7 @@ class TIntrusiveLinkedList(TBag):
             SIf(ENot(equal(target, NULL)), SAssign(EGetField(target, self.prev_ptr).with_type(self.t), new_elem), SNoOp()),
             SAssign(target, new_elem)])
     def implement_remove(self, target, args):
+        assert target.type == self.rep_type()
         elem, = args
         prev = EGetField(elem, self.prev_ptr).with_type(self.t)
         next = EGetField(elem, self.next_ptr).with_type(self.t)
@@ -121,6 +123,8 @@ class TIntrusiveLinkedList(TBag):
             SAssign(next, NULL),
             SAssign(prev, NULL)])
     def for_each(self, id, iter, body):
+        assert iter.type == self.rep_type()
+        assert id.type == self.t
         next = fresh_name("next")
         return seq([
             SDecl(id.id, iter),
@@ -130,10 +134,13 @@ class TIntrusiveLinkedList(TBag):
                     body,
                     SAssign(id, EVar(next))]))])
     def find_one(self, target):
+        assert target.type == self.rep_type()
         return target
     def make_empty(self):
         return ENull().with_type(self.t)
     def construct_concrete(self, e : Exp, out : Exp):
+        assert out.type == self.rep_type()
+        assert out.type == self.rep_type()
         x = fresh_var(self.t, "x")
         return seq([
             SAssign(out, NULL),
