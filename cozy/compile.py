@@ -331,6 +331,11 @@ class CxxPrinter(common.Visitor):
                         seq([SAssign(res, EBool(True).with_type(t)), SBreak()]),
                         SNoOp()))]), indent)
                 return (setup, res.id)
+        elif op == "-" and isinstance(e.type, TBag):
+            v = fresh_var(e.type)
+            x = fresh_var(e.type.t)
+            stm = self.visit(SForEach(x, e.e2, SCall(v, "remove", [x])), indent)
+            return ("{}{};\n".format(indent, self.visit(v.type, v.id)) + self.visit(self.construct_concrete(v.type, e.e1, v), indent) + stm, v.id)
         elif op == BOp.Or:
             return self.visit(ECond(e.e1, EBool(True), e.e2).with_type(TBool()), indent)
         elif op == BOp.And:
