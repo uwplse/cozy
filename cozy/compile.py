@@ -674,8 +674,7 @@ class JavaPrinter(CxxPrinter):
         for name, t in spec.statevars:
             initial_value = state_exps[name]
             fvs = free_vars(initial_value)
-            from cozy.synthesis.core import construct_value
-            initial_value = subst(initial_value, {v.id : construct_value(v.type) for v in fvs})
+            initial_value = subst(initial_value, {v.id : evaluation.construct_value(v.type) for v in fvs})
             setup = self.construct_concrete(t, initial_value, EVar(name).with_type(t))
             s += self.visit(setup, INDENT + INDENT)
         s += "{}}}\n".format(INDENT)
