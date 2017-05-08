@@ -443,7 +443,10 @@ class Typechecker(Visitor):
         e.p.arg.type = elem_type
         self.visit(e.p)
         self.ensure_type(e.p.body, BOOL)
-        e.type = e.e.type
+        if isinstance(e.e.type, syntax.TSet):
+            e.type = syntax.TSet(self.get_collection_type(e.e))
+        else:
+            e.type = syntax.TBag(self.get_collection_type(e.e))
 
     def visit_EMakeMap(self, e):
         self.visit(e.e)
