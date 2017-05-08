@@ -34,10 +34,8 @@ class Library(object):
                 else:
                     yield TNativeMap(ty.k, v)
         elif type(ty) is TBag:
-            if isinstance(ty.t, THandle):
-                yield TIntrusiveLinkedList(ty.t)
             for t in self.impls(ty.t):
-                yield TNativeList(t) # TODO: support for this is *very* spotty
+                yield TNativeList(t)
         elif type(ty) is TSet:
             if isinstance(ty.t, THandle):
                 yield TIntrusiveLinkedList(ty.t)
