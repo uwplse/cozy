@@ -132,7 +132,7 @@ class TIntrusiveLinkedList(TBag):
                 seq([
                     SDecl(next, EGetField(id, self.next_ptr).with_type(id.type)),
                     body,
-                    SAssign(id, EVar(next))]))])
+                    SAssign(id, EVar(next).with_type(id.type))]))])
     def find_one(self, target):
         assert target.type == self.rep_type()
         return target
