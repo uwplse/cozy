@@ -455,15 +455,14 @@ class CxxPrinter(common.Visitor):
         return self.visit_EGetField(EGetField(e.e, "_{}".format(e.n)), indent)
 
     def visit_ECall(self, e, indent=""):
+        if e.args:
+            setups, args = zip(*[self.visit(arg, indent) for arg in e.args])
+        else:
+            setups, args = ([], [])
         if e.func in self.funcs:
             f = self.funcs[e.func]
-            if e.args:
-                setups, args = zip(*[self.visit(arg, indent) for arg in e.args])
-                return ("".join(setups), "({})".format(f.body_string.format(**{ arg: val for (arg, _), val in zip(f.args, args) })))
-            else:
-                return ("", f.body_string)
+            return ("".join(setups), "({})".format(f.body_string.format(**{ arg: val for (arg, _), val in zip(f.args, args) })))
         elif e.func in self.queries:
-            setups, args = zip(*[self.visit(arg, indent) for arg in e.args])
             return ("".join(setups), "{}({})".format(e.func, ", ".join(args)))
         else:
             raise Exception("unknown function {}".format(repr(e.func)))
@@ -474,12 +473,16 @@ class CxxPrinter(common.Visitor):
     def visit_SEscape(self, s, indent=""):
         body = s.body_string
         args = s.args
+        if not args:
+            return body.format(indent=indent)
         setups, args = zip(*[self.visit(arg, indent) for arg in args])
         return "".join(setups) + body.format(indent=indent, **dict(zip(s.arg_names, args)))
 
     def visit_EEscape(self, e, indent=""):
         body = e.body_string
         args = e.args
+        if not args:
+            return ("", body)
         setups, args = zip(*[self.visit(arg, indent) for arg in args])
         return ("".join(setups), "(" + body.format(**dict(zip(e.arg_names, args))) + ")")
 
