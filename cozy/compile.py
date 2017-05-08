@@ -310,6 +310,20 @@ class CxxPrinter(common.Visitor):
         setup, e = self.visit(e.e, indent)
         return (setup, "static_cast<int>(" + e + ")")
 
+    def visit_EWithAlteredValue(self, e, indent=""):
+        # TODO: This isn't quite right.
+        # EWithAlteredValue produces a "magic" handle value with the same
+        # address as `e.handle`, but a different value at the other side. A
+        # correct implementation would be much more complex:
+        #  - allocate a new handle A with the appropriate value
+        #  - add a note in an auxiliary structure stating that A aliases with
+        #    e.handle
+        #  - when you check equality of handles, also consult the auxiliary
+        #    structure for hidden aliases
+        #  - on return from method, free all magic handles mentioned in the
+        #    auxiliary structure
+        return self.visit(e.handle, indent)
+
     def visit_EBinOp(self, e, indent=""):
         op = e.op
         if op == "+" and isinstance(e.e1.type, TBag):
