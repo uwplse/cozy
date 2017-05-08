@@ -358,7 +358,7 @@ class CxxPrinter(common.Visitor):
             new_body = body(v)
             return self.visit(SIf(iterable.cond,
                 SForEach(v, iterable.then_branch, new_body),
-                SForEach(v, iterable.else_branch, new_body)))
+                SForEach(v, iterable.else_branch, new_body)), indent=indent)
         elif isinstance(iterable, EMap):
             return self.for_each(
                 iterable.e,
