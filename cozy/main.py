@@ -22,6 +22,8 @@ from cozy import autotuning
 from cozy import sharing
 from cozy import opts
 
+save_failed_codegen_inputs = opts.Option("save-failed-codegen-inputs", str, "/tmp/failed_codegen.py", metavar="PATH")
+
 def run():
     parser = argparse.ArgumentParser(description='Data structure synthesizer.')
     parser.add_argument("-t", "--timeout", metavar="N", type=float, default=60, help="Per-query synthesis timeout (in seconds); default=60")
@@ -81,12 +83,23 @@ def run():
     print()
     print(impl.statevars)
 
-    java = args.java
-    if java is not None:
-        with common.open_maybe_stdout(java) as out:
-            out.write(compile.JavaPrinter().visit(impl, state_map, share_info, package=args.package))
+    try:
+        raise NotImplementedError()
+        java = args.java
+        if java is not None:
+            with common.open_maybe_stdout(java) as out:
+                out.write(compile.JavaPrinter().visit(impl, state_map, share_info, package=args.package))
 
-    cxx = getattr(args, "c++")
-    if cxx is not None:
-        with common.open_maybe_stdout(cxx) as out:
-            out.write(compile.CxxPrinter().visit(impl, state_map, share_info))
+        cxx = getattr(args, "c++")
+        if cxx is not None:
+            with common.open_maybe_stdout(cxx) as out:
+                out.write(compile.CxxPrinter().visit(impl, state_map, share_info))
+    except:
+        print("Code generation failed!")
+        if save_failed_codegen_inputs.value:
+            with open(save_failed_codegen_inputs.value, "w") as f:
+                f.write("impl = {}\n".format(repr(impl)))
+                f.write("state_map = {}\n".format(repr(state_map)))
+                f.write("share_info = {}\n".format(repr(share_info)))
+            print("Implementation was dumped to {}".format(save_failed_codegen_inputs.value))
+        raise
