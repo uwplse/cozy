@@ -5,7 +5,7 @@ from cozy import common
 from cozy.common import fresh_name
 from cozy.target_syntax import *
 from cozy import library, evaluation
-from cozy.syntax_tools import all_types, fresh_var, subst, free_vars
+from cozy.syntax_tools import all_types, fresh_var, subst, free_vars, is_scalar
 
 INDENT = "  "
 
@@ -326,8 +326,10 @@ class CxxPrinter(common.Visitor):
 
     def visit_EBinOp(self, e, indent=""):
         op = e.op
-        if op == "+" and isinstance(e.e1.type, TBag):
-            raise NotImplementedError("adding bags: {}".format(e))
+        if op == "+" and (isinstance(e.e1.type, TBag) or isinstance(e.e1.type, TSet)):
+            raise NotImplementedError("adding collections: {}".format(e))
+        elif op == "==" and (isinstance(e.e1.type, TBag) or isinstance(e.e1.type, TSet)):
+            raise NotImplementedError("comparing collections: {}".format(e))
         elif op == BOp.In:
             if isinstance(e.e2.type, TSet):
                 if type(e.e2.type) in (TSet, library.TNativeSet):
@@ -776,11 +778,9 @@ class JavaPrinter(CxxPrinter):
         return super().visit_EUnaryOp(e, indent)
 
     def visit_EBinOp(self, e, indent):
-        if e.op == "==":
+        if e.op == "==" and is_scalar(e.e1.type):
             setup1, e1 = self.visit(e.e1, indent)
             setup2, e2 = self.visit(e.e2, indent)
-            if e1 == "null" or e2 == "null":
-                return (setup1 + setup2, "({} == {})".format(e1, e2))
             return (setup1 + setup2, "java.util.Objects.equals({}, {})".format(e1, e2))
         return super().visit_EBinOp(e, indent)
 
