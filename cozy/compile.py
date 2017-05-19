@@ -384,8 +384,11 @@ class CxxPrinter(common.Visitor):
                         SNoOp()))]), indent)
                 return (setup, res.id)
         elif op == "-" and isinstance(e.type, TBag):
-            v = fresh_var(e.type)
-            x = fresh_var(e.type.t)
+            t = e.type
+            if type(t) is TBag:
+                t = library.TNativeList(t.t)
+            v = fresh_var(t)
+            x = fresh_var(t.t)
             stm = self.visit(SForEach(x, e.e2, SCall(v, "remove", [x])), indent)
             return ("{}{};\n".format(indent, self.visit(v.type, v.id)) + self.visit(self.construct_concrete(v.type, e.e1, v), indent) + stm, v.id)
         elif op == BOp.Or:
