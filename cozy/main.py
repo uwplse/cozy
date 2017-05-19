@@ -84,7 +84,6 @@ def run():
     print(impl.statevars)
 
     try:
-        raise NotImplementedError()
         java = args.java
         if java is not None:
             with common.open_maybe_stdout(java) as out:
