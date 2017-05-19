@@ -324,12 +324,45 @@ class CxxPrinter(common.Visitor):
         #    auxiliary structure
         return self.visit(e.handle, indent)
 
+    def _is_concrete(self, e):
+        if is_scalar(e.type):
+            return True
+        elif type(e.type) in [TMap, TSet, TBag]:
+            return False
+        return True
+
+    def histogram(self, e, indent) -> (str, EVar):
+        t = library.TNativeMap(e.type.t, INT)
+        hist = fresh_var(t)
+        x = fresh_var(e.type.t)
+        val = fresh_var(INT)
+        decl = self.visit(t, hist.id)
+        s = self.visit(SForEach(x, e,
+            SMapUpdate(hist, x, val,
+                SAssign(val, EBinOp(val, "+", ONE).with_type(INT)))), indent)
+        return ("{}{};\n".format(indent, decl) + self.visit(self.initialize_native_map(hist), indent) + s, hist)
+
+    def _eq(self, e1, e2, indent):
+        if is_scalar(e1.type):
+            return self.visit(EEscape("({e1} == {e2})", ["e1", "e2"], [e1, e2]), indent)
+        elif isinstance(e1.type, TSet) and isinstance(e2.type, TSet):
+            raise NotImplementedError("set equality")
+        elif isinstance(e1.type, TBag) or isinstance(e2.type, TBag):
+            setup1, v1 = self.histogram(e1, indent)
+            setup2, v2 = self.histogram(e2, indent)
+            setup3, res = self._eq(v1, v2, indent)
+            return (setup1 + setup2 + setup3, res)
+        elif isinstance(e1.type, TMap) or isinstance(e2.type, TMap):
+            raise NotImplementedError("map equality")
+        else:
+            raise NotImplementedError((e1.type, e2.type))
+
     def visit_EBinOp(self, e, indent=""):
         op = e.op
         if op == "+" and (isinstance(e.e1.type, TBag) or isinstance(e.e1.type, TSet)):
             raise NotImplementedError("adding collections: {}".format(e))
-        elif op == "==" and (isinstance(e.e1.type, TBag) or isinstance(e.e1.type, TSet)):
-            raise NotImplementedError("comparing collections: {}".format(e))
+        elif op == "==":
+            return self._eq(e.e1, e.e2, indent)
         elif op == BOp.In:
             if isinstance(e.e2.type, TSet):
                 if type(e.e2.type) in (TSet, library.TNativeSet):
@@ -777,12 +810,13 @@ class JavaPrinter(CxxPrinter):
             return (setup, "!({})".format(ee))
         return super().visit_EUnaryOp(e, indent)
 
-    def visit_EBinOp(self, e, indent):
-        if e.op == "==" and is_scalar(e.e1.type):
-            setup1, e1 = self.visit(e.e1, indent)
-            setup2, e2 = self.visit(e.e2, indent)
-            return (setup1 + setup2, "java.util.Objects.equals({}, {})".format(e1, e2))
-        return super().visit_EBinOp(e, indent)
+    def _eq(self, e1, e2, indent):
+        if (is_scalar(e1.type) or
+                (isinstance(e1.type, library.TNativeMap) and isinstance(e2.type, library.TNativeMap)) or
+                (isinstance(e1.type, library.TNativeSet) and isinstance(e2.type, library.TNativeSet)) or
+                (isinstance(e1.type, library.TNativeList) and isinstance(e2.type, library.TNativeList))):
+            return self.visit(EEscape("java.util.Objects.equals({e1}, {e2})", ["e1", "e2"], [e1, e2]), indent)
+        return super()._eq(e1, e2, indent)
 
     def test_set_containment_native(self, set : Exp, elem : Exp, indent) -> (str, str):
         return self.visit(EEscape("{set}.contains({elem})", ["set", "elem"], [set, elem]), indent)
