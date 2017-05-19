@@ -9,10 +9,10 @@ Aggr:
         l
 
     query totalSum()
-        sum [ i.val | i <- l ]
+        sum [ i | i <- l ]
 
     query countGt10()
-        sum [ 1 | x <- l, x.val > 10 ]
+        sum [ 1 | x <- l, x > 10 ]
 
 //    query minimum()
 //        min l
