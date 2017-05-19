@@ -343,7 +343,10 @@ class CxxPrinter(common.Visitor):
         return ("{}{};\n".format(indent, decl) + self.visit(self.initialize_native_map(hist), indent) + s, hist)
 
     def _eq(self, e1, e2, indent):
-        if is_scalar(e1.type):
+        if (is_scalar(e1.type) or
+                (isinstance(e1.type, library.TNativeMap) and isinstance(e2.type, library.TNativeMap)) or
+                (isinstance(e1.type, library.TNativeSet) and isinstance(e2.type, library.TNativeSet)) or
+                (isinstance(e1.type, library.TNativeList) and isinstance(e2.type, library.TNativeList))):
             return self.visit(EEscape("({e1} == {e2})", ["e1", "e2"], [e1, e2]), indent)
         elif isinstance(e1.type, TSet) and isinstance(e2.type, TSet):
             raise NotImplementedError("set equality")
@@ -652,7 +655,7 @@ class CxxPrinter(common.Visitor):
             return "{{ {} }}".format(", ".join(self.initial_value(t.t) for i in range(t.n)))
         elif isinstance(t, TTuple):
             return "{{ {} }}".format(", ".join(self.initial_value(tt) for tt in t.ts))
-        elif isinstance(t, library.TNativeMap):
+        elif isinstance(t, library.TNativeMap) or isinstance(t, library.TNativeList) or isinstance(t, library.TNativeSet):
             return "()"
         elif self.visit(t, "").endswith("*"): # a little hacky
             return "(NULL)"
