@@ -50,7 +50,7 @@ The `tests` folder contains a few tests written with Python's
 [unittest](https://docs.python.org/3/library/unittest.html) library. Run them
 with
 
-    python3 -m unittest -b tests/*.py
+    $ python3 -m unittest -b tests/*.py
 
 (The `-b` flag "buffers" output so that Python only shows output from failing
 tests.)
