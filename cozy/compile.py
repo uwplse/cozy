@@ -475,10 +475,6 @@ class CxxPrinter(common.Visitor):
             SForEach(x, iterable, seq([
                 SAssign(v, EJust(x)),
                 SEscapeBlock(label)])))
-        # find = self.for_each(iterable, lambda x: seq([SAssign(v, EJust(x)), SBreak()]), indent=indent)
-        # return ("{decl}{find}".format(
-        #     decl=self.visit(SDecl(v.id, ENull().with_type(v.type)), indent=indent),
-        #     find=self.visit(SEscapable(label, SEscape(find, [], [])), indent=indent)), v.id)
         return (self.visit(seq([decl, find]), indent), v.id)
 
     def visit_EUnaryOp(self, e, indent):
