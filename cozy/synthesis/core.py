@@ -172,8 +172,8 @@ class Learner(object):
             self.watched_exps.append((e, r, cost, a, pool))
 
     def _examples_for(self, e):
-        binders = [b for b in free_vars(e) if b in self.binders]
-        return instantiate_examples((self.target,), self.examples, binders)
+        # binders = [b for b in free_vars(e) if b in self.binders]
+        return instantiate_examples((self.target,), self.examples, self.binders)
 
     def _fingerprint(self, e, examples=None):
         return fingerprint(e, self._examples_for(e))
