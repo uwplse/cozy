@@ -610,7 +610,7 @@ class CxxPrinter(common.Visitor):
             elif call.func == "remove":
                 setup1, target = self.visit(call.target, indent)
                 setup2, arg = self.visit(call.args[0], indent)
-                return setup1 + setup2 + "{}{target}.remove({target}.find({}));\n".format(indent, arg, target=target)
+                return setup1 + setup2 + "{}{target}.erase(::std::find({target}.begin(), {target}.end(), {}));\n".format(indent, arg, target=target)
             else:
                 raise NotImplementedError(call.func)
         elif type(call.target.type) in (library.TNativeSet, TSet):
@@ -693,6 +693,7 @@ class CxxPrinter(common.Visitor):
         self.queries = { q.name: q for q in spec.methods if isinstance(q, Query) }
 
         s = "#pragma once\n"
+        s += "#include <algorithm>\n"
         s += "#include <vector>\n"
         s += "#include <unordered_set>\n"
         s += "#include <unordered_map>\n"
