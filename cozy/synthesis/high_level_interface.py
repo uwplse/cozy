@@ -259,7 +259,7 @@ def synthesize(
             impls[q.name] = rewrite_ret(q, lambda prev: ret, keep_assumptions=False)
 
             for op in ops:
-                print("###### INCREMENTALIZING: {}".format(op.name))
+                # print("###### INCREMENTALIZING: {}".format(op.name))
                 delta = op_deltas[op.name]
                 for new_member, projection in rep:
                     (state_update_stm, subqueries) = inc.sketch_update(new_member, projection, subst(projection, delta), state_vars, list(op.assumptions))
