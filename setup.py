@@ -13,8 +13,8 @@ if sys.version_info < (3, 4):
 
 try:
     import z3
-    if z3.get_version() < (4, 4, 2):
-        die("Need Z3 >= 4.4.2; found {}".format(z3.get_version_string()))
+    if z3.get_version() < (4, 5):
+        die("Need Z3 >= 4.5; found {}".format(z3.get_version_string()))
 except ImportError:
     die("Z3 Python module was not found")
 
