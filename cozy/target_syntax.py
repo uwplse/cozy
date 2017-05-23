@@ -44,7 +44,10 @@ EVectorGet = declare_case(Exp, "EVectorGet", ["e", "i"])
 
 # Iterators
 SWhile   = declare_case(Stm, "SWhile", ["e", "body"])
-SBreak   = declare_case(Stm, "SBreak")
+
+# Fake go-to
+SEscapableBlock = declare_case(Stm, "SEscapableBlock", ["label", "body"])
+SEscapeBlock    = declare_case(Stm, "SEscapeBlock", ["label"])
 
 # Bag transformations
 EFilter  = declare_case(Exp, "EFilter",  ["e", "p"])
