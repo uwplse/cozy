@@ -610,7 +610,12 @@ class CxxPrinter(common.Visitor):
             elif call.func == "remove":
                 setup1, target = self.visit(call.target, indent)
                 setup2, arg = self.visit(call.args[0], indent)
-                return setup1 + setup2 + "{}{target}.erase(::std::find({target}.begin(), {target}.end(), {}));\n".format(indent, arg, target=target)
+                it = fresh_name("it")
+                return setup1 + setup2 + "{indent}auto {it}(::std::find({target}.begin(), {target}.end(), {arg}));\n{indent}if ({it} != {target}.end()) {target}.erase({it});\n".format(
+                    indent=indent,
+                    arg=arg,
+                    target=target,
+                    it=it)
             else:
                 raise NotImplementedError(call.func)
         elif type(call.target.type) in (library.TNativeSet, TSet):
