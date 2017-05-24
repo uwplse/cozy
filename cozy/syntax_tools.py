@@ -637,7 +637,7 @@ def qsubst(
         haystack : syntax.Exp,
         needle   : syntax.EVar,
         repl     : syntax.Exp):
-    if repl.size() <= 1 or free_vars(haystack, count_uses=True).get(needle, 0) <= 1:
+    if repl.size() <= 1 or free_vars(haystack, counts=True).get(needle, 0) <= 1:
         return subst(haystack, { needle.id : repl })
     e = syntax.ELet(repl, target_syntax.ELambda(needle, haystack))
     if hasattr(haystack, "type"):
@@ -790,14 +790,68 @@ def break_conj(e):
     else:
         yield e
 
+class Aeq(object):
+    def __init__(self, e : syntax.Exp):
+        self.e = e
+    def __hash__(self):
+        res = 0
+        q = [self.e]
+        while q:
+            x = q[-1]
+            del q[-1]
+            if isinstance(x, syntax.EVar):
+                continue
+            elif isinstance(x, common.ADT):
+                res *= 31
+                res += hash(type(x))
+                res %= 2**64
+                q.extend(x.children())
+            elif isinstance(x, tuple) or isinstance(x, list):
+                q.extend(x)
+            else:
+                res += hash(x)
+                # raise NotImplementedError(repr(x))
+        return res % (2**64)
+    def __eq__(self, other):
+        return isinstance(other, Aeq) and alpha_equivalent(self.e, other.e)
+    def __ne__(self, other):
+        return not (self == other)
+
 def cse(e):
     """
     Common subexpression elimination. Replaces re-used expressions with ELet,
     e.g. "(x+1) + (x+1)" ---> "let a = x+1 in a+a".
     """
     def finish(e, avail):
-        for k, v in reversed(avail.items()):
-            e = qsubst(e, v, k)
+        ravail = collections.OrderedDict([(v, k) for (k, v) in avail.items() if v is not None])
+        counts = free_vars(e, counts=True)
+        for var, value in reversed(ravail.items()):
+            for (vv, ct) in free_vars(value, counts=True).items():
+                counts[vv] = counts.get(vv, 0) + ct
+        to_inline = common.OrderedSet(v for v in ravail if counts.get(v, 0) <= 1 or ravail[v].size() < 2)
+        sub = { v : ravail[v] for v in to_inline }
+
+        skip = { }
+        class V(BottomUpRewriter):
+            def visit_EVar(self, var):
+                if var in sub and var not in skip:
+                    return self.visit(sub[var])
+                return var
+            def visit_ELambda(self, lam):
+                with common.extend(skip, lam.arg, True):
+                    return target_syntax.ELambda(lam.arg, self.visit(lam.body))
+
+        inliner = V()
+        e = inliner.visit(e)
+
+        for var, value in reversed(ravail.items()):
+            if var in to_inline:
+                continue
+            value = inliner.visit(value)
+            ee = syntax.ELet(value, target_syntax.ELambda(var, e))
+            if hasattr(e, "type"):
+                ee = ee.with_type(e.type)
+            e = ee
         return e
 
     class V(BottomUpRewriter):
@@ -805,18 +859,23 @@ def cse(e):
             super().__init__()
             self.avail = collections.OrderedDict() # maps expressions --> variables
         def visit_Exp(self, e):
-            e = type(e)(*[self.visit(c) for c in e.children()]).with_type(e.type)
-            res = self.avail.get(e)
+            ee = type(e)(*[self.visit(c) for c in e.children()])
+            res = self.avail.get(ee)
             if res is not None:
                 return res
-            v = fresh_var(e.type)
-            self.avail[e] = v
+            v = syntax.EVar(common.fresh_name("tmp"))
+            if hasattr(e, "type"):
+                ee = ee.with_type(e.type)
+                v = v.with_type(e.type)
+            self.avail[ee] = v
             return v
         def visit_ELambda(self, e):
-            invalid = [x for x in self.avail.keys() if e.arg in free_vars(x)]
-            with common.extend_multi(self.avail, [(i, None) for i in invalid]):
-                body = self.visit(e.body)
-                body = finish(body, self.avail)
+            old_avail = self.avail
+            invalid = [e.arg]
+            self.avail = collections.OrderedDict([(k, v) for (k, v) in self.avail.items() if k not in invalid])
+            body = self.visit(e.body)
+            body = finish(body, self.avail)
+            self.avail = old_avail # TODO: we can copy over exprs that don't use the arg
             return target_syntax.ELambda(e.arg, body)
 
     v = V()
