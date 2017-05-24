@@ -323,14 +323,14 @@ _PRETTYPRINTER = PrettyPrinter()
 def pprint(ast):
     return _PRETTYPRINTER.visit(ast)
 
-def free_vars(exp, count_uses=False):
+def free_vars(exp, counts=False):
 
     class VarCollector(common.Visitor):
         def __init__(self):
-            self.bound = []
+            self.bound = collections.defaultdict(int)
 
         def visit_EVar(self, e):
-            if e.id not in self.bound:
+            if not self.bound[e.id]:
                 yield e
 
         def visit_EMakeRecord(self, e):
@@ -347,18 +347,14 @@ def free_vars(exp, count_uses=False):
             c = clauses[i]
             if isinstance(c, syntax.CPull):
                 yield from self.visit(c.e)
-                self.bound.append(c.id)
+                self.bound[c.id] += 1
                 yield from self.visit_clauses(clauses, i + 1, e)
-                del self.bound[-1]
+                self.bound[c.id] -= 1
             elif isinstance(c, syntax.CCond):
                 yield from self.visit(c.e)
                 yield from self.visit_clauses(clauses, i + 1, e)
             else:
                 raise Exception("unknown case: {}".format(c))
-
-        def visit_EAlloc(self, e):
-            for ee in e.args:
-                yield from self.visit(ee)
 
         def visit_ECall(self, e):
             for ee in e.args:
@@ -369,15 +365,17 @@ def free_vars(exp, count_uses=False):
                 yield from self.visit(ee)
 
         def visit_ELambda(self, e):
-            for v in self.visit(e.body):
-                if v.id != e.arg.id:
-                    yield v
+            self.bound[e.arg.id] += 1
+            yield from self.visit(e.body)
+            self.bound[e.arg.id] -= 1
 
         def visit_Query(self, q):
             args = set(arg_name for (arg_name, arg_type) in q.args)
-            for v in itertools.chain(self.visit(q.ret), *[self.visit(a) for a in q.assumptions]):
-                if v.id not in args:
-                    yield v
+            for a in args:
+                self.bound[arg] += 1
+            yield from itertools.chain(self.visit(q.ret), *[self.visit(a) for a in q.assumptions])
+            for a in args:
+                self.bound[arg] -= 1
 
         def visit_Exp(self, e):
             for child in e.children():
@@ -388,7 +386,7 @@ def free_vars(exp, count_uses=False):
             raise NotImplementedError(type(o))
 
     it = VarCollector().visit(exp)
-    if count_uses:
+    if counts:
         res = collections.OrderedDict()
         for v in it:
             res[v] = res.get(v, 0) + 1
