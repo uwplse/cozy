@@ -580,7 +580,10 @@ def subst(exp, replacements):
             arg = e.arg
             body = e.body
             while any(arg in free_vars(r) for r in replacements.values()):
-                new_arg = fresh_var(arg.type)
+                if hasattr(arg, "type"):
+                    new_arg = fresh_var(arg.type)
+                else:
+                    new_arg = syntax.EVar(common.fresh_name())
                 body = subst(body, { arg.id : new_arg })
                 arg = new_arg
             return target_syntax.ELambda(arg, subst(body, m))
