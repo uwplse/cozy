@@ -638,7 +638,10 @@ def qsubst(
         repl     : syntax.Exp):
     if repl.size() <= 1 or free_vars(haystack, count_uses=True).get(needle, 0) <= 1:
         return subst(haystack, { needle.id : repl })
-    return syntax.ELet(repl, target_syntax.ELambda(needle, haystack)).with_type(haystack.type)
+    e = syntax.ELet(repl, target_syntax.ELambda(needle, haystack))
+    if hasattr(haystack, "type"):
+        e = e.with_type(haystack.type)
+    return e
 
 def alpha_equivalent(e1, e2, allow_rename=lambda v1, v2: False):
     """
