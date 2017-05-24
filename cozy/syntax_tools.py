@@ -785,3 +785,37 @@ def break_conj(e):
         yield from break_conj(e.e2)
     else:
         yield e
+
+def cse(e):
+    """
+    Common subexpression elimination. Replaces re-used expressions with ELet,
+    e.g. "(x+1) + (x+1)" ---> "let a = x+1 in a+a".
+    """
+    def finish(e, avail):
+        for k, v in reversed(avail.items()):
+            e = qsubst(e, v, k)
+        return e
+
+    class V(BottomUpRewriter):
+        def __init__(self):
+            super().__init__()
+            self.avail = collections.OrderedDict() # maps expressions --> variables
+        def visit_Exp(self, e):
+            e = type(e)(*[self.visit(c) for c in e.children()]).with_type(e.type)
+            res = self.avail.get(e)
+            if res is not None:
+                return res
+            v = fresh_var(e.type)
+            self.avail[e] = v
+            return v
+        def visit_ELambda(self, e):
+            invalid = [x for x in self.avail.keys() if e.arg in free_vars(x)]
+            with common.extend_multi(self.avail, [(i, None) for i in invalid]):
+                body = self.visit(e.body)
+                body = finish(body, self.avail)
+            return target_syntax.ELambda(e.arg, body)
+
+    v = V()
+    res = v.visit(e)
+    res = finish(res, v.avail)
+    return res
