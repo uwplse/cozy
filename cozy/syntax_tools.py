@@ -5,6 +5,7 @@ Various utilities for working with syntax trees.
 
 """
 
+import collections
 import sys
 import itertools
 
@@ -322,7 +323,7 @@ _PRETTYPRINTER = PrettyPrinter()
 def pprint(ast):
     return _PRETTYPRINTER.visit(ast)
 
-def free_vars(exp):
+def free_vars(exp, count_uses=False):
 
     class VarCollector(common.Visitor):
         def __init__(self):
@@ -386,7 +387,14 @@ def free_vars(exp):
         def visit_object(self, o):
             raise NotImplementedError(type(o))
 
-    return common.OrderedSet(VarCollector().visit(exp))
+    it = VarCollector().visit(exp)
+    if count_uses:
+        res = collections.OrderedDict()
+        for v in it:
+            res[v] = res.get(v, 0) + 1
+        return res
+    else:
+        return common.OrderedSet(it)
 
 def all_exps(e):
     class V(BottomUpExplorer):
