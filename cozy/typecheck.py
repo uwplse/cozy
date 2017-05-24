@@ -209,6 +209,12 @@ class Typechecker(Visitor):
         self.report_err(e, "expression has non-handle type {}".format(e.type))
         return DEFAULT_TYPE
 
+    def visit_ELet(self, e):
+        self.visit(e.e)
+        e.f.arg.type = e.e.type
+        self.visit(e.f)
+        e.type = e.f.body.type
+
     def visit_EUnaryOp(self, e):
         self.visit(e.e)
         if e.op == syntax.UOp.Sum:
