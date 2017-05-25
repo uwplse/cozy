@@ -34,3 +34,10 @@ class TestEvaluation(unittest.TestCase):
             bind_callback=lambda arg, val: binds.append((arg, val)))
         assert m == Bag([1, 1])
         assert binds == [(x, i) for i in numbers]
+
+    def test_leq(self):
+        e = ZERO
+        for i in range(50):
+            e = ECond(EBinOp(e, "<=", ONE), ONE, ZERO).with_type(INT)
+        res = eval(e, env={})
+        print(res)

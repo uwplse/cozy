@@ -525,7 +525,8 @@ def replace(exp, old_exp, new_exp):
 
 @common.typechecked
 def re_use(e : syntax.Exp, target):
-    return mk_lambda(e.type, target).apply_to(e)
+    v = fresh_var(e.type)
+    return qsubst(target(v), v, e)
 
 def subst(exp, replacements):
     """
