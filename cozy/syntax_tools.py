@@ -859,7 +859,10 @@ def cse(e):
         def __init__(self):
             super().__init__()
             self.avail = collections.OrderedDict() # maps expressions --> variables
+            self.avail_by_id = collections.OrderedDict() # maps ids -> variables
         def visit_Exp(self, e):
+            if id(e) in self.avail_by_id:
+                return self.avail_by_id[id(e)]
             ee = type(e)(*[self.visit(c) for c in e.children()])
             res = self.avail.get(ee)
             if res is not None:
@@ -869,14 +872,18 @@ def cse(e):
                 ee = ee.with_type(e.type)
                 v = v.with_type(e.type)
             self.avail[ee] = v
+            self.avail_by_id[id(e)] = v
             return v
         def visit_ELambda(self, e):
             old_avail = self.avail
+            old_avail_by_id = self.avail_by_id
             invalid = [e.arg]
             self.avail = collections.OrderedDict([(k, v) for (k, v) in self.avail.items() if k not in invalid])
+            self.avail_by_id = collections.OrderedDict()
             body = self.visit(e.body)
             body = finish(body, self.avail)
             self.avail = old_avail # TODO: we can copy over exprs that don't use the arg
+            self.avail_by_id = old_avail_by_id
             return target_syntax.ELambda(e.arg, body)
 
     v = V()

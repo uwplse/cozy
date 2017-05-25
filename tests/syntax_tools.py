@@ -25,4 +25,6 @@ class TestSyntaxTools(unittest.TestCase):
         a = EBinOp(x, "+", ONE).with_type(INT)
         e = EBinOp(a, "+", a).with_type(INT)
         e = EBinOp(e, "+", ELet(ONE, ELambda(x, EBinOp(x, "+", x).with_type(INT))).with_type(INT)).with_type(INT)
+        print(pprint(e))
+        print(pprint(cse(e)))
         assert valid(EEq(e, cse(e)))
