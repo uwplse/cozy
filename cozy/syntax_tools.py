@@ -372,10 +372,10 @@ def free_vars(exp, counts=False):
         def visit_Query(self, q):
             args = set(arg_name for (arg_name, arg_type) in q.args)
             for a in args:
-                self.bound[arg] += 1
+                self.bound[a] += 1
             yield from itertools.chain(self.visit(q.ret), *[self.visit(a) for a in q.assumptions])
             for a in args:
-                self.bound[arg] -= 1
+                self.bound[a] -= 1
 
         def visit_Exp(self, e):
             for child in e.children():
