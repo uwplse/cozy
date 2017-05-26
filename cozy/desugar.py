@@ -111,12 +111,11 @@ def desugar_exp(e : Exp) -> Exp:
                 arg = fresh_var(BOOL)
                 return self.visit(EUnaryOp(UOp.Empty, EFilter(e.e, ELambda(arg, ENot(arg))).with_type(e.e.type)).with_type(e.type))
             elif e.op == UOp.Length:
-                # Rewrite to sum of 1 over target expression.
-                return self.visit(
-                        EUnaryOp(UOp.Sum,
-                            EMap(sub,
-                                mk_lambda(sub.type.t, lambda x: ENum(1).with_type(INT))
-                                ).with_type(TBag(INT))).with_type(INT))
+                # Rewrite to sum of mapping 1 over subexpression.
+                map_expr = EMap(
+                    sub, mk_lambda(sub.type.t, lambda x: ENum(1).with_type(INT))
+                    ).with_type(TBag(INT))
+                return self.visit(EUnaryOp(UOp.Sum, map_expr).with_type(INT))
             elif e.op == UOp.Sum:
                 if isinstance(sub, EBinOp) and sub.op == "+":
                     return self.visit(EBinOp(
