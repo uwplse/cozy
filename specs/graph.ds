@@ -1,17 +1,18 @@
 Graph:
-
     handletype Node = { id : Int }
     handletype Edge = { src : Int, dst : Int }
 
     state nodes : Bag<Node>
     state edges : Bag<Edge>
 
+    // Invariant: disallow self-edges.
     assume (sum [ 1 | e <- edges, e.val.src == e.val.dst ]) == 0;
 
     op addNode(n : Node)
         nodes.add(n)
 
     op addEdge(e : Edge)
+        assume e.val.src != e.val.dst;
         edges.add(e)
 
 //    query outgoing(nodeId : Int)

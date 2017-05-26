@@ -1,5 +1,4 @@
 In:
-
     handletype Elem = (Int, Int)
     state xs : Set<Elem>
 
@@ -7,4 +6,5 @@ In:
         [ x | x <- xs, x.val.0 == st or x.val.1 == ed ]
 
     op add(e : Elem)
+        assume not(e in xs);
         xs.add(e)

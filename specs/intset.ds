@@ -1,8 +1,8 @@
 ClauseDB:
-
     state ints : Set<Int>
 
     op add(i : Int)
+        assume not(i in ints);
         ints.add(i)
 
     op remove(i : Int)
