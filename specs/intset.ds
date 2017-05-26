@@ -24,5 +24,4 @@ ClauseDB:
 //        min [x | x <- ints, x >= i]
 
     query size()
-        // len ints
-        sum [1 | _ <- ints]
+        len ints
