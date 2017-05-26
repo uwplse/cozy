@@ -38,15 +38,6 @@ for filename in files:
     setup(filename)
 
 class TestLen(unittest.TestCase):
-    def test_parse(self):
-        sample = """
-        In:
-            state foo : Int
-            query fooAnd1()
-                foo + 1
-        """
-        parse(sample)
-
     def test_parse_len_old(self):
         sample = """
         In:
