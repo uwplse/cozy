@@ -97,8 +97,11 @@ class CxxPrinter(common.Visitor):
                 cond=cond,
                 body=body)
 
-    def visit_SBreak(self, s, indent):
-        return "{indent}break;\n".format(indent=indent)
+    def visit_SEscapableBlock(self, s, indent):
+        return "{body}{label}:\n".format(body=self.visit(s.body, indent), label=s.label)
+
+    def visit_SEscapeBlock(self, s, indent):
+        return "{indent}goto {label};\n".format(indent=indent, label=s.label)
 
     def visit_str(self, s, indent=""):
         return indent + s + "\n"
@@ -376,12 +379,14 @@ class CxxPrinter(common.Visitor):
                 t = TBool()
                 res = fresh_var(t, "found")
                 x = fresh_var(e.e1.type, "x")
+                label = fresh_name("label")
                 setup = self.visit(seq([
                     SDecl(res.id, EBool(False).with_type(t)),
-                    SForEach(x, e.e2, SIf(
-                        EBinOp(x, "==", e.e1),
-                        seq([SAssign(res, EBool(True).with_type(t)), SBreak()]),
-                        SNoOp()))]), indent)
+                    SEscapableBlock(label,
+                        SForEach(x, e.e2, SIf(
+                            EBinOp(x, "==", e.e1),
+                            seq([SAssign(res, EBool(True).with_type(t)), SEscapeBlock(label)]),
+                            SNoOp())))]), indent)
                 return (setup, res.id)
         elif op == "-" and isinstance(e.type, TBag):
             t = e.type
@@ -463,9 +468,18 @@ class CxxPrinter(common.Visitor):
 
     def find_one(self, iterable, indent=""):
         v = fresh_var(TMaybe(iterable.type.t))
-        return ("{decl}{find}".format(
-            decl=self.visit(SDecl(v.id, ENull().with_type(v.type)), indent=indent),
-            find=self.for_each(iterable, lambda x: seq([SAssign(v, EJust(x)), SBreak()]), indent=indent)), v.id)
+        label = fresh_name("label")
+        x = fresh_var(iterable.type.t)
+        decl = SDecl(v.id, ENull().with_type(v.type))
+        find = SEscapableBlock(label,
+            SForEach(x, iterable, seq([
+                SAssign(v, EJust(x)),
+                SEscapeBlock(label)])))
+        # find = self.for_each(iterable, lambda x: seq([SAssign(v, EJust(x)), SBreak()]), indent=indent)
+        # return ("{decl}{find}".format(
+        #     decl=self.visit(SDecl(v.id, ENull().with_type(v.type)), indent=indent),
+        #     find=self.visit(SEscapable(label, SEscape(find, [], [])), indent=indent)), v.id)
+        return (self.visit(seq([decl, find]), indent), v.id)
 
     def visit_EUnaryOp(self, e, indent):
         op = e.op
@@ -596,7 +610,12 @@ class CxxPrinter(common.Visitor):
             elif call.func == "remove":
                 setup1, target = self.visit(call.target, indent)
                 setup2, arg = self.visit(call.args[0], indent)
-                return setup1 + setup2 + "{}{target}.remove({target}.find({}));\n".format(indent, arg, target=target)
+                it = fresh_name("it")
+                return setup1 + setup2 + "{indent}auto {it}(::std::find({target}.begin(), {target}.end(), {arg}));\n{indent}if ({it} != {target}.end()) {target}.erase({it});\n".format(
+                    indent=indent,
+                    arg=arg,
+                    target=target,
+                    it=it)
             else:
                 raise NotImplementedError(call.func)
         elif type(call.target.type) in (library.TNativeSet, TSet):
@@ -679,6 +698,7 @@ class CxxPrinter(common.Visitor):
         self.queries = { q.name: q for q in spec.methods if isinstance(q, Query) }
 
         s = "#pragma once\n"
+        s += "#include <algorithm>\n"
         s += "#include <vector>\n"
         s += "#include <unordered_set>\n"
         s += "#include <unordered_map>\n"
@@ -784,6 +804,15 @@ class JavaPrinter(CxxPrinter):
 
     def initialize_native_map(self, out):
         return SEscape("{indent}{e} = new java.util.HashMap<>();\n", ["e"], [out])
+
+    def visit_SEscapableBlock(self, s, indent):
+        return "{label}: do {{\n{body}{indent}}} while (false);\n".format(
+            body=self.visit(s.body, indent + INDENT),
+            indent=indent,
+            label=s.label)
+
+    def visit_SEscapeBlock(self, s, indent):
+        return "{indent}break {label};\n".format(indent=indent, label=s.label)
 
     def visit_EMakeRecord(self, e, indent=""):
         setups, args = zip(*[self.visit(v, indent) for (f, v) in e.fields])

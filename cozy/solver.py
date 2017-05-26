@@ -212,7 +212,7 @@ class ToZ3(Visitor):
     def visit_EVar(self, v, env):
         return env[v.id]
     def visit_ENum(self, n, env):
-        if n.type == INT:
+        if n.type in (INT, LONG):
             return z3.IntVal(n.val, self.ctx)
         raise NotImplementedError(n.type)
     def visit_EStr(self, s, env):

@@ -97,12 +97,12 @@ def sketch_update(
 
     def make_subgoal(e, a=[]):
         e = desugar_exp(e)
-        fvs = free_vars(e)
-        if not any(v in ctx for v in fvs):
+        if not any(v in ctx for v in free_vars(e)):
             return e
-        query_name = fresh_name()
-        query_vars = [v for v in fvs if v not in ctx]
-        query = syntax.Query(query_name, syntax.Visibility.Internal, [(arg.id, arg.type) for arg in query_vars], assumptions + a, e)
+        query_name = fresh_name("query")
+        query = syntax.Query(query_name, syntax.Visibility.Internal, [], assumptions + a, e)
+        query_vars = [v for v in free_vars(query) if v not in ctx]
+        query.args = [(arg.id, arg.type) for arg in query_vars]
         subgoals.append(query)
         return syntax.ECall(query_name, query_vars).with_type(e.type)
 
