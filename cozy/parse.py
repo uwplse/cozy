@@ -62,7 +62,8 @@ _OPERATORS = [
     ("CLOSE_BRACKET", "]"),
     ("DOT", "."),
     ("LEFT_ARROW", "<-"),
-    ("VBAR", "|")]
+    ("VBAR", "|")
+    ]
 
 ################################################################################
 
@@ -211,7 +212,7 @@ def make_parser():
         ("left", "OP_EQ", "OP_NE", "OP_LT", "OP_LE", "OP_GT", "OP_GE"),
         ("left", "OP_PLUS", "OP_MINUS"),
         ("left", "KW_IN"),
-        ("left", "KW_NOT", "KW_UNIQUE", "KW_EMPTY", "KW_EXISTS", "KW_THE", "KW_MIN", "KW_MAX", "KW_SUM", "KW_ANY", "KW_ALL"),
+        ("left", "KW_NOT", "KW_UNIQUE", "KW_EMPTY", "KW_EXISTS", "KW_THE", "KW_MIN", "KW_MAX", "KW_SUM", "KW_ANY", "KW_ALL", "KW_LEN"),
         ("left", "OP_OPEN_PAREN"),
         ("left", "OP_DOT"))
 
@@ -238,13 +239,13 @@ def make_parser():
                | exp OP_IMPLIES exp
                | KW_NOT exp
                | exp KW_IN exp
-               | OP_VBAR exp OP_VBAR
                | KW_UNIQUE exp
                | KW_EMPTY exp
                | KW_THE exp
                | KW_MIN exp
                | KW_MAX exp
                | KW_SUM exp
+               | KW_LEN exp
                | KW_ANY exp
                | KW_ALL exp
                | KW_EXISTS exp

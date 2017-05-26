@@ -36,3 +36,31 @@ for filename in files:
         f.__name__ = "test_{}".format(filename.replace("-", "_"))
         setattr(TestParser, f.__name__, f)
     setup(filename)
+
+class TestLen(unittest.TestCase):
+    def test_parse(self):
+        sample = """
+        In:
+            state foo : Int
+            query fooAnd1()
+                foo + 1
+        """
+        parse(sample)
+
+    def test_parse_len_old(self):
+        sample = """
+        In:
+            state foo : Bag<Int>
+            query fooLen()
+                sum [1 | _ <- foo]
+        """
+        parse(sample)
+
+    def test_parse_len(self):
+        sample = """
+        In:
+            state foo : Bag<Int>
+            query fooLen()
+                len foo
+        """
+        parse(sample)
