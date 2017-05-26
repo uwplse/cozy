@@ -110,6 +110,13 @@ def desugar_exp(e : Exp) -> Exp:
             elif e.op == UOp.All:
                 arg = fresh_var(BOOL)
                 return self.visit(EUnaryOp(UOp.Empty, EFilter(e.e, ELambda(arg, ENot(arg))).with_type(e.e.type)).with_type(e.type))
+            elif e.op == UOp.Length:
+                # Rewrite to sum of 1 over target expression.
+                return self.visit(
+                        EUnaryOp(UOp.Sum,
+                            EMap(sub,
+                                mk_lambda(sub.type.t, lambda x: ENum(1).with_type(INT))
+                                ).with_type(TBag(INT))).with_type(INT))
             elif e.op == UOp.Sum:
                 if isinstance(sub, EBinOp) and sub.op == "+":
                     return self.visit(EBinOp(
@@ -189,9 +196,11 @@ def desugar(spec : Spec) -> Spec:
         list(spec.statevars),
         list(spec.assumptions),
         list(spec.methods))
+
     for i in range(len(spec.statevars)):
         v, t = spec.statevars[i]
         if isinstance(t, TSet):
+            # Sets become bags w/ implicit unique assumptions.
             t = TBag(t.t)
             spec.statevars[i] = (v, t)
             v = EVar(v).with_type(t)
