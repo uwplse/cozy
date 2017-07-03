@@ -55,3 +55,16 @@ class TestLen(unittest.TestCase):
                 len foo
         """
         parse(sample)
+
+
+class TestEnhancedModifications(unittest.TestCase):
+    def test_parse_method_call_with_expr(self):
+        sample = """
+        Test:
+            state foo : Bag<Int>
+            op add2x(i : Int)
+                foo.add(i * 2)
+            op add3x(i : Int)
+                foo.add(i + i + i)
+        """
+        parse(sample)

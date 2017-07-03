@@ -65,7 +65,7 @@ _OPERATORS = [
     ("VBAR", "|")
     ]
 
-################################################################################
+# Lexer ########################################################################
 
 def keyword_token_name(kw):
     return "KW_{}".format(kw.upper())
@@ -137,7 +137,7 @@ def tokenize(s):
             break
         yield tok
 
-################################################################################
+# Parser #######################################################################
 
 def make_parser():
     start = "spec"
@@ -271,9 +271,9 @@ def make_parser():
                 exps = p[2]
                 if len(exps) == 0:
                     raise Exception("illegal ()")
-                if len(exps) == 1:
+                elif len(exps) == 1:
                     p[0] = exps[0]
-                if len(exps) > 1:
+                elif len(exps) > 1:
                     p[0] = syntax.ETuple(tuple(exps))
             elif p[1] == "[":
                 p[0] = syntax.ESingleton(p[2])
