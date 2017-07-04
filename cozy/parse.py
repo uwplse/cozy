@@ -33,6 +33,7 @@ _KEYWORDS = ([
     "false",
     "min",
     "max",
+    "if",
     "Native"] +
     list(syntax.UOps) +
     list(syntax.BOps))
@@ -342,8 +343,11 @@ def make_parser():
 
     def p_stm(p):
         """stm : accesschain OP_OPEN_PAREN exp_list OP_CLOSE_PAREN
-               | accesschain OP_ASSIGN exp"""
-        if p[2] == "(":
+               | accesschain OP_ASSIGN exp
+               | KW_IF exp OP_COLON stm"""
+        if p[1] == "if":
+            assert False
+        elif p[2] == "(":
             p[0] = syntax.SCall(p[1].e, p[1].f, p[3])
         else:
             p[0] = syntax.SAssign(p[1], p[3])
@@ -360,6 +364,7 @@ def make_parser():
     return yacc.yacc()
 
 _parser = make_parser()
+
 def parse(s):
     parser = _parser
     return parser.parse(s)

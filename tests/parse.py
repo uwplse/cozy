@@ -56,15 +56,28 @@ class TestLen(unittest.TestCase):
         """
         parse(sample)
 
-
 class TestEnhancedModifications(unittest.TestCase):
     def test_parse_method_call_with_expr(self):
         sample = """
         Test:
             state foo : Bag<Int>
             op add2x(i : Int)
-                foo.add(i * 2)
+                foo.add(i + i)
             op add3x(i : Int)
                 foo.add(i + i + i)
+            op addIncremented(i : Int)
+                foo.add(i + 1)
+            op addNegative(i : Int)
+                foo.add(0 - i)
+        """
+        parse(sample)
+
+    def test_guard_mechanism(self):
+        sample = """
+        Test:
+            state foo : Bag<Int>
+            op add_2x_unique(i : Int)
+                if not (i + i) in foo:
+                    foo.add(i + i)
         """
         parse(sample)
