@@ -346,7 +346,9 @@ def make_parser():
                | accesschain OP_ASSIGN exp
                | KW_IF exp OP_COLON stm"""
         if p[1] == "if":
-            assert False
+            # TODO: Expand this to implement full if/else, where the leaf
+            # statements are possibly blocks.
+            p[0] = syntax.SIf(p[2], p[4], syntax.SNoOp())
         elif p[2] == "(":
             p[0] = syntax.SCall(p[1].e, p[1].f, p[3])
         else:
