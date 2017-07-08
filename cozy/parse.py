@@ -34,6 +34,7 @@ _KEYWORDS = ([
     "min",
     "max",
     "if",
+    "else",
     "Native"] +
     list(syntax.UOps) +
     list(syntax.BOps))
@@ -207,6 +208,8 @@ def make_parser():
     parsetools.multi(locals(), "assumes", "assume")
 
     precedence = (
+        ("nonassoc", "IF_PLAIN"),
+        ("nonassoc", "KW_ELSE"),
         ("left", "OP_COMMA"),
         ("left", "OP_IMPLIES"),
         ("left", "KW_AND", "KW_OR"),
@@ -344,11 +347,11 @@ def make_parser():
     def p_stm(p):
         """stm : accesschain OP_OPEN_PAREN exp_list OP_CLOSE_PAREN
                | accesschain OP_ASSIGN exp
-               | KW_IF exp OP_COLON stm"""
+               | KW_IF exp OP_COLON stm %prec IF_PLAIN
+               | KW_IF exp OP_COLON stm KW_ELSE OP_COLON stm"""
         if p[1] == "if":
-            # TODO: Expand this to implement full if/else, where the leaf
-            # statements are possibly blocks.
-            p[0] = syntax.SIf(p[2], p[4], syntax.SNoOp())
+            elseExpr = p[7] if len(p) == 8 else syntax.SNoOp()
+            p[0] = syntax.SIf(p[2], p[4], elseExpr)
         elif p[2] == "(":
             p[0] = syntax.SCall(p[1].e, p[1].f, p[3])
         else:
