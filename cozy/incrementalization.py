@@ -36,8 +36,8 @@ def _delta_form(res : { str : syntax.Exp }, op : syntax.Stm) -> { str : syntax.E
         update = _rewriter(op.lhs)
         update(res, lambda old: op.rhs)
     elif isinstance(op, syntax.SIf):
-        assert False
-        pass
+        _delta_form(res, op.then_branch)
+        _delta_form(res, op.else_branch)
     else:
         raise NotImplementedError(type(op.body))
 
