@@ -32,9 +32,10 @@ def check_type(value, ty, value_name="value"):
             check_type(value[i], ty[0], "{}[{}]".format(value_name, i))
     elif type(ty) is dict:
         assert type(value) is dict, "{} has type {}, not {}".format(value_name, type(value).__name__, "dict")
-        for k, t in ty.items():
-            assert k in value, "{} is missing key {}".format(value_name, repr(k))
-            check_type(value[k], t, "{}[{}]".format(value_name, repr(k)))
+        ((kt, vt),) = ty.items()
+        for k, v in value.items():
+            check_type(k, kt, value_name)
+            check_type(v, vt, "{}[{}]".format(value_name, k))
     elif type(ty) is set:
         assert type(value) is set, "{} has type {}, not {}".format(value_name, type(value).__name__, "set")
         subty, = ty
