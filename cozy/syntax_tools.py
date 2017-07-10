@@ -324,75 +324,52 @@ def pprint(ast):
     return _PRETTYPRINTER.visit(ast)
 
 def free_vars(exp, counts=False):
+    res = collections.OrderedDict()
+    bound = collections.defaultdict(int)
 
-    class VarCollector(common.Visitor):
-        def __init__(self):
-            self.bound = collections.defaultdict(int)
+    class Unbind(object):
+        def __init__(self, var):
+            self.var = var
+        def exec(self):
+            bound[self.var] -= 1
 
-        def visit_EVar(self, e):
-            if not self.bound[e.id]:
-                yield e
-
-        def visit_EMakeRecord(self, e):
-            for f, ee in e.fields:
-                yield from self.visit(ee)
-
-        def visit_EListComprehension(self, e):
-            return self.visit_clauses(e.clauses, 0, e.e)
-
-        def visit_clauses(self, clauses, i, e):
-            if i >= len(clauses):
-                yield from self.visit(e)
-                return
-            c = clauses[i]
-            if isinstance(c, syntax.CPull):
-                yield from self.visit(c.e)
-                self.bound[c.id] += 1
-                yield from self.visit_clauses(clauses, i + 1, e)
-                self.bound[c.id] -= 1
-            elif isinstance(c, syntax.CCond):
-                yield from self.visit(c.e)
-                yield from self.visit_clauses(clauses, i + 1, e)
+    stk = [exp]
+    while stk:
+        x = stk[-1]
+        del stk[-1]
+        if isinstance(x, Unbind):
+            x.exec()
+        elif isinstance(x, syntax.EVar):
+            if not bound[x]:
+                res[x] = res.get(x, 0) + 1
+        elif isinstance(x, target_syntax.ELambda):
+            bound[x.arg] += 1
+            stk.append(Unbind(x.arg))
+            stk.append(x.body)
+        elif isinstance(x, syntax.EListComprehension):
+            raise NotImplementedError()
+        elif isinstance(x, syntax.Method):
+            args = [syntax.EVar(a).with_type(t) for (a, t) in x.args]
+            for a in args:
+                bound[a] += 1
+            stk.extend(Unbind(a) for a in args)
+            if isinstance(x, syntax.Query):
+                stk.extend(reversed(x.assumptions))
+                stk.append(x.ret)
             else:
-                raise Exception("unknown case: {}".format(c))
+                raise NotImplementedError()
+        elif isinstance(x, common.ADT):
+            stk.extend(reversed(x.children()))
+        elif isinstance(x, list) or isinstance(x, tuple):
+            stk.extend(reversed(x))
+        elif isinstance(x, str) or isinstance(x, int):
+            continue
+        else:
+            raise NotImplementedError(repr(x))
 
-        def visit_ECall(self, e):
-            for ee in e.args:
-                yield from self.visit(ee)
-
-        def visit_ETuple(self, e):
-            for ee in e.es:
-                yield from self.visit(ee)
-
-        def visit_ELambda(self, e):
-            self.bound[e.arg.id] += 1
-            yield from self.visit(e.body)
-            self.bound[e.arg.id] -= 1
-
-        def visit_Query(self, q):
-            args = set(arg_name for (arg_name, arg_type) in q.args)
-            for a in args:
-                self.bound[a] += 1
-            yield from itertools.chain(self.visit(q.ret), *[self.visit(a) for a in q.assumptions])
-            for a in args:
-                self.bound[a] -= 1
-
-        def visit_Exp(self, e):
-            for child in e.children():
-                if isinstance(child, syntax.Exp):
-                    yield from self.visit(child)
-
-        def visit_object(self, o):
-            raise NotImplementedError(type(o))
-
-    it = VarCollector().visit(exp)
-    if counts:
-        res = collections.OrderedDict()
-        for v in it:
-            res[v] = res.get(v, 0) + 1
-        return res
-    else:
-        return common.OrderedSet(it)
+    if not counts:
+        res = common.OrderedSet(res.keys())
+    return res
 
 def all_exps(e):
     class V(BottomUpExplorer):

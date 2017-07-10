@@ -1,5 +1,6 @@
 import unittest
 
+from cozy.common import OrderedSet
 from cozy.target_syntax import *
 from cozy.syntax_tools import *
 from cozy.typecheck import retypecheck
@@ -28,3 +29,15 @@ class TestSyntaxTools(unittest.TestCase):
         print(pprint(e))
         print(pprint(cse(e)))
         assert valid(EEq(e, cse(e)))
+
+    def test_fvs_depth(self):
+        e = ZERO
+        for i in range(500):
+            e = ECond(EBinOp(e, "<=", ONE), ONE, ZERO).with_type(INT)
+        res = free_vars(e)
+
+    def test_fvs(self):
+        e = EBinOp(EMapGet(EStateVar(EMakeMap2(EVar('l').with_type(TBag(INT)), ELambda(EVar('_var111').with_type(INT), EBinOp(EVar('_var111').with_type(INT), 'in', EVar('l').with_type(TBag(INT))).with_type(BOOL))).with_type(TMap(INT, BOOL))).with_type(TMap(INT, BOOL)), EVar('n').with_type(INT)).with_type(BOOL), '==', EBinOp(EVar('_var111').with_type(INT), 'in', EVar('l').with_type(TBag(INT))).with_type(BOOL)).with_type(BOOL)
+        print(pprint(e))
+        print(free_vars(e))
+        assert free_vars(e) == OrderedSet([EVar('l').with_type(TBag(INT)), EVar('n').with_type(INT), EVar('_var111').with_type(INT)])
