@@ -130,6 +130,7 @@ T = EBool(True) .with_type(BOOL)
 F = EBool(False).with_type(BOOL)
 ZERO = ENum(0).with_type(INT)
 ONE = ENum(1).with_type(INT)
+NULL = ENull()
 
 def seq(stms):
     stms = [s for s in stms if not isinstance(s, SNoOp)]
