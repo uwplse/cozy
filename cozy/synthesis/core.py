@@ -194,8 +194,8 @@ class Learner(object):
             efvs = free_vars(equality)
             # remove assumptions that talk about binders not in either expression
             assumptions = EAll([a for a in assumptions if all((v in efvs or v not in self.binders) for v in free_vars(a))])
-            eqfp = self._fingerprint(implies(assumptions, equality))
-            if all(eqfp[i] for i in range(1, len(eqfp))):
+            examples = self._examples_for(equality)
+            if all(((eval(e, ex) == eval(watched_e, ex)) if eval(assumptions, ex) else True) for ex in examples):
                 yield (watched_e, e, r)
 
     def next(self):
