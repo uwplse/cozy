@@ -904,11 +904,35 @@ class JavaPrinter(CxxPrinter):
                     Field=common.capitalize(f),
                     field=f)
 
-            s += "{indent}public {ctor}({args}) {{\n{inits}{indent}}}\n".format(
-                indent=indent+INDENT,
-                ctor=name,
-                args=", ".join(self.visit(ft, f) for (f, ft) in public_fields),
-                inits="".join("{indent}this.{f} = {f};\n".format(indent=indent+INDENT*2, f=f) for (f, ft) in public_fields))
+            def flatten(field_types):
+                args = []
+                exps = []
+                for ft in field_types:
+                    if isinstance(ft, TRecord):
+                        aa, ee = flatten([t for (f, t) in ft.fields])
+                        args.extend(aa)
+                        exps.append(EMakeRecord(tuple((f, e) for ((f, _), e) in zip(ft.fields, ee))).with_type(ft))
+                    elif isinstance(ft, TTuple):
+                        aa, ee = flatten(ft.ts)
+                        args.extend(aa)
+                        exps.append(ETuple(tuple(ee)).with_type(ft))
+                    else:
+                        v = fresh_var(ft)
+                        args.append((v.id, ft))
+                        exps.append(v)
+                return args, exps
+
+            if isinstance(t, THandle):
+                args, exps = flatten([ft for (f, ft) in public_fields])
+            else:
+                args = public_fields
+                exps = [EVar(f) for (f, ft) in args]
+            s += "{indent}public {ctor}({args}) {{\n".format(indent=indent+INDENT, ctor=name, args=", ".join(self.visit(ft, f) for (f, ft) in args))
+            for ((f, ft), e) in zip(public_fields, exps):
+                setup, e = self.visit(e, indent=indent+INDENT*2)
+                s += setup
+                s += "{indent}this.{f} = {e};\n".format(indent=indent+INDENT*2, f=f, e=e)
+            s += "{indent}}}\n".format(indent=indent+INDENT)
 
             if value_equality:
                 hc = fresh_name("hash_code")
