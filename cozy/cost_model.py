@@ -125,6 +125,10 @@ class MemoryUsageCostModel(CostModel, BottomUpExplorer):
     def is_monotonic(self):
         return False
 
+# Some kinds of expressions have a massive penalty associated with them if they
+# appear at runtime.
+EXTREME_COST = 100000000
+
 class RunTimeCostModel(CostModel, BottomUpExplorer):
     def __init__(self):
         self.memcm = MemoryUsageCostModel()
@@ -162,6 +166,8 @@ class RunTimeCostModel(CostModel, BottomUpExplorer):
     #     c3 = self.visit(e.else_branch)
     #     p = P(e.cond)
     #     return 0.01 + c1 + p*c2 + (1-p)*c3
+    def visit_EWithAlteredValue(self, e):
+        return EXTREME_COST + self.visit(e.handle) + self.visit(e.new_value)
     def visit_EMap(self, e):
         return 0.01 + self.visit(e.e) + self.cardinality(e.e) * self.visit(e.f.body)
     def visit_EFlatMap(self, e):
@@ -169,9 +175,9 @@ class RunTimeCostModel(CostModel, BottomUpExplorer):
     def visit_EFilter(self, e):
         return 0.01 + self.visit(e.e) + self.cardinality(e.e) * self.visit(e.p.body)
     def visit_EMakeMap(self, e):
-        return 100000000 + self.visit(e.e) + self.cardinality(e.e) * (self.visit(e.key.body) + self.visit(e.value.body))
+        return EXTREME_COST + self.visit(e.e) + self.cardinality(e.e) * (self.visit(e.key.body) + self.visit(e.value.body))
     def visit_EMakeMap2(self, e):
-        return 100000000 + self.visit(e.e) + self.cardinality(e.e) * self.visit(e.value.body)
+        return EXTREME_COST + self.visit(e.e) + self.cardinality(e.e) * self.visit(e.value.body)
     def visit_EStateVar(self, e):
         return self.memcm.cost(e.e, STATE_POOL) / 100
     def visit(self, x):
