@@ -823,7 +823,7 @@ class JavaPrinter(CxxPrinter):
         return SEscape("{indent}{e} = new java.util.HashMap<>();\n", ["e"], [out])
 
     def visit_SEscapableBlock(self, s, indent):
-        return "{label}: do {{\n{body}{indent}}} while (false);\n".format(
+        return "{indent}{label}: do {{\n{body}{indent}}} while (false);\n".format(
             body=self.visit(s.body, indent + INDENT),
             indent=indent,
             label=s.label)
