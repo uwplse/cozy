@@ -430,7 +430,7 @@ class FragmentEnumerator(common.Visitor):
         t = e.type
         for (a, x, r, bound) in self.visit(e.e):
             yield (lambda r: (a, x, lambda x: target_syntax.EFilter(r(x), e.p).with_type(t), bound))(r)
-        for (a, x, r, bound) in self.recurse_with_assumptions_about_bound_var(e.p, [syntax.EBinOp(e.p.arg, syntax.BOp.In, e.e).with_type(syntax.BOOL)]):
+        for (a, x, r, bound) in self.recurse_with_assumptions_about_bound_var(e.p, [syntax.EBinOp(e.p.arg, syntax.BOp.In, e.e).with_type(syntax.BOOL)] if e.p.arg not in free_vars(e.e) else []):
             yield (lambda r: (a, x, lambda x: target_syntax.EFilter(e.e, r(x)).with_type(t), bound))(r)
 
     def visit_EMap(self, e):
@@ -438,7 +438,7 @@ class FragmentEnumerator(common.Visitor):
         t = e.type
         for (a, x, r, bound) in self.visit(e.e):
             yield (lambda r: (a, x, lambda x: target_syntax.EMap(r(x), e.f).with_type(t), bound))(r)
-        for (a, x, r, bound) in self.recurse_with_assumptions_about_bound_var(e.f, [syntax.EBinOp(e.f.arg, syntax.BOp.In, e.e).with_type(syntax.BOOL)]):
+        for (a, x, r, bound) in self.recurse_with_assumptions_about_bound_var(e.f, [syntax.EBinOp(e.f.arg, syntax.BOp.In, e.e).with_type(syntax.BOOL)] if e.f.arg not in free_vars(e.e) else []):
             yield (lambda r: (a, x, lambda x: target_syntax.EMap(e.e, r(x)).with_type(t), bound))(r)
 
     def visit_EFlatMap(self, e):
@@ -446,7 +446,7 @@ class FragmentEnumerator(common.Visitor):
         t = e.type
         for (a, x, r, bound) in self.visit(e.e):
             yield (lambda r: (a, x, lambda x: target_syntax.EFlatMap(r(x), e.f).with_type(t), bound))(r)
-        for (a, x, r, bound) in self.recurse_with_assumptions_about_bound_var(e.f, [syntax.EBinOp(e.f.arg, syntax.BOp.In, e.e).with_type(syntax.BOOL)]):
+        for (a, x, r, bound) in self.recurse_with_assumptions_about_bound_var(e.f, [syntax.EBinOp(e.f.arg, syntax.BOp.In, e.e).with_type(syntax.BOOL)] if e.f.arg not in free_vars(e.e) else []):
             yield (lambda r: (a, x, lambda x: target_syntax.EFlatMap(e.e, r(x)).with_type(t), bound))(r)
 
     def visit_Exp(self, obj):
