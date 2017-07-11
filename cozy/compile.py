@@ -206,7 +206,7 @@ class CxxPrinter(common.Visitor):
             return SSeq(
                 self.initialize_native_map(out),
                 self.construct_map(t, e, out))
-        elif type(t) in [TBool, TInt, TNative, THandle, TMaybe, TLong, TString]:
+        elif type(t) in [TBool, TInt, TNative, THandle, TMaybe, TLong, TString, TEnum]:
             return SEscape("{indent}{lhs} = {rhs};\n", ["lhs", "rhs"], [out, e])
         raise NotImplementedError(t)
 
