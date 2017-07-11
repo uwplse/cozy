@@ -5,6 +5,7 @@ import os
 import inspect
 from multiprocessing import Value
 import ctypes
+import tempfile
 
 def check_type(value, ty, value_name="value"):
     """
@@ -243,10 +244,25 @@ def all_distinct(iter):
     distinct_elems = set(elems)
     return len(elems) == len(distinct_elems)
 
+class AtomicWriteableFile(object):
+    def __init__(self, dst):
+        self.dst = dst
+        fd, path = tempfile.mkstemp(text=True)
+        self.fd = os.fdopen(fd, "w")
+        self.path = path
+    def __enter__(self, *args, **kwargs):
+        return self
+    def __exit__(self, *args, **kwargs):
+        os.fsync(self.fd)
+        self.fd.close()
+        os.replace(src=self.path, dst=self.dst)
+    def write(self, thing):
+        self.fd.write(thing)
+
 def open_maybe_stdout(f):
     if f == "-":
         return os.fdopen(os.dup(sys.stdout.fileno()), "w")
-    return open(f, "w")
+    return AtomicWriteableFile(f)
 
 def memoize(f):
     # Someday if we upgrade to Python 3 this can be replaced with
