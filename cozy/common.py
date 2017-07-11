@@ -6,6 +6,7 @@ import inspect
 from multiprocessing import Value
 import ctypes
 import tempfile
+import shutil
 
 def check_type(value, ty, value_name="value"):
     """
@@ -247,17 +248,18 @@ def all_distinct(iter):
 class AtomicWriteableFile(object):
     def __init__(self, dst):
         self.dst = dst
-        fd, path = tempfile.mkstemp(text=True)
-        self.fd = os.fdopen(fd, "w")
-        self.path = path
+        tmp_fd, tmp_path = tempfile.mkstemp(text=True)
+        self.tmp_fd = tmp_fd
+        self.tmp_file = os.fdopen(tmp_fd, "w")
+        self.tmp_path = tmp_path
     def __enter__(self, *args, **kwargs):
         return self
     def __exit__(self, *args, **kwargs):
-        os.fsync(self.fd)
-        self.fd.close()
-        os.replace(src=self.path, dst=self.dst)
+        os.fsync(self.tmp_fd)
+        self.tmp_file.close() # also closes self.tmp_fd
+        shutil.move(src=self.tmp_path, dst=self.dst)
     def write(self, thing):
-        self.fd.write(thing)
+        self.tmp_file.write(thing)
 
 def open_maybe_stdout(f):
     if f == "-":
