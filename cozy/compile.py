@@ -5,7 +5,7 @@ from cozy import common
 from cozy.common import fresh_name
 from cozy.target_syntax import *
 from cozy import library, evaluation
-from cozy.syntax_tools import all_types, fresh_var, subst, free_vars, is_scalar
+from cozy.syntax_tools import all_types, fresh_var, subst, free_vars, is_scalar, mk_lambda
 
 INDENT = "  "
 
@@ -244,16 +244,31 @@ class CxxPrinter(common.Visitor):
             raise NotImplementedError(repr(lval))
 
     def visit_EMapGet(self, e, indent=""):
-        if isinstance(e.map.type, library.TNativeMap):
-            return self.native_map_get(
-                e,
-                lambda out: self.construct_concrete(
-                    e.map.type.v,
-                    evaluation.construct_value(e.map.type.v),
-                    out),
-                indent)
+        if isinstance(e.map, EStateVar):
+            return self.visit(EMapGet(e.map.e, e.key).with_type(e.type), indent=indent)
+        elif isinstance(e.map, EMakeMap2):
+            return self.visit(ELet(e.key, mk_lambda(e.key.type, lambda k:
+                ECond(EBinOp(k, BOp.In, e.map.e).with_type(BOOL),
+                    e.map.value.apply_to(k),
+                    evaluation.construct_value(e.map.type.v)).with_type(e.type))).with_type(e.type), indent=indent)
+        elif isinstance(e.map, ECond):
+            return self.visit(ELet(e.key, mk_lambda(e.key.type, lambda k:
+                ECond(e.map.cond,
+                    EMapGet(e.map.then_branch, k).with_type(e.type),
+                    EMapGet(e.map.else_branch, k).with_type(e.type)).with_type(e.type))).with_type(e.type), indent=indent)
+        elif isinstance(e.map, EVar):
+            if isinstance(e.map.type, library.TNativeMap):
+                return self.native_map_get(
+                    e,
+                    lambda out: self.construct_concrete(
+                        e.map.type.v,
+                        evaluation.construct_value(e.map.type.v),
+                        out),
+                    indent)
+            else:
+                return self.visit(e.map.type.get_key(e.map, e.key), indent)
         else:
-            return self.visit(e.map.type.get_key(e.map, e.key), indent)
+            raise NotImplementedError(type(e.map))
 
     def visit_SMapUpdate(self, update, indent=""):
         if isinstance(update.change, SNoOp):
