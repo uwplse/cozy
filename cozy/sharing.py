@@ -26,11 +26,19 @@ def uses_intrusive_data(e : target_syntax.Exp, handle : target_syntax.Exp) -> ta
         return uses_intrusive_data(e.e, handle)
     elif isinstance(e, target_syntax.EBinOp):
         return uses_intrusive_data(e.e1, handle) or uses_intrusive_data(e.e2, handle)
+    elif isinstance(e, target_syntax.ECond):
+        return target_syntax.ECond(e.cond,
+            uses_intrusive_data(e.then_branch, handle),
+            uses_intrusive_data(e.else_branch, handle)).with_type(target_syntax.BOOL)
+    elif isinstance(e, target_syntax.ESingleton):
+        if e.type.t == handle.type:
+            return target_syntax.EEq(e.e, handle)
+        return target_syntax.F
     elif isinstance(e, target_syntax.ETuple):
         return target_syntax.EAny(uses_intrusive_data(ee, handle) for ee in e.es)
     elif isinstance(e, target_syntax.EVar):
         if isinstance(e.type, target_syntax.TBag) and e.type.t == handle.type:
-            return target_syntax.EBinOp(handle, target_syntax.BOp.In, e).with_type(target_syntax.TBool())
+            return target_syntax.EBinOp(handle, target_syntax.BOp.In, e).with_type(target_syntax.BOOL)
         return target_syntax.F
     elif type(e) in [target_syntax.ENum, target_syntax.EBool, target_syntax.EEnumEntry]:
         return target_syntax.F
