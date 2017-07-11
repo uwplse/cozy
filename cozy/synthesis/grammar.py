@@ -11,6 +11,10 @@ class BinderBuilder(ExpBuilder):
         super().__init__()
         self.binders = binders
         self.state_vars = state_vars
+    def __repr__(self):
+        return "BinderBuilder(binders={!r}, state_vars={!r})".format(
+            self.binders,
+            self.state_vars)
     def build(self, cache, size):
         # print("Cache:")
         # for (e, sz, pool) in cache:

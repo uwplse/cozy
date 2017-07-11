@@ -387,6 +387,25 @@ def improve(
         hints : [Exp] = None,
         examples = None):
 
+    print("call to improve:")
+    print("""improve(
+        target={target!r},
+        assumptions={assumptions!r},
+        binders={binders!r},
+        cost_model={cost_model!r},
+        builder={builder!r},
+        stop_callback={stop_callback!r},
+        hints={hints!r},
+        examples={examples!r})""".format(
+            target=target,
+            assumptions=assumptions,
+            binders=binders,
+            cost_model=cost_model,
+            builder=builder,
+            stop_callback=stop_callback,
+            hints=hints,
+            examples=examples))
+
     binders = list(binders)
     target = fixup_binders(target, binders, allow_add=False)
     assumptions = fixup_binders(assumptions, binders, allow_add=False)

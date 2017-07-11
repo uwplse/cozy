@@ -158,6 +158,13 @@ class AcceleratedBuilder(ExpBuilder):
         self.state_vars = state_vars
         self.args = args
 
+    def __repr__(self):
+        return "AcceleratedBuilder(wrapped={!r}, binders={!r}, state_vars={!r}, args={!r})".format(
+            self.wrapped,
+            self.binders,
+            self.state_vars,
+            self.args)
+
     def build(self, cache, size):
 
         for (sz1, sz2) in pick_to_sum(2, size-1):
