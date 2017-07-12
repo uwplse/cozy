@@ -47,8 +47,6 @@ class Library(object):
         else:
             yield ty
 
-NULL = ENull()
-
 class TNativeMap(TMap):
     def __init__(self, k, v):
         super().__init__(k, v)

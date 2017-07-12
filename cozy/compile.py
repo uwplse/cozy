@@ -5,7 +5,7 @@ from cozy import common
 from cozy.common import fresh_name
 from cozy.target_syntax import *
 from cozy import library, evaluation
-from cozy.syntax_tools import all_types, fresh_var, subst, free_vars, is_scalar
+from cozy.syntax_tools import all_types, fresh_var, subst, free_vars, is_scalar, mk_lambda
 
 INDENT = "  "
 
@@ -206,7 +206,7 @@ class CxxPrinter(common.Visitor):
             return SSeq(
                 self.initialize_native_map(out),
                 self.construct_map(t, e, out))
-        elif type(t) in [TBool, TInt, TNative, THandle, TMaybe, TLong, TString]:
+        elif type(t) in [TBool, TInt, TNative, THandle, TMaybe, TLong, TString, TEnum]:
             return SEscape("{indent}{lhs} = {rhs};\n", ["lhs", "rhs"], [out, e])
         raise NotImplementedError(t)
 
@@ -244,16 +244,31 @@ class CxxPrinter(common.Visitor):
             raise NotImplementedError(repr(lval))
 
     def visit_EMapGet(self, e, indent=""):
-        if isinstance(e.map.type, library.TNativeMap):
-            return self.native_map_get(
-                e,
-                lambda out: self.construct_concrete(
-                    e.map.type.v,
-                    evaluation.construct_value(e.map.type.v),
-                    out),
-                indent)
+        if isinstance(e.map, EStateVar):
+            return self.visit(EMapGet(e.map.e, e.key).with_type(e.type), indent=indent)
+        elif isinstance(e.map, EMakeMap2):
+            return self.visit(ELet(e.key, mk_lambda(e.key.type, lambda k:
+                ECond(EBinOp(k, BOp.In, e.map.e).with_type(BOOL),
+                    e.map.value.apply_to(k),
+                    evaluation.construct_value(e.map.type.v)).with_type(e.type))).with_type(e.type), indent=indent)
+        elif isinstance(e.map, ECond):
+            return self.visit(ELet(e.key, mk_lambda(e.key.type, lambda k:
+                ECond(e.map.cond,
+                    EMapGet(e.map.then_branch, k).with_type(e.type),
+                    EMapGet(e.map.else_branch, k).with_type(e.type)).with_type(e.type))).with_type(e.type), indent=indent)
+        elif isinstance(e.map, EVar):
+            if isinstance(e.map.type, library.TNativeMap):
+                return self.native_map_get(
+                    e,
+                    lambda out: self.construct_concrete(
+                        e.map.type.v,
+                        evaluation.construct_value(e.map.type.v),
+                        out),
+                    indent)
+            else:
+                return self.visit(e.map.type.get_key(e.map, e.key), indent)
         else:
-            return self.visit(e.map.type.get_key(e.map, e.key), indent)
+            raise NotImplementedError(type(e.map))
 
     def visit_SMapUpdate(self, update, indent=""):
         if isinstance(update.change, SNoOp):
@@ -475,10 +490,6 @@ class CxxPrinter(common.Visitor):
             SForEach(x, iterable, seq([
                 SAssign(v, EJust(x)),
                 SEscapeBlock(label)])))
-        # find = self.for_each(iterable, lambda x: seq([SAssign(v, EJust(x)), SBreak()]), indent=indent)
-        # return ("{decl}{find}".format(
-        #     decl=self.visit(SDecl(v.id, ENull().with_type(v.type)), indent=indent),
-        #     find=self.visit(SEscapable(label, SEscape(find, [], [])), indent=indent)), v.id)
         return (self.visit(seq([decl, find]), indent), v.id)
 
     def visit_EUnaryOp(self, e, indent):
@@ -535,6 +546,12 @@ class CxxPrinter(common.Visitor):
             return ("".join(setups), "{}({})".format(e.func, ", ".join(args)))
         else:
             raise Exception("unknown function {}".format(repr(e.func)))
+
+    def visit_ELet(self, e, indent=""):
+        v = fresh_var(e.e.type)
+        setup1 = self.visit(SDecl(v, e.e), indent=indent)
+        setup2, res = self.visit(e.f.apply_to(v), indent=indent)
+        return (setup1 + setup2, res)
 
     def visit_Exp(self, e, indent=""):
         raise NotImplementedError(e)
@@ -806,7 +823,7 @@ class JavaPrinter(CxxPrinter):
         return SEscape("{indent}{e} = new java.util.HashMap<>();\n", ["e"], [out])
 
     def visit_SEscapableBlock(self, s, indent):
-        return "{label}: do {{\n{body}{indent}}} while (false);\n".format(
+        return "{indent}{label}: do {{\n{body}{indent}}} while (false);\n".format(
             body=self.visit(s.body, indent + INDENT),
             indent=indent,
             label=s.label)
@@ -887,11 +904,35 @@ class JavaPrinter(CxxPrinter):
                     Field=common.capitalize(f),
                     field=f)
 
-            s += "{indent}public {ctor}({args}) {{\n{inits}{indent}}}\n".format(
-                indent=indent+INDENT,
-                ctor=name,
-                args=", ".join(self.visit(ft, f) for (f, ft) in public_fields),
-                inits="".join("{indent}this.{f} = {f};\n".format(indent=indent+INDENT*2, f=f) for (f, ft) in public_fields))
+            def flatten(field_types):
+                args = []
+                exps = []
+                for ft in field_types:
+                    if isinstance(ft, TRecord):
+                        aa, ee = flatten([t for (f, t) in ft.fields])
+                        args.extend(aa)
+                        exps.append(EMakeRecord(tuple((f, e) for ((f, _), e) in zip(ft.fields, ee))).with_type(ft))
+                    elif isinstance(ft, TTuple):
+                        aa, ee = flatten(ft.ts)
+                        args.extend(aa)
+                        exps.append(ETuple(tuple(ee)).with_type(ft))
+                    else:
+                        v = fresh_var(ft)
+                        args.append((v.id, ft))
+                        exps.append(v)
+                return args, exps
+
+            if isinstance(t, THandle):
+                args, exps = flatten([ft for (f, ft) in public_fields])
+            else:
+                args = public_fields
+                exps = [EVar(f) for (f, ft) in args]
+            s += "{indent}public {ctor}({args}) {{\n".format(indent=indent+INDENT, ctor=name, args=", ".join(self.visit(ft, f) for (f, ft) in args))
+            for ((f, ft), e) in zip(public_fields, exps):
+                setup, e = self.visit(e, indent=indent+INDENT*2)
+                s += setup
+                s += "{indent}this.{f} = {e};\n".format(indent=indent+INDENT*2, f=f, e=e)
+            s += "{indent}}}\n".format(indent=indent+INDENT)
 
             if value_equality:
                 hc = fresh_name("hash_code")

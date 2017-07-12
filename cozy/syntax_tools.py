@@ -5,6 +5,7 @@ Various utilities for working with syntax trees.
 
 """
 
+import collections
 import sys
 import itertools
 
@@ -322,71 +323,53 @@ _PRETTYPRINTER = PrettyPrinter()
 def pprint(ast):
     return _PRETTYPRINTER.visit(ast)
 
-def free_vars(exp):
+def free_vars(exp, counts=False):
+    res = collections.OrderedDict()
+    bound = collections.defaultdict(int)
 
-    class VarCollector(common.Visitor):
-        def __init__(self):
-            self.bound = []
+    class Unbind(object):
+        def __init__(self, var):
+            self.var = var
+        def exec(self):
+            bound[self.var] -= 1
 
-        def visit_EVar(self, e):
-            if e.id not in self.bound:
-                yield e
-
-        def visit_EMakeRecord(self, e):
-            for f, ee in e.fields:
-                yield from self.visit(ee)
-
-        def visit_EListComprehension(self, e):
-            return self.visit_clauses(e.clauses, 0, e.e)
-
-        def visit_clauses(self, clauses, i, e):
-            if i >= len(clauses):
-                yield from self.visit(e)
-                return
-            c = clauses[i]
-            if isinstance(c, syntax.CPull):
-                yield from self.visit(c.e)
-                self.bound.append(c.id)
-                yield from self.visit_clauses(clauses, i + 1, e)
-                del self.bound[-1]
-            elif isinstance(c, syntax.CCond):
-                yield from self.visit(c.e)
-                yield from self.visit_clauses(clauses, i + 1, e)
+    stk = [exp]
+    while stk:
+        x = stk[-1]
+        del stk[-1]
+        if isinstance(x, Unbind):
+            x.exec()
+        elif isinstance(x, syntax.EVar):
+            if not bound[x]:
+                res[x] = res.get(x, 0) + 1
+        elif isinstance(x, target_syntax.ELambda):
+            bound[x.arg] += 1
+            stk.append(Unbind(x.arg))
+            stk.append(x.body)
+        elif isinstance(x, syntax.EListComprehension):
+            raise NotImplementedError()
+        elif isinstance(x, syntax.Method):
+            args = [syntax.EVar(a).with_type(t) for (a, t) in x.args]
+            for a in args:
+                bound[a] += 1
+            stk.extend(Unbind(a) for a in args)
+            if isinstance(x, syntax.Query):
+                stk.extend(reversed(x.assumptions))
+                stk.append(x.ret)
             else:
-                raise Exception("unknown case: {}".format(c))
+                raise NotImplementedError()
+        elif isinstance(x, common.ADT):
+            stk.extend(reversed(x.children()))
+        elif isinstance(x, list) or isinstance(x, tuple):
+            stk.extend(reversed(x))
+        elif isinstance(x, str) or isinstance(x, int):
+            continue
+        else:
+            raise NotImplementedError(repr(x))
 
-        def visit_EAlloc(self, e):
-            for ee in e.args:
-                yield from self.visit(ee)
-
-        def visit_ECall(self, e):
-            for ee in e.args:
-                yield from self.visit(ee)
-
-        def visit_ETuple(self, e):
-            for ee in e.es:
-                yield from self.visit(ee)
-
-        def visit_ELambda(self, e):
-            for v in self.visit(e.body):
-                if v.id != e.arg.id:
-                    yield v
-
-        def visit_Query(self, q):
-            args = set(arg_name for (arg_name, arg_type) in q.args)
-            for v in itertools.chain(self.visit(q.ret), *[self.visit(a) for a in q.assumptions]):
-                if v.id not in args:
-                    yield v
-
-        def visit_Exp(self, e):
-            for child in e.children():
-                if isinstance(child, syntax.Exp):
-                    yield from self.visit(child)
-
-        def visit_object(self, o):
-            raise NotImplementedError(type(o))
-
-    return common.OrderedSet(VarCollector().visit(exp))
+    if not counts:
+        res = common.OrderedSet(res.keys())
+    return res
 
 def all_exps(e):
     class V(BottomUpExplorer):
@@ -447,7 +430,7 @@ class FragmentEnumerator(common.Visitor):
         t = e.type
         for (a, x, r, bound) in self.visit(e.e):
             yield (lambda r: (a, x, lambda x: target_syntax.EFilter(r(x), e.p).with_type(t), bound))(r)
-        for (a, x, r, bound) in self.recurse_with_assumptions_about_bound_var(e.p, [syntax.EBinOp(e.p.arg, syntax.BOp.In, e.e).with_type(syntax.BOOL)]):
+        for (a, x, r, bound) in self.recurse_with_assumptions_about_bound_var(e.p, [syntax.EBinOp(e.p.arg, syntax.BOp.In, e.e).with_type(syntax.BOOL)] if e.p.arg not in free_vars(e.e) else []):
             yield (lambda r: (a, x, lambda x: target_syntax.EFilter(e.e, r(x)).with_type(t), bound))(r)
 
     def visit_EMap(self, e):
@@ -455,7 +438,7 @@ class FragmentEnumerator(common.Visitor):
         t = e.type
         for (a, x, r, bound) in self.visit(e.e):
             yield (lambda r: (a, x, lambda x: target_syntax.EMap(r(x), e.f).with_type(t), bound))(r)
-        for (a, x, r, bound) in self.recurse_with_assumptions_about_bound_var(e.f, [syntax.EBinOp(e.f.arg, syntax.BOp.In, e.e).with_type(syntax.BOOL)]):
+        for (a, x, r, bound) in self.recurse_with_assumptions_about_bound_var(e.f, [syntax.EBinOp(e.f.arg, syntax.BOp.In, e.e).with_type(syntax.BOOL)] if e.f.arg not in free_vars(e.e) else []):
             yield (lambda r: (a, x, lambda x: target_syntax.EMap(e.e, r(x)).with_type(t), bound))(r)
 
     def visit_EFlatMap(self, e):
@@ -463,7 +446,7 @@ class FragmentEnumerator(common.Visitor):
         t = e.type
         for (a, x, r, bound) in self.visit(e.e):
             yield (lambda r: (a, x, lambda x: target_syntax.EFlatMap(r(x), e.f).with_type(t), bound))(r)
-        for (a, x, r, bound) in self.recurse_with_assumptions_about_bound_var(e.f, [syntax.EBinOp(e.f.arg, syntax.BOp.In, e.e).with_type(syntax.BOOL)]):
+        for (a, x, r, bound) in self.recurse_with_assumptions_about_bound_var(e.f, [syntax.EBinOp(e.f.arg, syntax.BOp.In, e.e).with_type(syntax.BOOL)] if e.f.arg not in free_vars(e.e) else []):
             yield (lambda r: (a, x, lambda x: target_syntax.EFlatMap(e.e, r(x)).with_type(t), bound))(r)
 
     def visit_Exp(self, obj):
@@ -519,7 +502,8 @@ def replace(exp, old_exp, new_exp):
 
 @common.typechecked
 def re_use(e : syntax.Exp, target):
-    return mk_lambda(e.type, target).apply_to(e)
+    v = fresh_var(e.type)
+    return qsubst(target(v), v, e)
 
 def subst(exp, replacements):
     """
@@ -574,7 +558,10 @@ def subst(exp, replacements):
             arg = e.arg
             body = e.body
             while any(arg in free_vars(r) for r in replacements.values()):
-                new_arg = fresh_var(arg.type)
+                if hasattr(arg, "type"):
+                    new_arg = fresh_var(arg.type)
+                else:
+                    new_arg = syntax.EVar(common.fresh_name())
                 body = subst(body, { arg.id : new_arg })
                 arg = new_arg
             return target_syntax.ELambda(arg, subst(body, m))
@@ -622,6 +609,18 @@ def subst(exp, replacements):
             return res
 
     return Subst().visit(exp)
+
+@common.typechecked
+def qsubst(
+        haystack : syntax.Exp,
+        needle   : syntax.EVar,
+        repl     : syntax.Exp):
+    if repl.size() <= 1 or free_vars(haystack, counts=True).get(needle, 0) <= 1:
+        return subst(haystack, { needle.id : repl })
+    e = syntax.ELet(repl, target_syntax.ELambda(needle, haystack))
+    if hasattr(haystack, "type"):
+        e = e.with_type(haystack.type)
+    return e
 
 def alpha_equivalent(e1, e2, allow_rename=lambda v1, v2: False):
     """
@@ -768,3 +767,103 @@ def break_conj(e):
         yield from break_conj(e.e2)
     else:
         yield e
+
+class Aeq(object):
+    def __init__(self, e : syntax.Exp):
+        self.e = e
+    def __hash__(self):
+        res = 0
+        q = [self.e]
+        while q:
+            x = q[-1]
+            del q[-1]
+            if isinstance(x, syntax.EVar):
+                continue
+            elif isinstance(x, common.ADT):
+                res *= 31
+                res += hash(type(x))
+                res %= 2**64
+                q.extend(x.children())
+            elif isinstance(x, tuple) or isinstance(x, list):
+                q.extend(x)
+            else:
+                res += hash(x)
+                # raise NotImplementedError(repr(x))
+        return res % (2**64)
+    def __eq__(self, other):
+        return isinstance(other, Aeq) and alpha_equivalent(self.e, other.e)
+    def __ne__(self, other):
+        return not (self == other)
+
+def cse(e):
+    """
+    Common subexpression elimination. Replaces re-used expressions with ELet,
+    e.g. "(x+1) + (x+1)" ---> "let a = x+1 in a+a".
+    """
+    def finish(e, avail):
+        ravail = collections.OrderedDict([(v, k) for (k, v) in avail.items() if v is not None])
+        counts = free_vars(e, counts=True)
+        for var, value in reversed(ravail.items()):
+            for (vv, ct) in free_vars(value, counts=True).items():
+                counts[vv] = counts.get(vv, 0) + ct
+        to_inline = common.OrderedSet(v for v in ravail if counts.get(v, 0) <= 1 or ravail[v].size() < 2)
+        sub = { v : ravail[v] for v in to_inline }
+
+        skip = { }
+        class V(BottomUpRewriter):
+            def visit_EVar(self, var):
+                if var in sub and var not in skip:
+                    return self.visit(sub[var])
+                return var
+            def visit_ELambda(self, lam):
+                with common.extend(skip, lam.arg, True):
+                    return target_syntax.ELambda(lam.arg, self.visit(lam.body))
+
+        inliner = V()
+        e = inliner.visit(e)
+
+        for var, value in reversed(ravail.items()):
+            if var in to_inline:
+                continue
+            value = inliner.visit(value)
+            ee = syntax.ELet(value, target_syntax.ELambda(var, e))
+            if hasattr(e, "type"):
+                ee = ee.with_type(e.type)
+            e = ee
+        return e
+
+    class V(BottomUpRewriter):
+        def __init__(self):
+            super().__init__()
+            self.avail = collections.OrderedDict() # maps expressions --> variables
+            self.avail_by_id = collections.OrderedDict() # maps ids -> variables
+        def visit_Exp(self, e):
+            if id(e) in self.avail_by_id:
+                return self.avail_by_id[id(e)]
+            ee = type(e)(*[self.visit(c) for c in e.children()])
+            res = self.avail.get(ee)
+            if res is not None:
+                return res
+            v = syntax.EVar(common.fresh_name("tmp"))
+            if hasattr(e, "type"):
+                ee = ee.with_type(e.type)
+                v = v.with_type(e.type)
+            self.avail[ee] = v
+            self.avail_by_id[id(e)] = v
+            return v
+        def visit_ELambda(self, e):
+            old_avail = self.avail
+            old_avail_by_id = self.avail_by_id
+            invalid = [e.arg]
+            self.avail = collections.OrderedDict([(k, v) for (k, v) in self.avail.items() if k not in invalid])
+            self.avail_by_id = collections.OrderedDict()
+            body = self.visit(e.body)
+            body = finish(body, self.avail)
+            self.avail = old_avail # TODO: we can copy over exprs that don't use the arg
+            self.avail_by_id = old_avail_by_id
+            return target_syntax.ELambda(e.arg, body)
+
+    v = V()
+    res = v.visit(e)
+    res = finish(res, v.avail)
+    return res

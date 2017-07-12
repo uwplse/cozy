@@ -231,6 +231,8 @@ class ToZ3(Visitor):
         return (self.false, self.mkval(e.type.t))
     def visit_EJust(self, e, env):
         return (self.true, self.visit(e.e, env))
+    def visit_ELet(self, e, env):
+        return self.apply(e.f, self.visit(e.e, env), env)
     def flatten(self, e, env):
         if decideable(e.type):
             yield (self.visit(e, env), e.type)

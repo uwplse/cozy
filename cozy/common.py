@@ -5,6 +5,8 @@ import os
 import inspect
 from multiprocessing import Value
 import ctypes
+import tempfile
+import shutil
 
 def check_type(value, ty, value_name="value"):
     """
@@ -32,9 +34,10 @@ def check_type(value, ty, value_name="value"):
             check_type(value[i], ty[0], "{}[{}]".format(value_name, i))
     elif type(ty) is dict:
         assert type(value) is dict, "{} has type {}, not {}".format(value_name, type(value).__name__, "dict")
-        for k, t in ty.items():
-            assert k in value, "{} is missing key {}".format(value_name, repr(k))
-            check_type(value[k], t, "{}[{}]".format(value_name, repr(k)))
+        ((kt, vt),) = ty.items()
+        for k, v in value.items():
+            check_type(k, kt, value_name)
+            check_type(v, vt, "{}[{}]".format(value_name, k))
     elif type(ty) is set:
         assert type(value) is set, "{} has type {}, not {}".format(value_name, type(value).__name__, "set")
         subty, = ty
@@ -242,10 +245,26 @@ def all_distinct(iter):
     distinct_elems = set(elems)
     return len(elems) == len(distinct_elems)
 
+class AtomicWriteableFile(object):
+    def __init__(self, dst):
+        self.dst = dst
+        tmp_fd, tmp_path = tempfile.mkstemp(text=True)
+        self.tmp_fd = tmp_fd
+        self.tmp_file = os.fdopen(tmp_fd, "w")
+        self.tmp_path = tmp_path
+    def __enter__(self, *args, **kwargs):
+        return self
+    def __exit__(self, *args, **kwargs):
+        os.fsync(self.tmp_fd)
+        self.tmp_file.close() # also closes self.tmp_fd
+        shutil.move(src=self.tmp_path, dst=self.dst)
+    def write(self, thing):
+        self.tmp_file.write(thing)
+
 def open_maybe_stdout(f):
     if f == "-":
         return os.fdopen(os.dup(sys.stdout.fileno()), "w")
-    return open(f, "w")
+    return AtomicWriteableFile(f)
 
 def memoize(f):
     # Someday if we upgrade to Python 3 this can be replaced with

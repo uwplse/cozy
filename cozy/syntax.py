@@ -90,7 +90,7 @@ EStr                = declare_case(Exp, "EStr",               ["val"])
 ENative             = declare_case(Exp, "ENative",            ["e"])
 EEnumEntry          = declare_case(Exp, "EEnumEntry",         ["name"])
 ENull               = declare_case(Exp, "ENull")
-EJust               = declare_case(Exp, "EJust", ["e"])
+EJust               = declare_case(Exp, "EJust",              ["e"])
 ECond               = declare_case(Exp, "ECond",              ["cond", "then_branch", "else_branch"])
 EBinOp              = declare_case(Exp, "EBinOp",             ["e1", "op", "e2"])
 EUnaryOp            = declare_case(Exp, "EUnaryOp",           ["op", "e"])
@@ -130,6 +130,7 @@ T = EBool(True) .with_type(BOOL)
 F = EBool(False).with_type(BOOL)
 ZERO = ENum(0).with_type(INT)
 ONE = ENum(1).with_type(INT)
+NULL = ENull()
 
 def seq(stms):
     stms = [s for s in stms if not isinstance(s, SNoOp)]

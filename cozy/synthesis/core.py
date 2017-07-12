@@ -194,8 +194,8 @@ class Learner(object):
             efvs = free_vars(equality)
             # remove assumptions that talk about binders not in either expression
             assumptions = EAll([a for a in assumptions if all((v in efvs or v not in self.binders) for v in free_vars(a))])
-            eqfp = self._fingerprint(implies(assumptions, equality))
-            if all(eqfp[i] for i in range(1, len(eqfp))):
+            examples = self._examples_for(equality)
+            if all(((eval(e, ex) == eval(watched_e, ex)) if eval(assumptions, ex) else True) for ex in examples):
                 yield (watched_e, e, r)
 
     def next(self):
@@ -386,6 +386,25 @@ def improve(
         stop_callback,
         hints : [Exp] = None,
         examples = None):
+
+    print("call to improve:")
+    print("""improve(
+        target={target!r},
+        assumptions={assumptions!r},
+        binders={binders!r},
+        cost_model={cost_model!r},
+        builder={builder!r},
+        stop_callback={stop_callback!r},
+        hints={hints!r},
+        examples={examples!r})""".format(
+            target=target,
+            assumptions=assumptions,
+            binders=binders,
+            cost_model=cost_model,
+            builder=builder,
+            stop_callback=stop_callback,
+            hints=hints,
+            examples=examples))
 
     binders = list(binders)
     target = fixup_binders(target, binders, allow_add=False)
