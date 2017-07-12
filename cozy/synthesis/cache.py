@@ -1,6 +1,6 @@
 from cozy.common import nested_dict
 from cozy.target_syntax import Exp, EVar, EStateVar
-from cozy.syntax_tools import free_vars
+from cozy.syntax_tools import free_vars, pprint
 from cozy.pools import RUNTIME_POOL, STATE_POOL, ALL_POOLS
 
 class NatDict(object):
@@ -47,6 +47,8 @@ class Cache(object):
     def is_tag(self, t):
         return isinstance(t, type)
     def add(self, e, size, pool):
+        if pool == STATE_POOL:
+            assert not isinstance(e, EStateVar), "adding {} to state pool".format(pprint(e))
         self.data[pool][self.tag(e.type)][e.type][size].append(e)
         self.size += 1
     def evict(self, e, size, pool):
