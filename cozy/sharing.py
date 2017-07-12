@@ -20,6 +20,8 @@ def uses_intrusive_data(e : target_syntax.Exp, handle : target_syntax.Exp) -> ta
         return target_syntax.F
     elif isinstance(e, target_syntax.EFilter):
         return target_syntax.EAll([uses_intrusive_data(e.e, handle), e.p.apply_to(handle)])
+    elif isinstance(e, target_syntax.EEmptyList):
+        return target_syntax.F
     elif isinstance(e, target_syntax.EMap):
         return uses_intrusive_data(e.e, handle)
     elif isinstance(e, target_syntax.EUnaryOp):
