@@ -167,6 +167,13 @@ class AcceleratedBuilder(ExpBuilder):
 
     def build(self, cache, size):
 
+        # state var conversion
+        for e in cache.find(pool=RUNTIME_POOL, size=size-1):
+            if all(v not in self.args for v in free_vars(e)):
+                x = strip_EStateVar(e)
+                yield (x, STATE_POOL)
+                yield (EStateVar(x).with_type(x.type), RUNTIME_POOL)
+
         for (sz1, sz2) in pick_to_sum(2, size-1):
             for e in cache.find(pool=RUNTIME_POOL, size=sz1):
                 yield from map_accelerate(e, self.state_vars, self.binders, cache, sz2)
