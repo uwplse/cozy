@@ -355,12 +355,10 @@ class OrderedSet(MutableSet):
             return len(self) == len(other) and list(self) == list(other)
         return set(self) == set(other)
 
-def unique(iter, key=lambda x: x):
+def unique(iter):
     """
-    Yields a stream of deduplicated elements. If the 'key' parameter is
-    provided, elements x are deduplicated according to key(x). When duplicates
-    are found, the first element in the iterable is kept and others are
-    dropped. Elements are returned in the same order as the input iterator.
+    Yields a stream of deduplicated elements.
+    Elements are returned in the same order as the input iterator.
     """
     yield from OrderedSet(iter)
 
