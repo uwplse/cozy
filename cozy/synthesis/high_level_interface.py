@@ -1,4 +1,4 @@
-from collections import namedtuple, deque, defaultdict
+from collections import namedtuple, deque, defaultdict, OrderedDict
 import datetime
 import itertools
 import sys
@@ -292,7 +292,27 @@ def synthesize(
         timeout = Timeout(per_query_timeout)
         while any(not j.done for j in improvement_jobs) and not timeout.is_timed_out():
             try:
-                (q, new_rep, new_ret) = solutions_q.get(timeout=0.5)
+                # list of (Query, new_rep, new_ret) objects
+                results = solutions_q.drain(block=True, timeout=0.5)
+            except Empty:
+                continue
+
+            # group by query name, favoring later (i.e. better) solutions
+            print("updating with {} new solutions".format(len(results)))
+            improved_queries_by_name = OrderedDict()
+            killed = 0
+            for r in results:
+                q, new_rep, new_ret = r
+                if q.name in improved_queries_by_name:
+                    killed += 1
+                improved_queries_by_name[q.name] = r
+            if killed:
+                print(" --> dropped {} worse solutions".format(killed))
+
+            # update query implementations
+            for (q, new_rep, new_ret) in improved_queries_by_name.values():
+                # this guard might be false if a better solution was
+                # enqueued but the job has already been cleaned up
                 if q.name in [qq.name for qq in specs]:
                     print("SOLUTION FOR {}".format(q.name))
                     print("-" * 40)
@@ -300,12 +320,10 @@ def synthesize(
                         print("  {} : {} = {}".format(sv.id, pprint(sv.type), pprint(proj)))
                     print("  return {}".format(pprint(new_ret)))
                     print("-" * 40)
-                    # this might fail if a better solution was enqueued but the job has
-                    # already been stopped and cleaned up
                     set_impl(q, new_rep, new_ret)
-                    cleanup()
-            except Empty:
-                pass
+
+            # clean up
+            cleanup()
 
         # stop jobs
         print("Stopping jobs")

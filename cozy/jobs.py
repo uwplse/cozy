@@ -92,3 +92,24 @@ class SafeQueue(object):
         return self.q.put(item, block=block, timeout=timeout)
     def get(self, block=False, timeout=None):
         return self.sideq.get(block=block, timeout=timeout)
+    def drain(self, block=False, timeout=None):
+        """
+        Remove all elements currently in the queue and put them in a list.
+        The first element in the list is the first element that would have
+        been returned by .get(), the second is the second, and so on.
+
+        If block=False (the default), then the timeout is ignored and this
+        method may return an empty list.
+
+        If block=True, then this function blocks until at least one element is
+        available. If a timeout is also provided, then a queue.Empty exception
+        is raised if no element is available in the given number of seconds.
+        """
+        res = []
+        if block:
+            res.append(self.get(block=True, timeout=timeout))
+        while True:
+            try:
+                res.append(self.get(block=False))
+            except Empty:
+                return res
