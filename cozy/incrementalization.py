@@ -36,8 +36,17 @@ def _delta_form(res : { str : syntax.Exp }, op : syntax.Stm) -> { str : syntax.E
         update = _rewriter(op.lhs)
         update(res, lambda old: op.rhs)
     elif isinstance(op, syntax.SIf):
-        _delta_form(res, op.then_branch)
-        _delta_form(res, op.else_branch)
+        res_then = res.copy()
+        _delta_form(res_then, op.then_branch)
+        res_else = res.copy()
+        _delta_form(res_else, op.else_branch)
+
+        for key in res:
+            then_val = res_then[key]
+            else_val = res_else[key]
+            if then_val != else_val:
+                # Substatements differ; need to defer to ECond evaluation.
+                res[key] = syntax.ECond(op.cond, then_val, else_val)
     else:
         raise NotImplementedError(type(op.body))
 
