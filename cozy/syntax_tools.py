@@ -397,7 +397,7 @@ class FragmentEnumerator(common.Visitor):
         if not pre_visit:
             pre_visit = lambda obj: True
         if not post_visit:
-            post_visit = lambda obj, res: res
+            post_visit = lambda obj: None
         self.pre_visit = pre_visit
         self.post_visit = post_visit
 
@@ -477,7 +477,8 @@ class FragmentEnumerator(common.Visitor):
 
     def visit(self, obj):
         if self.pre_visit(obj):
-            return self.post_visit(obj, super().visit(obj))
+            yield from super().visit(obj)
+            self.post_visit(obj)
         else:
             return ()
 

@@ -158,11 +158,10 @@ class Learner(object):
             if isinstance(obj, EStateVar):
                 sv_depth += 1
             return True
-        def post_visit(obj, res):
+        def post_visit(obj):
             nonlocal sv_depth
             if isinstance(obj, EStateVar):
                 sv_depth -= 1
-            return res
         for (a, e, r) in enumerate_fragments(self.target, pre_visit=pre_visit, post_visit=post_visit):
             if isinstance(e, ELambda) or any(v not in self.legal_free_vars for v in free_vars(e)):
                 continue
