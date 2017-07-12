@@ -235,3 +235,14 @@ class TestSolver(unittest.TestCase):
         assert retypecheck(e)
         model = satisfy(e, validate_model=True)
         assert model
+
+    def test_distinct_handles_with_altered_values(self):
+        t = THandle("H", TInt())
+        h1 = EHandle(ZERO, ZERO).with_type(t)
+        h2 = EWithAlteredValue(h1, ONE).with_type(t)
+        bt = TBag(t)
+        bag = EUnaryOp(UOp.Distinct, EBinOp(
+            ESingleton(h1).with_type(bt), "+",
+            ESingleton(h2).with_type(bt)).with_type(bt)).with_type(bt)
+        v = EVar("b").with_type(bt)
+        satisfy(EEq(v, bag), validate_model=True)

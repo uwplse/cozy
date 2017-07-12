@@ -200,7 +200,11 @@ class Evaluator(Visitor):
         elif e.op == UOp.AreUnique:
             return all_distinct(self.visit(e.e, env))
         elif e.op == UOp.Distinct:
-            return Bag(unique(self.visit(e.e, env)))
+            res = []
+            for x in self.visit(e.e, env):
+                if not any(eq(e.type.t, x, y) for y in res):
+                    res.append(x)
+            return Bag(res)
         elif e.op == UOp.The:
             bag = self.visit(e.e, env)
             if bag:
