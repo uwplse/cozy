@@ -28,6 +28,7 @@ def run():
     parser = argparse.ArgumentParser(description='Data structure synthesizer.')
     parser.add_argument("-t", "--timeout", metavar="N", type=float, default=60, help="Per-query synthesis timeout (in seconds); default=60")
     parser.add_argument("-s", "--simple", action="store_true", help="Do not synthesize improved solution; use the most trivial implementation of the spec")
+    parser.add_argument("-p", "--port", metavar="P", type=int, default=None, help="Port to run progress-showing HTTP server")
 
     java_opts = parser.add_argument_group("Java codegen")
     java_opts.add_argument("--java", metavar="FILE.java", default=None, help="Output file for java classes, use '-' for stdout")
@@ -65,9 +66,30 @@ def run():
         sys.exit(1)
 
     if not args.simple:
+        callback = None
+        server = None
+        if args.port:
+            from cozy import progress_server
+            state = ["Initializing..."]
+            def callback(res):
+                ast, state_map = res
+                s = ""
+                for v, e in state_map.items():
+                    s += "{} : {} = {}\n".format(v, syntax_tools.pprint(e.type), syntax_tools.pprint(e))
+                s += "\n"
+                s += syntax_tools.pprint(ast)
+                state[0] = s
+            server = progress_server.ProgressServer(port=args.port, callback=lambda: state[0])
+            server.start_async()
         ast, state_map = synthesis.synthesize(
             ast,
-            per_query_timeout = datetime.timedelta(seconds=args.timeout))
+            per_query_timeout = datetime.timedelta(seconds=args.timeout),
+            progress_callback = callback)
+        if server is not None:
+            server.join()
+        print()
+        for v, e in state_map.items():
+            print("{} : {} = {}".format(v, syntax_tools.pprint(e.type), syntax_tools.pprint(e)))
         print()
         print(syntax_tools.pprint(ast))
     else:

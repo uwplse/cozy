@@ -116,8 +116,9 @@ def rewrite_ret(q : Query, repl, keep_assumptions=True) -> Query:
 
 @typechecked
 def synthesize(
-        spec      : Spec,
-        per_query_timeout : datetime.timedelta = datetime.timedelta(seconds=60)) -> (Spec, dict):
+        spec              : Spec,
+        per_query_timeout : datetime.timedelta = datetime.timedelta(seconds=60),
+        progress_callback = None) -> (Spec, { str : Exp }):
 
     # gather root types
     types = list(all_types(spec))
@@ -283,6 +284,47 @@ def synthesize(
                             push_goal(sub_q)
                     op_stms[new_member][op.name] = state_update_stm
 
+        def result():
+            # construct new queries
+            new_queries = list(impls.values())
+
+            # construct new op implementations
+            new_ops = []
+            for op in ops:
+                stms = [ ss[op.name] for ss in op_stms.values() ]
+
+                # append changes to op. arguments
+                # TODO: detect pointer aliasing between op arguments and state vars?
+                arg_changes = inc.delta_form(op.args, op)
+                for v, t in op.args:
+                    v = EVar(v).with_type(t)
+                    (stm, subqueries) = inc.sketch_update(v, v, subst(v, arg_changes), [], [])
+                    if subqueries:
+                        raise NotImplementedError("update to {} in {} is too complex".format(v.id, op.name))
+                    stms.append(stm)
+
+                # construct new op. implementation
+                new_stms = seq(stms)
+                new_ops.append(Op(
+                    op.name,
+                    op.args,
+                    [],
+                    new_stms))
+
+            # assemble final result
+            state_var_exps = OrderedDict()
+            for (v, e) in new_state_vars:
+                state_var_exps[v.id] = e
+
+            new_statevars = [(v, e.type) for (v, e) in state_var_exps.items()]
+            return (Spec(
+                spec.name,
+                spec.types,
+                spec.extern_funcs,
+                new_statevars,
+                [],
+                new_queries + new_ops), state_var_exps)
+
         # set initial implementations
         for q in spec.methods:
             if isinstance(q, Query):
@@ -324,48 +366,10 @@ def synthesize(
 
             # clean up
             cleanup()
+            if progress_callback is not None:
+                progress_callback(result())
 
         # stop jobs
         print("Stopping jobs")
         stop_jobs(list(improvement_jobs))
-
-        # construct new queries
-        new_queries = list(impls.values())
-
-        # construct new op implementations
-        new_ops = []
-        for op in ops:
-            stms = [ ss[op.name] for ss in op_stms.values() ]
-
-            # append changes to op. arguments
-            # TODO: detect pointer aliasing between op arguments and state vars?
-            arg_changes = inc.delta_form(op.args, op)
-            for v, t in op.args:
-                v = EVar(v).with_type(t)
-                (stm, subqueries) = inc.sketch_update(v, v, subst(v, arg_changes), [], [])
-                if subqueries:
-                    raise NotImplementedError("update to {} in {} is too complex".format(v.id, op.name))
-                stms.append(stm)
-
-            # construct new op. implementation
-            new_stms = seq(stms)
-            new_ops.append(Op(
-                op.name,
-                op.args,
-                [],
-                new_stms))
-
-        # assemble final result
-        state_var_exps = { }
-        for (v, e) in new_state_vars:
-            state_var_exps[v.id] = e
-            print("{} : {} = {}".format(v.id, pprint(v.type), pprint(e)))
-
-        new_statevars = [(v, e.type) for (v, e) in state_var_exps.items()]
-        return (Spec(
-            spec.name,
-            spec.types,
-            spec.extern_funcs,
-            new_statevars,
-            [],
-            new_queries + new_ops), state_var_exps)
+        return result()
