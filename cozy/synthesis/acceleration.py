@@ -169,7 +169,7 @@ class AcceleratedBuilder(ExpBuilder):
 
         # state var conversion
         for e in cache.find(pool=RUNTIME_POOL, size=size-1):
-            if all(v not in self.args for v in free_vars(e)):
+            if all(v in self.state_vars for v in free_vars(e)):
                 x = strip_EStateVar(e)
                 yield (x, STATE_POOL)
                 yield (EStateVar(x).with_type(x.type), RUNTIME_POOL)
