@@ -1,7 +1,7 @@
 from cozy.common import fresh_name
 from cozy import syntax
 from cozy import target_syntax
-from cozy.syntax_tools import free_vars, pprint, fresh_var, mk_lambda, alpha_equivalent
+from cozy.syntax_tools import free_vars, pprint, fresh_var, mk_lambda, alpha_equivalent, strip_EStateVar
 from cozy.desugar import desugar_exp
 from cozy.typecheck import is_numeric
 
@@ -111,6 +111,7 @@ def sketch_update(
     subgoals = []
 
     def make_subgoal(e, a=[]):
+        e = strip_EStateVar(e)
         e = desugar_exp(e)
         if not any(v in ctx for v in free_vars(e)):
             return e

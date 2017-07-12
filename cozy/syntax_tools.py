@@ -71,6 +71,12 @@ class BottomUpRewriter(BottomUpExplorer):
             out.value_type = x.value_type
         return out
 
+def strip_EStateVar(e : syntax.Exp):
+    class V(BottomUpRewriter):
+        def visit_EStateVar(self, e):
+            return self.visit(e.e)
+    return V().visit(e)
+
 def deep_copy(ast):
     return BottomUpRewriter().visit(ast)
 

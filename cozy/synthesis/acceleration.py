@@ -3,7 +3,7 @@ import itertools
 from cozy.common import find_one, partition, pick_to_sum
 from .core import ExpBuilder
 from cozy.target_syntax import *
-from cozy.syntax_tools import free_vars, break_conj, all_exps, replace, pprint, enumerate_fragments, mk_lambda
+from cozy.syntax_tools import free_vars, break_conj, all_exps, replace, pprint, enumerate_fragments, mk_lambda, strip_EStateVar
 from cozy.desugar import desugar_exp
 from cozy.typecheck import is_numeric
 from cozy.pools import RUNTIME_POOL, STATE_POOL
@@ -120,7 +120,7 @@ def map_accelerate(e, state_vars, binders, cache, size):
                 if any(v in binders for v in free_vars(m)):
                     continue
                 yield (m, STATE_POOL)
-                yield (EMapGet(EStateVar(m).with_type(m.type), arg).with_type(e.type), RUNTIME_POOL)
+                yield (EMapGet(EStateVar(strip_EStateVar(m)).with_type(m.type), arg).with_type(e.type), RUNTIME_POOL)
 
 def accelerate_filter(bag, p, state_vars, binders, cache, size):
     parts = list(break_conj(p.body))
@@ -190,7 +190,7 @@ class AcceleratedBuilder(ExpBuilder):
                 if const_parts and other_parts:
                     inner_filter = EFilter(bag.e, ELambda(bag.p.arg, EAll(const_parts))).with_type(bag.type)
                     yield (inner_filter, STATE_POOL)
-                    yield (EFilter(EStateVar(inner_filter).with_type(inner_filter.type), ELambda(bag.p.arg, EAll(other_parts))).with_type(bag.type), RUNTIME_POOL)
+                    yield (EFilter(EStateVar(strip_EStateVar(inner_filter)).with_type(inner_filter.type), ELambda(bag.p.arg, EAll(other_parts))).with_type(bag.type), RUNTIME_POOL)
 
                 # construct map lookups
                 binder = bag.p.arg
@@ -203,7 +203,7 @@ class AcceleratedBuilder(ExpBuilder):
                             EMap(bag.e, ELambda(binder, key_proj)).with_type(TBag(key_proj.type)),
                             ELambda(bag_binder, EFilter(bag.e, ELambda(binder, EEq(key_proj, bag_binder))).with_type(bag.type))).with_type(TMap(key_proj.type, bag.type))
                         yield (m, STATE_POOL)
-                        m = EStateVar(m).with_type(m.type)
+                        m = EStateVar(strip_EStateVar(m)).with_type(m.type)
                         mg = EMapGet(m, key_lookup).with_type(bag.type)
                         from cozy.typecheck import retypecheck
                         yield (mg, RUNTIME_POOL)
