@@ -24,22 +24,22 @@ def check_type(value, ty, value_name="value"):
     if ty is None:
         pass
     elif type(ty) is tuple:
-        assert type(value) is tuple, "{} has type {}, not {}".format(value_name, type(value).__name__, "tuple")
+        assert isinstance(value, tuple), "{} has type {}, not {}".format(value_name, type(value).__name__, "tuple")
         assert len(value) == len(ty), "{} has {} entries, not {}".format(value_name, len(value), len(ty))
         for v, t, i in zip(value, ty, range(len(value))):
             check_type(v, t, "{}[{}]".format(value_name, i))
     elif type(ty) is list:
-        assert type(value) is list, "{} has type {}, not {}".format(value_name, type(value).__name__, "list")
+        assert isinstance(value, list), "{} has type {}, not {}".format(value_name, type(value).__name__, "list")
         for i in range(len(value)):
             check_type(value[i], ty[0], "{}[{}]".format(value_name, i))
     elif type(ty) is dict:
-        assert type(value) is dict, "{} has type {}, not {}".format(value_name, type(value).__name__, "dict")
+        assert isinstance(value, dict), "{} has type {}, not {}".format(value_name, type(value).__name__, "dict")
         ((kt, vt),) = ty.items()
         for k, v in value.items():
             check_type(k, kt, value_name)
             check_type(v, vt, "{}[{}]".format(value_name, k))
     elif type(ty) is set:
-        assert type(value) is set, "{} has type {}, not {}".format(value_name, type(value).__name__, "set")
+        assert isinstance(value, set), "{} has type {}, not {}".format(value_name, type(value).__name__, "set")
         subty, = ty
         for x in value:
             check_type(x, subty, "{} in {}".format(x, value_name))
