@@ -17,9 +17,27 @@ class TestSyntaxTools(unittest.TestCase):
                 EFilter(xs, ELambda(x, T)),
                 EEmptyList().with_type(xs.type))))
         assert retypecheck(e)
-        for (a, e, r) in enumerate_fragments(e):
+        for (a, e, r, bound) in enumerate_fragments(e):
             if e == T:
                 assert not valid(implies(EAll(a), equal(x, ZERO)), validate_model=True), "assumptions at {}: {}".format(pprint(e), "; ".join(pprint(aa) for aa in a))
+
+    def test_enumerate_fragments_bound(self):
+        b = EVar("b").with_type(BOOL)
+        e = ELet(ZERO, mk_lambda(INT, lambda x: b))
+        assert retypecheck(e)
+        for (a, x, r, bound) in enumerate_fragments(e):
+            if x == b:
+                assert bound == { e.f.arg }, "got {}".format(bound)
+            elif x == ZERO:
+                assert bound == set(), "got {}".format(bound)
+
+    def test_enumerate_fragments_estatevar(self):
+        b = EVar("b").with_type(BOOL)
+        e = ELet(ZERO, mk_lambda(INT, lambda x: EStateVar(b)))
+        assert retypecheck(e)
+        for (a, e, r, bound) in enumerate_fragments(e):
+            if e == b:
+                assert not bound, "EStateVar should reset bound variables, but got {}".format(bound)
 
     def test_cse(self):
         x = EVar("x").with_type(INT)

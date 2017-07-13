@@ -400,16 +400,22 @@ class FragmentEnumerator(common.Visitor):
             post_visit = lambda obj: None
         self.pre_visit = pre_visit
         self.post_visit = post_visit
+        self.bound = collections.OrderedDict()
+
+    def currently_bound(self):
+        return common.OrderedSet(self.bound.keys())
 
     def visit_ELambda(self, obj):
         # raise NotImplementedError(obj)
         return self.recurse_with_assumptions_about_bound_var(obj, [])
 
     def recurse_with_assumptions_about_bound_var(self, e : target_syntax.ELambda, assume : [syntax.Exp]):
-        for (a, x, r, bound) in self.visit(e.body):
-            if assume and e.arg not in bound:
-                a = a + assume
-            yield (lambda r: (a, x, lambda x: target_syntax.ELambda(e.arg, r(x)), bound | {e.arg}))(r)
+        orig_bound = self.currently_bound()
+        with common.extend(self.bound, e.arg, True):
+            for (a, x, r, bound) in self.visit(e.body):
+                if assume and e.arg not in bound:
+                    a = a + assume
+                yield (lambda r: (a, x, lambda x: target_syntax.ELambda(e.arg, r(x)), bound))(r)
 
     # def visit_EMakeMap(self, e):
     #     yield ([], e, lambda x: x)
@@ -431,8 +437,29 @@ class FragmentEnumerator(common.Visitor):
     #             x,
     #             lambda x: target_syntax.EMakeMap(e.e, e.key, target_syntax.ELambda(e.value.arg, r(x))).with_type(t)))(r)
 
+    def visit_EStateVar(self, e):
+        """
+        A very tricky case: the set of bound variables gets cleared for its
+        children. Consider
+
+            Filter {\v -> EStateVar(v)} C
+
+        The `v` in the EStateVar is *different* from the `v` bound by the filter
+        predicate, since this expression is conceptually equivalent to
+
+            state s = v
+            Filter {\v -> s} C
+        """
+        yield ([], e, lambda x: x, common.OrderedSet(self.bound.keys()))
+        orig_bound = self.bound
+        self.bound = collections.OrderedDict()
+        t = e.type
+        for (a, x, r, bound) in self.visit(e.e):
+            yield (lambda r: (a, x, lambda x: target_syntax.EStateVar(r(x)).with_type(t), bound))(r)
+        self.bound = orig_bound
+
     def visit_EFilter(self, e):
-        yield ([], e, lambda x: x, set())
+        yield ([], e, lambda x: x, self.currently_bound())
         t = e.type
         for (a, x, r, bound) in self.visit(e.e):
             yield (lambda r: (a, x, lambda x: target_syntax.EFilter(r(x), e.p).with_type(t), bound))(r)
@@ -440,7 +467,7 @@ class FragmentEnumerator(common.Visitor):
             yield (lambda r: (a, x, lambda x: target_syntax.EFilter(e.e, r(x)).with_type(t), bound))(r)
 
     def visit_EMap(self, e):
-        yield ([], e, lambda x: x, set())
+        yield ([], e, lambda x: x, self.currently_bound())
         t = e.type
         for (a, x, r, bound) in self.visit(e.e):
             yield (lambda r: (a, x, lambda x: target_syntax.EMap(r(x), e.f).with_type(t), bound))(r)
@@ -448,7 +475,7 @@ class FragmentEnumerator(common.Visitor):
             yield (lambda r: (a, x, lambda x: target_syntax.EMap(e.e, r(x)).with_type(t), bound))(r)
 
     def visit_EFlatMap(self, e):
-        yield ([], e, lambda x: x, set())
+        yield ([], e, lambda x: x, self.currently_bound())
         t = e.type
         for (a, x, r, bound) in self.visit(e.e):
             yield (lambda r: (a, x, lambda x: target_syntax.EFlatMap(r(x), e.f).with_type(t), bound))(r)
@@ -456,7 +483,7 @@ class FragmentEnumerator(common.Visitor):
             yield (lambda r: (a, x, lambda x: target_syntax.EFlatMap(e.e, r(x)).with_type(t), bound))(r)
 
     def visit_Exp(self, obj):
-        yield ([], obj, lambda x: x, set())
+        yield ([], obj, lambda x: x, self.currently_bound())
         t = obj.type
         children = obj.children()
         for i in range(len(children)):
@@ -467,13 +494,13 @@ class FragmentEnumerator(common.Visitor):
         return self.visit_tuple(l)
 
     def visit_tuple(self, t):
-        yield ([], t, lambda x: x, set())
+        yield ([], t, lambda x: x, self.currently_bound())
         for i in range(len(t)):
             for (a, x, r, bound) in self.visit(t[i]):
                 yield (a, x, (lambda r, i: lambda x: t[:i] + (r(x),) + t[i+1:])(r, i), bound)
 
     def visit_object(self, obj):
-        yield ([], obj, lambda x: x, set())
+        yield ([], obj, lambda x: x, self.currently_bound())
 
     def visit(self, obj):
         if self.pre_visit(obj):
@@ -484,18 +511,22 @@ class FragmentEnumerator(common.Visitor):
 
 def enumerate_fragments(e : syntax.Exp, pre_visit=None, post_visit=None):
     """
-    Yields tuples (a : [Exp], x : Exp, r : Exp->Exp) such that:
+    Yields tuples (a : [Exp], x : Exp, r : Exp->Exp, ctx : {EVar}) such that:
         x is a non-lambda subexpression of e
-        a are true assumptions whenever x is evaluated on any input to e
+        a are true assumptions whenever x is evaluated on any input to e (NOTE:
+            these assumptions may be conservative, but they are never wrong)
         r(x) == e (in general, r can be used to replace x with a new subexpr)
+        ctx is the set of bound vars at x (i.e. in any potential replacement y,
+            all free vars in y not in ctx will be free in r(y))
 
     Fragments are enumerated top-down (i.e. every expression comes before any
     of its subexpressions).
     """
     enumerator = FragmentEnumerator(pre_visit, post_visit)
-    for (a, x, r, bound) in enumerator.visit(e):
+    for info in enumerator.visit(e):
+        (a, x, r, bound) = info
         if isinstance(x, syntax.Exp) and not isinstance(x, target_syntax.ELambda):
-            yield (a, x, r)
+            yield info
 
 def replace(exp, old_exp, new_exp):
     class Replacer(BottomUpRewriter):

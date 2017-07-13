@@ -62,7 +62,7 @@ def infer_map_lookup(filter, binder, state : {EVar}):
     assert False
 
 def break_plus_minus(e):
-    for (_, x, r) in enumerate_fragments(e):
+    for (_, x, r, _) in enumerate_fragments(e):
         if isinstance(x, EBinOp) and x.op in ("+", "-"):
             # print("accel --> {}".format(pprint(r(x.e1))))
             yield from break_plus_minus(r(x.e1))
@@ -78,7 +78,7 @@ def break_plus_minus(e):
     yield e
 
 def break_or(e):
-    for (_, x, r) in enumerate_fragments(e):
+    for (_, x, r, _) in enumerate_fragments(e):
         if isinstance(x, EBinOp) and x.op == BOp.Or:
             yield from break_or(r(x.e1))
             yield from break_or(r(x.e2))
@@ -105,7 +105,7 @@ def as_aggregation_of_filter(e):
         yield (Aggregation(), mk_lambda(e.type.t, lambda x: T), e)
 
 def map_accelerate(e, state_vars, binders, args, cache, size):
-    for (_, arg, f) in enumerate_fragments(strip_EStateVar(e)):
+    for (_, arg, f, _) in enumerate_fragments(strip_EStateVar(e)):
         if any(v in state_vars for v in free_vars(arg)):
             continue
         for binder in (b for b in binders if b.type == arg.type):

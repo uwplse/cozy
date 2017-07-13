@@ -126,7 +126,7 @@ class Learner(object):
         self.target = new_target
         self.update_watched_exps()
         self.roots = []
-        for (e, r, cost, a, pool) in self.watched_exps:
+        for (e, r, cost, a, pool, bound) in self.watched_exps:
             self.roots.append((e, pool))
         # new_roots = []
         # for e in itertools.chain(all_exps(new_target), all_exps(assumptions)):
@@ -162,13 +162,13 @@ class Learner(object):
             nonlocal sv_depth
             if isinstance(obj, EStateVar):
                 sv_depth -= 1
-        for (a, e, r) in enumerate_fragments(self.target, pre_visit=pre_visit, post_visit=post_visit):
+        for (a, e, r, bound) in enumerate_fragments(self.target, pre_visit=pre_visit, post_visit=post_visit):
             if isinstance(e, ELambda) or any(v not in self.legal_free_vars for v in free_vars(e)):
                 continue
             depth = (sv_depth - 1) if isinstance(e, EStateVar) else sv_depth
             pool = STATE_POOL if depth else RUNTIME_POOL
             cost = self.cost_model.cost(e, pool)
-            self.watched_exps.append((e, r, cost, a, pool))
+            self.watched_exps.append((e, r, cost, a, pool, bound))
 
     def _examples_for(self, e):
         # binders = [b for b in free_vars(e) if b in self.binders]
@@ -177,12 +177,27 @@ class Learner(object):
     def _fingerprint(self, e, examples=None):
         return fingerprint(e, self._examples_for(e))
 
+    def _doctor_for_context(self, e : Exp, bound_vars : {EVar}):
+        """
+        Fix an expression so that it has no bad free variables.
+
+        Binders are not allowed to be free in output expressions. Since no
+        binders are free in the input expression, it is actually OK to replace
+        them with arbitrary expressions of the correct type without affecting
+        correctness.
+        """
+        v = find_one(fv for fv in free_vars(e) if fv in self.binders and fv not in bound_vars)
+        while v:
+            e = subst(e, { v.id : construct_value(v.type) })
+            v = find_one(fv for fv in free_vars(e) if fv in self.binders and fv not in bound_vars)
+        return e
+
     def _possible_replacements(self, e, pool, cost):
         """
         Yields watched expressions that appear as worse versions of the given
         expression. There may be more than one.
         """
-        for (watched_e, r, watched_cost, assumptions, p) in self.watched_exps:
+        for (watched_e, r, watched_cost, assumptions, p, bound) in self.watched_exps:
             if p != pool:
                 continue
             if watched_e.type != e.type or watched_cost < cost:
@@ -195,7 +210,8 @@ class Learner(object):
             assumptions = EAll([a for a in assumptions if all((v in efvs or v not in self.binders) for v in free_vars(a))])
             examples = self._examples_for(equality)
             if all(((eval(e, ex) == eval(watched_e, ex)) if eval(assumptions, ex) else True) for ex in examples):
-                yield (watched_e, e, r)
+                e2 = self._doctor_for_context(e, bound)
+                yield (watched_e, e2, r)
 
     def next(self):
         while True:
@@ -427,14 +443,12 @@ def improve(
                 break
 
             # 2. substitute-in the improvement
+            print("Found candidate replacement [{}] for [{}]".format(pprint(new_e), pprint(old_e)))
             new_target = repl(new_e)
 
-            bad_var = find_one(free_vars(new_target), lambda v: v not in vars)
-            if bad_var is not None:
-                print("oops")
+            assert not find_one(free_vars(new_target), lambda v: v not in vars)
 
             # 3. check
-            print("Found candidate replacement [{}] for [{}]".format(pprint(new_e), pprint(old_e)))
             formula = EAll([assumptions, ENot(equal(target, new_target))])
             counterexample = satisfy(formula, vars=vars)
             if counterexample is not None:
@@ -454,15 +468,6 @@ def improve(
                 learner.reset(examples)
             else:
                 # b. if correct: yield it, watch the new target, goto 1
-
-                while bad_var:
-                    print("Eliminating bad free var {}".format(pprint(bad_var)))
-                    new_value = construct_value(bad_var.type)
-                    subst_repl = { bad_var.id: new_value }
-                    new_target = subst(new_target, subst_repl)
-                    new_e = subst(new_e, subst_repl)
-                    bad_var = find_one(free_vars(new_target), lambda v: v not in vars)
-
                 old_cost = cost_model.cost(target, RUNTIME_POOL)
                 new_cost = cost_model.cost(new_target, RUNTIME_POOL)
                 if new_cost > old_cost:

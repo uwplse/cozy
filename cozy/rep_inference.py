@@ -62,7 +62,7 @@ def infer_rep(state : [EVar], qexp : Exp, validate_types : bool = False) -> [([(
     dirty = True
     while dirty:
         dirty = False
-        for (_, e, r) in enumerate_fragments(qexp):
+        for (_, e, r, _) in enumerate_fragments(qexp):
             needs_rewrite = False
             if isinstance(e, EStateVar):
                 needs_rewrite = True
