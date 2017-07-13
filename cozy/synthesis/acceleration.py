@@ -104,8 +104,8 @@ def as_aggregation_of_filter(e):
     elif isinstance(e.type, TBag):
         yield (Aggregation(), mk_lambda(e.type.t, lambda x: T), e)
 
-def map_accelerate(e, state_vars, binders, cache, size):
-    for (_, arg, f) in enumerate_fragments(e):
+def map_accelerate(e, state_vars, binders, args, cache, size):
+    for (_, arg, f) in enumerate_fragments(strip_EStateVar(e)):
         if any(v in state_vars for v in free_vars(arg)):
             continue
         for binder in (b for b in binders if b.type == arg.type):
@@ -117,10 +117,11 @@ def map_accelerate(e, state_vars, binders, cache, size):
                     continue
                 m = EMakeMap2(bag,
                     ELambda(binder, value)).with_type(TMap(arg.type, e.type))
+                assert not any(v in args for v in free_vars(m))
                 if any(v in binders for v in free_vars(m)):
                     continue
                 yield (m, STATE_POOL)
-                yield (EMapGet(EStateVar(strip_EStateVar(m)).with_type(m.type), arg).with_type(e.type), RUNTIME_POOL)
+                yield (EMapGet(EStateVar(m).with_type(m.type), arg).with_type(e.type), RUNTIME_POOL)
 
 def accelerate_filter(bag, p, state_vars, binders, cache, size):
     parts = list(break_conj(p.body))
@@ -176,7 +177,7 @@ class AcceleratedBuilder(ExpBuilder):
 
         for (sz1, sz2) in pick_to_sum(2, size-1):
             for e in cache.find(pool=RUNTIME_POOL, size=sz1):
-                yield from map_accelerate(e, self.state_vars, self.binders, cache, sz2)
+                yield from map_accelerate(e, self.state_vars, self.binders, self.args, cache, sz2)
                 if isinstance(e, EFilter) and not any(v in self.binders for v in free_vars(e)):
                     yield from accelerate_filter(e.e, e.p, self.state_vars, self.binders, cache, sz2)
 
@@ -188,7 +189,7 @@ class AcceleratedBuilder(ExpBuilder):
                         yield (EFilter(bag, mk_lambda(bag.type.t, lambda _: ENot(EBinOp(a, BOp.In, v).with_type(BOOL)))).with_type(bag.type), RUNTIME_POOL)
 
             if isinstance(bag, EFilter):
-                if any(v in self.binders for v in free_vars(bag)):
+                if any(v not in self.state_vars for v in free_vars(bag)):
                     continue
 
                 # separate filter conds
@@ -209,6 +210,7 @@ class AcceleratedBuilder(ExpBuilder):
                         m = EMakeMap2(
                             EMap(bag.e, ELambda(binder, key_proj)).with_type(TBag(key_proj.type)),
                             ELambda(bag_binder, EFilter(bag.e, ELambda(binder, EEq(key_proj, bag_binder))).with_type(bag.type))).with_type(TMap(key_proj.type, bag.type))
+                        assert not any(v in self.args for v in free_vars(m))
                         yield (m, STATE_POOL)
                         m = EStateVar(strip_EStateVar(m)).with_type(m.type)
                         mg = EMapGet(m, key_lookup).with_type(bag.type)
