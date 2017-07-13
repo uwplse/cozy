@@ -4,6 +4,7 @@ import unittest
 from cozy.target_syntax import *
 from cozy.parse import parse
 from cozy.typecheck import typecheck
+from cozy import syntax
 
 class TestParser(unittest.TestCase):
     pass
@@ -81,3 +82,21 @@ class TestEnhancedModifications(unittest.TestCase):
                     foo.add(i + i)
         """
         parse(sample)
+
+    def test_dangling_else(self):
+        sample = """Test:
+           state f : Bag<Int>
+           op foo(i : Int)
+                if not (i in foo):
+                    if not ((i + i) in foo):
+                        foo.add(i + i + i)
+                    else:
+                        foo.add(i + i + i + i)
+        """
+        # Verify that `else` code pairs with inner `if`.
+        ast = parse(sample)
+        foo = ast.methods[0]
+        assert isinstance(foo.body, syntax.SIf)
+        assert isinstance(foo.body.then_branch.else_branch, syntax.SCall)
+        assert isinstance(foo.body.else_branch, syntax.SNoOp)
+
