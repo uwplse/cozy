@@ -4,6 +4,7 @@ import sys
 import os
 import inspect
 from multiprocessing import Value
+import threading
 import ctypes
 import tempfile
 import shutil
@@ -89,10 +90,13 @@ def match(value, binders):
 
     return None
 
+# _protect helps to help guard against infinite recursion
+# Since it is global, locking uses seems wise.
+_protect = set()
+_protect_lock = threading.RLock()
+
 @total_ordering
 class ADT(object):
-    def __init__(self):
-        self._protect = False
     def children(self):
         return ()
     def size(self):
@@ -110,15 +114,16 @@ class ADT(object):
     def __str__(self):
         return repr(self)
     def __repr__(self):
-        if not hasattr(self, "_protect"):
-            self._protect = False
-        if self._protect:
-            return "<<recursive>>"
-        self._protect = True
-        try:
-            return "{}({})".format(type(self).__name__, ", ".join(repr(child) for child in self.children()))
-        finally:
-            self._protect = False
+        my_id = id(self)
+        with _protect_lock:
+            if my_id in _protect:
+                return "<<recursive>>"
+            _protect.add(my_id)
+            try:
+                return "{}({})".format(type(self).__name__, ", ".join(repr(child) for child in self.children()))
+            finally:
+                # remove my_id, but do not throw an exception on failure
+                _protect.difference_update({my_id})
     def __hash__(self):
         return hash(self.children())
     def __eq__(self, other):

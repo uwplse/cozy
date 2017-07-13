@@ -59,3 +59,9 @@ class TestSyntaxTools(unittest.TestCase):
         print(pprint(e))
         print(free_vars(e))
         assert free_vars(e) == OrderedSet([EVar('l').with_type(TBag(INT)), EVar('n').with_type(INT), EVar('_var111').with_type(INT)])
+
+    def test_recursive_adt_repr(self):
+        e = EStateVar(None)
+        e.e = e
+        print(repr(e))
+        assert repr(e) == "EStateVar(<<recursive>>)"

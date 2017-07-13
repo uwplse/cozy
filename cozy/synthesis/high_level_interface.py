@@ -194,7 +194,7 @@ def synthesize(
                 list(spec.assumptions) + list(q.assumptions),
                 q,
                 specs=list(specs),
-                k=lambda new_rep, new_ret: solutions_q.put(nodicts((q, new_rep, new_ret))))
+                k=lambda new_rep, new_ret: solutions_q.put((q, new_rep, new_ret)))
             specs.append(q)
             improvement_jobs.append(j)
             j.start()
