@@ -44,7 +44,10 @@ def _delta_form(res : { str : syntax.Exp }, op : syntax.Stm) -> { str : syntax.E
         for key in res:
             then_val = res_then[key]
             else_val = res_else[key]
-            if then_val != else_val:
+
+            if then_val == else_val:
+                res[key] = then_val
+            else:
                 # Substatements differ; need to defer to ECond evaluation.
                 res[key] = syntax.ECond(op.cond, then_val, else_val)
     else:
