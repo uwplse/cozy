@@ -350,8 +350,8 @@ def make_parser():
                | KW_IF exp OP_COLON stm %prec IF_PLAIN
                | KW_IF exp OP_COLON stm KW_ELSE OP_COLON stm"""
         if p[1] == "if":
-            elseExpr = p[7] if len(p) == 8 else syntax.SNoOp()
-            p[0] = syntax.SIf(p[2], p[4], elseExpr)
+            else_expr = p[7] if len(p) == 8 else syntax.SNoOp()
+            p[0] = syntax.SIf(p[2], p[4], else_expr)
         elif p[2] == "(":
             p[0] = syntax.SCall(p[1].e, p[1].f, p[3])
         else:
