@@ -56,12 +56,6 @@ class BinderBuilder(ExpBuilder):
                 yield (EUnaryOp("-", e).with_type(INT), pool)
 
             for (sz1, sz2) in pick_to_sum(2, size - 1):
-                # Try instantiating bound expressions
-                for e1 in cache.find(pool=pool, size=sz1):
-                    binders = free_vars(e1) & set(self.binders)
-                    for b in binders:
-                        for e2 in cache.find(pool=pool, type=b.type, size=sz2):
-                            yield (subst(e1, { b.id: e2 }), pool)
                 for a1 in cache.find(pool=pool, type=INT, size=sz1):
                     for a2 in cache.find(pool=pool, type=INT, size=sz2):
                         yield (EBinOp(a1, "+", a2).with_type(INT), pool)

@@ -167,6 +167,14 @@ class AcceleratedBuilder(ExpBuilder):
             self.args)
 
     def build(self, cache, size):
+        # Try instantiating bound expressions
+        # for pool in (STATE_POOL, RUNTIME_POOL):
+        #     for (sz1, sz2) in pick_to_sum(2, size-1):
+        #         for e1 in cache.find(pool=pool, size=sz1):
+        #             binders = free_vars(e1) & set(self.binders)
+        #             for b in binders:
+        #                 for e2 in cache.find(pool=pool, type=b.type, size=sz2):
+        #                     yield (subst(e1, {b.id:e2}), pool)
 
         # state var conversion
         for e in cache.find(pool=RUNTIME_POOL, size=size-1):
