@@ -30,6 +30,24 @@ def P(e, assumptions=T):
             return P(ENot(EAll([ENot(e.e1), ENot(e.e2)])), assumptions)
     return 0.5
 
+def map_ok(m : EMakeMap2):
+    """exist k1, k2 such that k1 != k2 and m[k1] != m[k2]?"""
+    k1 = fresh_var(m.type.k)
+    k2 = fresh_var(m.type.k)
+    mm = fresh_var(m.type)
+    v1 = EMapGet(mm, k1).with_type(m.type.v)
+    v2 = EMapGet(mm, k2).with_type(m.type.v)
+    f = EAll([ENot(EEq(k1, k2)), ELet(m, ELambda(mm, ENot(EEq(v1, v2))))])
+    return satisfiable(f)
+    from cozy.solver import satisfy
+    res = satisfy(f)
+    if res is None:
+        print("BAD MAP: {}".format(pprint(m)))
+    else:
+        print("map {} ok:".format(pprint(m)))
+        print(res)
+    return (res is not None)
+
 class CostModel(object):
     def cost(self, e, pool):
         raise NotImplementedError()
@@ -61,7 +79,7 @@ class CardinalityVisitor(BottomUpExplorer):
     def visit_EMakeMap(self, e):
         return self.visit(e.e)
     def visit_EMakeMap2(self, e):
-        return self.visit(e.e)
+        return self.visit(e.e) + (EXTREME_COST * int(map_ok(e)))
     def visit_EMapGet(self, e, k=None):
         # return self.visit(e.map) / 3
         if not k:
