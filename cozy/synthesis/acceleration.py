@@ -264,7 +264,7 @@ class AcceleratedBuilder(ExpBuilder):
                         yield (EFilter(bag, mk_lambda(bag.type.t, lambda _: ENot(EBinOp(a, BOp.In, v).with_type(BOOL)))).with_type(bag.type), RUNTIME_POOL)
 
             if isinstance(bag, EFilter):
-                if any(v not in self.state_vars for v in free_vars(bag)):
+                if any(v not in self.state_vars for v in free_vars(bag.e)):
                     continue
 
                 # separate filter conds

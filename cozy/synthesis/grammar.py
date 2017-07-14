@@ -114,5 +114,4 @@ class BinderBuilder(ExpBuilder):
                     for val in cache.find(pool=STATE_POOL, size=sz2):
                         t = TMap(bag.type.t, val.type)
                         m = EMakeMap2(bag, ELambda(b, val)).with_type(t)
-                        m._tag = True
                         yield (m, STATE_POOL)
