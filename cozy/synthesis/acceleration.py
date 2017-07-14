@@ -3,7 +3,7 @@ import itertools
 from cozy.common import find_one, partition, pick_to_sum
 from .core import ExpBuilder
 from cozy.target_syntax import *
-from cozy.syntax_tools import free_vars, break_conj, all_exps, replace, pprint, enumerate_fragments, mk_lambda, strip_EStateVar
+from cozy.syntax_tools import free_vars, break_conj, all_exps, replace, pprint, enumerate_fragments, mk_lambda, strip_EStateVar, alpha_equivalent
 from cozy.desugar import desugar_exp
 from cozy.typecheck import is_numeric
 from cozy.pools import RUNTIME_POOL, STATE_POOL
@@ -150,6 +150,67 @@ def accelerate_filter(bag, p, state_vars, binders, cache, size):
                 if e.type == bag.type and pool == RUNTIME_POOL:
                     yield (EFilter(e, ELambda(p.arg, EAll(rest))).with_type(bag.type), RUNTIME_POOL)
 
+def break_bag(e):
+    assert isinstance(e.type, TBag)
+    if isinstance(e, EBinOp):
+        if e.op == "+":
+            yield from break_bag(e.e1)
+            yield from break_bag(e.e2)
+        else:
+            assert e.op == "-"
+            yield from break_bag(e.e1)
+            for pos, x in break_bag(e.e2):
+                yield (not pos, x)
+    elif isinstance(e, EMap):
+        for pos, x in break_bag(e.e):
+            yield pos, EMap(x, e.f).with_type(e.type)
+    elif isinstance(e, EFilter):
+        for pos, x in break_bag(e.e):
+            yield pos, EFilter(x, e.p).with_type(e.type)
+    else:
+        yield True, e
+
+def break_sum(e):
+    assert e.type == INT
+    if isinstance(e, EBinOp):
+        if e.op == "+":
+            yield from break_sum(e.e1)
+            yield from break_sum(e.e2)
+        else:
+            assert e.op == "-"
+            yield from break_sum(e.e1)
+            for pos, x in break_sum(e.e2):
+                yield (not pos, x)
+    elif isinstance(e, EUnaryOp) and e.op == UOp.Sum:
+        for pos, b in break_bag(e.e):
+            yield pos, EUnaryOp(UOp.Sum, b).with_type(INT)
+    elif isinstance(e, EUnaryOp) and e.op == "-":
+        for pos, x in break_sum(e.e):
+            yield (not pos, x)
+    else:
+        yield True, e
+
+def simplify_sum(e):
+    parts = list(break_sum(e))
+    t, f = partition(parts, lambda p: p[0])
+    t = [x[1] for x in t]
+    f = [x[1] for x in f]
+    parts = []
+    for x in t:
+        opp = find_one(f, lambda y: alpha_equivalent(strip_EStateVar(x), strip_EStateVar(y)))
+        if opp:
+            f.remove(opp)
+        else:
+            parts.append(x)
+    parts.extend(EUnaryOp("-", x).with_type(INT) for x in f)
+
+    if not parts:
+        return ZERO
+    res = parts[0]
+    for i in range(1, len(parts)):
+        res = EBinOp(res, "+", parts[i]).with_type(INT)
+    return res
+
 class AcceleratedBuilder(ExpBuilder):
 
     def __init__(self, wrapped : ExpBuilder, binders : [EVar], state_vars : [EVar], args : [EVar]):
@@ -167,6 +228,12 @@ class AcceleratedBuilder(ExpBuilder):
             self.args)
 
     def build(self, cache, size):
+
+        for e in cache.find(pool=RUNTIME_POOL, size=size-1, type=INT):
+            e2 = simplify_sum(e)
+            if e != e2:
+                yield (e2, RUNTIME_POOL)
+
         # Try instantiating bound expressions
         # for pool in (STATE_POOL, RUNTIME_POOL):
         #     for (sz1, sz2) in pick_to_sum(2, size-1):
@@ -222,7 +289,6 @@ class AcceleratedBuilder(ExpBuilder):
                         yield (m, STATE_POOL)
                         m = EStateVar(strip_EStateVar(m)).with_type(m.type)
                         mg = EMapGet(m, key_lookup).with_type(bag.type)
-                        from cozy.typecheck import retypecheck
                         yield (mg, RUNTIME_POOL)
                         yield (EFilter(mg, ELambda(binder, remaining_filter)).with_type(mg.type), RUNTIME_POOL)
 
