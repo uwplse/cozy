@@ -206,7 +206,7 @@ class Learner(object):
         # binders = [b for b in free_vars(e) if b in self.binders]
         return instantiate_examples((self.target,), self.examples, self.binders)
 
-    def _fingerprint(self, e, examples=None):
+    def _fingerprint(self, e):
         return fingerprint(e, self._examples_for(e))
 
     def _doctor_for_context(self, e : Exp, bound_vars : {EVar}):
