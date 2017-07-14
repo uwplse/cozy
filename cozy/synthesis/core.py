@@ -276,7 +276,7 @@ class Learner(object):
                     _on_exp(e, "new")
                 else:
                     prev_cost, prev_exps = prev
-                    if e in (ee for (ee, size) in prev_exps):
+                    if any(alpha_equivalent(e, ee) for (ee, size) in prev_exps):
                         _on_exp(e, "duplicate")
                         continue
                     elif cost == prev_cost:

@@ -1,7 +1,10 @@
-from cozy.common import nested_dict
+from cozy.common import nested_dict, find_one
 from cozy.target_syntax import Exp, EVar, EStateVar
-from cozy.syntax_tools import free_vars, pprint
+from cozy.syntax_tools import free_vars, pprint, alpha_equivalent
 from cozy.pools import RUNTIME_POOL, STATE_POOL, ALL_POOLS
+from cozy.opts import Option
+
+enforce_wf = Option("enforce-cache-wf", bool, False)
 
 class NatDict(object):
     def __init__(self, factory):
@@ -47,10 +50,16 @@ class Cache(object):
         return type(t)
     def is_tag(self, t):
         return isinstance(t, type)
+    def contains(self, e, pool):
+        return find_one(self.find(pool=pool, type=e.type), lambda x: alpha_equivalent(x, e)) is not None
     def add(self, e, size, pool):
-        if pool == STATE_POOL:
-            assert not isinstance(e, EStateVar), "adding {} to state pool".format(pprint(e))
-            assert not any(v in self.args for v in free_vars(e)), "bad vars: {}".format(pprint(e))
+        if isinstance(e, EStateVar) and self.contains(e.e, STATE_POOL):
+            return # already implicitly exists
+        if enforce_wf.value:
+            assert not self.contains(e, pool)
+            if pool == STATE_POOL:
+                assert not isinstance(e, EStateVar), "adding {} to state pool".format(pprint(e))
+                assert not any(v in self.args for v in free_vars(e)), "bad vars: {}".format(pprint(e))
         self.data[pool][self.tag(e.type)][e.type][size].append(e)
         self.size += 1
     def evict(self, e, size, pool):
