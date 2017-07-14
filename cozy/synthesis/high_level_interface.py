@@ -103,12 +103,12 @@ class ImproveQueryJob(jobs.Job):
             print("Using {} binders".format(n_binders))
             relevant_state_vars = [v for v in self.state if v in free_vars(EAll(self.assumptions)) | free_vars(self.q.ret)]
             b = BinderBuilder(binders, relevant_state_vars)
+            used_vars = free_vars(self.q.ret)
+            for a in self.q.assumptions:
+                used_vars |= free_vars(a)
+            args = [EVar(v).with_type(t) for (v, t) in self.q.args]
+            args = [a for a in args if a in used_vars]
             if accelerate.value:
-                used_vars = free_vars(self.q.ret)
-                for a in self.q.assumptions:
-                    used_vars |= free_vars(a)
-                args = [EVar(v).with_type(t) for (v, t) in self.q.args]
-                args = [a for a in args if a in used_vars]
                 b = AcceleratedBuilder(b, binders, relevant_state_vars, args)
 
             try:
@@ -118,6 +118,7 @@ class ImproveQueryJob(jobs.Job):
                         hints=self.hints,
                         examples=self.examples,
                         binders=binders,
+                        args=args,
                         cost_model=CompositeCostModel(self.state), # TODO: + binders?
                         builder=b,
                         stop_callback=lambda: self.stop_requested)):

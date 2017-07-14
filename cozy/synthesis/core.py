@@ -98,9 +98,41 @@ def _on_exp(e, fate, *args):
     if hasattr(e, "_tag"):
         print(" ---> [{}, {}] {}; {}".format(fate, pprint(e.type), pprint(e), ", ".join((pprint(e) if isinstance(e, ADT) else str(e)) for e in args)), file=sys.stderr)
 
+class ContextMap(object):
+    VALUE = "value"
+    def __init__(self):
+        self.m = { }
+    def _lookup(self, ctx, create=False):
+        k = sorted(ctx)
+        m = self.m
+        for v in k:
+            m2 = m.get(v)
+            if m2 is None:
+                if create:
+                    m2 = { }
+                    m[v] = m2
+                else:
+                    raise KeyError(ctx)
+            m = m2
+        return m
+    def __setitem__(self, ctx : {EVar}, value):
+        self._lookup(ctx, create=True)[ContextMap.VALUE] = value
+    def __getitem__(self, ctx : {EVar}):
+        return self._lookup(ctx, create=False)[ContextMap.VALUE]
+    def _print(self, m):
+        for (k, v) in m.items():
+            if k == ContextMap.VALUE:
+                yield "-> {}".format(v)
+            else:
+                for s in self._print(v):
+                    yield "{} {}".format(pprint(k), s)
+    def __str__(self):
+        return "\n".join(self._print(self.m))
+
 class Learner(object):
-    def __init__(self, target, assumptions, binders, legal_free_vars, examples, cost_model, builder, stop_callback):
+    def __init__(self, target, assumptions, binders, args, legal_free_vars, examples, cost_model, builder, stop_callback):
         self.binders = OrderedSet(binders)
+        self.args = OrderedSet(args)
         self.legal_free_vars = legal_free_vars
         self.stop_callback = stop_callback
         self.cost_model = cost_model
@@ -110,7 +142,7 @@ class Learner(object):
         self.watch(target, assumptions)
 
     def reset(self, examples, update_watched_exps=True):
-        self.cache = Cache(self.binders)
+        self.cache = Cache(binders=self.binders, args=self.args)
         self.current_size = 0
         self.examples = examples
         self.seen.clear()
@@ -396,6 +428,7 @@ def improve(
         target : Exp,
         assumptions : Exp,
         binders : [EVar],
+        args : [EVar],
         cost_model : CostModel,
         builder : ExpBuilder,
         stop_callback,
@@ -407,6 +440,7 @@ def improve(
         target={target!r},
         assumptions={assumptions!r},
         binders={binders!r},
+        args={args!r},
         cost_model={cost_model!r},
         builder={builder!r},
         stop_callback={stop_callback!r},
@@ -415,6 +449,7 @@ def improve(
             target=target,
             assumptions=assumptions,
             binders=binders,
+            args=args,
             cost_model=cost_model,
             builder=builder,
             stop_callback=stop_callback,
@@ -433,7 +468,7 @@ def improve(
 
     if examples is None:
         examples = []
-    learner = Learner(target, assumptions, binders, vars + binders, examples, cost_model, builder, stop_callback)
+    learner = Learner(target, assumptions, binders, args, vars + binders, examples, cost_model, builder, stop_callback)
     try:
         while True:
             # 1. find any potential improvement to any sub-exp of target

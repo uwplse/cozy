@@ -34,11 +34,12 @@ class NatDict(object):
         data.extend(factory() for i in range(len(data), n + 1))
 
 class Cache(object):
-    def __init__(self, binders : [EVar], items : [(Exp, int)]=None):
+    def __init__(self, binders : [EVar], args : [EVar], items : [(Exp, int)]=None):
         # self.data[pool][type_tag][type][size] is list of exprs
         self.data = [nested_dict(2, lambda: NatDict(list)) for i in range(len(ALL_POOLS))]
         self.size = 0
         self.binders = set(binders)
+        self.args = set(args)
         if items:
             for (e, size) in items:
                 self.add(e, size)
@@ -49,6 +50,7 @@ class Cache(object):
     def add(self, e, size, pool):
         if pool == STATE_POOL:
             assert not isinstance(e, EStateVar), "adding {} to state pool".format(pprint(e))
+            assert not any(v in self.args for v in free_vars(e)), "bad vars: {}".format(pprint(e))
         self.data[pool][self.tag(e.type)][e.type][size].append(e)
         self.size += 1
     def evict(self, e, size, pool):
