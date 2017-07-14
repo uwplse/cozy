@@ -434,6 +434,28 @@ def improve(
         stop_callback,
         hints : [Exp] = None,
         examples = None):
+    """
+    Improve the target expression using enumerative synthesis.
+    This function is a generator that yields increasingly better and better
+    versions of the input expression `target`.
+
+    Notes on internals of this algorithm follow.
+
+    Key differences from "regular" enumerative synthesis:
+        - Expressions may be built using a set of "binders"---extra free
+          variables thrown into the mix at the beginning.
+        - Expressions are either "state" expressions or "runtime" expressions,
+          allowing this algorithm to choose what things to store on the data
+          structure and what things to compute at query execution time. (The
+          cost model is ultimately responsible for this choice.)
+
+    Other features of this algorithm:
+        - If a better version of *any subexpression* for the target is found,
+          it is immediately substituted in and the overall expression is
+          returned. This "smooths out" the search space a little, and lets us
+          find kinda-good solutions very quickly, even if the best possible
+          solution is out of reach.
+    """
 
     print("call to improve:")
     print("""improve(
@@ -523,6 +545,7 @@ def improve(
                     # raise Exception("detected nonmonotonicity")
                     continue
                 if new_cost == old_cost:
+                    print("...but cost ({}) is unchanged".format(old_cost))
                     continue
                 print("found improvement: {} -----> {}".format(pprint(old_e), pprint(new_e)))
                 print("cost: {} -----> {}".format(old_cost, new_cost))
