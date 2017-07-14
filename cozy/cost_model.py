@@ -112,7 +112,7 @@ class CardinalityVisitor(BottomUpExplorer):
         if e.op == UOp.The:
             return 1000 # TODO???
         elif e.op == UOp.Distinct:
-            return self.visit(e.e) * 0.9
+            return self.visit(e.e) #* 0.9
         else:
             raise NotImplementedError(e)
     def visit_EMap(self, e):
