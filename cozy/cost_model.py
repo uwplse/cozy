@@ -79,7 +79,7 @@ class CardinalityVisitor(BottomUpExplorer):
     def visit_EMakeMap(self, e):
         return self.visit(e.e)
     def visit_EMakeMap2(self, e):
-        return self.visit(e.e) + (EXTREME_COST * int(map_ok(e)))
+        return self.visit(e.e) + (EXTREME_COST * int(not map_ok(e)))
     def visit_EMapGet(self, e, k=None):
         # return self.visit(e.map) / 3
         if not k:
