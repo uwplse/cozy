@@ -234,15 +234,15 @@ class Learner(object):
                 continue
             if watched_e.type != e.type or watched_cost < cost:
                 continue
-            if e == watched_e:
+            e2 = self._doctor_for_context(e, bound)
+            if e2 == watched_e:
                 continue
-            equality = EEq(e, watched_e)
+            equality = EEq(e2, watched_e)
             efvs = free_vars(equality)
             # remove assumptions that talk about binders not in either expression
             assumptions = EAll([a for a in assumptions if all((v in efvs or v not in self.binders) for v in free_vars(a))])
             examples = self._examples_for(equality)
-            if all(((eval(e, ex) == eval(watched_e, ex)) if eval(assumptions, ex) else True) for ex in examples):
-                e2 = self._doctor_for_context(e, bound)
+            if all(((eval(e2, ex) == eval(watched_e, ex)) if eval(assumptions, ex) else True) for ex in examples):
                 yield (watched_e, e2, r)
 
     def next(self):
