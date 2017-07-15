@@ -246,3 +246,14 @@ class TestSolver(unittest.TestCase):
             ESingleton(h2).with_type(bt)).with_type(bt)).with_type(bt)
         v = EVar("b").with_type(bt)
         satisfy(EEq(v, bag), validate_model=True)
+
+    def test_distinct_handles_with_altered_values2(self):
+        t = THandle("H", TInt())
+        h1 = EHandle(ZERO, ZERO).with_type(t)
+        h2 = EWithAlteredValue(h1, ONE).with_type(t)
+        bt = TBag(t)
+        res = EUnaryOp(UOp.AreUnique, EBinOp(
+            ESingleton(h1).with_type(bt), "+",
+            ESingleton(h2).with_type(bt)).with_type(bt)).with_type(BOOL)
+        v = EVar("b").with_type(BOOL)
+        satisfy(EEq(v, res), validate_model=True)

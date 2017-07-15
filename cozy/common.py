@@ -245,11 +245,6 @@ def product(iter):
         p *= x
     return p
 
-def all_distinct(iter):
-    elems = iter if isinstance(iter, list) else list(iter)
-    distinct_elems = set(elems)
-    return len(elems) == len(distinct_elems)
-
 class AtomicWriteableFile(object):
     def __init__(self, dst):
         self.dst = dst

@@ -3,7 +3,7 @@ from functools import total_ordering
 
 from cozy.target_syntax import *
 from cozy.syntax_tools import equal, pprint
-from cozy.common import Visitor, FrozenDict, all_distinct, unique, extend
+from cozy.common import Visitor, FrozenDict, unique, extend
 from cozy.typecheck import is_numeric
 
 @total_ordering
@@ -204,11 +204,15 @@ class Evaluator(Visitor):
         elif e.op == UOp.Empty:
             return not bool(self.visit(e.e, env))
         elif e.op == UOp.AreUnique:
-            return all_distinct(self.visit(e.e, env))
+            l = sorted(self.visit(e.e, env))
+            for i in range(len(l) - 1):
+                if eq(e.e.type.t, l[i], l[i+1]):
+                    return False
+            return True
         elif e.op == UOp.Distinct:
             res = []
-            for x in self.visit(e.e, env):
-                if not any(eq(e.type.t, x, y) for y in res):
+            for x in sorted(self.visit(e.e, env)):
+                if not res or not eq(e.e.type.t, res[-1], x):
                     res.append(x)
             return Bag(res)
         elif e.op == UOp.The:
