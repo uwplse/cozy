@@ -54,6 +54,8 @@ class Map(object):
 class Maybe(object):
     def __init__(self, obj):
         self.obj = obj
+    def __repr__(self):
+        return "Maybe({!r})".format(self.obj)
     def __hash__(self):
         return hash(self.obj)
     def __eq__(self, other):
