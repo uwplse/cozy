@@ -538,11 +538,6 @@ def replace(exp, old_exp, new_exp):
             return super().visit(e)
     return Replacer().visit(exp)
 
-@common.typechecked
-def re_use(e : syntax.Exp, target):
-    v = fresh_var(e.type)
-    return qsubst(target(v), v, e)
-
 def subst(exp, replacements):
     """
     Performs capture-avoiding substitution.

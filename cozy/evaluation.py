@@ -2,7 +2,7 @@ from collections import UserDict, defaultdict, namedtuple
 from functools import total_ordering
 
 from cozy.target_syntax import *
-from cozy.syntax_tools import equal, re_use
+from cozy.syntax_tools import equal, pprint
 from cozy.common import Visitor, FrozenDict, all_distinct, unique, extend
 from cozy.typecheck import is_numeric
 
@@ -97,51 +97,57 @@ class Bag(object):
 
 Handle = namedtuple("Handle", ["address", "value"])
 
-def eq(t, v1, v2):
-    if isinstance(t, THandle):
-        return v1.address == v2.address
-    elif isinstance(t, TBag):
-        elems1 = list(sorted(v1))
-        elems2 = list(sorted(v2))
-        return len(elems1) == len(elems2) and all(eq(t.t, x1, x2) for (x1, x2) in zip(elems1, elems2))
-    elif isinstance(t, TSet):
-        return eq(TBag(t.t), v1, v2)
-    elif isinstance(t, TMap):
-        keys1 = Bag(v1.keys())
-        keys2 = Bag(v2.keys())
-        return eq(TBag(t.k), keys1, keys2) and all(eq(t.v, v1[k], v2[k]) for k in keys1) and eq(t.v, v1.default, v2.default)
-    elif isinstance(t, TMaybe):
-        if v1.obj is None and v2.obj is None:
-            return True
-        if v1.obj is None or v2.obj is None:
-            return False
-        return eq(t.t, v1.obj, v2.obj)
-    elif isinstance(t, TTuple):
-        return all(eq(tt, vv1, vv2) for (tt, vv1, vv2) in zip(t.ts, v1, v2))
-    elif isinstance(t, TRecord):
-        return all(eq(ft, v1[f], v2[f]) for (f, ft) in t.fields)
-    else:
-        return v1 == v2
+LT = -1
+EQ =  0
+GT =  1
+def cmp(t, v1, v2):
+    stk = [(t, v1, v2)]
+    while stk:
+        (t, v1, v2) = stk[-1]
+        del stk[-1]
 
-def lt(t, v1, v2):
-    if isinstance(t, THandle):
-        return v1.address < v2.address
-    elif isinstance(t, TBag):
-        raise NotImplementedError(t)
-    elif isinstance(t, TSet):
-        return lt(TBag(t.t), v1, v2)
-    elif isinstance(t, TMap):
-        raise NotImplementedError(t)
-    elif isinstance(t, TMaybe):
-        raise NotImplementedError(t)
-    elif isinstance(t, TTuple):
-        raise NotImplementedError(t)
-    elif isinstance(t, TRecord):
-        raise NotImplementedError(t)
-    elif isinstance(t, TEnum):
-        return t.cases.index(v1) < t.cases.index(v2)
-    else:
-        return v1 < v2
+        if isinstance(t, THandle):
+            if v1.address == v2.address: continue
+            if v1.address <  v2.address: return LT
+            else:                        return GT
+        elif isinstance(t, TEnum):
+            i1 = t.cases.index(v1)
+            i2 = t.cases.index(v2)
+            if i1 == i2: continue
+            if i1 <  i2: return LT
+            else:        return GT
+        elif isinstance(t, TBag) or isinstance(t, TSet):
+            elems1 = list(sorted(v1))
+            elems2 = list(sorted(v2))
+            if len(elems1) < len(elems2): return LT
+            if len(elems1) > len(elems2): return GT
+            stk.extend(reversed([(t.t, x, y) for (x, y) in zip(elems1, elems2)]))
+        elif isinstance(t, TMap):
+            keys1 = Bag(sorted(v1.keys()))
+            keys2 = Bag(v2.keys())
+            stk.extend(reversed([(t.v, v1[k], v2[k]) for k in keys1]))
+            stk.append((TSet(t.k), keys1, keys2))
+            stk.append((t.v, v1.default, v2.default))
+        elif isinstance(t, TMaybe):
+            if v1.obj is None and v2.obj is None:
+                continue
+            elif v1.obj is None:
+                return LT
+            elif v2.obj is None:
+                return GT
+            stk.append((t.t, v1.obj, v2.obj))
+        elif isinstance(t, TTuple):
+            stk.extend(reversed([(tt, vv1, vv2) for (tt, vv1, vv2) in zip(t.ts, v1, v2)]))
+        elif isinstance(t, TRecord):
+            stk.extend(reversed([(ft, v1[f], v2[f]) for (f, ft) in t.fields]))
+        else:
+            if   v1 == v2: continue
+            elif v1 <  v2: return LT
+            else:          return GT
+    return EQ
+
+def eq(t, v1, v2):
+    return cmp(t, v1, v2) == EQ
 
 class Evaluator(Visitor):
     def __init__(self, bind_callback):
@@ -216,42 +222,41 @@ class Evaluator(Visitor):
         else:
             raise NotImplementedError(e.op)
     def visit_EBinOp(self, e, env):
+        # short-circuit operators
         if e.op == BOp.And:
             return self.visit(e.e1, env) and self.visit(e.e2, env)
         elif e.op == BOp.Or:
             return self.visit(e.e1, env) or self.visit(e.e2, env)
-        elif e.op == ">":
-            return self.visit(ENot(EBinOp(e.e1, "<=", e.e2).with_type(BOOL)), env)
-        elif e.op == "<=":
-            return self.visit(
-                re_use(e.e1, lambda v1:
-                re_use(e.e2, lambda v2:
-                    EAny([EBinOp(v1, "<", v2).with_type(BOOL), equal(v1, v2)]))), env)
-        elif e.op == ">=":
-            return self.visit(ENot(EBinOp(e.e1, "<", e.e2).with_type(BOOL)), env)
-        elif e.op == "!=":
-            return self.visit(ENot(equal(e1, e2)), env)
 
         v1 = self.visit(e.e1, env)
         v2 = self.visit(e.e2, env)
+        e1type = e.e1.type
         if e.op == "+":
             return v1 + v2
         elif e.op == "-":
-            if isinstance(e.e1.type, TBag):
+            if isinstance(e1type, TBag):
                 elems = list(v1)
                 for x in v2:
                     for i in range(len(elems)):
-                        if eq(e.e1.type.t, x, elems[i]):
+                        if eq(e1type.t, x, elems[i]):
                             del elems[i]
                             break
                 return Bag(elems)
             return v1 - v2
         elif e.op == "==":
-            return eq(e.e1.type, v1, v2)
+            return cmp(e1type, v1, v2) == EQ
         elif e.op == "<":
-            return lt(e.e1.type, v1, v2)
+            return cmp(e1type, v1, v2) == LT
+        elif e.op == ">":
+            return cmp(e1type, v1, v2) == GT
+        elif e.op == "<=":
+            return cmp(e1type, v1, v2) != GT
+        elif e.op == ">=":
+            return cmp(e1type, v1, v2) != LT
+        elif e.op == "!=":
+            return cmp(e1type, v1, v2) != EQ
         elif e.op == BOp.In:
-            return any(eq(e.e1.type, v1, v2elem) for v2elem in v2)
+            return any(eq(e1type, v1, v2elem) for v2elem in v2)
         else:
             raise NotImplementedError(e.op)
     def visit_ETuple(self, e, env):
