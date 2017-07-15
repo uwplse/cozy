@@ -10,17 +10,11 @@ one  = ENum(1).with_type(INT)
 
 class TestEvaluation(unittest.TestCase):
 
-    def test_mk_map(self):
-        e = EMakeMap(EBinOp(ESingleton(zero), "+", ESingleton(one)),
-            mk_lambda(INT, lambda i: zero),
-            mk_lambda(TBag(INT), lambda ii: EMakeMap(ii,
-                mk_lambda(INT, lambda i: one),
-                mk_lambda(TBag(INT), lambda ii: EUnaryOp(UOp.Sum, ii)))))
+    def test_let(self):
+        x = EVar("x").with_type(INT)
+        e = ELet(ZERO, ELambda(x, ELet(ONE, ELambda(x, EBinOp(x, "+", x)))))
         assert retypecheck(e)
-        m = eval(e, env={})
-        assert m[0][1] == 1
-        assert 1 not in m.keys()
-        assert 0 not in m[0].keys()
+        assert eval(e, env={}) == 2
 
     def test_bind_callback(self):
         xs = EVar("xs").with_type(TBag(INT))
@@ -32,8 +26,8 @@ class TestEvaluation(unittest.TestCase):
         m = eval(e,
             env={xs.id: Bag(numbers)},
             bind_callback=lambda arg, val: binds.append((arg, val)))
-        assert m == Bag([1, 1])
-        assert binds == [(x, i) for i in numbers]
+        assert m == Bag([1, 1]), "m={}".format(m)
+        assert binds == [(x, i) for i in numbers], "binds={}".format(binds)
 
     def test_leq(self):
         e = ZERO

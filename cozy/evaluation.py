@@ -105,8 +105,7 @@ GT =  1
 def cmp(t, v1, v2):
     stk = [(t, v1, v2)]
     while stk:
-        (t, v1, v2) = stk[-1]
-        del stk[-1]
+        (t, v1, v2) = stk.pop()
 
         if isinstance(t, THandle):
             if v1.address == v2.address: continue
@@ -151,188 +150,8 @@ def cmp(t, v1, v2):
 def eq(t, v1, v2):
     return cmp(t, v1, v2) == EQ
 
-class Evaluator(Visitor):
-    def __init__(self, bind_callback):
-        self.bind_callback = bind_callback
-    def visit_EVar(self, v, env):
-        return env[v.id]
-    def visit_ENum(self, n, env):
-        return n.val
-    def visit_EBool(self, b, env):
-        return b.val
-    def visit_EHandle(self, e, env):
-        return Handle(self.visit(e.addr, env), self.visit(e.value, env))
-    def visit_EStr(self, e, env):
-        return e.val
-    def visit_EEmptyList(self, e, env):
-        return Bag()
-    def visit_ESingleton(self, e, env):
-        return Bag((self.visit(e.e, env),))
-    def visit_EJust(self, e, env):
-        return Maybe(self.visit(e.e, env))
-    def visit_ENull(self, e, env):
-        return Maybe(None)
-    def visit_ECall(self, call, env):
-        return env[call.func](*[self.visit(arg, env) for arg in call.args])
-    def visit_ELet(self, e, env):
-        return self.eval_lambda(e.f, self.visit(e.e, env), env)
-    def visit_ECond(self, e, env):
-        if self.visit(e.cond, env):
-            return self.visit(e.then_branch, env)
-        else:
-            return self.visit(e.else_branch, env)
-    def visit_EEnumEntry(self, val, env):
-        # return val.type.cases.index(val.name)
-        return val.name
-    def visit_ENative(self, val, env):
-        return (val.type.name, self.visit(val.e, env))
-    def visit_EWithAlteredValue(self, e, env):
-        h = self.visit(e.handle, env)
-        new_val = self.visit(e.new_value, env)
-        return Handle(h.address, new_val)
-    def visit_EGetField(self, e, env):
-        lhs = self.visit(e.e, env)
-        if isinstance(e.e.type, THandle):
-            assert e.f == "val"
-            return lhs.value
-        return lhs[e.f]
-    def visit_EUnaryOp(self, e, env):
-        if e.op == UOp.Not:
-            return not self.visit(e.e, env)
-        elif e.op == UOp.Sum:
-            return sum(self.visit(e.e, env))
-        elif e.op == UOp.Exists:
-            return bool(self.visit(e.e, env))
-        elif e.op == UOp.Empty:
-            return not bool(self.visit(e.e, env))
-        elif e.op == UOp.AreUnique:
-            l = sorted(self.visit(e.e, env))
-            for i in range(len(l) - 1):
-                if eq(e.e.type.t, l[i], l[i+1]):
-                    return False
-            return True
-        elif e.op == UOp.Distinct:
-            res = []
-            for x in sorted(self.visit(e.e, env)):
-                if not res or not eq(e.e.type.t, res[-1], x):
-                    res.append(x)
-            return Bag(res)
-        elif e.op == UOp.The:
-            bag = self.visit(e.e, env)
-            if bag:
-                return Maybe(bag[0])
-            else:
-                return self.visit(ENull().with_type(e.type), env)
-        elif e.op == "-":
-            return -self.visit(e.e, env)
-        else:
-            raise NotImplementedError(e.op)
-    def visit_EBinOp(self, e, env):
-        # short-circuit operators
-        if e.op == BOp.And:
-            return self.visit(e.e1, env) and self.visit(e.e2, env)
-        elif e.op == BOp.Or:
-            return self.visit(e.e1, env) or self.visit(e.e2, env)
-
-        v1 = self.visit(e.e1, env)
-        v2 = self.visit(e.e2, env)
-        e1type = e.e1.type
-        if e.op == "+":
-            return v1 + v2
-        elif e.op == "-":
-            if isinstance(e1type, TBag):
-                elems = list(v1)
-                for x in v2:
-                    for i in range(len(elems)):
-                        if eq(e1type.t, x, elems[i]):
-                            del elems[i]
-                            break
-                return Bag(elems)
-            return v1 - v2
-        elif e.op == "==":
-            return cmp(e1type, v1, v2) == EQ
-        elif e.op == "<":
-            return cmp(e1type, v1, v2) == LT
-        elif e.op == ">":
-            return cmp(e1type, v1, v2) == GT
-        elif e.op == "<=":
-            return cmp(e1type, v1, v2) != GT
-        elif e.op == ">=":
-            return cmp(e1type, v1, v2) != LT
-        elif e.op == "!=":
-            return cmp(e1type, v1, v2) != EQ
-        elif e.op == BOp.In:
-            return any(eq(e1type, v1, v2elem) for v2elem in v2)
-        else:
-            raise NotImplementedError(e.op)
-    def visit_ETuple(self, e, env):
-        return tuple(self.visit(ee, env) for ee in e.es)
-    def visit_ETupleGet(self, e, env):
-        tup = self.visit(e.e, env)
-        return tup[e.n]
-    def visit_EApp(self, e, env):
-        return self.eval_lambda(e.f, self.visit(e.arg, env), env)
-    def visit_EListComprehension(self, e, env):
-        return Bag(self.visit_clauses(e.clauses, e.e, env))
-    def eval_lambda(self, lam, arg, env):
-        self.bind_callback(lam.arg, arg)
-        with extend(env, lam.arg.id, arg):
-            return self.visit(lam.body, env)
-    def visit_EAlterMaybe(self, e, env):
-        x = self.visit(e.e, env)
-        if x.obj is not None:
-            x = Maybe(self.eval_lambda(e.f, x.obj, env))
-        return x
-    def visit_EMakeRecord(self, e, env):
-        return FrozenDict({ f:self.visit(v, env) for (f, v) in e.fields })
-    def visit_EMakeMap(self, e, env):
-        default = self.eval_lambda(e.value, Bag(), env)
-        im = Map(TMap(e.type.k, e.e.type), Bag())
-        for x in self.visit(e.e, env):
-            im[self.eval_lambda(e.key, x, env)] += Bag((x,))
-        res = Map(e.type, default)
-        for (k, es) in im.items():
-            res[k] = self.eval_lambda(e.value, es, env)
-        return res
-    def visit_EMakeMap2(self, e, env):
-        default = mkval(e.type.v)
-        res = Map(e.type, default)
-        for x in self.visit(e.e, env):
-            res[x] = self.eval_lambda(e.value, x, env)
-        return res
-    def visit_EMapGet(self, e, env):
-        return self.visit(e.map, env)[self.visit(e.key, env)]
-    def visit_EMapKeys(self, e, env):
-        return Bag(self.visit(e.e, env).keys())
-    def visit_EMap(self, e, env):
-        return Bag(self.eval_lambda(e.f, x, env) for x in self.visit(e.e, env))
-    def visit_EFilter(self, e, env):
-        return Bag(x for x in self.visit(e.e, env) if self.eval_lambda(e.p, x, env))
-    def visit_EFlatMap(self, e, env):
-        res = self.visit(EMap(e.e, e.f).with_type(TBag(e.type.t)), env)
-        return Bag(elem for bag in res for elem in bag)
-    def visit_clauses(self, clauses, e, env):
-        if not clauses:
-            yield self.visit(e, env)
-            return
-        c = clauses[0]
-        if isinstance(c, CCond):
-            if self.visit(c.e, env):
-                yield from self.visit_clauses(clauses[1:], e, env)
-        elif isinstance(c, CPull):
-            for x in self.visit(c.e, env):
-                env2 = dict(env)
-                env2[c.id] = x
-                yield from self.visit_clauses(clauses[1:], e, env2)
-    def visit_EStateVar(self, e, env):
-        return self.visit(e.e, env)
-    def visit_Exp(self, e, env):
-        raise NotImplementedError("eval({})".format(e))
-    def visit_object(self, o, *args):
-        raise Exception("cannot eval {}".format(repr(o)))
-
 def eval(e, env, bind_callback=lambda arg, val: None):
-    return Evaluator(bind_callback).visit(e, env)
+    return eval_bulk(e, (env,), bind_callback)[0]
 
 def mkval(type : Type):
     """
@@ -343,7 +162,7 @@ def mkval(type : Type):
     if isinstance(type, TNative):
         return (type.name, 0)
     if isinstance(type, TMaybe):
-        return Maybe(None)
+        return _NULL_VALUE
     if isinstance(type, TBool):
         return False
     if isinstance(type, TString):
@@ -391,3 +210,424 @@ def construct_value(t : Type) -> Exp:
     e = e.with_type(t)
     assert eval(e, {}) == mkval(t)
     return e
+
+def _eval_compiled(ops, init_stk=()):
+    ops = list(reversed(ops))
+    stk = list(init_stk)
+    while ops:
+        op = ops.pop()
+        new_ops = op(stk)
+        if new_ops:
+            ops.extend(reversed(new_ops))
+    return stk[-1]
+
+def push_true(stk):
+    stk.append(True)
+
+def push_false(stk):
+    stk.append(False)
+
+def make_handle(stk):
+    value = stk.pop()
+    addr = stk.pop()
+    stk.append(Handle(addr, value))
+
+def make_singleton(stk):
+    stk.append(Bag((stk.pop(),)))
+
+def withalteredvalue(stk):
+    nv = stk.pop()
+    h = stk.pop()
+    stk.append(Handle(h.address, nv))
+
+def push_null(stk):
+    stk.append(_NULL_VALUE)
+
+def make_just(stk):
+    stk.append(Maybe(stk.pop()))
+
+def get_handle_value(stk):
+    stk.append(stk.pop().value)
+
+def iterable_to_bag(stk):
+    stk.append(Bag(stk.pop()))
+
+def read_map(stk):
+    k = stk.pop()
+    m = stk.pop()
+    stk.append(m[k])
+
+def read_map_keys(stk):
+    stk.append(Bag(stk.pop().keys()))
+
+def binaryop_add(stk):
+    v2 = stk.pop()
+    v1 = stk.pop()
+    stk.append(v1 + v2)
+
+def binaryop_sub(stk):
+    v2 = stk.pop()
+    v1 = stk.pop()
+    stk.append(v1 - v2)
+
+def binaryop_sub_bags(elem_type):
+    def binaryop_sub_bags(stk):
+        v2 = stk.pop()
+        v1 = stk.pop()
+        elems = list(v1)
+        for x in v2:
+            for i in range(len(elems)):
+                if eq(elem_type, x, elems[i]):
+                    del elems[i]
+                    break
+        stk.append(Bag(elems))
+    return binaryop_sub_bags
+
+def binaryop_eq(t):
+    def binaryop_eq(stk):
+        v2 = stk.pop()
+        v1 = stk.pop()
+        stk.append(cmp(t, v1, v2) == EQ)
+    return binaryop_eq
+
+def binaryop_ne(t):
+    def binaryop_ne(stk):
+        v2 = stk.pop()
+        v1 = stk.pop()
+        stk.append(cmp(t, v1, v2) != EQ)
+    return binaryop_ne
+
+def binaryop_lt(t):
+    def binaryop_lt(stk):
+        v2 = stk.pop()
+        v1 = stk.pop()
+        stk.append(cmp(t, v1, v2) == LT)
+    return binaryop_lt
+
+def binaryop_le(t):
+    def binaryop_le(stk):
+        v2 = stk.pop()
+        v1 = stk.pop()
+        stk.append(cmp(t, v1, v2) != GT)
+    return binaryop_le
+
+def binaryop_gt(t):
+    def binaryop_gt(stk):
+        v2 = stk.pop()
+        v1 = stk.pop()
+        stk.append(cmp(t, v1, v2) == GT)
+    return binaryop_gt
+
+def binaryop_ge(t):
+    def binaryop_ge(stk):
+        v2 = stk.pop()
+        v1 = stk.pop()
+        stk.append(cmp(t, v1, v2) != LT)
+    return binaryop_ge
+
+def binaryop_in(elem_type):
+    def binaryop_in(stk):
+        v2 = stk.pop()
+        v1 = stk.pop()
+        stk.append(any(eq(elem_type, v1, v2elem) for v2elem in v2))
+    return binaryop_in
+
+def unaryop_not(stk):
+    stk.append(not stk.pop())
+
+def unaryop_sum(stk):
+    stk.append(sum(stk.pop()))
+
+def unaryop_exists(stk):
+    stk.append(bool(stk.pop()))
+
+def unaryop_empty(stk):
+    stk.append(not stk.pop())
+
+def unaryop_neg(stk):
+    stk.append(-stk.pop())
+
+def unaryop_areunique(elem_type):
+    def unaryop_areunique(stk):
+        v = stk.pop()
+        l = sorted(v)
+        res = True
+        for i in range(len(l) - 1):
+            if eq(elem_type, l[i], l[i+1]):
+                res = False
+                break
+        stk.append(res)
+    return unaryop_areunique
+
+def unaryop_distinct(elem_type):
+    def unaryop_distinct(stk):
+        v = stk.pop()
+        res = []
+        for x in sorted(v):
+            if not res or not eq(elem_type, res[-1], x):
+                res.append(x)
+        stk.append(Bag(res))
+    return unaryop_distinct
+
+def unaryop_the(stk):
+    v = stk.pop()
+    if v:
+        stk.append(Maybe(v[0]))
+    else:
+        stk.append(_NULL_VALUE)
+
+def do_concat(stk):
+    v = stk.pop()
+    stk.append(Bag(elem for bag in v for elem in bag))
+
+_NULL_VALUE = Maybe(None)
+_EMPTY_BAG = Bag()
+def _compile(e, env : {str:int}, out, bind_callback):
+    if isinstance(e, EVar):
+        i = env[e.id]
+        if isinstance(i, int):
+            def load_var(stk):
+                stk.append(stk[i])
+            out.append(load_var)
+        else:
+            def load_bound(stk):
+                stk.append(i())
+            out.append(load_bound)
+    elif isinstance(e, EBool):
+        out.append(push_true if e.val else push_false)
+    elif isinstance(e, ENum):
+        s = e.val
+        def push_num(stk):
+            stk.append(s)
+        out.append(push_num)
+    elif isinstance(e, EStr):
+        s = e.val
+        def push_str(stk):
+            stk.append(s)
+        out.append(push_str)
+    elif isinstance(e, EEnumEntry):
+        s = e.name
+        def push_enum(stk):
+            stk.append(s)
+        out.append(push_enum)
+    elif isinstance(e, EEmptyList):
+        def push_empty_list(stk):
+            stk.append(_EMPTY_BAG)
+        out.append(push_empty_list)
+    elif isinstance(e, ESingleton):
+        _compile(e.e, env, out, bind_callback=bind_callback)
+        out.append(make_singleton)
+    elif isinstance(e, EHandle):
+        _compile(e.addr, env, out, bind_callback=bind_callback)
+        _compile(e.value, env, out, bind_callback=bind_callback)
+        out.append(make_handle)
+    elif isinstance(e, EWithAlteredValue):
+        _compile(e.handle, env, out, bind_callback=bind_callback)
+        _compile(e.new_value, env, out, bind_callback=bind_callback)
+        out.append(withalteredvalue)
+    elif isinstance(e, ENull):
+        out.append(push_null)
+    elif isinstance(e, EJust):
+        _compile(e.e, env, out, bind_callback=bind_callback)
+        out.append(make_just)
+    elif isinstance(e, ECond):
+        _compile(e.cond, env, out, bind_callback=bind_callback)
+        then_code = []; _compile(e.then_branch, env, then_code, bind_callback=bind_callback)
+        else_code = []; _compile(e.else_branch, env, else_code, bind_callback=bind_callback)
+        def ite(stk):
+            return then_code if stk.pop() else else_code
+        out.append(ite)
+    elif isinstance(e, EMakeRecord):
+        for (f, ee) in e.fields:
+            _compile(ee, env, out, bind_callback=bind_callback)
+        def make_record(stk):
+            stk.append(FrozenDict((f, stk.pop()) for (f, _) in reversed(e.fields)))
+        out.append(make_record)
+    elif isinstance(e, EGetField):
+        _compile(e.e, env, out, bind_callback=bind_callback)
+        if isinstance(e.e.type, THandle):
+            assert e.f == "val"
+            out.append(get_handle_value)
+        else:
+            assert isinstance(e.e.type, TRecord)
+            f = e.f
+            def get_field(stk):
+                stk.append(stk.pop()[f])
+            out.append(get_field)
+    elif isinstance(e, ETuple):
+        n = len(e.es)
+        for ee in e.es:
+            _compile(ee, env, out, bind_callback=bind_callback)
+        def make_tuple(stk):
+            entries = reversed([stk.pop() for i in range(n)])
+            stk.append(tuple(entries))
+        out.append(make_tuple)
+    elif isinstance(e, ETupleGet):
+        _compile(e.e, env, out, bind_callback=bind_callback)
+        def tuple_get(stk):
+            stk.append(stk.pop()[e.n])
+        out.append(tuple_get)
+    elif isinstance(e, EStateVar):
+        _compile(e.e, env, out, bind_callback=bind_callback)
+    elif isinstance(e, ENative):
+        _compile(e.e, env, out, bind_callback=bind_callback)
+        def make_native(stk):
+            stk.append((e.type.name, stk.pop()))
+        out.append(make_native)
+    elif isinstance(e, EUnaryOp):
+        _compile(e.e, env, out, bind_callback=bind_callback)
+        if e.op == UOp.Not:
+            out.append(unaryop_not)
+        elif e.op == UOp.Sum:
+            out.append(unaryop_sum)
+        elif e.op == UOp.Exists:
+            out.append(unaryop_exists)
+        elif e.op == UOp.Empty:
+            out.append(unaryop_empty)
+        elif e.op == UOp.AreUnique:
+            out.append(unaryop_areunique(e.e.type.t))
+        elif e.op == UOp.Distinct:
+            out.append(unaryop_distinct(e.e.type.t))
+        elif e.op == UOp.The:
+            out.append(unaryop_the)
+        elif e.op == "-":
+            out.append(unaryop_neg)
+        else:
+            raise NotImplementedError(e.op)
+    elif isinstance(e, EBinOp):
+        if e.op == "and":
+            return _compile(ECond(e.e1, e.e2, F).with_type(BOOL), env, out, bind_callback=bind_callback)
+        elif e.op == "or":
+            return _compile(ECond(e.e1, T, e.e2).with_type(BOOL), env, out, bind_callback=bind_callback)
+        _compile(e.e1, env, out, bind_callback=bind_callback)
+        _compile(e.e2, env, out, bind_callback=bind_callback)
+        e1type = e.e1.type
+        if e.op == "+":
+            out.append(binaryop_add)
+        elif e.op == "-":
+            if isinstance(e1type, TBag):
+                out.append(binaryop_sub_bags(e1type.t))
+            else:
+                out.append(binaryop_sub)
+        elif e.op == "==":
+            out.append(binaryop_eq(e1type))
+        elif e.op == "<":
+            out.append(binaryop_lt(e1type))
+        elif e.op == ">":
+            out.append(binaryop_gt(e1type))
+        elif e.op == "<=":
+            out.append(binaryop_le(e1type))
+        elif e.op == ">=":
+            out.append(binaryop_ge(e1type))
+        elif e.op == "!=":
+            out.append(binaryop_ne(e1type))
+        elif e.op == BOp.In:
+            out.append(binaryop_in(e1type))
+        else:
+            raise NotImplementedError(e.op)
+    elif isinstance(e, EFilter):
+        _compile(e.e, env, out, bind_callback=bind_callback)
+        box = [None]
+        body = []
+        with extend(env, e.p.arg.id, lambda: box[0]):
+            _compile(e.p.body, env, body, bind_callback=bind_callback)
+        def set_arg(v):
+            def set_arg(stk):
+                box[0] = v
+            return set_arg
+        def maybe_append_to_result(idx):
+            return lambda stk: (stk[idx].append(box[0]) if stk.pop() else None)
+        def do_filter(stk):
+            bag = stk.pop()
+            res_idx = len(stk)
+            stk.append([])
+            ops = []
+            for (i, val) in enumerate(bag):
+                ops.append(set_arg(val))
+                bind_callback(e.p.arg, val)
+                ops.extend(body)
+                ops.append(maybe_append_to_result(res_idx))
+            return ops
+        out.append(do_filter)
+        out.append(iterable_to_bag)
+    elif isinstance(e, EMap):
+        _compile(e.e, env, out, bind_callback=bind_callback)
+        box = [None]
+        body = []
+        with extend(env, e.f.arg.id, lambda: box[0]):
+            _compile(e.f.body, env, body, bind_callback=bind_callback)
+        def set_arg(v):
+            def set_arg(stk):
+                box[0] = v
+            return set_arg
+        def append_to_result(idx):
+            return lambda stk: stk[idx].append(stk.pop())
+        def do_map(stk):
+            bag = stk.pop()
+            res_idx = len(stk)
+            stk.append([])
+            ops = []
+            for (i, val) in enumerate(bag):
+                ops.append(set_arg(val))
+                bind_callback(e.f.arg, val)
+                ops.extend(body)
+                ops.append(append_to_result(res_idx))
+            return ops
+        out.append(do_map)
+        out.append(iterable_to_bag)
+    elif isinstance(e, EFlatMap):
+        _compile(EMap(e.e, e.f).with_type(TBag(e.type.t)), env, out, bind_callback=bind_callback)
+        out.append(do_concat)
+    elif isinstance(e, EMakeMap2):
+        _compile(EMap(e.e, ELambda(e.value.arg, ETuple((e.value.arg, e.value.body)))), env, out, bind_callback=bind_callback)
+        default = mkval(e.type.v)
+        def make_map(stk):
+            res = Map(e.type, default)
+            for (k, v) in stk.pop():
+                res[k] = v
+            stk.append(res)
+        out.append(make_map)
+    elif isinstance(e, EMapGet):
+        _compile(e.map, env, out, bind_callback=bind_callback)
+        _compile(e.key, env, out, bind_callback=bind_callback)
+        out.append(read_map)
+    elif isinstance(e, EMapKeys):
+        _compile(e.e, env, out, bind_callback=bind_callback)
+        out.append(read_map_keys)
+    elif isinstance(e, ECall):
+        _compile(EVar(e.func), env, out, bind_callback=bind_callback)
+        for a in e.args:
+            _compile(a, env, out, bind_callback=bind_callback)
+        n = len(e.args)
+        def call(stk):
+            args = reversed([stk.pop() for i in range(n)])
+            f = stk.pop()
+            stk.append(f(*args))
+        out.append(call)
+    elif isinstance(e, ELet):
+        _compile(e.e, env, out, bind_callback=bind_callback)
+        box = [None]
+        def set_arg(v):
+            def set_arg(stk):
+                box[0] = v
+            return set_arg
+        def do_bind(stk):
+            return [set_arg(stk.pop())]
+        out.append(do_bind)
+        with extend(env, e.f.arg.id, lambda: box[0]):
+            _compile(e.f.body, env, out, bind_callback=bind_callback)
+    else:
+        raise NotImplementedError(type(e))
+
+def eval_bulk(e, envs, bind_callback=None):
+    if bind_callback is None:
+        bind_callback = lambda arg, val: None
+    # return [eval(e, env, bind_callback=bind_callback) for env in envs]
+    if not envs:
+        return []
+    ops = []
+    vars = list(envs[0].keys())
+    vmap = { v : i for (i, v) in enumerate(vars) }
+    envs = [ [env[v] for v in sorted(env.keys(), key=vmap.get)] for env in envs ]
+    _compile(e, vmap, ops, bind_callback)
+    return [_eval_compiled(ops, env) for env in envs]

@@ -7,7 +7,7 @@ from cozy.typecheck import INT, BOOL
 from cozy.syntax_tools import subst, pprint, free_vars, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda, enumerate_fragments
 from cozy.common import OrderedSet, ADT, Visitor, fresh_name, typechecked, unique, pick_to_sum, cross_product, OrderedDefaultDict, OrderedSet, group_by, find_one
 from cozy.solver import satisfy, satisfiable, valid
-from cozy.evaluation import eval, mkval, construct_value
+from cozy.evaluation import eval, eval_bulk, mkval, construct_value
 from cozy.cost_model import CostModel
 from cozy.opts import Option
 from cozy.pools import RUNTIME_POOL, STATE_POOL
@@ -58,7 +58,7 @@ def instantiate_examples(watched_targets, examples, binders : [EVar]):
     return examples
 
 def fingerprint(e, examples):
-    return (e.type,) + tuple(eval(e, ex) for ex in examples)
+    return (e.type,) + tuple(eval_bulk(e, examples))
 
 def make_constant_of_type(t):
     class V(Visitor):
@@ -242,7 +242,11 @@ class Learner(object):
             # remove assumptions that talk about binders not in either expression
             assumptions = EAll([a for a in assumptions if all((v in efvs or v not in self.binders) for v in free_vars(a))])
             examples = self._examples_for(equality)
-            if all(((eval(e2, ex) == eval(watched_e, ex)) if eval(assumptions, ex) else True) for ex in examples):
+            ok = eval_bulk(assumptions, examples)
+            examples = [ex for (ex, b) in zip(examples, ok) if b]
+            e2_vals = eval_bulk(e2, examples)
+            watched_e_vals = eval_bulk(watched_e, examples)
+            if all(((e2_val == watched_e_val) for (e2_val, watched_e_val) in zip(e2_vals, watched_e_vals))):
                 yield (watched_e, e2, r)
 
     def next(self):
