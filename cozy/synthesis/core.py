@@ -1,4 +1,4 @@
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 import itertools
 import sys
 
@@ -129,6 +129,49 @@ class ContextMap(object):
     def __str__(self):
         return "\n".join(self._print(self.m))
 
+class BehaviorIndex(object):
+    VALUE = "value"
+    def __init__(self):
+        self.data = OrderedDict()
+    def _search(self, m, results, i=0):
+        if m is None:
+            return
+        if i >= len(results):
+            yield from m.get(BehaviorIndex.VALUE, ())
+        else:
+            yield from self._search(m.get(any), results, i+1)
+            yield from self._search(m.get(results[i]), results, i+1)
+    def put(self, e, assumptions, examples, data):
+        ok      = [True] + eval_bulk(assumptions, examples)
+        results = [e.type] + eval_bulk(e, examples)
+        m = self.data
+        for b, r in zip(ok, results):
+            k = any if not b else r
+            m2 = m.get(k)
+            if m2 is None:
+                m2 = OrderedDict()
+                m[k] = m2
+            m = m2
+        l = m.get(BehaviorIndex.VALUE)
+        if l is None:
+            l = []
+            m[BehaviorIndex.VALUE] = l
+        l.append(data)
+    def search(self, behavior):
+        yield from self._search(self.data, behavior)
+    def _pr(self, m):
+        if BehaviorIndex.VALUE in m:
+            yield str(m[BehaviorIndex.VALUE])
+            return
+        for k, v in m.items():
+            for s in self._pr(v):
+                yield "{} > {}".format("*" if k is any else pprint(k) if isinstance(k, ADT) else repr(k), s)
+    def __str__(self):
+        s = "Behavior Index\n"
+        for line in self._pr(self.data):
+            s += "  " + line + "\n"
+        return s
+
 class Learner(object):
     def __init__(self, target, assumptions, binders, args, legal_free_vars, examples, cost_model, builder, stop_callback):
         self.binders = OrderedSet(binders)
@@ -194,17 +237,22 @@ class Learner(object):
             nonlocal sv_depth
             if isinstance(obj, EStateVar):
                 sv_depth -= 1
+        self.all_examples = instantiate_examples((self.target,), self.examples, self.binders)
+        self.behavior_index = BehaviorIndex()
         for (a, e, r, bound) in enumerate_fragments(self.target, pre_visit=pre_visit, post_visit=post_visit):
             if isinstance(e, ELambda) or any(v not in self.legal_free_vars for v in free_vars(e)):
                 continue
             depth = (sv_depth - 1) if isinstance(e, EStateVar) else sv_depth
             pool = STATE_POOL if depth else RUNTIME_POOL
             cost = self.cost_model.cost(e, pool)
-            self.watched_exps.append((e, r, cost, a, pool, bound))
+            info = (e, r, cost, a, pool, bound)
+            self.watched_exps.append(info)
+            self.behavior_index.put(e, EAll(a), self.all_examples, info)
 
     def _examples_for(self, e):
         # binders = [b for b in free_vars(e) if b in self.binders]
-        return instantiate_examples((self.target,), self.examples, self.binders)
+        # return instantiate_examples((self.target,), self.examples, self.binders)
+        return self.all_examples
 
     def _fingerprint(self, e):
         return fingerprint(e, self._examples_for(e))
@@ -224,30 +272,20 @@ class Learner(object):
             v = find_one(fv for fv in free_vars(e) if fv in self.binders and fv not in bound_vars)
         return e
 
-    def _possible_replacements(self, e, pool, cost):
+    def _possible_replacements(self, e, pool, cost, fp):
         """
         Yields watched expressions that appear as worse versions of the given
         expression. There may be more than one.
         """
-        for (watched_e, r, watched_cost, assumptions, p, bound) in self.watched_exps:
+        for (watched_e, r, watched_cost, assumptions, p, bound) in self.behavior_index.search(fp):
             if p != pool:
                 continue
-            if watched_e.type != e.type or watched_cost < cost:
+            if watched_cost < cost:
                 continue
             e2 = self._doctor_for_context(e, bound)
             if e2 == watched_e:
                 continue
-            equality = EEq(e2, watched_e)
-            efvs = free_vars(equality)
-            # remove assumptions that talk about binders not in either expression
-            assumptions = EAll([a for a in assumptions if all((v in efvs or v not in self.binders) for v in free_vars(a))])
-            examples = self._examples_for(equality)
-            ok = eval_bulk(assumptions, examples)
-            examples = [ex for (ex, b) in zip(examples, ok) if b]
-            e2_vals = eval_bulk(e2, examples)
-            watched_e_vals = eval_bulk(watched_e, examples)
-            if all(((e2_val == watched_e_val) for (e2_val, watched_e_val) in zip(e2_vals, watched_e_vals))):
-                yield (watched_e, e2, r)
+            yield (watched_e, e2, r)
 
     def next(self):
         while True:
@@ -306,9 +344,9 @@ class Learner(object):
                         _on_exp(e, "worse", *[e for (e, cost) in prev_exps])
                         continue
 
-                improvements = list(self._possible_replacements(e, pool, cost))
+                improvements = list(self._possible_replacements(e, pool, cost, fp))
                 if improvements:
-                    self.backlog = (e, pool, cost)
+                    self.backlog = (e, pool, cost, fp)
                     self.backlog_counter = 1
                     return improvements[0]
 
