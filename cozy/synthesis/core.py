@@ -16,7 +16,7 @@ from .cache import Cache
 
 save_testcases = Option("save-testcases", str, "", metavar="PATH")
 hyperaggressive_eviction = Option("hyperaggressive-eviction", bool, True)
-reject_symmetric_binops = Option("reject-symmetric-binops", bool, True)
+reject_symmetric_binops = Option("reject-symmetric-binops", bool, False)
 eliminate_vars = Option("eliminate-vars", bool, False)
 reset_on_success = Option("reset-on-success", bool, False)
 enforce_seen_wf = Option("enforce-seen-set-well-formed", bool, False)
