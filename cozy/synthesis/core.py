@@ -133,14 +133,6 @@ class BehaviorIndex(object):
     VALUE = "value"
     def __init__(self):
         self.data = OrderedDict()
-    def _search(self, m, results, i=0):
-        if m is None:
-            return
-        if i >= len(results):
-            yield from m.get(BehaviorIndex.VALUE, ())
-        else:
-            yield from self._search(m.get(any), results, i+1)
-            yield from self._search(m.get(results[i]), results, i+1)
     def put(self, e, assumptions, examples, data):
         ok      = [True] + eval_bulk(assumptions, examples)
         results = [e.type] + eval_bulk(e, examples)
@@ -158,7 +150,16 @@ class BehaviorIndex(object):
             m[BehaviorIndex.VALUE] = l
         l.append(data)
     def search(self, behavior):
-        yield from self._search(self.data, behavior)
+        q = [(0, self.data)]
+        while q:
+            (i, m) = q.pop()
+            if m is None:
+                continue
+            if i >= len(behavior):
+                yield from m[BehaviorIndex.VALUE]
+            else:
+                q.append((i+1, m.get(any)))
+                q.append((i+1, m.get(behavior[i])))
     def _pr(self, m):
         if BehaviorIndex.VALUE in m:
             yield str(m[BehaviorIndex.VALUE])
