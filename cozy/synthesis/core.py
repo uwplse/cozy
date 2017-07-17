@@ -19,6 +19,7 @@ hyperaggressive_eviction = Option("hyperaggressive-eviction", bool, True)
 reject_symmetric_binops = Option("reject-symmetric-binops", bool, True)
 eliminate_vars = Option("eliminate-vars", bool, False)
 reset_on_success = Option("reset-on-success", bool, False)
+enforce_seen_wf = Option("enforce-seen-set-well-formed", bool, False)
 
 class ExpBuilder(object):
     def build(self, cache, size):
@@ -198,18 +199,19 @@ class Learner(object):
             self.update_watched_exps()
 
     def _check_seen_wf(self):
-        # recheck some stuff
-        for ((pool, fp), (cost, exps)) in self.seen.items():
-            for (e, size) in exps:
-                fpnow = self._fingerprint(e)
-                if fp != fpnow:
-                    print("#" * 40)
-                    print(pprint(e))
-                    print(fp)
-                    print(fpnow)
-                    assert False
+        if enforce_seen_wf.value:
+            for ((pool, fp), (cost, exps)) in self.seen.items():
+                for (e, size) in exps:
+                    fpnow = self._fingerprint(e)
+                    if fp != fpnow:
+                        print("#" * 40)
+                        print(pprint(e))
+                        print(fp)
+                        print(fpnow)
+                        assert False
 
     def fix_seen(self):
+        print("fixing seen set...")
         new_seen = { }
         for ((pool, fp), (cost, exps)) in self.seen.items():
             for item in exps:
@@ -223,6 +225,7 @@ class Learner(object):
                     new_seen[k] = (cost, [item])
         self.seen = new_seen
         self._check_seen_wf()
+        print("finished fixing seen set")
 
     def watch(self, new_target, assumptions):
         self._check_seen_wf()
