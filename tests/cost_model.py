@@ -14,6 +14,15 @@ def cost_of(e):
 
 class TestCostModel(unittest.TestCase):
 
+    def test_statevar_literal_emptylist(self):
+        empty = EEmptyList().with_type(TBag(INT))
+        empty_sv = EStateVar(empty).with_type(empty.type)
+        assert cost_of(empty_sv) > cost_of(empty)
+
+    def test_statevar_literal_number(self):
+        zero_sv = EStateVar(ZERO).with_type(ZERO.type)
+        assert cost_of(zero_sv) > cost_of(ZERO)
+
     def test_map_vs_filter(self):
         # e1 = Filter {(\_var11 : xs.Handle -> ((_var11).val == z))} ((xs + []))
         xs = EVar("xs").with_type(TBag(INT))
