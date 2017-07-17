@@ -146,6 +146,9 @@ class MemoryUsageCostModel(CostModel, BottomUpExplorer):
 # Some kinds of expressions have a massive penalty associated with them if they
 # appear at runtime.
 EXTREME_COST = 100000000
+MILD_PENALTY = 1000
+
+RUNTIME_NODE_EXEC_COST = 0.01
 
 class RunTimeCostModel(CostModel, BottomUpExplorer):
     def __init__(self):
@@ -162,7 +165,7 @@ class RunTimeCostModel(CostModel, BottomUpExplorer):
         cost = self.visit(e.e)
         if e.op in (UOp.Sum, UOp.Distinct):
             cost += self.cardinality(e.e)
-        return cost + 0.01
+        return cost + RUNTIME_NODE_EXEC_COST
     def visit_EBinOp(self, e):
         if e.op == BOp.In:
             return self.visit(EFilter(e.e2, mk_lambda(e.e1.type, lambda x: equal(x, e.e1))))
@@ -177,37 +180,39 @@ class RunTimeCostModel(CostModel, BottomUpExplorer):
         #     cost = c1 + P(ENot(e.e1)) * c2
         # elif e.op == "and":
         #     cost = c1 + P(e.e1) * c2
-        return cost + 0.01
+        return cost + RUNTIME_NODE_EXEC_COST
     # def visit_ECond(self, e):
     #     c1 = self.visit(e.cond)
     #     c2 = self.visit(e.then_branch)
     #     c3 = self.visit(e.else_branch)
     #     p = P(e.cond)
-    #     return 0.01 + c1 + p*c2 + (1-p)*c3
+    #     return RUNTIME_NODE_EXEC_COST + c1 + p*c2 + (1-p)*c3
     def visit_EWithAlteredValue(self, e):
         return EXTREME_COST + self.visit(e.handle) + self.visit(e.new_value)
     def visit_EMap(self, e):
-        return 0.01 + self.visit(e.e) + self.cardinality(e.e) * self.visit(e.f.body)
+        return RUNTIME_NODE_EXEC_COST + self.visit(e.e) + self.cardinality(e.e) * self.visit(e.f.body) + (MILD_PENALTY if isinstance(e.e, EBinOp) and e.e.op in "+-" else 0)
     def visit_EFlatMap(self, e):
-        return 0.01 + self.visit(EMap(e.e, e.f))
+        return RUNTIME_NODE_EXEC_COST + self.visit(EMap(e.e, e.f)) + (MILD_PENALTY if isinstance(e.e, EBinOp) and e.e.op in "+-" else 0)
     def visit_EFilter(self, e):
-        return 0.01 + self.visit(e.e) + self.cardinality(e.e) * self.visit(e.p.body)
+        return RUNTIME_NODE_EXEC_COST + self.visit(e.e) + self.cardinality(e.e) * self.visit(e.p.body) + (MILD_PENALTY if isinstance(e.e, EBinOp) and e.e.op in "+-" else 0)
     def visit_EMakeMap(self, e):
         return EXTREME_COST + self.visit(e.e) + self.cardinality(e.e) * (self.visit(e.key.body) + self.visit(e.value.body))
     def visit_EMakeMap2(self, e):
         return EXTREME_COST + self.visit(e.e) + self.cardinality(e.e) * self.visit(e.value.body)
+    def visit_ECond(self, e):
+        return EXTREME_COST + self.visit(e.cond) + self.visit(e.then_branch) + self.visit(e.else_branch)
     def visit_EStateVar(self, e):
-        return self.memcm.cost(e.e, STATE_POOL) / 100
+        return self.memcm.cost(e.e, STATE_POOL) / 10 + MILD_PENALTY
     def visit(self, x):
         if isinstance(x, Exp) and not free_vars(x):
-            return x.size() / 100
+            return x.size() * RUNTIME_NODE_EXEC_COST / 100
         return super().visit(x)
     def join(self, x, child_costs):
         if isinstance(x, list) or isinstance(x, tuple):
             return sum(child_costs)
         if not isinstance(x, Exp):
             return 0
-        return 0.01 + sum(child_costs)
+        return RUNTIME_NODE_EXEC_COST + sum(child_costs)
 
 class CompositeCostModel(RunTimeCostModel):
     def __init__(self, state_vars : [EVar] = []):
