@@ -167,6 +167,8 @@ def break_bag(e):
     elif isinstance(e, EFilter):
         for pos, x in break_bag(e.e):
             yield pos, EFilter(x, e.p).with_type(e.type)
+    elif isinstance(e, EStateVar):
+        yield from break_bag(e.e)
     else:
         yield True, e
 
@@ -187,6 +189,8 @@ def break_sum(e):
     elif isinstance(e, EUnaryOp) and e.op == "-":
         for pos, x in break_sum(e.e):
             yield (not pos, x)
+    elif isinstance(e, EStateVar):
+        yield from break_sum(e.e)
     else:
         yield True, e
 
@@ -233,6 +237,20 @@ class AcceleratedBuilder(ExpBuilder):
             e2 = simplify_sum(e)
             if e != e2:
                 yield (e2, RUNTIME_POOL)
+
+        # Fixup EFilter(\x -> ECond...)
+        for e in cache.find(pool=RUNTIME_POOL, size=size-1, type=TBag):
+            if isinstance(e, EFilter):
+                for (_, x, r, _) in enumerate_fragments(e.p.body):
+                    if isinstance(x, ECond):
+                        lhs = EFilter(e.e, ELambda(e.p.arg, EAll([     x.cond , r(x.then_branch)]))).with_type(e.type)
+                        rhs = EFilter(e.e, ELambda(e.p.arg, EAll([ENot(x.cond), r(x.else_branch)]))).with_type(e.type)
+                        union = EBinOp(lhs, "+", rhs).with_type(e.type)
+                        yield (lhs.p.body, RUNTIME_POOL)
+                        yield (rhs.p.body, RUNTIME_POOL)
+                        yield (lhs, RUNTIME_POOL)
+                        yield (rhs, RUNTIME_POOL)
+                        yield (union, RUNTIME_POOL)
 
         # Try instantiating bound expressions
         # for pool in (STATE_POOL, RUNTIME_POOL):
