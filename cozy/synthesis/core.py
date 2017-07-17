@@ -197,7 +197,35 @@ class Learner(object):
         if update_watched_exps:
             self.update_watched_exps()
 
+    def _check_seen_wf(self):
+        # recheck some stuff
+        for ((pool, fp), (cost, exps)) in self.seen.items():
+            for (e, size) in exps:
+                fpnow = self._fingerprint(e)
+                if fp != fpnow:
+                    print("#" * 40)
+                    print(pprint(e))
+                    print(fp)
+                    print(fpnow)
+                    assert False
+
+    def fix_seen(self):
+        new_seen = { }
+        for ((pool, fp), (cost, exps)) in self.seen.items():
+            for item in exps:
+                e, size = item
+                fpnow = self._fingerprint(e)
+                k = (pool, fpnow)
+                val = new_seen.get(k)
+                if val is not None:
+                    val[1].append(item)
+                else:
+                    new_seen[k] = (cost, [item])
+        self.seen = new_seen
+        self._check_seen_wf()
+
     def watch(self, new_target, assumptions):
+        self._check_seen_wf()
         self.backlog_counter = 0
         self.target = new_target
         self.update_watched_exps()
@@ -225,6 +253,7 @@ class Learner(object):
                     del self.seen[(pool, fp)]
             if n:
                 print("evicted {} elements".format(n))
+        self._check_seen_wf()
 
     def update_watched_exps(self):
         self.cost_ceiling = self.cost_model.cost(self.target, RUNTIME_POOL)
@@ -250,6 +279,7 @@ class Learner(object):
             info = (e, r, cost, a, pool, bound)
             self.watched_exps.append(info)
             self.behavior_index.put(e, EAll(a), self.all_examples, info)
+        self.fix_seen()
 
     def _examples_for(self, e):
         # binders = [b for b in free_vars(e) if b in self.binders]
@@ -321,7 +351,7 @@ class Learner(object):
                     self.seen[(pool, fp)] = (cost, [(e, self.current_size)])
                     self.cache.add(e, pool=pool, size=self.current_size)
                     self.last_progress = self.current_size
-                    _on_exp(e, "new")
+                    _on_exp(e, "new", "runtime" if pool == RUNTIME_POOL else "state")
                 else:
                     prev_cost, prev_exps = prev
                     if any(alpha_equivalent(e, ee) for (ee, size) in prev_exps):
