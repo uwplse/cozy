@@ -203,6 +203,7 @@ class Learner(object):
         self.update_watched_exps()
         self.roots = []
         for (e, r, cost, a, pool, bound) in self.watched_exps:
+            _on_exp(e, "new root")
             self.roots.append((e, pool))
         # new_roots = []
         # for e in itertools.chain(all_exps(new_target), all_exps(assumptions)):
@@ -284,6 +285,10 @@ class Learner(object):
             if watched_cost < cost:
                 continue
             e2 = self._doctor_for_context(e, bound)
+            if e != e2:
+                print("*** doctoring took place; ctx=[{}]".format(", ".join(v.id for v in bound)))
+                print("    original --> {}".format(pprint(e)))
+                print("    modified --> {}".format(pprint(e2)))
             if e2 == watched_e:
                 continue
             yield (watched_e, e2, r)
@@ -521,6 +526,11 @@ def improve(
             hints=hints,
             examples=examples))
 
+    print()
+    print("improving: {}".format(pprint(target)))
+    print("subject to: {}".format(pprint(assumptions)))
+    print()
+
     binders = list(binders)
     target = fixup_binders(target, binders, allow_add=False)
     assumptions = fixup_binders(assumptions, binders, allow_add=False)
@@ -543,7 +553,8 @@ def improve(
                 break
 
             # 2. substitute-in the improvement
-            print("Found candidate replacement [{}] for [{}]".format(pprint(new_e), pprint(old_e)))
+            print("Found candidate replacement [{}] for [{}] in".format(pprint(new_e), pprint(old_e)))
+            print(pprint(repl(EVar("@___"))))
             new_target = repl(new_e)
 
             assert not find_one(free_vars(new_target), lambda v: v not in vars)
