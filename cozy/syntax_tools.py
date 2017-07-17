@@ -417,26 +417,6 @@ class FragmentEnumerator(common.Visitor):
                     a = a + assume
                 yield (lambda r: (a, x, lambda x: target_syntax.ELambda(e.arg, r(x)), bound))(r)
 
-    # def visit_EMakeMap(self, e):
-    #     yield ([], e, lambda x: x)
-    #     t = e.type
-    #     for (a, x, r) in self.visit(e.e):
-    #         yield (lambda r: (a, x, lambda x: target_syntax.EMakeMap(r(x), e.key, e.value).with_type(t)))(r)
-    #     for (a, x, r) in self.visit(e.key.body):
-    #         # keyfunc arg is in e.e
-    #         yield (lambda r: (
-    #             a + [syntax.EBinOp(e.key.arg, syntax.BOp.In, e.e).with_type(syntax.BOOL)],
-    #             x,
-    #             lambda x: target_syntax.EMakeMap(e.e, target_syntax.ELambda(e.key.arg, r(x)), e.value).with_type(t)))(r)
-    #     for (a, x, r) in self.visit(e.value.body):
-    #         # valuefunc arg is a subset of e.e
-    #         # keys of valuefunc arg are all the same
-    #         key_bag = syntax.TBag(e.key.body.type)
-    #         yield (lambda r: (
-    #             a + [], # syntax.EIsSubset(e.value.arg, e.e), target_syntax.EIsSingleton(syntax.EUnaryOp(syntax.UOp.Distinct, target_syntax.EMap(e.value.arg, e.key).with_type(key_bag)).with_type(key_bag))
-    #             x,
-    #             lambda x: target_syntax.EMakeMap(e.e, e.key, target_syntax.ELambda(e.value.arg, r(x))).with_type(t)))(r)
-
     def visit_EStateVar(self, e):
         """
         A very tricky case: the set of bound variables gets cleared for its
@@ -481,6 +461,14 @@ class FragmentEnumerator(common.Visitor):
             yield (lambda r: (a, x, lambda x: target_syntax.EFlatMap(r(x), e.f).with_type(t), bound))(r)
         for (a, x, r, bound) in self.recurse_with_assumptions_about_bound_var(e.f, [syntax.EBinOp(e.f.arg, syntax.BOp.In, e.e).with_type(syntax.BOOL)] if e.f.arg not in free_vars(e.e) else []):
             yield (lambda r: (a, x, lambda x: target_syntax.EFlatMap(e.e, r(x)).with_type(t), bound))(r)
+
+    def visit_EMakeMap2(self, e):
+        yield ([], e, lambda x: x, self.currently_bound())
+        t = e.type
+        for (a, x, r, bound) in self.visit(e.e):
+            yield (lambda r: (a, x, lambda x: target_syntax.EMakeMap2(r(x), e.value).with_type(t), bound))(r)
+        for (a, x, r, bound) in self.recurse_with_assumptions_about_bound_var(e.value, [syntax.EBinOp(e.value.arg, syntax.BOp.In, e.e).with_type(syntax.BOOL)] if e.value.arg not in free_vars(e.e) else []):
+            yield (lambda r: (a, x, lambda x: target_syntax.EMakeMap2(e.e, r(x)).with_type(t), bound))(r)
 
     def visit_Exp(self, obj):
         yield ([], obj, lambda x: x, self.currently_bound())
