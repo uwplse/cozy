@@ -97,9 +97,6 @@ class BinderBuilder(ExpBuilder):
                 for bag in cache.find(pool=pool, type=TBag, size=sz1):
                     for binder in binders_by_type[bag.type.t]:
                         for body in itertools.chain(cache.find(pool=pool, size=sz2), (binder,)):
-                            # experimental filter
-                            if binder not in free_vars(body):
-                                continue
                             yield (EMap(bag, ELambda(binder, body)).with_type(TBag(body.type)), pool)
                             if body.type == BOOL:
                                 yield (EFilter(bag, ELambda(binder, body)).with_type(bag.type), pool)
