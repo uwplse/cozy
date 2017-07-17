@@ -504,6 +504,16 @@ def can_elim_var(spec : Exp, assumptions : Exp, v : EVar):
     vv = fresh_var(v.type)
     return valid(implies(EAll([assumptions, subst(assumptions, {v.id:vv})]), equal(spec, subst(spec, {v.id:vv}))))
 
+_DONE = set([EVar, EEnumEntry, ENum, EStr, EBool])
+def heuristic_done(e : Exp, args : [EVar] = []):
+    return (
+        (type(e) in _DONE) or
+        (isinstance(e, ESingleton) and heuristic_done(e.e)) or
+        (isinstance(e, EStateVar) and heuristic_done(e.e)))
+
+def never_stop():
+    return False
+
 @typechecked
 def improve(
         target : Exp,
@@ -512,7 +522,7 @@ def improve(
         args : [EVar],
         cost_model : CostModel,
         builder : ExpBuilder,
-        stop_callback,
+        stop_callback = never_stop,
         hints : [Exp] = None,
         examples = None):
     """
@@ -641,6 +651,11 @@ def improve(
                 learner.watch(new_target, assumptions)
                 target = new_target
                 yield new_target
+
+                if heuristic_done(new_target, args):
+                    print("target now matches doneness heuristic")
+                    break
+
     except KeyboardInterrupt:
         for e in learner.cache.random_sample(50):
             print(pprint(e))
