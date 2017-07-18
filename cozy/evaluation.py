@@ -156,35 +156,14 @@ def eval(e, env, bind_callback=lambda arg, val: None):
 def mkval(type : Type):
     """
     Produce an arbitrary value of the given type.
+    eval(construct_value(t), {}) == mkval(t)
     """
-    if isinstance(type, TInt) or isinstance(type, TLong):
-        return 0
-    if isinstance(type, TNative):
-        return (type.name, 0)
-    if isinstance(type, TMaybe):
-        return _NULL_VALUE
-    if isinstance(type, TBool):
-        return False
-    if isinstance(type, TString):
-        return ""
-    if isinstance(type, TBag):
-        return Bag()
-    if isinstance(type, TMap):
-        return Map(type, mkval(type.v))
-    if isinstance(type, TEnum):
-        return type.cases[0]
-    if isinstance(type, TRecord):
-        return FrozenDict({ f:mkval(t) for (f, t) in type.fields })
-    if isinstance(type, THandle):
-        return Handle(0, mkval(type.value_type))
-    if isinstance(type, TTuple):
-        return tuple(mkval(t) for t in type.ts)
-    raise NotImplementedError(type)
+    return eval(construct_value(type), {})
 
 @typechecked
 def construct_value(t : Type) -> Exp:
     """
-    Construct an expression e such that
+    Construct an arbitrary expression e of the given type.
     eval(construct_value(t), {}) == mkval(t)
     """
     if is_numeric(t):
@@ -193,6 +172,8 @@ def construct_value(t : Type) -> Exp:
         e = F
     elif t == STRING:
         e = EStr("")
+    elif isinstance(t, TMaybe):
+        e = ENull()
     elif isinstance(t, TBag):
         e = EEmptyList()
     elif isinstance(t, TTuple):
@@ -205,11 +186,46 @@ def construct_value(t : Type) -> Exp:
         e = EHandle(construct_value(INT), construct_value(t.value_type))
     elif isinstance(t, TNative):
         e = ENative(construct_value(INT))
+    elif isinstance(t, TMap):
+        e = EMakeMap2(
+            EEmptyList().with_type(t.k),
+            ELambda(EVar("x").with_type(t.k), construct_value(t.v)))
     else:
         raise NotImplementedError(pprint(t))
-    e = e.with_type(t)
-    assert eval(e, {}) == mkval(t)
-    return e
+    return e.with_type(t)
+
+def _uneval(t, value):
+    print(value)
+    if is_numeric(t):
+        return ENum(value).with_type(t)
+    elif t == BOOL:
+        return EBool(value).with_type(t)
+    elif isinstance(t, TBag):
+        e = EEmptyList().with_type(t)
+        for x in value:
+            e = EBinOp(e, "+", ESingleton(uneval(x, t.t)).with_type(t)).with_type(t)
+        return e
+    elif isinstance(t, TTuple):
+        return ETuple(tuple(uneval(tt, x) for (tt, x) in zip(t.ts, value))).with_type(t)
+    elif isinstance(t, TRecord):
+        return EMakeRecord(tuple((f, uneval(tt, value[f])) for (f, tt) in t.fields)).with_type(t)
+    elif isinstance(t, TEnum):
+        return EEnumEntry(value).with_type(t)
+    elif isinstance(t, THandle):
+        return EHandle(ENum(value.address).with_type(INT), uneval(t.value_type, value.value)).with_type(t)
+    elif isinstance(t, TNative):
+        return ENative(ENum(value[1]).with_type(INT)).with_type(t)
+    else:
+        raise NotImplementedError(pprint(t))
+
+@typechecked
+def uneval(t : Type, value) -> Exp:
+    """
+    Produce an expression `e` of type `t` such that `eval(e, {}) == value`.
+    """
+    res = _uneval(t, value)
+    assert eval(res, {}) == value
+    return res
 
 def _eval_compiled(ops, init_stk=()):
     ops = list(reversed(ops))
