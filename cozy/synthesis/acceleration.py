@@ -105,10 +105,10 @@ def as_aggregation_of_filter(e):
         yield (Aggregation(), mk_lambda(e.type.t, lambda x: T), e)
 
 def map_accelerate(e, state_vars, binders, args, cache, size):
-    for (_, arg, f, _) in enumerate_fragments(strip_EStateVar(e)):
+    for (_, arg, f, bound) in enumerate_fragments(strip_EStateVar(e)):
         if any(v in state_vars for v in free_vars(arg)):
             continue
-        for binder in (b for b in binders if b.type == arg.type):
+        for binder in (b for b in binders if b.type == arg.type and b not in bound):
             value = f(binder)
             if any(v not in state_vars and v not in binders for v in free_vars(value)):
                 continue
