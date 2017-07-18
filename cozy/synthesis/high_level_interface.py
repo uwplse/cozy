@@ -47,7 +47,6 @@ class ImproveQueryJob(jobs.Job):
             assumptions : [Exp],
             q : Query,
             k,
-            specs : [Query] = [],
             hints : [Exp] = [],
             examples : [dict] = None):
         super().__init__()
@@ -58,7 +57,6 @@ class ImproveQueryJob(jobs.Job):
         assert all(v in state for v in free_vars(q)), str([v for v in free_vars(q) if v not in state])
         self.hints = hints
         self.examples = examples
-        self.specs = specs
         self.k = k
     def __str__(self):
         return "ImproveQueryJob[{}]".format(self.q.name)
@@ -68,16 +66,6 @@ class ImproveQueryJob(jobs.Job):
             sys.stdout = f
             print("STARTING IMPROVEMENT JOB {} (|examples|={})".format(self.q.name, len(self.examples or ())))
             print(pprint(self.q))
-
-            if dedup_queries.value:
-                qq = find_one(self.specs, lambda qq: queries_equivalent(qq, self.q))
-                if qq is not None:
-                    print("########### subgoal {} is equivalent to {}".format(self.q.name, qq.name))
-                    arg_reorder = [[x[0] for x in self.q.args].index(a) for (a, t) in qq.args]
-                    args = tuple(EVar(a).with_type(t) for (a, t) in self.q.args)
-                    args = tuple(args[idx] for idx in arg_reorder)
-                    self.k([], ECall(qq.name, args).with_type(self.q.ret.type))
-                    return
 
             all_types = self.ctx.all_types
             n_binders = 1
@@ -179,6 +167,7 @@ def synthesize(
 
         def push_goal(q : Query):
             print("########### NEW SUBGOAL: {}".format(pprint(q)))
+            specs.append(q)
             fvs = free_vars(q)
             # initial rep
             qargs = set(EVar(a).with_type(t) for (a, t) in q.args)
@@ -193,9 +182,7 @@ def synthesize(
                 state_vars,
                 list(spec.assumptions) + list(q.assumptions),
                 q,
-                specs=list(specs),
                 k=lambda new_rep, new_ret: solutions_q.put((q, new_rep, new_ret)))
-            specs.append(q)
             improvement_jobs.append(j)
             j.start()
 
@@ -287,7 +274,21 @@ def synthesize(
                 for new_member, projection in rep:
                     (state_update_stm, subqueries) = inc.sketch_update(new_member, projection, subst(projection, delta), state_vars, list(op.assumptions))
                     for sub_q in subqueries:
-                        push_goal(sub_q)
+                        qq = find_one(specs, lambda qq: dedup_queries.value and queries_equivalent(qq, sub_q))
+                        if qq is not None:
+                            print("########### subgoal {} is equivalent to {}".format(sub_q.name, qq.name))
+                            arg_reorder = [[x[0] for x in sub_q.args].index(a) for (a, t) in qq.args]
+                            class Repl(BottomUpRewriter):
+                                def visit_ECall(self, e):
+                                    args = tuple(self.visit(a) for a in e.args)
+                                    if e.func == sub_q.name:
+                                        args = tuple(args[idx] for idx in arg_reorder)
+                                        return ECall(qq.name, args).with_type(e.type)
+                                    else:
+                                        return ECall(e.func, args).with_type(e.type)
+                            state_update_stm = Repl().visit(state_update_stm)
+                        else:
+                            push_goal(sub_q)
                     op_stms[new_member][op.name] = state_update_stm
 
         def result():
