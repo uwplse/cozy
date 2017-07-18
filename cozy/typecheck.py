@@ -418,6 +418,12 @@ class Typechecker(Visitor):
             self.report_err(e, "no enum entry {} in scope".format(e.name))
             e.type = DEFAULT_TYPE
 
+    def visit_ENative(self, e):
+        self.visit(e.e)
+        self.ensure_type(e.e, syntax.INT)
+        if not hasattr(e, "type"):
+            self.report_err(e, "not enough information to construct type for ENative expression")
+
     def visit_ETuple(self, e):
         for ee in e.es:
             self.visit(ee)
