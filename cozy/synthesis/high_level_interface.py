@@ -70,9 +70,8 @@ class ImproveQueryJob(jobs.Job):
             print(pprint(self.q))
 
             if dedup_queries.value:
-                qq = [qq for qq in self.specs if queries_equivalent(qq, self.q)]
-                if qq:
-                    qq = qq[0]
+                qq = find_one(self.specs, lambda qq: queries_equivalent(qq, self.q))
+                if qq is not None:
                     print("########### subgoal {} is equivalent to {}".format(self.q.name, qq.name))
                     arg_reorder = [[x[0] for x in self.q.args].index(a) for (a, t) in qq.args]
                     args = tuple(EVar(a).with_type(t) for (a, t) in self.q.args)
