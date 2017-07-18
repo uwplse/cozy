@@ -7,14 +7,16 @@ from cozy.pools import STATE_POOL, RUNTIME_POOL
 from .core import ExpBuilder
 
 class BinderBuilder(ExpBuilder):
-    def __init__(self, binders : [EVar], state_vars : [EVar]):
+    def __init__(self, binders : [EVar], state_vars : [EVar], args : [EVar] = []):
         super().__init__()
         self.binders = binders
         self.state_vars = state_vars
+        self.args = args
     def __repr__(self):
-        return "BinderBuilder(binders={!r}, state_vars={!r})".format(
+        return "BinderBuilder(binders={!r}, state_vars={!r}, args={!r})".format(
             self.binders,
-            self.state_vars)
+            self.state_vars,
+            self.args)
     def build(self, cache, size):
         # print("Cache:")
         # for (e, sz, pool) in cache:
@@ -29,8 +31,12 @@ class BinderBuilder(ExpBuilder):
                 yield (ENum(0).with_type(INT), pool)
                 for b in self.binders:
                     yield (b, pool)
-                for v in self.state_vars:
-                    yield (v, pool)
+                if pool == STATE_POOL:
+                    for v in self.state_vars:
+                        yield (v, pool)
+                elif pool == RUNTIME_POOL:
+                    for v in self.args:
+                        yield (v, pool)
 
             for t in list(cache.types()):
                 if isinstance(t, TBag):

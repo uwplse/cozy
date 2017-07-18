@@ -60,6 +60,21 @@ class Cache(object):
             if pool == STATE_POOL:
                 assert not isinstance(e, EStateVar), "adding {} to state pool".format(pprint(e))
                 assert not any(v in self.args for v in free_vars(e)), "bad vars: {}".format(pprint(e))
+            else:
+                # state vars must be wrapped
+                from cozy.syntax_tools import enumerate_fragments
+                z = e
+                dirty = True
+                while dirty:
+                    dirty = False
+                    for (_, x, r, _) in enumerate_fragments(z):
+                        if isinstance(x, EStateVar):
+                            from cozy.target_syntax import ZERO
+                            z = r(ZERO)
+                            dirty = True
+                            break
+                bad = find_one(free_vars(z), lambda v: not (v in self.binders or v in self.args))
+                assert not bad, "state var `{}` not wrapped in: {!r}".format(bad.id, e)
         self.data[pool][self.tag(e.type)][e.type][size].append(e)
         self.size += 1
     def evict(self, e, size, pool):

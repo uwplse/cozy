@@ -102,12 +102,12 @@ class ImproveQueryJob(jobs.Job):
             binders = [fresh_var(t) for t in all_types if is_scalar(t) for i in range(n_binders)]
             print("Using {} binders".format(n_binders))
             relevant_state_vars = [v for v in self.state if v in free_vars(EAll(self.assumptions)) | free_vars(self.q.ret)]
-            b = BinderBuilder(binders, relevant_state_vars)
             used_vars = free_vars(self.q.ret)
             for a in self.q.assumptions:
                 used_vars |= free_vars(a)
             args = [EVar(v).with_type(t) for (v, t) in self.q.args]
             args = [a for a in args if a in used_vars]
+            b = BinderBuilder(binders, relevant_state_vars, args)
             if accelerate.value:
                 b = AcceleratedBuilder(b, binders, relevant_state_vars, args)
 
