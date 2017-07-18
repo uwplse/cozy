@@ -650,6 +650,22 @@ class CxxPrinter(common.Visitor):
         stm = f(call.target, call.args)
         return self.visit(stm, indent)
 
+    def nbits(self, t):
+        if t == BOOL:
+            return 1
+        elif isinstance(t, TEnum):
+            return common.integer_log2_round_up(len(t.cases))
+        else:
+            return None
+
+    def declare_field(self, name, type, indent):
+        nbits = self.nbits(type)
+        bitspec = " : {}".format(nbits) if nbits else ""
+        return "{indent}{field_decl}{bitspec};\n".format(
+            indent=indent,
+            field_decl=self.visit(type, name),
+            bitspec=bitspec)
+
     def define_type(self, toplevel_name, t, name, indent, sharing):
         if isinstance(t, TEnum):
             return "{indent}enum {name} {{\n{cases}{indent}}};\n".format(
@@ -661,7 +677,7 @@ class CxxPrinter(common.Visitor):
             s = "{indent}struct {name} {{\n".format(indent=indent, name=name)
             s += "{indent}public:\n".format(indent=indent)
             for (f, ft) in fields:
-                s += "{indent}{field_decl};\n".format(indent=indent+INDENT, field_decl=self.visit(ft, f))
+                s += self.declare_field(f, ft, indent=indent+INDENT)
             s += "{indent}private:\n".format(indent=indent)
             s += "{indent}friend class {toplevel_name};\n".format(indent=indent+INDENT, toplevel_name=toplevel_name)
             for group in sharing.get(t, []):
@@ -728,7 +744,7 @@ class CxxPrinter(common.Visitor):
         s += "protected:\n"
         for name, t in spec.statevars:
             self.statevar_name = name
-            s += "{}{};\n".format(INDENT, self.visit(t, name))
+            s += self.declare_field(name, t, indent=INDENT)
         s += "public:\n"
         s += INDENT + "inline {name}() : {inits} {{ }}\n".format(
             name=spec.name,

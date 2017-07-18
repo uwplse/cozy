@@ -470,3 +470,20 @@ def find_one(iter, p=lambda x: True):
         if p(x):
             return x
     return None
+
+def divide_integers_and_round_up(x, y):
+    assert x > 0
+    assert y > 0
+    return (x - 1) // y + 1
+
+def integer_log2_round_up(x):
+    """
+    Returns the number of bits required to represent `x` distinct values---i.e.
+    log2(x) rounded up.
+    """
+    assert x > 0
+    res = 0
+    while x:
+        res += 1
+        x = divide_integers_and_round_up(x, 2)
+    return res
