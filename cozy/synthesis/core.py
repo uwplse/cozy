@@ -7,7 +7,7 @@ from cozy.typecheck import INT, BOOL
 from cozy.syntax_tools import subst, pprint, free_vars, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda, enumerate_fragments
 from cozy.common import OrderedSet, ADT, Visitor, fresh_name, typechecked, unique, pick_to_sum, cross_product, OrderedDefaultDict, OrderedSet, group_by, find_one
 from cozy.solver import satisfy, satisfiable, valid
-from cozy.evaluation import eval, eval_bulk, mkval, construct_value
+from cozy.evaluation import eval, eval_bulk, mkval, construct_value, uneval
 from cozy.cost_model import CostModel
 from cozy.opts import Option
 from cozy.pools import RUNTIME_POOL, STATE_POOL
@@ -300,10 +300,18 @@ class Learner(object):
         binders are free in the input expression, it is actually OK to replace
         them with arbitrary expressions of the correct type without affecting
         correctness.
+
+        In order to ensure that the synthesizer continues to make progress, we
+        pull the "arbitrary expression" from the set of things we have seen the
+        value get bound to in the past. If the binder is incorrect here, then
+        the verifier will produce a counterexample in which it gets bound to
+        something else.
         """
+        value_by_var = { }
+        eval_bulk(self.target, self.examples, bind_callback=lambda var, val: value_by_var.update({var:val}))
         v = find_one(fv for fv in free_vars(e) if fv in self.binders and fv not in bound_vars)
         while v:
-            e = subst(e, { v.id : construct_value(v.type) })
+            e = subst(e, { v.id : uneval(v.type, value_by_var.get(v, mkval(v.type))) })
             v = find_one(fv for fv in free_vars(e) if fv in self.binders and fv not in bound_vars)
         return e
 

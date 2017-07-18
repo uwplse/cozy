@@ -195,7 +195,6 @@ def construct_value(t : Type) -> Exp:
     return e.with_type(t)
 
 def _uneval(t, value):
-    print(value)
     if is_numeric(t):
         return ENum(value).with_type(t)
     elif t == BOOL:
