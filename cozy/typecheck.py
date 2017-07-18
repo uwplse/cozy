@@ -423,6 +423,17 @@ class Typechecker(Visitor):
         self.ensure_type(e.e, syntax.INT)
         if not hasattr(e, "type"):
             self.report_err(e, "not enough information to construct type for ENative expression")
+            e.type = DEFAULT_TYPE
+
+    def visit_EHandle(self, e):
+        self.visit(e.addr)
+        self.ensure_type(e.addr, syntax.INT)
+        self.visit(e.value)
+        if hasattr(e, "type"):
+            self.ensure_type(e.value, e.type.value_type)
+        else:
+            self.report_err(e, "not enough information to construct type for EHandle expression")
+            e.type = DEFAULT_TYPE
 
     def visit_ETuple(self, e):
         for ee in e.es:
