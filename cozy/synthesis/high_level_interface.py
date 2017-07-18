@@ -230,12 +230,17 @@ def synthesize(
             changed = True
             while changed:
                 changed = False
-                for qname in queries_to_keep:
+                for qname in list(queries_to_keep):
                     if qname in impls:
                         for sv in free_vars(impls[qname]):
                             if sv not in state_vars_to_keep:
                                 state_vars_to_keep.add(sv)
                                 changed = True
+                        for e in all_exps(impls[qname].ret):
+                            if isinstance(e, ECall):
+                                if e.func not in queries_to_keep:
+                                    queries_to_keep.add(e.func)
+                                    changed = True
                 for sv in state_vars_to_keep:
                     for op_stm in op_stms[sv].values():
                         for qname in queries_used_by(op_stm):
