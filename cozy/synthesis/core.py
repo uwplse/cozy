@@ -15,6 +15,7 @@ from cozy.pools import RUNTIME_POOL, STATE_POOL
 from .cache import Cache
 
 save_testcases = Option("save-testcases", str, "", metavar="PATH")
+hyperaggressive_culling = Option("hyperaggressive-culling", bool, False)
 hyperaggressive_eviction = Option("hyperaggressive-eviction", bool, True)
 reject_symmetric_binops = Option("reject-symmetric-binops", bool, False)
 eliminate_vars = Option("eliminate-vars", bool, False)
@@ -244,7 +245,7 @@ class Learner(object):
         #         self._fingerprint(e)
         #         new_roots.append(e)
         # self.roots = new_roots
-        if self.cost_model.is_monotonic():
+        if self.cost_model.is_monotonic() or hyperaggressive_culling.value:
             seen = list(self.seen.items())
             n = 0
             for ((pool, fp), (cost, exps)) in seen:
@@ -351,7 +352,7 @@ class Learner(object):
 
                 cost = self.cost_model.cost(e, pool)
 
-                if self.cost_model.is_monotonic() and cost > self.cost_ceiling:
+                if (self.cost_model.is_monotonic() or hyperaggressive_culling.value) and cost > self.cost_ceiling:
                     _on_exp(e, "too expensive", cost, self.cost_ceiling)
                     continue
 
@@ -376,7 +377,7 @@ class Learner(object):
                     elif cost < prev_cost:
                         for (prev_exp, prev_size) in prev_exps:
                             self.cache.evict(prev_exp, size=prev_size, pool=pool)
-                            if self.cost_model.is_monotonic() and hyperaggressive_eviction.value:
+                            if (self.cost_model.is_monotonic() or hyperaggressive_culling.value) and hyperaggressive_eviction.value:
                                 for (cached_e, size, p) in list(self.cache):
                                     if p != pool:
                                         continue
