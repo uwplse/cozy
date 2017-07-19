@@ -460,6 +460,8 @@ class CxxPrinter(common.Visitor):
         elif isinstance(iterable, ECall) and iterable.func in self.queries:
             q = self.queries[iterable.func]
             return self.for_each(subst(q.ret, { a : v for ((a, t), v) in zip(q.args, iterable.args) }), body, indent=indent)
+        elif isinstance(iterable, ELet):
+            return self.for_each(iterable.f.apply_to(iterable.e), body, indent=indent)
         else:
             x = fresh_var(iterable.type.t)
             if type(iterable.type) in (TBag, library.TNativeList, TSet, library.TNativeSet):
@@ -701,21 +703,25 @@ class CxxPrinter(common.Visitor):
         else:
             return ""
 
-    def initial_value(self, t):
+    def initial_value(self, t, require_type_spec=False):
+        s = ""
+        if require_type_spec:
+            s += self.visit(t, name="")
         if isinstance(t, TBool):
-            return "(false)"
+            s += "(false)"
         elif isinstance(t, TInt) or isinstance(t, TLong):
-            return "(0)"
+            s += "(0)"
         elif isinstance(t, TVector):
-            return "{{ {} }}".format(", ".join(self.initial_value(t.t) for i in range(t.n)))
+            s += "{{ {} }}".format(", ".join(self.initial_value(t.t, require_type_spec=True) for i in range(t.n)))
         elif isinstance(t, TTuple):
-            return "{{ {} }}".format(", ".join(self.initial_value(tt) for tt in t.ts))
+            s += "{{ {} }}".format(", ".join(self.initial_value(tt, require_type_spec=True) for tt in t.ts))
         elif isinstance(t, library.TNativeMap) or isinstance(t, library.TNativeList) or isinstance(t, library.TNativeSet):
-            return "()"
+            s += "()"
         elif self.visit(t, "").endswith("*"): # a little hacky
-            return "(NULL)"
+            s += "(NULL)"
         else:
-            return self.initial_value(t.rep_type())
+            s += self.initial_value(t.rep_type())
+        return s
 
     def setup_types(self, spec, state_exps, sharing):
         self.types.clear()
@@ -1033,6 +1039,9 @@ class JavaPrinter(CxxPrinter):
                 decl=self.visit(TNative("java.util.Iterator<>"), it),
                 e=e),
             "({it}.hasNext() ? {it}.next() : null)".format(it=it))
+
+    def visit_TVector(self, t, name):
+        return "{}[] {}".format(self.visit(t.t, ""), name)
 
     def visit_TNativeMap(self, t, name):
         return "java.util.HashMap<{}, {}> {}".format(

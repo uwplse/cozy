@@ -7,9 +7,10 @@ import unittest
 from cozy.target_syntax import *
 from cozy.syntax_tools import pprint, mk_lambda, fresh_var
 from cozy.compile import CxxPrinter, JavaPrinter
-from cozy.library import Library, TNativeList, TNativeMap, TNativeSet
+from cozy.library import Library, TNativeList, TNativeMap, TNativeSet, TVectorMap
 from cozy.autotuning import enumerate_impls
 from cozy.sharing import compute_sharing
+from cozy.typecheck import retypecheck
 
 class TestCodegen(unittest.TestCase):
 
@@ -102,6 +103,15 @@ class TestCodegen(unittest.TestCase):
             f.write(codegen.visit(impl, state_map, share_info))
         res = subprocess.run(args)
         assert res.returncode == 0
+
+    def test_vector_map(self):
+        svs = [("xs", TVectorMap(BOOL, TNativeList(INT)))]
+        impl = Spec('VecMap', [], [], svs, [], [])
+        state_map = { "xs": EMakeMap2(EVar("bools").with_type(TBag(BOOL)), mk_lambda(BOOL, lambda x: ESingleton(x))) }
+        assert retypecheck(state_map["xs"])
+        share_info = compute_sharing(state_map, dict(svs))
+        self.check(impl, state_map, share_info, CxxPrinter())
+        self.check(impl, state_map, share_info, JavaPrinter())
 
     def test_regression3(self):
         Constr = TNative('Object')

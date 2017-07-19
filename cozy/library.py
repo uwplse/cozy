@@ -5,18 +5,23 @@ Concrete data structure implementations.
 from cozy.common import fresh_name, typechecked, product, cross_product
 from cozy.target_syntax import *
 from cozy.syntax_tools import equal, subst, fresh_var
+from cozy.evaluation import construct_value
 
-def count_cases(t):
+def cases(t):
     if t == BOOL:
-        return 2
+        yield T
+        yield F
     elif isinstance(t, TEnum):
-        return len(t.cases)
+        for c in t.cases:
+            yield EEnumEntry(c).with_type(t)
     elif isinstance(t, TTuple):
-        return product(count_cases(tt) for tt in t.ts)
-    elif isinstance(t, TRecord):
-        return product(count_cases(tt) for (f, tt) in t.fields)
+        for entries in cross_product(cases(tt) for tt in t.ts):
+            yield ETuple(tuple(entries)).with_type(t)
     else:
         raise ValueError(t)
+
+def count_cases(t):
+    return sum(1 for case in cases(t)) # less mem. than len(list(cases(t)))
 
 def is_enumerable(t):
     try:
@@ -58,6 +63,10 @@ class TVectorMap(TMap):
     def rep_type(self):
         return TVector(self.v, count_cases(self.k))
 
+    @property
+    def all_keys(self) -> [Exp]:
+        return cases(self.k)
+
     def to_index(self, key):
         if key.type == BOOL:
             return EBoolToInt(key).with_type(TInt())
@@ -70,6 +79,20 @@ class TVectorMap(TMap):
                 i = EBinOp(i, "+", self.to_index(ETupleGet(key, i).with_type(key.type.ts[i]))).with_type(TInt())
         else:
             raise NotImplementedError(key.type)
+
+    def construct_concrete(self, e : Exp, out : Exp):
+        assert out.type == self.rep_type()
+        assert isinstance(e, EMakeMap2) # TODO?
+        k = fresh_var(self.k, "k")
+        return seq(
+            [SAssign(
+                EVectorGet(out, ENum(i).with_type(INT)).with_type(self.v),
+                construct_value(self.v))
+                for (i, k) in enumerate(self.all_keys)] +
+            [SForEach(k, e.e,
+                SAssign(
+                    EVectorGet(out, k).with_type(self.v),
+                    ELet(k, e.value).with_type(self.v)))])
 
     @typechecked
     def update_key(self, m : Exp, k : Exp, v : EVar, change : Stm):
@@ -137,7 +160,6 @@ class TIntrusiveLinkedList(TBag):
     def make_empty(self):
         return ENull().with_type(self.t)
     def construct_concrete(self, e : Exp, out : Exp):
-        assert out.type == self.rep_type()
         assert out.type == self.rep_type()
         x = fresh_var(self.t, "x")
         return seq([
