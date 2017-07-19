@@ -6,6 +6,7 @@ Various utilities for working with syntax trees.
 """
 
 import collections
+from contextlib import contextmanager
 import sys
 import itertools
 
@@ -643,34 +644,38 @@ def qsubst(
         e = e.with_type(haystack.type)
     return e
 
-def alpha_equivalent(e1, e2, allow_rename=lambda v1, v2: False):
+def alpha_equivalent(e1, e2):
     """
     Equality on expression ASTs is syntactic equality; even variable names are
     compared. So,
         [x | x <- L] != [y | y <- L].
     However, alpha equivalence allows renaming of variables, so
         alpha_equivalent([x | x <- L], [y | y <- L]) == True.
-
-    The allow_rename parameter lets the programmer specify that some variables
-    may be renamed into others. For instance, if allow_rename(y, z) == True,
-    then the expressions "x+y" and "x+z" will be treated as alpha equivalent.
     """
     class V(common.Visitor):
         def __init__(self):
-            self.remap = { } # maps e1 varnames ---> e2 varnames
+            self.depth = 0
+            self.remap_l = { } # maps e1 varnames ---> ids
+            self.remap_r = { } # maps e2 varnames ---> ids
+
+        @contextmanager
+        @common.typechecked
+        def unify(self, vs : [(syntax.EVar, syntax.EVar)], i : int = 0):
+            if i >= len(vs):
+                yield
+            else:
+                self.depth += 1
+                v1, v2 = vs[i]
+                with common.extend(self.remap_l, v1, self.depth):
+                    with common.extend(self.remap_r, v2, self.depth):
+                        with self.unify(vs, i + 1):
+                            yield
+                self.depth -= 1
+
         def visit_EVar(self, e1, e2):
             if not isinstance(e2, syntax.EVar):
                 return False
-            e1id = e1.id
-            if allow_rename(e1, e2):
-                if e1.id not in self.remap:
-                    e1id = e2.id
-                    self.remap[e1.id] = e1id
-                else:
-                    e1id = self.remap[e1.id]
-            elif e1.id in self.remap:
-                e1id = self.remap[e1.id]
-            return e1id == e2.id
+            return self.remap_l.get(e1) == self.remap_r.get(e2)
         def visit_ETuple(self, e1, e2):
             if not isinstance(e2, syntax.ETuple):
                 return False
@@ -681,7 +686,7 @@ def alpha_equivalent(e1, e2, allow_rename=lambda v1, v2: False):
         def visit_ELambda(self, e1, e2):
             if not isinstance(e2, target_syntax.ELambda):
                 return False
-            with common.extend(self.remap, e1.arg.id, e2.arg.id):
+            with self.unify([(e1.arg, e2.arg)]):
                 return self.visit(e1.body, e2.body)
         def visit_EListComprehension(self, lcmp, other):
             if not isinstance(other, syntax.EListComprehension):
@@ -697,7 +702,7 @@ def alpha_equivalent(e1, e2, allow_rename=lambda v1, v2: False):
             if isinstance(c1, syntax.CPull):
                 if not isinstance(c2, syntax.CPull):
                     return False
-                with common.extend(self.remap, c1.id, c2.id):
+                with self.unify([(c1, c2)]):
                     return self.visit_clauses(i + 1, clauses1, clauses2, e1, e2)
             elif isinstance(c1, syntax.CCond):
                 return self.visit(c1.e, c2.e) and self.visit_clauses(i + 1, clauses1, clauses2, e1, e2)
@@ -720,7 +725,7 @@ def alpha_equivalent(e1, e2, allow_rename=lambda v1, v2: False):
                 return False
             if len(q1.args) != len(q2.args):
                 return False
-            with common.extend_multi(self.remap, [(arg1, arg2) for ((arg1, type1), (arg2, type2)) in zip(q1.args, q2.args)]):
+            with self.unify(list(zip([arg for (arg, t) in q1.args], [arg for (arg, t) in q2.args]))):
                 # TODO: assumptions
                 return self.visit(q1.ret, q2.ret)
         def visit_object(self, o, *args):

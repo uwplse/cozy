@@ -5,19 +5,19 @@ from cozy.target_syntax import *
 
 class TestAlphaEquivalent(unittest.TestCase):
 
-    def test_allow_rename(self):
-        x = EVar("x").with_type(TInt())
-        y = EVar("y").with_type(TInt())
-        for b in [True, False]:
-            aeq = alpha_equivalent(x, y, allow_rename=lambda v1, v2: b)
-            assert aeq == b, "{} is {n}alpha-equiv to {}".format(pprint(x), pprint(y), n="" if aeq else "not ")
-
     def test_binders(self):
         v1 = EVar("foo")
         e1 = EMap(v1, mk_lambda(TInt(), lambda arg: v1))
         e2 = EMap(v1, mk_lambda(TInt(), lambda arg: v1))
         assert e1.f.arg.id != e2.f.arg.id
         assert alpha_equivalent(e1, e2)
+
+    def test_mixed_binders(self):
+        x = EVar("x")
+        y = EVar("y")
+        e1 = ELambda(x, ELambda(y, x))
+        e2 = ELambda(x, ELambda(x, x))
+        assert not alpha_equivalent(e1, e2)
 
     def test_lambdas(self):
         employers = EVar("employers").with_type(TBag(TInt()))
