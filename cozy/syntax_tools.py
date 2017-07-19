@@ -675,7 +675,7 @@ def alpha_equivalent(e1, e2):
         def visit_EVar(self, e1, e2):
             if not isinstance(e2, syntax.EVar):
                 return False
-            return self.remap_l.get(e1) == self.remap_r.get(e2)
+            return self.remap_l.get(e1, e1) == self.remap_r.get(e2, e2)
         def visit_ETuple(self, e1, e2):
             if not isinstance(e2, syntax.ETuple):
                 return False

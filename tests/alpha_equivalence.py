@@ -12,6 +12,11 @@ class TestAlphaEquivalent(unittest.TestCase):
         assert e1.f.arg.id != e2.f.arg.id
         assert alpha_equivalent(e1, e2)
 
+    def test_free_vars_not_equivalent(self):
+        x = EVar("_var3423")
+        y = EVar("_var3422")
+        assert not alpha_equivalent(x, y)
+
     def test_mixed_binders(self):
         x = EVar("x")
         y = EVar("y")
