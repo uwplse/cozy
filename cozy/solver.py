@@ -2,12 +2,13 @@ from collections import defaultdict
 from datetime import datetime
 import itertools
 import threading
+from functools import lru_cache
 
 import z3
 
 from cozy.target_syntax import *
 from cozy.syntax_tools import pprint, free_vars
-from cozy.common import declare_case, fresh_name, Visitor, FrozenDict, typechecked, memoize, extend
+from cozy.common import declare_case, fresh_name, Visitor, FrozenDict, typechecked, extend
 from cozy import evaluation
 from cozy.opts import Option
 
@@ -727,7 +728,7 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
                 name = k[0]
                 out_type = k[1]
                 arg_types = k[2]
-                @memoize
+                @lru_cache(maxsize=None)
                 def extracted_func(*args):
                     return reconstruct(model, f(*[visitor.unreconstruct(v, t) for (v, t) in zip(args, arg_types)]), out_type)
                 res[name] = extracted_func
