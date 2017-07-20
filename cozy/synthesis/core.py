@@ -158,7 +158,7 @@ class BehaviorIndex(object):
             if m is None:
                 continue
             if i >= len(behavior):
-                yield from m[BehaviorIndex.VALUE]
+                yield from (m.get(BehaviorIndex.VALUE) or [])
             else:
                 q.append((i+1, m.get(any)))
                 q.append((i+1, m.get(behavior[i])))
