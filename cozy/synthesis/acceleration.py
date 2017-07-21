@@ -167,8 +167,8 @@ def break_bag(e):
     elif isinstance(e, EFilter):
         for pos, x in break_bag(e.e):
             yield pos, EFilter(x, e.p).with_type(e.type)
-    elif isinstance(e, EStateVar):
-        yield from break_bag(e.e)
+    # elif isinstance(e, EStateVar):
+    #     yield from break_bag(e.e)
     else:
         yield True, e
 
@@ -189,8 +189,8 @@ def break_sum(e):
     elif isinstance(e, EUnaryOp) and e.op == "-":
         for pos, x in break_sum(e.e):
             yield (not pos, x)
-    elif isinstance(e, EStateVar):
-        yield from break_sum(e.e)
+    # elif isinstance(e, EStateVar):
+    #     yield from break_sum(e.e)
     else:
         yield True, e
 
