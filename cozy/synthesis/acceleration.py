@@ -289,9 +289,10 @@ class AcceleratedBuilder(ExpBuilder):
                 const_parts, other_parts = partition(break_conj(bag.p.body), lambda e:
                     all((v == bag.p.arg or v in self.state_vars) for v in free_vars(e)))
                 if const_parts and other_parts:
-                    inner_filter = EFilter(bag.e, ELambda(bag.p.arg, EAll(const_parts))).with_type(bag.type)
+                    inner_filter = strip_EStateVar(EFilter(bag.e, ELambda(bag.p.arg, EAll(const_parts))).with_type(bag.type))
                     yield (inner_filter, STATE_POOL)
-                    yield (EFilter(EStateVar(strip_EStateVar(inner_filter)).with_type(inner_filter.type), ELambda(bag.p.arg, EAll(other_parts))).with_type(bag.type), RUNTIME_POOL)
+                    outer_filter = EFilter(EStateVar(inner_filter).with_type(inner_filter.type), ELambda(bag.p.arg, EAll(other_parts))).with_type(bag.type)
+                    yield (outer_filter, RUNTIME_POOL)
 
                 # construct map lookups
                 binder = bag.p.arg
