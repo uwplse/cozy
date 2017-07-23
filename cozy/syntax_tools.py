@@ -411,12 +411,15 @@ class FragmentEnumerator(common.Visitor):
         return self.recurse_with_assumptions_about_bound_var(obj, [])
 
     def recurse_with_assumptions_about_bound_var(self, e : target_syntax.ELambda, assume : [syntax.Exp]):
-        orig_bound = self.currently_bound()
-        with common.extend(self.bound, e.arg, True):
-            for (a, x, r, bound) in self.visit(e.body):
-                if assume and e.arg not in bound:
-                    a = a + assume
-                yield (lambda r: (a, x, lambda x: target_syntax.ELambda(e.arg, r(x)), bound))(r)
+        if self.pre_visit(e):
+            orig_bound = self.currently_bound()
+            yield ([], e, lambda x: x, orig_bound)
+            with common.extend(self.bound, e.arg, e):
+                for (a, x, r, bound) in self.visit(e.body):
+                    if assume and self.bound[e.arg] is e:
+                        a = a + assume
+                    yield (lambda r, x, a, bound: (a, x, lambda x: target_syntax.ELambda(e.arg, r(x)), bound))(r, x, a, bound)
+            self.post_visit(e)
 
     def visit_EStateVar(self, e):
         """
@@ -498,7 +501,7 @@ class FragmentEnumerator(common.Visitor):
         else:
             return ()
 
-def enumerate_fragments(e : syntax.Exp, pre_visit=None, post_visit=None):
+def enumerate_fragments(e : syntax.Exp, pre_visit=None, post_visit=None, include_lambdas=False):
     """
     Yields tuples (a : [Exp], x : Exp, r : Exp->Exp, ctx : {EVar}) such that:
         x is a non-lambda subexpression of e
@@ -514,7 +517,7 @@ def enumerate_fragments(e : syntax.Exp, pre_visit=None, post_visit=None):
     enumerator = FragmentEnumerator(pre_visit, post_visit)
     for info in enumerator.visit(e):
         (a, x, r, bound) = info
-        if isinstance(x, syntax.Exp) and not isinstance(x, target_syntax.ELambda):
+        if isinstance(x, syntax.Exp) and ((not isinstance(x, target_syntax.ELambda)) or include_lambdas):
             yield info
 
 def replace(exp, old_exp, new_exp):
