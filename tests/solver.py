@@ -145,6 +145,16 @@ class TestSolver(unittest.TestCase):
         assert retypecheck(e)
         assert satisfiable(e, validate_model=True)
 
+    def test_unary_all(self):
+        a = EUnaryOp(UOp.All, EVar("a").with_type(TBag(BOOL)))
+        assert retypecheck(a)
+        assert satisfiable(a, validate_model=True)
+
+    def test_unary_any(self):
+        a = EUnaryOp(UOp.Any, EVar("a").with_type(TBag(BOOL)))
+        assert retypecheck(a)
+        assert satisfiable(a, validate_model=True)
+
     def test_symbolic_enum_left(self):
         T = TEnum(("A", "B"))
         x = EVar("x").with_type(T)

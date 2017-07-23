@@ -353,6 +353,12 @@ def unaryop_not(stk):
 def unaryop_sum(stk):
     stk.append(sum(stk.pop()))
 
+def unaryop_all(stk):
+    stk.append(all(stk.pop()))
+
+def unaryop_any(stk):
+    stk.append(any(stk.pop()))
+
 def unaryop_exists(stk):
     stk.append(bool(stk.pop()))
 
@@ -499,6 +505,10 @@ def _compile(e, env : {str:int}, out, bind_callback):
             out.append(unaryop_exists)
         elif e.op == UOp.Empty:
             out.append(unaryop_empty)
+        elif e.op == UOp.All:
+            out.append(unaryop_all)
+        elif e.op == UOp.Any:
+            out.append(unaryop_any)
         elif e.op == UOp.AreUnique:
             out.append(unaryop_areunique(e.e.type.t))
         elif e.op == UOp.Distinct:
