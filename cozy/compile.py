@@ -513,7 +513,8 @@ class CxxPrinter(common.Visitor):
             return self.visit(ENot(EUnaryOp(UOp.Empty, e.e).with_type(BOOL)), indent)
         elif op in ("-", UOp.Not):
             ce, ee = self.visit(e.e, indent)
-            return (ce, "({op} {ee})".format(op=op, ee=ee))
+            op_str = "!" if op == UOp.Not else str(op)
+            return (ce, "({op} {ee})".format(op=op_str, ee=ee))
         elif op == UOp.Distinct:
             v = fresh_var(e.type)
             stm = self.construct_concrete(e.type, e, v)
@@ -877,12 +878,6 @@ class JavaPrinter(CxxPrinter):
 
     def visit_EEnumEntry(self, e, indent=""):
         return ("", "{}.{}".format(self.typename(e.type), e.name))
-
-    def visit_EUnaryOp(self, e, indent):
-        if e.op == UOp.Not:
-            setup, ee = self.visit(e.e, indent)
-            return (setup, "!({})".format(ee))
-        return super().visit_EUnaryOp(e, indent)
 
     def _eq(self, e1, e2, indent):
         if (is_scalar(e1.type) or
