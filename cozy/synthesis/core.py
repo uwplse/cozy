@@ -277,6 +277,7 @@ class Learner(object):
         for (a, e, r, bound) in enumerate_fragments(self.target, pre_visit=pre_visit, post_visit=post_visit):
             if isinstance(e, ELambda) or any(v not in self.legal_free_vars for v in free_vars(e)):
                 continue
+            a = [aa for aa in a if all(v in self.legal_free_vars for v in free_vars(aa))]
             depth = (sv_depth - 1) if isinstance(e, EStateVar) else sv_depth
             pool = STATE_POOL if depth else RUNTIME_POOL
             cost = self.cost_model.cost(e, pool)
@@ -423,7 +424,8 @@ def fixup_binders(e : Exp, binders_to_use : [EVar], allow_add=False) -> Exp:
                     binders_by_type[e.arg.type].append(e.arg)
                     return ELambda(e.arg, self.visit(e.body))
                 else:
-                    raise Exception("No legal binder to use for {}".format(e))
+                    # print("No legal binder to use for {}".format(e))
+                    return ELambda(e.arg, self.visit(e.body))
             b = legal_repls[0]
             return ELambda(b, self.visit(subst(e.body, { e.arg.id : b })))
     return V().visit(e)
