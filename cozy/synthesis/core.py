@@ -340,7 +340,8 @@ class Learner(object):
     def next(self):
         while True:
             if self.backlog is not None:
-                improvements = list(self._possible_replacements(*self.backlog))
+                (e, pool, cost) = self.backlog
+                improvements = list(self._possible_replacements(e, pool, cost, self._fingerprint(e)))
                 if self.backlog_counter < len(improvements):
                     i = improvements[self.backlog_counter]
                     self.backlog_counter += 1
@@ -401,7 +402,7 @@ class Learner(object):
 
                 improvements = list(self._possible_replacements(e, pool, cost, fp))
                 if improvements:
-                    self.backlog = (e, pool, cost, fp)
+                    self.backlog = (e, pool, cost)
                     self.backlog_counter = 1
                     return improvements[0]
 
