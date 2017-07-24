@@ -147,10 +147,14 @@ class ToZ3(Visitor):
             return z3.And(*conds, self.ctx)
         elif isinstance(t, TMap):
             conds = [self.eq(t.v, e1["default"], e2["default"], env)]
+            def map_keys(m):
+                return ([mask for (mask, k, v) in m["mapping"]], [k for (mask, k, v) in m["mapping"]])
+            e1keys = map_keys(e1)
+            e2keys = map_keys(e2)
             for (mask, k, v) in e1["mapping"]:
-                conds.append(z3.Implies(mask, self.eq(t.v, self._map_get(t, e1, k, env), self._map_get(t, e2, k, env), env), self.ctx))
+                conds.append(z3.Implies(mask, z3.And(self.is_in(t.k, e2keys, k, env), self.eq(t.v, self._map_get(t, e1, k, env), self._map_get(t, e2, k, env), env), self.ctx), self.ctx))
             for (mask, k, v) in e2["mapping"]:
-                conds.append(z3.Implies(mask, self.eq(t.v, self._map_get(t, e1, k, env), self._map_get(t, e2, k, env), env), self.ctx))
+                conds.append(z3.Implies(mask, z3.And(self.is_in(t.k, e1keys, k, env), self.eq(t.v, self._map_get(t, e1, k, env), self._map_get(t, e2, k, env), env), self.ctx), self.ctx))
             return z3.And(*conds, self.ctx)
         elif isinstance(t, THandle):
             h1, val1 = e1
