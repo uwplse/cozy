@@ -190,7 +190,7 @@ class Learner(object):
 
     def reset(self, examples, update_watched_exps=True):
         self.cache = Cache(binders=self.binders, args=self.args)
-        self.current_size = 0
+        self.current_size = -1
         self.examples = examples
         self.seen.clear()
         self.builder_iter = ()
@@ -410,7 +410,7 @@ class Learner(object):
 
             self.current_size += 1
             self.builder_iter = self.builder.build(self.cache, self.current_size)
-            if self.current_size == 1:
+            if self.current_size == 0:
                 self.builder_iter = itertools.chain(self.builder_iter, iter(self.roots))
             print("minor iteration {}, |cache|={}".format(self.current_size, len(self.cache)))
 
