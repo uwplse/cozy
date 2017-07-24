@@ -236,7 +236,7 @@ class AcceleratedBuilder(ExpBuilder):
         for e in cache.find(pool=RUNTIME_POOL, size=size-1, type=INT):
             e2 = simplify_sum(e)
             if e != e2:
-                yield (e2, RUNTIME_POOL)
+                yield self.check(e2, RUNTIME_POOL)
 
         # Fixup EFilter(\x -> ECond...)
         for e in cache.find(pool=RUNTIME_POOL, size=size-1, type=TBag):
@@ -246,11 +246,11 @@ class AcceleratedBuilder(ExpBuilder):
                         lhs = EFilter(e.e, ELambda(e.p.arg, EAll([     x.cond , r(x.then_branch)]))).with_type(e.type)
                         rhs = EFilter(e.e, ELambda(e.p.arg, EAll([ENot(x.cond), r(x.else_branch)]))).with_type(e.type)
                         union = EBinOp(lhs, "+", rhs).with_type(e.type)
-                        # yield (lhs.p.body, RUNTIME_POOL)
-                        # yield (rhs.p.body, RUNTIME_POOL)
-                        yield (lhs, RUNTIME_POOL)
-                        yield (rhs, RUNTIME_POOL)
-                        yield (union, RUNTIME_POOL)
+                        # yield self.check(lhs.p.body, RUNTIME_POOL)
+                        # yield self.check(rhs.p.body, RUNTIME_POOL)
+                        yield self.check(lhs, RUNTIME_POOL)
+                        yield self.check(rhs, RUNTIME_POOL)
+                        yield self.check(union, RUNTIME_POOL)
 
         # Try instantiating bound expressions
         for pool in (STATE_POOL, RUNTIME_POOL):
@@ -260,20 +260,22 @@ class AcceleratedBuilder(ExpBuilder):
                         for e2 in cache.find(pool=pool, type=v.type, size=sz2):
                             if pool == RUNTIME_POOL:
                                 e2 = subst(strip_EStateVar(e2), { sv.id : EStateVar(sv).with_type(sv.type) for sv in self.state_vars if sv != v })
-                            yield (subst(e1, {v.id:e2}), pool)
+                            yield self.check(subst(e1, {v.id:e2}), pool)
 
         # state var conversion
         for e in cache.find(pool=RUNTIME_POOL, size=size-1):
             if all(v in self.state_vars for v in free_vars(e)):
                 x = strip_EStateVar(e)
-                yield (x, STATE_POOL)
-                yield (EStateVar(x).with_type(x.type), RUNTIME_POOL)
+                yield self.check(x, STATE_POOL)
+                yield self.check(EStateVar(x).with_type(x.type), RUNTIME_POOL)
 
         for (sz1, sz2) in pick_to_sum(2, size-1):
             for e in cache.find(pool=RUNTIME_POOL, size=sz1):
-                yield from map_accelerate(e, self.state_vars, self.binders, self.args, cache, sz2)
+                for x, pool in map_accelerate(e, self.state_vars, self.binders, self.args, cache, sz2):
+                    yield self.check(x, pool)
                 if isinstance(e, EFilter) and not any(v in self.binders for v in free_vars(e)):
-                    yield from accelerate_filter(e.e, e.p, self.state_vars, self.binders, cache, sz2)
+                    for x, pool in accelerate_filter(e.e, e.p, self.state_vars, self.binders, cache, sz2):
+                        yield self.check(x, pool)
 
         for bag in itertools.chain(cache.find(pool=RUNTIME_POOL, type=TBag, size=size-1), cache.find(pool=RUNTIME_POOL, type=TSet, size=size-1)):
             for a in self.args:
@@ -281,8 +283,8 @@ class AcceleratedBuilder(ExpBuilder):
                     if TBag(a.type) == v.type:
                         v = EStateVar(v).with_type(v.type)
                         cond = EBinOp(a, BOp.In, v).with_type(BOOL)
-                        yield (EFilter(bag, mk_lambda(bag.type.t, lambda _:      cond )).with_type(bag.type), RUNTIME_POOL)
-                        yield (EFilter(bag, mk_lambda(bag.type.t, lambda _: ENot(cond))).with_type(bag.type), RUNTIME_POOL)
+                        yield self.check(EFilter(bag, mk_lambda(bag.type.t, lambda _:      cond )).with_type(bag.type), RUNTIME_POOL)
+                        yield self.check(EFilter(bag, mk_lambda(bag.type.t, lambda _: ENot(cond))).with_type(bag.type), RUNTIME_POOL)
 
             if isinstance(bag, EFilter):
                 if any(v not in self.state_vars for v in free_vars(bag.e)):
@@ -293,9 +295,9 @@ class AcceleratedBuilder(ExpBuilder):
                     all((v == bag.p.arg or v in self.state_vars) for v in free_vars(e)))
                 if const_parts and other_parts:
                     inner_filter = strip_EStateVar(EFilter(bag.e, ELambda(bag.p.arg, EAll(const_parts))).with_type(bag.type))
-                    yield (inner_filter, STATE_POOL)
+                    yield self.check(inner_filter, STATE_POOL)
                     outer_filter = EFilter(EStateVar(inner_filter).with_type(inner_filter.type), ELambda(bag.p.arg, EAll(other_parts))).with_type(bag.type)
-                    yield (outer_filter, RUNTIME_POOL)
+                    yield self.check(outer_filter, RUNTIME_POOL)
 
                 # construct map lookups
                 binder = bag.p.arg
@@ -304,15 +306,15 @@ class AcceleratedBuilder(ExpBuilder):
                     key_proj, key_lookup, remaining_filter = inf
                     bag_binder = find_one(self.binders, lambda b: b.type == key_proj.type and b != binder)
                     if bag_binder:
-                        m = EMakeMap2(
+                        m = strip_EStateVar(EMakeMap2(
                             EMap(bag.e, ELambda(binder, key_proj)).with_type(TBag(key_proj.type)),
-                            ELambda(bag_binder, EFilter(bag.e, ELambda(binder, EEq(key_proj, bag_binder))).with_type(bag.type))).with_type(TMap(key_proj.type, bag.type))
+                            ELambda(bag_binder, EFilter(bag.e, ELambda(binder, EEq(key_proj, bag_binder))).with_type(bag.type))).with_type(TMap(key_proj.type, bag.type)))
                         assert not any(v in self.args for v in free_vars(m))
-                        yield (m, STATE_POOL)
-                        m = EStateVar(strip_EStateVar(m)).with_type(m.type)
+                        yield self.check(m, STATE_POOL)
+                        m = EStateVar(m).with_type(m.type)
                         mg = EMapGet(m, key_lookup).with_type(bag.type)
-                        yield (mg, RUNTIME_POOL)
-                        yield (EFilter(mg, ELambda(binder, remaining_filter)).with_type(mg.type), RUNTIME_POOL)
+                        yield self.check(mg, RUNTIME_POOL)
+                        yield self.check(EFilter(mg, ELambda(binder, remaining_filter)).with_type(mg.type), RUNTIME_POOL)
 
         # for e in cache.find(size=size-1):
         #     # F(xs +/- ys) ---> F(xs), F(ys)

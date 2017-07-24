@@ -4,7 +4,7 @@ import sys
 
 from cozy.target_syntax import *
 from cozy.typecheck import INT, BOOL
-from cozy.syntax_tools import subst, pprint, free_vars, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda, enumerate_fragments
+from cozy.syntax_tools import subst, pprint, free_vars, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda, enumerate_fragments, exp_wf
 from cozy.common import OrderedSet, ADT, Visitor, fresh_name, typechecked, unique, pick_to_sum, cross_product, OrderedDefaultDict, OrderedSet, group_by, find_one
 from cozy.solver import satisfy, satisfiable, valid
 from cozy.evaluation import eval, eval_bulk, mkval, construct_value, uneval
@@ -22,8 +22,13 @@ eliminate_vars = Option("eliminate-vars", bool, False)
 reset_on_success = Option("reset-on-success", bool, False)
 enforce_seen_wf = Option("enforce-seen-set-well-formed", bool, False)
 enforce_strong_progress = Option("enforce-strong-progress", bool, True)
+enforce_exprs_wf = Option("enforce-expressions-well-formed", bool, False)
 
 class ExpBuilder(object):
+    def check(self, e, pool):
+        if enforce_exprs_wf.value:
+            assert exp_wf(e, state_vars=self.state_vars, args=self.args, pool=pool)
+        return (e, pool)
     def build(self, cache, size):
         raise NotImplementedError()
 
