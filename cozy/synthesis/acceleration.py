@@ -3,7 +3,7 @@ import itertools
 from cozy.common import find_one, partition, pick_to_sum
 from .core import ExpBuilder
 from cozy.target_syntax import *
-from cozy.syntax_tools import free_vars, break_conj, all_exps, replace, pprint, enumerate_fragments, mk_lambda, strip_EStateVar, alpha_equivalent
+from cozy.syntax_tools import free_vars, break_conj, all_exps, replace, pprint, enumerate_fragments, mk_lambda, strip_EStateVar, alpha_equivalent, subst
 from cozy.desugar import desugar_exp
 from cozy.typecheck import is_numeric
 from cozy.pools import RUNTIME_POOL, STATE_POOL
@@ -253,13 +253,14 @@ class AcceleratedBuilder(ExpBuilder):
                         yield (union, RUNTIME_POOL)
 
         # Try instantiating bound expressions
-        # for pool in (STATE_POOL, RUNTIME_POOL):
-        #     for (sz1, sz2) in pick_to_sum(2, size-1):
-        #         for e1 in cache.find(pool=pool, size=sz1):
-        #             binders = free_vars(e1) & set(self.binders)
-        #             for b in binders:
-        #                 for e2 in cache.find(pool=pool, type=b.type, size=sz2):
-        #                     yield (subst(e1, {b.id:e2}), pool)
+        for pool in (STATE_POOL, RUNTIME_POOL):
+            for (sz1, sz2) in pick_to_sum(2, size-1):
+                for e1 in cache.find(pool=pool, size=sz1):
+                    for v in free_vars(e1):
+                        for e2 in cache.find(pool=pool, type=v.type, size=sz2):
+                            if pool == RUNTIME_POOL:
+                                e2 = subst(strip_EStateVar(e2), { sv.id : EStateVar(sv).with_type(sv.type) for sv in self.state_vars if sv != v })
+                            yield (subst(e1, {v.id:e2}), pool)
 
         # state var conversion
         for e in cache.find(pool=RUNTIME_POOL, size=size-1):
