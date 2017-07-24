@@ -198,8 +198,6 @@ def synthesize(
             js = list(js)
             jobs.stop_jobs(js)
             for j in js:
-                if not j.successful:
-                    raise Exception("failed job: {}".format(j))
                 improvement_jobs.remove(j)
 
         def cleanup():
@@ -335,6 +333,10 @@ def synthesize(
         # wait for results
         timeout = Timeout(per_query_timeout)
         while any(not j.done for j in improvement_jobs) and not timeout.is_timed_out():
+            for j in improvement_jobs:
+                if j.done and not j.successful:
+                    raise Exception("failed job: {}".format(j))
+
             try:
                 # list of (Query, new_rep, new_ret) objects
                 results = solutions_q.drain(block=True, timeout=0.5)
