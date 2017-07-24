@@ -21,6 +21,7 @@ reject_symmetric_binops = Option("reject-symmetric-binops", bool, False)
 eliminate_vars = Option("eliminate-vars", bool, False)
 reset_on_success = Option("reset-on-success", bool, False)
 enforce_seen_wf = Option("enforce-seen-set-well-formed", bool, False)
+enforce_strong_progress = Option("enforce-strong-progress", bool, True)
 
 class ExpBuilder(object):
     def build(self, cache, size):
@@ -367,6 +368,11 @@ class Learner(object):
                     _on_exp(e, "new", "runtime" if pool == RUNTIME_POOL else "state")
                 else:
                     prev_cost, prev_exps = prev
+                    if enforce_strong_progress.value:
+                        bad = find_one(all_exps(e), lambda ee: any(alpha_equivalent(ee, pe) for pe in prev_exps))
+                        if bad:
+                            _on_exp(e, "failed strong progress requirement", bad)
+                            continue
                     if any(alpha_equivalent(e, ee) for (ee, size) in prev_exps):
                         _on_exp(e, "duplicate")
                         continue
@@ -470,15 +476,6 @@ class FixedBuilder(ExpBuilder):
                     continue
                 if not satisfiable(EAll([self.assumptions, equal(len, ENum(1).with_type(INT))])):
                     _on_exp(e, "rejecting illegal application of 'the': always empty")
-                    continue
-
-            # filters must *do* something
-            # This prevents degenerate cases where the synthesizer uses filter
-            # expressions to artificially lower the estimated cardinality of a
-            # collection.
-            if isinstance(e, EFilter):
-                if not satisfiable(EAll([self.assumptions, ENot(equal(e, e.e))])):
-                    _on_exp(e, "rejecting no-op filter")
                     continue
 
             # # map gets must be provably in the map
