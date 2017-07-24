@@ -416,7 +416,7 @@ class FragmentEnumerator(common.Visitor):
             yield ([], e, lambda x: x, orig_bound)
             with common.extend(self.bound, e.arg, e):
                 for (a, x, r, bound) in self.visit(e.body):
-                    if assume and self.bound[e.arg] is e:
+                    if assume and self.bound.get(e.arg) is e:
                         a = a + assume
                     yield (lambda r, x, a, bound: (a, x, lambda x: target_syntax.ELambda(e.arg, r(x)), bound))(r, x, a, bound)
             self.post_visit(e)
