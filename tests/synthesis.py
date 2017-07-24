@@ -40,7 +40,7 @@ class TestSynthesisCore(unittest.TestCase):
         res = None
         x = EVar("x").with_type(BOOL)
         xs = EVar("xs").with_type(TBag(BOOL))
-        target = EFilter(xs, ELambda(x, x))
+        target = EFilter(EStateVar(xs), ELambda(x, x))
         assumptions = EUnaryOp(UOp.All, xs)
         assert retypecheck(target)
         assert retypecheck(assumptions)
@@ -54,7 +54,21 @@ class TestSynthesisCore(unittest.TestCase):
         res = None
         x = EVar("x").with_type(BOOL)
         xs = EVar("xs").with_type(TBag(BOOL))
-        target = EFilter(xs, ELambda(x, x))
+        target = EFilter(EStateVar(xs), ELambda(x, x))
+        assumptions = EUnaryOp(UOp.All, xs)
+        assert retypecheck(target)
+        assert retypecheck(assumptions)
+        def should_stop():
+            return isinstance(res, EVar)
+        for r in improve(target, assumptions, [], [], CompositeCostModel(), BinderBuilder([], [xs], []), stop_callback=should_stop):
+            print(pprint(r))
+            res = r
+
+    def test_incomplete_binders_list_2(self):
+        res = None
+        x = EVar("x").with_type(BOOL)
+        xs = EVar("xs").with_type(TBag(BOOL))
+        target = EFilter(EStateVar(xs), ELambda(x, T))
         assumptions = EUnaryOp(UOp.All, xs)
         assert retypecheck(target)
         assert retypecheck(assumptions)
