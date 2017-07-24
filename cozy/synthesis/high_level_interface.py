@@ -195,14 +195,9 @@ def synthesize(
             return qs
 
         def stop_jobs(js):
-            for j in list(js):
-                j.request_stop()
+            js = list(js)
+            jobs.stop_jobs(js)
             for j in js:
-                while True:
-                    j.join(timeout=30)
-                    if j.done:
-                        break
-                    print("job '{}' failed to stop in 30 seconds; it is probably deadlocked".format(j), file=sys.stderr)
                 if not j.successful:
                     raise Exception("failed job: {}".format(j))
                 improvement_jobs.remove(j)

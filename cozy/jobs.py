@@ -49,6 +49,17 @@ class Job(object):
     def join(self, timeout=None):
         self._thread.join(timeout=timeout)
 
+def stop_jobs(jobs):
+    jobs = list(jobs)
+    for j in jobs:
+        j.request_stop()
+    for j in jobs:
+        while True:
+            j.join(timeout=30)
+            if j.done:
+                break
+            print("job '{}' failed to stop in 30 seconds".format(j), file=sys.stderr)
+
 class SafeQueue(object):
     """
     The multiprocessing.Queue class and its cousins come with a lot of caveats!
