@@ -2,8 +2,8 @@ import itertools
 
 from cozy.common import pick_to_sum, cross_product, group_by, find_one
 from cozy.target_syntax import *
-from cozy.syntax_tools import subst, mk_lambda, free_vars, is_scalar
-from cozy.pools import STATE_POOL, RUNTIME_POOL
+from cozy.syntax_tools import subst, mk_lambda, free_vars, is_scalar, pprint, strip_EStateVar
+from cozy.pools import STATE_POOL, RUNTIME_POOL, ALL_POOLS
 from .core import ExpBuilder
 
 class BinderBuilder(ExpBuilder):
@@ -24,7 +24,7 @@ class BinderBuilder(ExpBuilder):
         #     print("    @size={}, pool={}\t:\t{}".format(sz, pool, pprint(e)))
         binders_by_type = group_by(self.binders, lambda b: b.type)
 
-        for pool in (STATE_POOL, RUNTIME_POOL):
+        for pool in ALL_POOLS:
             if size == 1:
                 yield (T, pool)
                 yield (F, pool)
