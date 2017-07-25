@@ -174,5 +174,8 @@ def EIsSubset(e1, e2):
 def EEq(e1, e2):
     return EBinOp(e1, "==", e2).with_type(BOOL)
 
+def EIn(e1, e2):
+    return EBinOp(e1, BOp.In, e2).with_type(BOOL)
+
 def EImplies(e1, e2):
     return EBinOp(ENot(e1), BOp.Or, e2).with_type(BOOL)
