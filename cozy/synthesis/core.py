@@ -52,18 +52,22 @@ def _instantiate_examples(examples, binder, possible_values):
             yield e2
 
 def instantiate_examples(watched_targets, examples, binders : [EVar]):
-    # collect all the values that flow into the binders
-    vals_by_type = defaultdict(OrderedSet)
-    for e in watched_targets:
-        for ex in examples:
+    res = []
+    for ex in examples:
+        # collect all the values that flow into the binders
+        vals_by_type = defaultdict(OrderedSet)
+        for e in watched_targets:
             eval(e, ex, bind_callback=lambda arg, val: vals_by_type[arg.type].add(val))
-    # instantiate examples with each possible combination of values
-    for v in binders:
-        examples = list(_instantiate_examples(examples, v, vals_by_type.get(v.type, ())))
-    # print("Got {} instantiated examples".format(len(examples)), file=sys.stderr)
-    # for ex in examples:
-    #     print(" ---> " + repr(ex), file=sys.stderr)
-    return examples
+        # print(vals_by_type)
+        # instantiate examples with each possible combination of values
+        x = [ex]
+        for v in binders:
+            x = list(_instantiate_examples(x, v, vals_by_type.get(v.type, ())))
+        # print("Got {} instantiated examples".format(len(examples)), file=sys.stderr)
+        # for ex in examples:
+        #     print(" ---> " + repr(ex), file=sys.stderr)
+        res.extend(x)
+    return res
 
 def fingerprint(e, examples):
     return (e.type,) + tuple(eval_bulk(e, examples))
