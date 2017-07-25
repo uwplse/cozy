@@ -366,7 +366,7 @@ def pick_to_sum(n, total_size):
     if n == 1:
         yield (total_size,)
         return
-    for size in range(1, total_size - n + 2):
+    for size in range(0, total_size + 1):
         for rest in pick_to_sum(n - 1, total_size - size):
             yield (size,) + rest
 
