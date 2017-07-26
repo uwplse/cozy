@@ -53,6 +53,7 @@ _OPERATORS = [
     ("NE", "!="),
     ("PLUS", "+"),
     ("MINUS", "-"),
+    ("QUESTION", "?"),
     ("COLON", ":"),
     ("SEMICOLON", ";"),
     ("COMMA", ","),
@@ -211,6 +212,7 @@ def make_parser():
         ("nonassoc", "IF_PLAIN"),
         ("nonassoc", "KW_ELSE"),
         ("left", "OP_COMMA"),
+        ("left", "OP_QUESTION"),
         ("left", "OP_IMPLIES"),
         ("left", "KW_AND", "KW_OR"),
         ("left", "OP_EQ", "OP_NE", "OP_LT", "OP_LE", "OP_GT", "OP_GE"),
@@ -241,6 +243,7 @@ def make_parser():
                | exp KW_AND exp
                | exp KW_OR exp
                | exp OP_IMPLIES exp
+               | exp OP_QUESTION exp OP_COLON exp
                | KW_NOT exp
                | exp KW_IN exp
                | KW_UNIQUE exp
@@ -293,7 +296,9 @@ def make_parser():
             else:
                 p[0] = syntax.EBinOp(p[1], p[2], p[3])
         else:
-            if p[1] == "[":
+            if p[2] == "?":
+                p[0] = syntax.ECond(p[1], p[3], p[5])
+            elif p[1] == "[":
                 p[0] = syntax.EListComprehension(p[2], p[4])
             elif p[2] == "(":
                 p[0] = syntax.ECall(p[1], p[3])
