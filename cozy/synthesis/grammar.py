@@ -88,6 +88,13 @@ class BinderBuilder(ExpBuilder):
                     for k in cache.find(pool=pool, type=m.type.k, size=sz2):
                         yield self.check(EMapGet(m, k).with_type(m.type.v), pool)
 
+            if pool == RUNTIME_POOL:
+                for (sz1, sz2, sz3) in pick_to_sum(3, size-1):
+                    for cond in cache.find(pool=pool, type=BOOL, size=sz1):
+                        for then_branch in cache.find(pool=pool, size=sz2):
+                            for else_branch in cache.find(pool=pool, size=sz3, type=then_branch.type):
+                                yield self.check(ECond(cond, then_branch, else_branch).with_type(then_branch.type), pool)
+
             for bag in cache.find(pool=pool, type=TBag, size=size-1):
                 # len of bag
                 count = EUnaryOp(UOp.Sum, EMap(bag, mk_lambda(bag.type.t, lambda x: ENum(1).with_type(INT))).with_type(TBag(INT))).with_type(INT)
