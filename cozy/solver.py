@@ -56,6 +56,7 @@ def ite(ty : Type, cond : z3.AstRef, then_branch, else_branch):
     elif isinstance(ty, TTuple):
         return tuple(ite(t, cond, v1, v2) for (v1, v2, t) in zip(then_branch, else_branch, ty.ts))
     elif isinstance(ty, TMap):
+        ncond = z3.Not(cond, ctx)
         def1, map1 = then_branch["default"], then_branch["mapping"]
         def2, map2 = else_branch["default"], else_branch["mapping"]
         mapping = []
@@ -71,16 +72,16 @@ def ite(ty : Type, cond : z3.AstRef, then_branch, else_branch):
             elif i < len(map1):
                 m1, k1, v1 = map1[i]
                 mapping.append((
-                    m1,
+                    z3.And(cond, m1, ctx),
                     k1,
-                    ite(ty.v, cond, v1, def2)))
+                    v1))
             else:
                 assert i < len(map2)
                 m2, k2, v2 = map2[i]
                 mapping.append((
-                    m2,
+                    z3.And(ncond, m2, ctx),
                     k2,
-                    ite(ty.v, cond, def1, v2)))
+                    v2))
 
         return {
             "default": ite(ty.v, cond, def1, def2),
