@@ -37,7 +37,7 @@ def map_ok(m : EMakeMap2):
     mm = fresh_var(m.type)
     v1 = EMapGet(mm, k1).with_type(m.type.v)
     v2 = EMapGet(mm, k2).with_type(m.type.v)
-    f = EAll([ENot(EEq(k1, k2)), ELet(m, ELambda(mm, ENot(EEq(v1, v2))))])
+    f = EAll([ENot(EEq(k1, k2)), ELet(m, ELambda(mm, ENot(EEq(v1, v2)))).with_type(BOOL)])
     return satisfiable(f)
     from cozy.solver import satisfy
     res = satisfy(f)
