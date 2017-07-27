@@ -18,7 +18,7 @@ save_testcases = Option("save-testcases", str, "", metavar="PATH")
 hyperaggressive_culling = Option("hyperaggressive-culling", bool, False)
 hyperaggressive_eviction = Option("hyperaggressive-eviction", bool, True)
 reject_symmetric_binops = Option("reject-symmetric-binops", bool, False)
-eliminate_vars = Option("eliminate-vars", bool, False)
+eliminate_vars = Option("eliminate-vars", bool, True)
 reset_on_success = Option("reset-on-success", bool, False)
 enforce_seen_wf = Option("enforce-seen-set-well-formed", bool, False)
 enforce_strong_progress = Option("enforce-strong-progress", bool, True)
@@ -502,25 +502,27 @@ class FixedBuilder(ExpBuilder):
 
             yield (e, pool)
 
-class VarElimBuilder(ExpBuilder):
-    def __init__(self, wrapped_builder, illegal_vars : [EVar]):
+class StateElimBuilder(ExpBuilder):
+    def __init__(self, wrapped_builder):
         self.wrapped_builder = wrapped_builder
-        self.illegal_vars = set(illegal_vars)
     def build(self, cache, size):
-        for e in self.wrapped_builder.build(cache, size):
-            if not any(v in self.illegal_vars for v in free_vars(e)):
-                yield e
+        for tup in self.wrapped_builder.build(cache, size):
+            e, pool = tup
+            if pool != STATE_POOL and not any(isinstance(x, EStateVar) for x in all_exps(e)):
+                yield tup
             else:
-                _on_exp(e, "contains illegal vars")
+                _on_exp(e, "culled state expression")
 
 def truncate(s):
     if len(s) > 60:
         return s[:60] + "..."
     return s
 
-def can_elim_var(spec : Exp, assumptions : Exp, v : EVar):
-    vv = fresh_var(v.type)
-    return valid(implies(EAll([assumptions, subst(assumptions, {v.id:vv})]), equal(spec, subst(spec, {v.id:vv}))))
+def can_elim_vars(spec : Exp, assumptions : Exp, vs : [EVar]):
+    sub = { v.id : fresh_var(v.type) for v in vs }
+    return valid(EImplies(
+        EAll([assumptions, subst(assumptions, sub)]),
+        EEq(spec, subst(spec, sub))))
 
 _DONE = set([EVar, EEnumEntry, ENum, EStr, EBool])
 def heuristic_done(e : Exp, args : [EVar] = []):
@@ -537,6 +539,7 @@ def improve(
         target : Exp,
         assumptions : Exp,
         binders : [EVar],
+        state_vars : [EVar],
         args : [EVar],
         cost_model : CostModel,
         builder : ExpBuilder,
@@ -571,6 +574,7 @@ def improve(
         target={target!r},
         assumptions={assumptions!r},
         binders={binders!r},
+        state_vars={state_vars!r},
         args={args!r},
         cost_model={cost_model!r},
         builder={builder!r},
@@ -580,6 +584,7 @@ def improve(
             target=target,
             assumptions=assumptions,
             binders=binders,
+            state_vars=state_vars,
             args=args,
             cost_model=cost_model,
             builder=builder,
@@ -597,10 +602,10 @@ def improve(
     assumptions = fixup_binders(assumptions, binders, allow_add=False)
     builder = FixedBuilder(builder, binders, assumptions)
 
+    if eliminate_vars.value and can_elim_vars(target, assumptions, state_vars):
+        builder = StateElimBuilder(builder)
+
     vars = list(free_vars(target) | free_vars(assumptions))
-    if eliminate_vars.value:
-        illegal_vars = [v for v in vars if can_elim_var(target, assumptions, v)]
-        builder = VarElimBuilder(builder, illegal_vars)
 
     if examples is None:
         examples = []

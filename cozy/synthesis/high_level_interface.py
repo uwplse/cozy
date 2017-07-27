@@ -105,6 +105,7 @@ class ImproveQueryJob(jobs.Job):
                         hints=self.hints,
                         examples=self.examples,
                         binders=binders,
+                        state_vars=relevant_state_vars,
                         args=args,
                         cost_model=CompositeCostModel(self.state), # TODO: + binders?
                         builder=b,
