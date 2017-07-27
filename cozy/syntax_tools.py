@@ -648,7 +648,8 @@ def qsubst(
         e = e.with_type(haystack.type)
     return e
 
-def alpha_equivalent(e1, e2):
+@common.typechecked
+def alpha_equivalent(e1 : syntax.Exp, e2 : syntax.Exp) -> bool:
     """
     Equality on expression ASTs is syntactic equality; even variable names are
     compared. So,

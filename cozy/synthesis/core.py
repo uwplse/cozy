@@ -379,7 +379,7 @@ class Learner(object):
                 else:
                     prev_cost, prev_exps = prev
                     if enforce_strong_progress.value:
-                        bad = find_one(all_exps(e), lambda ee: any(alpha_equivalent(ee, pe) for pe in prev_exps))
+                        bad = find_one(all_exps(e), lambda ee: any(alpha_equivalent(ee, pe) for (pe, sz) in prev_exps))
                         if bad:
                             _on_exp(e, "failed strong progress requirement", bad)
                             continue
