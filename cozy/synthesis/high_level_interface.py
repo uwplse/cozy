@@ -333,10 +333,13 @@ def synthesize(
 
         # wait for results
         timeout = Timeout(per_query_timeout)
-        while any(not j.done for j in improvement_jobs) and not timeout.is_timed_out():
+        done = False
+        while not done and not timeout.is_timed_out():
             for j in improvement_jobs:
                 if j.done and not j.successful:
                     raise Exception("failed job: {}".format(j))
+
+            done = all(j.done for j in improvement_jobs)
 
             try:
                 # list of (Query, new_rep, new_ret) objects
