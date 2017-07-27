@@ -107,7 +107,7 @@ class ImproveQueryJob(jobs.Job):
                         binders=binders,
                         state_vars=relevant_state_vars,
                         args=args,
-                        cost_model=CompositeCostModel(self.state), # TODO: + binders?
+                        cost_model=CompositeCostModel(),
                         builder=b,
                         stop_callback=lambda: self.stop_requested)):
 
