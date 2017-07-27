@@ -425,7 +425,7 @@ class Learner(object):
             print("minor iteration {}, |cache|={}".format(self.current_size, len(self.cache)))
 
 @typechecked
-def fixup_binders(e : Exp, binders_to_use : [EVar], allow_add=False) -> Exp:
+def fixup_binders(e : Exp, binders_to_use : [EVar], allow_add=False, throw=False) -> Exp:
     binders_by_type = group_by(binders_to_use, lambda b: b.type)
     class V(BottomUpRewriter):
         def visit_ELambda(self, e):
@@ -440,8 +440,11 @@ def fixup_binders(e : Exp, binders_to_use : [EVar], allow_add=False) -> Exp:
                     binders_by_type[e.arg.type].append(e.arg)
                     return ELambda(e.arg, self.visit(e.body))
                 else:
-                    # print("No legal binder to use for {}".format(e))
-                    return ELambda(e.arg, self.visit(e.body))
+                    if throw:
+                        print("No legal binder to use for {}".format(pprint(e)))
+                        raise Exception(pprint(e))
+                    else:
+                        return ELambda(e.arg, self.visit(e.body))
             b = legal_repls[0]
             return ELambda(b, self.visit(subst(e.body, { e.arg.id : b })))
     return V().visit(e)

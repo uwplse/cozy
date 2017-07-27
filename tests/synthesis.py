@@ -46,7 +46,7 @@ class TestSynthesisCore(unittest.TestCase):
         assert retypecheck(assumptions)
         def should_stop():
             return isinstance(res, EVar)
-        for r in improve(target, assumptions, [x], [], CompositeCostModel(), BinderBuilder([x], [xs], []), stop_callback=should_stop):
+        for r in improve(target, assumptions, [x], [xs], [], CompositeCostModel(), BinderBuilder([x], [xs], []), stop_callback=should_stop):
             print(pprint(r))
             res = r
 
@@ -60,7 +60,7 @@ class TestSynthesisCore(unittest.TestCase):
         assert retypecheck(assumptions)
         def should_stop():
             return isinstance(res, EVar)
-        for r in improve(target, assumptions, [], [], CompositeCostModel(), BinderBuilder([], [xs], []), stop_callback=should_stop):
+        for r in improve(target, assumptions, [], [xs], [], CompositeCostModel(), BinderBuilder([], [xs], []), stop_callback=should_stop):
             print(pprint(r))
             res = r
 
@@ -74,6 +74,6 @@ class TestSynthesisCore(unittest.TestCase):
         assert retypecheck(assumptions)
         def should_stop():
             return isinstance(res, EVar)
-        for r in improve(target, assumptions, [], [], CompositeCostModel(), BinderBuilder([], [xs], []), stop_callback=should_stop):
+        for r in improve(target, assumptions, [], [xs], [], CompositeCostModel(), BinderBuilder([], [xs], []), stop_callback=should_stop):
             print(pprint(r))
             res = r

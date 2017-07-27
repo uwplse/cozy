@@ -80,7 +80,7 @@ class ImproveQueryJob(jobs.Job):
                         b = fresh_var(t)
                         binders.append(b)
                 try:
-                    core.fixup_binders(expr, binders)
+                    core.fixup_binders(expr, binders, throw=True)
                     done = True
                 except:
                     pass
