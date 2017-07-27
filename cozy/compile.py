@@ -514,7 +514,7 @@ class CxxPrinter(common.Visitor):
         elif op in ("-", UOp.Not):
             ce, ee = self.visit(e.e, indent)
             op_str = "!" if op == UOp.Not else str(op)
-            return (ce, "({op} {ee})".format(op=op_str, ee=ee))
+            return (ce, "({op}{ee})".format(op=op_str, ee=ee))
         elif op == UOp.Distinct:
             v = fresh_var(e.type)
             stm = self.construct_concrete(e.type, e, v)
