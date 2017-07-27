@@ -91,7 +91,9 @@ class NoMoreImprovements(Exception):
     pass
 
 oracle = None
+_fates = defaultdict(int)
 def _on_exp(e, fate, *args):
+    _fates[fate] += 1
     return
     # if (isinstance(e, EMapGet) or
     #         isinstance(e, EFilter) or
@@ -198,6 +200,7 @@ class Learner(object):
         self.watch(target, assumptions)
 
     def reset(self, examples, update_watched_exps=True):
+        _fates.clear()
         self.cache = Cache(binders=self.binders, args=self.args)
         self.current_size = -1
         self.examples = examples
@@ -284,6 +287,7 @@ class Learner(object):
                 sv_depth -= 1
         self.all_examples = instantiate_examples((self.target,), self.examples, self.binders)
         self.behavior_index = BehaviorIndex()
+        print("|all_examples|={}".format(len(self.all_examples)))
         for (a, e, r, bound) in enumerate_fragments(self.target, pre_visit=pre_visit, post_visit=post_visit):
             if isinstance(e, ELambda) or any(v not in self.legal_free_vars for v in free_vars(e)):
                 continue
@@ -378,15 +382,15 @@ class Learner(object):
                     _on_exp(e, "new", "runtime" if pool == RUNTIME_POOL else "state")
                 else:
                     prev_cost, prev_exps = prev
-                    if enforce_strong_progress.value:
+                    if any(alpha_equivalent(e, ee) for (ee, size) in prev_exps):
+                        _on_exp(e, "duplicate")
+                        continue
+                    if enforce_strong_progress.value and cost <= prev_cost:
                         bad = find_one(all_exps(e), lambda ee: any(alpha_equivalent(ee, pe) for (pe, sz) in prev_exps))
                         if bad:
                             _on_exp(e, "failed strong progress requirement", bad)
                             continue
-                    if any(alpha_equivalent(e, ee) for (ee, size) in prev_exps):
-                        _on_exp(e, "duplicate")
-                        continue
-                    elif cost == prev_cost:
+                    if cost == prev_cost:
                         self.cache.add(e, pool=pool, size=self.current_size)
                         self.seen[(pool, fp)][1].append((e, self.current_size))
                         self.last_progress = self.current_size
@@ -422,6 +426,9 @@ class Learner(object):
             self.builder_iter = self.builder.build(self.cache, self.current_size)
             if self.current_size == 0:
                 self.builder_iter = itertools.chain(self.builder_iter, iter(self.roots))
+            for f, ct in sorted(_fates.items(), key=lambda x: x[1], reverse=True):
+                print("  {:6} | {}".format(ct, f))
+            _fates.clear()
             print("minor iteration {}, |cache|={}".format(self.current_size, len(self.cache)))
 
 @typechecked
