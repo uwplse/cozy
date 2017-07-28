@@ -518,12 +518,14 @@ def can_elim_vars(spec : Exp, assumptions : Exp, vs : [EVar]):
         EAll([assumptions, subst(assumptions, sub)]),
         EEq(spec, subst(spec, sub))))
 
-_DONE = set([EVar, EEnumEntry, ENum, EStr, EBool])
+_DONE = set([EVar, EEnumEntry, ENum, EStr, EBool, EEmptyList, ENull])
 def heuristic_done(e : Exp, args : [EVar] = []):
     return (
         (type(e) in _DONE) or
         (isinstance(e, ESingleton) and heuristic_done(e.e)) or
-        (isinstance(e, EStateVar) and heuristic_done(e.e)))
+        (isinstance(e, EStateVar) and heuristic_done(e.e)) or
+        (isinstance(e, EGetField) and heuristic_done(e.e)) or
+        (isinstance(e, EJust) and heuristic_done(e.e)))
 
 def never_stop():
     return False
