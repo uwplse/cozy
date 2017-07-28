@@ -1,52 +1,14 @@
-from functools import lru_cache
+from collections import OrderedDict
+from functools import total_ordering, lru_cache
+import itertools
+import sys
 
+from cozy.common import typechecked, partition
 from cozy.target_syntax import *
-from cozy.syntax_tools import BottomUpExplorer, pprint, equal, fresh_var, mk_lambda, free_vars
+from cozy.syntax_tools import BottomUpExplorer, pprint, equal, fresh_var, mk_lambda, free_vars, subst
 from cozy.pools import RUNTIME_POOL, STATE_POOL
-from cozy.solver import satisfiable, valid
-
-@lru_cache(maxsize=2**16)
-def P(e, assumptions=T):
-    """
-    Estimate probability that e evaluates to true.
-    """
-    if isinstance(e, EBool):
-        return 1 if e.val else 0
-    if not satisfiable(EAll([assumptions, e])):
-        return 0
-    if not satisfiable(EAll([assumptions, ENot(e)])):
-        return 1
-    if isinstance(e, EUnaryOp) and e.op == UOp.Not:
-        return 1 - P(e.e, assumptions)
-    elif isinstance(e, EBinOp):
-        if e.op == BOp.And:
-            if valid(EImplies(assumptions, EImplies(e.e1, e.e2))):
-                return P(e.e2)
-            elif valid(EImplies(assumptions, EImplies(e.e2, e.e1))):
-                return P(e.e1)
-            else:
-                return P(e.e1, assumptions) * P(e.e2, assumptions)
-        elif e.op == BOp.Or:
-            return P(ENot(EAll([ENot(e.e1), ENot(e.e2)])), assumptions)
-    return 0.5
-
-def map_ok(m : EMakeMap2):
-    """exist k1, k2 such that k1 != k2 and m[k1] != m[k2]?"""
-    k1 = fresh_var(m.type.k)
-    k2 = fresh_var(m.type.k)
-    mm = fresh_var(m.type)
-    v1 = EMapGet(mm, k1).with_type(m.type.v)
-    v2 = EMapGet(mm, k2).with_type(m.type.v)
-    f = EAll([ENot(EEq(k1, k2)), ELet(m, ELambda(mm, ENot(EEq(v1, v2)))).with_type(BOOL)])
-    return satisfiable(f)
-    from cozy.solver import satisfy
-    res = satisfy(f)
-    if res is None:
-        print("BAD MAP: {}".format(pprint(m)))
-    else:
-        print("map {} ok:".format(pprint(m)))
-        print(res)
-    return (res is not None)
+from cozy.solver import valid, satisfiable, REAL, SolverReportedUnknown
+from cozy.evaluation import eval
 
 class CostModel(object):
     def cost(self, e, pool):
@@ -54,173 +16,234 @@ class CostModel(object):
     def is_monotonic(self):
         raise NotImplementedError()
 
-class ConstantCost(CostModel):
-    def cost(self, e):
-        return 1
-    def is_monotonic(self):
-        return True
+@lru_cache(maxsize=2**16)
+@typechecked
+def cardinality_le(c1 : Exp, c2 : Exp, assumptions : Exp) -> bool:
+    assert c1.type == c2.type
+    v = fresh_var(c1.type.t)
+    return valid(EImplies(assumptions, EImplies(EIn(v, c1), EIn(v, c2))))
 
-class CardinalityVisitor(BottomUpExplorer):
-    def __init__(self, st={}):
-        self.st = st
-    def visit_EVar(self, v):
-        mapping = self.st.get(v)
-        if mapping is not None:
-            return self.visit(mapping)
-        return 1000
-    def visit_EGetField(self, e):
-        return 1000
-    def visit_ETupleGet(self, e):
-        return 1000
-    def visit_EEmptyList(self, e):
-        return 0
-    def visit_ESingleton(self, e):
-        return 1
-    def visit_EMakeMap(self, e):
-        return self.visit(e.e)
-    def visit_EMakeMap2(self, e):
-        return self.visit(e.e) + (EXTREME_COST * int(not map_ok(e)))
-    def visit_EMapGet(self, e, k=None):
-        # return self.visit(e.map) / 3
-        if not k:
-            k = lambda x: x
-        if isinstance(e.map, EMakeMap):
-            # return self.visit(e.map) / 3
-            return self.visit(k(e.map.value.apply_to(EFilter(e.map.e, ELambda(e.map.key.arg, equal(e.map.key.body, e.key))))))
-        elif isinstance(e.map, EMakeMap2):
-            return self.visit(k(e.map.value.apply_to(e.key)))
-        elif isinstance(e.map, EVar) and e.map in self.st:
-            return self.visit(k(EMapGet(self.st[e.map], e.key)))
-        elif isinstance(e.map, EMapGet):
-            return self.visit_EMapGet(e.map, k=lambda x: EMapGet(x, e.key))
-        elif isinstance(e.map, EStateVar):
-            return self.visit(k(EMapGet(e.map.e, e.key)))
-        else:
-            raise NotImplementedError(pprint(e))
-    def visit_EFilter(self, e):
-        if isinstance(e.e, EFilter):
-            return self.visit(EFilter(e.e.e, ELambda(e.p.arg, EAll([e.p.body, e.e.p.apply_to(e.p.arg)]))))
-        return self.visit(e.e) * P(e.p.body, assumptions=EBinOp(e.p.arg, BOp.In, e.e).with_type(BOOL))
-    def visit_EBinOp(self, e):
-        if e.op == "+":
-            return self.visit(e.e1) + self.visit(e.e2)
-        elif e.op == "-":
-            return max(self.visit(e.e1) - self.visit(e.e2), 0)
-        else:
-            raise NotImplementedError(e)
-    def visit_EUnaryOp(self, e):
-        if e.op == UOp.The:
-            return 1000 # TODO???
-        elif e.op == UOp.Distinct:
-            return self.visit(e.e) #* 0.9
-        else:
-            raise NotImplementedError(e)
-    def visit_EMap(self, e):
-        return self.visit(e.e)
-    def visit_EMapKeys(self, e):
-        return self.visit(e.e) * 0.9
-    def visit_EFlatMap(self, e):
-        return self.visit(e.e) * self.visit(e.f.body)
-    def visit_ECond(self, e):
-        # This rule is strange, but it has to work this way to preserve monotonicity
-        return self.visit(e.then_branch) + self.visit(e.else_branch)
-    def visit_EStateVar(self, e):
-        return self.visit(e.e)
-    def visit_Exp(self, e):
-        raise NotImplementedError(e)
+@lru_cache(maxsize=2**16)
+@typechecked
+def cardinality_le_implies_lt(c1 : Exp, c2 : Exp, assumptions : Exp) -> bool:
+    assert c1.type == c2.type
+    v = fresh_var(c1.type.t)
+    return satisfiable(EAll((assumptions, EIn(v, c2), ENot(EIn(v, c1)))))
 
-class MemoryUsageCostModel(CostModel, BottomUpExplorer):
-    def __init__(self):
-        self.cardinality = CardinalityVisitor().visit
-    def cost(self, e, pool):
-        cost = 0
-        if isinstance(e.type, TBag) or isinstance(e.type, TMap) or isinstance(e.type, TSet):
-            cost += self.cardinality(e)
-        elif e.type == BOOL:
-            cost += P(e)
-        cost += e.size()
-        return cost
-    def is_monotonic(self):
-        return False
+class Cost(object):
+
+    WORSE = "worse"
+    BETTER = "better"
+    UNORDERED = "unordered"
+
+    def __init__(self,
+            e             : Exp,
+            pool          : int,
+            formula       : Exp,
+            secondary     : float          = 0.0,
+            assumptions   : Exp            = T,
+            cardinalities : { EVar : Exp } = None):
+        assert formula.type == INT
+        self.e = e
+        self.pool = pool
+        self.formula = formula
+        self.secondary = secondary
+        assert all(v.type == INT for v in free_vars(assumptions))
+        self.assumptions = assumptions
+        self.cardinalities = cardinalities or { }
+
+    def order_cardinalities(self, other, assumptions):
+        cardinalities = OrderedDict()
+        cardinalities.update(self.cardinalities)
+        cardinalities.update(other.cardinalities)
+        assumptions = EAll((self.assumptions, other.assumptions, assumptions))
+        res = []
+        for (v1, c1) in cardinalities.items():
+            res.append(EBinOp(v1, ">=", ZERO).with_type(BOOL))
+            for (v2, c2) in cardinalities.items():
+                if v1 == v2 or c1.type != c2.type:
+                    continue
+                if cardinality_le(c1, c2, assumptions):
+                    if cardinality_le_implies_lt(c1, c2, assumptions):
+                        res.append(EBinOp(v1, "<", v2).with_type(BOOL))
+                    else:
+                        res.append(EBinOp(v1, "<=", v2).with_type(BOOL))
+        # print("cards: {}".format(pprint(EAll(res))))
+        return EAll(res)
+
+    @typechecked
+    def always(self, op, other, assumptions : Exp) -> bool:
+        """
+        Partial order on costs subject to assumptions.
+        """
+        if isinstance(self.formula, ENum) and isinstance(other.formula, ENum):
+            return eval(EBinOp(self.formula, op, other.formula).with_type(BOOL), env={})
+        f = EImplies(
+            EAll((self.assumptions, other.assumptions, self.order_cardinalities(other, assumptions))),
+            EBinOp(self.formula, op, other.formula).with_type(BOOL))
+        try:
+            return valid(f, logic="QF_LIA", timeout=1)
+        except SolverReportedUnknown:
+            # If we accidentally made an unsolveable integer arithmetic formula,
+            # then try again with real numbers. This will admit some models that
+            # are not possible (since bags must have integer cardinalities), but
+            # returning false is always a safe move here, so it's fine.
+            print("Warning: not able to solve {}".format(pprint(f)), file=sys.stderr)
+            f = subst(f, { v.id : EVar(v.id).with_type(REAL) for v in free_vars(f) })
+            return valid(f, logic="QF_NRA")
+
+    def compare_to(self, other, assumptions : Exp = T) -> bool:
+        if self.sometimes_worse_than(other, assumptions) and not other.sometimes_worse_than(self, assumptions):
+            return Cost.WORSE
+        elif self.sometimes_better_than(other, assumptions) and not other.sometimes_better_than(self, assumptions):
+            return Cost.BETTER
+        else:
+            if self.always("==", other, assumptions):
+                return (
+                    Cost.WORSE if self.secondary > other.secondary else
+                    Cost.BETTER if self.secondary < other.secondary else
+                    Cost.UNORDERED)
+            return Cost.UNORDERED
+
+    def always_worse_than(self, other, assumptions : Exp = T) -> bool:
+        # it is NOT possible that `self` takes less time than `other`
+        return self.always(">", other, assumptions)
+
+    def always_better_than(self, other, assumptions : Exp = T) -> bool:
+        # it is NOT possible that `self` takes more time than `other`
+        return self.always("<", other, assumptions)
+
+    def sometimes_worse_than(self, other, assumptions : Exp = T) -> bool:
+        # it is possible that `self` takes more time than `other`
+        return not self.always("<=", other, assumptions)
+
+    def sometimes_better_than(self, other, assumptions : Exp = T) -> bool:
+        # it is possible that `self` takes less time than `other`
+        return not self.always(">=", other, assumptions)
+
+    # def equivalent_to(self, other, assumptions : Exp = T) -> bool:
+    #     return not self.always_worse_than(other) and not other.always_worse_than(self)
+
+    def __str__(self):
+        return "cost[{} subject to {}, {}]".format(
+            pprint(self.formula),
+            pprint(self.assumptions),
+            ", ".join(pprint(EEq(v, EUnaryOp(UOp.Length, e))) for v, e in self.cardinalities.items()))
+
+    def __repr__(self):
+        return "Cost({!r}, assumptions={!r}, cardinalities={!r})".format(
+            self.formula,
+            self.assumptions,
+            self.cardinalities)
+
+Cost.ZERO = Cost(None, None, ZERO)
+
+def break_sum(e):
+    if isinstance(e, EBinOp) and e.op == "+":
+        yield from break_sum(e.e1)
+        yield from break_sum(e.e2)
+    else:
+        yield e
+
+def ESum(es):
+    es = [e for x in es for e in break_sum(x) if e != ZERO]
+    if not es:
+        return ZERO
+    nums, nonnums = partition(es, lambda e: isinstance(e, ENum))
+    es = nonnums
+    if nums:
+        es.append(ENum(sum(n.val for n in nums)).with_type(INT))
+
+    def balance(es):
+        if len(es) < 4:
+            res = es[0]
+            for i in range(1, len(es)):
+                res = EBinOp(res, "+", es[i]).with_type(res.type)
+            return res
+        else:
+            cut = len(es) // 2
+            return EBinOp(balance(es[:cut]), "+", balance(es[cut:])).with_type(INT)
+
+    return balance(es)
 
 # Some kinds of expressions have a massive penalty associated with them if they
 # appear at runtime.
-EXTREME_COST = 100000000
-MILD_PENALTY = 1000
+EXTREME_COST = ENum(1000).with_type(INT)
+MILD_PENALTY = ENum(  10).with_type(INT)
+TWO          = ENum(   2).with_type(INT)
 
-RUNTIME_NODE_EXEC_COST = 0.01
-
-class RunTimeCostModel(CostModel, BottomUpExplorer):
+class CompositeCostModel(CostModel, BottomUpExplorer):
     def __init__(self):
-        self.memcm = MemoryUsageCostModel()
-        self.cardinality = CardinalityVisitor().visit
-    def cost(self, e, pool):
-        return self.visit(e)
-    def is_monotonic(self):
-        return False
-
-    def visit_EVar(self, e):
-        return 1
-    def visit_EUnaryOp(self, e):
-        cost = self.visit(e.e)
-        if e.op in (UOp.Sum, UOp.Distinct):
-            cost += self.cardinality(e.e)
-        return cost + RUNTIME_NODE_EXEC_COST
-    def visit_EBinOp(self, e):
-        if e.op == BOp.In:
-            return self.visit(EFilter(e.e2, mk_lambda(e.e1.type, lambda x: equal(x, e.e1))))
-        c1 = self.visit(e.e1)
-        c2 = self.visit(e.e2)
-        cost = c1 + c2
-        if e.op == "==" and isinstance(e.e1.type, TBag):
-            cost += self.cardinality(e.e1) + self.cardinality(e.e2)
-        elif e.op == "-" and isinstance(e.type, TBag):
-            cost += self.cardinality(e.e1) + self.cardinality(e.e2)
-        # elif e.op == "or":
-        #     cost = c1 + P(ENot(e.e1)) * c2
-        # elif e.op == "and":
-        #     cost = c1 + P(e.e1) * c2
-        return cost + RUNTIME_NODE_EXEC_COST
-    # def visit_ECond(self, e):
-    #     c1 = self.visit(e.cond)
-    #     c2 = self.visit(e.then_branch)
-    #     c3 = self.visit(e.else_branch)
-    #     p = P(e.cond)
-    #     return RUNTIME_NODE_EXEC_COST + c1 + p*c2 + (1-p)*c3
-    def visit_EWithAlteredValue(self, e):
-        return EXTREME_COST + self.visit(e.handle) + self.visit(e.new_value)
-    def visit_EMap(self, e):
-        return RUNTIME_NODE_EXEC_COST + self.visit(e.e) + self.cardinality(e.e) * self.visit(e.f.body) + (MILD_PENALTY if isinstance(e.e, EBinOp) and e.e.op in "+-" else 0)
-    def visit_EFlatMap(self, e):
-        return RUNTIME_NODE_EXEC_COST + self.visit(EMap(e.e, e.f)) + (MILD_PENALTY if isinstance(e.e, EBinOp) and e.e.op in "+-" else 0)
-    def visit_EFilter(self, e):
-        return RUNTIME_NODE_EXEC_COST + self.visit(e.e) + self.cardinality(e.e) * self.visit(e.p.body) + (MILD_PENALTY if isinstance(e.e, EBinOp) and e.e.op in "+-" else 0)
-    def visit_EMakeMap(self, e):
-        return EXTREME_COST + self.visit(e.e) + self.cardinality(e.e) * (self.visit(e.key.body) + self.visit(e.value.body))
-    def visit_EMakeMap2(self, e):
-        return EXTREME_COST + self.visit(e.e) + self.cardinality(e.e) * self.visit(e.value.body)
-    def visit_ECond(self, e):
-        return EXTREME_COST + self.visit(e.cond) + self.visit(e.then_branch) + self.visit(e.else_branch)
-    def visit_EStateVar(self, e):
-        return self.memcm.cost(e.e, STATE_POOL) / 10 + MILD_PENALTY
-    def visit(self, x):
-        if isinstance(x, Exp) and not free_vars(x):
-            return x.size() * RUNTIME_NODE_EXEC_COST / 100
-        return super().visit(x)
-    def join(self, x, child_costs):
-        if isinstance(x, list) or isinstance(x, tuple):
-            return sum(child_costs)
-        if not isinstance(x, Exp):
-            return 0
-        return RUNTIME_NODE_EXEC_COST + sum(child_costs)
-
-class CompositeCostModel(RunTimeCostModel):
-    def __init__(self, state_vars : [EVar] = []):
         super().__init__()
     def __repr__(self):
         return "CompositeCostModel()"
+    def cardinality(self, e : Exp, plus_one=False) -> Exp:
+        if plus_one:
+            return ESum((self.cardinality(e, plus_one=False), ONE))
+        if isinstance(e, EEmptyList):
+            return ZERO
+        if isinstance(e, ESingleton):
+            return ONE
+        if isinstance(e, EBinOp) and e.op == "+":
+            return ESum((self.cardinality(e.e1), self.cardinality(e.e2)))
+        if isinstance(e, EMap):
+            return self.cardinality(e.e)
+        if e in self.cardinalities:
+            return self.cardinalities[e]
+        else:
+            v = fresh_var(INT)
+            self.cardinalities[e] = v
+            if isinstance(e, EFilter):
+                self.assumptions.append(EBinOp(v, "<=", self.cardinality(e.e)).with_type(BOOL))
+            return v
+    def statecost(self, e : Exp) -> float:
+        return e.size() / 100
+    def visit_EStateVar(self, e):
+        self.secondaries += self.statecost(e.e)
+        return ONE
+    def visit_EUnaryOp(self, e):
+        costs = [ONE, self.visit(e.e)]
+        if e.op in (UOp.Sum, UOp.Distinct, UOp.AreUnique):
+            costs.append(self.cardinality(e.e))
+        return ESum(costs)
+    def visit_EBinOp(self, e):
+        c1 = self.visit(e.e1)
+        c2 = self.visit(e.e2)
+        costs = [ONE, c1, c2]
+        if e.op == BOp.In:
+            costs.append(self.cardinality(e.e2))
+        elif e.op == "==" and isinstance(e.e1.type, TBag):
+            costs.append(self.cardinality(e.e1))
+            costs.append(self.cardinality(e.e2))
+        elif e.op == "-" and isinstance(e.type, TBag):
+            costs.append(self.cardinality(e.e1))
+            costs.append(self.cardinality(e.e2))
+        return ESum(costs)
+    def visit_EMakeMap2(self, e):
+        return ESum((EXTREME_COST, self.visit(e.e), EBinOp(self.cardinality(e.e, plus_one=True), "*", self.visit(e.value.body)).with_type(INT)))
+    def visit_EFilter(self, e):
+        return ESum((TWO, self.visit(e.e), EBinOp(self.cardinality(e.e, plus_one=True), "*", self.visit(e.p.body)).with_type(INT)))
+    def visit_EFlatMap(self, e):
+        return self.visit(EMap(e.e, e.f))
+    def visit_EMap(self, e):
+        return ESum((TWO, self.visit(e.e), EBinOp(self.cardinality(e.e, plus_one=True), "*", self.visit(e.f.body)).with_type(INT)))
+    def join(self, x, child_costs):
+        if isinstance(x, list) or isinstance(x, tuple):
+            return ESum(child_costs)
+        if not isinstance(x, Exp):
+            return ZERO
+        return ESum(itertools.chain((ONE,), child_costs))
+    def is_monotonic(self):
+        return False
     def cost(self, e, pool):
         if pool == RUNTIME_POOL:
-            return super().cost(e, pool)
+            self.cardinalities = OrderedDict()
+            self.assumptions = []
+            self.secondaries = 0
+            f = self.visit(e)
+            invcard = OrderedDict()
+            for e, v in self.cardinalities.items():
+                invcard[v] = e
+            return Cost(e, pool, f, secondary=self.secondaries, assumptions=EAll(self.assumptions), cardinalities=invcard)
         else:
-            return self.memcm.cost(e, pool)
+            return Cost(e, pool, ZERO, secondary=self.statecost(e))

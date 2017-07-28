@@ -14,6 +14,15 @@ from cozy.opts import Option
 
 save_solver_testcases = Option("save-solver-testcases", str, "", metavar="PATH")
 
+class SolverReportedUnknown(Exception):
+    pass
+
+class ModelValidationError(Exception):
+    pass
+
+TReal = declare_case(Type, "TReal", [])
+REAL = TReal()
+
 @typechecked
 def ite(ty : Type, cond : z3.AstRef, then_branch, else_branch):
     ctx = cond.ctx
@@ -297,6 +306,9 @@ class ToZ3(Visitor):
             for i in range(len(bag_elems)):
                 sum = z3.If(bag_mask[i], bag_elems[i], self.int_zero, ctx=self.ctx) + sum
             return sum
+        elif e.op == UOp.Length:
+            v = EVar("v").with_type(e.e.type.t)
+            return self.visit(EUnaryOp(UOp.Sum, EMap(e.e, ELambda(v, ONE)).with_type(TBag(INT))).with_type(e.type), env)
         elif e.op == UOp.AreUnique:
             def is_unique(bag):
                 bag_mask, bag_elems = bag
@@ -389,6 +401,8 @@ class ToZ3(Visitor):
             return v1 >= v2
         elif e.op == "<=":
             return v1 <= v2
+        elif e.op == "*":
+            return v1 * v2
         elif e.op == "+":
             if isinstance(e.type, TBag):
                 return (v1[0] + v2[0], v1[1] + v2[1])
@@ -556,6 +570,8 @@ class ToZ3(Visitor):
         solver = self.solver
         if type == INT or type == LONG or isinstance(type, TNative):
             return z3.Int(fresh_name(), ctx=ctx)
+        elif type == REAL:
+            return z3.Real(fresh_name(), ctx=ctx)
         elif type == STRING:
             i = z3.Int(fresh_name(), ctx=ctx)
             solver.add(i >= 0)
@@ -625,7 +641,7 @@ def mkconst(ctx, solver, val):
         raise NotImplementedError(repr(val))
 
 _LOCK = threading.Lock()
-def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = True):
+def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = True, model_callback = None, logic : str = None, timeout : float = None):
     start = datetime.now()
     with _LOCK:
         # print("Checking sat (|e|={}); time to acquire lock = {}".format(e.size(), datetime.now() - start))
@@ -634,13 +650,17 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
         assert e.type == BOOL
 
         ctx = z3.Context()
-        solver = z3.Solver(ctx=ctx)
+        solver = z3.Solver(ctx=ctx) if logic is None else z3.SolverFor(logic, ctx=ctx)
+        if timeout is not None:
+            solver.set("timeout", int(timeout * 1000))
         solver.set("core.validate", validate_model)
         visitor = ToZ3(ctx, solver)
 
         def reconstruct(model, value, type):
             if type == INT or type == LONG:
                 return model.eval(value, model_completion=True).as_long()
+            elif type == REAL:
+                return model.eval(value, model_completion=True).as_fraction()
             elif isinstance(type, TNative):
                 return (type.name, model.eval(value, model_completion=True).as_long())
             elif type == STRING:
@@ -728,7 +748,7 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
         if res == z3.unsat:
             return None
         elif res == z3.unknown:
-            raise Exception("z3 reported unknown")
+            raise SolverReportedUnknown("z3 reported unknown")
         else:
             model = solver.model()
             # print(model)
@@ -743,7 +763,8 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
                 def extracted_func(*args):
                     return reconstruct(model, f(*[visitor.unreconstruct(v, t) for (v, t) in zip(args, arg_types)]), out_type)
                 res[name] = extracted_func
-            # print(res)
+            if model_callback is not None:
+                model_callback(res)
             if validate_model:
                 x = evaluation.eval(e, res)
                 if x is not True:
@@ -796,7 +817,7 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
                                                 eenv[x.p.arg.id] = reconstruct(model, elem, x.type.t)
                                                 wq.append((x.p.body, senv, eenv))
                                     break
-                    raise Exception("model validation failed")
+                    raise ModelValidationError("model validation failed")
             return res
 
 def satisfiable(e, **opts):

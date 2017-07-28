@@ -280,6 +280,11 @@ def binaryop_add(stk):
     v1 = stk.pop()
     stk.append(v1 + v2)
 
+def binaryop_mul(stk):
+    v2 = stk.pop()
+    v1 = stk.pop()
+    stk.append(v1 * v2)
+
 def binaryop_sub(stk):
     v2 = stk.pop()
     v1 = stk.pop()
@@ -529,6 +534,8 @@ def _compile(e, env : {str:int}, out, bind_callback):
         e1type = e.e1.type
         if e.op == "+":
             out.append(binaryop_add)
+        elif e.op == "*":
+            out.append(binaryop_mul)
         elif e.op == "-":
             if isinstance(e1type, TBag):
                 out.append(binaryop_sub_bags(e1type.t))

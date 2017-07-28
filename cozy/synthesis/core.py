@@ -8,7 +8,7 @@ from cozy.syntax_tools import subst, pprint, free_vars, BottomUpExplorer, Bottom
 from cozy.common import OrderedSet, ADT, Visitor, fresh_name, typechecked, unique, pick_to_sum, cross_product, OrderedDefaultDict, OrderedSet, group_by, find_one
 from cozy.solver import satisfy, satisfiable, valid
 from cozy.evaluation import eval, eval_bulk, mkval, construct_value, uneval
-from cozy.cost_model import CostModel
+from cozy.cost_model import CostModel, Cost
 from cozy.opts import Option
 from cozy.pools import RUNTIME_POOL, STATE_POOL
 
@@ -243,6 +243,7 @@ class Learner(object):
 
     def watch(self, new_target, assumptions):
         self._check_seen_wf()
+        self.assumptions = assumptions
         self.backlog_counter = 0
         self.target = new_target
         self.update_watched_exps()
@@ -339,14 +340,16 @@ class Learner(object):
         for (watched_e, r, watched_cost, assumptions, p, bound) in self.behavior_index.search(fp):
             if p != pool:
                 continue
-            if watched_cost < cost:
-                continue
             e2 = self._doctor_for_context(e, bound)
             if e != e2:
                 print("*** doctoring took place; ctx=[{}]".format(", ".join(v.id for v in bound)))
                 print("    original --> {}".format(pprint(e)))
                 print("    modified --> {}".format(pprint(e2)))
             if e2 == watched_e:
+                continue
+            if not cost.sometimes_better_than(watched_cost):
+                # TODO: do we ever actually hit this branch?
+                _on_exp(e, "skipped possible replacement", watched_e)
                 continue
             yield (watched_e, e2, r)
 
@@ -385,17 +388,19 @@ class Learner(object):
                     if any(alpha_equivalent(e, ee) for (ee, size) in prev_exps):
                         _on_exp(e, "duplicate")
                         continue
-                    if enforce_strong_progress.value and cost <= prev_cost:
+                    ordering = cost.compare_to(prev_cost, self.assumptions)
+                    assert ordering in (Cost.WORSE, Cost.BETTER, Cost.UNORDERED)
+                    if enforce_strong_progress.value and ordering != Cost.WORSE:
                         bad = find_one(all_exps(e), lambda ee: any(alpha_equivalent(ee, pe) for (pe, sz) in prev_exps))
                         if bad:
                             _on_exp(e, "failed strong progress requirement", bad)
                             continue
-                    if cost == prev_cost:
+                    _on_exp(e, ordering, "runtime" if pool == RUNTIME_POOL else "state", *[e for (e, cost) in prev_exps])
+                    if ordering == Cost.UNORDERED:
                         self.cache.add(e, pool=pool, size=self.current_size)
                         self.seen[(pool, fp)][1].append((e, self.current_size))
                         self.last_progress = self.current_size
-                        _on_exp(e, "equivalent", *[e for (e, cost) in prev_exps])
-                    elif cost < prev_cost:
+                    elif ordering == Cost.BETTER:
                         for (prev_exp, prev_size) in prev_exps:
                             self.cache.evict(prev_exp, size=prev_size, pool=pool)
                             if (self.cost_model.is_monotonic() or hyperaggressive_culling.value) and hyperaggressive_eviction.value:
@@ -408,9 +413,7 @@ class Learner(object):
                         self.cache.add(e, pool=pool, size=self.current_size)
                         self.seen[(pool, fp)] = (cost, [(e, self.current_size)])
                         self.last_progress = self.current_size
-                        _on_exp(e, "better", *[e for (e, cost) in prev_exps])
                     else:
-                        _on_exp(e, "worse", *[e for (e, cost) in prev_exps])
                         continue
 
                 improvements = list(self._possible_replacements(e, pool, cost, fp))
@@ -651,7 +654,7 @@ def improve(
                 # b. if correct: yield it, watch the new target, goto 1
                 old_cost = cost_model.cost(target, RUNTIME_POOL)
                 new_cost = cost_model.cost(new_target, RUNTIME_POOL)
-                if new_cost > old_cost:
+                if new_cost.always_worse_than(old_cost):
                     print("WHOOPS! COST GOT WORSE!")
                     if save_testcases.value:
                         with open(save_testcases.value, "a") as f:
