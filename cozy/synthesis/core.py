@@ -9,7 +9,7 @@ from cozy.solver import satisfy, satisfiable, valid
 from cozy.evaluation import eval, eval_bulk, mkval, construct_value, uneval
 from cozy.cost_model import CostModel, Cost
 from cozy.opts import Option
-from cozy.pools import RUNTIME_POOL, STATE_POOL
+from cozy.pools import RUNTIME_POOL, STATE_POOL, pool_name
 
 from .cache import Cache
 
@@ -248,7 +248,7 @@ class Learner(object):
         self.update_watched_exps()
         self.roots = []
         for (e, r, cost, a, pool, bound) in self.watched_exps:
-            _on_exp(e, "new root")
+            _on_exp(e, "new root", pool_name(pool))
             self.roots.append((e, pool))
         # new_roots = []
         # for e in itertools.chain(all_exps(new_target), all_exps(assumptions)):
@@ -336,7 +336,7 @@ class Learner(object):
                 continue
             if not cost.sometimes_better_than(watched_cost):
                 # TODO: do we ever actually hit this branch?
-                _on_exp(e, "skipped possible replacement", watched_e)
+                _on_exp(e, "skipped possible replacement", pool_name(pool), watched_e)
                 continue
             yield (watched_e, e2, r)
 
@@ -369,7 +369,7 @@ class Learner(object):
                     self.seen[(pool, fp)] = (cost, [(e, self.current_size)])
                     self.cache.add(e, pool=pool, size=self.current_size)
                     self.last_progress = self.current_size
-                    _on_exp(e, "new", "runtime" if pool == RUNTIME_POOL else "state")
+                    _on_exp(e, "new", pool_name(pool))
                 else:
                     prev_cost, prev_exps = prev
                     if any(alpha_equivalent(e, ee) for (ee, size) in prev_exps):
@@ -382,7 +382,7 @@ class Learner(object):
                         if bad:
                             _on_exp(e, "failed strong progress requirement", bad)
                             continue
-                    _on_exp(e, ordering, "runtime" if pool == RUNTIME_POOL else "state", *[e for (e, cost) in prev_exps])
+                    _on_exp(e, ordering, pool_name(pool), *[e for (e, cost) in prev_exps])
                     if ordering == Cost.UNORDERED:
                         self.cache.add(e, pool=pool, size=self.current_size)
                         self.seen[(pool, fp)][1].append((e, self.current_size))
