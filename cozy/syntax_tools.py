@@ -521,6 +521,30 @@ def enumerate_fragments(e : syntax.Exp, pre_visit=None, post_visit=None, include
         if isinstance(x, syntax.Exp) and ((not isinstance(x, target_syntax.ELambda)) or include_lambdas):
             yield info
 
+def enumerate_fragments_and_pools(e : syntax.Exp, pre_visit=None, post_visit=None, include_lambdas=False):
+    """
+    Like enumerate_fragments, but adds "pool" to the tuple depending on whether
+    we are beneath an EStateVar.
+    """
+    sv_depth = 0
+    def new_pre_visit(obj):
+        nonlocal sv_depth
+        if pre_visit is not None and not pre_visit(obj):
+            return False
+        if isinstance(obj, target_syntax.EStateVar):
+            sv_depth += 1
+        return True
+    def new_post_visit(obj):
+        nonlocal sv_depth
+        if post_visit is not None:
+            post_visit(obj)
+        if isinstance(obj, target_syntax.EStateVar):
+            sv_depth -= 1
+    def pool(e):
+        return pools.STATE_POOL if ((sv_depth - 1) if isinstance(e, target_syntax.EStateVar) else sv_depth) else pools.RUNTIME_POOL
+    for (a, x, r, bound) in enumerate_fragments(e, new_pre_visit, new_post_visit, include_lambdas=include_lambdas):
+        yield (a, x, r, bound, pool(x))
+
 def replace(exp, old_exp, new_exp):
     class Replacer(BottomUpRewriter):
         def visit_ELambda(self, e):

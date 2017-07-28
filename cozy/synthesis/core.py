@@ -3,8 +3,7 @@ import itertools
 import sys
 
 from cozy.target_syntax import *
-from cozy.typecheck import INT, BOOL
-from cozy.syntax_tools import subst, pprint, free_vars, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda, enumerate_fragments, exp_wf
+from cozy.syntax_tools import subst, pprint, free_vars, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda, enumerate_fragments_and_pools, exp_wf, is_scalar
 from cozy.common import OrderedSet, ADT, Visitor, fresh_name, typechecked, unique, pick_to_sum, cross_product, OrderedDefaultDict, OrderedSet, group_by, find_one
 from cozy.solver import satisfy, satisfiable, valid
 from cozy.evaluation import eval, eval_bulk, mkval, construct_value, uneval
@@ -276,25 +275,13 @@ class Learner(object):
     def update_watched_exps(self):
         self.cost_ceiling = self.cost_model.cost(self.target, RUNTIME_POOL)
         self.watched_exps = []
-        sv_depth = 0
-        def pre_visit(obj):
-            nonlocal sv_depth
-            if isinstance(obj, EStateVar):
-                sv_depth += 1
-            return True
-        def post_visit(obj):
-            nonlocal sv_depth
-            if isinstance(obj, EStateVar):
-                sv_depth -= 1
         self.all_examples = instantiate_examples((self.target,), self.examples, self.binders)
         self.behavior_index = BehaviorIndex()
         print("|all_examples|={}".format(len(self.all_examples)))
-        for (a, e, r, bound) in enumerate_fragments(self.target, pre_visit=pre_visit, post_visit=post_visit):
+        for (a, e, r, bound, pool) in enumerate_fragments_and_pools(self.target):
             if isinstance(e, ELambda) or any(v not in self.legal_free_vars for v in free_vars(e)):
                 continue
             a = [aa for aa in a if all(v in self.legal_free_vars for v in free_vars(aa))]
-            depth = (sv_depth - 1) if isinstance(e, EStateVar) else sv_depth
-            pool = STATE_POOL if depth else RUNTIME_POOL
             cost = self.cost_model.cost(e, pool)
             info = (e, r, cost, a, pool, bound)
             self.watched_exps.append(info)
