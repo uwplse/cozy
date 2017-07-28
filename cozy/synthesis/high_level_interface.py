@@ -336,8 +336,11 @@ def synthesize(
         done = False
         while not done and not timeout.is_timed_out():
             for j in improvement_jobs:
-                if j.done and not j.successful:
-                    raise Exception("failed job: {}".format(j))
+                if j.done:
+                    if j.successful:
+                        stop_jobs([j])
+                    else:
+                        raise Exception("failed job: {}".format(j))
 
             done = all(j.done for j in improvement_jobs)
 
