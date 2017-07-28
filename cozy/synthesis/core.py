@@ -633,7 +633,7 @@ def improve(
             assert not find_one(free_vars(new_target), lambda v: v not in vars)
 
             # 3. check
-            formula = EAll([assumptions, ENot(equal(target, new_target))])
+            formula = EAll([assumptions, ENot(EBinOp(target, "===", new_target).with_type(BOOL))])
             counterexample = satisfy(formula, vars=vars)
             if counterexample is not None:
                 if counterexample in examples:

@@ -121,7 +121,7 @@ class ToZ3(Visitor):
             self.distinct(t, values[1:]),
             *[z3.Not(self.eq(t, values[0], v1, {}), self.ctx) for v1 in values[1:]],
             self.ctx)
-    def eq(self, t, e1, e2, env):
+    def eq(self, t, e1, e2, env, deep=False):
         if type(t) in [TInt, TLong, TBool, TEnum, TNative, TString]:
             assert isinstance(e1, z3.AstRef), "{}".format(repr(e1))
             assert isinstance(e2, z3.AstRef), "{}".format(repr(e2))
@@ -131,7 +131,7 @@ class ToZ3(Visitor):
             m2, v2 = e2
             return z3.And(
                 m1 == m2,
-                z3.Implies(m1, self.eq(t.t, v1, v2, env), self.ctx),
+                z3.Implies(m1, self.eq(t.t, v1, v2, env, deep=deep), self.ctx),
                 self.ctx)
         elif isinstance(t, TBag) or isinstance(t, TSet):
             elem_type = t.t
@@ -146,39 +146,46 @@ class ToZ3(Visitor):
             conds = []
             conds.append(e1len == e2len)
 
-            lhs_counts = [ (x, self.count_in(elem_type, e1, x, env)) for x in lhs_elems ]
+            lhs_counts = [ (x, self.count_in(elem_type, e1, x, env, deep=deep)) for x in lhs_elems ]
             for x, count in lhs_counts:
-                conds.append(count == self.count_in(elem_type, e2, x, env))
+                conds.append(count == self.count_in(elem_type, e2, x, env, deep=deep))
 
-            rhs_counts = [ (x, self.count_in(elem_type, e1, x, env)) for x in rhs_elems ]
+            rhs_counts = [ (x, self.count_in(elem_type, e1, x, env, deep=deep)) for x in rhs_elems ]
             for x, count in rhs_counts:
-                conds.append(count == self.count_in(elem_type, e1, x, env))
+                conds.append(count == self.count_in(elem_type, e1, x, env, deep=deep))
+
+            if deep:
+                # TODO: the(e1) == the(e2)
+                pass
 
             return z3.And(*conds, self.ctx)
         elif isinstance(t, TMap):
-            conds = [self.eq(t.v, e1["default"], e2["default"], env)]
+            conds = [self.eq(t.v, e1["default"], e2["default"], env, deep=deep)]
             def map_keys(m):
                 return ([mask for (mask, k, v) in m["mapping"]], [k for (mask, k, v) in m["mapping"]])
             e1keys = map_keys(e1)
             e2keys = map_keys(e2)
             for (mask, k, v) in e1["mapping"]:
-                conds.append(z3.Implies(mask, z3.And(self.is_in(t.k, e2keys, k, env), self.eq(t.v, self._map_get(t, e1, k, env), self._map_get(t, e2, k, env), env), self.ctx), self.ctx))
+                conds.append(z3.Implies(mask, z3.And(self.is_in(t.k, e2keys, k, env), self.eq(t.v, self._map_get(t, e1, k, env), self._map_get(t, e2, k, env), env, deep=deep), self.ctx), self.ctx))
             for (mask, k, v) in e2["mapping"]:
-                conds.append(z3.Implies(mask, z3.And(self.is_in(t.k, e1keys, k, env), self.eq(t.v, self._map_get(t, e1, k, env), self._map_get(t, e2, k, env), env), self.ctx), self.ctx))
+                conds.append(z3.Implies(mask, z3.And(self.is_in(t.k, e1keys, k, env), self.eq(t.v, self._map_get(t, e1, k, env), self._map_get(t, e2, k, env), env, deep=deep), self.ctx), self.ctx))
             return z3.And(*conds, self.ctx)
         elif isinstance(t, THandle):
             h1, val1 = e1
             h2, val2 = e2
-            return h1 == h2
+            res = h1 == h2
+            if deep:
+                res = z3.And(res, self.eq(t.value_type, val1, val2, env, deep=deep), self.ctx)
+            return res
         elif isinstance(t, TRecord):
-            conds = [self.eq(tt, e1[f], e2[f], env) for (f, tt) in t.fields]
+            conds = [self.eq(tt, e1[f], e2[f], env, deep=deep) for (f, tt) in t.fields]
             return z3.And(*conds, self.ctx)
         elif isinstance(t, TTuple):
-            conds = [self.eq(t, x, y, env) for (t, x, y) in zip(t.ts, e1, e2)]
+            conds = [self.eq(t, x, y, env, deep=deep) for (t, x, y) in zip(t.ts, e1, e2)]
             return z3.And(*conds, self.ctx)
         else:
             raise NotImplementedError(t)
-    def count_in(self, t, bag, x, env):
+    def count_in(self, t, bag, x, env, deep=False):
         """
         t - type of elems in bag
         bag - a bag
@@ -190,9 +197,9 @@ class ToZ3(Visitor):
         bag_mask, bag_elems = bag
         l = self.int_zero
         for i in range(len(bag_elems)):
-            l = z3.If(z3.And(bag_mask[i], self.eq(t, x, bag_elems[i], env), self.ctx), self.int_one, self.int_zero, ctx=self.ctx) + l
+            l = z3.If(z3.And(bag_mask[i], self.eq(t, x, bag_elems[i], env, deep=deep), self.ctx), self.int_one, self.int_zero, ctx=self.ctx) + l
         return l
-    def is_in(self, t, bag, x, env):
+    def is_in(self, t, bag, x, env, deep=False):
         """
         t - type of elems in bag
         bag - a bag
@@ -203,7 +210,7 @@ class ToZ3(Visitor):
         """
         bag_mask, bag_elems = bag
         conds = [
-            z3.And(mask, self.eq(t, x, elem, env), self.ctx)
+            z3.And(mask, self.eq(t, x, elem, env, deep=deep), self.ctx)
             for (mask, elem) in zip(bag_mask, bag_elems)]
         return z3.Or(*conds, self.ctx)
     def len_of(self, val):
@@ -393,6 +400,8 @@ class ToZ3(Visitor):
             return z3.Or(v1, v2, self.ctx)
         elif e.op == "==":
             return self.eq(e.e1.type, v1, v2, env)
+        elif e.op == "===":
+            return self.eq(e.e1.type, v1, v2, env, deep=True)
         elif e.op == ">":
             return v1 > v2
         elif e.op == "<":

@@ -102,15 +102,28 @@ Handle = namedtuple("Handle", ["address", "value"])
 LT = -1
 EQ =  0
 GT =  1
-def cmp(t, v1, v2):
+def cmp(t, v1, v2, deep=False):
     stk = [(t, v1, v2)]
+
+    orig_deep = deep
+    def cleardeep():
+        nonlocal deep
+        deep = False
+    def resetdeep():
+        nonlocal deep
+        deep = orig_deep
+
     while stk:
-        (t, v1, v2) = stk.pop()
+        head = stk.pop()
+        if hasattr(head, "__call__"):
+            head()
+            continue
+        (t, v1, v2) = head
 
         if isinstance(t, THandle):
-            if v1.address == v2.address: continue
-            if v1.address <  v2.address: return LT
-            else:                        return GT
+            if deep:
+                stk.append((t.value_type, v1.value, v2.value))
+            stk.append((INT, v1.address, v2.address))
         elif isinstance(t, TEnum):
             i1 = t.cases.index(v1)
             i2 = t.cases.index(v2)
@@ -118,16 +131,19 @@ def cmp(t, v1, v2):
             if i1 <  i2: return LT
             else:        return GT
         elif isinstance(t, TBag) or isinstance(t, TSet):
+            # TODO: if deep, handle "the"?
             elems1 = list(sorted(v1))
             elems2 = list(sorted(v2))
             if len(elems1) < len(elems2): return LT
             if len(elems1) > len(elems2): return GT
             stk.extend(reversed([(t.t, x, y) for (x, y) in zip(elems1, elems2)]))
         elif isinstance(t, TMap):
-            keys1 = Bag(sorted(v1.keys()))
+            keys1 = Bag(v1.keys())
             keys2 = Bag(v2.keys())
-            stk.extend(reversed([(t.v, v1[k], v2[k]) for k in keys1]))
+            stk.extend(reversed([(t.v, v1[k], v2[k]) for k in sorted(keys1)]))
+            stk.append(resetdeep)
             stk.append((TSet(t.k), keys1, keys2))
+            stk.append(cleardeep)
             stk.append((t.v, v1.default, v2.default))
         elif isinstance(t, TMaybe):
             if v1.obj is None and v2.obj is None:
@@ -303,11 +319,11 @@ def binaryop_sub_bags(elem_type):
         stk.append(Bag(elems))
     return binaryop_sub_bags
 
-def binaryop_eq(t):
+def binaryop_eq(t, deep=False):
     def binaryop_eq(stk):
         v2 = stk.pop()
         v1 = stk.pop()
-        stk.append(cmp(t, v1, v2) == EQ)
+        stk.append(cmp(t, v1, v2, deep=deep) == EQ)
     return binaryop_eq
 
 def binaryop_ne(t):
@@ -543,6 +559,8 @@ def _compile(e, env : {str:int}, out, bind_callback):
                 out.append(binaryop_sub)
         elif e.op == "==":
             out.append(binaryop_eq(e1type))
+        elif e.op == "===":
+            out.append(binaryop_eq(e1type, deep=True))
         elif e.op == "<":
             out.append(binaryop_lt(e1type))
         elif e.op == ">":

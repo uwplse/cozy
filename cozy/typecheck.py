@@ -289,7 +289,7 @@ class Typechecker(Visitor):
     def visit_EBinOp(self, e):
         self.visit(e.e1)
         self.visit(e.e2)
-        if e.op in ["==", "!=", "<", "<=", ">", ">="]:
+        if e.op in ["==", "===", "!=", "<", "<=", ">", ">="]:
             if not all([t in (INT, LONG) for t in [e.e1.type, e.e2.type]]):
                 self.ensure_type(e.e2, e.e1.type)
             e.type = BOOL
