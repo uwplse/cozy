@@ -491,12 +491,6 @@ class FixedBuilder(ExpBuilder):
                 if not valid(implies(self.assumptions, EBinOp(len, "<=", ENum(1).with_type(INT)).with_type(BOOL))):
                     _on_exp(e, "rejecting illegal application of 'the': could have >1 elems")
                     continue
-                if not satisfiable(EAll([self.assumptions, equal(len, ENum(0).with_type(INT))])):
-                    _on_exp(e, "rejecting illegal application of 'the': cannot be empty")
-                    continue
-                if not satisfiable(EAll([self.assumptions, equal(len, ENum(1).with_type(INT))])):
-                    _on_exp(e, "rejecting illegal application of 'the': always empty")
-                    continue
 
             # # map gets must be provably in the map
             # if isinstance(e, EMapGet):
