@@ -71,18 +71,6 @@ def instantiate_examples(watched_targets, examples, binders : [EVar]):
 def fingerprint(e, examples):
     return (e.type,) + tuple(eval_bulk(e, examples))
 
-def make_constant_of_type(t):
-    class V(Visitor):
-        def visit_TInt(self, t):
-            return ENum(0).with_type(t)
-        def visit_TBool(self, t):
-            return EBool(False).with_type(t)
-        def visit_TBag(self, t):
-            return EEmptyList().with_type(t)
-        def visit_Type(self, t):
-            raise NotImplementedError(t)
-    return V().visit(t)
-
 class StopException(Exception):
     pass
 
