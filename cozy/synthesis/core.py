@@ -311,12 +311,17 @@ class Learner(object):
         the verifier will produce a counterexample in which it gets bound to
         something else.
         """
+        orig_e = e
         value_by_var = { }
         eval_bulk(self.target, self.examples, bind_callback=lambda var, val: value_by_var.update({var:val}))
         v = find_one(fv for fv in free_vars(e) if fv in self.binders and fv not in bound_vars)
         while v:
             e = subst(e, { v.id : uneval(v.type, value_by_var.get(v, mkval(v.type))) })
             v = find_one(fv for fv in free_vars(e) if fv in self.binders and fv not in bound_vars)
+        if e != orig_e:
+            print("*** doctoring took place; ctx=[{}]".format(", ".join(v.id for v in bound_vars)))
+            print("    original --> {}".format(pprint(e)))
+            print("    modified --> {}".format(pprint(orig_e)))
         return e
 
     def _possible_replacements(self, e, pool, cost, fp):
@@ -327,18 +332,11 @@ class Learner(object):
         for (watched_e, r, watched_cost, assumptions, p, bound) in self.behavior_index.search(fp):
             if p != pool:
                 continue
-            e2 = self._doctor_for_context(e, bound)
-            if e != e2:
-                print("*** doctoring took place; ctx=[{}]".format(", ".join(v.id for v in bound)))
-                print("    original --> {}".format(pprint(e)))
-                print("    modified --> {}".format(pprint(e2)))
-            if e2 == watched_e:
-                continue
             if not cost.sometimes_better_than(watched_cost):
                 # TODO: do we ever actually hit this branch?
                 _on_exp(e, "skipped possible replacement", pool_name(pool), watched_e)
                 continue
-            yield (watched_e, e2, r)
+            yield (watched_e, e, r)
 
     def next(self):
         while True:
@@ -619,8 +617,6 @@ def improve(
             print(pprint(repl(EVar("@___"))))
             new_target = repl(new_e)
 
-            assert not find_one(free_vars(new_target), lambda v: v not in vars)
-
             # 3. check
             formula = EAll([assumptions, ENot(EBinOp(target, "===", new_target).with_type(BOOL))])
             counterexample = satisfy(formula, vars=vars)
@@ -641,6 +637,13 @@ def improve(
                 learner.reset(examples)
             else:
                 # b. if correct: yield it, watch the new target, goto 1
+
+                # if binders appear free, let's fix it
+                new_target2 = learner._doctor_for_context(new_target, {})
+                if new_target2 != new_target:
+                    new_target = new_target2
+                    assert valid(EImplies(assumptions, EBinOp(target, "===", new_target).with_type(BOOL)))
+
                 old_cost = cost_model.cost(target, RUNTIME_POOL)
                 new_cost = cost_model.cost(new_target, RUNTIME_POOL)
                 if new_cost.always_worse_than(old_cost):
