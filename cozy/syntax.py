@@ -144,19 +144,34 @@ def seq(stms):
             result = s if result is None else SSeq(result, s)
         return result
 
+def build_balanced_tree(t, op, es : [Exp], st=None, ed=None):
+    """
+    Create a balanced expression tree out of an associative binary operator.
+
+    Many internal functions do not like deep, stick-shaped trees since those
+    functions are recursive and Python has a small-ish maximum stack depth.
+    """
+    if st is None:
+        st = 0
+    if ed is None:
+        ed = len(es)
+    n = ed - st
+    assert n > 0, "cannot create balanced tree out of empty list"
+    if n == 1:
+        return es[st]
+    else:
+        cut = st + (n // 2)
+        return EBinOp(
+            build_balanced_tree(t, op, es, st=st, ed=cut), op,
+            build_balanced_tree(t, op, es, st=cut, ed=ed)).with_type(t)
+
 def EAll(exps):
     exps = [ e for e in exps if e != T ]
     if any(e == F for e in exps):
         return F
-    res = None
-    for e in exps:
-        if res is None:
-            res = e
-        else:
-            res = EBinOp(res, "and", e).with_type(BOOL)
-    if res is None:
+    if not exps:
         return T
-    return res
+    return build_balanced_tree(BOOL, BOp.And, exps)
 
 def EAny(exps):
     return ENot(EAll([ENot(e) for e in exps]))

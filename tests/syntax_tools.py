@@ -5,8 +5,14 @@ from cozy.target_syntax import *
 from cozy.syntax_tools import *
 from cozy.typecheck import retypecheck
 from cozy.solver import valid
+from cozy.evaluation import eval
 
 class TestSyntaxTools(unittest.TestCase):
+
+    def test_eall(self):
+        assert eval(EAll(()), {})
+        for l in range(5):
+            print(pprint(EAll([EVar("v{}".format(i)).with_type(BOOL) for i in range(l)])))
 
     def test_enumerate_fragments_strange_binder_behavior(self):
         xs = EVar("xs").with_type(TBag(INT))

@@ -153,18 +153,7 @@ def ESum(es):
     es = nonnums
     if nums:
         es.append(ENum(sum(n.val for n in nums)).with_type(INT))
-
-    def balance(es):
-        if len(es) < 4:
-            res = es[0]
-            for i in range(1, len(es)):
-                res = EBinOp(res, "+", es[i]).with_type(res.type)
-            return res
-        else:
-            cut = len(es) // 2
-            return EBinOp(balance(es[:cut]), "+", balance(es[cut:])).with_type(INT)
-
-    return balance(es)
+    return build_balanced_tree(INT, "+", es)
 
 # Some kinds of expressions have a massive penalty associated with them if they
 # appear at runtime.
