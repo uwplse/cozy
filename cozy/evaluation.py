@@ -2,8 +2,8 @@ from collections import UserDict, defaultdict, namedtuple
 from functools import total_ordering
 
 from cozy.target_syntax import *
-from cozy.syntax_tools import equal, pprint
-from cozy.common import Visitor, FrozenDict, unique, extend
+from cozy.syntax_tools import equal, pprint, free_vars, all_exps
+from cozy.common import FrozenDict, OrderedSet, extend
 from cozy.typecheck import is_numeric
 
 @total_ordering
@@ -669,6 +669,13 @@ def _compile(e, env : {str:int}, out, bind_callback):
     else:
         raise NotImplementedError(type(e))
 
+def free_vars_and_funcs(e):
+    for v in free_vars(e):
+        yield v.id
+    for x in all_exps(e):
+        if isinstance(x, ECall):
+            yield x.func
+
 def eval_bulk(e, envs, bind_callback=None):
     if bind_callback is None:
         bind_callback = lambda arg, val: None
@@ -676,8 +683,8 @@ def eval_bulk(e, envs, bind_callback=None):
     if not envs:
         return []
     ops = []
-    vars = list(envs[0].keys())
+    vars = OrderedSet(free_vars_and_funcs(e))
     vmap = { v : i for (i, v) in enumerate(vars) }
-    envs = [ [env[v] for v in sorted(env.keys(), key=vmap.get)] for env in envs ]
+    envs = [ [env[v] for v in vars] for env in envs ]
     _compile(e, vmap, ops, bind_callback)
     return [_eval_compiled(ops, env) for env in envs]
