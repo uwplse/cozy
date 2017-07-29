@@ -332,8 +332,9 @@ class Learner(object):
         for (watched_e, r, watched_cost, assumptions, p, bound) in self.behavior_index.search(fp):
             if p != pool:
                 continue
+            if e == watched_e:
+                continue
             if not cost.sometimes_better_than(watched_cost):
-                # TODO: do we ever actually hit this branch?
                 _on_exp(e, "skipped possible replacement", pool_name(pool), watched_e)
                 continue
             yield (watched_e, e, r)
