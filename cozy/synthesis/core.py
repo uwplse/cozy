@@ -56,7 +56,9 @@ def instantiate_examples(watched_targets, examples, binders : [EVar]):
         # collect all the values that flow into the binders
         vals_by_type = defaultdict(OrderedSet)
         for e in watched_targets:
-            eval(e, ex, bind_callback=lambda arg, val: vals_by_type[arg.type].add(val))
+            eval(e, ex,
+                bind_callback=lambda arg, val: vals_by_type[arg.type].add(val),
+                use_default_values_for_undefined_vars = True)
         # print(vals_by_type)
         # instantiate examples with each possible combination of values
         x = [ex]
@@ -301,7 +303,9 @@ class Learner(object):
         """
         orig_e = e
         value_by_var = { }
-        eval_bulk(self.target, self.examples, bind_callback=lambda var, val: value_by_var.update({var:val}))
+        eval_bulk(self.target, self.examples,
+            bind_callback=lambda var, val: value_by_var.update({var:val}),
+            use_default_values_for_undefined_vars = True)
         v = find_one(fv for fv in free_vars(e) if fv in self.binders and fv not in bound_vars)
         while v:
             e = subst(e, { v.id : uneval(v.type, value_by_var.get(v, mkval(v.type))) })
@@ -627,12 +631,6 @@ def improve(
             else:
                 # b. if correct: yield it, watch the new target, goto 1
 
-                # if binders appear free, let's fix it
-                new_target2 = learner._doctor_for_context(new_target, {})
-                if new_target2 != new_target:
-                    new_target = new_target2
-                    assert valid(EImplies(assumptions, EBinOp(target, "===", new_target).with_type(BOOL)))
-
                 old_cost = cost_model.cost(target, RUNTIME_POOL)
                 new_cost = cost_model.cost(new_target, RUNTIME_POOL)
                 if new_cost.always_worse_than(old_cost):
@@ -661,7 +659,17 @@ def improve(
                     learner.reset(examples, update_watched_exps=False)
                 learner.watch(new_target, assumptions)
                 target = new_target
-                yield new_target
+
+                # if binders appear free, let's fix it
+                new_target2 = learner._doctor_for_context(new_target, {})
+                if new_target2 != new_target:
+                    if not valid(EImplies(assumptions, EBinOp(target, "===", new_target2).with_type(BOOL))):
+                        print("OOPS!")
+                        print("correct: {}".format(pprint(new_target)))
+                        print("wrong:   {}".format(pprint(new_target2)))
+                        assert False
+
+                yield new_target2
 
                 if heuristic_done(new_target, args):
                     print("target now matches doneness heuristic")
