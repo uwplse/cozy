@@ -166,8 +166,8 @@ def cmp(t, v1, v2, deep=False):
 def eq(t, v1, v2):
     return cmp(t, v1, v2) == EQ
 
-def eval(e, env, bind_callback=lambda arg, val: None):
-    return eval_bulk(e, (env,), bind_callback)[0]
+def eval(e, env, *args, **kwargs):
+    return eval_bulk(e, (env,), *args, **kwargs)[0]
 
 def mkval(type : Type):
     """
@@ -676,7 +676,7 @@ def free_vars_and_funcs(e):
         if isinstance(x, ECall):
             yield x.func
 
-def eval_bulk(e, envs, bind_callback=None):
+def eval_bulk(e, envs, bind_callback=None, use_default_values_for_undefined_vars : bool = False):
     if bind_callback is None:
         bind_callback = lambda arg, val: None
     # return [eval(e, env, bind_callback=bind_callback) for env in envs]
@@ -684,7 +684,8 @@ def eval_bulk(e, envs, bind_callback=None):
         return []
     ops = []
     vars = OrderedSet(free_vars_and_funcs(e))
+    types = { v.id : v.type for v in free_vars(e) }
     vmap = { v : i for (i, v) in enumerate(vars) }
-    envs = [ [env[v] for v in vars] for env in envs ]
+    envs = [ [(env.get(v, mkval(types[v])) if use_default_values_for_undefined_vars else env[v]) for v in vars] for env in envs ]
     _compile(e, vmap, ops, bind_callback)
     return [_eval_compiled(ops, env) for env in envs]
