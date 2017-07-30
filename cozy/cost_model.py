@@ -56,7 +56,6 @@ class Cost(object):
         cardinalities = OrderedDict()
         cardinalities.update(self.cardinalities)
         cardinalities.update(other.cardinalities)
-        assumptions = EAll((self.assumptions, other.assumptions, assumptions))
         res = []
         for (v1, c1) in cardinalities.items():
             res.append(EBinOp(v1, ">=", ZERO).with_type(BOOL))
@@ -72,14 +71,16 @@ class Cost(object):
         return EAll(res)
 
     @typechecked
-    def always(self, op, other, assumptions : Exp) -> bool:
+    def always(self, op, other, assumptions : Exp, cards = None) -> bool:
         """
         Partial order on costs subject to assumptions.
         """
+        if cards is None:
+            cards = self.order_cardinalities(other, assumptions)
         if isinstance(self.formula, ENum) and isinstance(other.formula, ENum):
             return eval(EBinOp(self.formula, op, other.formula).with_type(BOOL), env={})
         f = EImplies(
-            EAll((self.assumptions, other.assumptions, self.order_cardinalities(other, assumptions))),
+            EAll((self.assumptions, other.assumptions, cards)),
             EBinOp(self.formula, op, other.formula).with_type(BOOL))
         try:
             return valid(f, logic="QF_LIA", timeout=1)
@@ -93,33 +94,34 @@ class Cost(object):
             return valid(f, logic="QF_NRA")
 
     def compare_to(self, other, assumptions : Exp = T) -> bool:
-        if self.sometimes_worse_than(other, assumptions) and not other.sometimes_worse_than(self, assumptions):
+        cards = self.order_cardinalities(other, assumptions)
+        if self.sometimes_worse_than(other, assumptions, cards) and not other.sometimes_worse_than(self, assumptions, cards):
             return Cost.WORSE
-        elif self.sometimes_better_than(other, assumptions) and not other.sometimes_better_than(self, assumptions):
+        elif self.sometimes_better_than(other, assumptions, cards) and not other.sometimes_better_than(self, assumptions, cards):
             return Cost.BETTER
         else:
-            if self.always("==", other, assumptions):
+            if self.always("==", other, assumptions, cards):
                 return (
                     Cost.WORSE if self.secondary > other.secondary else
                     Cost.BETTER if self.secondary < other.secondary else
                     Cost.UNORDERED)
             return Cost.UNORDERED
 
-    def always_worse_than(self, other, assumptions : Exp = T) -> bool:
+    def always_worse_than(self, other, assumptions : Exp = T, cards : Exp = None) -> bool:
         # it is NOT possible that `self` takes less time than `other`
-        return self.always(">", other, assumptions)
+        return self.always(">", other, assumptions, cards)
 
-    def always_better_than(self, other, assumptions : Exp = T) -> bool:
+    def always_better_than(self, other, assumptions : Exp = T, cards : Exp = None) -> bool:
         # it is NOT possible that `self` takes more time than `other`
-        return self.always("<", other, assumptions)
+        return self.always("<", other, assumptions, cards)
 
-    def sometimes_worse_than(self, other, assumptions : Exp = T) -> bool:
+    def sometimes_worse_than(self, other, assumptions : Exp = T, cards : Exp = None) -> bool:
         # it is possible that `self` takes more time than `other`
-        return not self.always("<=", other, assumptions)
+        return not self.always("<=", other, assumptions, cards)
 
-    def sometimes_better_than(self, other, assumptions : Exp = T) -> bool:
+    def sometimes_better_than(self, other, assumptions : Exp = T, cards : Exp = None) -> bool:
         # it is possible that `self` takes less time than `other`
-        return not self.always(">=", other, assumptions)
+        return not self.always(">=", other, assumptions, cards)
 
     # def equivalent_to(self, other, assumptions : Exp = T) -> bool:
     #     return not self.always_worse_than(other) and not other.always_worse_than(self)
