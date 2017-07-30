@@ -10,9 +10,10 @@ from collections import OrderedDict, defaultdict
 
 from cozy.common import find_one, typechecked
 from cozy.syntax import *
-from cozy.syntax_tools import subst, free_vars, fresh_var, alpha_equivalent, all_exps, BottomUpRewriter, BottomUpExplorer
+from cozy.syntax_tools import subst, free_vars, fresh_var, alpha_equivalent, all_exps, BottomUpRewriter, BottomUpExplorer, pprint
 import cozy.incrementalization as inc
 from cozy.opts import Option
+from cozy.simplification import simplify
 
 from .misc import rewrite_ret, queries_equivalent
 
@@ -86,6 +87,12 @@ class Implementation(object):
                     self.abstract_state,
                     list(op.assumptions))
                 for sub_q in subqueries:
+                    # orig_ret = sub_q.ret
+                    # print("rewritng ret for {}".format(pprint(orig_ret)))
+                    sub_q = rewrite_ret(sub_q, simplify)
+                    # if sub_q.ret != orig_ret:
+                    #     print("rewrote ret")
+                    #     print(" --> {}".format(pprint(sub_q.ret)))
                     qq = find_one(self.query_specs, lambda qq: dedup_queries.value and queries_equivalent(qq, sub_q))
                     if qq is not None:
                         print("########### subgoal {} is equivalent to {}".format(sub_q.name, qq.name))
