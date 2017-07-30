@@ -197,7 +197,7 @@ class CompositeCostModel(CostModel, BottomUpExplorer):
         return ONE
     def visit_EUnaryOp(self, e):
         costs = [ONE, self.visit(e.e)]
-        if e.op in (UOp.Sum, UOp.Distinct, UOp.AreUnique):
+        if e.op in (UOp.Sum, UOp.Distinct, UOp.AreUnique, UOp.All, UOp.Any, UOp.Length):
             costs.append(self.cardinality(e.e))
         return ESum(costs)
     def visit_EBinOp(self, e):
