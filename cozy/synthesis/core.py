@@ -461,10 +461,37 @@ class FixedBuilder(ExpBuilder):
                 _on_exp(e, "rejecting symmetric use of commutative operator")
                 continue
 
+            # various filtering
+            if isinstance(e.type, TBag) and isinstance(e.type.t, TBag):
+                _on_exp(e, "rejecting bag-of-bags")
+                continue
+
+            # various filtering on maps
+            if isinstance(e.type, TMap) and not (is_scalar(e.type.k) and ((is_scalar(e.type.v) or (isinstance(e.type.v, TBag) and is_scalar(e.type.v.t))))):
+                _on_exp(e, "rejecting ill-typed map")
+                continue
+            x = e
+            if isinstance(x, EMakeMap2) and isinstance(x.type.v, TBag):
+                k1 = fresh_var(x.type.k)
+                k2 = fresh_var(x.type.k)
+                v  = fresh_var(x.type.v.t)
+                s  = EAll([
+                    self.assumptions,
+                    ENot(EEq(k1, k2)),
+                    EIn(v, EMapGet(x, k1).with_type(x.type.v)),
+                    EIn(v, EMapGet(x, k2).with_type(x.type.v))])
+                if satisfiable(s):
+                    _on_exp(x, "rejecting non-polynomial-sized map")
+                    continue
+
             # all sets must have distinct values
             if isinstance(e.type, TSet):
-                if not valid(implies(self.assumptions, EUnaryOp("unique", e).with_type(BOOL))):
+                if not valid(implies(self.assumptions, EUnaryOp(UOp.AreUnique, e).with_type(BOOL))):
                     raise Exception("insanity: values of {} are not distinct".format(e))
+            if isinstance(e.type, TBag):
+                if not valid(implies(self.assumptions, EUnaryOp(UOp.AreUnique, e).with_type(BOOL))):
+                    _on_exp(x, "rejecting bag with duplicates")
+                    continue
 
             # experimental criterion: "the" must be a 0- or 1-sized collection
             if isinstance(e, EUnaryOp) and e.op == "the":
