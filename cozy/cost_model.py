@@ -9,6 +9,9 @@ from cozy.syntax_tools import BottomUpExplorer, pprint, equal, fresh_var, mk_lam
 from cozy.pools import RUNTIME_POOL, STATE_POOL
 from cozy.solver import valid, satisfiable, REAL, SolverReportedUnknown
 from cozy.evaluation import eval
+from cozy.opts import Option
+
+assume_large_cardinalities = Option("assume-large-cardinalities", bool, True)
 
 class CostModel(object):
     def cost(self, e, pool):
@@ -230,6 +233,10 @@ class CompositeCostModel(CostModel, BottomUpExplorer):
         if pool == RUNTIME_POOL:
             self.cardinalities = OrderedDict()
             self.assumptions = []
+            if assume_large_cardinalities.value:
+                for v in free_vars(e):
+                    if isinstance(v.type, TBag) or isinstance(v.type, TSet):
+                        self.assumptions.append(EBinOp(self.cardinality(v), ">", ENum(1000).with_type(INT)).with_type(BOOL))
             self.secondaries = 0
             f = self.visit(e)
             invcard = OrderedDict()
