@@ -122,7 +122,7 @@ class ToZ3(Visitor):
             *[z3.Not(self.eq(t, values[0], v1, {}), self.ctx) for v1 in values[1:]],
             self.ctx)
     def eq(self, t, e1, e2, env, deep=False):
-        if type(t) in [TInt, TLong, TBool, TEnum, TNative, TString]:
+        if decideable(t):
             assert isinstance(e1, z3.AstRef), "{}".format(repr(e1))
             assert isinstance(e2, z3.AstRef), "{}".format(repr(e2))
             return e1 == e2
@@ -637,7 +637,7 @@ class ToZ3(Visitor):
             raise NotImplementedError(type)
 
 def decideable(t):
-    return type(t) in [TInt, TLong, TBool, TString, TEnum, TNative]
+    return type(t) in [TInt, TLong, TBool, TString, TEnum, TNative, TReal]
 
 def mkconst(ctx, solver, val):
     if type(val) == int:
