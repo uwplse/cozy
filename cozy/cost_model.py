@@ -5,7 +5,7 @@ import sys
 
 from cozy.common import typechecked, partition
 from cozy.target_syntax import *
-from cozy.syntax_tools import BottomUpExplorer, pprint, equal, fresh_var, mk_lambda, free_vars, subst
+from cozy.syntax_tools import BottomUpExplorer, pprint, equal, fresh_var, mk_lambda, free_vars, subst, alpha_equivalent
 from cozy.pools import RUNTIME_POOL, STATE_POOL
 from cozy.solver import valid, satisfiable, REAL, SolverReportedUnknown
 from cozy.evaluation import eval
@@ -29,6 +29,7 @@ def cardinality_le(c1 : Exp, c2 : Exp, assumptions : Exp) -> bool:
 @lru_cache(maxsize=2**16)
 @typechecked
 def cardinality_le_implies_lt(c1 : Exp, c2 : Exp, assumptions : Exp) -> bool:
+    return False # disabled for performance
     assert c1.type == c2.type
     v = fresh_var(c1.type.t)
     return satisfiable(EAll((assumptions, EIn(v, c2), ENot(EIn(v, c1)))))
@@ -65,7 +66,9 @@ class Cost(object):
             for (v2, c2) in cardinalities.items():
                 if v1 == v2 or c1.type != c2.type:
                     continue
-                if cardinality_le(c1, c2, assumptions):
+                if alpha_equivalent(c1, c2):
+                    res.append(EEq(v1, v2))
+                elif cardinality_le(c1, c2, assumptions):
                     if cardinality_le_implies_lt(c1, c2, assumptions):
                         res.append(EBinOp(v1, "<", v2).with_type(BOOL))
                     else:
@@ -92,9 +95,13 @@ class Cost(object):
             # then try again with real numbers. This will admit some models that
             # are not possible (since bags must have integer cardinalities), but
             # returning false is always a safe move here, so it's fine.
-            print("Warning: not able to solve {}".format(pprint(f)), file=sys.stderr)
+            print("Warning: not able to solve {}".format(pprint(f)))
             f = subst(f, { v.id : EVar(v.id).with_type(REAL) for v in free_vars(f) })
-            return valid(f, logic="QF_NRA")
+            try:
+                return valid(f, logic="QF_NRA", timeout=5)
+            except SolverReportedUnknown:
+                print("Giving up!")
+                return False
 
     def compare_to(self, other, assumptions : Exp = T) -> bool:
         cards = self.order_cardinalities(other, assumptions)
