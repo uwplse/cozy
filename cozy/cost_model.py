@@ -214,9 +214,11 @@ class CompositeCostModel(CostModel, BottomUpExplorer):
         if e.op == BOp.In:
             costs.append(self.cardinality(e.e2))
         elif e.op == "==" and isinstance(e.e1.type, TBag):
+            costs.append(EXTREME_COST)
             costs.append(self.cardinality(e.e1))
             costs.append(self.cardinality(e.e2))
         elif e.op == "-" and isinstance(e.type, TBag):
+            costs.append(EXTREME_COST)
             costs.append(self.cardinality(e.e1))
             costs.append(self.cardinality(e.e2))
         return ESum(costs)
