@@ -87,7 +87,8 @@ class TVectorMap(TMap):
             raise NotImplementedError(key.type)
 
     def construct_concrete(self, e : Exp, out : Exp):
-        assert out.type == self.rep_type()
+        assert out.type == self, "{} : {}".format(pprint(e), pprint(e.type))
+        out = shallow_copy(out).with_type(self.rep_type())
         assert isinstance(e, EMakeMap2) # TODO?
         k = fresh_var(self.k, "k")
         return seq(
@@ -171,7 +172,8 @@ class TIntrusiveLinkedList(TBag):
     def make_empty(self):
         return ENull().with_type(self)
     def construct_concrete(self, e : Exp, out : Exp):
-        assert out.type == self
+        assert out.type == self, "{} : {}".format(pprint(e), pprint(e.type))
+        out = shallow_copy(out).with_type(self.rep_type())
         x = fresh_var(self.t, "x")
         return seq([
             SAssign(out, self.null),

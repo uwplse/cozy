@@ -107,6 +107,8 @@ class CxxPrinter(common.Visitor):
         return indent + s + "\n"
 
     def visit_Query(self, q, indent=""):
+        if q.visibility != Visibility.Public:
+            return ""
         ret_type = q.ret.type
         if isinstance(ret_type, TBag):
             x = EVar(common.fresh_name("x")).with_type(ret_type.t)
@@ -188,7 +190,6 @@ class CxxPrinter(common.Visitor):
         lvalue `out`.
         """
         if hasattr(t, "construct_concrete"):
-            out = type(out)(*out.children()).with_type(t.rep_type())
             return t.construct_concrete(e, out)
         elif isinstance(t, library.TNativeList) or type(t) is TBag:
             x = fresh_var(t.t)
@@ -546,7 +547,10 @@ class CxxPrinter(common.Visitor):
             f = self.funcs[e.func]
             return ("".join(setups), "({})".format(f.body_string.format(**{ arg: val for (arg, _), val in zip(f.args, args) })))
         elif e.func in self.queries:
-            return ("".join(setups), "{}({})".format(e.func, ", ".join(args)))
+            q = self.queries[e.func]
+            body = subst(q.ret, { q.args[i][0] : EEscape(args[i], (), ()).with_type(q.args[i][1]) for i in range(len(q.args)) })
+            setup, res = self.visit(body, indent=indent)
+            return ("".join(setups) + setup, res)
         else:
             raise Exception("unknown function {}".format(repr(e.func)))
 
@@ -704,26 +708,6 @@ class CxxPrinter(common.Visitor):
         else:
             return ""
 
-    def initial_value(self, t, require_type_spec=False):
-        s = ""
-        if require_type_spec:
-            s += self.visit(t, name="")
-        if isinstance(t, TBool):
-            s += "(false)"
-        elif isinstance(t, TInt) or isinstance(t, TLong):
-            s += "(0)"
-        elif isinstance(t, TVector):
-            s += "{{ {} }}".format(", ".join(self.initial_value(t.t, require_type_spec=True) for i in range(t.n)))
-        elif isinstance(t, TTuple):
-            s += "{{ {} }}".format(", ".join(self.initial_value(tt, require_type_spec=True) for tt in t.ts))
-        elif isinstance(t, library.TNativeMap) or isinstance(t, library.TNativeList) or isinstance(t, library.TNativeSet):
-            s += "()"
-        elif self.visit(t, "").endswith("*"): # a little hacky
-            s += "(NULL)"
-        else:
-            s += self.initial_value(t.rep_type())
-        return s
-
     def setup_types(self, spec, state_exps, sharing):
         self.types.clear()
         names = { t : name for (name, t) in spec.types }
@@ -753,11 +737,14 @@ class CxxPrinter(common.Visitor):
             self.statevar_name = name
             s += self.declare_field(name, t, indent=INDENT)
         s += "public:\n"
-        s += INDENT + "inline {name}() : {inits} {{ }}\n".format(
-            name=spec.name,
-            inits=", ".join(
-                "{} {}".format(name, self.initial_value(t))
-                for (name, t) in spec.statevars))
+        s += INDENT + "inline {name}() {{\n".format(name=spec.name)
+        for name, t in spec.statevars:
+            initial_value = state_exps[name]
+            fvs = free_vars(initial_value)
+            initial_value = subst(initial_value, {v.id : evaluation.construct_value(v.type) for v in fvs})
+            setup = self.construct_concrete(t, initial_value, EVar(name).with_type(t))
+            s += self.visit(setup, INDENT + INDENT)
+        s += INDENT + "}\n"
         s += INDENT + "{name}(const {name}& other) = delete;\n".format(name=spec.name)
         for op in spec.methods:
             s += self.visit(op, INDENT)
@@ -814,6 +801,8 @@ class JavaPrinter(CxxPrinter):
         return s
 
     def visit_Query(self, q, indent=""):
+        if q.visibility != Visibility.Public:
+            return ""
         ret_type = q.ret.type
         if isinstance(ret_type, TBag):
             x = EVar(common.fresh_name("x")).with_type(ret_type.t)
