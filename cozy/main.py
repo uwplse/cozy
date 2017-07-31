@@ -114,11 +114,14 @@ def run():
             pickle.dump(ast, f)
             print("Saved implementation to file {}".format(args.save))
 
+    print("Generating final concrete implementation...")
     lib = library.Library()
-    impls = list(autotuning.enumerate_impls(code, lib))
+    impls = list(autotuning.enumerate_impls(code, state_map, lib, assumptions=ast.spec.assumptions))
     print("# impls: {}".format(len(impls)))
 
     impl = impls[0] # TODO: autotuning
+    for (v, t) in impl.statevars:
+        print("{} ~~> {}".format(v, syntax_tools.pprint(t)))
     share_info = sharing.compute_sharing(state_map, dict(impl.statevars))
 
     print()

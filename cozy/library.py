@@ -4,8 +4,9 @@ Concrete data structure implementations.
 
 from cozy.common import fresh_name, typechecked, product, cross_product
 from cozy.target_syntax import *
-from cozy.syntax_tools import equal, subst, fresh_var
+from cozy.syntax_tools import equal, subst, fresh_var, pprint, shallow_copy
 from cozy.evaluation import construct_value
+from cozy.solver import valid
 
 def cases(t):
     if t == BOOL:
@@ -31,23 +32,28 @@ def is_enumerable(t):
         return False
 
 class Library(object):
-    def impls(self, ty):
+    @typechecked
+    def impls(self, e : Exp, assumptions : Exp):
+        ty = e.type
         if type(ty) is TMap:
-            for v in self.impls(ty.v):
+            k = fresh_var(ty.k)
+            for v in self.impls(EMapGet(e, k).with_type(e.type.v), assumptions):
                 if is_enumerable(ty.k):
                     yield TVectorMap(ty.k, v)
                 else:
                     yield TNativeMap(ty.k, v)
-        elif type(ty) is TBag:
-            for t in self.impls(ty.t):
-                yield TNativeList(t)
-        elif type(ty) is TSet:
+        elif type(ty) is TSet or (type(ty) is TBag and valid(EImplies(assumptions, EUnaryOp(UOp.AreUnique, e).with_type(BOOL)), model_callback=print)):
             if isinstance(ty.t, THandle):
                 yield TIntrusiveLinkedList(ty.t)
-            for t in self.impls(ty.t):
+            x = fresh_var(ty.t)
+            for t in self.impls(x, EAll((assumptions, EIn(x, e)))):
                 yield TNativeSet(t)
+        elif type(ty) is TBag:
+            x = fresh_var(ty.t)
+            for t in self.impls(x, EAll((assumptions, EIn(x, e)))):
+                yield TNativeList(t)
         elif type(ty) is TTuple:
-            for refinements in cross_product([self.impls(t) for t in ty.ts]):
+            for refinements in cross_product([self.impls(ETupleGet(e, i).with_type(ty.ts[i]), assumptions) for i in range(len(ty.ts))]):
                 yield TTuple(refinements)
         else:
             yield ty

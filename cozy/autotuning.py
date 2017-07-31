@@ -1,14 +1,21 @@
 from collections import deque
+import itertools
 
 from cozy.common import typechecked
 from cozy.typecheck import typecheck
 from cozy.library import Library
-from cozy.target_syntax import Spec
+from cozy.syntax import Spec, Exp, EVar, EAll, EEq, T
 from cozy.syntax_tools import subst, deep_copy, all_types
 
-def find_refinement(ast, lib):
+def find_refinement(ast, state_map, lib, assumptions):
+    assumptions = EAll(itertools.chain(
+        assumptions,
+        ast.assumptions,
+        (EEq(EVar(v).with_type(e.type), e) for (v, e) in state_map.items())))
     for (v, t) in ast.statevars:
-        refs = list(lib.impls(t))
+        refs = list(lib.impls(
+            EVar(v).with_type(t),
+            assumptions=assumptions))
         if not (len(refs) == 1 and refs[0] == t):
             return (v, refs)
     return None
@@ -29,7 +36,7 @@ def apply_rewrite(statevar, new_type, ast):
     return new_ast
 
 @typechecked
-def enumerate_impls(ast : Spec, lib : Library):
+def enumerate_impls(ast : Spec, state_map : { str : Exp }, lib : Library, assumptions : [Exp] = []):
     """
     Takes a specification as input and yields refined implementations.
     """
@@ -39,7 +46,7 @@ def enumerate_impls(ast : Spec, lib : Library):
 
     while wq:
         ast = wq.popleft()
-        refinement = find_refinement(ast, lib)
+        refinement = find_refinement(ast, state_map, lib, assumptions)
         if refinement:
             statevar, rewrites = refinement
             for new_type in rewrites:
