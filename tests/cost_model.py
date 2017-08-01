@@ -53,6 +53,57 @@ class TestCostModel(unittest.TestCase):
         c2 = cost_of(e2)
         assert c1.always_better_than(c2), "{} @ {} > {} @ {}".format(pprint(e1), c1, pprint(e2), c2)
 
+    def test_true_filter(self):
+        x = EVar("x").with_type(INT)
+        y = EVar("y").with_type(INT)
+        e1 = ESingleton(x)
+        e2 = EFilter(e1, ELambda(y, T))
+        assert retypecheck(e1)
+        assert retypecheck(e2)
+        assert cost_of(e1).compare_to(cost_of(e2)) == Cost.BETTER
+        assert cost_of(e2).compare_to(cost_of(e1)) == Cost.WORSE
+
+    def test_map_true_filter(self):
+        x = EVar("x").with_type(INT)
+        y = EVar("y").with_type(INT)
+        f = ELambda(y, ZERO)
+        e1 = ESingleton(x)
+        e2 = EFilter(e1, ELambda(y, T))
+        e1 = EMap(e1, f)
+        e2 = EMap(e2, f)
+        assert retypecheck(e1)
+        assert retypecheck(e2)
+        assert cost_of(e1).compare_to(cost_of(e2)) == Cost.BETTER
+        assert cost_of(e2).compare_to(cost_of(e1)) == Cost.WORSE
+
+    def test_eq_true_filter(self):
+        x = EVar("x").with_type(INT)
+        y = EVar("y").with_type(INT)
+        f = ELambda(y, ZERO)
+        e1 = ESingleton(x)
+        e2 = EFilter(e1, ELambda(y, T))
+        e1 = EEq(e1, e1)
+        e2 = EEq(e2, e2)
+        assert retypecheck(e1)
+        assert retypecheck(e2)
+        assert cost_of(e1).compare_to(cost_of(e2)) == Cost.BETTER
+        assert cost_of(e2).compare_to(cost_of(e1)) == Cost.WORSE
+
+    def test_eq_true_filter_in_filter(self):
+        x = EVar("x").with_type(INT)
+        y = EVar("y").with_type(INT)
+        f = ELambda(y, ZERO)
+        e1 = ESingleton(x)
+        e2 = EFilter(e1, ELambda(y, T))
+        e1 = EEq(e1, e1)
+        e2 = EEq(e2, e2)
+        e1 = EFilter(ESingleton(x), ELambda(y, e1))
+        e2 = EFilter(ESingleton(x), ELambda(y, e2))
+        assert retypecheck(e1)
+        assert retypecheck(e2)
+        assert cost_of(e1).compare_to(cost_of(e2)) == Cost.BETTER
+        assert cost_of(e2).compare_to(cost_of(e1)) == Cost.WORSE
+
     def test_basics(self):
         ys = EVar('ys').with_type(TBag(THandle('ys', TInt())))
         e = EBinOp(EUnaryOp('sum', EFlatMap(EBinOp(ys, '+', EEmptyList().with_type(TBag(THandle('ys', TInt())))).with_type(TBag(THandle('ys', TInt()))), ELambda(EVar('_var12').with_type(THandle('ys', TInt())), ESingleton(ENum(1).with_type(TInt())).with_type(TBag(TInt())))).with_type(TBag(TInt()))).with_type(TInt()), '==', ENum(0).with_type(TInt())).with_type(TBool())
