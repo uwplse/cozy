@@ -125,6 +125,8 @@ BOOL = TBool()
 INT = TInt()
 LONG = TLong()
 STRING = TString()
+BOOL_BAG = TBag(BOOL)
+INT_BAG = TBag(INT)
 
 T = EBool(True) .with_type(BOOL)
 F = EBool(False).with_type(BOOL)

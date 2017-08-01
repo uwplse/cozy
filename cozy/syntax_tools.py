@@ -404,6 +404,12 @@ class FragmentEnumerator(common.Visitor):
         self.post_visit = post_visit
         self.bound = collections.OrderedDict()
 
+    def EDeepIn(self, x, bag):
+        arg = syntax.EVar("_fragarg").with_type(x.type)
+        return syntax.EUnaryOp(syntax.UOp.Any,
+            target_syntax.EMap(bag, target_syntax.ELambda(arg,
+                syntax.EBinOp(arg, "===", x).with_type(syntax.BOOL))).with_type(syntax.BOOL_BAG)).with_type(syntax.BOOL)
+
     def currently_bound(self):
         return common.OrderedSet(self.bound.keys())
 
@@ -448,7 +454,7 @@ class FragmentEnumerator(common.Visitor):
         t = e.type
         for (a, x, r, bound) in self.visit(e.e):
             yield (lambda r: (a, x, lambda x: target_syntax.EFilter(r(x), e.p).with_type(t), bound))(r)
-        for (a, x, r, bound) in self.recurse_with_assumptions_about_bound_var(e.p, [syntax.EBinOp(e.p.arg, syntax.BOp.In, e.e).with_type(syntax.BOOL)] if e.p.arg not in free_vars(e.e) else []):
+        for (a, x, r, bound) in self.recurse_with_assumptions_about_bound_var(e.p, [self.EDeepIn(e.p.arg, e.e)] if e.p.arg not in free_vars(e.e) else []):
             yield (lambda r: (a, x, lambda x: target_syntax.EFilter(e.e, r(x)).with_type(t), bound))(r)
 
     def visit_EMap(self, e):
@@ -456,7 +462,7 @@ class FragmentEnumerator(common.Visitor):
         t = e.type
         for (a, x, r, bound) in self.visit(e.e):
             yield (lambda r: (a, x, lambda x: target_syntax.EMap(r(x), e.f).with_type(t), bound))(r)
-        for (a, x, r, bound) in self.recurse_with_assumptions_about_bound_var(e.f, [syntax.EBinOp(e.f.arg, syntax.BOp.In, e.e).with_type(syntax.BOOL)] if e.f.arg not in free_vars(e.e) else []):
+        for (a, x, r, bound) in self.recurse_with_assumptions_about_bound_var(e.f, [self.EDeepIn(e.f.arg, e.e)] if e.f.arg not in free_vars(e.e) else []):
             yield (lambda r: (a, x, lambda x: target_syntax.EMap(e.e, r(x)).with_type(t), bound))(r)
 
     def visit_EFlatMap(self, e):
@@ -464,7 +470,7 @@ class FragmentEnumerator(common.Visitor):
         t = e.type
         for (a, x, r, bound) in self.visit(e.e):
             yield (lambda r: (a, x, lambda x: target_syntax.EFlatMap(r(x), e.f).with_type(t), bound))(r)
-        for (a, x, r, bound) in self.recurse_with_assumptions_about_bound_var(e.f, [syntax.EBinOp(e.f.arg, syntax.BOp.In, e.e).with_type(syntax.BOOL)] if e.f.arg not in free_vars(e.e) else []):
+        for (a, x, r, bound) in self.recurse_with_assumptions_about_bound_var(e.f, [self.EDeepIn(e.f.arg, e.e)] if e.f.arg not in free_vars(e.e) else []):
             yield (lambda r: (a, x, lambda x: target_syntax.EFlatMap(e.e, r(x)).with_type(t), bound))(r)
 
     def visit_EMakeMap2(self, e):
@@ -472,7 +478,7 @@ class FragmentEnumerator(common.Visitor):
         t = e.type
         for (a, x, r, bound) in self.visit(e.e):
             yield (lambda r: (a, x, lambda x: target_syntax.EMakeMap2(r(x), e.value).with_type(t), bound))(r)
-        for (a, x, r, bound) in self.recurse_with_assumptions_about_bound_var(e.value, [syntax.EBinOp(e.value.arg, syntax.BOp.In, e.e).with_type(syntax.BOOL)] if e.value.arg not in free_vars(e.e) else []):
+        for (a, x, r, bound) in self.recurse_with_assumptions_about_bound_var(e.value, [self.EDeepIn(e.value.arg, e.e)] if e.value.arg not in free_vars(e.e) else []):
             yield (lambda r: (a, x, lambda x: target_syntax.EMakeMap2(e.e, r(x)).with_type(t), bound))(r)
 
     def visit_Exp(self, obj):
