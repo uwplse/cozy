@@ -1,7 +1,6 @@
 from collections import OrderedDict
 from functools import total_ordering, lru_cache
 import itertools
-import sys
 
 from cozy.common import typechecked, partition
 from cozy.target_syntax import *
