@@ -133,7 +133,7 @@ class ContextMap(object):
         return "\n".join(self._print(self.m))
 
 class BehaviorIndex(object):
-    VALUE = "value"
+    VALUE = object()
     def __init__(self):
         self.data = OrderedDict()
     def put(self, e, assumptions, examples, data):
@@ -152,6 +152,20 @@ class BehaviorIndex(object):
             l = []
             m[BehaviorIndex.VALUE] = l
         l.append(data)
+    def rsearch(self, p, m=None):
+        """
+        Useful only for debugging.
+        """
+        if m is None:
+            m = self.data
+        for (k, v) in m.items():
+            if k is BehaviorIndex.VALUE:
+                for val in v:
+                    if p(val):
+                        yield ()
+            else:
+                for res in self.rsearch(p, m=v):
+                    yield (k,) + res
     def search(self, behavior):
         q = [(0, self.data)]
         while q:
