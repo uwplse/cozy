@@ -625,6 +625,11 @@ def improve(
     print("subject to: {}".format(pprint(assumptions)))
     print()
 
+    if not satisfiable(assumptions):
+        print("assumptions are unsat; this query will never be called")
+        yield construct_value(target.type)
+        return
+
     binders = list(binders)
     target = fixup_binders(target, binders, allow_add=False)
     assumptions = fixup_binders(assumptions, binders, allow_add=False)
