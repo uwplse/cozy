@@ -392,6 +392,12 @@ class ToZ3(Visitor):
             self.remove_all(bag_type, self.remove_one(bag_type, bag, elems[0], env), rest, env),
             self.remove_all(bag_type, bag, rest, env))
     def visit_EBinOp(self, e, env):
+        # optimization: x in (distinct y) --> x in y
+        # ("distinct" is very expensive for the solver)
+        if e.op == BOp.In and isinstance(e.e2, EUnaryOp) and e.e2.op == UOp.Distinct:
+            return self.visit(EIn(e.e1, e.e2.e), env)
+
+        # normal path
         v1 = self.visit(e.e1, env)
         v2 = self.visit(e.e2, env)
         if e.op == BOp.And:
