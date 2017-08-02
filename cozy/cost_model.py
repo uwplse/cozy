@@ -193,7 +193,7 @@ class CompositeCostModel(CostModel, BottomUpExplorer):
         else:
             v = fresh_var(INT)
             self.cardinalities[e] = v
-            if isinstance(e, EFilter):
+            if isinstance(e, EFilter) or (isinstance(e, EUnaryOp) and e.op == UOp.Distinct):
                 self.assumptions.append(EBinOp(v, "<=", self.cardinality(e.e)).with_type(BOOL))
             return v
     def statecost(self, e : Exp) -> float:
