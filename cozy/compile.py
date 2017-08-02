@@ -401,7 +401,7 @@ class CxxPrinter(common.Visitor):
                     SDecl(res.id, EBool(False).with_type(t)),
                     SEscapableBlock(label,
                         SForEach(x, e.e2, SIf(
-                            EBinOp(x, "==", e.e1),
+                            EBinOp(x, "==", e.e1).with_type(BOOL),
                             seq([SAssign(res, EBool(True).with_type(t)), SEscapeBlock(label)]),
                             SNoOp())))]), indent)
                 return (setup, res.id)
@@ -506,7 +506,7 @@ class CxxPrinter(common.Visitor):
             x = fresh_var(type, "x")
             setup = self.visit(seq([
                 SDecl(res.id, ENum(0).with_type(type)),
-                SForEach(x, e.e, SAssign(res, EBinOp(res, "+", x)))]), indent)
+                SForEach(x, e.e, SAssign(res, EBinOp(res, "+", x).with_type(type)))]), indent)
             return (setup, res.id)
         elif op == UOp.Empty:
             t = TMaybe(e.e.type.t)
