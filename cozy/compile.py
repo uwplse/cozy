@@ -5,7 +5,8 @@ from cozy import common
 from cozy.common import fresh_name
 from cozy.target_syntax import *
 from cozy import library, evaluation
-from cozy.syntax_tools import all_types, fresh_var, subst, free_vars, is_scalar, mk_lambda
+from cozy.syntax_tools import all_types, fresh_var, subst, free_vars, is_scalar, mk_lambda, alpha_equivalent
+from cozy.simplification import simplify
 
 INDENT = "  "
 
@@ -592,6 +593,8 @@ class CxxPrinter(common.Visitor):
             return self.visit(SAssign(lhs, rhs), indent)
 
     def visit_SAssign(self, s, indent=""):
+        if alpha_equivalent(simplify(s.lhs), simplify(s.rhs)):
+            return self.visit(SNoOp(), indent)
         stm = self.construct_concrete(s.lhs.type, s.rhs, s.lhs)
         return self.visit(stm, indent)
 
@@ -619,6 +622,11 @@ class CxxPrinter(common.Visitor):
         return res + "\n"
 
     def visit_ECond(self, e, indent=""):
+        scond = simplify(e.cond)
+        if scond == T:
+            return self.visit(e.then_branch, indent)
+        elif scond == F:
+            return self.visit(e.else_branch, indent)
         v = fresh_var(e.type)
         return (
             "{indent}{decl};\n".format(indent=indent, decl=self.visit(v.type, v.id)) +
