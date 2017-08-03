@@ -166,14 +166,15 @@ class TIntrusiveLinkedList(TBag):
                     body,
                     SAssign(id, EVar(next).with_type(id.type))]))])
     def find_one(self, target):
+        print("finding one {} : {}".format(pprint(target), pprint(target.type)))
         assert target.type == self
         target = shallow_copy(target).with_type(self.rep_type())
         return target
     def make_empty(self):
         return ENull().with_type(self)
     def construct_concrete(self, e : Exp, out : Exp):
-        assert out.type == self, "{} : {}".format(pprint(e), pprint(e.type))
-        out = shallow_copy(out).with_type(self.rep_type())
+        if self == out.type:
+            out = shallow_copy(out).with_type(self.rep_type())
         x = fresh_var(self.t, "x")
         return seq([
             SAssign(out, self.null),
