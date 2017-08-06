@@ -420,9 +420,19 @@ class CxxPrinter(common.Visitor):
             stm = self.visit(SForEach(x, e.e2, SCall(v, "remove", [x])), indent)
             return ("{}{};\n".format(indent, self.visit(v.type, v.id)) + self.visit(self.construct_concrete(v.type, e.e1, v), indent) + stm, v.id)
         elif op == BOp.Or:
-            return self.visit(ECond(e.e1, EBool(True), e.e2).with_type(TBool()), indent)
+            (s1, r1) = self.visit(e.e1)
+            (s2, r2) = self.visit(e.e2)
+            if s2:
+                return self.visit(ECond(e.e1, EBool(True), e.e2).with_type(TBool()), indent)
+            else:
+                return (s1, "({} || {})".format(r1, r2))
         elif op == BOp.And:
-            return self.visit(ECond(e.e1, e.e2, EBool(False)).with_type(TBool()), indent)
+            (s1, r1) = self.visit(e.e1)
+            (s2, r2) = self.visit(e.e2)
+            if s2:
+                return self.visit(ECond(e.e1, EBool(True), e.e2).with_type(TBool()), indent)
+            else:
+                return (s1, "({} && {})".format(r1, r2))
         ce1, e1 = self.visit(e.e1, indent)
         ce2, e2 = self.visit(e.e2, indent)
         return (ce1 + ce2, "({e1} {op} {e2})".format(e1=e1, op=op, e2=e2))
