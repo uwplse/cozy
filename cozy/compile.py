@@ -15,10 +15,11 @@ EEscape = declare_case(Exp, "EEscape", ["body_string", "arg_names", "args"])
 
 class CxxPrinter(common.Visitor):
 
-    def __init__(self):
+    def __init__(self, use_qhash : bool = False):
         self.types = OrderedDict()
         self.funcs = {}
         self.queries = {}
+        self.use_qhash = use_qhash
 
     def typename(self, t):
         return self.types[t]
@@ -51,7 +52,10 @@ class CxxPrinter(common.Visitor):
         return "{} *{}".format(self.typename(t), name)
 
     def visit_TNativeMap(self, t, name):
-        return "std::unordered_map< {}, {} > {}".format(self.visit(t.k, ""), self.visit(t.v, ""), name)
+        if self.use_qhash:
+            return "QHash< {}, {} > {}".format(self.visit(t.k, ""), self.visit(t.v, ""), name)
+        else:
+            return "std::unordered_map< {}, {} > {}".format(self.visit(t.k, ""), self.visit(t.v, ""), name)
 
     def visit_TMap(self, t, name):
         return self.visit(t.rep_type(), name)
@@ -166,6 +170,8 @@ class CxxPrinter(common.Visitor):
     def native_map_get(self, e, default_value, indent=""):
         (smap, emap) = self.visit(e.map, indent)
         (skey, ekey) = self.visit(e.key, indent)
+        if self.use_qhash:
+            return (smap + skey, "{}.value({})".format(emap, ekey))
         iterator = fresh_var(TNative("auto"), "map_iterator")
         res = fresh_var(e.type, "lookup_result")
         setup_default = self.visit(default_value(res), indent+INDENT)
@@ -733,7 +739,10 @@ class CxxPrinter(common.Visitor):
         s += "#include <algorithm>\n"
         s += "#include <vector>\n"
         s += "#include <unordered_set>\n"
-        s += "#include <unordered_map>\n"
+        if self.use_qhash:
+            s += "#include <QHash>\n"
+        else:
+            s += "#include <unordered_map>\n"
         s += "class {} {{\n".format(spec.name)
         s += "public:\n"
 

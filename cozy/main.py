@@ -37,6 +37,7 @@ def run():
 
     cxx_opts = parser.add_argument_group("C++ codegen")
     cxx_opts.add_argument("--c++", metavar="FILE.h", default=None, help="Output file for C++ (header-only class), use '-' for stdout")
+    cxx_opts.add_argument("--use-qhash", action="store_true", help="QHash---the Qt implementation of hash maps---often outperforms the default C++ map implementations")
 
     internal_opts = parser.add_argument_group("Internal parameters")
     opts.setup(internal_opts)
@@ -136,7 +137,7 @@ def run():
         cxx = getattr(args, "c++")
         if cxx is not None:
             with common.open_maybe_stdout(cxx) as out:
-                out.write(compile.CxxPrinter().visit(impl, state_map, share_info))
+                out.write(compile.CxxPrinter(use_qhash=args.use_qhash).visit(impl, state_map, share_info))
     except:
         print("Code generation failed!")
         if save_failed_codegen_inputs.value:
