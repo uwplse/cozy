@@ -780,6 +780,10 @@ class CxxPrinter(common.Visitor):
 
 class JavaPrinter(CxxPrinter):
 
+    def __init__(self, boxed : bool = True):
+        super().__init__()
+        self.boxed = boxed
+
     def visit_Spec(self, spec, state_exps, sharing, package=None):
         self.state_exps = state_exps
         self.funcs = { f.name: f for f in spec.extern_funcs }
@@ -853,13 +857,16 @@ class JavaPrinter(CxxPrinter):
                 body=body)
 
     def initialize_native_list(self, out):
-        return SEscape("{indent}{e} = new java.util.ArrayList<>();\n", ["e"], [out])
+        init = "new {};\n".format(self.visit(out.type, name="()"))
+        return SEscape("{indent}{e} = " + init, ["e"], [out])
 
     def initialize_native_set(self, out):
-        return SEscape("{indent}{e} = new java.util.HashSet<>();\n", ["e"], [out])
+        init = "new {};\n".format(self.visit(out.type, name="()"))
+        return SEscape("{indent}{e} = " + init, ["e"], [out])
 
     def initialize_native_map(self, out):
-        return SEscape("{indent}{e} = new java.util.HashMap<>();\n", ["e"], [out])
+        init = "new {};\n".format(self.visit(out.type, name="()"))
+        return SEscape("{indent}{e} = " + init, ["e"], [out])
 
     def visit_SEscapableBlock(self, s, indent):
         return "{indent}{label}: do {{\n{body}{indent}}} while (false);\n".format(
@@ -896,6 +903,8 @@ class JavaPrinter(CxxPrinter):
         return ("", "{}.{}".format(self.typename(e.type), e.name))
 
     def _eq(self, e1, e2, indent):
+        if not self.boxed and self.is_primitive(e1.type):
+            return self.visit(EEscape("({e1} == {e2})", ("e1", "e2"), (e1, e2)), indent)
         if (is_scalar(e1.type) or
                 (isinstance(e1.type, library.TNativeMap) and isinstance(e2.type, library.TNativeMap)) or
                 (isinstance(e1.type, library.TNativeSet) and isinstance(e2.type, library.TNativeSet)) or
@@ -905,6 +914,30 @@ class JavaPrinter(CxxPrinter):
 
     def test_set_containment_native(self, set : Exp, elem : Exp, indent) -> (str, str):
         return self.visit(EEscape("{set}.contains({elem})", ["set", "elem"], [set, elem]), indent)
+
+    def compute_hash_1(self, e : str, t : Type, out : EVar, indent : str) -> str:
+        if not self.boxed and self.is_primitive(t):
+            if t == INT:
+                res = e
+            elif t == LONG:
+                res = "((int)({e})) ^ ((int)(({e}) >> 32))".format(e=e)
+            elif t == BOOL:
+                res = "({e}) ? 1 : 0".format(e=e)
+            else:
+                raise NotImplementedError(t)
+        else:
+            res = "({}).hashCode()".format(e)
+        return "{indent}{out} = ({out} * 31) ^ ({res});\n".format(
+            indent=indent,
+            out=out.id,
+            res=res)
+
+    def compute_hash(self, fields : [(str, Type)], indent : str) -> (str, str):
+        hc = fresh_var(INT, "hash_code")
+        s = indent + "int " + hc.id + " = 0;\n"
+        for f, ft in fields:
+            s += self.compute_hash_1(f, ft, hc, indent)
+        return (s, hc.id)
 
     def define_type(self, toplevel_name, t, name, indent, sharing):
         if isinstance(t, TEnum):
@@ -968,11 +1001,9 @@ class JavaPrinter(CxxPrinter):
             s += "{indent}}}\n".format(indent=indent+INDENT)
 
             if value_equality:
-                hc = fresh_name("hash_code")
                 s += "{indent}@Override\n{indent}public int hashCode() {{\n".format(indent=indent+INDENT)
-                s += "{indent}int {hc} = 0;\n".format(indent=indent+INDENT*2, hc=hc)
-                for (f, ft) in public_fields + private_fields:
-                    s += "{indent}{hc} = ({hc} * 31) ^ {f}.hashCode();\n".format(indent=indent+INDENT*2, hc=hc, f=f)
+                (compute, hc) = self.compute_hash(public_fields + private_fields, indent=indent+INDENT*2)
+                s += compute
                 s += "{indent}return {hc};\n".format(indent=indent+INDENT*2, hc=hc)
                 s += "{indent}}}\n".format(indent=indent+INDENT)
 
@@ -981,9 +1012,12 @@ class JavaPrinter(CxxPrinter):
                 s += "{indent}if (other == this) return true;\n".format(indent=indent+INDENT*2)
                 s += "{indent}if (!(other instanceof {name})) return false;\n".format(indent=indent+INDENT*2, name=name)
                 s += "{indent}{name} o = ({name})other;\n".format(indent=indent+INDENT*2, name=name)
-                s += "{indent}return {conds};\n".format(
-                    indent=indent+INDENT*2,
-                    conds=" && ".join("java.util.Objects.equals(this.{f}, o.{f})".format(f=f) for (f, ft) in all_fields) if all_fields else "true")
+                setup, eq = self.visit(EAll([EEq(
+                    EEscape("this.{}".format(f), (), ()).with_type(ft),
+                    EEscape("o.{}".format(f),    (), ()).with_type(ft))
+                    for (f, ft) in all_fields]), indent=indent+INDENT*2)
+                s += setup
+                s += "{indent}return {cond};\n".format(indent=indent+INDENT*2, cond=eq)
                 s += "{indent}}}\n".format(indent=indent+INDENT)
 
             s += "{indent}}}\n".format(indent=indent)
@@ -997,10 +1031,16 @@ class JavaPrinter(CxxPrinter):
         return "Boolean {}".format(name)
 
     def visit_TInt(self, t, name):
-        return "Integer {}".format(name)
+        return "{} {}".format("Integer" if self.boxed else "int", name)
 
     def visit_TLong(self, t, name):
-        return "Long {}".format(name)
+        return "{} {}".format("Long" if self.boxed else "int", name)
+
+    def is_primitive(self, t):
+        return t in (INT, LONG, BOOL)
+
+    def trovename(self, t):
+        return common.capitalize(self.visit(t, name="").strip()) if self.is_primitive(t) else "Object"
 
     def visit_THandle(self, t, name):
         return "{} {}".format(self.typename(t), name)
@@ -1009,15 +1049,30 @@ class JavaPrinter(CxxPrinter):
         return "String {}".format(name)
 
     def visit_TNativeList(self, t, name):
-        return "java.util.ArrayList<{}> {}".format(self.visit(t.t, ""), name)
+        if self.boxed or not self.is_primitive(t.t):
+            return "java.util.ArrayList<{}> {}".format(self.visit(t.t, ""), name)
+        else:
+            return "gnu.trove.list.array.T{}ArrayList {}".format(
+                self.trovename(t.t),
+                name)
 
     def visit_TNativeSet(self, t, name):
-        return "java.util.HashSet< {} > {}".format(self.visit(t.t, ""), name)
+        if self.boxed or not self.is_primitive(t.t):
+            return "java.util.HashSet< {} > {}".format(self.visit(t.t, ""), name)
+        else:
+            return "gnu.trove.set.hash.T{}HashSet {}".format(
+                self.trovename(t.t),
+                name)
 
     def visit_TBag(self, t, name):
         if hasattr(t, "rep_type"):
             return self.visit(t.rep_type(), name)
-        return "java.util.Collection<{}> {}".format(self.visit(t.t, ""), name)
+        if self.boxed or not self.is_primitive(t.t):
+            return "java.util.Collection<{}> {}".format(self.visit(t.t, ""), name)
+        else:
+            return "gnu.trove.T{}Collection {}".format(
+                self.trovename(t.t),
+                name)
 
     def visit_SCall(self, call, indent=""):
         if type(call.target.type) in (library.TNativeList, TBag, library.TNativeSet, TSet):
@@ -1055,10 +1110,20 @@ class JavaPrinter(CxxPrinter):
         return "{}[] {}".format(self.visit(t.t, ""), name)
 
     def visit_TNativeMap(self, t, name):
-        return "java.util.HashMap<{}, {}> {}".format(
-            self.visit(t.k, ""),
-            self.visit(t.v, ""),
-            name)
+        if self.boxed or (not self.is_primitive(t.k) and not self.is_primitive(t.v)):
+            return "java.util.HashMap<{}, {}> {}".format(
+                self.visit(t.k, ""),
+                self.visit(t.v, ""),
+                name)
+        else:
+            return "gnu.trove.map.hash.T{k}{v}HashMap{targs} {name}".format(
+                k=self.trovename(t.k),
+                v=self.trovename(t.v),
+                targs=(
+                    "<{}>".format(self.visit(t.k, "")) if not self.is_primitive(t.k) else
+                    "<{}>".format(self.visit(t.v, "")) if not self.is_primitive(t.v) else
+                    ""),
+                name=name)
 
     def visit_TMaybe(self, t, name):
         return self.visit(t.t, name)
@@ -1084,10 +1149,15 @@ class JavaPrinter(CxxPrinter):
     def native_map_get(self, e, default_value, indent=""):
         (smap, emap) = self.visit(e.map, indent)
         (skey, ekey) = self.visit(e.key, indent)
-        edefault = fresh_var(e.type, "lookup_result")
+        edefault = fresh_var(e.type, "default_val")
         sdefault = indent + self.visit(edefault.type, edefault.id) + ";\n"
         sdefault += self.visit(default_value(edefault), indent)
-        return (smap + skey + sdefault, "{emap}.getOrDefault({ekey}, {edefault})".format(emap=emap, ekey=ekey, edefault=edefault.id))
+        (srest, res) = self.visit(ECond(
+            EEscape("{m}.containsKey({k})".format(m=emap, k=ekey), (), ()).with_type(e.type),
+            EEscape("{m}.get({k})".format(m=emap, k=ekey), (), ()).with_type(e.type),
+            edefault).with_type(e.type), indent=indent)
+        return (smap + skey + sdefault + srest, res)
+        # return (smap + skey + sdefault, "{emap}.getOrDefault({ekey}, {edefault})".format(emap=emap, ekey=ekey, edefault=edefault.id))
 
     def visit_object(self, o, *args, **kwargs):
         return "/* implement visit_{} */".format(type(o).__name__)

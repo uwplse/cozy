@@ -15,6 +15,15 @@ from cozy.typecheck import retypecheck
 
 class TestCodegen(unittest.TestCase):
 
+    def trove_path(self):
+        dir = "/tmp"
+        path = os.path.join(dir, "trove-3.0.3.jar")
+        if not os.path.exists(path):
+            subprocess.run(["curl", "-LO", "https://bitbucket.org/trove4j/trove/downloads/trove-3.0.3.tar.gz"], cwd=dir)
+            subprocess.run(["tar", "xf", "trove-3.0.3.tar.gz"], cwd=dir)
+            subprocess.run(["ln", "3.0.3/lib/trove-3.0.3.jar", path], cwd=dir)
+        return path
+
     def test_regression2(self):
         Constr = TNative('Object')
         PropagatableVector = TNative('Object')
@@ -42,23 +51,23 @@ class TestCodegen(unittest.TestCase):
         print("# impls: {}".format(len(impls)))
         dir = tempfile.mkdtemp()
         print("Writing impls to {}".format(dir))
-        codegen = JavaPrinter()
-        for i in range(len(impls)):
-            impl = impls[i]
-            dir_i = os.path.join(dir, str(i))
-            os.mkdir(dir_i)
-            filename = os.path.join(dir_i, "{}.java".format(spec.name))
-            args = ["javac", filename]
-            print("[impl {}] Running {}".format(i, " ".join(args)))
+        for codegen in (JavaPrinter(boxed=False), JavaPrinter(boxed=True)):
+            for i in range(len(impls)):
+                impl = impls[i]
+                dir_i = os.path.join(dir, "boxed" if codegen.boxed else "unboxed", str(i))
+                os.makedirs(dir_i)
+                filename = os.path.join(dir_i, "{}.java".format(spec.name))
+                args = ["javac", "-cp", self.trove_path(), filename]
+                print("[impl {}] Running {}".format(i, " ".join(args)))
 
-            share_info = compute_sharing(state_map, dict(impl.statevars))
-            print(share_info)
-            with open(filename, "w") as f:
-                f.write(codegen.visit(impl, state_map, share_info))
-            res = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            print(res.stdout.decode("UTF-8"))
-            print(res.stderr.decode("UTF-8"))
-            assert res.returncode == 0
+                share_info = compute_sharing(state_map, dict(impl.statevars))
+                print(share_info)
+                with open(filename, "w") as f:
+                    f.write(codegen.visit(impl, state_map, share_info))
+                res = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                print(res.stdout.decode("UTF-8"))
+                print(res.stderr.decode("UTF-8"))
+                assert res.returncode == 0
         shutil.rmtree(dir)
 
     def check(self, impl, state_map, share_info, codegen):
