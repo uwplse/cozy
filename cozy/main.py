@@ -71,7 +71,9 @@ def run():
         ast = desugar.desugar(ast)
         # print(syntax_tools.pprint(ast))
 
-        errors = invariant_preservation.check_ops_preserve_invariants(ast)
+        errors = (
+            invariant_preservation.check_ops_preserve_invariants(ast) +
+            invariant_preservation.check_the_wf(ast))
         if errors:
             for e in errors:
                 print("Error: {}".format(e))

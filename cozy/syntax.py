@@ -188,6 +188,12 @@ def EIsSubset(e1, e2):
         EBinOp(e1, "-", e2).with_type(e1.type), "==",
         EEmptyList().with_type(e1.type)).with_type(BOOL)
 
+def EIsSingleton(e):
+    return EEq(EUnaryOp(UOp.Length, e).with_type(INT), ONE)
+
+def EEmpty(e):
+    return EUnaryOp(UOp.Empty, e).with_type(BOOL)
+
 def EEq(e1, e2):
     return EBinOp(e1, "==", e2).with_type(BOOL)
 
