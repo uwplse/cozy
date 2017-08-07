@@ -418,6 +418,9 @@ def unaryop_the(stk):
     else:
         stk.append(_NULL_VALUE)
 
+def unaryop_len(stk):
+    stk.append(len(stk.pop()))
+
 def do_concat(stk):
     v = stk.pop()
     stk.append(Bag(elem for bag in v for elem in bag))
@@ -530,6 +533,8 @@ def _compile(e, env : {str:int}, out, bind_callback):
             out.append(unaryop_all)
         elif e.op == UOp.Any:
             out.append(unaryop_any)
+        elif e.op == UOp.Length:
+            out.append(unaryop_len)
         elif e.op == UOp.AreUnique:
             out.append(unaryop_areunique(e.e.type.t))
         elif e.op == UOp.Distinct:
