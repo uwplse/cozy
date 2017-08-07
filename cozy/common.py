@@ -470,3 +470,6 @@ def integer_log2_round_up(x):
         res += 1
         x = divide_integers_and_round_up(x, 2)
     return res
+
+def identity_func(x):
+    return x

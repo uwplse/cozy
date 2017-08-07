@@ -403,6 +403,7 @@ class FragmentEnumerator(common.Visitor):
         self.pre_visit = pre_visit
         self.post_visit = post_visit
         self.bound = collections.OrderedDict()
+        self.assumptions = []
 
     def EDeepIn(self, x, bag):
         arg = syntax.EVar("_fragarg").with_type(x.type)
@@ -413,20 +414,47 @@ class FragmentEnumerator(common.Visitor):
     def currently_bound(self):
         return common.OrderedSet(self.bound.keys())
 
-    def visit_ELambda(self, obj):
-        # raise NotImplementedError(obj)
-        return self.recurse_with_assumptions_about_bound_var(obj, [])
+    def current_assumptions(self):
+        return self.assumptions
+
+    @contextmanager
+    @common.typechecked
+    def push_assumptions(self, new_assumptions : [syntax.Exp] = []):
+        old_assumptions = self.assumptions
+        self.assumptions = self.assumptions + new_assumptions
+        yield
+        self.assumptions = old_assumptions
+
+    @contextmanager
+    @common.typechecked
+    def intro_vars(self, vars : [syntax.EVar], source):
+        vars = common.OrderedSet(vars)
+        old_assumptions = self.assumptions
+        self.assumptions = [a for a in self.assumptions if not (free_vars(a) & vars)]
+        with common.extend_multi(self.bound, [(v, source) for v in vars]):
+            yield
+        self.assumptions = old_assumptions
+
+    def visit_assumptions_seq(self, assumptions, i=0):
+        if i >= len(assumptions):
+            return
+        for info in self.visit(assumptions[i]):
+            yield (lambda i, a, x, r, bound: (a, x, lambda x: tuple(assumptions[:i]) + (x,) + tuple(assumptions[i:]), bound))(i, *info)
+        self.assumptions.append(assumptions[i])
+        yield from self.visit_assumptions_seq(assumptions, i+1)
 
     def recurse_with_assumptions_about_bound_var(self, e : target_syntax.ELambda, assume : [syntax.Exp]):
         if self.pre_visit(e):
-            orig_bound = self.currently_bound()
-            yield ([], e, lambda x: x, orig_bound)
-            with common.extend(self.bound, e.arg, e):
-                for (a, x, r, bound) in self.visit(e.body):
-                    if assume and self.bound.get(e.arg) is e:
-                        a = a + assume
-                    yield (lambda r, x, a, bound: (a, x, lambda x: target_syntax.ELambda(e.arg, r(x)), bound))(r, x, a, bound)
+            yield (self.current_assumptions(), e, common.identity_func, self.currently_bound())
+            with self.intro_vars([e.arg], e):
+                with self.push_assumptions(assume):
+                    for (a, x, r, bound) in self.visit(e.body):
+                        yield (lambda r, x, a, bound: (a, x, lambda x: target_syntax.ELambda(e.arg, r(x)), bound))(r, x, a, bound)
             self.post_visit(e)
+
+    def visit_ELambda(self, obj):
+        # raise NotImplementedError(obj)
+        return self.recurse_with_assumptions_about_bound_var(obj, [])
 
     def visit_EStateVar(self, e):
         """
@@ -441,7 +469,7 @@ class FragmentEnumerator(common.Visitor):
             state s = v
             Filter {\v -> s} C
         """
-        yield ([], e, lambda x: x, common.OrderedSet(self.bound.keys()))
+        yield (self.current_assumptions(), e, common.identity_func, self.currently_bound())
         orig_bound = self.bound
         self.bound = collections.OrderedDict()
         t = e.type
@@ -450,7 +478,7 @@ class FragmentEnumerator(common.Visitor):
         self.bound = orig_bound
 
     def visit_EFilter(self, e):
-        yield ([], e, lambda x: x, self.currently_bound())
+        yield (self.current_assumptions(), e, common.identity_func, self.currently_bound())
         t = e.type
         for (a, x, r, bound) in self.visit(e.e):
             yield (lambda r: (a, x, lambda x: target_syntax.EFilter(r(x), e.p).with_type(t), bound))(r)
@@ -458,7 +486,7 @@ class FragmentEnumerator(common.Visitor):
             yield (lambda r: (a, x, lambda x: target_syntax.EFilter(e.e, r(x)).with_type(t), bound))(r)
 
     def visit_EMap(self, e):
-        yield ([], e, lambda x: x, self.currently_bound())
+        yield (self.current_assumptions(), e, common.identity_func, self.currently_bound())
         t = e.type
         for (a, x, r, bound) in self.visit(e.e):
             yield (lambda r: (a, x, lambda x: target_syntax.EMap(r(x), e.f).with_type(t), bound))(r)
@@ -466,7 +494,7 @@ class FragmentEnumerator(common.Visitor):
             yield (lambda r: (a, x, lambda x: target_syntax.EMap(e.e, r(x)).with_type(t), bound))(r)
 
     def visit_EFlatMap(self, e):
-        yield ([], e, lambda x: x, self.currently_bound())
+        yield (self.current_assumptions(), e, common.identity_func, self.currently_bound())
         t = e.type
         for (a, x, r, bound) in self.visit(e.e):
             yield (lambda r: (a, x, lambda x: target_syntax.EFlatMap(r(x), e.f).with_type(t), bound))(r)
@@ -474,32 +502,75 @@ class FragmentEnumerator(common.Visitor):
             yield (lambda r: (a, x, lambda x: target_syntax.EFlatMap(e.e, r(x)).with_type(t), bound))(r)
 
     def visit_EMakeMap2(self, e):
-        yield ([], e, lambda x: x, self.currently_bound())
+        yield (self.current_assumptions(), e, common.identity_func, self.currently_bound())
         t = e.type
         for (a, x, r, bound) in self.visit(e.e):
             yield (lambda r: (a, x, lambda x: target_syntax.EMakeMap2(r(x), e.value).with_type(t), bound))(r)
         for (a, x, r, bound) in self.recurse_with_assumptions_about_bound_var(e.value, [self.EDeepIn(e.value.arg, e.e)] if e.value.arg not in free_vars(e.e) else []):
             yield (lambda r: (a, x, lambda x: target_syntax.EMakeMap2(e.e, r(x)).with_type(t), bound))(r)
 
-    def visit_Exp(self, obj):
-        yield ([], obj, lambda x: x, self.currently_bound())
-        t = obj.type
+    def visit_ECond(self, e):
+        yield (self.current_assumptions(), e, common.identity_func, self.currently_bound())
+        for info in self.visit(e.cond):
+            yield (lambda a, x, r, bound: (a, x, lambda x: ECond(r(x), e.then_branch, e.else_branch).with_type(e.type), bound))(*info)
+        with self.push_assumptions([e.cond]):
+            for info in self.visit(e.then_branch):
+                yield (lambda a, x, r, bound: (a, x, lambda x: ECond(e.cond, r(x), e.else_branch).with_type(e.type), bound))(*info)
+        with self.push_assumptions([syntax.ENot(e.cond)]):
+            for info in self.visit(e.else_branch):
+                yield (lambda a, x, r, bound: (a, x, lambda x: ECond(e.cond, e.then_branch, r(x)).with_type(e.type), bound))(*info)
+
+    def rebuild(self, obj, new_children):
+        res = type(obj)(*new_children)
+        if isinstance(obj, syntax.Exp) and hasattr(obj, "type"):
+            res = res.with_type(obj.type)
+        return res
+
+    def visit_Spec(self, s):
+        yield (self.current_assumptions(), s, common.identity_func, self.currently_bound())
+        with self.intro_vars([syntax.EVar(v).with_type(t) for (v, t) in s.statevars], s):
+            with self.push_assumptions():
+                for info in self.visit_assumptions_seq(s.assumptions):
+                    yield (lambda a, x, r, bound: (a, x, lambda x: syntax.Spec(s.name, s.types, s.extern_funcs, s.statevars, r(x), s.methods), bound))(*info)
+                for info in self.visit(s.methods):
+                    yield (lambda a, x, r, bound: (a, x, lambda x: syntax.Spec(s.name, s.types, s.extern_funcs, s.statevars, s.assumptions, ms), bound))(*info)
+
+    def visit_Op(self, m):
+        yield (self.current_assumptions(), m, common.identity_func, self.currently_bound())
+        with self.intro_vars([syntax.EVar(v).with_type(t) for (v, t) in m.args], m):
+            with self.push_assumptions():
+                for info in self.visit_assumptions_seq(m.assumptions):
+                    yield (lambda a, x, r, bound: (a, x, lambda x: syntax.Op(m.name, m.args, r(x), m.body), bound))(*info)
+                for info in self.visit(m.body):
+                    yield (lambda a, x, r, bound: (a, x, lambda x: syntax.Op(m.name, m.args, m.assumptions, r(x)), bound))(*info)
+
+    def visit_Query(self, q):
+        yield (self.current_assumptions(), q, common.identity_func, self.currently_bound())
+        with self.intro_vars([syntax.EVar(v).with_type(t) for (v, t) in q.args], q):
+            with self.push_assumptions():
+                for info in self.visit_assumptions_seq(q.assumptions):
+                    yield (lambda a, x, r, bound: (a, x, lambda x: syntax.Query(q.name, q.args, r(x), q.ret), bound))(*info)
+                for info in self.visit(q.ret):
+                    yield (lambda a, x, r, bound: (a, x, lambda x: syntax.Query(q.name, q.args, q.assumptions, r(x)), bound))(*info)
+
+    def visit_ADT(self, obj):
+        yield (self.current_assumptions(), obj, common.identity_func, self.currently_bound())
         children = obj.children()
         for i in range(len(children)):
             for (a, x, r, bound) in self.visit(children[i]):
-                yield (a, x, (lambda r, i: lambda x: type(obj)(*(children[:i] + (r(x),) + children[i+1:])).with_type(t))(r, i), bound)
+                yield (a, x, (lambda r, i: lambda x: self.rebuild(obj, (children[:i] + (r(x),) + children[i+1:])))(r, i), bound)
 
     def visit_list(self, l):
-        return self.visit_tuple(l)
+        return self.visit_tuple(tuple(l))
 
     def visit_tuple(self, t):
-        yield ([], t, lambda x: x, self.currently_bound())
+        yield (self.current_assumptions(), t, common.identity_func, self.currently_bound())
         for i in range(len(t)):
             for (a, x, r, bound) in self.visit(t[i]):
                 yield (a, x, (lambda r, i: lambda x: t[:i] + (r(x),) + t[i+1:])(r, i), bound)
 
     def visit_object(self, obj):
-        yield ([], obj, lambda x: x, self.currently_bound())
+        yield (self.current_assumptions(), obj, common.identity_func, self.currently_bound())
 
     def visit(self, obj):
         if self.pre_visit(obj):
