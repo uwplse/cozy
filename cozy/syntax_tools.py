@@ -512,13 +512,13 @@ class FragmentEnumerator(common.Visitor):
     def visit_ECond(self, e):
         yield (self.current_assumptions(), e, common.identity_func, self.currently_bound())
         for info in self.visit(e.cond):
-            yield (lambda a, x, r, bound: (a, x, lambda x: ECond(r(x), e.then_branch, e.else_branch).with_type(e.type), bound))(*info)
+            yield (lambda a, x, r, bound: (a, x, lambda x: syntax.ECond(r(x), e.then_branch, e.else_branch).with_type(e.type), bound))(*info)
         with self.push_assumptions([e.cond]):
             for info in self.visit(e.then_branch):
-                yield (lambda a, x, r, bound: (a, x, lambda x: ECond(e.cond, r(x), e.else_branch).with_type(e.type), bound))(*info)
+                yield (lambda a, x, r, bound: (a, x, lambda x: syntax.ECond(e.cond, r(x), e.else_branch).with_type(e.type), bound))(*info)
         with self.push_assumptions([syntax.ENot(e.cond)]):
             for info in self.visit(e.else_branch):
-                yield (lambda a, x, r, bound: (a, x, lambda x: ECond(e.cond, e.then_branch, r(x)).with_type(e.type), bound))(*info)
+                yield (lambda a, x, r, bound: (a, x, lambda x: syntax.ECond(e.cond, e.then_branch, r(x)).with_type(e.type), bound))(*info)
 
     def rebuild(self, obj, new_children):
         res = type(obj)(*new_children)
