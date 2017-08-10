@@ -4,7 +4,11 @@ from cozy.common import pick_to_sum, cross_product, group_by, find_one
 from cozy.target_syntax import *
 from cozy.syntax_tools import subst, mk_lambda, free_vars, is_scalar, pprint, strip_EStateVar
 from cozy.pools import STATE_POOL, RUNTIME_POOL, ALL_POOLS
+from cozy.opts import Option
+
 from .core import ExpBuilder
+
+build_exprs = Option("build-exprs", bool, True)
 
 class BinderBuilder(ExpBuilder):
     def __init__(self, binders : [EVar], state_vars : [EVar], args : [EVar] = []):
@@ -37,6 +41,9 @@ class BinderBuilder(ExpBuilder):
                 elif pool == RUNTIME_POOL:
                     for v in self.args:
                         yield self.check(v, pool)
+
+            if not build_exprs.value:
+                return
 
             for t in list(cache.types()):
                 if isinstance(t, TBag):
