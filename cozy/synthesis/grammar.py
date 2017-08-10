@@ -32,7 +32,7 @@ class BinderBuilder(ExpBuilder):
             if size == 1:
                 yield self.check(T, pool)
                 yield self.check(F, pool)
-                yield self.check(ENum(0).with_type(INT), pool)
+                yield self.check(ZERO, pool)
                 for b in self.binders:
                     yield self.check(b, pool)
                 if pool == STATE_POOL:
