@@ -370,10 +370,16 @@ def pick_to_sum(n, total_size):
         for rest in pick_to_sum(n - 1, total_size - size):
             yield (size,) + rest
 
+def make_random_access(iter):
+    if isinstance(iter, list) or isinstance(iter, tuple):
+        return iter
+    return list(iter)
+
 def cross_product(iters, i=0):
     """
     Take the cross product of a finite set of possibly-infinite iterators.
     """
+    iters = make_random_access(iters)
     if i == len(iters):
         yield ()
     if i >= len(iters):
