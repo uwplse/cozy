@@ -123,7 +123,7 @@ def map_accelerate(e, state_vars, binders, args, cache, size):
                 yield (m, STATE_POOL)
                 yield (EMapGet(EStateVar(m).with_type(m.type), arg).with_type(e.type), RUNTIME_POOL)
 
-def accelerate_filter(bag, p, state_vars, binders, cache, size):
+def accelerate_filter(bag, p, state_vars, binders, args, cache, size):
     parts = list(break_conj(p.body))
     guards = []
     map_conds = []
@@ -144,7 +144,13 @@ def accelerate_filter(bag, p, state_vars, binders, cache, size):
     if in_conds:
         for i in range(len(in_conds)):
             rest = others + in_conds[:i] + in_conds[i+1:] + map_conds
-            for tup in map_accelerate(EFilter(EFilter(bag, ELambda(p.arg, EAll(guards))).with_type(bag.type), ELambda(p.arg, in_conds[i])).with_type(bag.type), state_vars, binders, cache, size):
+            for tup in map_accelerate(
+                    EFilter(EFilter(bag, ELambda(p.arg, EAll(guards))).with_type(bag.type), ELambda(p.arg, in_conds[i])).with_type(bag.type),
+                    state_vars,
+                    binders,
+                    args,
+                    cache,
+                    size):
                 (e, pool) = tup
                 yield tup
                 if e.type == bag.type and pool == RUNTIME_POOL:
@@ -274,7 +280,7 @@ class AcceleratedBuilder(ExpBuilder):
                 for x, pool in map_accelerate(e, self.state_vars, self.binders, self.args, cache, sz2):
                     yield self.check(x, pool)
                 if isinstance(e, EFilter) and not any(v in self.binders for v in free_vars(e)):
-                    for x, pool in accelerate_filter(e.e, e.p, self.state_vars, self.binders, cache, sz2):
+                    for x, pool in accelerate_filter(e.e, e.p, self.state_vars, self.binders, self.args, cache, sz2):
                         yield self.check(x, pool)
 
         for bag in itertools.chain(cache.find(pool=RUNTIME_POOL, type=TBag, size=size-1), cache.find(pool=RUNTIME_POOL, type=TSet, size=size-1)):
