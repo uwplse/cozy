@@ -199,8 +199,9 @@ class Learner(object):
         self.cost_model = cost_model
         self.builder = builder
         self.seen = { } # map of { (pool, fingerprint) : (cost, [(e, size)]) }
+        self.assumptions = assumptions
         self.reset(examples, update_watched_exps=False)
-        self.watch(target, assumptions)
+        self.watch(target)
 
     def reset(self, examples, update_watched_exps=True):
         _fates.clear()
@@ -244,9 +245,8 @@ class Learner(object):
         self._check_seen_wf()
         print("finished fixing seen set")
 
-    def watch(self, new_target, assumptions):
+    def watch(self, new_target):
         self._check_seen_wf()
-        self.assumptions = assumptions
         self.backlog_counter = 0
         self.target = new_target
         self.update_watched_exps()
@@ -255,29 +255,31 @@ class Learner(object):
             _on_exp(e, "new root", pool_name(pool))
             self.roots.append((e, pool))
         # new_roots = []
-        # for e in itertools.chain(all_exps(new_target), all_exps(assumptions)):
+        # for e in itertools.chain(all_exps(new_target), all_exps(self.assumptions)):
         #     if e in new_roots:
         #         continue
         #     if not isinstance(e, ELambda) and all(v in self.legal_free_vars for v in free_vars(e)):
         #         self._fingerprint(e)
         #         new_roots.append(e)
         # self.roots = new_roots
-        if self.cost_model.is_monotonic() or hyperaggressive_culling.value:
-            seen = list(self.seen.items())
-            n = 0
-            for ((pool, fp), (cost, exps)) in seen:
-                if cost > self.cost_ceiling:
-                    for (e, size) in exps:
-                        _on_exp(e, "evicted due to lowered cost ceiling [cost={}, ceiling={}]".format(cost, self.cost_ceiling))
-                        self.cache.evict(e, size=size, pool=pool)
-                        n += 1
-                    del self.seen[(pool, fp)]
-            if n:
-                print("evicted {} elements".format(n))
+
+        ## TODO: fix this up for symbolic cost model
+        # if self.cost_model.is_monotonic() or hyperaggressive_culling.value:
+        #     seen = list(self.seen.items())
+        #     n = 0
+        #     for ((pool, fp), (cost, exps)) in seen:
+        #         if cost > self.cost_ceiling:
+        #             for (e, size) in exps:
+        #                 _on_exp(e, "evicted due to lowered cost ceiling [cost={}, ceiling={}]".format(cost, self.cost_ceiling))
+        #                 self.cache.evict(e, size=size, pool=pool)
+        #                 n += 1
+        #             del self.seen[(pool, fp)]
+        #     if n:
+        #         print("evicted {} elements".format(n))
         self._check_seen_wf()
 
     def update_watched_exps(self):
-        self.cost_ceiling = self.cost_model.cost(self.target, RUNTIME_POOL)
+        # self.cost_ceiling = self.cost_model.cost(self.target, RUNTIME_POOL)
         self.watched_exps = []
         self.all_examples = instantiate_examples((self.target,), self.examples, self.binders)
         self.behavior_index = BehaviorIndex()
@@ -363,9 +365,10 @@ class Learner(object):
 
                 cost = self.cost_model.cost(e, pool)
 
-                if (self.cost_model.is_monotonic() or hyperaggressive_culling.value) and cost > self.cost_ceiling:
-                    _on_exp(e, "too expensive", cost, self.cost_ceiling)
-                    continue
+                ## TODO: fix this up for symbolic cost model
+                # if (self.cost_model.is_monotonic() or hyperaggressive_culling.value) and cost > self.cost_ceiling:
+                #     _on_exp(e, "too expensive", cost, self.cost_ceiling)
+                #     continue
 
                 fp = self._fingerprint(e)
                 prev = self.seen.get((pool, fp))
@@ -679,7 +682,8 @@ def improve(
 
                 old_cost = cost_model.cost(target, RUNTIME_POOL)
                 new_cost = cost_model.cost(new_target, RUNTIME_POOL)
-                if new_cost.always_worse_than(old_cost):
+                ordering = new_cost.compare_to(old_cost)
+                if ordering == Cost.WORSE:
                     print("WHOOPS! COST GOT WORSE!")
                     if save_testcases.value:
                         with open(save_testcases.value, "a") as f:
@@ -696,14 +700,14 @@ def improve(
                             f.write("        assert False\n")
                     # raise Exception("detected nonmonotonicity")
                     continue
-                if new_cost == old_cost:
-                    print("...but cost ({}) is unchanged".format(old_cost))
-                    continue
+                # elif ordering == Cost.UNORDERED:
+                #     print("...but cost is unchanged".format(old_cost))
+                #     continue
                 print("found improvement: {} -----> {}".format(pprint(old_e), pprint(new_e)))
                 print("cost: {} -----> {}".format(old_cost, new_cost))
                 if reset_on_success.value:
                     learner.reset(examples, update_watched_exps=False)
-                learner.watch(new_target, assumptions)
+                learner.watch(new_target)
                 target = new_target
 
                 # if binders appear free, let's fix it
