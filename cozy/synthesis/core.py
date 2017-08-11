@@ -713,12 +713,12 @@ def improve(
 
                 # if binders appear free, let's fix it
                 new_target2 = learner._doctor_for_context(new_target, {})
-                if new_target2 != new_target:
-                    if not valid(EImplies(assumptions, EBinOp(target, "===", new_target2).with_type(BOOL))):
-                        print("OOPS!")
-                        print("correct: {}".format(pprint(new_target)))
-                        print("wrong:   {}".format(pprint(new_target2)))
-                        assert False
+                # if new_target2 != new_target:
+                #     if not valid(EImplies(assumptions, EBinOp(target, "===", new_target2).with_type(BOOL))):
+                #         print("OOPS!")
+                #         print("correct: {}".format(pprint(new_target)))
+                #         print("wrong:   {}".format(pprint(new_target2)))
+                #         assert False
 
                 yield new_target2
 
