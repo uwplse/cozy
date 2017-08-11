@@ -818,9 +818,10 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
                                     for v in free_vars(x):
                                         print(" ---> s[{}] = {}".format(v.id, solver_env[v.id]))
                                         print(" ---> e[{}] = {}".format(v.id, eval_env[v.id]))
-                                    if isinstance(x, EBinOp):
-                                        print(" ---> lhs = {}".format(evaluation.eval(x.e1, eval_env)))
-                                        print(" ---> rhs = {}".format(evaluation.eval(x.e2, eval_env)))
+                                    for i, c in enumerate(x.children()):
+                                        if isinstance(c, Exp) and not isinstance(c, ELambda):
+                                            print(" ---> solver arg[{}] = {}".format(i, reconstruct(model, visitor.visit(c, solver_env), c.type)))
+                                            print(" ---> eval'r arg[{}] = {}".format(i, evaluation.eval(c, eval_env)))
                                     if isinstance(x, EFilter):
                                         smask, selems = visitor.visit(x.e, solver_env)
                                         for (mask, elem) in zip(smask, selems):
