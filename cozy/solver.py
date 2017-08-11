@@ -339,7 +339,7 @@ class ToZ3(Visitor):
             return z3.And(*[z3.Implies(m, e, self.ctx) for (m, e) in zip(mask, elems)], self.ctx)
         elif e.op == UOp.Any:
             mask, elems = self.visit(e.e, env)
-            return z3.Or(*[z3.Implies(m, e, self.ctx) for (m, e) in zip(mask, elems)], self.ctx)
+            return z3.Or(*[z3.And(m, e, self.ctx) for (m, e) in zip(mask, elems)], self.ctx)
         elif e.op == UOp.Distinct:
             elem_type = e.type.t
             return self.distinct_bag_elems(self.visit(e.e, env), elem_type, env)
