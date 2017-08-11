@@ -1,6 +1,6 @@
 from cozy.syntax import *
 from cozy.solver import valid
-from cozy.syntax_tools import pprint, subst, enumerate_fragments
+from cozy.syntax_tools import pprint, subst, enumerate_fragments, cse
 from cozy.incrementalization import delta_form
 from cozy.opts import Option
 
@@ -20,7 +20,7 @@ def check_ops_preserve_invariants(spec : Spec):
         for a in spec.assumptions:
             a_post_delta = subst(a, remap)
             assumptions = list(m.assumptions) + list(spec.assumptions)
-            if not valid(EImplies(EAll(assumptions), a_post_delta)):
+            if not valid(cse(EImplies(EAll(assumptions), a_post_delta))):
                 res.append("{.name!r} may not preserve invariant {}".format(m, pprint(a)))
     return res
 
@@ -28,6 +28,6 @@ def check_the_wf(spec : Spec):
     res = []
     for (a, e, r, bound) in enumerate_fragments(spec):
         if isinstance(e, EUnaryOp) and e.op == UOp.The:
-            if not valid(EImplies(EAll(a), EAny([EIsSingleton(e.e), EEmpty(e.e)]))):
+            if not valid(cse(EImplies(EAll(a), EAny([EIsSingleton(e.e), EEmpty(e.e)])))):
                 res.append("at {}: `the` is illegal since its argument may not be singleton".format(pprint(e)))
     return res
