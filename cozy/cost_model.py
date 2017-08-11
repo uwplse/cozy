@@ -76,7 +76,7 @@ class Cost(object):
         return EAll(res)
 
     @typechecked
-    def always(self, op, other, assumptions : Exp, cards = None) -> bool:
+    def always(self, op, other, assumptions : Exp, cards = None, **kwargs) -> bool:
         """
         Partial order on costs subject to assumptions.
         """
@@ -88,16 +88,16 @@ class Cost(object):
             EAll((self.assumptions, other.assumptions, cards)),
             EBinOp(self.formula, op, other.formula).with_type(BOOL))
         try:
-            return valid(f, logic="QF_LIA", timeout=1)
+            return valid(f, logic="QF_LIA", timeout=1, **kwargs)
         except SolverReportedUnknown:
             # If we accidentally made an unsolveable integer arithmetic formula,
             # then try again with real numbers. This will admit some models that
             # are not possible (since bags must have integer cardinalities), but
             # returning false is always a safe move here, so it's fine.
             print("Warning: not able to solve {}".format(pprint(f)))
-            f = subst(f, { v.id : EVar(v.id).with_type(REAL) for v in free_vars(f) })
+            f = subst(f, { v.id : EVar(v.id).with_type(REAL) for v in free_vars(cards) })
             try:
-                return valid(f, logic="QF_NRA", timeout=5)
+                return valid(f, logic="QF_NRA", timeout=5, **kwargs)
             except SolverReportedUnknown:
                 print("Giving up!")
                 return False
@@ -146,6 +146,27 @@ class Cost(object):
             self.formula,
             self.assumptions,
             self.cardinalities)
+
+def debug_comparison(e1, c1, e2, c2):
+    print("-" * 20)
+    print("comparing costs...")
+    print("  e1 = {}".format(pprint(e1)))
+    print("  c1 = {}".format(c1))
+    print("  e2 = {}".format(pprint(e2)))
+    print("  c2 = {}".format(c2))
+    print("joint orderings...")
+    cards = c1.order_cardinalities(c2, assumptions=T)
+    print("  {}".format(pprint(cards)))
+    for op in ("<=", "<", ">", ">="):
+        print("c1 always {} c2?".format(op))
+        x = []
+        res = c1.always(op, c2, assumptions=T, cards=cards, model_callback=lambda m: x.append(m))
+        if res:
+            print("  YES")
+        else:
+            print("  NO: {}".format(x[0]))
+            print("  c1 = {}".format(eval(c1.formula, env=x[0])))
+            print("  c2 = {}".format(eval(c2.formula, env=x[0])))
 
 Cost.ZERO = Cost(None, None, ZERO)
 
@@ -241,10 +262,11 @@ class CompositeCostModel(CostModel, BottomUpExplorer):
         if pool == RUNTIME_POOL:
             self.cardinalities = OrderedDict()
             self.assumptions = []
+            min_cardinality = ENum(1000).with_type(INT)
             if assume_large_cardinalities.value:
                 for v in free_vars(e):
                     if isinstance(v.type, TBag) or isinstance(v.type, TSet):
-                        self.assumptions.append(EBinOp(self.cardinality(v), ">", ENum(1000).with_type(INT)).with_type(BOOL))
+                        self.assumptions.append(EBinOp(self.cardinality(v), ">", min_cardinality).with_type(BOOL))
             self.secondaries = 0
             f = self.visit(e)
             invcard = OrderedDict()
