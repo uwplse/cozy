@@ -691,6 +691,6 @@ def eval_bulk(e, envs, bind_callback=None, use_default_values_for_undefined_vars
     vars = OrderedSet(free_vars_and_funcs(e))
     types = { v.id : v.type for v in free_vars(e) }
     vmap = { v : i for (i, v) in enumerate(vars) }
-    envs = [ [(env.get(v, mkval(types[v])) if use_default_values_for_undefined_vars else env[v]) for v in vars] for env in envs ]
+    envs = [ [(env.get(v, mkval(types[v])) if (use_default_values_for_undefined_vars and v in types) else env[v]) for v in vars] for env in envs ]
     _compile(e, vmap, ops, bind_callback)
     return [_eval_compiled(ops, env) for env in envs]
