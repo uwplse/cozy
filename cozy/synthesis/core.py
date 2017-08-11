@@ -254,6 +254,7 @@ class Learner(object):
         for (e, r, cost, a, pool, bound) in self.watched_exps:
             _on_exp(e, "new root", pool_name(pool))
             self.roots.append((e, pool))
+        self.roots.sort(key = lambda tup: tup[0].size())
         # new_roots = []
         # for e in itertools.chain(all_exps(new_target), all_exps(self.assumptions)):
         #     if e in new_roots:
