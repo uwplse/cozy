@@ -71,6 +71,7 @@ def run():
         ast = desugar.desugar(ast)
         # print(syntax_tools.pprint(ast))
 
+        print("Checking assumptions...")
         errors = (
             invariant_preservation.check_ops_preserve_invariants(ast) +
             invariant_preservation.check_the_wf(ast))
@@ -78,6 +79,7 @@ def run():
             for e in errors:
                 print("Error: {}".format(e))
             sys.exit(1)
+        print("Done!")
 
         ast = synthesis.construct_initial_implementation(ast)
 
