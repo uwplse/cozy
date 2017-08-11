@@ -215,11 +215,15 @@ def _uneval(t, value):
         return ENum(value).with_type(t)
     elif t == BOOL:
         return EBool(value).with_type(t)
-    elif isinstance(t, TBag):
+    elif isinstance(t, TBag) or isinstance(t, TSet):
         e = EEmptyList().with_type(t)
         for x in value:
             e = EBinOp(e, "+", ESingleton(uneval(x, t.t)).with_type(t)).with_type(t)
         return e
+    elif isinstance(t, TString):
+        return EStr(value).with_type(t)
+    elif isinstance(t, TMaybe):
+        return ENull().with_type(t) if value.obj is None else EJust(value.obj).with_type(t)
     elif isinstance(t, TTuple):
         return ETuple(tuple(uneval(tt, x) for (tt, x) in zip(t.ts, value))).with_type(t)
     elif isinstance(t, TRecord):
