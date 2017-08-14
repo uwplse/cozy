@@ -888,6 +888,8 @@ class JavaPrinter(CxxPrinter):
         return ("".join(setups), "new {}({})".format(name, ", ".join(args)))
 
     def visit_ENull(self, e, indent=""):
+        if not self.boxed and isinstance(e.type, TMaybe) and self.is_primitive(e.type.t):
+            return self.visit(evaluation.construct_value(e.type.t), indent=indent)
         return ("", "null")
 
     def visit_EStr(self, e, indent=""):
