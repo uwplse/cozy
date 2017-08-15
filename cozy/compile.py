@@ -1154,6 +1154,21 @@ class JavaPrinter(CxxPrinter):
     def visit_TRef(self, t, name):
         return self.visit(t.t, name)
 
+    def for_each_native(self, x, iterable, body, indent):
+        if self.troveargs(x.type) is None:
+            setup, iterable_src = self.visit(iterable, indent)
+            itname = fresh_name("iterator")
+            return "{setup}{indent}gnu.trove.iterator.T{T}Iterator {it} = {iterable}.iterator();\n{indent}while ({it}.hasNext()) {{\n{indent2}{decl} = {it}.next();\n{body}{indent}}}\n".format(
+                setup=setup,
+                iterable=iterable_src,
+                it=itname,
+                T=self.trovename(x.type),
+                decl=self.visit(x.type, name=x.id),
+                body=self.visit(body, indent+INDENT),
+                indent=indent,
+                indent2=indent+INDENT)
+        return super().for_each_native(x, iterable, body, indent)
+
     def visit_SMapUpdate(self, update, indent=""):
         if isinstance(update.change, SNoOp):
             return ""
