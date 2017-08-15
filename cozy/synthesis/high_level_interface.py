@@ -211,7 +211,7 @@ def improve_implementation(
                 # this guard might be false if a better solution was
                 # enqueued but the job has already been cleaned up
                 if q.name in [qq.name for qq in impl.query_specs]:
-                    print("SOLUTION FOR {}".format(q.name))
+                    print("SOLUTION FOR {} [size={}]".format(q.name, new_ret.size() + sum(proj.size() for (v, proj) in new_rep)))
                     print("-" * 40)
                     for (sv, proj) in new_rep:
                         print("  {} : {} = {}".format(sv.id, pprint(sv.type), pprint(proj)))
