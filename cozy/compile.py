@@ -1,4 +1,5 @@
 from collections import OrderedDict
+from contextlib import contextmanager
 import json
 
 from cozy import common
@@ -784,6 +785,13 @@ class JavaPrinter(CxxPrinter):
         super().__init__()
         self.boxed = boxed
 
+    @contextmanager
+    def boxed_mode(self):
+        oldboxed = self.boxed
+        self.boxed = True
+        yield
+        self.boxed = oldboxed
+
     def visit_Spec(self, spec, state_exps, sharing, package=None):
         self.state_exps = state_exps
         self.funcs = { f.name: f for f in spec.extern_funcs }
@@ -1030,7 +1038,7 @@ class JavaPrinter(CxxPrinter):
             return ""
 
     def visit_TBool(self, t, name):
-        return "Boolean {}".format(name)
+        return "{} {}".format("Boolean" if self.boxed else "boolean", name)
 
     def visit_TInt(self, t, name):
         return "{} {}".format("Integer" if self.boxed else "int", name)
@@ -1039,10 +1047,26 @@ class JavaPrinter(CxxPrinter):
         return "{} {}".format("Long" if self.boxed else "int", name)
 
     def is_primitive(self, t):
-        return t in (INT, LONG, BOOL)
+        return t in (INT, LONG, BOOL) or (isinstance(t, TMaybe) and self.is_primitive(t.t))
 
     def trovename(self, t):
-        return common.capitalize(self.visit(t, name="").strip()) if self.is_primitive(t) else "Object"
+        t = common.capitalize(self.visit(t, name="").strip()) if self.is_primitive(t) else "Object"
+        if t == "Boolean":
+            # Ack! Trove does not support boolean collections. In general, there
+            # are more efficient implementations when you only have a finite set
+            # of values...
+            # See:
+            #   https://sourceforge.net/p/trove4j/discussion/121845/thread/1bd4dce9/
+            #   https://sourceforge.net/p/trove4j/discussion/121845/thread/ba39ca71/
+            return "Object"
+        return t
+
+    def troveargs(self, t):
+        name = self.trovename(t)
+        if name == "Object":
+            with self.boxed_mode():
+                return self.visit(t, name="")
+        return None
 
     def visit_THandle(self, t, name):
         return "{} {}".format(self.typename(t), name)
@@ -1069,12 +1093,7 @@ class JavaPrinter(CxxPrinter):
     def visit_TBag(self, t, name):
         if hasattr(t, "rep_type"):
             return self.visit(t.rep_type(), name)
-        if self.boxed or not self.is_primitive(t.t):
-            return "java.util.Collection<{}> {}".format(self.visit(t.t, ""), name)
-        else:
-            return "gnu.trove.T{}Collection {}".format(
-                self.trovename(t.t),
-                name)
+        return self.visit_TNativeList(t, name)
 
     def visit_SCall(self, call, indent=""):
         if type(call.target.type) in (library.TNativeList, TBag, library.TNativeSet, TSet):
@@ -1118,13 +1137,15 @@ class JavaPrinter(CxxPrinter):
                 self.visit(t.v, ""),
                 name)
         else:
+            args = []
+            for x in (t.k, t.v):
+                x = self.troveargs(x)
+                if x is not None:
+                    args.append(x)
             return "gnu.trove.map.hash.T{k}{v}HashMap{targs} {name}".format(
                 k=self.trovename(t.k),
                 v=self.trovename(t.v),
-                targs=(
-                    "<{}>".format(self.visit(t.k, "")) if not self.is_primitive(t.k) else
-                    "<{}>".format(self.visit(t.v, "")) if not self.is_primitive(t.v) else
-                    ""),
+                targs="<{}>".format(", ".join(args)) if args else "",
                 name=name)
 
     def visit_TMaybe(self, t, name):
