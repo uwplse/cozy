@@ -573,7 +573,7 @@ class CxxPrinter(common.Visitor):
 
     def visit_ELet(self, e, indent=""):
         v = fresh_var(e.e.type)
-        setup1 = self.visit(SDecl(v, e.e), indent=indent)
+        setup1 = self.visit(SDecl(v.id, e.e), indent=indent)
         setup2, res = self.visit(e.f.apply_to(v), indent=indent)
         return (setup1 + setup2, res)
 
