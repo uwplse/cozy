@@ -6,11 +6,11 @@ def handler_class(callback):
         def do_GET(self):
             if self.path != "/":
                 self.send_response(404)
-                res = "not found"
+                content = "not found"
                 self.send_header("Content-Type", "text/plain")
                 self.send_header("Content-Length", str(len(content)))
                 self.end_headers()
-                self.wfile.write(res.encode("utf-8"))
+                self.wfile.write(content.encode("utf-8"))
                 return
             content = callback()
             self.send_response(200)
