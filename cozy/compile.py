@@ -166,6 +166,14 @@ class CxxPrinter(common.Visitor):
         return (setup1 + setup2 + setup3 + setup4, res.id)
 
     def visit_EEmptyList(self, e, indent=""):
+        if isinstance(e.type, library.TNativeList):
+            v = fresh_name()
+            decl = "{indent}{decl};\n".format(indent=indent, decl=self.visit(e.type, name=v))
+            return (decl + self.visit(self.initialize_native_list(EVar(v).with_type(e.type)), indent), v)
+        elif isinstance(e.type, library.TNativeSet):
+            v = fresh_name()
+            decl = "{indent}{decl};\n".format(indent=indent, decl=self.visit(e.type, name=v))
+            return (decl + self.visit(self.initialize_native_set(EVar(v).with_type(e.type)), indent), v)
         return self.visit(e.type.make_empty(), indent)
 
     def native_map_get(self, e, default_value, indent=""):
@@ -873,8 +881,21 @@ class JavaPrinter(CxxPrinter):
         return SEscape("{indent}{e} = " + init, ["e"], [out])
 
     def initialize_native_map(self, out):
-        init = "new {};\n".format(self.visit(out.type, name="()"))
-        return SEscape("{indent}{e} = " + init, ["e"], [out])
+        if self.use_trove(out.type):
+            if self.trovename(out.type.k) == "Object":
+                args = "64, 0.5f, {default}"
+            elif self.trovename(out.type.v) == "Object":
+                args = "64, 0.5f"
+            else:
+                args = "64, 0.5f, 0, {default}"
+            # args:
+            # int initialCapacity, float loadFactor, K noEntryKey, V noEntryValue
+            # loadFactor of 0.5 (trove's default) means map has 2x more buckets than entries
+            init = "new {}({});\n".format(self.visit(out.type, name=""), args)
+            return SEscape("{indent}{e} = " + init, ["e", "default"], [out, evaluation.construct_value(out.type.v)])
+        else:
+            init = "new {};\n".format(self.visit(out.type, name="()"))
+            return SEscape("{indent}{e} = " + init, ["e"], [out])
 
     def visit_SEscapableBlock(self, s, indent):
         return "{indent}{label}: do {{\n{body}{indent}}} while (false);\n".format(
@@ -959,8 +980,12 @@ class JavaPrinter(CxxPrinter):
             public_fields = []
             private_fields = []
             value_equality = True
+            handle_val_is_this = False
             if isinstance(t, THandle):
-                public_fields = [("val", t.value_type)]
+                if isinstance(t.value_type, TRecord):
+                    handle_val_is_this = True
+                else:
+                    public_fields = [("val", t.value_type)]
                 value_equality = False
                 for group in sharing.get(t, []):
                     for gt in group:
@@ -970,7 +995,10 @@ class JavaPrinter(CxxPrinter):
             else:
                 public_fields = list(t.fields)
             all_fields = public_fields + private_fields
-            s = "{indent}public static final class {name} implements java.io.Serializable {{\n".format(indent=indent, name=name)
+            s = "{indent}public static class {name}{extends} implements java.io.Serializable {{\n".format(
+                indent=indent,
+                name=name,
+                extends=" extends {}".format(self.visit(t.value_type, "")) if handle_val_is_this else "")
             for (f, ft) in public_fields + private_fields:
                 s += "{indent}private {field_decl};\n".format(indent=indent+INDENT, field_decl=self.visit(ft, f))
             for (f, ft) in public_fields:
@@ -979,6 +1007,10 @@ class JavaPrinter(CxxPrinter):
                     type=self.visit(ft, ""),
                     Field=common.capitalize(f),
                     field=f)
+            if handle_val_is_this:
+                s += "{indent}public {type} getVal() {{ return this; }}\n".format(
+                    indent=indent+INDENT,
+                    type=self.visit(t.value_type, ""))
 
             def flatten(field_types):
                 args = []
@@ -999,7 +1031,7 @@ class JavaPrinter(CxxPrinter):
                 return args, exps
 
             if isinstance(t, THandle):
-                args, exps = flatten([ft for (f, ft) in public_fields])
+                args, exps = flatten([ft for (f, ft) in (t.value_type.fields if handle_val_is_this else public_fields)])
             else:
                 args = public_fields
                 exps = [EVar(f) for (f, ft) in args]
@@ -1008,6 +1040,12 @@ class JavaPrinter(CxxPrinter):
                 setup, e = self.visit(e, indent=indent+INDENT*2)
                 s += setup
                 s += "{indent}this.{f} = {e};\n".format(indent=indent+INDENT*2, f=f, e=e)
+            if handle_val_is_this:
+                setups, es = zip(*[self.visit(e, indent=indent+INDENT*2) for e in exps])
+                s += "".join(setups)
+                s += "{indent}super({args});\n".format(
+                    indent=indent+INDENT*2,
+                    args=", ".join(es))
             s += "{indent}}}\n".format(indent=indent+INDENT)
 
             if value_equality:
@@ -1114,6 +1152,8 @@ class JavaPrinter(CxxPrinter):
 
     def visit_EGetField(self, e, indent):
         setup, ee = self.visit(e.e, indent)
+        if isinstance(e.e.type, THandle):
+            return (setup, "({}).getVal()".format(ee, e.f))
         return (setup, "({}).{}".format(ee, e.f))
 
     def find_one_native(self, iterable, indent):
@@ -1130,13 +1170,13 @@ class JavaPrinter(CxxPrinter):
     def visit_TVector(self, t, name):
         return "{}[] {}".format(self.visit(t.t, ""), name)
 
+    def use_trove(self, t):
+        if isinstance(t, TMap):
+            return not (self.boxed or (not self.is_primitive(t.k) and not self.is_primitive(t.v)))
+        return False
+
     def visit_TNativeMap(self, t, name):
-        if self.boxed or (not self.is_primitive(t.k) and not self.is_primitive(t.v)):
-            return "java.util.HashMap<{}, {}> {}".format(
-                self.visit(t.k, ""),
-                self.visit(t.v, ""),
-                name)
-        else:
+        if self.use_trove(t):
             args = []
             for x in (t.k, t.v):
                 x = self.troveargs(x)
@@ -1147,6 +1187,11 @@ class JavaPrinter(CxxPrinter):
                 v=self.trovename(t.v),
                 targs="<{}>".format(", ".join(args)) if args else "",
                 name=name)
+        else:
+            return "java.util.HashMap<{}, {}> {}".format(
+                self.visit(t.k, ""),
+                self.visit(t.v, ""),
+                name)
 
     def visit_TMaybe(self, t, name):
         return self.visit(t.t, name)
@@ -1173,6 +1218,7 @@ class JavaPrinter(CxxPrinter):
         if isinstance(update.change, SNoOp):
             return ""
         if isinstance(update.map.type, library.TNativeMap):
+            # TODO: liveness analysis to avoid this map lookup in some cases
             vsetup, val = self.visit(EMapGet(update.map, update.key).with_type(update.map.type.v), indent)
             s = "{indent}{decl} = {val};\n".format(
                 indent=indent,
@@ -1185,17 +1231,39 @@ class JavaPrinter(CxxPrinter):
             return super().visit_SMapUpdate(update, indent)
 
     def native_map_get(self, e, default_value, indent=""):
-        (smap, emap) = self.visit(e.map, indent)
-        (skey, ekey) = self.visit(e.key, indent)
-        edefault = fresh_var(e.type, "default_val")
-        sdefault = indent + self.visit(edefault.type, edefault.id) + ";\n"
-        sdefault += self.visit(default_value(edefault), indent)
-        (srest, res) = self.visit(ECond(
-            EEscape("{m}.containsKey({k})".format(m=emap, k=ekey), (), ()).with_type(e.type),
-            EEscape("{m}.get({k})".format(m=emap, k=ekey), (), ()).with_type(e.type),
-            edefault).with_type(e.type), indent=indent)
-        return (smap + skey + sdefault + srest, res)
-        # return (smap + skey + sdefault, "{emap}.getOrDefault({ekey}, {edefault})".format(emap=emap, ekey=ekey, edefault=edefault.id))
+        if self.use_trove(e.map.type):
+            if self.trovename(e.map.type.v) == "Object" and not isinstance(evaluation.construct_value(e.map.type.v), ENull):
+                # Le sigh...
+                (smap, emap) = self.visit(e.map, indent)
+                (skey, ekey) = self.visit(e.key, indent)
+                v = fresh_var(e.map.type.v, hint="v")
+                with self.boxed_mode():
+                    decl = self.visit(SDecl(v.id, EEscape("{emap}.get({ekey})".format(emap=emap, ekey=ekey), [], []).with_type(e.type)), indent=indent)
+                s, e = self.visit(ECond(EEq(v, ENull().with_type(v.type)), evaluation.construct_value(e.map.type.v), v).with_type(e.type), indent=indent)
+                return (smap + skey + decl + s, e)
+            else:
+                # For Trove, defaults are set at construction time
+                (smap, emap) = self.visit(e.map, indent)
+                (skey, ekey) = self.visit(e.key, indent)
+                return (smap + skey, "{emap}.get({ekey})".format(emap=emap, ekey=ekey))
+        else:
+            (smap, emap) = self.visit(e.map, indent)
+            (skey, ekey) = self.visit(e.key, indent)
+            edefault = fresh_var(e.type, "lookup_result")
+            sdefault = indent + self.visit(edefault.type, edefault.id) + ";\n"
+            sdefault += self.visit(default_value(edefault), indent)
+            return (smap + skey + sdefault, "{emap}.getOrDefault({ekey}, {edefault})".format(emap=emap, ekey=ekey, edefault=edefault.id))
+            # (smap, emap) = self.visit(e.map, indent)
+            # (skey, ekey) = self.visit(e.key, indent)
+            # edefault = fresh_var(e.type, "default_val")
+            # sdefault = indent + self.visit(edefault.type, edefault.id) + ";\n"
+            # sdefault += self.visit(default_value(edefault), indent)
+            # (srest, res) = self.visit(ECond(
+            #     EEscape("{m}.containsKey({k})".format(m=emap, k=ekey), (), ()).with_type(e.type),
+            #     EEscape("{m}.get({k})".format(m=emap, k=ekey), (), ()).with_type(e.type),
+            #     edefault).with_type(e.type), indent=indent)
+            # return (smap + skey + sdefault + srest, res)
+            # # return (smap + skey + sdefault, "{emap}.getOrDefault({ekey}, {edefault})".format(emap=emap, ekey=ekey, edefault=edefault.id))
 
     def visit_object(self, o, *args, **kwargs):
         return "/* implement visit_{} */".format(type(o).__name__)
