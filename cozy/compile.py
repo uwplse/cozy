@@ -13,6 +13,7 @@ INDENT = "  "
 
 SEscape = declare_case(Stm, "SEscape", ["body_string", "arg_names", "args"])
 EEscape = declare_case(Exp, "EEscape", ["body_string", "arg_names", "args"])
+TArray  = declare_case(Type, "TArray", ["t"])
 
 class CxxPrinter(common.Visitor):
 
@@ -156,9 +157,9 @@ class CxxPrinter(common.Visitor):
 
     def visit_EAlterMaybe(self, e, indent=""):
         setup1, ee = self.visit(e.e, indent)
-        tmp = fresh_var(e.e.type)
+        tmp = fresh_var(e.e.type, "tmp")
         setup2 = "{indent}{decl} = {val};\n".format(indent=indent, decl=self.visit(tmp.type, tmp.id), val=ee)
-        res = fresh_var(e.type)
+        res = fresh_var(e.type, "res")
         setup3 = "{indent}{decl};\n".format(
             indent=indent,
             decl=self.visit(res.type, res.id))
@@ -167,11 +168,11 @@ class CxxPrinter(common.Visitor):
 
     def visit_EEmptyList(self, e, indent=""):
         if isinstance(e.type, library.TNativeList):
-            v = fresh_name()
+            v = fresh_name("empty")
             decl = "{indent}{decl};\n".format(indent=indent, decl=self.visit(e.type, name=v))
             return (decl + self.visit(self.initialize_native_list(EVar(v).with_type(e.type)), indent), v)
         elif isinstance(e.type, library.TNativeSet):
-            v = fresh_name()
+            v = fresh_name("empty")
             decl = "{indent}{decl};\n".format(indent=indent, decl=self.visit(e.type, name=v))
             return (decl + self.visit(self.initialize_native_set(EVar(v).with_type(e.type)), indent), v)
         return self.visit(e.type.make_empty(), indent)
@@ -208,14 +209,14 @@ class CxxPrinter(common.Visitor):
         if hasattr(t, "construct_concrete"):
             return t.construct_concrete(e, out)
         elif isinstance(t, library.TNativeList) or type(t) is TBag:
-            x = fresh_var(t.t)
+            x = fresh_var(t.t, "x")
             return SSeq(
                 self.initialize_native_list(out),
                 SForEach(x, e, SCall(out, "add", [x])))
         elif isinstance(t, library.TNativeSet) or type(t) is TSet:
             if isinstance(e, EUnaryOp) and e.op == UOp.Distinct:
                 return self.construct_concrete(t, e.e, out)
-            x = fresh_var(t.t)
+            x = fresh_var(t.t, "x")
             return SSeq(
                 self.initialize_native_set(out),
                 SForEach(x, e, SCall(out, "add", [x])))
@@ -233,8 +234,8 @@ class CxxPrinter(common.Visitor):
                 construct_map(t, e.then_branch, out),
                 construct_map(t, e.else_branch, out))
         elif isinstance(e, EMakeMap2):
-            k = fresh_var(t.k)
-            v = fresh_var(t.v)
+            k = fresh_var(t.k, "k")
+            v = fresh_var(t.v, "v")
             return SForEach(k, e.e,
                 SMapUpdate(out, k, v,
                     self.construct_concrete(t.v, e.value.apply_to(k), v)))
@@ -306,7 +307,7 @@ class CxxPrinter(common.Visitor):
         if isinstance(update.map.type, library.TNativeMap):
             msetup, map = self.visit(update.map, indent)
             ksetup, key = self.visit(update.key, indent)
-            ref = fresh_var(update.map.type.v)
+            ref = fresh_var(update.map.type.v, "ref")
             s = "{indent}{decl} = {map}[{key}];\n".format(
                 indent=indent,
                 map=map,
@@ -368,9 +369,9 @@ class CxxPrinter(common.Visitor):
 
     def histogram(self, e, indent) -> (str, EVar):
         t = library.TNativeMap(e.type.t, INT)
-        hist = fresh_var(t)
+        hist = fresh_var(t, "hist")
         x = fresh_var(e.type.t)
-        val = fresh_var(INT)
+        val = fresh_var(INT, "val")
         decl = self.visit(t, hist.id)
         s = self.visit(SForEach(x, e,
             SMapUpdate(hist, x, val,
@@ -424,8 +425,8 @@ class CxxPrinter(common.Visitor):
             t = e.type
             if type(t) is TBag:
                 t = library.TNativeList(t.t)
-            v = fresh_var(t)
-            x = fresh_var(t.t)
+            v = fresh_var(t, "v")
+            x = fresh_var(t.t, "x")
             stm = self.visit(SForEach(x, e.e2, SCall(v, "remove", [x])), indent)
             return ("{}{};\n".format(indent, self.visit(v.type, v.id)) + self.visit(self.construct_concrete(v.type, e.e1, v), indent) + stm, v.id)
         elif op == BOp.Or:
@@ -456,7 +457,7 @@ class CxxPrinter(common.Visitor):
         elif isinstance(iterable, ESingleton):
             return self.visit(body(iterable.e), indent=indent)
         elif isinstance(iterable, ECond):
-            v = fresh_var(iterable.type.t)
+            v = fresh_var(iterable.type.t, "v")
             new_body = body(v)
             return self.visit(SIf(iterable.cond,
                 SForEach(v, iterable.then_branch, new_body),
@@ -467,7 +468,7 @@ class CxxPrinter(common.Visitor):
                 lambda v: body(iterable.f.apply_to(v)),
                 indent=indent)
         elif isinstance(iterable, EUnaryOp) and iterable.op == UOp.Distinct:
-            tmp = fresh_var(library.TNativeSet(iterable.type.t))
+            tmp = fresh_var(library.TNativeSet(iterable.type.t), "tmp")
             return "".join((
                 "{indent}{decl};\n".format(indent=indent, decl=self.visit(tmp.type, tmp.id)),
                 self.visit(self.initialize_native_set(tmp), indent),
@@ -490,7 +491,7 @@ class CxxPrinter(common.Visitor):
         elif isinstance(iterable, ELet):
             return self.for_each(iterable.f.apply_to(iterable.e), body, indent=indent)
         else:
-            x = fresh_var(iterable.type.t)
+            x = fresh_var(iterable.type.t, "x")
             if type(iterable.type) in (TBag, library.TNativeList, TSet, library.TNativeSet):
                 return self.for_each_native(x, iterable, body(x), indent)
             return self.visit(iterable.type.for_each(x, iterable, body(x)), indent=indent)
@@ -511,9 +512,9 @@ class CxxPrinter(common.Visitor):
         return self.for_each(iter, lambda x: subst(body, {id.id : x}), indent)
 
     def find_one(self, iterable, indent=""):
-        v = fresh_var(TMaybe(iterable.type.t))
+        v = fresh_var(TMaybe(iterable.type.t), "v")
         label = fresh_name("label")
-        x = fresh_var(iterable.type.t)
+        x = fresh_var(iterable.type.t, "x")
         decl = SDecl(v.id, ENull().with_type(v.type))
         find = SEscapableBlock(label,
             SForEach(x, iterable, seq([
@@ -543,7 +544,7 @@ class CxxPrinter(common.Visitor):
             op_str = "!" if op == UOp.Not else str(op)
             return (ce, "({op} {ee})".format(op=op_str, ee=ee))
         elif op == UOp.Distinct:
-            v = fresh_var(e.type)
+            v = fresh_var(e.type, "v")
             stm = self.construct_concrete(e.type, e, v)
             return ("{}{};\n".format(indent, self.visit(e.type, v.id)) + self.visit(stm, indent), v.id)
         else:
@@ -581,7 +582,7 @@ class CxxPrinter(common.Visitor):
             raise Exception("unknown function {}".format(repr(e.func)))
 
     def visit_ELet(self, e, indent=""):
-        v = fresh_var(e.e.type)
+        v = fresh_var(e.e.type, "v")
         setup1 = self.visit(SDecl(v.id, e.e), indent=indent)
         setup2, res = self.visit(e.f.apply_to(v), indent=indent)
         return (setup1 + setup2, res)
@@ -611,7 +612,7 @@ class CxxPrinter(common.Visitor):
     def copy_to(self, lhs, rhs, indent=""):
         if isinstance(lhs.type, TBag):
             cl, el = self.visit(lhs, indent)
-            x = fresh_var(lhs.type.t)
+            x = fresh_var(lhs.type.t, "x")
             # TODO: hacky use of EVar ahead! We need an EEscape, like SEscape
             return cl + self.visit(SForEach(x, rhs, SCall(EVar(el).with_type(lhs.type), "add", [x])), indent=indent)
         else:
@@ -652,7 +653,7 @@ class CxxPrinter(common.Visitor):
             return self.visit(e.then_branch, indent)
         elif scond == F:
             return self.visit(e.else_branch, indent)
-        v = fresh_var(e.type)
+        v = fresh_var(e.type, "v")
         return (
             "{indent}{decl};\n".format(indent=indent, decl=self.visit(v.type, v.id)) +
             self.visit(SIf(e.cond, SAssign(v, e.then_branch), SAssign(v, e.else_branch)), indent),
@@ -819,14 +820,17 @@ class JavaPrinter(CxxPrinter):
             s += "{}protected {};\n".format(INDENT, self.visit(t, name))
 
         # constructor
-        s += "{}public {}() {{\n".format(INDENT, spec.name)
+        s += "{indent}public {name}() {{\n{indent2}clear();\n{indent}}}\n\n".format(indent=INDENT, indent2=INDENT+INDENT, name=spec.name)
+
+        # clear
+        s += "{}public void clear() {{\n".format(INDENT, spec.name)
         for name, t in spec.statevars:
             initial_value = state_exps[name]
             fvs = free_vars(initial_value)
             initial_value = subst(initial_value, {v.id : evaluation.construct_value(v.type) for v in fvs})
             setup = self.construct_concrete(t, initial_value, EVar(name).with_type(t))
             s += self.visit(setup, INDENT + INDENT)
-        s += "{}}}\n".format(INDENT)
+        s += "{}}}\n\n".format(INDENT)
 
         # methods
         for op in spec.methods:
@@ -880,7 +884,21 @@ class JavaPrinter(CxxPrinter):
         init = "new {};\n".format(self.visit(out.type, name="()"))
         return SEscape("{indent}{e} = " + init, ["e"], [out])
 
+    def strip_generics(self, t : str):
+        import re
+        return re.sub("<.*>", "", t)
+
+    def div_by_64_and_round_up(self, e):
+        return EBinOp(EBinOp(EBinOp(e, "-", ONE).with_type(INT), ">>", ENum(6).with_type(INT)).with_type(INT), "+", ONE).with_type(INT)
+
+    def initialize_array(self, elem_type, len, out):
+        if elem_type == BOOL:
+            return SEscape("{indent}{out} = new long[{len}];\n", ["out", "len"], [out, self.div_by_64_and_round_up(len)])
+        return SEscape("{indent}{out} = new " + self.strip_generics(self.visit(elem_type, name="")) + "[{len}];\n", ["out", "len"], [out, len])
+
     def initialize_native_map(self, out):
+        if out.type.k == INT:
+            return self.initialize_array(out.type.v, ENum(64).with_type(INT), out)
         if self.use_trove(out.type):
             if self.trovename(out.type.k) == "Object":
                 args = "64, 0.5f, {default}"
@@ -935,16 +953,16 @@ class JavaPrinter(CxxPrinter):
 
     def _eq(self, e1, e2, indent):
         if not self.boxed and self.is_primitive(e1.type):
-            return self.visit(EEscape("({e1} == {e2})", ("e1", "e2"), (e1, e2)), indent)
+            return self.visit(EEscape("({e1} == {e2})", ("e1", "e2"), (e1, e2)).with_type(BOOL), indent)
         if (is_scalar(e1.type) or
                 (isinstance(e1.type, library.TNativeMap) and isinstance(e2.type, library.TNativeMap)) or
                 (isinstance(e1.type, library.TNativeSet) and isinstance(e2.type, library.TNativeSet)) or
                 (isinstance(e1.type, library.TNativeList) and isinstance(e2.type, library.TNativeList))):
-            return self.visit(EEscape("java.util.Objects.equals({e1}, {e2})", ["e1", "e2"], [e1, e2]), indent)
+            return self.visit(EEscape("java.util.Objects.equals({e1}, {e2})", ["e1", "e2"], [e1, e2]).with_type(BOOL), indent)
         return super()._eq(e1, e2, indent)
 
     def test_set_containment_native(self, set : Exp, elem : Exp, indent) -> (str, str):
-        return self.visit(EEscape("{set}.contains({elem})", ["set", "elem"], [set, elem]), indent)
+        return self.visit(EEscape("{set}.contains({elem})", ["set", "elem"], [set, elem]).with_type(BOOL), indent)
 
     def compute_hash_1(self, e : str, t : Type, out : EVar, indent : str) -> str:
         if not self.boxed and self.is_primitive(t):
@@ -1025,7 +1043,7 @@ class JavaPrinter(CxxPrinter):
                         args.extend(aa)
                         exps.append(ETuple(tuple(ee)).with_type(ft))
                     else:
-                        v = fresh_var(ft)
+                        v = fresh_var(ft, "v")
                         args.append((v.id, ft))
                         exps.append(v)
                 return args, exps
@@ -1175,7 +1193,14 @@ class JavaPrinter(CxxPrinter):
             return not (self.boxed or (not self.is_primitive(t.k) and not self.is_primitive(t.v)))
         return False
 
+    def visit_TArray(self, t, name):
+        if t.t == BOOL:
+            return "long[] {}".format(name)
+        return "{}[] {}".format(self.visit(t.t, name=""), name)
+
     def visit_TNativeMap(self, t, name):
+        if t.k == INT:
+            return self.visit(TArray(t.v), name)
         if self.use_trove(t):
             args = []
             for x in (t.k, t.v):
@@ -1218,6 +1243,9 @@ class JavaPrinter(CxxPrinter):
         if isinstance(update.change, SNoOp):
             return ""
         if isinstance(update.map.type, library.TNativeMap):
+            asetup = ""
+            if update.map.type.k == INT:
+                asetup = self.array_resize_for_index(update.map.type.v, update.map, update.key, indent)
             # TODO: liveness analysis to avoid this map lookup in some cases
             vsetup, val = self.visit(EMapGet(update.map, update.key).with_type(update.map.type.v), indent)
             s = "{indent}{decl} = {val};\n".format(
@@ -1226,11 +1254,55 @@ class JavaPrinter(CxxPrinter):
                 val=val)
             msetup, map = self.visit(update.map, indent) # TODO: deduplicate
             ksetup, key = self.visit(update.key, indent) # TODO: deduplicate
-            return vsetup + s + self.visit(update.change, indent) + msetup + "{indent}{map}.put({key}, {val});\n".format(indent=indent, map=map, key=key, val=update.val_var.id)
+            if update.map.type.k == INT:
+                do_put = self.visit(self.array_put(update.map.type.v, EEscape(map, [], []).with_type(update.map.type), EEscape(key, [], []).with_type(update.key.type), update.val_var), indent)
+            else:
+                do_put = "{indent}{map}.put({key}, {val});\n".format(indent=indent, map=map, key=key, val=update.val_var.id)
+            return asetup + vsetup + s + self.visit(update.change, indent) + msetup + do_put
         else:
             return super().visit_SMapUpdate(update, indent)
 
+    def array_resize_for_index(self, elem_type, a, i, indent):
+        new_a = fresh_name(hint="new_array")
+        if elem_type == BOOL:
+            t = "long"
+        else:
+            t = self.strip_generics(self.visit(elem_type, name=""))
+        len = EEscape("{a}.length", ["a"], [a]).with_type(INT)
+        double_size = SEscape(
+            "{{indent}}{t}[] {new_a} = new {t}[{{len}} << 1];\n{{indent}}System.arraycopy({{a}}, 0, {new_a}, 0, {{len}});\n{{indent}}{{a}} = {new_a};\n".format(t=t, new_a=new_a),
+            ["a", "len"], [a, len])
+        return self.visit(SWhile(
+            ENot(self.array_in_bounds(elem_type, a, i)),
+            double_size), indent)
+
+    def array_put(self, elem_type, a, i, val):
+        if elem_type == BOOL:
+            return SEscape("{indent}if ({val}) {{ {a}[{i} >> 6] |= (1L << {i}); }} else {{ {a}[{i} >> 6] &= ~(1L << {i}); }};\n",
+                ["a", "i", "val"],
+                [a, i, val])
+        return SEscape("{indent}{lval} = {val};\n", ["lval", "val"], [self.array_get(elem_type, a, i), val])
+
+    def array_get(self, elem_type, a, i):
+        if elem_type == BOOL:
+            return EEscape("(({a}[{i} >> 6] & (1L << {i})) != 0)", ["a", "i"], [a, i]).with_type(BOOL)
+        return EEscape("{a}[{i}]", ["a", "i"], [a, i]).with_type(elem_type)
+
+    def array_in_bounds(self, elem_type, a, i):
+        if elem_type == BOOL:
+            len = EBinOp(EEscape("{a}.length", ["a"], [a]), "<<", ENum(6).with_type(INT)).with_type(INT)
+        else:
+            len = EEscape("{a}.length", ["a"], [a]).with_type(INT)
+        return EAll([
+            EBinOp(i, ">=", ZERO).with_type(BOOL),
+            EBinOp(i, "<", len).with_type(BOOL)])
+
     def native_map_get(self, e, default_value, indent=""):
+        if e.key.type == INT:
+            return self.visit(ECond(
+                self.array_in_bounds(e.map.type.v, e.map, e.key),
+                self.array_get(e.map.type.v, e.map, e.key),
+                evaluation.construct_value(e.map.type.v)).with_type(e.map.type.v), indent=indent)
         if self.use_trove(e.map.type):
             if self.trovename(e.map.type.v) == "Object" and not isinstance(evaluation.construct_value(e.map.type.v), ENull):
                 # Le sigh...
