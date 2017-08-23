@@ -1,5 +1,5 @@
 from collections import UserDict, defaultdict, namedtuple
-from functools import total_ordering
+from functools import total_ordering, cmp_to_key
 
 from cozy.target_syntax import *
 from cozy.syntax_tools import equal, pprint, free_vars, all_exps
@@ -394,9 +394,10 @@ def unaryop_neg(stk):
     stk.append(-stk.pop())
 
 def unaryop_areunique(elem_type):
+    keyfunc = cmp_to_key(lambda v1, v2: cmp(elem_type, v1, v2))
     def unaryop_areunique(stk):
         v = stk.pop()
-        l = sorted(v)
+        l = sorted(v, key=keyfunc)
         res = True
         for i in range(len(l) - 1):
             if eq(elem_type, l[i], l[i+1]):
@@ -406,10 +407,11 @@ def unaryop_areunique(elem_type):
     return unaryop_areunique
 
 def unaryop_distinct(elem_type):
+    keyfunc = cmp_to_key(lambda v1, v2: cmp(elem_type, v1, v2))
     def unaryop_distinct(stk):
         v = stk.pop()
         res = []
-        for x in sorted(v):
+        for x in sorted(v, key=keyfunc):
             if not res or not eq(elem_type, res[-1], x):
                 res.append(x)
         stk.append(Bag(res))
