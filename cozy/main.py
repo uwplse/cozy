@@ -9,7 +9,7 @@ import argparse
 import datetime
 
 from cozy import parse
-from cozy import compile
+from cozy import codegen
 from cozy import common
 from cozy import typecheck
 from cozy import desugar
@@ -136,12 +136,12 @@ def run():
         java = args.java
         if java is not None:
             with common.open_maybe_stdout(java) as out:
-                out.write(compile.JavaPrinter(boxed=(not args.unboxed)).visit(impl, state_map, share_info))
+                out.write(codegen.JavaPrinter(boxed=(not args.unboxed)).visit(impl, state_map, share_info))
 
         cxx = getattr(args, "c++")
         if cxx is not None:
             with common.open_maybe_stdout(cxx) as out:
-                out.write(compile.CxxPrinter(use_qhash=args.use_qhash).visit(impl, state_map, share_info))
+                out.write(codegen.CxxPrinter(use_qhash=args.use_qhash).visit(impl, state_map, share_info))
     except:
         print("Code generation failed!")
         if save_failed_codegen_inputs.value:

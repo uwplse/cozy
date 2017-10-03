@@ -7,7 +7,7 @@ import unittest
 
 from cozy.target_syntax import *
 from cozy.syntax_tools import pprint, mk_lambda, fresh_var
-from cozy.compile import CxxPrinter, JavaPrinter
+from cozy.codegen import CxxPrinter, JavaPrinter
 from cozy.library import Library, TIntrusiveLinkedList, TNativeList, TNativeMap, TNativeSet, TVectorMap
 from cozy.autotuning import enumerate_impls
 from cozy.sharing import compute_sharing
