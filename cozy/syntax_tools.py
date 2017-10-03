@@ -331,6 +331,17 @@ _PRETTYPRINTER = PrettyPrinter()
 def pprint(ast):
     return _PRETTYPRINTER.visit(ast)
 
+def free_funcs(e : syntax.Exp) -> dict:
+    res = collections.OrderedDict()
+    for x in all_exps(e):
+        if isinstance(x, syntax.ECall):
+            t = target_syntax.TFunc(tuple(arg.type for arg in x.args), x.type)
+            if x.func in res:
+                assert res[x.func] == t
+            else:
+                res[x.func] = t
+    return res
+
 def free_vars(exp, counts=False):
     res = collections.OrderedDict()
     bound = collections.defaultdict(int)

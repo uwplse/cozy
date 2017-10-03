@@ -345,3 +345,10 @@ class TestSolver(unittest.TestCase):
             ESingleton(h2).with_type(bt)).with_type(bt)).with_type(BOOL)
         v = EVar("b").with_type(BOOL)
         satisfy(EEq(v, res), validate_model=True)
+
+    def test_funcs(self):
+        x = EVar("x").with_type(INT)
+        e = EEq(ECall("f", (x,)).with_type(INT), ZERO)
+        model = satisfy(e)
+        assert model
+        assert model["f"](model["x"]) == 0

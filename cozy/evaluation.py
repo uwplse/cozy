@@ -2,7 +2,7 @@ from collections import UserDict, defaultdict, namedtuple
 from functools import total_ordering, cmp_to_key
 
 from cozy.target_syntax import *
-from cozy.syntax_tools import equal, pprint, free_vars, all_exps
+from cozy.syntax_tools import equal, pprint, free_vars, free_funcs, all_exps
 from cozy.common import FrozenDict, OrderedSet, extend
 from cozy.typecheck import is_numeric
 
@@ -683,9 +683,8 @@ def _compile(e, env : {str:int}, out, bind_callback):
 def free_vars_and_funcs(e):
     for v in free_vars(e):
         yield v.id
-    for x in all_exps(e):
-        if isinstance(x, ECall):
-            yield x.func
+    for f in free_funcs(e):
+        yield f
 
 def eval_bulk(e, envs, bind_callback=None, use_default_values_for_undefined_vars : bool = False):
     if bind_callback is None:
@@ -697,6 +696,10 @@ def eval_bulk(e, envs, bind_callback=None, use_default_values_for_undefined_vars
     vars = OrderedSet(free_vars_and_funcs(e))
     types = { v.id : v.type for v in free_vars(e) }
     vmap = { v : i for (i, v) in enumerate(vars) }
-    envs = [ [(env.get(v, mkval(types[v])) if (use_default_values_for_undefined_vars and v in types) else env[v]) for v in vars] for env in envs ]
+    try:
+        envs = [ [(env.get(v, mkval(types[v])) if (use_default_values_for_undefined_vars and v in types) else env[v]) for v in vars] for env in envs ]
+    except KeyError:
+        import pdb
+        pdb.set_trace()
     _compile(e, vmap, ops, bind_callback)
     return [_eval_compiled(ops, env) for env in envs]

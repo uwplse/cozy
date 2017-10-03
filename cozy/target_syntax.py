@@ -24,6 +24,7 @@ class ELambda(Exp):
         return (self.arg, self.body)
     def __repr__(self):
         return "ELambda{}".format(repr(self.children()))
+TFunc = declare_case(Type, "TFunc", ["arg_types", "ret_type"])
 
 # Misc
 TRef       = declare_case(Type, "TRef", ["t"])

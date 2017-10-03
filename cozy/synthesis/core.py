@@ -3,7 +3,7 @@ import itertools
 import sys
 
 from cozy.target_syntax import *
-from cozy.syntax_tools import subst, pprint, free_vars, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda, enumerate_fragments_and_pools, exp_wf, is_scalar
+from cozy.syntax_tools import subst, pprint, free_vars, free_funcs, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda, enumerate_fragments_and_pools, exp_wf, is_scalar
 from cozy.common import OrderedSet, ADT, Visitor, fresh_name, typechecked, unique, pick_to_sum, cross_product, OrderedDefaultDict, OrderedSet, group_by, find_one
 from cozy.solver import satisfy, satisfiable, valid
 from cozy.evaluation import eval, eval_bulk, mkval, construct_value, uneval
@@ -643,6 +643,7 @@ def improve(
         builder = StateElimBuilder(builder)
 
     vars = list(free_vars(target) | free_vars(assumptions))
+    funcs = free_funcs(EAll([target, assumptions]))
 
     if examples is None:
         examples = []
@@ -662,7 +663,7 @@ def improve(
 
             # 3. check
             formula = EAll([assumptions, ENot(EBinOp(target, "===", new_target).with_type(BOOL))])
-            counterexample = satisfy(formula, vars=vars)
+            counterexample = satisfy(formula, vars=vars, funcs=funcs)
             if counterexample is not None:
                 if counterexample in examples:
                     print("duplicate example: {}".format(repr(counterexample)))

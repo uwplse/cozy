@@ -7,7 +7,7 @@ from functools import lru_cache
 import z3
 
 from cozy.target_syntax import *
-from cozy.syntax_tools import pprint, free_vars
+from cozy.syntax_tools import pprint, free_vars, free_funcs
 from cozy.common import declare_case, fresh_name, Visitor, FrozenDict, typechecked, extend
 from cozy import evaluation
 from cozy.opts import Option
@@ -108,7 +108,6 @@ class ToZ3(Visitor):
     def __init__(self, z3ctx, z3solver):
         self.ctx = z3ctx
         self.solver = z3solver
-        self.funcs = { }
         self.int_zero = z3.IntVal(0, self.ctx)
         self.int_one  = z3.IntVal(1, self.ctx)
         self.true = z3.BoolVal(True, self.ctx)
@@ -255,19 +254,9 @@ class ToZ3(Visitor):
         return (self.true, self.visit(e.e, env))
     def visit_ELet(self, e, env):
         return self.apply(e.f, self.visit(e.e, env), env)
-    def flatten(self, e, env):
-        if decideable(e.type):
-            yield (self.visit(e, env), e.type)
-        else:
-            raise NotImplementedError(e.type)
     def visit_ECall(self, call, env):
-        args = [x for arg in call.args for x in self.flatten(arg, env)]
-        key = (call.func, call.type, tuple(t for (v, t) in args))
-        f = self.funcs.get(key)
-        if f is None:
-            f = z3.Function(fresh_name(call.func), *[self.visit(t) for (v, t) in args], self.visit(call.type))
-            self.funcs[key] = f
-        return f(*[v for (v, t) in args])
+        args = [self.visit(x, env) for x in call.args]
+        return env[call.func](*args)
     def visit_EEnumEntry(self, e, env):
         return z3.IntVal(e.type.cases.index(e.name), self.ctx)
     def visit_ENative(self, e, env):
@@ -639,6 +628,10 @@ class ToZ3(Visitor):
             v = (h, self.mkvar(collection_depth, type.value_type))
             self.handle_vars.append((type.value_type,) + v)
             return v
+        elif isinstance(type, TFunc):
+            return z3.Function(fresh_name(),
+                *[self.visit(t) for t in type.arg_types],
+                self.visit(type.ret_type))
         else:
             raise NotImplementedError(type)
 
@@ -656,7 +649,7 @@ def mkconst(ctx, solver, val):
         raise NotImplementedError(repr(val))
 
 _LOCK = threading.Lock()
-def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = True, model_callback = None, logic : str = None, timeout : float = None):
+def satisfy(e, vars = None, funcs = None, collection_depth : int = 2, validate_model : bool = True, model_callback = None, logic : str = None, timeout : float = None):
     start = datetime.now()
     with _LOCK:
         # print("Checking sat (|e|={}); time to acquire lock = {}".format(e.size(), datetime.now() - start))
@@ -725,6 +718,10 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
                 raise NotImplementedError(type)
 
         _env = { }
+        if funcs is None:
+            funcs = free_funcs(e)
+        for f, t in funcs.items():
+            _env[f] = visitor.mkvar(collection_depth, t)
         fvs = free_vars(e)
         if vars is None:
             vars = fvs
@@ -768,16 +765,17 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
             model = solver.model()
             # print(model)
             res = { }
-            for v in vars:
-                res[v.id] = reconstruct(model, _env[v.id], v.type)
-            for k, f in visitor.funcs.items():
-                name = k[0]
-                out_type = k[1]
-                arg_types = k[2]
+            for f, t in funcs.items():
+                name = f
+                f = _env[name]
+                out_type = t.ret_type
+                arg_types = t.arg_types
                 @lru_cache(maxsize=None)
                 def extracted_func(*args):
                     return reconstruct(model, f(*[visitor.unreconstruct(v, t) for (v, t) in zip(args, arg_types)]), out_type)
                 res[name] = extracted_func
+            for v in vars:
+                res[v.id] = reconstruct(model, _env[v.id], v.type)
             if model_callback is not None:
                 model_callback(res)
             if validate_model:
