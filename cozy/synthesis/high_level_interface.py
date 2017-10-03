@@ -9,7 +9,6 @@ from cozy.target_syntax import *
 import cozy.syntax_tools
 from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, BottomUpRewriter, free_vars, pprint, subst, implies, fresh_var, mk_lambda, all_exps, equal, is_scalar
 import cozy.incrementalization as inc
-from cozy.typecheck import INT, BOOL
 from cozy.timeouts import Timeout, TimeoutException
 from cozy.cost_model import CompositeCostModel
 from cozy.rep_inference import infer_rep

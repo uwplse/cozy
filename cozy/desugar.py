@@ -1,6 +1,6 @@
 from cozy.common import typechecked, fresh_name
 from cozy.target_syntax import *
-from cozy.typecheck import INT, BOOL, retypecheck, is_numeric
+from cozy.typecheck import retypecheck, is_numeric
 from cozy.syntax_tools import BottomUpRewriter, subst, fresh_var, all_types, all_exps, equal, implies, mk_lambda, compose, nnf, dnf, break_conj, pprint
 from cozy.solver import valid
 from cozy.opts import Option
