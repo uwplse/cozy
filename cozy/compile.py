@@ -805,7 +805,7 @@ class JavaPrinter(CxxPrinter):
         yield
         self.boxed = oldboxed
 
-    def visit_Spec(self, spec, state_exps, sharing, package=None):
+    def visit_Spec(self, spec, state_exps, sharing):
         self.state_exps = state_exps
         self.funcs = { f.name: f for f in spec.extern_funcs }
         self.queries = { q.name: q for q in spec.methods if isinstance(q, Query) }

@@ -33,7 +33,6 @@ def run():
 
     java_opts = parser.add_argument_group("Java codegen")
     java_opts.add_argument("--java", metavar="FILE.java", default=None, help="Output file for java classes, use '-' for stdout")
-    java_opts.add_argument("--package", metavar="pkg.name", default=None, help="Java package name")
     java_opts.add_argument("--unboxed", action="store_true", help="Use unboxed primitives. NOTE: synthesized data structures may require GNU Trove (http://trove.starlight-systems.com/)")
 
     cxx_opts = parser.add_argument_group("C++ codegen")
@@ -137,7 +136,7 @@ def run():
         java = args.java
         if java is not None:
             with common.open_maybe_stdout(java) as out:
-                out.write(compile.JavaPrinter(boxed=(not args.unboxed)).visit(impl, state_map, share_info, package=args.package))
+                out.write(compile.JavaPrinter(boxed=(not args.unboxed)).visit(impl, state_map, share_info))
 
         cxx = getattr(args, "c++")
         if cxx is not None:
