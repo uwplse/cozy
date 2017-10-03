@@ -1229,7 +1229,7 @@ class JavaPrinter(CxxPrinter):
         return self.visit(t.t, name)
 
     def for_each_native(self, x, iterable, body, indent):
-        if self.troveargs(x.type) is None:
+        if not self.boxed and self.troveargs(x.type) is None:
             setup, iterable_src = self.visit(iterable, indent)
             itname = fresh_name("iterator")
             return "{setup}{indent}gnu.trove.iterator.T{T}Iterator {it} = {iterable}.iterator();\n{indent}while ({it}.hasNext()) {{\n{indent2}{decl} = {it}.next();\n{body}{indent}}}\n".format(
