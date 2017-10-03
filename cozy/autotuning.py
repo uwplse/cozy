@@ -27,7 +27,9 @@ def apply_rewrite(statevar, new_type, ast):
         ast.extern_funcs,
         [v for v in ast.statevars if v[0] != statevar] + [(statevar, new_type)],
         deep_copy(ast.assumptions),
-        deep_copy(ast.methods))
+        deep_copy(ast.methods),
+        ast.header,
+        ast.footer)
     errs = typecheck(new_ast)
     for e in errs:
         print(e)

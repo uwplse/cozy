@@ -143,7 +143,9 @@ class Implementation(object):
             self.spec.extern_funcs,
             new_statevars,
             [],
-            list(self.query_impls.values()) + new_ops)
+            list(self.query_impls.values()) + new_ops,
+            self.spec.header,
+            self.spec.footer)
 
     @property
     def concretization_functions(self) -> { str : Exp }:

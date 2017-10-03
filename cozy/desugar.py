@@ -194,7 +194,9 @@ def desugar(spec : Spec) -> Spec:
         list(spec.extern_funcs),
         list(spec.statevars),
         list(spec.assumptions),
-        list(spec.methods))
+        list(spec.methods),
+        spec.header,
+        spec.footer)
 
     for i in range(len(spec.statevars)):
         v, t = spec.statevars[i]

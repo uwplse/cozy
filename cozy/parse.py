@@ -82,7 +82,7 @@ for kw in _KEYWORDS:
     tokens.append(keyword_token_name(kw))
 for opname, op in _OPERATORS:
     tokens.append(op_token_name(opname))
-tokens += ["WORD", "NUM", "STRINGLITERAL"]
+tokens += ["WORD", "NUM", "STRINGLITERAL", "EXTERNCODETOKEN"]
 tokens = tuple(tokens) # freeze tokens
 
 def make_lexer():
@@ -117,6 +117,11 @@ def make_lexer():
         t.value = ast.literal_eval(t.value)
         return t
 
+    def t_EXTERNCODETOKEN(t):
+        r"\{\{(.|\n)*?\}\}"
+        t.value = t.value[2:-2]
+        return t
+
     # Define a rule so we can track line numbers
     def t_newline(t):
         r'\n+'
@@ -146,8 +151,13 @@ def make_parser():
     start = "spec"
 
     def p_spec(p):
-        """spec : WORD OP_COLON typedecls funcdecls states assumes methods"""
-        p[0] = syntax.Spec(p[1], p[3], p[4], p[5], p[6], p[7])
+        """spec : externcode WORD OP_COLON typedecls funcdecls states assumes methods externcode"""
+        p[0] = syntax.Spec(p[2], p[4], p[5], p[6], p[7], p[8], p[1], p[9])
+
+    def p_externcode(p):
+        """externcode :
+                      | EXTERNCODETOKEN"""
+        p[0] = p[1] if len(p) > 1 else ""
 
     parsetools.multi(locals(), "typedecls", "typedecl")
 

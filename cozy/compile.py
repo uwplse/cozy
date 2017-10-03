@@ -763,7 +763,8 @@ class CxxPrinter(common.Visitor):
             s += "#include <QHash>\n"
         else:
             s += "#include <unordered_map>\n"
-        s += "class {} {{\n".format(spec.name)
+        s += spec.header
+        s += "\nclass {} {{\n".format(spec.name)
         s += "public:\n"
 
         self.setup_types(spec, state_exps, sharing)
@@ -785,7 +786,10 @@ class CxxPrinter(common.Visitor):
         s += INDENT + "{name}(const {name}& other) = delete;\n".format(name=spec.name)
         for op in spec.methods:
             s += self.visit(op, INDENT)
-        s += "};"
+        s += "};\n\n"
+        s += spec.footer
+        if not s.endswith("\n"):
+            s += "\n"
         return s
 
 class JavaPrinter(CxxPrinter):
@@ -807,11 +811,8 @@ class JavaPrinter(CxxPrinter):
         self.queries = { q.name: q for q in spec.methods if isinstance(q, Query) }
         self.setup_types(spec, state_exps, sharing)
 
-        s = ""
-        if package:
-            s += "package {};\n\n".format(package)
-
-        s += "public class {} implements java.io.Serializable {{\n".format(spec.name)
+        s = spec.header
+        s += "\npublic class {} implements java.io.Serializable {{\n".format(spec.name)
         for name, t in spec.types:
             self.types[t] = name
 
@@ -840,7 +841,10 @@ class JavaPrinter(CxxPrinter):
         for t, name in self.types.items():
             s += self.define_type(spec.name, t, name, INDENT, sharing)
 
-        s += "}"
+        s += "}\n\n"
+        s += spec.footer
+        if not s.endswith("\n"):
+            s += "\n"
         return s
 
     def visit_Op(self, q, indent=""):

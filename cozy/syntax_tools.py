@@ -531,9 +531,9 @@ class FragmentEnumerator(common.Visitor):
         with self.intro_vars([syntax.EVar(v).with_type(t) for (v, t) in s.statevars], s):
             with self.push_assumptions():
                 for info in self.visit_assumptions_seq(s.assumptions):
-                    yield (lambda a, x, r, bound: (a, x, lambda x: syntax.Spec(s.name, s.types, s.extern_funcs, s.statevars, r(x), s.methods), bound))(*info)
+                    yield (lambda a, x, r, bound: (a, x, lambda x: syntax.Spec(s.name, s.types, s.extern_funcs, s.statevars, r(x), s.methods, s.header, s.footer), bound))(*info)
                 for info in self.visit(s.methods):
-                    yield (lambda a, x, r, bound: (a, x, lambda x: syntax.Spec(s.name, s.types, s.extern_funcs, s.statevars, s.assumptions, ms), bound))(*info)
+                    yield (lambda a, x, r, bound: (a, x, lambda x: syntax.Spec(s.name, s.types, s.extern_funcs, s.statevars, s.assumptions, ms, s.header, s.footer), bound))(*info)
 
     def visit_Op(self, m):
         yield (self.current_assumptions(), m, common.identity_func, self.currently_bound())
