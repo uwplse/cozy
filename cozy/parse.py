@@ -130,7 +130,7 @@ def make_lexer():
     t_ignore = ' \t'
 
     def t_error(t):
-        print("Illegal character {}".format(repr(t.value[0])), file=sys.stderr)
+        print("Illegal character {} on line {}".format(repr(t.value[0]), t.lexer.lineno), file=sys.stderr)
         t.lexer.skip(1)
 
     return lex.lex()
