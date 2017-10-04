@@ -340,14 +340,9 @@ class ToZ3(Visitor):
             bag = self.visit(e.e, env)
             mask, elems = bag
             exists = z3.Or(*mask, self.ctx)
-            elem = None
+            elem = self.mkval(t)
             for (m, e) in reversed(list(zip(mask, elems))):
-                if elem is None:
-                    elem = e
-                else:
-                    elem = ite(t, m, e, elem)
-            if elem is None:
-                elem = self.mkval(t)
+                elem = ite(t, m, e, elem)
             return (exists, elem)
         elif e.op == "-":
             return -self.visit(e.e, env)
