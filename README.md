@@ -131,6 +131,8 @@ For sets and bags, Cozy allows `x.add(new_element)` and `x.remove(element)`.
 Note that `remove` removes exactly one occurrence of the element if
 any is present.
 
+Updates can also be guarded by if-checks, as in `if condition: x.add(y)`.
+
 ### Other Useful Features
 
 #### Typedefs
