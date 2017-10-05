@@ -88,6 +88,7 @@ From a specification like this, Cozy will produce a much better implementation:
  - `(T1, T2, ...)`: tuples, e.g. `(Int, Int)` is a pair of ints
  - `{f1 : T1, f2 : T2, ...}`: records
  - `Set<T>`, `Bag<T>`: sets and multisets, respectively
+ - `enum {case1, case2, ...}`: enumerations
 
 ### Query Methods
 
@@ -132,10 +133,7 @@ any is present.
 
 ### Other Useful Features
 
-To facilitate integration with other code, Cozy includes several other useful
-features.
-
-#### Typedefs and Native Types
+#### Typedefs
 
 (TODO: document this)
 
@@ -147,7 +145,11 @@ features.
 
 (TODO: this is very complicated!)
 
-#### Headers and Footers
+#### Escaping the Spec Language
+
+To facilitate integration with other code, Cozy gives you several ways to
+"escape" the confines of the specification language. This lets you use types,
+functions, and other features defined outside the specification.
 
 Code enclosed in double-braces at the top or bottom of a specification will be
 coped into the output directly. For example, to put a synthesized class into
@@ -164,9 +166,30 @@ a particular Java package:
     /* here is a footer! */
     }}
 
-#### Extern Functions
+To use a type declared elsewhere, you can use `Native "TypeName"`. At code
+generation time, Cozy will simply insert the text `TypeName` wherever that type
+is used. For instance:
 
-(TODO: document this)
+    MyDataStructure:
+        type User = Native "User"
+        state u : User
+        ...
+
+To use code declared elsewhere, you can use "extern" functions. These are
+snippets of code that Cozy inlines into the final implementation where
+necessary. Cozy assumes that these snippets are both effectively pure and quite
+efficient. For instance, Cozy's limited support for strings can be easily
+extended:
+
+    MyDataStructure:
+        type Char = Native "char"
+        extern firstCharacter(s : String) : Char = "{s}.charAt(0)"
+        extern isUpperCase(c : Char) : Bool = "Character.isUpperCase({c})"
+
+        state names : Set<String>
+
+        query miscapitalized()
+            [n | n <- names, not isUpperCase(firstCharacter(n))]
 
 ## Tests
 
