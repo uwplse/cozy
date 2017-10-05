@@ -256,6 +256,11 @@ def _eval_compiled(ops, init_stk=()):
             ops.extend(reversed(new_ops))
     return stk[-1]
 
+def push(val):
+    def _push(stk):
+        stk.append(val)
+    return _push
+
 def push_true(stk):
     stk.append(True)
 
@@ -430,6 +435,23 @@ def unaryop_len(stk):
 def do_concat(stk):
     v = stk.pop()
     stk.append(Bag(elem for bag in v for elem in bag))
+
+def if_then_else(then_code, else_code):
+    def ite(stk):
+        return then_code if stk.pop() else else_code
+    return ite
+
+def dup(stk):
+    stk.append(stk[-1])
+
+def swp(stk):
+    x = stk.pop()
+    y = stk.pop()
+    stk.append(x)
+    stk.append(y)
+
+def drop(stk):
+    stk.pop()
 
 _NULL_VALUE = Maybe(None)
 _EMPTY_BAG = Bag()
@@ -639,6 +661,42 @@ def _compile(e, env : {str:int}, out, bind_callback):
     elif isinstance(e, EFlatMap):
         _compile(EMap(e.e, e.f).with_type(TBag(e.type.t)), env, out, bind_callback=bind_callback)
         out.append(do_concat)
+    elif isinstance(e, EArgMin) or isinstance(e, EArgMax):
+        # stack layout:
+        #   len | f(best) | best | elem_0 | ... | elem_len
+
+        # body is a seq. of opcodes that has the effect of pushing
+        # f(top_of_stack) onto the stack, leaving the old top underneath
+        box = [None]
+        def set_arg(stk):
+            box[0] = stk[-1]
+        body = [set_arg]
+        with extend(env, e.f.arg.id, lambda: box[0]):
+            _compile(e.f.body, env, body, bind_callback=bind_callback)
+
+        keytype = e.f.arg.type
+
+        def initialize(stk):
+            bag = stk.pop()
+            if bag:
+                stk.extend(reversed(bag))
+            else:
+                stk.append(mkval(e.type))
+            return body + [push(len(bag)-1)]
+
+        do_cmp = binaryop_lt(keytype) if isinstance(e, EArgMin) else binaryop_gt(keytype)
+        def loop(stk):
+            len = stk.pop()
+            key = stk.pop()
+            if len > 0:
+                best = stk.pop()
+                return body + [dup, push(key), do_cmp, if_then_else(
+                    [],
+                    [drop, drop, push(best), push(key)]), push(len-1), loop]
+
+        _compile(e.e, env, out, bind_callback=bind_callback)
+        out.append(initialize)
+        out.append(loop)
     elif isinstance(e, EMakeMap2):
         _compile(EMap(e.e, ELambda(e.value.arg, ETuple((e.value.arg, e.value.body)))), env, out, bind_callback=bind_callback)
         default = mkval(e.type.v)

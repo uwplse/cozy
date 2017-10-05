@@ -120,6 +120,9 @@ class BinderBuilder(ExpBuilder):
                             yield self.check(EMap(bag, ELambda(binder, body)).with_type(TBag(body.type)), pool)
                             if body.type == BOOL:
                                 yield self.check(EFilter(bag, ELambda(binder, body)).with_type(bag.type), pool)
+                            if body.type == INT:
+                                yield self.check(EArgMin(bag, ELambda(binder, body)).with_type(bag.type.t), pool)
+                                yield self.check(EArgMax(bag, ELambda(binder, body)).with_type(bag.type.t), pool)
                             if pool == RUNTIME_POOL and isinstance(body.type, TBag):
                                 yield self.check(EFlatMap(bag, ELambda(binder, body)).with_type(TBag(body.type.t)), pool)
 

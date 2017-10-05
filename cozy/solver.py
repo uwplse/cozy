@@ -120,6 +120,16 @@ class ToZ3(Visitor):
             self.distinct(t, values[1:]),
             *[z3.Not(self.eq(t, values[0], v1, {}), self.ctx) for v1 in values[1:]],
             self.ctx)
+    def lt(self, t, e1, e2, env, deep=False):
+        if decideable(t):
+            return e1 < e2
+        else:
+            raise NotImplementedError()
+    def gt(self, t, e1, e2, env, deep=False):
+        if decideable(t):
+            return e1 > e2
+        else:
+            raise NotImplementedError()
     def eq(self, t, e1, e2, env, deep=False):
         if decideable(t):
             assert isinstance(e1, z3.AstRef), "{}".format(repr(e1))
@@ -348,6 +358,55 @@ class ToZ3(Visitor):
             return -self.visit(e.e, env)
         else:
             raise NotImplementedError(e.op)
+    def _optimal(self, e, env, cmp):
+        keytype = e.f.body.type
+        mask, elems = self.visit(e.e, env)
+
+        if not elems:
+            return self.mkval(e.type)
+
+        # print(pprint(e))
+
+        # 1st pass: find the best key
+        first = True
+        bestkey = None
+        legal = self.false
+        keyelems = [self.apply(e.f, x, env) for x in elems]
+        for m, key in reversed(list(zip(mask, keyelems))):
+            if first:
+                bestkey = key
+                first = False
+                legal = m
+            else:
+                bestkey = ite(keytype,
+                    z3.Or(z3.And(m, cmp(keytype, key, bestkey, env), self.ctx), z3.Not(legal, self.ctx), self.ctx),
+                    key,
+                    bestkey)
+                legal = z3.Or(m, legal, self.ctx)
+        # print(" -> bestkey={}".format(bestkey))
+
+        # 2nd pass: find the first elem having that key
+        first = True
+        res = None
+        legal = self.false
+        for m, key, x in reversed(list(zip(mask, keyelems, elems))):
+            if first:
+                res = x
+                first = False
+                legal = m
+            else:
+                res = ite(e.type,
+                    z3.Or(z3.And(m, self.eq(keytype, key, bestkey, env), self.ctx), z3.Not(legal, self.ctx), self.ctx),
+                    x,
+                    res)
+                legal = z3.Or(m, legal, self.ctx)
+        # print(" -> res={}".format(res))
+
+        return ite(e.type, legal, res, self.mkval(e.type))
+    def visit_EArgMin(self, e, env):
+        return self._optimal(e, env, self.lt)
+    def visit_EArgMax(self, e, env):
+        return self._optimal(e, env, self.gt)
     def visit_EWithAlteredValue(self, e, env):
         id, val = self.visit(e.handle, env)
         return (id, self.visit(e.new_value, env))
@@ -393,9 +452,9 @@ class ToZ3(Visitor):
         elif e.op == "===":
             return self.eq(e.e1.type, v1, v2, env, deep=True)
         elif e.op == ">":
-            return v1 > v2
+            return self.gt(e.e1.type, v1, v2, env)
         elif e.op == "<":
-            return v1 < v2
+            return self.lt(e.e1.type, v1, v2, env)
         elif e.op == ">=":
             return v1 >= v2
         elif e.op == "<=":

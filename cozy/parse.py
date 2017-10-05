@@ -31,8 +31,8 @@ _KEYWORDS = ([
     "assume",
     "true",
     "false",
-    "min",
-    "max",
+    "min", "argmin",
+    "max", "argmax",
     "if",
     "else",
     "Native"] +
@@ -65,6 +65,7 @@ _OPERATORS = [
     ("CLOSE_BRACKET", "]"),
     ("DOT", "."),
     ("LEFT_ARROW", "<-"),
+    ("RIGHT_ARROW", "->"),
     ("VBAR", "|")
     ]
 
@@ -236,6 +237,10 @@ def make_parser():
         """exp : STRINGLITERAL"""
         p[0] = syntax.EStr(p[1])
 
+    def p_lambda(p):
+        """lambda : OP_OPEN_BRACE WORD OP_RIGHT_ARROW exp OP_CLOSE_BRACE"""
+        p[0] = syntax.ELambda(syntax.EVar(p[2]), p[4])
+
     def p_exp(p):
         """exp : NUM
                | WORD
@@ -255,12 +260,15 @@ def make_parser():
                | exp OP_IMPLIES exp
                | exp OP_QUESTION exp OP_COLON exp
                | KW_NOT exp
+               | OP_MINUS exp
                | exp KW_IN exp
                | KW_UNIQUE exp
                | KW_EMPTY exp
                | KW_THE exp
                | KW_MIN exp
                | KW_MAX exp
+               | KW_ARGMIN lambda exp
+               | KW_ARGMAX lambda exp
                | KW_SUM exp
                | KW_LEN exp
                | KW_ANY exp
@@ -282,7 +290,12 @@ def make_parser():
             else:
                 p[0] = syntax.EVar(p[1])
         elif len(p) == 3:
-            p[0] = syntax.EUnaryOp(p[1], p[2])
+            if p[1] == "min":
+                p[0] = syntax.EArgMin(p[2], syntax.ELambda(syntax.EVar("x"), syntax.EVar("x")))
+            elif p[1] == "max":
+                p[0] = syntax.EArgMax(p[2], syntax.ELambda(syntax.EVar("x"), syntax.EVar("x")))
+            else:
+                p[0] = syntax.EUnaryOp(p[1], p[2])
         elif len(p) == 4:
             if p[1] == "(":
                 exps = p[2]
@@ -301,8 +314,10 @@ def make_parser():
                     p[0] = syntax.ETupleGet(p[1], p[3].val)
                 else:
                     p[0] = syntax.EGetField(p[1], p[3])
-            elif p[1] == "|":
-                p[0] = syntax.EUnaryOp("len", p[2])
+            elif p[1] == "argmin":
+                p[0] = syntax.EArgMin(p[3], p[2])
+            elif p[1] == "argmax":
+                p[0] = syntax.EArgMax(p[3], p[2])
             else:
                 p[0] = syntax.EBinOp(p[1], p[2], p[3])
         else:

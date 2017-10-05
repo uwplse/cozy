@@ -94,6 +94,8 @@ EJust               = declare_case(Exp, "EJust",              ["e"])
 ECond               = declare_case(Exp, "ECond",              ["cond", "then_branch", "else_branch"])
 EBinOp              = declare_case(Exp, "EBinOp",             ["e1", "op", "e2"])
 EUnaryOp            = declare_case(Exp, "EUnaryOp",           ["op", "e"])
+EArgMin             = declare_case(Exp, "EArgMin",            ["e", "f"])
+EArgMax             = declare_case(Exp, "EArgMax",            ["e", "f"])
 EHandle             = declare_case(Exp, "EHandle",            ["addr", "value"])
 EGetField           = declare_case(Exp, "EGetField",          ["e", "f"])
 EMakeRecord         = declare_case(Exp, "EMakeRecord",        ["fields"])
@@ -104,6 +106,21 @@ ECall               = declare_case(Exp, "ECall",              ["func", "args"])
 ETuple              = declare_case(Exp, "ETuple",             ["es"])
 ETupleGet           = declare_case(Exp, "ETupleGet",          ["e", "n"])
 ELet                = declare_case(Exp, "ELet",               ["e", "f"])
+
+# Lambdas
+TFunc = declare_case(Type, "TFunc", ["arg_types", "ret_type"])
+class ELambda(Exp):
+    @typechecked
+    def __init__(self, arg : EVar, body : Exp):
+        self.arg = arg
+        self.body = body
+    def apply_to(self, arg):
+        from cozy.syntax_tools import subst
+        return subst(self.body, { self.arg.id : arg })
+    def children(self):
+        return (self.arg, self.body)
+    def __repr__(self):
+        return "ELambda{}".format(repr(self.children()))
 
 class ComprehensionClause(ADT): pass
 CPull               = declare_case(ComprehensionClause, "CPull", ["id", "e"])

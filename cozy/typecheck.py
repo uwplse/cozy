@@ -248,6 +248,20 @@ class Typechecker(Visitor):
         else:
             raise NotImplementedError(e.op)
 
+    def visit_EArgMin(self, e):
+        self.visit(e.e)
+        e.f.arg.type = self.get_collection_type(e.e)
+        self.visit(e.f)
+        e.type = e.f.arg.type
+        # todo: ensure sortable (e.f.arg.type)
+
+    def visit_EArgMax(self, e):
+        self.visit(e.e)
+        e.f.arg.type = self.get_collection_type(e.e)
+        self.visit(e.f)
+        e.type = e.f.arg.type
+        # todo: ensure sortable (e.f.arg.type)
+
     def visit_EBool(self, e):
         e.type = BOOL
 

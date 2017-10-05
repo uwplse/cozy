@@ -250,6 +250,10 @@ class CompositeCostModel(CostModel, BottomUpExplorer):
         return self.visit(EMap(e.e, e.f))
     def visit_EMap(self, e):
         return ESum((TWO, self.visit(e.e), EBinOp(self.cardinality(e.e, plus_one=True), "*", self.visit(e.f.body)).with_type(INT)))
+    def visit_EArgMin(self, e):
+        return ESum((TWO, self.visit(e.e), EBinOp(self.cardinality(e.e, plus_one=True), "*", self.visit(e.f.body)).with_type(INT)))
+    def visit_EArgMax(self, e):
+        return ESum((TWO, self.visit(e.e), EBinOp(self.cardinality(e.e, plus_one=True), "*", self.visit(e.f.body)).with_type(INT)))
     def join(self, x, child_costs):
         if isinstance(x, list) or isinstance(x, tuple):
             return ESum(child_costs)
