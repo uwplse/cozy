@@ -1,10 +1,12 @@
 import unittest
 
-from cozy.syntax_tools import mk_lambda
+from cozy.syntax_tools import mk_lambda, pprint
 from cozy.target_syntax import *
-from cozy.typecheck import INT, BOOL
+from cozy.cost_model import CompositeCostModel
+from cozy.typecheck import retypecheck
 from cozy.evaluation import Bag, mkval
-from cozy.synthesis.core import instantiate_examples, fingerprint
+from cozy.synthesis.core import instantiate_examples, fingerprint, improve
+from cozy.synthesis.grammar import BinderBuilder
 
 handle_type = THandle("H", INT)
 handle1 = (1, mkval(INT))
@@ -33,3 +35,45 @@ class TestSynthesisCore(unittest.TestCase):
         new_examples = list(instantiate_examples((zero,), examples, [binder]))
         assert new_examples == [
             { "x": bag, "binder": False }]
+
+    def test_easy_synth(self):
+        res = None
+        x = EVar("x").with_type(BOOL)
+        xs = EVar("xs").with_type(TBag(BOOL))
+        target = EFilter(EStateVar(xs), ELambda(x, x))
+        assumptions = EUnaryOp(UOp.All, xs)
+        assert retypecheck(target)
+        assert retypecheck(assumptions)
+        def should_stop():
+            return isinstance(res, EVar)
+        for r in improve(target, assumptions, [x], [xs], [], CompositeCostModel(), BinderBuilder([x], [xs], []), stop_callback=should_stop):
+            print(pprint(r))
+            res = r
+
+    def test_incomplete_binders_list(self):
+        res = None
+        x = EVar("x").with_type(BOOL)
+        xs = EVar("xs").with_type(TBag(BOOL))
+        target = EFilter(EStateVar(xs), ELambda(x, x))
+        assumptions = EUnaryOp(UOp.All, xs)
+        assert retypecheck(target)
+        assert retypecheck(assumptions)
+        def should_stop():
+            return isinstance(res, EVar)
+        for r in improve(target, assumptions, [], [xs], [], CompositeCostModel(), BinderBuilder([], [xs], []), stop_callback=should_stop):
+            print(pprint(r))
+            res = r
+
+    def test_incomplete_binders_list_2(self):
+        res = None
+        x = EVar("x").with_type(BOOL)
+        xs = EVar("xs").with_type(TBag(BOOL))
+        target = EFilter(EStateVar(xs), ELambda(x, T))
+        assumptions = EUnaryOp(UOp.All, xs)
+        assert retypecheck(target)
+        assert retypecheck(assumptions)
+        def should_stop():
+            return isinstance(res, EVar)
+        for r in improve(target, assumptions, [], [xs], [], CompositeCostModel(), BinderBuilder([], [xs], []), stop_callback=should_stop):
+            print(pprint(r))
+            res = r

@@ -2,7 +2,7 @@ import unittest
 
 from cozy.target_syntax import *
 from cozy.syntax_tools import *
-from cozy.evaluation import eval, Bag
+from cozy.evaluation import eval, Bag, Map, cmp, EQ, LT, GT
 from cozy.typecheck import retypecheck
 
 zero = ENum(0).with_type(INT)
@@ -35,3 +35,8 @@ class TestEvaluation(unittest.TestCase):
             e = ECond(EBinOp(e, "<=", ONE), ONE, ZERO).with_type(INT)
         res = eval(e, env={})
         print(res)
+
+    def test_map_eq(self):
+        m = Map(TMap(THandle('Entry', TRecord((('key', TNative('uint64_t')), ('pixmap', TNative('QPixmap *')), ('indexData', TNative('QByteArray')), ('memSize', TInt()), ('diskSize', TInt()), ('st', TEnum(('Disk', 'Loading', 'DiskAndMemory', 'MemoryOnly', 'Saving', 'NetworkPending', 'IndexPending', 'Invalid'))), ('inUse', TBool())))), TEnum(('Disk', 'Loading', 'DiskAndMemory', 'MemoryOnly', 'Saving', 'NetworkPending', 'IndexPending', 'Invalid'))), 'Disk', [])
+        assert m == m
+        assert cmp(m.type, m, m) == EQ

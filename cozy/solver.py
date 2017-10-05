@@ -7,12 +7,21 @@ from functools import lru_cache
 import z3
 
 from cozy.target_syntax import *
-from cozy.syntax_tools import pprint, free_vars
+from cozy.syntax_tools import pprint, free_vars, free_funcs
 from cozy.common import declare_case, fresh_name, Visitor, FrozenDict, typechecked, extend
 from cozy import evaluation
 from cozy.opts import Option
 
 save_solver_testcases = Option("save-solver-testcases", str, "", metavar="PATH")
+
+class SolverReportedUnknown(Exception):
+    pass
+
+class ModelValidationError(Exception):
+    pass
+
+TReal = declare_case(Type, "TReal", [])
+REAL = TReal()
 
 @typechecked
 def ite(ty : Type, cond : z3.AstRef, then_branch, else_branch):
@@ -56,6 +65,7 @@ def ite(ty : Type, cond : z3.AstRef, then_branch, else_branch):
     elif isinstance(ty, TTuple):
         return tuple(ite(t, cond, v1, v2) for (v1, v2, t) in zip(then_branch, else_branch, ty.ts))
     elif isinstance(ty, TMap):
+        ncond = z3.Not(cond, ctx)
         def1, map1 = then_branch["default"], then_branch["mapping"]
         def2, map2 = else_branch["default"], else_branch["mapping"]
         mapping = []
@@ -71,16 +81,16 @@ def ite(ty : Type, cond : z3.AstRef, then_branch, else_branch):
             elif i < len(map1):
                 m1, k1, v1 = map1[i]
                 mapping.append((
-                    m1,
+                    z3.And(cond, m1, ctx),
                     k1,
-                    ite(ty.v, cond, v1, def2)))
+                    v1))
             else:
                 assert i < len(map2)
                 m2, k2, v2 = map2[i]
                 mapping.append((
-                    m2,
+                    z3.And(ncond, m2, ctx),
                     k2,
-                    ite(ty.v, cond, def1, v2)))
+                    v2))
 
         return {
             "default": ite(ty.v, cond, def1, def2),
@@ -98,7 +108,6 @@ class ToZ3(Visitor):
     def __init__(self, z3ctx, z3solver):
         self.ctx = z3ctx
         self.solver = z3solver
-        self.funcs = { }
         self.int_zero = z3.IntVal(0, self.ctx)
         self.int_one  = z3.IntVal(1, self.ctx)
         self.true = z3.BoolVal(True, self.ctx)
@@ -111,8 +120,18 @@ class ToZ3(Visitor):
             self.distinct(t, values[1:]),
             *[z3.Not(self.eq(t, values[0], v1, {}), self.ctx) for v1 in values[1:]],
             self.ctx)
-    def eq(self, t, e1, e2, env):
-        if type(t) in [TInt, TLong, TBool, TEnum, TNative, TString]:
+    def lt(self, t, e1, e2, env, deep=False):
+        if decideable(t):
+            return e1 < e2
+        else:
+            raise NotImplementedError()
+    def gt(self, t, e1, e2, env, deep=False):
+        if decideable(t):
+            return e1 > e2
+        else:
+            raise NotImplementedError()
+    def eq(self, t, e1, e2, env, deep=False):
+        if decideable(t):
             assert isinstance(e1, z3.AstRef), "{}".format(repr(e1))
             assert isinstance(e2, z3.AstRef), "{}".format(repr(e2))
             return e1 == e2
@@ -121,7 +140,7 @@ class ToZ3(Visitor):
             m2, v2 = e2
             return z3.And(
                 m1 == m2,
-                z3.Implies(m1, self.eq(t.t, v1, v2, env), self.ctx),
+                z3.Implies(m1, self.eq(t.t, v1, v2, env, deep=deep), self.ctx),
                 self.ctx)
         elif isinstance(t, TBag) or isinstance(t, TSet):
             elem_type = t.t
@@ -136,35 +155,46 @@ class ToZ3(Visitor):
             conds = []
             conds.append(e1len == e2len)
 
-            lhs_counts = [ (x, self.count_in(elem_type, e1, x, env)) for x in lhs_elems ]
+            lhs_counts = [ (x, self.count_in(elem_type, e1, x, env, deep=deep)) for x in lhs_elems ]
             for x, count in lhs_counts:
-                conds.append(count == self.count_in(elem_type, e2, x, env))
+                conds.append(count == self.count_in(elem_type, e2, x, env, deep=deep))
 
-            rhs_counts = [ (x, self.count_in(elem_type, e1, x, env)) for x in rhs_elems ]
+            rhs_counts = [ (x, self.count_in(elem_type, e1, x, env, deep=deep)) for x in rhs_elems ]
             for x, count in rhs_counts:
-                conds.append(count == self.count_in(elem_type, e1, x, env))
+                conds.append(count == self.count_in(elem_type, e1, x, env, deep=deep))
+
+            if deep:
+                # TODO: the(e1) == the(e2)
+                pass
 
             return z3.And(*conds, self.ctx)
         elif isinstance(t, TMap):
-            conds = [self.eq(t.v, e1["default"], e2["default"], env)]
+            conds = [self.eq(t.v, e1["default"], e2["default"], env, deep=deep)]
+            def map_keys(m):
+                return ([mask for (mask, k, v) in m["mapping"]], [k for (mask, k, v) in m["mapping"]])
+            e1keys = map_keys(e1)
+            e2keys = map_keys(e2)
             for (mask, k, v) in e1["mapping"]:
-                conds.append(z3.Implies(mask, self.eq(t.v, self._map_get(t, e1, k, env), self._map_get(t, e2, k, env), env), self.ctx))
+                conds.append(z3.Implies(mask, z3.And(self.is_in(t.k, e2keys, k, env), self.eq(t.v, self._map_get(t, e1, k, env), self._map_get(t, e2, k, env), env, deep=deep), self.ctx), self.ctx))
             for (mask, k, v) in e2["mapping"]:
-                conds.append(z3.Implies(mask, self.eq(t.v, self._map_get(t, e1, k, env), self._map_get(t, e2, k, env), env), self.ctx))
+                conds.append(z3.Implies(mask, z3.And(self.is_in(t.k, e1keys, k, env), self.eq(t.v, self._map_get(t, e1, k, env), self._map_get(t, e2, k, env), env, deep=deep), self.ctx), self.ctx))
             return z3.And(*conds, self.ctx)
         elif isinstance(t, THandle):
             h1, val1 = e1
             h2, val2 = e2
-            return h1 == h2
+            res = h1 == h2
+            if deep:
+                res = z3.And(res, self.eq(t.value_type, val1, val2, env, deep=deep), self.ctx)
+            return res
         elif isinstance(t, TRecord):
-            conds = [self.eq(tt, e1[f], e2[f], env) for (f, tt) in t.fields]
+            conds = [self.eq(tt, e1[f], e2[f], env, deep=deep) for (f, tt) in t.fields]
             return z3.And(*conds, self.ctx)
         elif isinstance(t, TTuple):
-            conds = [self.eq(t, x, y, env) for (t, x, y) in zip(t.ts, e1, e2)]
+            conds = [self.eq(t, x, y, env, deep=deep) for (t, x, y) in zip(t.ts, e1, e2)]
             return z3.And(*conds, self.ctx)
         else:
             raise NotImplementedError(t)
-    def count_in(self, t, bag, x, env):
+    def count_in(self, t, bag, x, env, deep=False):
         """
         t - type of elems in bag
         bag - a bag
@@ -176,9 +206,9 @@ class ToZ3(Visitor):
         bag_mask, bag_elems = bag
         l = self.int_zero
         for i in range(len(bag_elems)):
-            l = z3.If(z3.And(bag_mask[i], self.eq(t, x, bag_elems[i], env), self.ctx), self.int_one, self.int_zero, ctx=self.ctx) + l
+            l = z3.If(z3.And(bag_mask[i], self.eq(t, x, bag_elems[i], env, deep=deep), self.ctx), self.int_one, self.int_zero, ctx=self.ctx) + l
         return l
-    def is_in(self, t, bag, x, env):
+    def is_in(self, t, bag, x, env, deep=False):
         """
         t - type of elems in bag
         bag - a bag
@@ -189,7 +219,7 @@ class ToZ3(Visitor):
         """
         bag_mask, bag_elems = bag
         conds = [
-            z3.And(mask, self.eq(t, x, elem, env), self.ctx)
+            z3.And(mask, self.eq(t, x, elem, env, deep=deep), self.ctx)
             for (mask, elem) in zip(bag_mask, bag_elems)]
         return z3.Or(*conds, self.ctx)
     def len_of(self, val):
@@ -234,19 +264,9 @@ class ToZ3(Visitor):
         return (self.true, self.visit(e.e, env))
     def visit_ELet(self, e, env):
         return self.apply(e.f, self.visit(e.e, env), env)
-    def flatten(self, e, env):
-        if decideable(e.type):
-            yield (self.visit(e, env), e.type)
-        else:
-            raise NotImplementedError(e.type)
     def visit_ECall(self, call, env):
-        args = [x for arg in call.args for x in self.flatten(arg, env)]
-        key = (call.func, call.type, tuple(t for (v, t) in args))
-        f = self.funcs.get(key)
-        if f is None:
-            f = z3.Function(fresh_name(call.func), *[self.visit(t) for (v, t) in args], self.visit(call.type))
-            self.funcs[key] = f
-        return f(*[v for (v, t) in args])
+        args = [self.visit(x, env) for x in call.args]
+        return env[call.func](*args)
     def visit_EEnumEntry(self, e, env):
         return z3.IntVal(e.type.cases.index(e.name), self.ctx)
     def visit_ENative(self, e, env):
@@ -292,6 +312,9 @@ class ToZ3(Visitor):
             for i in range(len(bag_elems)):
                 sum = z3.If(bag_mask[i], bag_elems[i], self.int_zero, ctx=self.ctx) + sum
             return sum
+        elif e.op == UOp.Length:
+            v = EVar("v").with_type(e.e.type.t)
+            return self.visit(EUnaryOp(UOp.Sum, EMap(e.e, ELambda(v, ONE)).with_type(TBag(INT))).with_type(e.type), env)
         elif e.op == UOp.AreUnique:
             def is_unique(bag):
                 bag_mask, bag_elems = bag
@@ -310,6 +333,12 @@ class ToZ3(Visitor):
         elif e.op == UOp.Exists:
             mask, elems = self.visit(e.e, env)
             return z3.Or(*mask, self.ctx)
+        elif e.op == UOp.All:
+            mask, elems = self.visit(e.e, env)
+            return z3.And(*[z3.Implies(m, e, self.ctx) for (m, e) in zip(mask, elems)], self.ctx)
+        elif e.op == UOp.Any:
+            mask, elems = self.visit(e.e, env)
+            return z3.Or(*[z3.And(m, e, self.ctx) for (m, e) in zip(mask, elems)], self.ctx)
         elif e.op == UOp.Distinct:
             elem_type = e.type.t
             return self.distinct_bag_elems(self.visit(e.e, env), elem_type, env)
@@ -321,19 +350,63 @@ class ToZ3(Visitor):
             bag = self.visit(e.e, env)
             mask, elems = bag
             exists = z3.Or(*mask, self.ctx)
-            elem = None
+            elem = self.mkval(t)
             for (m, e) in reversed(list(zip(mask, elems))):
-                if elem is None:
-                    elem = e
-                else:
-                    elem = ite(t, m, e, elem)
-            if elem is None:
-                elem = self.mkval(t)
+                elem = ite(t, m, e, elem)
             return (exists, elem)
         elif e.op == "-":
             return -self.visit(e.e, env)
         else:
             raise NotImplementedError(e.op)
+    def _optimal(self, e, env, cmp):
+        keytype = e.f.body.type
+        mask, elems = self.visit(e.e, env)
+
+        if not elems:
+            return self.mkval(e.type)
+
+        # print(pprint(e))
+
+        # 1st pass: find the best key
+        first = True
+        bestkey = None
+        legal = self.false
+        keyelems = [self.apply(e.f, x, env) for x in elems]
+        for m, key in reversed(list(zip(mask, keyelems))):
+            if first:
+                bestkey = key
+                first = False
+                legal = m
+            else:
+                bestkey = ite(keytype,
+                    z3.Or(z3.And(m, cmp(keytype, key, bestkey, env), self.ctx), z3.Not(legal, self.ctx), self.ctx),
+                    key,
+                    bestkey)
+                legal = z3.Or(m, legal, self.ctx)
+        # print(" -> bestkey={}".format(bestkey))
+
+        # 2nd pass: find the first elem having that key
+        first = True
+        res = None
+        legal = self.false
+        for m, key, x in reversed(list(zip(mask, keyelems, elems))):
+            if first:
+                res = x
+                first = False
+                legal = m
+            else:
+                res = ite(e.type,
+                    z3.Or(z3.And(m, self.eq(keytype, key, bestkey, env), self.ctx), z3.Not(legal, self.ctx), self.ctx),
+                    x,
+                    res)
+                legal = z3.Or(m, legal, self.ctx)
+        # print(" -> res={}".format(res))
+
+        return ite(e.type, legal, res, self.mkval(e.type))
+    def visit_EArgMin(self, e, env):
+        return self._optimal(e, env, self.lt)
+    def visit_EArgMax(self, e, env):
+        return self._optimal(e, env, self.gt)
     def visit_EWithAlteredValue(self, e, env):
         id, val = self.visit(e.handle, env)
         return (id, self.visit(e.new_value, env))
@@ -362,6 +435,12 @@ class ToZ3(Visitor):
             self.remove_all(bag_type, self.remove_one(bag_type, bag, elems[0], env), rest, env),
             self.remove_all(bag_type, bag, rest, env))
     def visit_EBinOp(self, e, env):
+        # optimization: x in (distinct y) --> x in y
+        # ("distinct" is very expensive for the solver)
+        if e.op == BOp.In and isinstance(e.e2, EUnaryOp) and e.e2.op == UOp.Distinct:
+            return self.visit(EIn(e.e1, e.e2.e), env)
+
+        # normal path
         v1 = self.visit(e.e1, env)
         v2 = self.visit(e.e2, env)
         if e.op == BOp.And:
@@ -370,14 +449,18 @@ class ToZ3(Visitor):
             return z3.Or(v1, v2, self.ctx)
         elif e.op == "==":
             return self.eq(e.e1.type, v1, v2, env)
+        elif e.op == "===":
+            return self.eq(e.e1.type, v1, v2, env, deep=True)
         elif e.op == ">":
-            return v1 > v2
+            return self.gt(e.e1.type, v1, v2, env)
         elif e.op == "<":
-            return v1 < v2
+            return self.lt(e.e1.type, v1, v2, env)
         elif e.op == ">=":
             return v1 >= v2
         elif e.op == "<=":
             return v1 <= v2
+        elif e.op == "*":
+            return v1 * v2
         elif e.op == "+":
             if isinstance(e.type, TBag):
                 return (v1[0] + v2[0], v1[1] + v2[1])
@@ -545,6 +628,8 @@ class ToZ3(Visitor):
         solver = self.solver
         if type == INT or type == LONG or isinstance(type, TNative):
             return z3.Int(fresh_name(), ctx=ctx)
+        elif type == REAL:
+            return z3.Real(fresh_name(), ctx=ctx)
         elif type == STRING:
             i = z3.Int(fresh_name(), ctx=ctx)
             solver.add(i >= 0)
@@ -597,11 +682,15 @@ class ToZ3(Visitor):
             v = (h, self.mkvar(collection_depth, type.value_type))
             self.handle_vars.append((type.value_type,) + v)
             return v
+        elif isinstance(type, TFunc):
+            return z3.Function(fresh_name(),
+                *[self.visit(t) for t in type.arg_types],
+                self.visit(type.ret_type))
         else:
             raise NotImplementedError(type)
 
 def decideable(t):
-    return type(t) in [TInt, TLong, TBool, TString, TEnum, TNative]
+    return type(t) in [TInt, TLong, TBool, TString, TEnum, TNative, TReal]
 
 def mkconst(ctx, solver, val):
     if type(val) == int:
@@ -614,7 +703,7 @@ def mkconst(ctx, solver, val):
         raise NotImplementedError(repr(val))
 
 _LOCK = threading.Lock()
-def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = True):
+def satisfy(e, vars = None, funcs = None, collection_depth : int = 2, validate_model : bool = True, model_callback = None, logic : str = None, timeout : float = None):
     start = datetime.now()
     with _LOCK:
         # print("Checking sat (|e|={}); time to acquire lock = {}".format(e.size(), datetime.now() - start))
@@ -623,13 +712,17 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
         assert e.type == BOOL
 
         ctx = z3.Context()
-        solver = z3.Solver(ctx=ctx)
+        solver = z3.Solver(ctx=ctx) if logic is None else z3.SolverFor(logic, ctx=ctx)
+        if timeout is not None:
+            solver.set("timeout", int(timeout * 1000))
         solver.set("core.validate", validate_model)
         visitor = ToZ3(ctx, solver)
 
         def reconstruct(model, value, type):
             if type == INT or type == LONG:
                 return model.eval(value, model_completion=True).as_long()
+            elif type == REAL:
+                return model.eval(value, model_completion=True).as_fraction()
             elif isinstance(type, TNative):
                 return (type.name, model.eval(value, model_completion=True).as_long())
             elif type == STRING:
@@ -679,6 +772,10 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
                 raise NotImplementedError(type)
 
         _env = { }
+        if funcs is None:
+            funcs = free_funcs(e)
+        for f, t in funcs.items():
+            _env[f] = visitor.mkvar(collection_depth, t)
         fvs = free_vars(e)
         if vars is None:
             vars = fvs
@@ -717,22 +814,24 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
         if res == z3.unsat:
             return None
         elif res == z3.unknown:
-            raise Exception("z3 reported unknown")
+            raise SolverReportedUnknown("z3 reported unknown")
         else:
             model = solver.model()
             # print(model)
             res = { }
-            for v in vars:
-                res[v.id] = reconstruct(model, _env[v.id], v.type)
-            for k, f in visitor.funcs.items():
-                name = k[0]
-                out_type = k[1]
-                arg_types = k[2]
+            for f, t in funcs.items():
+                name = f
+                f = _env[name]
+                out_type = t.ret_type
+                arg_types = t.arg_types
                 @lru_cache(maxsize=None)
                 def extracted_func(*args):
                     return reconstruct(model, f(*[visitor.unreconstruct(v, t) for (v, t) in zip(args, arg_types)]), out_type)
                 res[name] = extracted_func
-            # print(res)
+            for v in vars:
+                res[v.id] = reconstruct(model, _env[v.id], v.type)
+            if model_callback is not None:
+                model_callback(res)
             if validate_model:
                 x = evaluation.eval(e, res)
                 if x is not True:
@@ -771,9 +870,10 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
                                     for v in free_vars(x):
                                         print(" ---> s[{}] = {}".format(v.id, solver_env[v.id]))
                                         print(" ---> e[{}] = {}".format(v.id, eval_env[v.id]))
-                                    if isinstance(x, EBinOp):
-                                        print(" ---> lhs = {}".format(evaluation.eval(x.e1, eval_env)))
-                                        print(" ---> rhs = {}".format(evaluation.eval(x.e2, eval_env)))
+                                    for i, c in enumerate(x.children()):
+                                        if isinstance(c, Exp) and not isinstance(c, ELambda):
+                                            print(" ---> solver arg[{}] = {}".format(i, reconstruct(model, visitor.visit(c, solver_env), c.type)))
+                                            print(" ---> eval'r arg[{}] = {}".format(i, evaluation.eval(c, eval_env)))
                                     if isinstance(x, EFilter):
                                         smask, selems = visitor.visit(x.e, solver_env)
                                         for (mask, elem) in zip(smask, selems):
@@ -785,7 +885,7 @@ def satisfy(e, vars = None, collection_depth : int = 2, validate_model : bool = 
                                                 eenv[x.p.arg.id] = reconstruct(model, elem, x.type.t)
                                                 wq.append((x.p.body, senv, eenv))
                                     break
-                    raise Exception("model validation failed")
+                    raise ModelValidationError("model validation failed")
             return res
 
 def satisfiable(e, **opts):

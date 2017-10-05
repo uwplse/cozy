@@ -2,6 +2,7 @@ from multiprocessing import Process, Array, Queue
 from queue import Queue as PlainQueue, Empty
 import time
 import threading
+import sys
 
 from cozy.timeouts import Timeout
 from cozy.opts import Option
@@ -48,6 +49,17 @@ class Job(object):
         self._flags[0] = True
     def join(self, timeout=None):
         self._thread.join(timeout=timeout)
+
+def stop_jobs(jobs):
+    jobs = list(jobs)
+    for j in jobs:
+        j.request_stop()
+    for j in jobs:
+        while True:
+            j.join(timeout=30)
+            if j.done:
+                break
+            print("job '{}' failed to stop in 30 seconds".format(j), file=sys.stderr)
 
 class SafeQueue(object):
     """

@@ -31,8 +31,8 @@ _KEYWORDS = ([
     "assume",
     "true",
     "false",
-    "min",
-    "max",
+    "min", "argmin",
+    "max", "argmax",
     "if",
     "else",
     "Native"] +
@@ -53,6 +53,7 @@ _OPERATORS = [
     ("NE", "!="),
     ("PLUS", "+"),
     ("MINUS", "-"),
+    ("QUESTION", "?"),
     ("COLON", ":"),
     ("SEMICOLON", ";"),
     ("COMMA", ","),
@@ -64,6 +65,7 @@ _OPERATORS = [
     ("CLOSE_BRACKET", "]"),
     ("DOT", "."),
     ("LEFT_ARROW", "<-"),
+    ("RIGHT_ARROW", "->"),
     ("VBAR", "|")
     ]
 
@@ -81,7 +83,7 @@ for kw in _KEYWORDS:
     tokens.append(keyword_token_name(kw))
 for opname, op in _OPERATORS:
     tokens.append(op_token_name(opname))
-tokens += ["WORD", "NUM", "STRINGLITERAL"]
+tokens += ["WORD", "NUM", "STRINGLITERAL", "EXTERNCODETOKEN"]
 tokens = tuple(tokens) # freeze tokens
 
 def make_lexer():
@@ -116,6 +118,11 @@ def make_lexer():
         t.value = ast.literal_eval(t.value)
         return t
 
+    def t_EXTERNCODETOKEN(t):
+        r"\{\{(.|\n)*?\}\}"
+        t.value = t.value[2:-2]
+        return t
+
     # Define a rule so we can track line numbers
     def t_newline(t):
         r'\n+'
@@ -124,7 +131,7 @@ def make_lexer():
     t_ignore = ' \t'
 
     def t_error(t):
-        print("Illegal character {}".format(repr(t.value[0])), file=sys.stderr)
+        print("Illegal character {} on line {}".format(repr(t.value[0]), t.lexer.lineno), file=sys.stderr)
         t.lexer.skip(1)
 
     return lex.lex()
@@ -145,8 +152,13 @@ def make_parser():
     start = "spec"
 
     def p_spec(p):
-        """spec : WORD OP_COLON typedecls funcdecls states assumes methods"""
-        p[0] = syntax.Spec(p[1], p[3], p[4], p[5], p[6], p[7])
+        """spec : externcode WORD OP_COLON typedecls funcdecls states assumes methods externcode"""
+        p[0] = syntax.Spec(p[2], p[4], p[5], p[6], p[7], p[8], p[1], p[9])
+
+    def p_externcode(p):
+        """externcode :
+                      | EXTERNCODETOKEN"""
+        p[0] = p[1] if len(p) > 1 else ""
 
     parsetools.multi(locals(), "typedecls", "typedecl")
 
@@ -211,6 +223,7 @@ def make_parser():
         ("nonassoc", "IF_PLAIN"),
         ("nonassoc", "KW_ELSE"),
         ("left", "OP_COMMA"),
+        ("left", "OP_QUESTION"),
         ("left", "OP_IMPLIES"),
         ("left", "KW_AND", "KW_OR"),
         ("left", "OP_EQ", "OP_NE", "OP_LT", "OP_LE", "OP_GT", "OP_GE"),
@@ -223,6 +236,10 @@ def make_parser():
     def p_exp_strlit(p):
         """exp : STRINGLITERAL"""
         p[0] = syntax.EStr(p[1])
+
+    def p_lambda(p):
+        """lambda : OP_OPEN_BRACE WORD OP_RIGHT_ARROW exp OP_CLOSE_BRACE"""
+        p[0] = syntax.ELambda(syntax.EVar(p[2]), p[4])
 
     def p_exp(p):
         """exp : NUM
@@ -241,13 +258,17 @@ def make_parser():
                | exp KW_AND exp
                | exp KW_OR exp
                | exp OP_IMPLIES exp
+               | exp OP_QUESTION exp OP_COLON exp
                | KW_NOT exp
+               | OP_MINUS exp
                | exp KW_IN exp
                | KW_UNIQUE exp
                | KW_EMPTY exp
                | KW_THE exp
                | KW_MIN exp
                | KW_MAX exp
+               | KW_ARGMIN lambda exp
+               | KW_ARGMAX lambda exp
                | KW_SUM exp
                | KW_LEN exp
                | KW_ANY exp
@@ -269,7 +290,12 @@ def make_parser():
             else:
                 p[0] = syntax.EVar(p[1])
         elif len(p) == 3:
-            p[0] = syntax.EUnaryOp(p[1], p[2])
+            if p[1] == "min":
+                p[0] = syntax.EArgMin(p[2], syntax.ELambda(syntax.EVar("x"), syntax.EVar("x")))
+            elif p[1] == "max":
+                p[0] = syntax.EArgMax(p[2], syntax.ELambda(syntax.EVar("x"), syntax.EVar("x")))
+            else:
+                p[0] = syntax.EUnaryOp(p[1], p[2])
         elif len(p) == 4:
             if p[1] == "(":
                 exps = p[2]
@@ -288,12 +314,16 @@ def make_parser():
                     p[0] = syntax.ETupleGet(p[1], p[3].val)
                 else:
                     p[0] = syntax.EGetField(p[1], p[3])
-            elif p[1] == "|":
-                p[0] = syntax.EUnaryOp("len", p[2])
+            elif p[1] == "argmin":
+                p[0] = syntax.EArgMin(p[3], p[2])
+            elif p[1] == "argmax":
+                p[0] = syntax.EArgMax(p[3], p[2])
             else:
                 p[0] = syntax.EBinOp(p[1], p[2], p[3])
         else:
-            if p[1] == "[":
+            if p[2] == "?":
+                p[0] = syntax.ECond(p[1], p[3], p[5])
+            elif p[1] == "[":
                 p[0] = syntax.EListComprehension(p[2], p[4])
             elif p[2] == "(":
                 p[0] = syntax.ECall(p[1], p[3])
@@ -364,7 +394,7 @@ def make_parser():
     def p_error(p):
         if p is None:
             raise Exception("Unexpected end-of-file")
-        raise Exception("Syntax error on line {}".format(p.lineno))
+        raise Exception("Syntax error on line {} at {}".format(p.lineno, p))
 
     return yacc.yacc()
 

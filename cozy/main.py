@@ -9,11 +9,10 @@ import argparse
 import datetime
 
 from cozy import parse
-from cozy import compile
+from cozy import codegen
 from cozy import common
 from cozy import typecheck
 from cozy import desugar
-from cozy import target_syntax
 from cozy import syntax_tools
 from cozy import invariant_preservation
 from cozy import synthesis
@@ -26,16 +25,19 @@ save_failed_codegen_inputs = opts.Option("save-failed-codegen-inputs", str, "/tm
 
 def run():
     parser = argparse.ArgumentParser(description='Data structure synthesizer.')
+    parser.add_argument("-S", "--save", metavar="FILE", type=str, default=None, help="Save synthesis output")
+    parser.add_argument("-R", "--resume", action="store_true", help="Resume from saved synthesis output")
     parser.add_argument("-t", "--timeout", metavar="N", type=float, default=60, help="Per-query synthesis timeout (in seconds); default=60")
     parser.add_argument("-s", "--simple", action="store_true", help="Do not synthesize improved solution; use the most trivial implementation of the spec")
     parser.add_argument("-p", "--port", metavar="P", type=int, default=None, help="Port to run progress-showing HTTP server")
 
     java_opts = parser.add_argument_group("Java codegen")
     java_opts.add_argument("--java", metavar="FILE.java", default=None, help="Output file for java classes, use '-' for stdout")
-    java_opts.add_argument("--package", metavar="pkg.name", default=None, help="Java package name")
+    java_opts.add_argument("--unboxed", action="store_true", help="Use unboxed primitives. NOTE: synthesized data structures may require GNU Trove (http://trove.starlight-systems.com/)")
 
     cxx_opts = parser.add_argument_group("C++ codegen")
     cxx_opts.add_argument("--c++", metavar="FILE.h", default=None, help="Output file for C++ (header-only class), use '-' for stdout")
+    cxx_opts.add_argument("--use-qhash", action="store_true", help="QHash---the Qt implementation of hash maps---often outperforms the default C++ map implementations")
 
     internal_opts = parser.add_argument_group("Internal parameters")
     opts.setup(internal_opts)
@@ -44,26 +46,41 @@ def run():
     args = parser.parse_args()
     opts.read(args)
 
-    input_text = sys.stdin.read() if args.file is None else common.read_file(args.file)
-    ast = parse.parse(input_text)
+    if args.resume:
+        import pickle
+        if args.file is None:
+            ast = pickle.load(sys.stdin.buffer)
+        else:
+            with open(args.file, "rb") as f:
+                ast = pickle.load(f)
+        print("Loaded implementation from {}".format("stdin" if args.file is None else "file {}".format(args.file)))
+    else:
+        input_text = sys.stdin.read() if args.file is None else common.read_file(args.file)
+        ast = parse.parse(input_text)
 
-    errors = typecheck.typecheck(ast)
-    if errors:
-        for e in errors:
-            print("Error: {}".format(e))
-        sys.exit(1)
+        errors = typecheck.typecheck(ast)
+        if errors:
+            for e in errors:
+                print("Error: {}".format(e))
+            sys.exit(1)
 
-    print()
-    print(syntax_tools.pprint(ast))
+        # print()
+        # print(syntax_tools.pprint(ast))
 
-    ast = desugar.desugar(ast)
-    print(syntax_tools.pprint(ast))
+        ast = desugar.desugar(ast)
+        # print(syntax_tools.pprint(ast))
 
-    errors = invariant_preservation.check_ops_preserve_invariants(ast)
-    if errors:
-        for e in errors:
-            print("Error: {}".format(e))
-        sys.exit(1)
+        print("Checking assumptions...")
+        errors = (
+            invariant_preservation.check_ops_preserve_invariants(ast) +
+            invariant_preservation.check_the_wf(ast))
+        if errors:
+            for e in errors:
+                print("Error: {}".format(e))
+            sys.exit(1)
+        print("Done!")
+
+        ast = synthesis.construct_initial_implementation(ast)
 
     if not args.simple:
         callback = None
@@ -81,25 +98,35 @@ def run():
                 state[0] = s
             server = progress_server.ProgressServer(port=args.port, callback=lambda: state[0])
             server.start_async()
-        ast, state_map = synthesis.synthesize(
+        ast = synthesis.improve_implementation(
             ast,
             per_query_timeout = datetime.timedelta(seconds=args.timeout),
             progress_callback = callback)
         if server is not None:
             server.join()
-        print()
-        for v, e in state_map.items():
-            print("{} : {} = {}".format(v, syntax_tools.pprint(e.type), syntax_tools.pprint(e)))
-        print()
-        print(syntax_tools.pprint(ast))
-    else:
-        state_map = { v : target_syntax.EVar(v).with_type(t) for (v, t) in ast.statevars }
 
+    code = ast.code
+    state_map = ast.concretization_functions
+    print()
+    for v, e in state_map.items():
+        print("{} : {} = {}".format(v, syntax_tools.pprint(e.type), syntax_tools.pprint(e)))
+    print()
+    print(syntax_tools.pprint(code))
+
+    if args.save:
+        with open(args.save, "wb") as f:
+            import pickle
+            pickle.dump(ast, f)
+            print("Saved implementation to file {}".format(args.save))
+
+    print("Generating final concrete implementation...")
     lib = library.Library()
-    impls = list(autotuning.enumerate_impls(ast, lib))
+    impls = list(autotuning.enumerate_impls(code, state_map, lib, assumptions=ast.spec.assumptions))
     print("# impls: {}".format(len(impls)))
 
     impl = impls[0] # TODO: autotuning
+    for (v, t) in impl.statevars:
+        print("{} ~~> {}".format(v, syntax_tools.pprint(t)))
     share_info = sharing.compute_sharing(state_map, dict(impl.statevars))
 
     print()
@@ -109,12 +136,12 @@ def run():
         java = args.java
         if java is not None:
             with common.open_maybe_stdout(java) as out:
-                out.write(compile.JavaPrinter().visit(impl, state_map, share_info, package=args.package))
+                out.write(codegen.JavaPrinter(boxed=(not args.unboxed)).visit(impl, state_map, share_info))
 
         cxx = getattr(args, "c++")
         if cxx is not None:
             with common.open_maybe_stdout(cxx) as out:
-                out.write(compile.CxxPrinter().visit(impl, state_map, share_info))
+                out.write(codegen.CxxPrinter(use_qhash=args.use_qhash).visit(impl, state_map, share_info))
     except:
         print("Code generation failed!")
         if save_failed_codegen_inputs.value:

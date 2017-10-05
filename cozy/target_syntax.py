@@ -10,21 +10,6 @@ from cozy.opts import Option
 
 enforce_estatevar_wf = Option("enforce-well-formed-state-var-boundaries", bool, False)
 
-# Lambdas
-EApp = declare_case(Exp, "EApp", ["f", "arg"])
-class ELambda(Exp):
-    @typechecked
-    def __init__(self, arg : EVar, body : Exp):
-        self.arg = arg
-        self.body = body
-    def apply_to(self, arg):
-        from cozy.syntax_tools import subst
-        return subst(self.body, { self.arg.id : arg })
-    def children(self):
-        return (self.arg, self.body)
-    def __repr__(self):
-        return "ELambda{}".format(repr(self.children()))
-
 # Misc
 TRef       = declare_case(Type, "TRef", ["t"])
 EEnumToInt = declare_case(Exp, "EEnumToInt", ["e"])

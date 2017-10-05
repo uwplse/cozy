@@ -3,14 +3,13 @@ import itertools
 import sys
 
 from cozy.target_syntax import *
-from cozy.typecheck import INT, BOOL
-from cozy.syntax_tools import subst, pprint, free_vars, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda, enumerate_fragments
+from cozy.syntax_tools import subst, pprint, free_vars, free_funcs, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda, enumerate_fragments_and_pools, exp_wf, is_scalar
 from cozy.common import OrderedSet, ADT, Visitor, fresh_name, typechecked, unique, pick_to_sum, cross_product, OrderedDefaultDict, OrderedSet, group_by, find_one
 from cozy.solver import satisfy, satisfiable, valid
 from cozy.evaluation import eval, eval_bulk, mkval, construct_value, uneval
-from cozy.cost_model import CostModel
+from cozy.cost_model import CostModel, Cost
 from cozy.opts import Option
-from cozy.pools import RUNTIME_POOL, STATE_POOL
+from cozy.pools import RUNTIME_POOL, STATE_POOL, pool_name
 
 from .cache import Cache
 
@@ -18,11 +17,17 @@ save_testcases = Option("save-testcases", str, "", metavar="PATH")
 hyperaggressive_culling = Option("hyperaggressive-culling", bool, False)
 hyperaggressive_eviction = Option("hyperaggressive-eviction", bool, True)
 reject_symmetric_binops = Option("reject-symmetric-binops", bool, False)
-eliminate_vars = Option("eliminate-vars", bool, False)
+eliminate_vars = Option("eliminate-vars", bool, True)
 reset_on_success = Option("reset-on-success", bool, False)
 enforce_seen_wf = Option("enforce-seen-set-well-formed", bool, False)
+enforce_strong_progress = Option("enforce-strong-progress", bool, False)
+enforce_exprs_wf = Option("enforce-expressions-well-formed", bool, False)
 
 class ExpBuilder(object):
+    def check(self, e, pool):
+        if enforce_exprs_wf.value:
+            assert exp_wf(e, state_vars=self.state_vars, args=self.args, pool=pool)
+        return (e, pool)
     def build(self, cache, size):
         raise NotImplementedError()
 
@@ -46,33 +51,27 @@ def _instantiate_examples(examples, binder, possible_values):
             yield e2
 
 def instantiate_examples(watched_targets, examples, binders : [EVar]):
-    # collect all the values that flow into the binders
-    vals_by_type = defaultdict(OrderedSet)
-    for e in watched_targets:
-        for ex in examples:
-            eval(e, ex, bind_callback=lambda arg, val: vals_by_type[arg.type].add(val))
-    # instantiate examples with each possible combination of values
-    for v in binders:
-        examples = list(_instantiate_examples(examples, v, vals_by_type.get(v.type, ())))
-    # print("Got {} instantiated examples".format(len(examples)), file=sys.stderr)
-    # for ex in examples:
-    #     print(" ---> " + repr(ex), file=sys.stderr)
-    return examples
+    res = []
+    for ex in examples:
+        # collect all the values that flow into the binders
+        vals_by_type = defaultdict(OrderedSet)
+        for e in watched_targets:
+            eval(e, ex,
+                bind_callback=lambda arg, val: vals_by_type[arg.type].add(val),
+                use_default_values_for_undefined_vars = True)
+        # print(vals_by_type)
+        # instantiate examples with each possible combination of values
+        x = [ex]
+        for v in binders:
+            x = list(_instantiate_examples(x, v, vals_by_type.get(v.type, ())))
+        # print("Got {} instantiated examples".format(len(examples)), file=sys.stderr)
+        # for ex in examples:
+        #     print(" ---> " + repr(ex), file=sys.stderr)
+        res.extend(x)
+    return res
 
 def fingerprint(e, examples):
     return (e.type,) + tuple(eval_bulk(e, examples))
-
-def make_constant_of_type(t):
-    class V(Visitor):
-        def visit_TInt(self, t):
-            return ENum(0).with_type(t)
-        def visit_TBool(self, t):
-            return EBool(False).with_type(t)
-        def visit_TBag(self, t):
-            return EEmptyList().with_type(t)
-        def visit_Type(self, t):
-            raise NotImplementedError(t)
-    return V().visit(t)
 
 class StopException(Exception):
     pass
@@ -81,7 +80,9 @@ class NoMoreImprovements(Exception):
     pass
 
 oracle = None
+_fates = defaultdict(int)
 def _on_exp(e, fate, *args):
+    _fates[fate] += 1
     return
     # if (isinstance(e, EMapGet) or
     #         isinstance(e, EFilter) or
@@ -132,7 +133,7 @@ class ContextMap(object):
         return "\n".join(self._print(self.m))
 
 class BehaviorIndex(object):
-    VALUE = "value"
+    VALUE = object()
     def __init__(self):
         self.data = OrderedDict()
     def put(self, e, assumptions, examples, data):
@@ -151,6 +152,20 @@ class BehaviorIndex(object):
             l = []
             m[BehaviorIndex.VALUE] = l
         l.append(data)
+    def rsearch(self, p, m=None):
+        """
+        Useful only for debugging.
+        """
+        if m is None:
+            m = self.data
+        for (k, v) in m.items():
+            if k is BehaviorIndex.VALUE:
+                for val in v:
+                    if p(val):
+                        yield ()
+            else:
+                for res in self.rsearch(p, m=v):
+                    yield (k,) + res
     def search(self, behavior):
         q = [(0, self.data)]
         while q:
@@ -184,12 +199,14 @@ class Learner(object):
         self.cost_model = cost_model
         self.builder = builder
         self.seen = { } # map of { (pool, fingerprint) : (cost, [(e, size)]) }
+        self.assumptions = assumptions
         self.reset(examples, update_watched_exps=False)
-        self.watch(target, assumptions)
+        self.watch(target)
 
     def reset(self, examples, update_watched_exps=True):
+        _fates.clear()
         self.cache = Cache(binders=self.binders, args=self.args)
-        self.current_size = 0
+        self.current_size = -1
         self.examples = examples
         self.seen.clear()
         self.builder_iter = ()
@@ -228,57 +245,50 @@ class Learner(object):
         self._check_seen_wf()
         print("finished fixing seen set")
 
-    def watch(self, new_target, assumptions):
+    def watch(self, new_target):
         self._check_seen_wf()
         self.backlog_counter = 0
         self.target = new_target
         self.update_watched_exps()
         self.roots = []
         for (e, r, cost, a, pool, bound) in self.watched_exps:
-            _on_exp(e, "new root")
+            _on_exp(e, "new root", pool_name(pool))
             self.roots.append((e, pool))
+        self.roots.sort(key = lambda tup: tup[0].size())
         # new_roots = []
-        # for e in itertools.chain(all_exps(new_target), all_exps(assumptions)):
+        # for e in itertools.chain(all_exps(new_target), all_exps(self.assumptions)):
         #     if e in new_roots:
         #         continue
         #     if not isinstance(e, ELambda) and all(v in self.legal_free_vars for v in free_vars(e)):
         #         self._fingerprint(e)
         #         new_roots.append(e)
         # self.roots = new_roots
-        if self.cost_model.is_monotonic() or hyperaggressive_culling.value:
-            seen = list(self.seen.items())
-            n = 0
-            for ((pool, fp), (cost, exps)) in seen:
-                if cost > self.cost_ceiling:
-                    for (e, size) in exps:
-                        _on_exp(e, "evicted due to lowered cost ceiling [cost={}, ceiling={}]".format(cost, self.cost_ceiling))
-                        self.cache.evict(e, size=size, pool=pool)
-                        n += 1
-                    del self.seen[(pool, fp)]
-            if n:
-                print("evicted {} elements".format(n))
+
+        ## TODO: fix this up for symbolic cost model
+        # if self.cost_model.is_monotonic() or hyperaggressive_culling.value:
+        #     seen = list(self.seen.items())
+        #     n = 0
+        #     for ((pool, fp), (cost, exps)) in seen:
+        #         if cost > self.cost_ceiling:
+        #             for (e, size) in exps:
+        #                 _on_exp(e, "evicted due to lowered cost ceiling [cost={}, ceiling={}]".format(cost, self.cost_ceiling))
+        #                 self.cache.evict(e, size=size, pool=pool)
+        #                 n += 1
+        #             del self.seen[(pool, fp)]
+        #     if n:
+        #         print("evicted {} elements".format(n))
         self._check_seen_wf()
 
     def update_watched_exps(self):
-        self.cost_ceiling = self.cost_model.cost(self.target, RUNTIME_POOL)
+        # self.cost_ceiling = self.cost_model.cost(self.target, RUNTIME_POOL)
         self.watched_exps = []
-        sv_depth = 0
-        def pre_visit(obj):
-            nonlocal sv_depth
-            if isinstance(obj, EStateVar):
-                sv_depth += 1
-            return True
-        def post_visit(obj):
-            nonlocal sv_depth
-            if isinstance(obj, EStateVar):
-                sv_depth -= 1
         self.all_examples = instantiate_examples((self.target,), self.examples, self.binders)
         self.behavior_index = BehaviorIndex()
-        for (a, e, r, bound) in enumerate_fragments(self.target, pre_visit=pre_visit, post_visit=post_visit):
+        print("|all_examples|={}".format(len(self.all_examples)))
+        for (a, e, r, bound, pool) in enumerate_fragments_and_pools(self.target):
             if isinstance(e, ELambda) or any(v not in self.legal_free_vars for v in free_vars(e)):
                 continue
-            depth = (sv_depth - 1) if isinstance(e, EStateVar) else sv_depth
-            pool = STATE_POOL if depth else RUNTIME_POOL
+            a = [aa for aa in a if all(v in self.legal_free_vars for v in free_vars(aa))]
             cost = self.cost_model.cost(e, pool)
             info = (e, r, cost, a, pool, bound)
             self.watched_exps.append(info)
@@ -308,12 +318,19 @@ class Learner(object):
         the verifier will produce a counterexample in which it gets bound to
         something else.
         """
+        orig_e = e
         value_by_var = { }
-        eval_bulk(self.target, self.examples, bind_callback=lambda var, val: value_by_var.update({var:val}))
+        eval_bulk(self.target, self.examples,
+            bind_callback=lambda var, val: value_by_var.update({var:val}),
+            use_default_values_for_undefined_vars = True)
         v = find_one(fv for fv in free_vars(e) if fv in self.binders and fv not in bound_vars)
         while v:
             e = subst(e, { v.id : uneval(v.type, value_by_var.get(v, mkval(v.type))) })
             v = find_one(fv for fv in free_vars(e) if fv in self.binders and fv not in bound_vars)
+        if e != orig_e:
+            print("*** doctoring took place; ctx=[{}]".format(", ".join(v.id for v in bound_vars)))
+            print("    original --> {}".format(pprint(e)))
+            print("    modified --> {}".format(pprint(orig_e)))
         return e
 
     def _possible_replacements(self, e, pool, cost, fp):
@@ -324,21 +341,18 @@ class Learner(object):
         for (watched_e, r, watched_cost, assumptions, p, bound) in self.behavior_index.search(fp):
             if p != pool:
                 continue
-            if watched_cost < cost:
+            if e == watched_e:
                 continue
-            e2 = self._doctor_for_context(e, bound)
-            if e != e2:
-                print("*** doctoring took place; ctx=[{}]".format(", ".join(v.id for v in bound)))
-                print("    original --> {}".format(pprint(e)))
-                print("    modified --> {}".format(pprint(e2)))
-            if e2 == watched_e:
+            if not cost.sometimes_better_than(watched_cost):
+                _on_exp(e, "skipped possible replacement", pool_name(pool), watched_e)
                 continue
-            yield (watched_e, e2, r)
+            yield (watched_e, e, r)
 
     def next(self):
         while True:
             if self.backlog is not None:
-                improvements = list(self._possible_replacements(*self.backlog))
+                (e, pool, cost) = self.backlog
+                improvements = list(self._possible_replacements(e, pool, cost, self._fingerprint(e)))
                 if self.backlog_counter < len(improvements):
                     i = improvements[self.backlog_counter]
                     self.backlog_counter += 1
@@ -352,9 +366,10 @@ class Learner(object):
 
                 cost = self.cost_model.cost(e, pool)
 
-                if (self.cost_model.is_monotonic() or hyperaggressive_culling.value) and cost > self.cost_ceiling:
-                    _on_exp(e, "too expensive", cost, self.cost_ceiling)
-                    continue
+                ## TODO: fix this up for symbolic cost model
+                # if (self.cost_model.is_monotonic() or hyperaggressive_culling.value) and cost > self.cost_ceiling:
+                #     _on_exp(e, "too expensive", cost, self.cost_ceiling)
+                #     continue
 
                 fp = self._fingerprint(e)
                 prev = self.seen.get((pool, fp))
@@ -363,18 +378,25 @@ class Learner(object):
                     self.seen[(pool, fp)] = (cost, [(e, self.current_size)])
                     self.cache.add(e, pool=pool, size=self.current_size)
                     self.last_progress = self.current_size
-                    _on_exp(e, "new", "runtime" if pool == RUNTIME_POOL else "state")
+                    _on_exp(e, "new", pool_name(pool))
                 else:
                     prev_cost, prev_exps = prev
                     if any(alpha_equivalent(e, ee) for (ee, size) in prev_exps):
                         _on_exp(e, "duplicate")
                         continue
-                    elif cost == prev_cost:
+                    ordering = cost.compare_to(prev_cost, self.assumptions)
+                    assert ordering in (Cost.WORSE, Cost.BETTER, Cost.UNORDERED)
+                    if enforce_strong_progress.value and ordering != Cost.WORSE:
+                        bad = find_one(all_exps(e), lambda ee: any(alpha_equivalent(ee, pe) for (pe, sz) in prev_exps))
+                        if bad:
+                            _on_exp(e, "failed strong progress requirement", bad)
+                            continue
+                    _on_exp(e, ordering, pool_name(pool), *[e for (e, cost) in prev_exps])
+                    if ordering == Cost.UNORDERED:
                         self.cache.add(e, pool=pool, size=self.current_size)
                         self.seen[(pool, fp)][1].append((e, self.current_size))
                         self.last_progress = self.current_size
-                        _on_exp(e, "equivalent", *[e for (e, cost) in prev_exps])
-                    elif cost < prev_cost:
+                    elif ordering == Cost.BETTER:
                         for (prev_exp, prev_size) in prev_exps:
                             self.cache.evict(prev_exp, size=prev_size, pool=pool)
                             if (self.cost_model.is_monotonic() or hyperaggressive_culling.value) and hyperaggressive_eviction.value:
@@ -387,14 +409,12 @@ class Learner(object):
                         self.cache.add(e, pool=pool, size=self.current_size)
                         self.seen[(pool, fp)] = (cost, [(e, self.current_size)])
                         self.last_progress = self.current_size
-                        _on_exp(e, "better", *[e for (e, cost) in prev_exps])
                     else:
-                        _on_exp(e, "worse", *[e for (e, cost) in prev_exps])
                         continue
 
                 improvements = list(self._possible_replacements(e, pool, cost, fp))
                 if improvements:
-                    self.backlog = (e, pool, cost, fp)
+                    self.backlog = (e, pool, cost)
                     self.backlog_counter = 1
                     return improvements[0]
 
@@ -403,12 +423,15 @@ class Learner(object):
 
             self.current_size += 1
             self.builder_iter = self.builder.build(self.cache, self.current_size)
-            if self.current_size == 1:
+            if self.current_size == 0:
                 self.builder_iter = itertools.chain(self.builder_iter, iter(self.roots))
+            for f, ct in sorted(_fates.items(), key=lambda x: x[1], reverse=True):
+                print("  {:6} | {}".format(ct, f))
+            _fates.clear()
             print("minor iteration {}, |cache|={}".format(self.current_size, len(self.cache)))
 
 @typechecked
-def fixup_binders(e : Exp, binders_to_use : [EVar], allow_add=False) -> Exp:
+def fixup_binders(e : Exp, binders_to_use : [EVar], allow_add=False, throw=False) -> Exp:
     binders_by_type = group_by(binders_to_use, lambda b: b.type)
     class V(BottomUpRewriter):
         def visit_ELambda(self, e):
@@ -423,7 +446,11 @@ def fixup_binders(e : Exp, binders_to_use : [EVar], allow_add=False) -> Exp:
                     binders_by_type[e.arg.type].append(e.arg)
                     return ELambda(e.arg, self.visit(e.body))
                 else:
-                    raise Exception("No legal binder to use for {}".format(e))
+                    if throw:
+                        print("No legal binder to use for {}".format(pprint(e)))
+                        raise Exception(pprint(e))
+                    else:
+                        return ELambda(e.arg, self.visit(e.body))
             b = legal_repls[0]
             return ELambda(b, self.visit(subst(e.body, { e.arg.id : b })))
     return V().visit(e)
@@ -452,31 +479,43 @@ class FixedBuilder(ExpBuilder):
                 _on_exp(e, "rejecting symmetric use of commutative operator")
                 continue
 
+            # various filtering
+            if isinstance(e.type, TBag) and isinstance(e.type.t, TBag):
+                _on_exp(e, "rejecting bag-of-bags")
+                continue
+
+            # various filtering on maps
+            if isinstance(e.type, TMap) and not (is_scalar(e.type.k) and ((is_scalar(e.type.v) or (isinstance(e.type.v, TBag) and is_scalar(e.type.v.t))))):
+                _on_exp(e, "rejecting ill-typed map")
+                continue
+            x = e
+            if isinstance(x, EMakeMap2) and isinstance(x.type.v, TBag):
+                k1 = fresh_var(x.type.k)
+                k2 = fresh_var(x.type.k)
+                v  = fresh_var(x.type.v.t)
+                s  = EAll([
+                    self.assumptions,
+                    ENot(EEq(k1, k2)),
+                    EIn(v, EMapGet(x, k1).with_type(x.type.v)),
+                    EIn(v, EMapGet(x, k2).with_type(x.type.v))])
+                if satisfiable(s):
+                    _on_exp(x, "rejecting non-polynomial-sized map")
+                    continue
+
             # all sets must have distinct values
             if isinstance(e.type, TSet):
-                if not valid(implies(self.assumptions, EUnaryOp("unique", e).with_type(BOOL))):
+                if not valid(implies(self.assumptions, EUnaryOp(UOp.AreUnique, e).with_type(BOOL))):
                     raise Exception("insanity: values of {} are not distinct".format(e))
+            if isinstance(e.type, TBag):
+                if not valid(implies(self.assumptions, EUnaryOp(UOp.AreUnique, e).with_type(BOOL))):
+                    _on_exp(x, "rejecting bag with duplicates")
+                    continue
 
             # experimental criterion: "the" must be a 0- or 1-sized collection
             if isinstance(e, EUnaryOp) and e.op == "the":
                 len = EUnaryOp("sum", EMap(e.e, mk_lambda(e.type, lambda x: ENum(1).with_type(INT))).with_type(TBag(INT))).with_type(INT)
                 if not valid(implies(self.assumptions, EBinOp(len, "<=", ENum(1).with_type(INT)).with_type(BOOL))):
                     _on_exp(e, "rejecting illegal application of 'the': could have >1 elems")
-                    continue
-                if not satisfiable(EAll([self.assumptions, equal(len, ENum(0).with_type(INT))])):
-                    _on_exp(e, "rejecting illegal application of 'the': cannot be empty")
-                    continue
-                if not satisfiable(EAll([self.assumptions, equal(len, ENum(1).with_type(INT))])):
-                    _on_exp(e, "rejecting illegal application of 'the': always empty")
-                    continue
-
-            # filters must *do* something
-            # This prevents degenerate cases where the synthesizer uses filter
-            # expressions to artificially lower the estimated cardinality of a
-            # collection.
-            if isinstance(e, EFilter):
-                if not satisfiable(EAll([self.assumptions, ENot(equal(e, e.e))])):
-                    _on_exp(e, "rejecting no-op filter")
                     continue
 
             # # map gets must be provably in the map
@@ -493,32 +532,36 @@ class FixedBuilder(ExpBuilder):
 
             yield (e, pool)
 
-class VarElimBuilder(ExpBuilder):
-    def __init__(self, wrapped_builder, illegal_vars : [EVar]):
+class StateElimBuilder(ExpBuilder):
+    def __init__(self, wrapped_builder):
         self.wrapped_builder = wrapped_builder
-        self.illegal_vars = set(illegal_vars)
     def build(self, cache, size):
-        for e in self.wrapped_builder.build(cache, size):
-            if not any(v in self.illegal_vars for v in free_vars(e)):
-                yield e
+        for tup in self.wrapped_builder.build(cache, size):
+            e, pool = tup
+            if pool != STATE_POOL and not any(isinstance(x, EStateVar) for x in all_exps(e)):
+                yield tup
             else:
-                _on_exp(e, "contains illegal vars")
+                _on_exp(e, "culled state expression")
 
 def truncate(s):
     if len(s) > 60:
         return s[:60] + "..."
     return s
 
-def can_elim_var(spec : Exp, assumptions : Exp, v : EVar):
-    vv = fresh_var(v.type)
-    return valid(implies(EAll([assumptions, subst(assumptions, {v.id:vv})]), equal(spec, subst(spec, {v.id:vv}))))
+def can_elim_vars(spec : Exp, assumptions : Exp, vs : [EVar]):
+    sub = { v.id : fresh_var(v.type) for v in vs }
+    return valid(EImplies(
+        EAll([assumptions, subst(assumptions, sub)]),
+        EEq(spec, subst(spec, sub))))
 
-_DONE = set([EVar, EEnumEntry, ENum, EStr, EBool])
+_DONE = set([EVar, EEnumEntry, ENum, EStr, EBool, EEmptyList, ENull])
 def heuristic_done(e : Exp, args : [EVar] = []):
     return (
         (type(e) in _DONE) or
         (isinstance(e, ESingleton) and heuristic_done(e.e)) or
-        (isinstance(e, EStateVar) and heuristic_done(e.e)))
+        (isinstance(e, EStateVar) and heuristic_done(e.e)) or
+        (isinstance(e, EGetField) and heuristic_done(e.e)) or
+        (isinstance(e, EJust) and heuristic_done(e.e)))
 
 def never_stop():
     return False
@@ -528,6 +571,7 @@ def improve(
         target : Exp,
         assumptions : Exp,
         binders : [EVar],
+        state_vars : [EVar],
         args : [EVar],
         cost_model : CostModel,
         builder : ExpBuilder,
@@ -562,6 +606,7 @@ def improve(
         target={target!r},
         assumptions={assumptions!r},
         binders={binders!r},
+        state_vars={state_vars!r},
         args={args!r},
         cost_model={cost_model!r},
         builder={builder!r},
@@ -571,6 +616,7 @@ def improve(
             target=target,
             assumptions=assumptions,
             binders=binders,
+            state_vars=state_vars,
             args=args,
             cost_model=cost_model,
             builder=builder,
@@ -583,15 +629,21 @@ def improve(
     print("subject to: {}".format(pprint(assumptions)))
     print()
 
+    if not satisfiable(assumptions):
+        print("assumptions are unsat; this query will never be called")
+        yield construct_value(target.type)
+        return
+
     binders = list(binders)
     target = fixup_binders(target, binders, allow_add=False)
     assumptions = fixup_binders(assumptions, binders, allow_add=False)
     builder = FixedBuilder(builder, binders, assumptions)
 
+    if eliminate_vars.value and can_elim_vars(target, assumptions, state_vars):
+        builder = StateElimBuilder(builder)
+
     vars = list(free_vars(target) | free_vars(assumptions))
-    if eliminate_vars.value:
-        illegal_vars = [v for v in vars if can_elim_var(target, assumptions, v)]
-        builder = VarElimBuilder(builder, illegal_vars)
+    funcs = free_funcs(EAll([target, assumptions]))
 
     if examples is None:
         examples = []
@@ -609,11 +661,9 @@ def improve(
             print(pprint(repl(EVar("@___"))))
             new_target = repl(new_e)
 
-            assert not find_one(free_vars(new_target), lambda v: v not in vars)
-
             # 3. check
-            formula = EAll([assumptions, ENot(equal(target, new_target))])
-            counterexample = satisfy(formula, vars=vars)
+            formula = EAll([assumptions, ENot(EBinOp(target, "===", new_target).with_type(BOOL))])
+            counterexample = satisfy(formula, vars=vars, funcs=funcs)
             if counterexample is not None:
                 if counterexample in examples:
                     print("duplicate example: {}".format(repr(counterexample)))
@@ -631,9 +681,11 @@ def improve(
                 learner.reset(examples)
             else:
                 # b. if correct: yield it, watch the new target, goto 1
+
                 old_cost = cost_model.cost(target, RUNTIME_POOL)
                 new_cost = cost_model.cost(new_target, RUNTIME_POOL)
-                if new_cost > old_cost:
+                ordering = new_cost.compare_to(old_cost)
+                if ordering == Cost.WORSE:
                     print("WHOOPS! COST GOT WORSE!")
                     if save_testcases.value:
                         with open(save_testcases.value, "a") as f:
@@ -650,16 +702,26 @@ def improve(
                             f.write("        assert False\n")
                     # raise Exception("detected nonmonotonicity")
                     continue
-                if new_cost == old_cost:
-                    print("...but cost ({}) is unchanged".format(old_cost))
-                    continue
+                # elif ordering == Cost.UNORDERED:
+                #     print("...but cost is unchanged".format(old_cost))
+                #     continue
                 print("found improvement: {} -----> {}".format(pprint(old_e), pprint(new_e)))
                 print("cost: {} -----> {}".format(old_cost, new_cost))
                 if reset_on_success.value:
                     learner.reset(examples, update_watched_exps=False)
-                learner.watch(new_target, assumptions)
+                learner.watch(new_target)
                 target = new_target
-                yield new_target
+
+                # if binders appear free, let's fix it
+                new_target2 = learner._doctor_for_context(new_target, {})
+                # if new_target2 != new_target:
+                #     if not valid(EImplies(assumptions, EBinOp(target, "===", new_target2).with_type(BOOL))):
+                #         print("OOPS!")
+                #         print("correct: {}".format(pprint(new_target)))
+                #         print("wrong:   {}".format(pprint(new_target2)))
+                #         assert False
+
+                yield new_target2
 
                 if heuristic_done(new_target, args):
                     print("target now matches doneness heuristic")

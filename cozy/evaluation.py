@@ -1,9 +1,9 @@
 from collections import UserDict, defaultdict, namedtuple
-from functools import total_ordering
+from functools import total_ordering, cmp_to_key
 
 from cozy.target_syntax import *
-from cozy.syntax_tools import equal, pprint
-from cozy.common import Visitor, FrozenDict, unique, extend
+from cozy.syntax_tools import equal, pprint, free_vars, free_funcs, all_exps
+from cozy.common import FrozenDict, OrderedSet, extend
 from cozy.typecheck import is_numeric
 
 @total_ordering
@@ -102,15 +102,28 @@ Handle = namedtuple("Handle", ["address", "value"])
 LT = -1
 EQ =  0
 GT =  1
-def cmp(t, v1, v2):
+def cmp(t, v1, v2, deep=False):
     stk = [(t, v1, v2)]
+
+    orig_deep = deep
+    def cleardeep():
+        nonlocal deep
+        deep = False
+    def resetdeep():
+        nonlocal deep
+        deep = orig_deep
+
     while stk:
-        (t, v1, v2) = stk.pop()
+        head = stk.pop()
+        if hasattr(head, "__call__"):
+            head()
+            continue
+        (t, v1, v2) = head
 
         if isinstance(t, THandle):
-            if v1.address == v2.address: continue
-            if v1.address <  v2.address: return LT
-            else:                        return GT
+            if deep:
+                stk.append((t.value_type, v1.value, v2.value))
+            stk.append((INT, v1.address, v2.address))
         elif isinstance(t, TEnum):
             i1 = t.cases.index(v1)
             i2 = t.cases.index(v2)
@@ -118,16 +131,19 @@ def cmp(t, v1, v2):
             if i1 <  i2: return LT
             else:        return GT
         elif isinstance(t, TBag) or isinstance(t, TSet):
+            # TODO: if deep, handle "the"?
             elems1 = list(sorted(v1))
             elems2 = list(sorted(v2))
             if len(elems1) < len(elems2): return LT
             if len(elems1) > len(elems2): return GT
             stk.extend(reversed([(t.t, x, y) for (x, y) in zip(elems1, elems2)]))
         elif isinstance(t, TMap):
-            keys1 = Bag(sorted(v1.keys()))
+            keys1 = Bag(v1.keys())
             keys2 = Bag(v2.keys())
-            stk.extend(reversed([(t.v, v1[k], v2[k]) for k in keys1]))
+            stk.extend(reversed([(t.v, v1[k], v2[k]) for k in sorted(keys1)]))
+            stk.append(resetdeep)
             stk.append((TSet(t.k), keys1, keys2))
+            stk.append(cleardeep)
             stk.append((t.v, v1.default, v2.default))
         elif isinstance(t, TMaybe):
             if v1.obj is None and v2.obj is None:
@@ -150,8 +166,8 @@ def cmp(t, v1, v2):
 def eq(t, v1, v2):
     return cmp(t, v1, v2) == EQ
 
-def eval(e, env, bind_callback=lambda arg, val: None):
-    return eval_bulk(e, (env,), bind_callback)[0]
+def eval(e, env, *args, **kwargs):
+    return eval_bulk(e, (env,), *args, **kwargs)[0]
 
 def mkval(type : Type):
     """
@@ -199,11 +215,15 @@ def _uneval(t, value):
         return ENum(value).with_type(t)
     elif t == BOOL:
         return EBool(value).with_type(t)
-    elif isinstance(t, TBag):
+    elif isinstance(t, TBag) or isinstance(t, TSet):
         e = EEmptyList().with_type(t)
         for x in value:
             e = EBinOp(e, "+", ESingleton(uneval(x, t.t)).with_type(t)).with_type(t)
         return e
+    elif isinstance(t, TString):
+        return EStr(value).with_type(t)
+    elif isinstance(t, TMaybe):
+        return ENull().with_type(t) if value.obj is None else EJust(value.obj).with_type(t)
     elif isinstance(t, TTuple):
         return ETuple(tuple(uneval(tt, x) for (tt, x) in zip(t.ts, value))).with_type(t)
     elif isinstance(t, TRecord):
@@ -235,6 +255,11 @@ def _eval_compiled(ops, init_stk=()):
         if new_ops:
             ops.extend(reversed(new_ops))
     return stk[-1]
+
+def push(val):
+    def _push(stk):
+        stk.append(val)
+    return _push
 
 def push_true(stk):
     stk.append(True)
@@ -280,6 +305,11 @@ def binaryop_add(stk):
     v1 = stk.pop()
     stk.append(v1 + v2)
 
+def binaryop_mul(stk):
+    v2 = stk.pop()
+    v1 = stk.pop()
+    stk.append(v1 * v2)
+
 def binaryop_sub(stk):
     v2 = stk.pop()
     v1 = stk.pop()
@@ -298,11 +328,11 @@ def binaryop_sub_bags(elem_type):
         stk.append(Bag(elems))
     return binaryop_sub_bags
 
-def binaryop_eq(t):
+def binaryop_eq(t, deep=False):
     def binaryop_eq(stk):
         v2 = stk.pop()
         v1 = stk.pop()
-        stk.append(cmp(t, v1, v2) == EQ)
+        stk.append(cmp(t, v1, v2, deep=deep) == EQ)
     return binaryop_eq
 
 def binaryop_ne(t):
@@ -353,6 +383,12 @@ def unaryop_not(stk):
 def unaryop_sum(stk):
     stk.append(sum(stk.pop()))
 
+def unaryop_all(stk):
+    stk.append(all(stk.pop()))
+
+def unaryop_any(stk):
+    stk.append(any(stk.pop()))
+
 def unaryop_exists(stk):
     stk.append(bool(stk.pop()))
 
@@ -363,9 +399,10 @@ def unaryop_neg(stk):
     stk.append(-stk.pop())
 
 def unaryop_areunique(elem_type):
+    keyfunc = cmp_to_key(lambda v1, v2: cmp(elem_type, v1, v2))
     def unaryop_areunique(stk):
         v = stk.pop()
-        l = sorted(v)
+        l = sorted(v, key=keyfunc)
         res = True
         for i in range(len(l) - 1):
             if eq(elem_type, l[i], l[i+1]):
@@ -375,10 +412,11 @@ def unaryop_areunique(elem_type):
     return unaryop_areunique
 
 def unaryop_distinct(elem_type):
+    keyfunc = cmp_to_key(lambda v1, v2: cmp(elem_type, v1, v2))
     def unaryop_distinct(stk):
         v = stk.pop()
         res = []
-        for x in sorted(v):
+        for x in sorted(v, key=keyfunc):
             if not res or not eq(elem_type, res[-1], x):
                 res.append(x)
         stk.append(Bag(res))
@@ -391,9 +429,29 @@ def unaryop_the(stk):
     else:
         stk.append(_NULL_VALUE)
 
+def unaryop_len(stk):
+    stk.append(len(stk.pop()))
+
 def do_concat(stk):
     v = stk.pop()
     stk.append(Bag(elem for bag in v for elem in bag))
+
+def if_then_else(then_code, else_code):
+    def ite(stk):
+        return then_code if stk.pop() else else_code
+    return ite
+
+def dup(stk):
+    stk.append(stk[-1])
+
+def swp(stk):
+    x = stk.pop()
+    y = stk.pop()
+    stk.append(x)
+    stk.append(y)
+
+def drop(stk):
+    stk.pop()
 
 _NULL_VALUE = Maybe(None)
 _EMPTY_BAG = Bag()
@@ -499,6 +557,12 @@ def _compile(e, env : {str:int}, out, bind_callback):
             out.append(unaryop_exists)
         elif e.op == UOp.Empty:
             out.append(unaryop_empty)
+        elif e.op == UOp.All:
+            out.append(unaryop_all)
+        elif e.op == UOp.Any:
+            out.append(unaryop_any)
+        elif e.op == UOp.Length:
+            out.append(unaryop_len)
         elif e.op == UOp.AreUnique:
             out.append(unaryop_areunique(e.e.type.t))
         elif e.op == UOp.Distinct:
@@ -519,6 +583,8 @@ def _compile(e, env : {str:int}, out, bind_callback):
         e1type = e.e1.type
         if e.op == "+":
             out.append(binaryop_add)
+        elif e.op == "*":
+            out.append(binaryop_mul)
         elif e.op == "-":
             if isinstance(e1type, TBag):
                 out.append(binaryop_sub_bags(e1type.t))
@@ -526,6 +592,8 @@ def _compile(e, env : {str:int}, out, bind_callback):
                 out.append(binaryop_sub)
         elif e.op == "==":
             out.append(binaryop_eq(e1type))
+        elif e.op == "===":
+            out.append(binaryop_eq(e1type, deep=True))
         elif e.op == "<":
             out.append(binaryop_lt(e1type))
         elif e.op == ">":
@@ -593,6 +661,42 @@ def _compile(e, env : {str:int}, out, bind_callback):
     elif isinstance(e, EFlatMap):
         _compile(EMap(e.e, e.f).with_type(TBag(e.type.t)), env, out, bind_callback=bind_callback)
         out.append(do_concat)
+    elif isinstance(e, EArgMin) or isinstance(e, EArgMax):
+        # stack layout:
+        #   len | f(best) | best | elem_0 | ... | elem_len
+
+        # body is a seq. of opcodes that has the effect of pushing
+        # f(top_of_stack) onto the stack, leaving the old top underneath
+        box = [None]
+        def set_arg(stk):
+            box[0] = stk[-1]
+        body = [set_arg]
+        with extend(env, e.f.arg.id, lambda: box[0]):
+            _compile(e.f.body, env, body, bind_callback=bind_callback)
+
+        keytype = e.f.arg.type
+
+        def initialize(stk):
+            bag = stk.pop()
+            if bag:
+                stk.extend(reversed(bag))
+            else:
+                stk.append(mkval(e.type))
+            return body + [push(len(bag)-1)]
+
+        do_cmp = binaryop_lt(keytype) if isinstance(e, EArgMin) else binaryop_gt(keytype)
+        def loop(stk):
+            len = stk.pop()
+            key = stk.pop()
+            if len > 0:
+                best = stk.pop()
+                return body + [dup, push(key), do_cmp, if_then_else(
+                    [],
+                    [drop, drop, push(best), push(key)]), push(len-1), loop]
+
+        _compile(e.e, env, out, bind_callback=bind_callback)
+        out.append(initialize)
+        out.append(loop)
     elif isinstance(e, EMakeMap2):
         _compile(EMap(e.e, ELambda(e.value.arg, ETuple((e.value.arg, e.value.body)))), env, out, bind_callback=bind_callback)
         default = mkval(e.type.v)
@@ -634,15 +738,26 @@ def _compile(e, env : {str:int}, out, bind_callback):
     else:
         raise NotImplementedError(type(e))
 
-def eval_bulk(e, envs, bind_callback=None):
+def free_vars_and_funcs(e):
+    for v in free_vars(e):
+        yield v.id
+    for f in free_funcs(e):
+        yield f
+
+def eval_bulk(e, envs, bind_callback=None, use_default_values_for_undefined_vars : bool = False):
     if bind_callback is None:
         bind_callback = lambda arg, val: None
     # return [eval(e, env, bind_callback=bind_callback) for env in envs]
     if not envs:
         return []
     ops = []
-    vars = list(envs[0].keys())
+    vars = OrderedSet(free_vars_and_funcs(e))
+    types = { v.id : v.type for v in free_vars(e) }
     vmap = { v : i for (i, v) in enumerate(vars) }
-    envs = [ [env[v] for v in sorted(env.keys(), key=vmap.get)] for env in envs ]
+    try:
+        envs = [ [(env.get(v, mkval(types[v])) if (use_default_values_for_undefined_vars and v in types) else env[v]) for v in vars] for env in envs ]
+    except KeyError:
+        import pdb
+        pdb.set_trace()
     _compile(e, vmap, ops, bind_callback)
     return [_eval_compiled(ops, env) for env in envs]

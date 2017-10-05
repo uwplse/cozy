@@ -4,8 +4,9 @@ Concrete data structure implementations.
 
 from cozy.common import fresh_name, typechecked, product, cross_product
 from cozy.target_syntax import *
-from cozy.syntax_tools import equal, subst, fresh_var
+from cozy.syntax_tools import equal, subst, fresh_var, pprint, shallow_copy
 from cozy.evaluation import construct_value
+from cozy.solver import valid
 
 def cases(t):
     if t == BOOL:
@@ -31,23 +32,28 @@ def is_enumerable(t):
         return False
 
 class Library(object):
-    def impls(self, ty):
+    @typechecked
+    def impls(self, e : Exp, assumptions : Exp):
+        ty = e.type
         if type(ty) is TMap:
-            for v in self.impls(ty.v):
+            k = fresh_var(ty.k)
+            for v in self.impls(EMapGet(e, k).with_type(e.type.v), assumptions):
                 if is_enumerable(ty.k):
                     yield TVectorMap(ty.k, v)
                 else:
                     yield TNativeMap(ty.k, v)
-        elif type(ty) is TBag:
-            for t in self.impls(ty.t):
-                yield TNativeList(t)
-        elif type(ty) is TSet:
+        elif type(ty) is TSet or (type(ty) is TBag and valid(EImplies(assumptions, EUnaryOp(UOp.AreUnique, e).with_type(BOOL)), model_callback=print)):
             if isinstance(ty.t, THandle):
                 yield TIntrusiveLinkedList(ty.t)
-            for t in self.impls(ty.t):
+            x = fresh_var(ty.t)
+            for t in self.impls(x, EAll((assumptions, EIn(x, e)))):
                 yield TNativeSet(t)
+        elif type(ty) is TBag:
+            x = fresh_var(ty.t)
+            for t in self.impls(x, EAll((assumptions, EIn(x, e)))):
+                yield TNativeList(t)
         elif type(ty) is TTuple:
-            for refinements in cross_product([self.impls(t) for t in ty.ts]):
+            for refinements in cross_product([self.impls(ETupleGet(e, i).with_type(ty.ts[i]), assumptions) for i in range(len(ty.ts))]):
                 yield TTuple(refinements)
         else:
             yield ty
@@ -81,7 +87,8 @@ class TVectorMap(TMap):
             raise NotImplementedError(key.type)
 
     def construct_concrete(self, e : Exp, out : Exp):
-        assert out.type == self.rep_type()
+        assert out.type == self, "{} : {}".format(pprint(e), pprint(e.type))
+        out = shallow_copy(out).with_type(self.rep_type())
         assert isinstance(e, EMakeMap2) # TODO?
         k = fresh_var(self.k, "k")
         return seq(
@@ -110,6 +117,7 @@ class TIntrusiveLinkedList(TBag):
         super().__init__(t)
         self.next_ptr = fresh_name("next_ptr")
         self.prev_ptr = fresh_name("prev_ptr")
+        self.null = ENull().with_type(self.rep_type())
 
     def rep_type(self):
         return self.t
@@ -125,49 +133,55 @@ class TIntrusiveLinkedList(TBag):
                 (self.prev_ptr, self.t)]
         return []
     def implement_add(self, target, args):
-        assert target.type == self.rep_type()
+        assert target.type == self
+        target = shallow_copy(target).with_type(self.rep_type())
         new_elem, = args
         return seq([
             SAssign(EGetField(new_elem, self.next_ptr).with_type(self.t), target),
-            SAssign(EGetField(new_elem, self.prev_ptr).with_type(self.t), NULL),
-            SIf(ENot(equal(target, NULL)), SAssign(EGetField(target, self.prev_ptr).with_type(self.t), new_elem), SNoOp()),
+            SAssign(EGetField(new_elem, self.prev_ptr).with_type(self.t), self.null),
+            SIf(ENot(equal(target, self.null)), SAssign(EGetField(target, self.prev_ptr).with_type(self.t), new_elem), SNoOp()),
             SAssign(target, new_elem)])
     def implement_remove(self, target, args):
-        assert target.type == self.rep_type()
+        assert target.type == self
+        target = shallow_copy(target).with_type(self.rep_type())
         elem, = args
         prev = EGetField(elem, self.prev_ptr).with_type(self.t)
         next = EGetField(elem, self.next_ptr).with_type(self.t)
         return seq([
             SIf(equal(elem, target), SAssign(target, next), SNoOp()),
-            SIf(ENot(equal(prev, NULL)), SAssign(EGetField(prev, self.next_ptr).with_type(self.t), next), SNoOp()),
-            SIf(ENot(equal(next, NULL)), SAssign(EGetField(next, self.prev_ptr).with_type(self.t), prev), SNoOp()),
-            SAssign(next, NULL),
-            SAssign(prev, NULL)])
+            SIf(ENot(equal(prev, self.null)), SAssign(EGetField(prev, self.next_ptr).with_type(self.t), next), SNoOp()),
+            SIf(ENot(equal(next, self.null)), SAssign(EGetField(next, self.prev_ptr).with_type(self.t), prev), SNoOp()),
+            SAssign(next, self.null),
+            SAssign(prev, self.null)])
     def for_each(self, id, iter, body):
-        assert iter.type == self.rep_type()
+        assert iter.type == self
+        iter = shallow_copy(iter).with_type(self.rep_type())
         assert id.type == self.t
         next = fresh_name("next")
         return seq([
             SDecl(id.id, iter),
-            SWhile(ENot(equal(id, NULL)),
+            SWhile(ENot(equal(id, self.null)),
                 seq([
                     SDecl(next, EGetField(id, self.next_ptr).with_type(id.type)),
                     body,
                     SAssign(id, EVar(next).with_type(id.type))]))])
     def find_one(self, target):
-        assert target.type == self.rep_type()
+        print("finding one {} : {}".format(pprint(target), pprint(target.type)))
+        assert target.type == self
+        target = shallow_copy(target).with_type(self.rep_type())
         return target
     def make_empty(self):
-        return ENull().with_type(self.t)
+        return ENull().with_type(self)
     def construct_concrete(self, e : Exp, out : Exp):
-        assert out.type == self.rep_type()
+        if self == out.type:
+            out = shallow_copy(out).with_type(self.rep_type())
         x = fresh_var(self.t, "x")
         return seq([
-            SAssign(out, NULL),
+            SAssign(out, self.null),
             SForEach(x, e, seq([
                 SAssign(EGetField(x, self.next_ptr).with_type(self.t), out),
-                SAssign(EGetField(x, self.prev_ptr).with_type(self.t), NULL),
-                SIf(ENot(equal(out, NULL)), SAssign(EGetField(out, self.prev_ptr).with_type(self.t), x), SNoOp()),
+                SAssign(EGetField(x, self.prev_ptr).with_type(self.t), self.null),
+                SIf(ENot(equal(out, self.null)), SAssign(EGetField(out, self.prev_ptr).with_type(self.t), x), SNoOp()),
                 SAssign(out, x)]))])
 
 class TNativeList(TBag):
