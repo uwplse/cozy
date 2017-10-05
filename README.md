@@ -97,7 +97,7 @@ Expressions may contain:
  - Linear arithmetic (`+`, `-`)
  - Ternary expressions (`cond ? x : y`)
  - List comprehensions (`[expr | x <- xs, y <- ys, predicate]`)
- - Field access (`tuple[0]` to read the first element of a tuple, `record.field`
+ - Field access (`tuple.0` to read the first element of a tuple, `record.field`
    to read a field of a record)
  - Set union (`xs + ys`) and difference (`xs - ys`)
 
@@ -134,6 +134,10 @@ any is present.
 
 To facilitate integration with other code, Cozy includes several other useful
 features.
+
+#### Typedefs and Native Types
+
+(TODO: document this)
 
 #### Assumptions
 
