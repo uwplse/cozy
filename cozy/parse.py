@@ -394,7 +394,7 @@ def make_parser():
     def p_error(p):
         if p is None:
             raise Exception("Unexpected end-of-file")
-        raise Exception("Syntax error on line {}".format(p.lineno))
+        raise Exception("Syntax error on line {} at {}".format(p.lineno, p))
 
     return yacc.yacc()
 
