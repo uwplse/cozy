@@ -200,7 +200,7 @@ To facilitate integration with other code, Cozy gives you several ways to
 functions, and other features defined outside the specification.
 
 Code enclosed in double-braces at the top or bottom of a specification will be
-coped into the output directly. For example, to put a synthesized class into
+copied into the output directly. For example, to put a synthesized class into
 a particular Java package:
 
     {{
