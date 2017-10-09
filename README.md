@@ -131,15 +131,65 @@ For sets and bags, Cozy allows `x.add(new_element)` and `x.remove(element)`.
 Note that `remove` removes exactly one occurrence of the element if
 any is present.
 
+Updates can also be guarded by if-checks, as in `if condition: x.add(y)`.
+
 ### Other Useful Features
 
 #### Typedefs
 
-(TODO: document this)
+Cozy supports typedefs to make specifications easier to read.
+
+    MyDataStructure:
+        type MyStruct = { a : Int, b : Int }
+        ...
 
 #### Assumptions
 
-(TODO: document this)
+Sometimes clients interact with a data structure in more refined ways. For
+instance, it might happen to be true that a client will never add a duplicate
+element to the data structure. Cozy cannot possibly infer these facts during
+synthesis.
+
+Assumptions allow specification writers to communicate facts about the client
+to Cozy. They can be added to both update and query methods. Cozy does not
+check them; instead, it assumes that they will be true at each call site. That
+means it is up to you, the developer, to ensure that your assumptions are
+correct!
+
+In this example, the query `empty` will always return false under the given
+assumption. Cozy can exploit this fact to produce the trivial, obvious
+implementation.
+
+    MyDataStructure:
+        state ints : Bag<Int>
+        op add(i : Int)
+            assume i > 0;
+            ints.add(i)
+        query empty()
+            assume not empty ints;
+            empty ints;
+
+#### Invariants
+
+Invariants are properties of the data structure state that will always be true.
+Cozy _does_ check invariants by ensuring that (1) they hold in the initial
+state when all collections are empty and (2) every update operation preserves
+them.
+
+For instance:
+
+    MyDataStructure:
+        state ints : Bag<Int>
+
+        // invariant: all stored numbers are positive
+        assume all [i > 0 | i <- ints];
+
+        op add(i : Int)
+            // This assumption is necessary to ensure that the
+            // invariant is preserved. Cozy will complain if it
+            // is missing!
+            assume i > 0;
+            ints.add(i)
 
 #### Handles
 
@@ -152,7 +202,7 @@ To facilitate integration with other code, Cozy gives you several ways to
 functions, and other features defined outside the specification.
 
 Code enclosed in double-braces at the top or bottom of a specification will be
-coped into the output directly. For example, to put a synthesized class into
+copied into the output directly. For example, to put a synthesized class into
 a particular Java package:
 
     {{

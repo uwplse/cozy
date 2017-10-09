@@ -240,6 +240,18 @@ class PrettyPrinter(common.Visitor):
     def visit_EUnaryOp(self, e):
         return "({} {})".format(e.op, self.visit(e.e))
 
+    def visit_EArgMin(self, e):
+        if e.f.body == e.f.arg:
+            return "min {}".format(self.visit(e.e))
+        else:
+            return "argmin {{{}}} {}".format(self.visit(e.f), self.visit(e.e))
+
+    def visit_EArgMax(self, e):
+        if e.f.body == e.f.arg:
+            return "max {}".format(self.visit(e.e))
+        else:
+            return "argmax {{{}}} {}".format(self.visit(e.f), self.visit(e.e))
+
     def visit_EGetField(self, e):
         return "({}).{}".format(self.visit(e.e), e.f)
 
