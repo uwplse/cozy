@@ -561,7 +561,7 @@ def heuristic_done(e : Exp, args : [EVar] = []):
         (isinstance(e, ESingleton) and heuristic_done(e.e)) or
         (isinstance(e, EStateVar) and heuristic_done(e.e)) or
         (isinstance(e, EGetField) and heuristic_done(e.e)) or
-        (isinstance(e, EJust) and heuristic_done(e.e)))
+        (isinstance(e, ENull)))
 
 def never_stop():
     return False

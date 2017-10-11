@@ -95,12 +95,6 @@ def ite(ty : Type, cond : z3.AstRef, then_branch, else_branch):
         return {
             "default": ite(ty.v, cond, def1, def2),
             "mapping": mapping }
-    elif isinstance(ty, TMaybe):
-        p1, v1 = then_branch
-        p2, v2 = else_branch
-        return (
-            z3.If(cond, p1, p2),
-            ite(ty.t, cond, v1, v2))
     else:
         raise NotImplementedError(pprint(ty))
 
@@ -135,13 +129,6 @@ class ToZ3(Visitor):
             assert isinstance(e1, z3.AstRef), "{}".format(repr(e1))
             assert isinstance(e2, z3.AstRef), "{}".format(repr(e2))
             return e1 == e2
-        elif isinstance(t, TMaybe):
-            m1, v1 = e1
-            m2, v2 = e2
-            return z3.And(
-                m1 == m2,
-                z3.Implies(m1, self.eq(t.t, v1, v2, env, deep=deep), self.ctx),
-                self.ctx)
         elif isinstance(t, TBag) or isinstance(t, TSet):
             elem_type = t.t
             lhs_mask, lhs_elems = e1
@@ -260,8 +247,6 @@ class ToZ3(Visitor):
         return (self.visit(e.addr, env), self.visit(e.value, env))
     def visit_ENull(self, e, env):
         return (self.false, self.mkval(e.type.t))
-    def visit_EJust(self, e, env):
-        return (self.true, self.visit(e.e, env))
     def visit_ELet(self, e, env):
         return self.apply(e.f, self.visit(e.e, env), env)
     def visit_ECall(self, call, env):
@@ -275,9 +260,6 @@ class ToZ3(Visitor):
         return tuple(self.visit(ee, env) for ee in e.es)
     def visit_ETupleGet(self, e, env):
         return self.visit(e.e, env)[e.n]
-    def visit_EAlterMaybe(self, e, env):
-        mask, val = self.visit(e.e, env)
-        return mask, self.apply(e.f, val, env)
     def visit_EFlatMap(self, e, env):
         mask, elems = self.visit(EMap(e.e, e.f).with_type(TBag(e.f.body.type)), env)
         res_mask = []
@@ -345,15 +327,14 @@ class ToZ3(Visitor):
         elif e.op == UOp.Length:
             return self.len_of(self.visit(e.e, env))
         elif e.op == UOp.The:
-            assert isinstance(e.type, TMaybe)
-            t = e.type.t
+            t = e.type
             bag = self.visit(e.e, env)
             mask, elems = bag
             exists = z3.Or(*mask, self.ctx)
             elem = self.mkval(t)
             for (m, e) in reversed(list(zip(mask, elems))):
                 elem = ite(t, m, e, elem)
-            return (exists, elem)
+            return elem
         elif e.op == "-":
             return -self.visit(e.e, env)
         else:
@@ -613,9 +594,6 @@ class ToZ3(Visitor):
             return tuple(self.unreconstruct(v, t) for (v, t) in zip(value, type.ts))
         elif isinstance(type, TRecord):
             return { f:self.unreconstruct(value[f], t) for (f, t) in type.fields }
-        elif isinstance(type, TMaybe):
-            exists = value.obj is not None
-            return (self.unreconstruct(exists, BOOL), self.unreconstruct(value.obj, type.t) if exists else self.mkval(type.t))
         elif isinstance(type, TString):
             if all(c == "a" for c in value):
                 return z3.IntVal(len(value), ctx)
@@ -642,8 +620,6 @@ class ToZ3(Visitor):
             solver.add(n >= 0)
             solver.add(n < ncases)
             return n
-        elif isinstance(type, TMaybe):
-            return (self.mkvar(collection_depth, BOOL), self.mkvar(collection_depth, type.t))
         elif isinstance(type, TSet):
             res = self.mkvar(collection_depth, TBag(type.t))
             mask, elems = res
@@ -730,11 +706,6 @@ def satisfy(e, vars = None, funcs = None, collection_depth : int = 2, validate_m
                 return "a" * i
             elif type == BOOL:
                 return bool(model.eval(value, model_completion=True))
-            elif isinstance(type, TMaybe):
-                mask, value = value
-                mask = reconstruct(model, mask, BOOL)
-                value = reconstruct(model, value, type.t)
-                return evaluation.Maybe(value if mask else None)
             elif isinstance(type, TBag) or isinstance(type, TSet):
                 mask, elems = value
                 real_val = []

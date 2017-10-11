@@ -41,9 +41,6 @@ class CxxPrinter(common.Visitor):
     def visit_TRef(self, t, name):
         return self.visit(t.t, "&{}".format(name))
 
-    def visit_TMaybe(self, t, name):
-        return self.visit(t.t, name) if self.is_ptr_type(t.t) else self.visit(t.t, "*{}".format(name))
-
     def visit_THandle(self, t, name):
         return "{} *{}".format(self.typename(t), name)
 
@@ -144,22 +141,6 @@ class CxxPrinter(common.Visitor):
     def visit_EBool(self, e, indent=""):
         return ("", "true" if e.val else "false")
 
-    def visit_EJust(self, e, indent=""):
-        if self.is_ptr_type(e.e.type):
-            return self.visit(e.e)
-        raise NotImplementedError(e.type)
-
-    def visit_EAlterMaybe(self, e, indent=""):
-        setup1, ee = self.visit(e.e, indent)
-        tmp = fresh_var(e.e.type, "tmp")
-        setup2 = "{indent}{decl} = {val};\n".format(indent=indent, decl=self.visit(tmp.type, tmp.id), val=ee)
-        res = fresh_var(e.type, "res")
-        setup3 = "{indent}{decl};\n".format(
-            indent=indent,
-            decl=self.visit(res.type, res.id))
-        setup4 = self.visit(SIf(EBinOp(tmp, "==", ENull()), SAssign(res, ENull()), SAssign(res, e.f.apply_to(tmp))), indent=indent)
-        return (setup1 + setup2 + setup3 + setup4, res.id)
-
     def visit_EEmptyList(self, e, indent=""):
         if isinstance(e.type, library.TNativeList):
             v = fresh_name("empty")
@@ -218,7 +199,7 @@ class CxxPrinter(common.Visitor):
             return SSeq(
                 self.initialize_native_map(out),
                 self.construct_map(t, e, out))
-        elif type(t) in [TBool, TInt, TNative, THandle, TMaybe, TLong, TString, TEnum]:
+        elif type(t) in [TBool, TInt, TNative, THandle, TLong, TString, TEnum]:
             return SEscape("{indent}{lhs} = {rhs};\n", ["lhs", "rhs"], [out, e])
         raise NotImplementedError(t)
 
@@ -506,13 +487,13 @@ class CxxPrinter(common.Visitor):
         return self.for_each(iter, lambda x: subst(body, {id.id : x}), indent)
 
     def find_one(self, iterable, indent=""):
-        v = fresh_var(TMaybe(iterable.type.t), "v")
+        v = fresh_var(iterable.type.t, "v")
         label = fresh_name("label")
         x = fresh_var(iterable.type.t, "x")
-        decl = SDecl(v.id, ENull().with_type(v.type))
+        decl = SDecl(v.id, evaluation.construct_value(v.type))
         find = SEscapableBlock(label,
             SForEach(x, iterable, seq([
-                SAssign(v, EJust(x)),
+                SAssign(v, x),
                 SEscapeBlock(label)])))
         return (self.visit(seq([decl, find]), indent), v.id)
 
@@ -529,8 +510,7 @@ class CxxPrinter(common.Visitor):
                 SForEach(x, e.e, SAssign(res, EBinOp(res, "+", x).with_type(type)))]), indent)
             return (setup, res.id)
         elif op == UOp.Empty:
-            t = TMaybe(e.e.type.t)
-            return self.visit(EEq(EUnaryOp(UOp.The, e.e).with_type(t), ENull().with_type(t)), indent)
+            raise NotImplementedError()
         elif op == UOp.Exists:
             return self.visit(ENot(EUnaryOp(UOp.Empty, e.e).with_type(BOOL)), indent)
         elif op in ("-", UOp.Not):

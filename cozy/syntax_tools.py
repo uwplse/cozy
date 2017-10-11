@@ -40,8 +40,6 @@ def is_scalar(t : syntax.Type):
         return all(is_scalar(tt) for tt in t.ts)
     if isinstance(t, syntax.TRecord):
         return all(is_scalar(tt) for (f, tt) in t.fields)
-    if isinstance(t, syntax.TMaybe):
-        return is_scalar(t.t)
     return False
 
 class BottomUpExplorer(common.Visitor):
@@ -157,9 +155,6 @@ class PrettyPrinter(common.Visitor):
     def visit_TString(self, t):
         return "String"
 
-    def visit_TMaybe(self, t):
-        return "Maybe<{}>".format(self.visit(t.t))
-
     def visit_TTuple(self, t):
         return "({})".format(", ".join(self.visit(tt) for tt in t.ts))
 
@@ -201,9 +196,6 @@ class PrettyPrinter(common.Visitor):
     def visit_EEnumEntry(self, e):
         return e.name
 
-    def visit_EJust(self, e):
-        return "Just({})".format(self.visit(e.e))
-
     def visit_ENull(self, e):
         return "NULL"
 
@@ -212,9 +204,6 @@ class PrettyPrinter(common.Visitor):
 
     def visit_EApp(self, e):
         return "{}({})".format(self.visit(e.f), self.visit(e.arg))
-
-    def visit_EAlterMaybe(self, e):
-        return "AlterMaybe({}, {})".format(self.visit(e.e), self.visit(e.f))
 
     def visit_EMapGet(self, e):
         return "{}[{}]".format(self.visit(e.map), self.visit(e.key))

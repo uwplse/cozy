@@ -34,9 +34,6 @@ def EIsSingleton(e):
     arg = EVar(fresh_name()).with_type(e.type.t)
     return EBinOp(EUnaryOp(UOp.Sum, EMap(e, ELambda(arg, ONE)).with_type(TBag(INT))).with_type(INT), "<=", ONE).with_type(BOOL)
 
-# Maybe
-EAlterMaybe = declare_case(Exp, "EAlterMaybe", ["e", "f"])
-
 # Fixed-length vectors
 TVector    = declare_case(Type, "TVector", ["t", "n"])
 EVectorGet = declare_case(Exp, "EVectorGet", ["e", "i"])

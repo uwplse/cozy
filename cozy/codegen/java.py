@@ -161,8 +161,6 @@ class JavaPrinter(CxxPrinter):
         return ("".join(setups), "new {}({})".format(name, ", ".join(args)))
 
     def visit_ENull(self, e, indent=""):
-        if not self.boxed and isinstance(e.type, TMaybe) and self.is_primitive(e.type.t):
-            return self.visit(evaluation.construct_value(e.type.t), indent=indent)
         return ("", "null")
 
     def visit_EStr(self, e, indent=""):
@@ -355,7 +353,6 @@ class JavaPrinter(CxxPrinter):
     def is_primitive(self, t):
         return (
             t in (INT, LONG, BOOL) or
-            (isinstance(t, TMaybe) and self.is_primitive(t.t)) or
             (isinstance(t, TNative) and t.name.strip() in JAVA_PRIMITIVE_TYPES))
 
     def trovename(self, t):
@@ -418,9 +415,6 @@ class JavaPrinter(CxxPrinter):
                 raise NotImplementedError(call.func)
         return super().visit_SCall(call, indent)
 
-    def visit_EJust(self, e, indent):
-        return self.visit(e.e, indent)
-
     def visit_EGetField(self, e, indent):
         setup, ee = self.visit(e.e, indent)
         if isinstance(e.e.type, THandle):
@@ -470,9 +464,6 @@ class JavaPrinter(CxxPrinter):
                 self.visit(t.k, ""),
                 self.visit(t.v, ""),
                 name)
-
-    def visit_TMaybe(self, t, name):
-        return self.visit(t.t, name)
 
     def visit_TRef(self, t, name):
         return self.visit(t.t, name)

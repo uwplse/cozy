@@ -111,8 +111,6 @@ class Typechecker(Visitor):
             return syntax.TSet(self.visit(t.args))
         elif t.t == "Bag":
             return syntax.TBag(self.visit(t.args))
-        elif t.t == "Maybe":
-            return syntax.TMaybe(self.visit(t.args))
         else:
             self.report_err(t, "unknown type {}".format(t.t))
             return t
@@ -140,9 +138,6 @@ class Typechecker(Visitor):
 
     def visit_TNative(self, t):
         return t
-
-    def visit_TMaybe(self, t):
-        return type(t)(self.visit(t.t))
 
     def visit_TBag(self, t):
         return type(t)(self.visit(t.t))
@@ -231,8 +226,7 @@ class Typechecker(Visitor):
             t = self.get_collection_type(e.e)
             e.type = e.e.type
         elif e.op == syntax.UOp.The:
-            t = self.get_collection_type(e.e)
-            e.type = syntax.TMaybe(t)
+            e.type = self.get_collection_type(e.e)
         elif e.op in [syntax.UOp.Any, syntax.UOp.All]:
             self.ensure_type(e.e, syntax.TBag(BOOL))
             e.type = BOOL
@@ -277,15 +271,6 @@ class Typechecker(Visitor):
         if not hasattr(e, "type"):
             self.report_err(e, "not sure what type this NULL should have")
             e.type = DEFAULT_TYPE
-
-    def visit_EJust(self, e):
-        self.visit(e.e)
-        e.type = syntax.TMaybe(e.e.type)
-
-    def visit_EAlterMaybe(self, e):
-        self.visit(e.e)
-        self.visit(e.f)
-        e.type = syntax.TMaybe(e.f.body.type)
 
     def visit_ECond(self, e):
         self.visit(e.cond)

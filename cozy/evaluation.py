@@ -51,26 +51,6 @@ class Map(object):
         return self._hashable() == other._hashable()
 
 @total_ordering
-class Maybe(object):
-    def __init__(self, obj):
-        self.obj = obj
-    def __repr__(self):
-        return "Maybe({!r})".format(self.obj)
-    def __hash__(self):
-        return hash(self.obj)
-    def __eq__(self, other):
-        return ((self.obj is None) == (other.obj is None)) and self.obj == other.obj
-    def __lt__(self, other):
-        if self.obj is None and other.obj is not None:
-            return True
-        elif self.obj is not None and other.obj is None:
-            return False
-        elif self.obj is None and other.obj is None:
-            return False
-        else:
-            return self.obj < other.obj
-
-@total_ordering
 class Bag(object):
     def __init__(self, iterable=()):
         self.elems = tuple(iterable)
@@ -145,14 +125,6 @@ def cmp(t, v1, v2, deep=False):
             stk.append((TSet(t.k), keys1, keys2))
             stk.append(cleardeep)
             stk.append((t.v, v1.default, v2.default))
-        elif isinstance(t, TMaybe):
-            if v1.obj is None and v2.obj is None:
-                continue
-            elif v1.obj is None:
-                return LT
-            elif v2.obj is None:
-                return GT
-            stk.append((t.t, v1.obj, v2.obj))
         elif isinstance(t, TTuple):
             stk.extend(reversed([(tt, vv1, vv2) for (tt, vv1, vv2) in zip(t.ts, v1, v2)]))
         elif isinstance(t, TRecord):
@@ -188,8 +160,6 @@ def construct_value(t : Type) -> Exp:
         e = F
     elif t == STRING:
         e = EStr("")
-    elif isinstance(t, TMaybe):
-        e = ENull()
     elif isinstance(t, TBag):
         e = EEmptyList()
     elif isinstance(t, TTuple):
@@ -222,8 +192,6 @@ def _uneval(t, value):
         return e
     elif isinstance(t, TString):
         return EStr(value).with_type(t)
-    elif isinstance(t, TMaybe):
-        return ENull().with_type(t) if value.obj is None else EJust(value.obj).with_type(t)
     elif isinstance(t, TTuple):
         return ETuple(tuple(uneval(tt, x) for (tt, x) in zip(t.ts, value))).with_type(t)
     elif isinstance(t, TRecord):
@@ -281,10 +249,7 @@ def withalteredvalue(stk):
     stk.append(Handle(h.address, nv))
 
 def push_null(stk):
-    stk.append(_NULL_VALUE)
-
-def make_just(stk):
-    stk.append(Maybe(stk.pop()))
+    stk.append(None)
 
 def get_handle_value(stk):
     stk.append(stk.pop().value)
@@ -422,12 +387,11 @@ def unaryop_distinct(elem_type):
         stk.append(Bag(res))
     return unaryop_distinct
 
-def unaryop_the(stk):
-    v = stk.pop()
-    if v:
-        stk.append(Maybe(v[0]))
-    else:
-        stk.append(_NULL_VALUE)
+def unaryop_the(default):
+    def _unaryop_the(stk):
+        v = stk.pop()
+        stk.append(v[0] if v else default)
+    return _unaryop_the
 
 def unaryop_len(stk):
     stk.append(len(stk.pop()))
@@ -453,7 +417,6 @@ def swp(stk):
 def drop(stk):
     stk.pop()
 
-_NULL_VALUE = Maybe(None)
 _EMPTY_BAG = Bag()
 def _compile(e, env : {str:int}, out, bind_callback):
     if isinstance(e, EVar):
@@ -500,9 +463,6 @@ def _compile(e, env : {str:int}, out, bind_callback):
         out.append(withalteredvalue)
     elif isinstance(e, ENull):
         out.append(push_null)
-    elif isinstance(e, EJust):
-        _compile(e.e, env, out, bind_callback=bind_callback)
-        out.append(make_just)
     elif isinstance(e, ECond):
         _compile(e.cond, env, out, bind_callback=bind_callback)
         then_code = []; _compile(e.then_branch, env, then_code, bind_callback=bind_callback)
@@ -568,7 +528,7 @@ def _compile(e, env : {str:int}, out, bind_callback):
         elif e.op == UOp.Distinct:
             out.append(unaryop_distinct(e.e.type.t))
         elif e.op == UOp.The:
-            out.append(unaryop_the)
+            out.append(unaryop_the(default=mkval(e.type)))
         elif e.op == "-":
             out.append(unaryop_neg)
         else:

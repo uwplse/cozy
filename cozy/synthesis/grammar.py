@@ -57,7 +57,7 @@ class BinderBuilder(ExpBuilder):
             for e in cache.find(pool=pool, type=TBag(INT), size=size-1):
                 yield self.check(EUnaryOp(UOp.Sum, e).with_type(INT), pool)
             for e in cache.find(pool=pool, type=TBag, size=size-1):
-                yield self.check(EUnaryOp(UOp.The, e).with_type(TMaybe(e.type.t)), pool)
+                yield self.check(EUnaryOp(UOp.The, e).with_type(e.type.t), pool)
             for e in cache.find(pool=pool, type=THandle, size=size-1):
                 yield self.check(EGetField(e, "val").with_type(e.type.value_type), pool)
             for e in cache.find(pool=pool, type=TTuple, size=size-1):
