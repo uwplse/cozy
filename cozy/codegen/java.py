@@ -7,6 +7,9 @@ from cozy.syntax_tools import fresh_var, free_vars, subst, is_scalar
 from .cxx import CxxPrinter
 from .misc import *
 
+JAVA_PRIMITIVE_TYPES = {
+    "boolean", "byte", "char", "short", "int", "long", "float", "double"}
+
 class JavaPrinter(CxxPrinter):
 
     def __init__(self, boxed : bool = True):
@@ -36,14 +39,18 @@ class JavaPrinter(CxxPrinter):
             s += "{}protected {};\n".format(INDENT, self.visit(t, name))
 
         # constructor
-        s += "{indent}public {name}() {{\n{indent2}clear();\n{indent}}}\n\n".format(indent=INDENT, indent2=INDENT+INDENT, name=spec.name)
+        s += (
+            "{indent}public {name}() {{\n{indent2}clear();\n{indent}}}\n\n"
+            .format(indent=INDENT, indent2=INDENT+INDENT, name=spec.name)
+        )
 
         # clear
         s += "{}public void clear() {{\n".format(INDENT, spec.name)
         for name, t in spec.statevars:
             initial_value = state_exps[name]
             fvs = free_vars(initial_value)
-            initial_value = subst(initial_value, {v.id : evaluation.construct_value(v.type) for v in fvs})
+            initial_value = subst(initial_value,
+                {v.id : evaluation.construct_value(v.type) for v in fvs})
             setup = self.construct_concrete(t, initial_value, EVar(name).with_type(t))
             s += self.visit(setup, INDENT + INDENT)
         s += "{}}}\n\n".format(INDENT)
@@ -169,6 +176,12 @@ class JavaPrinter(CxxPrinter):
 
     def visit_EEnumEntry(self, e, indent=""):
         return ("", "{}.{}".format(self.typename(e.type), e.name))
+
+    def visit_ENative(self, e, indent=""):
+        if isinstance(e.type, library.TNative) and e.type.name in JAVA_PRIMITIVE_TYPES:
+            return ("", "0")
+        else:
+            return ("", "null")
 
     def _eq(self, e1, e2, indent):
         if not self.boxed and self.is_primitive(e1.type):
