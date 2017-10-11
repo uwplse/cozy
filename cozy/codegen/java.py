@@ -7,9 +7,6 @@ from cozy.syntax_tools import fresh_var, free_vars, subst, is_scalar
 from .cxx import CxxPrinter
 from .misc import *
 
-JAVA_PRIMITIVE_TYPES = {
-    "boolean", "byte", "char", "short", "int", "long", "float", "double"}
-
 class JavaPrinter(CxxPrinter):
 
     def __init__(self, boxed : bool = True):
@@ -179,10 +176,16 @@ class JavaPrinter(CxxPrinter):
 
     def visit_ENative(self, e, indent=""):
         assert e.e == ENum(0), "cannot generate code for non-trivial native value"
-        if isinstance(e.type, library.TNative) and e.type.name in JAVA_PRIMITIVE_TYPES:
-            return ("", "0")
-        else:
-            return ("", "null")
+        return ("", {
+            "boolean": "false",
+            "byte":    "(byte)0",
+            "char":    "'\\0'",
+            "short":   "(short)0",
+            "int":     "0",
+            "long":    "0L",
+            "float":   "0.0f",
+            "double":  "0.0",
+            }.get(e.type.name.strip(), "null"))
 
     def _eq(self, e1, e2, indent):
         if not self.boxed and self.is_primitive(e1.type):
