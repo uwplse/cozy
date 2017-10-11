@@ -178,6 +178,7 @@ class JavaPrinter(CxxPrinter):
         return ("", "{}.{}".format(self.typename(e.type), e.name))
 
     def visit_ENative(self, e, indent=""):
+        assert e.e == ENum(0), "cannot generate code for non-trivial native value"
         if isinstance(e.type, library.TNative) and e.type.name in JAVA_PRIMITIVE_TYPES:
             return ("", "0")
         else:
