@@ -120,6 +120,7 @@ def make_lexer():
 
     def t_EXTERNCODETOKEN(t):
         r"\{\{(.|\n)*?\}\}"
+        t.lexer.lineno += t.value.count("\n")
         t.value = t.value[2:-2]
         return t
 
