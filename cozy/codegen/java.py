@@ -7,6 +7,9 @@ from cozy.syntax_tools import fresh_var, free_vars, subst, is_scalar
 from .cxx import CxxPrinter
 from .misc import *
 
+JAVA_PRIMITIVE_TYPES = {
+    "boolean", "byte", "char", "short", "int", "long", "float", "double"}
+
 class JavaPrinter(CxxPrinter):
 
     def __init__(self, boxed : bool = True):
@@ -201,13 +204,24 @@ class JavaPrinter(CxxPrinter):
         return self.visit(EEscape("{set}.contains({elem})", ["set", "elem"], [set, elem]).with_type(BOOL), indent)
 
     def compute_hash_1(self, e : str, t : Type, out : EVar, indent : str) -> str:
-        if not self.boxed and self.is_primitive(t):
+        if self.is_primitive(t):
             if t == INT:
                 res = e
             elif t == LONG:
                 res = "((int)({e})) ^ ((int)(({e}) >> 32))".format(e=e)
             elif t == BOOL:
                 res = "({e}) ? 1 : 0".format(e=e)
+            elif isinstance(t, TNative):
+                res =  {
+                    "boolean": "{e} ? 1 : 0",
+                    "byte":    "{e}",
+                    "char":    "{e}",
+                    "short":   "{e}",
+                    "int":     "{e}",
+                    "long":    "((int)({e})) ^ ((int)(({e}) >> 32))",
+                    "float":   "Float.floatToIntBits({e})",
+                    "double":  "((int)(Double.doubleToRawLongBits({e}))) ^ ((int)((Double.doubleToRawLongBits({e})) >> 32))",
+                    }[t.name.strip()].format(e=e)
             else:
                 raise NotImplementedError(t)
         else:
@@ -339,7 +353,10 @@ class JavaPrinter(CxxPrinter):
         return "{} {}".format("Long" if self.boxed else "int", name)
 
     def is_primitive(self, t):
-        return t in (INT, LONG, BOOL) or (isinstance(t, TMaybe) and self.is_primitive(t.t))
+        return (
+            t in (INT, LONG, BOOL) or
+            (isinstance(t, TMaybe) and self.is_primitive(t.t)) or
+            (isinstance(t, TNative) and t.name.strip() in JAVA_PRIMITIVE_TYPES))
 
     def trovename(self, t):
         t = common.capitalize(self.visit(t, name="").strip()) if self.is_primitive(t) else "Object"
