@@ -30,6 +30,9 @@ def retypecheck(exp, env=None):
 def is_numeric(t):
     return t in [INT, LONG]
 
+def is_collection(t):
+    return isinstance(t, syntax.TBag) or isinstance(t, syntax.TSet)
+
 BOOL = syntax.BOOL
 INT = syntax.INT
 LONG = syntax.LONG
@@ -177,6 +180,16 @@ class Typechecker(Visitor):
         if not is_numeric(e.type):
             self.report_err(e, "expression has non-numeric type {}".format(e.type))
 
+    def lub(self, src, t1, t2, explanation):
+        if t1 == t2:
+            return t1
+        if is_numeric(t1) and is_numeric(t2):
+            return self.numeric_lub(t1, t2)
+        if is_collection(t1) and is_collection(t2):
+            return syntax.TBag(t1.t)
+        self.report_err(src, "cannot unify types {} and {} ({})".format(pprint(t1), pprint(t2), explanation))
+        return DEFAULT_TYPE
+
     def numeric_lub(self, t1, t2):
         if t1 == LONG or t2 == LONG:
             return LONG
@@ -277,8 +290,8 @@ class Typechecker(Visitor):
         self.visit(e.then_branch)
         self.visit(e.else_branch)
         self.ensure_type(e.cond, BOOL)
-        self.ensure_type(e.else_branch, e.then_branch.type)
-        e.type = e.then_branch.type
+        e.type = self.lub(e, e.else_branch.type, e.then_branch.type,
+            "cases in ternary expression must have the same type")
 
     def visit_ELambda(self, e):
         with self.scope():
