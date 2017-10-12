@@ -120,6 +120,8 @@ Cozy supports many useful reduction operations on collections as well:
  - Get the single element from a singleton collection (`the xs`)
  - Determine whether an element is in a collection (`e in xs`, equivalent to
    `exists [x | x <- xs, x == e]`)
+ - Find the smallest or largest element (`min xs` or `max xs`, respectively)
+ - Find an element that minimizes or maximizes a function (`argmin {\user -> user.signupDate} users` or `argmax ...`)
 
 ### Update Methods
 
