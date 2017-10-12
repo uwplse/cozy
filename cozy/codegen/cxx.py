@@ -497,6 +497,27 @@ class CxxPrinter(common.Visitor):
                 SEscapeBlock(label)])))
         return (self.visit(seq([decl, find]), indent), v.id)
 
+    def min_or_max(self, op, e, f, indent=""):
+        out = fresh_var(e.type.t, "min" if op == "<" else "max")
+        first = fresh_var(BOOL, "first")
+        x = fresh_var(e.type.t, "x")
+        decl1 = SDecl(out.id, evaluation.construct_value(out.type))
+        decl2 = SDecl(first.id, T)
+        find = SForEach(x, e,
+            SIf(EBinOp(
+                    first,
+                    BOp.Or,
+                    EBinOp(f.apply_to(x), op, f.apply_to(out))),
+                seq([SAssign(first, F), SAssign(out, x)]),
+                SNoOp()))
+        return (self.visit(seq([decl1, decl2, find]), indent), out.id)
+
+    def visit_EArgMin(self, e, indent=""):
+        return self.min_or_max("<", e.e, e.f, indent)
+
+    def visit_EArgMax(self, e, indent=""):
+        return self.min_or_max(">", e.e, e.f, indent)
+
     def visit_EUnaryOp(self, e, indent):
         op = e.op
         if op == UOp.The:
