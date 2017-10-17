@@ -4,10 +4,10 @@ In:
     state ys : Bag<Int>
 
     op addX(x : Int)
-        xs.add(x)
+        xs.add(x);
 
     op addY(y : Int)
-        ys.add(y)
+        ys.add(y);
 
     query a(z : Int)
         z in ys

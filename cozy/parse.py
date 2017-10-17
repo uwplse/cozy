@@ -221,7 +221,6 @@ def make_parser():
     parsetools.multi(locals(), "assumes", "assume")
 
     precedence = (
-        ("nonassoc", "IF_PLAIN"),
         ("nonassoc", "KW_ELSE"),
         ("left", "OP_COMMA"),
         ("left", "OP_QUESTION"),
@@ -376,15 +375,18 @@ def make_parser():
     parsetools.multi(locals(), "methods", "method")
 
     def p_stm(p):
-        """stm : accesschain OP_OPEN_PAREN exp_list OP_CLOSE_PAREN
-               | accesschain OP_ASSIGN exp
-               | KW_IF exp OP_COLON stm %prec IF_PLAIN
-               | KW_IF exp OP_COLON stm KW_ELSE OP_COLON stm"""
+        """stm : accesschain OP_OPEN_PAREN exp_list OP_CLOSE_PAREN OP_SEMICOLON
+               | accesschain OP_ASSIGN exp OP_SEMICOLON
+               | KW_IF exp OP_OPEN_BRACE stm OP_CLOSE_BRACE
+               | KW_IF exp OP_OPEN_BRACE stm OP_CLOSE_BRACE KW_ELSE OP_OPEN_BRACE stm OP_CLOSE_BRACE
+               | stm stm"""
         if p[1] == "if":
-            else_expr = p[7] if len(p) == 8 else syntax.SNoOp()
+            else_expr = p[8] if len(p) > 6 else syntax.SNoOp()
             p[0] = syntax.SIf(p[2], p[4], else_expr)
         elif p[2] == "(":
             p[0] = syntax.SCall(p[1].e, p[1].f, p[3])
+        elif isinstance(p[1], syntax.Stm):
+            p[0] = syntax.SSeq(p[1], p[2])
         else:
             p[0] = syntax.SAssign(p[1], p[3])
 

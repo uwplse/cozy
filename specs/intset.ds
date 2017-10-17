@@ -3,10 +3,10 @@ ClauseDB:
 
     op add(i : Int)
         assume not(i in ints);
-        ints.add(i)
+        ints.add(i);
 
     op remove(i : Int)
-        ints.remove(i)
+        ints.remove(i);
 
 //    query minVal()
 //        min ints

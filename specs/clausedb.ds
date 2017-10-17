@@ -8,16 +8,16 @@ ClauseDB:
 
     op addClause(c : Set<Bound>)
         assume not (c in clauses);
-        clauses.add(c)
+        clauses.add(c);
 
     op falsify(l : Bound)
         assume not (l in falselits);
         assume l < N;
-        falselits.add(l)
+        falselits.add(l);
 
     op unfalsify(l : Bound)
         assume l in falselits;
-        falselits.remove(l)
+        falselits.remove(l);
 
     private query nonfalse(c : Set<Bound>)
         [l | l <- c, not (l in falselits)]

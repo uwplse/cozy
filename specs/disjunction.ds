@@ -7,4 +7,4 @@ In:
 
     op add(e : Elem)
         assume not(e in xs);
-        xs.add(e)
+        xs.add(e);

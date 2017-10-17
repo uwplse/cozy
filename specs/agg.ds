@@ -3,7 +3,7 @@ Aggr:
     state l : Bag<Int>
 
     op add(i : Int)
-        l.add(i)
+        l.add(i);
 
     query elems()
         l

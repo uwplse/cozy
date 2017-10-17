@@ -57,7 +57,7 @@ Cozy specifications always have this general shape:
             exists [x | x <- elements, x == 0]
 
         op addElement(x : Int)
-            elements.add(x)
+            elements.add(x);
 
 The `state` declarations declare the private state of the data structure.
 The `query` methods retrieve some information about the private state.
@@ -77,8 +77,8 @@ From a specification like this, Cozy will produce a much better implementation:
             ctz
 
         op addElement(x : Int)
-            sz = sz + 1
-            ctz = ctz or (x == 0)
+            sz = sz + 1;
+            ctz = ctz or (x == 0);
 
 ### Supported Types
 
@@ -125,15 +125,15 @@ Cozy supports many useful reduction operations on collections as well:
 
 ### Update Methods
 
-For all types of state, assignment is allowed: `x = new_value`.
+For all types of state, assignment is allowed: `x = new_value;`.
 
-For records, changes can be made to individual fields: `x.field = new_value`.
+For records, changes can be made to individual fields: `x.field = new_value;`.
 
-For sets and bags, Cozy allows `x.add(new_element)` and `x.remove(element)`.
+For sets and bags, Cozy allows `x.add(new_element);` and `x.remove(element);`.
 Note that `remove` removes exactly one occurrence of the element if
 any is present.
 
-Updates can also be guarded by if-checks, as in `if condition: x.add(y)`.
+Updates can also be guarded by if-checks, as in `if condition { x.add(y); }`.
 
 ### Other Useful Features
 
@@ -166,10 +166,10 @@ implementation.
         state ints : Bag<Int>
         op add(i : Int)
             assume i > 0;
-            ints.add(i)
+            ints.add(i);
         query empty()
             assume not empty ints;
-            empty ints;
+            empty ints
 
 #### Invariants
 
@@ -191,7 +191,7 @@ For instance:
             // invariant is preserved. Cozy will complain if it
             // is missing!
             assume i > 0;
-            ints.add(i)
+            ints.add(i);
 
 #### Handles
 

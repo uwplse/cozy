@@ -285,19 +285,16 @@ class PrettyPrinter(common.Visitor):
         return repr(e)
 
     def visit_SNoOp(self, s, indent=""):
-        return "{}pass".format(indent)
+        return "{}pass;".format(indent)
 
     def visit_SCall(self, s, indent=""):
-        return "{}{}.{}({})".format(indent, self.visit(s.target), s.func, ", ".join(self.visit(arg) for arg in s.args))
+        return "{}{}.{}({});".format(indent, self.visit(s.target), s.func, ", ".join(self.visit(arg) for arg in s.args))
 
     def visit_SAssign(self, s, indent=""):
-        return "{}{} = {}".format(indent, self.visit(s.lhs), self.visit(s.rhs))
+        return "{}{} = {};".format(indent, self.visit(s.lhs), self.visit(s.rhs))
 
     def visit_SDecl(self, s, indent=""):
-        return "{}var {} : {} = {}".format(indent, s.id, self.visit(s.val.type), self.visit(s.val))
-
-    def visit_SDel(self, s, indent=""):
-        return "{}del {}".format(indent, self.visit(s.e))
+        return "{}var {} : {} = {};".format(indent, s.id, self.visit(s.val.type), self.visit(s.val))
 
     def visit_SSeq(self, s, indent=""):
         return "{}\n{}".format(self.visit(s.s1, indent), self.visit(s.s2, indent))
@@ -310,13 +307,13 @@ class PrettyPrinter(common.Visitor):
             indent=indent)
 
     def visit_SMapPut(self, s, indent=""):
-        return "{indent}{} = {}".format(
+        return "{indent}{} = {};".format(
             self.visit(target_syntax.EMapGet(s.map, s.key)),
             self.visit(s.value),
             indent=indent)
 
     def visit_SMapDel(self, s, indent=""):
-        return "{indent}del {}".format(
+        return "{indent}del {};".format(
             self.visit(target_syntax.EMapGet(s.map, s.key)),
             indent=indent)
 
@@ -325,8 +322,8 @@ class PrettyPrinter(common.Visitor):
 
     def visit_SIf(self, s, indent=""):
         if isinstance(s.else_branch, syntax.SNoOp):
-            return "{indent}if {}:\n{}".format(self.visit(s.cond), self.visit(s.then_branch, indent + "  "), indent=indent)
-        return "{indent}if {}:\n{}\n{indent}else:\n{}".format(self.visit(s.cond), self.visit(s.then_branch, indent + "  "), self.visit(s.else_branch, indent + "  "), indent=indent)
+            return "{indent}if {} {{\n{}\n{indent}}}".format(self.visit(s.cond), self.visit(s.then_branch, indent + "  "), indent=indent)
+        return "{indent}if {} {{\n{}\n{indent}}} else {{\n{}\n}}".format(self.visit(s.cond), self.visit(s.then_branch, indent + "  "), self.visit(s.else_branch, indent + "  "), indent=indent)
 
 _PRETTYPRINTER = PrettyPrinter()
 def pprint(ast):

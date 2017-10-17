@@ -32,13 +32,13 @@ class TestRepInference(unittest.TestCase):
                 op add(x : T, y : U)
                     assume x.val > 0;
                     assume y.val.score > 0;
-                    xs.add((x, y))
+                    xs.add((x, y));
 
                 op modX(x : T, newVal: Int)
-                    x.val = newVal
+                    x.val = newVal;
 
                 op modY(y : U, newVal: Int)
-                    y.val.score = newVal
+                    y.val.score = newVal;
 
                 query q()
                     xs

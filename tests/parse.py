@@ -19,7 +19,8 @@ files = [
     "disjunction",
     "map",
     "nested-map",
-    "in"]
+    "in",
+    "polyupdate"]
 
 for filename in files:
     def setup(filename):
@@ -63,13 +64,13 @@ class TestEnhancedModifications(unittest.TestCase):
         Test:
             state foo : Bag<Int>
             op add2x(i : Int)
-                foo.add(i + i)
+                foo.add(i + i);
             op add3x(i : Int)
-                foo.add(i + i + i)
+                foo.add(i + i + i);
             op addIncremented(i : Int)
-                foo.add(i + 1)
+                foo.add(i + 1);
             op addNegative(i : Int)
-                foo.add(0 - i)
+                foo.add(0 - i);
         """
         parse(sample)
 
@@ -78,8 +79,9 @@ class TestEnhancedModifications(unittest.TestCase):
         Test:
             state foo : Bag<Int>
             op add_2x_unique(i : Int)
-                if not (i + i) in foo:
-                    foo.add(i + i)
+                if not (i + i) in foo {
+                    foo.add(i + i);
+                }
         """
         parse(sample)
 
@@ -87,11 +89,13 @@ class TestEnhancedModifications(unittest.TestCase):
         sample = """Test:
            state f : Bag<Int>
            op foo(i : Int)
-                if not (i in foo):
-                    if not ((i + i) in foo):
-                        foo.add(i + i + i)
-                    else:
-                        foo.add(i + i + i + i)
+                if not (i in foo) {
+                    if not ((i + i) in foo) {
+                        foo.add(i + i + i);
+                    } else {
+                        foo.add(i + i + i + i);
+                    }
+                }
         """
         # Verify that `else` code pairs with inner `if`.
         ast = parse(sample)
