@@ -190,7 +190,7 @@ For instance:
         state ints : Bag<Int>
 
         // invariant: all stored numbers are positive
-        assume all [i > 0 | i <- ints];
+        invariant all [i > 0 | i <- ints];
 
         op add(i : Int)
             // This assumption is necessary to ensure that the

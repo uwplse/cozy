@@ -29,6 +29,7 @@ _KEYWORDS = ([
     "query",
     "state",
     "assume",
+    "invariant",
     "true",
     "false",
     "min", "argmin",
@@ -153,7 +154,7 @@ def make_parser():
     start = "spec"
 
     def p_spec(p):
-        """spec : externcode WORD OP_COLON typedecls funcdecls states assumes methods externcode"""
+        """spec : externcode WORD OP_COLON typedecls funcdecls states invariants methods externcode"""
         p[0] = syntax.Spec(p[2], p[4], p[5], p[6], p[7], p[8], p[1], p[9])
 
     def p_externcode(p):
@@ -218,7 +219,12 @@ def make_parser():
         """assume : KW_ASSUME exp OP_SEMICOLON"""
         p[0] = p[2]
 
+    def p_invariant(p):
+        """invariant : KW_INVARIANT exp OP_SEMICOLON"""
+        p[0] = p[2]
+
     parsetools.multi(locals(), "assumes", "assume")
+    parsetools.multi(locals(), "invariants", "invariant")
 
     precedence = (
         ("nonassoc", "KW_ELSE"),

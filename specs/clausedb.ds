@@ -4,7 +4,7 @@ ClauseDB:
     state clauses    : Set<Set<Bound>>
     state falselits  : Set<Bound>
 
-    assume empty [l | l <- falselits, l >= N];
+    invariant empty [l | l <- falselits, l >= N];
 
     op addClause(c : Set<Bound>)
         assume not (c in clauses);

@@ -26,8 +26,8 @@ class TestRepInference(unittest.TestCase):
 
                 state xs : Bag<(T, U)>
 
-                assume all [x.0.val > 0 | x <- xs];
-                assume all [x.1.val.score > 0 | x <- xs];
+                invariant all [x.0.val > 0 | x <- xs];
+                invariant all [x.1.val.score > 0 | x <- xs];
 
                 op add(x : T, y : U)
                     assume x.val > 0;
