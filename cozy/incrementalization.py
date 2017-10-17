@@ -51,7 +51,7 @@ def _delta_form(res : { str : syntax.Exp }, op : syntax.Stm) -> { str : syntax.E
                 # Substatements differ; need to defer to ECond evaluation.
                 res[key] = syntax.ECond(op.cond, then_val, else_val)
     else:
-        raise NotImplementedError(type(op.body))
+        raise NotImplementedError(type(op))
 
     return res
 
