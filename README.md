@@ -135,6 +135,12 @@ any is present.
 
 Updates can also be guarded by if-checks, as in `if condition { x.add(y); }`.
 
+An update method may perform multiple updates in sequence, as in
+
+    op update_with(y : Int)
+        xs.add(y);
+        if (y > 0) { s = s + y; }
+
 ### Other Useful Features
 
 #### Typedefs
