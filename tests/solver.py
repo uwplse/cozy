@@ -356,3 +356,29 @@ class TestSolver(unittest.TestCase):
 
     def test_argmin7(self):
         satisfy(EUnaryOp('not', EBinOp(EUnaryOp('not', EBinOp(EUnaryOp('sum', EMap(EVar('xs').with_type(TBag(TInt())), ELambda(EVar('_var35').with_type(TInt()), ENum(1).with_type(TInt()))).with_type(TBag(TInt()))).with_type(TInt()), '>=', ENum(2).with_type(TInt())).with_type(TBool())).with_type(TBool()), 'or', EBinOp(EUnaryOp('not', EBinOp(EVar('_var616').with_type(TInt()), 'in', EBinOp(EBinOp(EVar('xs').with_type(TBag(TInt())), '-', ESingleton(EArgMin(EVar('xs').with_type(TBag(TInt())), ELambda(EVar('_var35').with_type(TInt()), EVar('_var35').with_type(TInt()))).with_type(TInt())).with_type(TBag(TInt()))).with_type(TBag(TInt())), '-', ESingleton(EArgMin(EBinOp(EVar('xs').with_type(TBag(TInt())), '-', ESingleton(EArgMin(EVar('xs').with_type(TBag(TInt())), ELambda(EVar('_var35').with_type(TInt()), EVar('_var35').with_type(TInt()))).with_type(TInt())).with_type(TBag(TInt()))).with_type(TBag(TInt())), ELambda(EVar('_var35').with_type(TInt()), EVar('_var35').with_type(TInt()))).with_type(TInt())).with_type(TBag(TInt()))).with_type(TBag(TInt()))).with_type(TBool())).with_type(TBool()), 'or', EBinOp(EVar('_var616').with_type(TInt()), 'in', EBinOp(ESingleton(EArgMin(EVar('xs').with_type(TBag(TInt())), ELambda(EVar('_var35').with_type(TInt()), EVar('_var35').with_type(TInt()))).with_type(TInt())).with_type(TBag(TInt())), '-', ESingleton(EArgMin(ESingleton(EArgMin(EVar('xs').with_type(TBag(TInt())), ELambda(EVar('_var35').with_type(TInt()), EVar('_var35').with_type(TInt()))).with_type(TInt())).with_type(TBag(TInt())), ELambda(EVar('_var35').with_type(TInt()), EVar('_var35').with_type(TInt()))).with_type(TInt())).with_type(TBag(TInt()))).with_type(TBag(TInt()))).with_type(TBool())).with_type(TBool())).with_type(TBool())).with_type(TBool()), vars=OrderedSet([EVar('xs').with_type(TBag(TInt())), EVar('_var616').with_type(TInt())]), collection_depth=2, validate_model=True)
+
+    def test_lists1(self):
+        satisfy(EUnaryOp('not', EBinOp(EUnaryOp('not', EBool(True).with_type(TBool())).with_type(TBool()), 'or', EBinOp(EVar('l').with_type(TList(TNative('Object'))), '==', EDropFront(EBinOp(EVar('l').with_type(TList(TNative('Object'))), '+', ESingleton(EListGet(EVar('l').with_type(TList(TNative('Object'))), ENum(0).with_type(TInt())).with_type(TNative('Object'))).with_type(TList(TNative('Object')))).with_type(TList(TNative('Object')))).with_type(TList(TNative('Object')))).with_type(TBool())).with_type(TBool())).with_type(TBool()), vars=OrderedSet([EVar('l').with_type(TList(TNative('Object')))]), collection_depth=2, validate_model=True)
+
+    def test_lists2(self):
+        xs = EVar("xs").with_type(TList(INT))
+        e = ENot(EEq(xs, xs))
+        assert not satisfiable(e, collection_depth=2, validate_model=True)
+
+    def test_lists3(self):
+        xs = EVar("xs").with_type(TList(INT))
+        ys = EVar("ys").with_type(TList(INT))
+        e = EAll([EEq(xs, ys), EUnaryOp(UOp.Exists, xs).with_type(BOOL)])
+        assert satisfiable(e, collection_depth=2, validate_model=True)
+
+    def test_lists4(self):
+        xs = EVar("xs").with_type(TList(INT))
+        e = EEq(xs, EDropFront(xs).with_type(xs.type))
+        assert satisfiable(e, collection_depth=2, validate_model=True)
+
+    def test_lists5(self):
+        xs = EVar("xs").with_type(TList(INT))
+        e = EAll([
+            EUnaryOp(UOp.Empty, EDropFront(xs).with_type(xs.type)).with_type(BOOL),
+            EUnaryOp(UOp.Exists, xs).with_type(BOOL)])
+        assert satisfiable(e, collection_depth=2, validate_model=True)

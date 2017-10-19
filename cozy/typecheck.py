@@ -27,17 +27,17 @@ def retypecheck(exp, env=None):
             print(" --> {}".format(e))
     return not errs
 
-def is_numeric(t):
-    return t in [INT, LONG]
-
-def is_collection(t):
-    return isinstance(t, syntax.TBag) or isinstance(t, syntax.TSet)
-
 BOOL = syntax.BOOL
 INT = syntax.INT
 LONG = syntax.LONG
 STRING = syntax.STRING
 DEFAULT_TYPE = object()
+
+def is_numeric(t):
+    return t in (INT, LONG)
+
+def is_collection(t):
+    return type(t) in (syntax.TBag, syntax.TSet, syntax.TList)
 
 class Typechecker(Visitor):
 
@@ -114,6 +114,8 @@ class Typechecker(Visitor):
             return syntax.TSet(self.visit(t.args))
         elif t.t == "Bag":
             return syntax.TBag(self.visit(t.args))
+        elif t.t == "List":
+            return syntax.TList(self.visit(t.args))
         else:
             self.report_err(t, "unknown type {}".format(t.t))
             return t
@@ -146,6 +148,9 @@ class Typechecker(Visitor):
         return type(t)(self.visit(t.t))
 
     def visit_TSet(self, t):
+        return type(t)(self.visit(t.t))
+
+    def visit_TList(self, t):
         return type(t)(self.visit(t.t))
 
     def visit_TMap(self, t):
@@ -200,6 +205,7 @@ class Typechecker(Visitor):
         if e.type is DEFAULT_TYPE:           return DEFAULT_TYPE
         if isinstance(e.type, syntax.TBag):  return e.type.t
         if isinstance(e.type, syntax.TSet):  return e.type.t
+        if isinstance(e.type, syntax.TList): return e.type.t
         self.report_err(e, "expression has non-collection type {}".format(e.type))
         return DEFAULT_TYPE
 
@@ -315,8 +321,7 @@ class Typechecker(Visitor):
             self.ensure_type(e.e1, t)
             e.type = BOOL
         elif e.op in ["+", "-"]:
-            if e.e1.type in [INT, LONG]:
-                self.ensure_numeric(e.e1)
+            if is_numeric(e.e1.type):
                 self.ensure_numeric(e.e2)
                 e.type = self.numeric_lub(e.e1.type, e.e2.type)
             else:
@@ -324,7 +329,7 @@ class Typechecker(Visitor):
                 t2 = self.get_collection_type(e.e2)
                 if t1 != t2:
                     self.report_err(e, "cannot concat {} and {}".format(pprint(e.e1.type), pprint(e.e2.type)))
-                e.type = syntax.TBag(t1)
+                e.type = e.e1.type
         else:
             raise NotImplementedError(e.op)
 
@@ -364,14 +369,25 @@ class Typechecker(Visitor):
 
     def visit_ESingleton(self, e):
         self.visit(e.e)
-        e.type = syntax.TBag(e.e.type)
+        e.type = syntax.TList(e.e.type)
+
+    def visit_EListGet(self, e):
+        self.visit(e.e)
+        if isinstance(e.e.type, syntax.TList):
+            e.type = e.e.type.t
+        else:
+            e.type = DEFAULT_TYPE
+            if e.e.type is not DEFAULT_TYPE:
+                self.report_err(e, "cannot get element from non-list")
+        self.visit(e.index)
+        self.ensure_type(e.index, INT, "list index must be an Int")
 
     def visit_EListComprehension(self, e):
         with self.scope():
             for clause in e.clauses:
                 self.visit(clause)
             self.visit(e.e)
-        e.type = syntax.TBag(e.e.type)
+        e.type = syntax.TList(e.e.type)
 
     def visit_EMakeRecord(self, e):
         fields = []
@@ -471,7 +487,14 @@ class Typechecker(Visitor):
         elem_type = self.get_collection_type(e.e)
         e.f.arg.type = elem_type
         self.visit(e.f)
-        e.type = syntax.TBag(e.f.body.type)
+        if isinstance(e.e.type, syntax.TSet):
+            # Sets might not have distinct elements after the map transform.
+            # Consider e.g. `map {\x -> 1} my_set`.
+            e.type = syntax.TBag(e.f.body.type)
+        elif is_collection(e.e.type):
+            e.type = type(e.e.type)(e.f.body.type)
+        else:
+            e.type = DEFAULT_TYPE
 
     def visit_EFilter(self, e):
         self.visit(e.e)
@@ -479,10 +502,7 @@ class Typechecker(Visitor):
         e.p.arg.type = elem_type
         self.visit(e.p)
         self.ensure_type(e.p.body, BOOL)
-        if isinstance(e.e.type, syntax.TSet):
-            e.type = syntax.TSet(self.get_collection_type(e.e))
-        else:
-            e.type = syntax.TBag(self.get_collection_type(e.e))
+        e.type = e.e.type
 
     def visit_EMakeMap(self, e):
         self.visit(e.e)
@@ -575,6 +595,23 @@ class Typechecker(Visitor):
                 self.report_err(s, "add takes exactly 1 argument")
             if len(s.args) > 0:
                 self.ensure_type(s.args[0], elem_type)
+        elif s.func in ("add_front", "add_back"):
+            if isinstance(s.target.type, syntax.TList):
+                elem_type = s.target.type.t
+                if len(s.args) != 1:
+                    self.report_err(s, "{f} takes exactly 1 argument".format(f=s.func))
+                if len(s.args) > 0:
+                    self.ensure_type(s.args[0], elem_type)
+            else:
+                if s.target.type is not DEFAULT_TYPE:
+                    self.report_err(s, "target must be a list")
+        elif s.func in ("remove_front", "remove_back"):
+            if isinstance(s.target.type, syntax.TList):
+                if len(s.args) != 0:
+                    self.report_err(s, "{f} does not take arguments".format(f=s.func))
+            else:
+                if s.target.type is not DEFAULT_TYPE:
+                    self.report_err(s, "target must be a list")
         elif s.func == "remove":
             elem_type = self.get_collection_type(s.target)
             if len(s.args) != 1:

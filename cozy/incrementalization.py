@@ -28,6 +28,14 @@ def _delta_form(res : { str : syntax.Exp }, op : syntax.Stm) -> { str : syntax.E
         update = _rewriter(op.target)
         if op.func == "add":
             update(res, lambda old: syntax.EBinOp(old, "+", syntax.ESingleton(op.args[0]).with_type(old.type)).with_type(old.type))
+        elif op.func == "add_back":
+            update(res, lambda old: syntax.EBinOp(old, "+", syntax.ESingleton(op.args[0]).with_type(old.type)).with_type(old.type))
+        elif op.func == "add_front":
+            update(res, lambda old: syntax.EBinOp(syntax.ESingleton(op.args[0]).with_type(old.type), "+", old).with_type(old.type))
+        elif op.func == "remove_back":
+            update(res, lambda old: target_syntax.EDropBack(old).with_type(old.type))
+        elif op.func == "remove_front":
+            update(res, lambda old: target_syntax.EDropFront(old).with_type(old.type))
         elif op.func == "remove":
             update(res, lambda old: syntax.EBinOp(old, "-", syntax.ESingleton(op.args[0]).with_type(old.type)).with_type(old.type))
         else:
@@ -131,13 +139,15 @@ def sketch_update(
         return code
 
     t = lval.type
-    if isinstance(t, syntax.TBag):
+    if isinstance(t, syntax.TBag) or isinstance(t, syntax.TSet):
         to_add = make_subgoal(syntax.EBinOp(new_value, "-", old_value).with_type(t))
         to_del = make_subgoal(syntax.EBinOp(old_value, "-", new_value).with_type(t))
         v = fresh_var(t.t)
         stm = syntax.seq([
             syntax.SForEach(v, to_del, syntax.SCall(lval, "remove", [v])),
             syntax.SForEach(v, to_add, syntax.SCall(lval, "add", [v]))])
+    elif isinstance(t, syntax.TList):
+        raise NotImplementedError()
     elif is_numeric(t):
         change = make_subgoal(syntax.EBinOp(new_value, "-", old_value).with_type(t))
         stm = syntax.SAssign(lval, syntax.EBinOp(lval, "+", change).with_type(t))

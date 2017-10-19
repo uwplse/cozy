@@ -164,6 +164,8 @@ def construct_value(t : Type) -> Exp:
         e = EStr("")
     elif isinstance(t, TBag):
         e = EEmptyList()
+    elif isinstance(t, TList):
+        e = EEmptyList()
     elif isinstance(t, TTuple):
         e = ETuple(tuple(construct_value(tt) for tt in t.ts))
     elif isinstance(t, TRecord):
@@ -242,8 +244,11 @@ def make_handle(stk):
     addr = stk.pop()
     stk.append(Handle(addr, value))
 
-def make_singleton(stk):
+def make_singleton_bag(stk):
     stk.append(Bag((stk.pop(),)))
+
+def make_singleton_list(stk):
+    stk.append((stk.pop(),))
 
 def withalteredvalue(stk):
     nv = stk.pop()
@@ -419,6 +424,23 @@ def swp(stk):
 def drop(stk):
     stk.pop()
 
+def drop_front(stk):
+    l = stk.pop()
+    stk.append(l[1:])
+
+def drop_back(stk):
+    l = stk.pop()
+    stk.append(l[:-1])
+
+def list_index(default):
+    def _list_index(stk):
+        i = stk.pop()
+        l = stk.pop()
+        stk.append(
+            l[i] if i >= 0 and i < len(l) else
+            default)
+    return _list_index
+
 _EMPTY_BAG = Bag()
 def _compile(e, env : {str:int}, out, bind_callback):
     if isinstance(e, EVar):
@@ -454,7 +476,10 @@ def _compile(e, env : {str:int}, out, bind_callback):
         out.append(push_empty_list)
     elif isinstance(e, ESingleton):
         _compile(e.e, env, out, bind_callback=bind_callback)
-        out.append(make_singleton)
+        if isinstance(e.type, TList):
+            out.append(make_singleton_list)
+        else:
+            out.append(make_singleton_bag)
     elif isinstance(e, EHandle):
         _compile(e.addr, env, out, bind_callback=bind_callback)
         _compile(e.value, env, out, bind_callback=bind_callback)
@@ -570,6 +595,16 @@ def _compile(e, env : {str:int}, out, bind_callback):
             out.append(binaryop_in(e1type))
         else:
             raise NotImplementedError(e.op)
+    elif isinstance(e, EListGet):
+        _compile(e.e, env, out, bind_callback=bind_callback)
+        _compile(e.index, env, out, bind_callback=bind_callback)
+        out.append(list_index(mkval(e.type)))
+    elif isinstance(e, EDropFront):
+        _compile(e.e, env, out, bind_callback=bind_callback)
+        out.append(drop_front)
+    elif isinstance(e, EDropBack):
+        _compile(e.e, env, out, bind_callback=bind_callback)
+        out.append(drop_back)
     elif isinstance(e, EFilter):
         _compile(e.e, env, out, bind_callback=bind_callback)
         box = [None]

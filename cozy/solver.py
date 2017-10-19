@@ -29,7 +29,7 @@ def ite(ty : Type, cond : z3.AstRef, then_branch, else_branch):
     assert isinstance(ctx, z3.Context)
     if decideable(ty):
         return z3.If(cond, then_branch, else_branch, ctx)
-    elif isinstance(ty, TBag):
+    elif isinstance(ty, TBag) or isinstance(ty, TList):
         assert isinstance(then_branch, tuple)
         assert isinstance(else_branch, tuple)
         # print("CONSTRUCTING SYMBOLIC UNION [cond=({})]".format(cond))
@@ -98,6 +98,9 @@ def ite(ty : Type, cond : z3.AstRef, then_branch, else_branch):
     else:
         raise NotImplementedError(pprint(ty))
 
+def grid(rows, cols):
+    return [[None for c in range(cols)] for r in range(rows)]
+
 class ToZ3(Visitor):
     def __init__(self, z3ctx, z3solver):
         self.ctx = z3ctx
@@ -129,6 +132,63 @@ class ToZ3(Visitor):
             assert isinstance(e1, z3.AstRef), "{}".format(repr(e1))
             assert isinstance(e2, z3.AstRef), "{}".format(repr(e2))
             return e1 == e2
+        elif isinstance(t, TList):
+            elem_type = t.t
+            lhs_mask, lhs_elems = e1
+            rhs_mask, rhs_elems = e2
+
+            # # pad to square
+            # if len(lhs_mask) < len(rhs_mask):
+            #     lhs_elems = lhs_elems + [self.mkval(elem_type)] * (len(rhs_mask) - len(lhs_mask))
+            #     lhs_mask  = lhs_mask  + [self.false] * (len(rhs_mask) - len(lhs_mask))
+            # elif len(rhs_mask) < len(lhs_mask):
+            #     rhs_elems = rhs_elems + [self.mkval(elem_type)] * (len(lhs_mask) - len(rhs_mask))
+            #     rhs_mask  = rhs_mask  + [self.false] * (len(lhs_mask) - len(rhs_mask))
+            # assert len(lhs_mask) == len(rhs_mask)
+            # assert len(lhs_elems) == len(rhs_elems)
+
+            # eqs[i][j] := lhs[i] == rhs[j]
+            eqs = grid(len(lhs_mask), len(rhs_mask))
+            for (row, l) in enumerate(lhs_elems):
+                for (col, r) in enumerate(rhs_elems):
+                    eqs[row][col] = self.eq(elem_type, l, r, env, deep=deep)
+
+            # res[i][j] := lhs[i:] ?= rhs[i:]
+            res = grid(len(lhs_mask) + 1, len(rhs_mask) + 1)
+            # . . . v
+            # . . . v
+            # . . . v
+            # > > > T
+            res[len(lhs_mask)][len(rhs_mask)] = self.true
+            for row in reversed(range(len(lhs_mask))):
+                res[row][len(rhs_mask)] = z3.And(
+                    res[row+1][len(rhs_mask)],
+                    z3.Not(lhs_mask[row], self.ctx),
+                    self.ctx)
+            for col in reversed(range(len(rhs_mask))):
+                res[len(lhs_mask)][col] = z3.And(
+                    res[len(lhs_mask)][col+1],
+                    z3.Not(rhs_mask[col], self.ctx),
+                    self.ctx)
+
+            for row in reversed(range(len(lhs_mask))):
+                for col in reversed(range(len(rhs_mask))):
+                    lhs_m = lhs_mask[row]
+                    rhs_m = rhs_mask[col]
+                    res[row][col] = (
+                        ite(BOOL, lhs_m,
+                            ite(BOOL, rhs_m,
+                                # both masks are true
+                                z3.And(eqs[row][col], res[row+1][col+1], self.ctx),
+                                # only lhs mask: skip rhs
+                                res[row][col+1]),
+                            ite(BOOL, rhs_m,
+                                # only rhs mask: skip lhs
+                                res[row+1][col],
+                                # neither: skip both
+                                res[row+1][col+1])))
+            return res[0][0]
+
         elif isinstance(t, TBag) or isinstance(t, TSet):
             elem_type = t.t
             lhs_mask, lhs_elems = e1
@@ -443,7 +503,7 @@ class ToZ3(Visitor):
         elif e.op == "*":
             return v1 * v2
         elif e.op == "+":
-            if isinstance(e.type, TBag):
+            if isinstance(e.type, TBag) or isinstance(e.type, TList):
                 return (v1[0] + v2[0], v1[1] + v2[1])
             elif isinstance(e.type, TSet):
                 return self.visit(EUnaryOp(UOp.Distinct, EBinOp(e.e1, "+", e.e2).with_type(TBag(e.type.t))).with_type(TBag(e.type.t)), env)
@@ -463,6 +523,35 @@ class ToZ3(Visitor):
         x = self.visit_clauses(e.clauses, e.e, env)
         # print("{} ==> {}".format(pprint(e), x))
         return self.visit_clauses(e.clauses, e.e, env)
+    def visit_EListGet(self, e, env):
+        def f(l, idx):
+            mask, elems = l
+            if not mask:
+                return self.mkval(e.type)
+            m = mask[0]
+            x = elems[0]
+            return ite(e.type, m,
+                ite(e.type, self.eq(INT, idx, self.int_zero, env),
+                    x,
+                    f((mask[1:], elems[1:]), idx - self.int_one)),
+                f((mask[1:], elems[1:]), idx))
+        return f(self.visit(e.e, env), self.visit(e.index, env))
+    # def fold(self, out_type, bag, f, init):
+    #     res = init
+    #     mask, elems = bag
+    #     for (i, (m, x)) in enumerate(reversed(list(zip(mask, elems)))):
+    #         res = ite(out_type, m, f(x, res), res)
+    #     return res
+    def visit_EDropFront(self, e, env):
+        def drop1(mask, elems):
+            if not mask:
+                return ([], [])
+            m = mask[0]
+            x = elems[0]
+            mask = mask[1:]
+            elems = elems[1:]
+            return ite(e.type, m, (mask, elems), drop1(mask, elems))
+        return drop1(*self.visit(e.e, env))
     def visit_EMap(self, e, env):
         bag_mask, bag_elems = self.visit(e.e, env)
         res_elems = []
@@ -626,7 +715,7 @@ class ToZ3(Visitor):
             for i in range(1, len(mask)):
                 solver.add(z3.Implies(mask[i], self.distinct(type.t, *(elems[:(i+1)])), ctx))
             return res
-        elif isinstance(type, TBag):
+        elif isinstance(type, TBag) or isinstance(type, TList):
             mask = [self.mkvar(collection_depth, BOOL) for i in range(collection_depth)]
             elems = [self.mkvar(collection_depth, type.t) for i in range(collection_depth)]
             # symmetry breaking
@@ -706,12 +795,14 @@ def satisfy(e, vars = None, funcs = None, collection_depth : int = 2, validate_m
                 return "a" * i
             elif type == BOOL:
                 return bool(model.eval(value, model_completion=True))
-            elif isinstance(type, TBag) or isinstance(type, TSet):
+            elif isinstance(type, TBag) or isinstance(type, TSet) or isinstance(type, TList):
                 mask, elems = value
                 real_val = []
                 for i in range(len(elems)):
                     if reconstruct(model, mask[i], BOOL):
                         real_val.append(reconstruct(model, elems[i], type.t))
+                if isinstance(type, TList):
+                    return tuple(real_val)
                 return evaluation.Bag(real_val)
             elif isinstance(type, TMap):
                 default = reconstruct(model, value["default"], type.v)

@@ -267,6 +267,7 @@ def make_parser():
                | exp KW_OR exp
                | exp OP_IMPLIES exp
                | exp OP_QUESTION exp OP_COLON exp
+               | exp OP_OPEN_BRACKET exp OP_CLOSE_BRACKET
                | KW_NOT exp
                | OP_MINUS exp
                | exp KW_IN exp
@@ -332,6 +333,8 @@ def make_parser():
         else:
             if p[2] == "?":
                 p[0] = syntax.ECond(p[1], p[3], p[5])
+            elif p[2] == "[":
+                p[0] = syntax.EListGet(p[1], p[3])
             elif p[1] == "[":
                 p[0] = syntax.EListComprehension(p[2], p[4])
             elif p[2] == "(":

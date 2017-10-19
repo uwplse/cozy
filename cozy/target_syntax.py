@@ -50,6 +50,10 @@ EFilter  = declare_case(Exp, "EFilter",  ["e", "p"])
 EMap     = declare_case(Exp, "EMap",     ["e", "f"])
 EFlatMap = declare_case(Exp, "EFlatMap", ["e", "f"])
 
+# List transformations
+EDropFront = declare_case(Exp, "EDropFront", ["e"])
+EDropBack  = declare_case(Exp, "EDropBack",  ["e"])
+
 # Handle transformations
 EWithAlteredValue = declare_case(Exp, "EWithAlteredValue", ["handle", "new_value"])
 
