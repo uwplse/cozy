@@ -8,7 +8,7 @@ from cozy.invariant_preservation import check_ops_preserve_invariants
 def get_invariant_preservation_errs(spec : str):
     spec = parse(spec)
     errs = typecheck(spec)
-    assert not errs
+    assert not errs, str(errs)
     spec = desugar(spec)
     return check_ops_preserve_invariants(spec)
     assert errs

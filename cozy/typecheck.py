@@ -241,7 +241,8 @@ class Typechecker(Visitor):
         elif e.op == syntax.UOp.The:
             e.type = self.get_collection_type(e.e)
         elif e.op in [syntax.UOp.Any, syntax.UOp.All]:
-            self.ensure_type(e.e, syntax.TBag(BOOL))
+            t = self.get_collection_type(e.e)
+            self.lub(e, t, BOOL, "{op} must be over collection of bools".format(op=e.op))
             e.type = BOOL
         elif e.op == syntax.UOp.Length:
             self.get_collection_type(e.e)
