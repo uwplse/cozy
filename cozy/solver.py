@@ -137,16 +137,6 @@ class ToZ3(Visitor):
             lhs_mask, lhs_elems = e1
             rhs_mask, rhs_elems = e2
 
-            # # pad to square
-            # if len(lhs_mask) < len(rhs_mask):
-            #     lhs_elems = lhs_elems + [self.mkval(elem_type)] * (len(rhs_mask) - len(lhs_mask))
-            #     lhs_mask  = lhs_mask  + [self.false] * (len(rhs_mask) - len(lhs_mask))
-            # elif len(rhs_mask) < len(lhs_mask):
-            #     rhs_elems = rhs_elems + [self.mkval(elem_type)] * (len(lhs_mask) - len(rhs_mask))
-            #     rhs_mask  = rhs_mask  + [self.false] * (len(lhs_mask) - len(rhs_mask))
-            # assert len(lhs_mask) == len(rhs_mask)
-            # assert len(lhs_elems) == len(rhs_elems)
-
             # eqs[i][j] := lhs[i] == rhs[j]
             eqs = grid(len(lhs_mask), len(rhs_mask))
             for (row, l) in enumerate(lhs_elems):
