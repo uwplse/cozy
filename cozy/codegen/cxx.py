@@ -458,6 +458,9 @@ class CxxPrinter(common.Visitor):
             return self.for_each(iterable.e, lambda x: SIf(iterable.p.apply_to(x), body(x), SNoOp()), indent=indent)
         elif isinstance(iterable, EBinOp) and iterable.op == "+":
             return self.for_each(iterable.e1, body, indent=indent) + self.for_each(iterable.e2, body, indent=indent)
+        elif isinstance(iterable, EBinOp) and iterable.op == "-":
+            setup, e = self.visit(EBinOp(iterable.e1, "-", iterable.e2).with_type(library.TNativeList(iterable.type.t)), indent)
+            return setup + self.for_each(EEscape(e, (), ()).with_type(iterable.type), body, indent)
         elif isinstance(iterable, EFlatMap):
             # TODO: properly handle breaks inside body
             # TODO: indents get messed up here
