@@ -269,6 +269,7 @@ def make_parser():
                | OP_MINUS exp
                | exp KW_IN exp
                | KW_UNIQUE exp
+               | KW_DISTINCT exp
                | KW_EMPTY exp
                | KW_THE exp
                | KW_MIN exp
