@@ -67,7 +67,7 @@ def _delta_form(res : { str : syntax.Exp }, op : syntax.Stm) -> { str : syntax.E
     return res
 
 def _update_handle(e : syntax.Exp, handle : syntax.EVar, change):
-    if isinstance(e.type, syntax.TBag):
+    if isinstance(e.type, syntax.TBag) or isinstance(e.type, syntax.TList):
         return target_syntax.EMap(e, mk_lambda(e.type.t, lambda x: _update_handle(x, handle, change))).with_type(e.type)
     elif isinstance(e.type, syntax.THandle):
         if e.type == handle.type:
@@ -146,8 +146,8 @@ def sketch_update(
         stm = syntax.seq([
             syntax.SForEach(v, to_del, syntax.SCall(lval, "remove", [v])),
             syntax.SForEach(v, to_add, syntax.SCall(lval, "add", [v]))])
-    elif isinstance(t, syntax.TList):
-        raise NotImplementedError()
+    # elif isinstance(t, syntax.TList):
+    #     raise NotImplementedError()
     elif is_numeric(t):
         change = make_subgoal(syntax.EBinOp(new_value, "-", old_value).with_type(t))
         stm = syntax.SAssign(lval, syntax.EBinOp(lval, "+", change).with_type(t))

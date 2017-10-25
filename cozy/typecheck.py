@@ -175,9 +175,10 @@ class Typechecker(Visitor):
     def check_assignment(self, node, ltype, rtype):
         if ltype == rtype or ltype is DEFAULT_TYPE or rtype is DEFAULT_TYPE:
             return
-        if isinstance(ltype, syntax.TBag) and isinstance(rtype, syntax.TBag):
-            return
-        self.report_err(node, "cannot assign {} to a {}".format(pprint(ltype), pprint(rtype)))
+        for ct in (syntax.TBag, syntax.TSet, syntax.TList):
+            if isinstance(ltype, ct) and isinstance(rtype, ct):
+                return
+        self.report_err(node, "cannot assign {} to a {}".format(pprint(rtype), pprint(ltype)))
 
     def ensure_numeric(self, e):
         if e.type is DEFAULT_TYPE:
@@ -190,6 +191,8 @@ class Typechecker(Visitor):
             return t1
         if is_numeric(t1) and is_numeric(t2):
             return self.numeric_lub(t1, t2)
+        if isinstance(t1, syntax.TList) and isinstance(t2, syntax.TList):
+            return syntax.TList(t1.t)
         if is_collection(t1) and is_collection(t2):
             return syntax.TBag(t1.t)
         self.report_err(src, "cannot unify types {} and {} ({})".format(pprint(t1), pprint(t2), explanation))

@@ -52,6 +52,10 @@ class Library(object):
             x = fresh_var(ty.t)
             for t in self.impls(x, EAll((assumptions, EIn(x, e)))):
                 yield TNativeList(t)
+        elif type(ty) is TList:
+            if isinstance(ty.t, THandle) and valid(EImplies(assumptions, EUnaryOp(UOp.AreUnique, e).with_type(BOOL)), model_callback=print):
+                yield TIntrusiveLinkedList(ty.t)
+            yield TNativeList(ty.t)
         elif type(ty) is TTuple:
             for refinements in cross_product([self.impls(ETupleGet(e, i).with_type(ty.ts[i]), assumptions) for i in range(len(ty.ts))]):
                 yield TTuple(refinements)
@@ -112,7 +116,7 @@ class TVectorMap(TMap):
     def get_key(self, m : Exp, k : Exp):
         return EVectorGet(m, self.to_index(k))
 
-class TIntrusiveLinkedList(TBag):
+class TIntrusiveLinkedList(TList):
     def __init__(self, t):
         super().__init__(t)
         self.next_ptr = fresh_name("next_ptr")
@@ -155,6 +159,7 @@ class TIntrusiveLinkedList(TBag):
             SAssign(prev, self.null)])
     def for_each(self, id, iter, body):
         assert iter.type == self
+        # assert isinstance(iter, EVar), pprint(iter)
         iter = shallow_copy(iter).with_type(self.rep_type())
         assert id.type == self.t
         next = fresh_name("next")
@@ -173,6 +178,7 @@ class TIntrusiveLinkedList(TBag):
     def make_empty(self):
         return ENull().with_type(self)
     def construct_concrete(self, e : Exp, out : Exp):
+        print(pprint(e))
         if self == out.type:
             out = shallow_copy(out).with_type(self.rep_type())
         x = fresh_var(self.t, "x")
@@ -184,7 +190,7 @@ class TIntrusiveLinkedList(TBag):
                 SIf(ENot(equal(out, self.null)), SAssign(EGetField(out, self.prev_ptr).with_type(self.t), x), SNoOp()),
                 SAssign(out, x)]))])
 
-class TNativeList(TBag):
+class TNativeList(TList):
     def __init__(self, t):
         super().__init__(t)
 

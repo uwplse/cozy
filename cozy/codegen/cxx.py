@@ -228,6 +228,26 @@ class CxxPrinter(common.Visitor):
     def initialize_native_map(self, e) -> Stm:
         return SNoOp() # C++ does default-initialization
 
+    def visit_EListGet(self, e, indent):
+        if e.index == ENum(0):
+            return self.find_one(e.e, indent)
+        raise NotImplementedError(e)
+
+    def visit_ENative(self, e, indent):
+        assert e.e == ENum(0)
+        v = fresh_name("tmp")
+        decl = self.visit(e.type, v)
+        return ("{}{};\n".format(indent, decl), v)
+
+    def visit_EMakeRecord(self, e, indent):
+        t = self.visit(e.type, "")
+        setups, exps = zip(*[self.visit(ee, indent) for (f, ee) in e.fields])
+        return ("".join(setups), "{}{{ {} }}".format(t, ", ".join(exps)))
+
+    def visit_EHandle(self, e, indent):
+        assert e.addr == ENum(0), repr(e)
+        return self.visit(ENull().with_type(e.type), indent)
+
     def state_exp(self, lval):
         if isinstance(lval, EVar):
             return self.state_exps[lval.id]
@@ -398,7 +418,7 @@ class CxxPrinter(common.Visitor):
                             seq([SAssign(res, EBool(True).with_type(t)), SEscapeBlock(label)]),
                             SNoOp())))]), indent)
                 return (setup, res.id)
-        elif op == "-" and isinstance(e.type, TBag):
+        elif op == "-" and (isinstance(e.type, TBag) or isinstance(e.type, TList) or isinstance(e.type, TSet)):
             t = e.type
             if type(t) is TBag:
                 t = library.TNativeList(t.t)

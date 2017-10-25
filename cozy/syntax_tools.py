@@ -125,6 +125,9 @@ class PrettyPrinter(common.Visitor):
     def visit_TSet(self, s):
         return "Set<{}>".format(self.visit(s.t))
 
+    def visit_TList(self, s):
+        return "List<{}>".format(self.visit(s.t))
+
     def visit_TMap(self, m):
         return "Map<{}, {}>".format(self.visit(m.k), self.visit(m.v))
 

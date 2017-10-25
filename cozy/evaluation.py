@@ -129,6 +129,9 @@ def cmp(t, v1, v2, deep=False):
             stk.append((t.v, v1.default, v2.default))
         elif isinstance(t, TTuple):
             stk.extend(reversed([(tt, vv1, vv2) for (tt, vv1, vv2) in zip(t.ts, v1, v2)]))
+        elif isinstance(t, TList):
+            stk.extend(reversed([(t.t, vv1, vv2) for (vv1, vv2) in zip(v1, v2)]))
+            stk.append((INT, len(v1), len(v2)))
         elif isinstance(t, TRecord):
             stk.extend(reversed([(ft, v1[f], v2[f]) for (f, ft) in t.fields]))
         else:
@@ -263,6 +266,9 @@ def get_handle_value(stk):
 
 def iterable_to_bag(stk):
     stk.append(Bag(stk.pop()))
+
+def iterable_to_list(stk):
+    stk.append(tuple(stk.pop()))
 
 def read_map(stk):
     k = stk.pop()
@@ -654,7 +660,12 @@ def _compile(e, env : {str:int}, out, bind_callback):
                 ops.append(append_to_result(res_idx))
             return ops
         out.append(do_map)
-        out.append(iterable_to_bag)
+        if isinstance(e.type, TList):
+            out.append(iterable_to_list)
+        elif isinstance(e.type, TBag):
+            out.append(iterable_to_bag)
+        else:
+            raise NotImplementedError(e.type)
     elif isinstance(e, EFlatMap):
         _compile(EMap(e.e, e.f).with_type(TBag(e.type.t)), env, out, bind_callback=bind_callback)
         out.append(do_concat)
