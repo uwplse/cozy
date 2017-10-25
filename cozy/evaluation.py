@@ -59,6 +59,8 @@ class Bag(object):
     def __add__(self, other):
         return Bag(self.elems + other.elems)
     def __eq__(self, other):
+        if not isinstance(other, Bag):
+            return False
         return sorted(self.elems) == sorted(other.elems)
     def __lt__(self, other):
         return sorted(self.elems) < sorted(other.elems)
