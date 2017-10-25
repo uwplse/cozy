@@ -459,8 +459,9 @@ class CxxPrinter(common.Visitor):
         elif isinstance(iterable, EBinOp) and iterable.op == "+":
             return self.for_each(iterable.e1, body, indent=indent) + self.for_each(iterable.e2, body, indent=indent)
         elif isinstance(iterable, EBinOp) and iterable.op == "-":
-            setup, e = self.visit(EBinOp(iterable.e1, "-", iterable.e2).with_type(library.TNativeList(iterable.type.t)), indent)
-            return setup + self.for_each(EEscape(e, (), ()).with_type(iterable.type), body, indent)
+            t = library.TNativeList(iterable.type.t)
+            setup, e = self.visit(EBinOp(iterable.e1, "-", iterable.e2).with_type(t), indent)
+            return setup + self.for_each(EEscape(e, (), ()).with_type(t), body, indent)
         elif isinstance(iterable, EFlatMap):
             # TODO: properly handle breaks inside body
             # TODO: indents get messed up here
@@ -620,8 +621,9 @@ class CxxPrinter(common.Visitor):
 
     def visit_SAssign(self, s, indent=""):
         if alpha_equivalent(simplify(s.lhs), simplify(s.rhs)):
-            return self.visit(SNoOp(), indent)
-        stm = self.construct_concrete(s.lhs.type, s.rhs, s.lhs)
+            stm = SNoOp()
+        else:
+            stm = self.construct_concrete(s.lhs.type, s.rhs, s.lhs)
         return self.visit(stm, indent)
 
     def visit_SDecl(self, s, indent=""):
