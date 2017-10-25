@@ -59,8 +59,10 @@ class CxxPrinter(common.Visitor):
     def visit_TNativeSet(self, t, name):
         return "std::unordered_set< {} > {}".format(self.visit(t.t, ""), name)
 
-    def visit_TBag(self, t, name):
-        return self.visit(t.rep_type(), name)
+    def visit_Type(self, t, name):
+        if hasattr(t, "rep_type"):
+            return self.visit(t.rep_type(), name)
+        raise NotImplementedError(t)
 
     def visit_TRecord(self, t, name):
         return "{} {}".format(self.typename(t), name)
@@ -136,7 +138,7 @@ class CxxPrinter(common.Visitor):
         return s
 
     def visit_ENull(self, e, indent=""):
-        return ("", "NULL")
+        return ("", "nullptr")
 
     def visit_EBool(self, e, indent=""):
         return ("", "true" if e.val else "false")
