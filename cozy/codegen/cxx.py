@@ -512,7 +512,7 @@ class CxxPrinter(common.Visitor):
             SIf(EBinOp(
                     first,
                     BOp.Or,
-                    EBinOp(f.apply_to(x), op, f.apply_to(out))),
+                    EBinOp(f.apply_to(x), op, f.apply_to(out)).with_type(BOOL)).with_type(BOOL),
                 seq([SAssign(first, F), SAssign(out, x)]),
                 SNoOp()))
         return (self.visit(seq([decl1, decl2, find]), indent), out.id)
