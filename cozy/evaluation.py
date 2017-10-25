@@ -636,7 +636,7 @@ def _compile(e, env : {str:int}, out, bind_callback):
         with extend(env, e.f.arg.id, lambda: box[0]):
             _compile(e.f.body, env, body, bind_callback=bind_callback)
 
-        keytype = e.f.arg.type
+        keytype = e.f.body.type
 
         def initialize(stk):
             bag = stk.pop()
