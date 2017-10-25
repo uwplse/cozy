@@ -227,7 +227,8 @@ def make_parser():
     parsetools.multi(locals(), "invariants", "invariant")
 
     precedence = (
-        ("nonassoc", "KW_ELSE"),
+        ("nonassoc", "KW_ELSE", "OP_COLON"),
+        ("left", "OP_SEMICOLON"),
         ("left", "OP_COMMA"),
         ("left", "OP_QUESTION"),
         ("left", "OP_IMPLIES"),
@@ -235,9 +236,10 @@ def make_parser():
         ("left", "OP_EQ", "OP_NE", "OP_LT", "OP_LE", "OP_GT", "OP_GE"),
         ("left", "OP_PLUS", "OP_MINUS"),
         ("left", "KW_IN"),
-        ("left", "KW_NOT", "KW_UNIQUE", "KW_EMPTY", "KW_EXISTS", "KW_THE", "KW_MIN", "KW_MAX", "KW_SUM", "KW_ANY", "KW_ALL", "KW_LEN"),
+        ("left", "KW_NOT", "KW_DISTINCT", "KW_UNIQUE", "KW_EMPTY", "KW_EXISTS", "KW_THE", "KW_MIN", "KW_MAX", "KW_ARGMIN", "KW_ARGMAX", "KW_SUM", "KW_ANY", "KW_ALL", "KW_LEN"),
         ("left", "OP_OPEN_PAREN"),
-        ("left", "OP_DOT"))
+        ("left", "OP_DOT"),
+        ("left", "KW_OP", "KW_QUERY", "KW_PRIVATE"))
 
     def p_exp_strlit(p):
         """exp : STRINGLITERAL"""
@@ -381,21 +383,39 @@ def make_parser():
 
     parsetools.multi(locals(), "methods", "method")
 
-    def p_stm(p):
-        """stm : accesschain OP_OPEN_PAREN exp_list OP_CLOSE_PAREN OP_SEMICOLON
-               | accesschain OP_ASSIGN exp OP_SEMICOLON
-               | KW_IF exp OP_OPEN_BRACE stm OP_CLOSE_BRACE
-               | KW_IF exp OP_OPEN_BRACE stm OP_CLOSE_BRACE KW_ELSE OP_OPEN_BRACE stm OP_CLOSE_BRACE
-               | stm stm"""
+    def p_maybeelse(p):
+        """maybeelse :
+                     | KW_ELSE block"""
+        if len(p) > 1:
+            p[0] = p[2]
+        else:
+            p[0] = syntax.SNoOp()
+
+    def p_block(p):
+        """block : OP_OPEN_BRACE stm OP_CLOSE_BRACE"""
+        p[0] = p[2]
+
+    def p_basicstm(p):
+        """basicstm : accesschain OP_OPEN_PAREN exp_list OP_CLOSE_PAREN OP_SEMICOLON
+                    | accesschain OP_ASSIGN exp OP_SEMICOLON
+                    | KW_IF exp block maybeelse"""
         if p[1] == "if":
-            else_expr = p[8] if len(p) > 6 else syntax.SNoOp()
-            p[0] = syntax.SIf(p[2], p[4], else_expr)
+            p[0] = syntax.SIf(p[2], p[3], p[4])
         elif p[2] == "(":
             p[0] = syntax.SCall(p[1].e, p[1].f, p[3])
-        elif isinstance(p[1], syntax.Stm):
-            p[0] = syntax.SSeq(p[1], p[2])
         else:
             p[0] = syntax.SAssign(p[1], p[3])
+
+    def p_stm(p):
+        """stm :
+               | basicstm stm"""
+        if len(p) > 1:
+            if isinstance(p[2], syntax.SNoOp):
+                p[0] = p[1]
+            else:
+                p[0] = syntax.SSeq(p[1], p[2])
+        else:
+            p[0] = syntax.SNoOp()
 
     def p_empty(p):
         'empty :'
