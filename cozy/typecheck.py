@@ -37,7 +37,16 @@ def is_numeric(t):
     return t in (INT, LONG)
 
 def is_collection(t):
-    return type(t) in (syntax.TBag, syntax.TSet, syntax.TList)
+    return any(isinstance(t, ct) for ct in (syntax.TBag, syntax.TSet, syntax.TList))
+
+def to_abstract(t):
+    if isinstance(t, syntax.TBag):
+        return syntax.TBag(t.t)
+    if isinstance(t, syntax.TSet):
+        return syntax.TSet(t.t)
+    if isinstance(t, syntax.TList):
+        return syntax.TList(t.t)
+    return t
 
 class Typechecker(Visitor):
 
@@ -246,7 +255,7 @@ class Typechecker(Visitor):
             e.type = BOOL
         elif e.op == syntax.UOp.Distinct:
             t = self.get_collection_type(e.e)
-            e.type = e.e.type
+            e.type = to_abstract(e.e.type)
         elif e.op == syntax.UOp.The:
             e.type = self.get_collection_type(e.e)
         elif e.op in [syntax.UOp.Any, syntax.UOp.All]:
@@ -495,8 +504,9 @@ class Typechecker(Visitor):
             # Consider e.g. `map {\x -> 1} my_set`.
             e.type = syntax.TBag(e.f.body.type)
         elif is_collection(e.e.type):
-            e.type = type(e.e.type)(e.f.body.type)
+            e.type = type(to_abstract(e.e.type))(e.f.body.type)
         else:
+            self.report_err(e, "cannot map over non-collection {}".format(pprint(e.e.type)))
             e.type = DEFAULT_TYPE
 
     def visit_EFilter(self, e):
@@ -505,7 +515,7 @@ class Typechecker(Visitor):
         e.p.arg.type = elem_type
         self.visit(e.p)
         self.ensure_type(e.p.body, BOOL)
-        e.type = e.e.type
+        e.type = to_abstract(e.e.type)
 
     def visit_EMakeMap(self, e):
         self.visit(e.e)
