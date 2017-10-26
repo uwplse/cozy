@@ -53,6 +53,11 @@ class CxxPrinter(common.Visitor):
     def visit_TMap(self, t, name):
         return self.visit(t.rep_type(), name)
 
+    def visit_TList(self, t, name):
+        if type(t) is TList:
+            return self.visit_TNativeList(t, name)
+        return self.visit_Type(t, name)
+
     def visit_TNativeList(self, t, name):
         return "std::vector< {} > {}".format(self.visit(t.t, ""), name)
 
@@ -185,7 +190,7 @@ class CxxPrinter(common.Visitor):
         """
         if hasattr(t, "construct_concrete"):
             return t.construct_concrete(e, out)
-        elif isinstance(t, library.TNativeList) or type(t) is TBag:
+        elif isinstance(t, library.TNativeList) or type(t) is TBag or type(t) is TList:
             x = fresh_var(t.t, "x")
             return SSeq(
                 self.initialize_native_list(out),
@@ -203,7 +208,7 @@ class CxxPrinter(common.Visitor):
                 self.construct_map(t, e, out))
         elif type(t) in [TBool, TInt, TNative, THandle, TLong, TString, TEnum, TTuple, TRecord]:
             return SEscape("{indent}{lhs} = {rhs};\n", ["lhs", "rhs"], [out, e])
-        raise NotImplementedError(t)
+        raise NotImplementedError(t, e, out)
 
     def construct_map(self, t, e, out):
         if isinstance(e, ECond):
@@ -427,15 +432,15 @@ class CxxPrinter(common.Visitor):
             stm = self.visit(SForEach(x, e.e2, SCall(v, "remove", [x])), indent)
             return ("{}{};\n".format(indent, self.visit(v.type, v.id)) + self.visit(self.construct_concrete(v.type, e.e1, v), indent) + stm, v.id)
         elif op == BOp.Or:
-            (s1, r1) = self.visit(e.e1)
-            (s2, r2) = self.visit(e.e2)
+            (s1, r1) = self.visit(e.e1, indent)
+            (s2, r2) = self.visit(e.e2, indent)
             if s2:
                 return self.visit(ECond(e.e1, EBool(True), e.e2).with_type(TBool()), indent)
             else:
                 return (s1, "({} || {})".format(r1, r2))
         elif op == BOp.And:
-            (s1, r1) = self.visit(e.e1)
-            (s2, r2) = self.visit(e.e2)
+            (s1, r1) = self.visit(e.e1, indent)
+            (s2, r2) = self.visit(e.e2, indent)
             if s2:
                 return self.visit(ECond(e.e1, EBool(True), e.e2).with_type(TBool()), indent)
             else:
@@ -557,7 +562,16 @@ class CxxPrinter(common.Visitor):
                 SForEach(x, e.e, SAssign(res, EBinOp(res, "+", x).with_type(type)))]), indent)
             return (setup, res.id)
         elif op == UOp.Empty:
-            raise NotImplementedError()
+            iterable = e.e
+            v = fresh_var(BOOL, "v")
+            label = fresh_name("label")
+            x = fresh_var(iterable.type.t, "x")
+            decl = SDecl(v.id, F)
+            find = SEscapableBlock(label,
+                SForEach(x, iterable, seq([
+                    SAssign(v, T),
+                    SEscapeBlock(label)])))
+            return (self.visit(seq([decl, find]), indent), v.id)
         elif op == UOp.Exists:
             return self.visit(ENot(EUnaryOp(UOp.Empty, e.e).with_type(BOOL)), indent)
         elif op in ("-", UOp.Not):
@@ -682,7 +696,7 @@ class CxxPrinter(common.Visitor):
             v.id)
 
     def visit_SCall(self, call, indent=""):
-        if type(call.target.type) in (library.TNativeList, TBag):
+        if type(call.target.type) in (library.TNativeList, TBag, TList):
             if call.func == "add":
                 setup1, target = self.visit(call.target, indent)
                 setup2, arg = self.visit(call.args[0], indent)
