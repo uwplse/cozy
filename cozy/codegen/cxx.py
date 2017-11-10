@@ -442,7 +442,7 @@ class CxxPrinter(common.Visitor):
             (s1, r1) = self.visit(e.e1, indent)
             (s2, r2) = self.visit(e.e2, indent)
             if s2:
-                return self.visit(ECond(e.e1, EBool(True), e.e2).with_type(TBool()), indent)
+                return self.visit(ECond(e.e1, e.e2, EBool(False)).with_type(TBool()), indent)
             else:
                 return (s1, "({} && {})".format(r1, r2))
         ce1, e1 = self.visit(e.e1, indent)
