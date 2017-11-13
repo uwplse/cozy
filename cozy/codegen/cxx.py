@@ -523,7 +523,7 @@ class CxxPrinter(common.Visitor):
     def visit_EArgMax(self, e, indent=""):
         return self.min_or_max(">", e.e, e.f, indent)
 
-    def visit_EUnaryOp(self, e, indent):
+    def visit_EUnaryOp(self, e, indent=""):
         op = e.op
         if op == UOp.The:
             return self.find_one(e.e, indent=indent)
