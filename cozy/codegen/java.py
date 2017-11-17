@@ -188,6 +188,9 @@ class JavaPrinter(CxxPrinter):
             "double":  "0.0",
             }.get(e.type.name.strip(), "null"))
 
+    def visit_EMove(self, e, indent=""):
+        return self.visit(e.e, indent=indent)
+
     def _eq(self, e1, e2, indent):
         if not self.boxed and self.is_primitive(e1.type):
             return self.visit(EEscape("({e1} == {e2})", ("e1", "e2"), (e1, e2)).with_type(BOOL), indent)
