@@ -469,6 +469,7 @@ def fixup_binders(e : Exp, binders_to_use : [EVar], allow_add=False, throw=False
     return V().visit(e)
 
 COMMUTATIVE_OPERATORS = set(("==", "and", "or", "+"))
+ATTRS_TO_PRESERVE = ("_accel", "_tag")
 
 class FixedBuilder(ExpBuilder):
     def __init__(self, wrapped_builder, binders_to_use, assumptions : Exp):
@@ -481,8 +482,9 @@ class FixedBuilder(ExpBuilder):
                 orig = e
                 # print(hasattr(orig, "_tag"), file=sys.stderr)
                 e = fixup_binders(e, self.binders_to_use)
-                if hasattr(orig, "_tag"):
-                    e._tag = orig._tag
+                for a in ATTRS_TO_PRESERVE:
+                    if hasattr(orig, a):
+                        setattr(e, a, getattr(orig, a))
             except Exception:
                 _on_exp(e, "unable to rename binders")
                 continue

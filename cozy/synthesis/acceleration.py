@@ -237,6 +237,10 @@ class AcceleratedBuilder(ExpBuilder):
             self.state_vars,
             self.args)
 
+    def check(self, e, pool):
+        e._accel = True
+        return super().check(e, pool)
+
     def build(self, cache, size):
 
         for e in cache.find(pool=RUNTIME_POOL, size=size-1, type=INT):
