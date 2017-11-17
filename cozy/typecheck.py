@@ -347,7 +347,7 @@ class Typechecker(Visitor):
                 t2 = self.get_collection_type(e.e2)
                 if t1 != t2:
                     self.report_err(e, "cannot concat {} and {}".format(pprint(e.e1.type), pprint(e.e2.type)))
-                e.type = e.e1.type
+                e.type = to_abstract(e.e1.type)
         else:
             raise NotImplementedError(e.op)
 
@@ -642,7 +642,8 @@ class Typechecker(Visitor):
             if len(s.args) != 1:
                 self.report_err(s, "remove_all takes exactly 1 argument")
             if len(s.args) > 0:
-                self.ensure_type(s.args[0], s.target.type)
+                tt = self.get_collection_type(s.args[0])
+                self.lub(s.args[0], elem_type, tt, "call to remove_all")
         else:
             self.report_err(s, "unknown function {}".format(s.func))
 
