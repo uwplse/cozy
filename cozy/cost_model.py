@@ -209,6 +209,8 @@ class CompositeCostModel(CostModel, BottomUpExplorer):
             return ESum((self.cardinality(e.e1), self.cardinality(e.e2)))
         if isinstance(e, EMap):
             return self.cardinality(e.e)
+        if isinstance(e, EStateVar):
+            return self.cardinality(e.e)
         if e in self.cardinalities:
             return self.cardinalities[e]
         else:
