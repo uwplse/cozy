@@ -2,12 +2,15 @@ from collections import OrderedDict
 import json
 
 from cozy import common, library, evaluation
-from cozy.common import fresh_name
+from cozy.common import fresh_name, declare_case
 from cozy.target_syntax import *
 from cozy.syntax_tools import all_types, fresh_var, subst, free_vars, is_scalar, mk_lambda, alpha_equivalent
+from cozy.typecheck import is_collection
 from cozy.simplification import simplify
 
 from .misc import *
+
+EMove = declare_case(Exp, "EMove", ["e"])
 
 class CxxPrinter(common.Visitor):
 
@@ -55,6 +58,11 @@ class CxxPrinter(common.Visitor):
 
     def visit_TList(self, t, name):
         if type(t) is TList:
+            return self.visit_TNativeList(t, name)
+        return self.visit_Type(t, name)
+
+    def visit_TBag(self, t, name):
+        if type(t) is TBag:
             return self.visit_TNativeList(t, name)
         return self.visit_Type(t, name)
 
@@ -115,7 +123,7 @@ class CxxPrinter(common.Visitor):
         if q.visibility != Visibility.Public:
             return ""
         ret_type = q.ret.type
-        if isinstance(ret_type, TBag):
+        if is_collection(ret_type):
             x = EVar(common.fresh_name("x")).with_type(ret_type.t)
             s  = "{indent}template <class F>\n".format(indent=indent)
             s += "{indent}inline void {name} ({args}const F& _callback) const {{\n{body}  }}\n\n".format(
@@ -183,14 +191,17 @@ class CxxPrinter(common.Visitor):
             setup_default=setup_default)
         return (s, res.id)
 
-    def construct_concrete(self, t, e, out):
+    def construct_concrete(self, t : Type, e : Exp, out : Exp):
         """
         Construct a value of type `t` from the expression `e` and store it in
         lvalue `out`.
         """
+        # from cozy.syntax_tools import pprint
+        # print("construct_concrete | {} <- {}".format(pprint(out), pprint(e)))
         if hasattr(t, "construct_concrete"):
             return t.construct_concrete(e, out)
         elif isinstance(t, library.TNativeList) or type(t) is TBag or type(t) is TList:
+            assert out not in free_vars(e)
             x = fresh_var(t.t, "x")
             return SSeq(
                 self.initialize_native_list(out),
@@ -498,7 +509,7 @@ class CxxPrinter(common.Visitor):
             return self.for_each(iterable.f.apply_to(iterable.e), body, indent=indent)
         else:
             x = fresh_var(iterable.type.t, "x")
-            if type(iterable.type) in (TBag, library.TNativeList, TSet, library.TNativeSet):
+            if type(iterable.type) in (TBag, library.TNativeList, TSet, library.TNativeSet, TList):
                 return self.for_each_native(x, iterable, body(x), indent)
             return self.visit(iterable.type.for_each(x, iterable, body(x)), indent=indent)
 
@@ -549,6 +560,10 @@ class CxxPrinter(common.Visitor):
     def visit_EArgMax(self, e, indent=""):
         return self.min_or_max(">", e.e, e.f, indent)
 
+    def reverse_inplace(self, e : EVar) -> Stm:
+        assert type(e.type) in (TList, library.TNativeList)
+        return SEscape("{indent}std::reverse({e}.begin(), {e}.end());\n", ("e",), (e,))
+
     def visit_EUnaryOp(self, e, indent=""):
         op = e.op
         if op == UOp.The:
@@ -566,10 +581,10 @@ class CxxPrinter(common.Visitor):
             v = fresh_var(BOOL, "v")
             label = fresh_name("label")
             x = fresh_var(iterable.type.t, "x")
-            decl = SDecl(v.id, F)
+            decl = SDecl(v.id, T)
             find = SEscapableBlock(label,
                 SForEach(x, iterable, seq([
-                    SAssign(v, T),
+                    SAssign(v, F),
                     SEscapeBlock(label)])))
             return (self.visit(seq([decl, find]), indent), v.id)
         elif op == UOp.Exists:
@@ -581,6 +596,11 @@ class CxxPrinter(common.Visitor):
         elif op == UOp.Distinct:
             v = fresh_var(e.type, "v")
             stm = self.construct_concrete(e.type, e, v)
+            return ("{}{};\n".format(indent, self.visit(e.type, v.id)) + self.visit(stm, indent), v.id)
+        elif op == UOp.Reversed:
+            v = fresh_var(e.type, "v")
+            stm = self.construct_concrete(e.type, e.e, v)
+            stm = seq([stm, self.reverse_inplace(v)])
             return ("{}{};\n".format(indent, self.visit(e.type, v.id)) + self.visit(stm, indent), v.id)
         else:
             raise NotImplementedError(op)
@@ -653,11 +673,19 @@ class CxxPrinter(common.Visitor):
         else:
             return self.visit(SAssign(lhs, rhs), indent)
 
+    def visit_EMove(self, e, indent=""):
+        (s, e) = self.visit(e.e, indent)
+        return (s, "std::move({})".format(e))
+
     def visit_SAssign(self, s, indent=""):
         if alpha_equivalent(simplify(s.lhs), simplify(s.rhs)):
             stm = SNoOp()
         else:
-            stm = self.construct_concrete(s.lhs.type, s.rhs, s.lhs)
+            v = fresh_var(s.lhs.type)
+            stm = seq([
+                SEscape("{indent}" + self.visit(v.type, v.id) + ";\n", (), ()),
+                self.construct_concrete(s.lhs.type, s.rhs, v),
+                SEscape("{indent}{lhs} = {v};\n", ("lhs", "v",), (s.lhs, EMove(v).with_type(v.type),))])
         return self.visit(stm, indent)
 
     def visit_SDecl(self, s, indent=""):
@@ -786,7 +814,7 @@ class CxxPrinter(common.Visitor):
                 name = names.get(t, common.fresh_name("Type"))
                 self.types[t] = name
 
-    def visit_Spec(self, spec, state_exps, sharing):
+    def visit_Spec(self, spec, state_exps, sharing, abstract_state=()):
         self.state_exps = state_exps
         self.funcs = { f.name: f for f in spec.extern_funcs }
         self.queries = { q.name: q for q in spec.methods if isinstance(q, Query) }
@@ -811,6 +839,8 @@ class CxxPrinter(common.Visitor):
             self.statevar_name = name
             s += self.declare_field(name, t, indent=INDENT)
         s += "public:\n"
+
+        # default constructor
         s += INDENT + "inline {name}() {{\n".format(name=spec.name)
         for name, t in spec.statevars:
             initial_value = state_exps[name]
@@ -819,7 +849,22 @@ class CxxPrinter(common.Visitor):
             setup = self.construct_concrete(t, initial_value, EVar(name).with_type(t))
             s += self.visit(setup, INDENT + INDENT)
         s += INDENT + "}\n"
+
+        # explicit constructor
+        if abstract_state:
+            s += INDENT + "inline {name}({args}) {{\n".format(
+                name=spec.name,
+                args=", ".join(self.visit(t, v) for (v, t) in abstract_state))
+            for name, t in spec.statevars:
+                initial_value = state_exps[name]
+                setup = self.construct_concrete(t, initial_value, EVar(name).with_type(t))
+                s += self.visit(setup, INDENT + INDENT)
+            s += INDENT + "}\n"
+
+        # disable copy constructor (TODO: support this in the future?)
         s += INDENT + "{name}(const {name}& other) = delete;\n".format(name=spec.name)
+
+        # generate methods
         for op in spec.methods:
             s += self.visit(op, INDENT)
         s += "};\n\n"

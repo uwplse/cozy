@@ -141,7 +141,7 @@ def run():
         cxx = getattr(args, "c++")
         if cxx is not None:
             with common.open_maybe_stdout(cxx) as out:
-                out.write(codegen.CxxPrinter(use_qhash=args.use_qhash).visit(impl, state_map, share_info))
+                out.write(codegen.CxxPrinter(use_qhash=args.use_qhash).visit(impl, state_map, share_info, abstract_state=ast.spec.statevars))
     except:
         print("Code generation failed!")
         if save_failed_codegen_inputs.value:
