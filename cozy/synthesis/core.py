@@ -760,9 +760,9 @@ def improve(
                             f.write("        assert False\n")
                     # raise Exception("detected nonmonotonicity")
                     continue
-                # elif ordering == Cost.UNORDERED:
-                #     print("...but cost is unchanged".format(old_cost))
-                #     continue
+                elif ordering == Cost.UNORDERED:
+                    print("*** cost is unchanged")
+                    # continue
                 print("found improvement: {} -----> {}".format(pprint(old_e), pprint(new_e)))
                 print("cost: {} -----> {}".format(old_cost, new_cost))
                 if reset_on_success.value:

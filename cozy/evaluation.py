@@ -785,7 +785,12 @@ def eval_bulk(e, envs, bind_callback=None, use_default_values_for_undefined_vars
     try:
         envs = [ [(env.get(v, mkval(types[v])) if (use_default_values_for_undefined_vars and v in types) else env[v]) for v in vars] for env in envs ]
     except KeyError:
-        import pdb
-        pdb.set_trace()
+        import sys
+        print("OH NO", file=sys.stderr)
+        print("e = {}".format(pprint(e)), file=sys.stderr)
+        print("eval_bulk({!r}, {!r}, use_default_values_for_undefined_vars={!r})".format(e, envs, use_default_values_for_undefined_vars), file=sys.stderr)
+        # import pdb
+        # pdb.set_trace()
+        raise
     _compile(e, vmap, ops, bind_callback)
     return [_eval_compiled(ops, env) for env in envs]

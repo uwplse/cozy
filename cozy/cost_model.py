@@ -163,6 +163,8 @@ def debug_comparison(e1, c1, e2, c2):
         res = c1.always(op, c2, assumptions=T, cards=cards, model_callback=lambda m: x.append(m))
         if res:
             print("  YES")
+        elif not x:
+            print("  NO (no model!?)")
         else:
             print("  NO: {}".format(x[0]))
             print("  c1 = {}".format(eval(c1.formula, env=x[0])))
