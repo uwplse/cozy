@@ -236,7 +236,7 @@ def make_parser():
         ("left", "OP_EQ", "OP_NE", "OP_LT", "OP_LE", "OP_GT", "OP_GE"),
         ("left", "OP_PLUS", "OP_MINUS"),
         ("left", "KW_IN"),
-        ("left", "KW_NOT", "KW_DISTINCT", "KW_UNIQUE", "KW_EMPTY", "KW_EXISTS", "KW_THE", "KW_MIN", "KW_MAX", "KW_ARGMIN", "KW_ARGMAX", "KW_SUM", "KW_ANY", "KW_ALL", "KW_LEN"),
+        ("left", "KW_NOT", "KW_DISTINCT", "KW_UNIQUE", "KW_EMPTY", "KW_EXISTS", "KW_THE", "KW_MIN", "KW_MAX", "KW_ARGMIN", "KW_ARGMAX", "KW_SUM", "KW_ANY", "KW_ALL", "KW_LEN", "KW_REVERSED"),
         ("left", "OP_OPEN_PAREN"),
         ("left", "OP_DOT"),
         ("left", "KW_OP", "KW_QUERY", "KW_PRIVATE"))
@@ -284,6 +284,7 @@ def make_parser():
                | KW_ANY exp
                | KW_ALL exp
                | KW_EXISTS exp
+               | KW_REVERSED exp
                | exp OP_DOT NUM
                | exp OP_DOT WORD
                | OP_OPEN_PAREN exp_list OP_CLOSE_PAREN

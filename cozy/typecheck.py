@@ -268,6 +268,12 @@ class Typechecker(Visitor):
         elif e.op == syntax.UOp.Not:
             self.ensure_type(e.e, BOOL)
             e.type = BOOL
+        elif e.op == syntax.UOp.Reversed:
+            if isinstance(e.e.type, syntax.TList):
+                e.type = e.e.type
+            else:
+                self.report_err(e, "cannot reverse {}".format(e.e.type))
+                e.type = DEFAULT_TYPE
         elif e.op == "-":
             self.ensure_numeric(e.e)
             e.type = e.e.type

@@ -45,6 +45,7 @@ class UOp(object):
     Length    = "len"
     Empty     = "empty"
     The       = "the"
+    Reversed  = "reversed"
 
 UOps = (UOp.Sum,
         UOp.Not,
@@ -55,7 +56,8 @@ UOps = (UOp.Sum,
         UOp.Exists,
         UOp.Length,
         UOp.Empty,
-        UOp.The)
+        UOp.The,
+        UOp.Reversed)
 
 # Binary operators
 class BOp(object):

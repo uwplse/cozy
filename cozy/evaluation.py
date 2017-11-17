@@ -419,6 +419,9 @@ def unaryop_the(default):
         stk.append(v[0] if v else default)
     return _unaryop_the
 
+def unaryop_reversed(stk):
+    stk.append(tuple(reversed(stk.pop())))
+
 def unaryop_len(stk):
     stk.append(len(stk.pop()))
 
@@ -575,6 +578,8 @@ def _compile(e, env : {str:int}, out, bind_callback):
             out.append(unaryop_distinct(e.e.type.t))
         elif e.op == UOp.The:
             out.append(unaryop_the(default=mkval(e.type)))
+        elif e.op == UOp.Reversed:
+            out.append(unaryop_reversed)
         elif e.op == "-":
             out.append(unaryop_neg)
         else:

@@ -385,6 +385,9 @@ class ToZ3(Visitor):
             for (m, e) in reversed(list(zip(mask, elems))):
                 elem = ite(t, m, e, elem)
             return elem
+        elif e.op == UOp.Reversed:
+            mask, elems = self.visit(e.e, env)
+            return (list(reversed(mask)), list(reversed(elems)))
         elif e.op == "-":
             return -self.visit(e.e, env)
         else:
