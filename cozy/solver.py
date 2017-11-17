@@ -502,7 +502,7 @@ class ToZ3(Visitor):
             else:
                 raise NotImplementedError(e.type)
         elif e.op == "-":
-            if isinstance(e.type, TBag) or isinstance(e.type, TSet):
+            if isinstance(e.type, TBag) or isinstance(e.type, TSet) or isinstance(e.type, TList):
                 return self.remove_all(e.type, v1, v2, env)
             return v1 - v2
         elif e.op == BOp.In:

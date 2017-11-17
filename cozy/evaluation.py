@@ -306,6 +306,19 @@ def binaryop_sub_bags(elem_type):
         stk.append(Bag(elems))
     return binaryop_sub_bags
 
+def binaryop_sub_lists(elem_type):
+    def binaryop_sub_lists(stk):
+        v2 = stk.pop()
+        v1 = stk.pop()
+        elems = list(v1)
+        for x in v2:
+            for i in range(len(elems)):
+                if eq(elem_type, x, elems[i]):
+                    del elems[i]
+                    break
+        stk.append(tuple(elems))
+    return binaryop_sub_lists
+
 def binaryop_eq(t, deep=False):
     def binaryop_eq(stk):
         v2 = stk.pop()
@@ -581,6 +594,8 @@ def _compile(e, env : {str:int}, out, bind_callback):
         elif e.op == "-":
             if isinstance(e1type, TBag):
                 out.append(binaryop_sub_bags(e1type.t))
+            elif isinstance(e1type, TList):
+                out.append(binaryop_sub_lists(e1type.t))
             else:
                 out.append(binaryop_sub)
         elif e.op == "==":
