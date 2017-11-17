@@ -871,18 +871,19 @@ def satisfy(e, vars = None, funcs = None, collection_depth : int = 2, validate_m
         elif res == z3.unknown:
             raise SolverReportedUnknown("z3 reported unknown")
         else:
-            model = solver.model()
-            # print(model)
-            res = { }
-            for f, t in funcs.items():
-                name = f
-                f = _env[name]
-                out_type = t.ret_type
-                arg_types = t.arg_types
+            def mkfunc(f, arg_types, out_type):
                 @lru_cache(maxsize=None)
                 def extracted_func(*args):
                     return reconstruct(model, f(*[visitor.unreconstruct(v, t) for (v, t) in zip(args, arg_types)]), out_type)
-                res[name] = extracted_func
+                return extracted_func
+            model = solver.model()
+            # print(model)
+            res = { }
+            for name, t in funcs.items():
+                f = _env[name]
+                out_type = t.ret_type
+                arg_types = t.arg_types
+                res[name] = mkfunc(f, arg_types, out_type)
             for v in vars:
                 res[v.id] = reconstruct(model, _env[v.id], v.type)
             if model_callback is not None:
