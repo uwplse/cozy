@@ -38,6 +38,8 @@ def _delta_form(res : { str : syntax.Exp }, op : syntax.Stm) -> { str : syntax.E
             update(res, lambda old: target_syntax.EDropFront(old).with_type(old.type))
         elif op.func == "remove":
             update(res, lambda old: syntax.EBinOp(old, "-", syntax.ESingleton(op.args[0]).with_type(old.type)).with_type(old.type))
+        elif op.func == "remove_all":
+            update(res, lambda old: syntax.EBinOp(old, "-", op.args[0]).with_type(old.type))
         else:
             raise Exception("Unknown func: {}".format(op.func))
     elif isinstance(op, syntax.SAssign):
