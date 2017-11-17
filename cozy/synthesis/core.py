@@ -361,6 +361,47 @@ class Learner(object):
                 continue
             yield (watched_e, e, r)
 
+    def pre_optimize(self, e, pool):
+        """
+        Optimize `e` by replacing its subexpressions with the best cached
+        versions available (or leaving them untouched if they are new).
+        """
+        if not hasattr(e, "_accel"):
+            return e
+        class V(BottomUpRewriter):
+            def visit_EStateVar(_, e):
+                return EStateVar(self.pre_optimize(e.e, STATE_POOL)).with_type(e.type)
+            def visit_ELambda(_, e):
+                if e.arg not in self.binders and e.arg in free_vars(e.body):
+                    # Derp!  Someone made an expression that uses an illegal
+                    # binder.  There is no way to compute a fingerprint for the
+                    # body, unfortunately, so we just stop here.
+                    return e
+                return ELambda(e.arg, super().visit_ADT(e.body)) # optimize children
+            def visit_Exp(_, e): # do not shadow `self`
+                fp = self._fingerprint(e)
+                prev = self.seen.get((pool, fp))
+                if prev is None:
+                    return super().visit_ADT(e) # optimize children
+                prev_cost, prev_exps = prev
+                cost = self.cost_model.cost(e, pool)
+                ordering = cost.compare_to(prev_cost, self.assumptions)
+                if ordering == Cost.BETTER:
+                    return super().visit_ADT(e) # optimize children
+                else:
+                    # NOTE: no need to optimize children; if it is cached, then
+                    # it is presumably already the best possible.
+                    pe = prev_exps[0][0]
+                    # if not alpha_equivalent(e, pe):
+                    #     print("*** rewriting {} to {}".format(pprint(e), pprint(pe)), file=sys.stderr)
+                    return pe
+        try:
+            return V().visit(e)
+        except:
+            print("FAILED TO PREOPTIMIZE {}".format(pprint(e)))
+            print(repr(e))
+            raise
+
     def next(self):
         while True:
             if self.backlog is not None:
@@ -376,6 +417,8 @@ class Learner(object):
             for (e, pool) in self.builder_iter:
                 if self.stop_callback():
                     raise StopException()
+
+                e = self.pre_optimize(e, pool)
 
                 cost = self.cost_model.cost(e, pool)
 
