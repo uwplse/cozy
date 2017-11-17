@@ -9,7 +9,7 @@ from cozy.solver import satisfy, satisfiable, valid
 from cozy.evaluation import eval, eval_bulk, mkval, construct_value, uneval
 from cozy.cost_model import CostModel, Cost
 from cozy.opts import Option
-from cozy.pools import RUNTIME_POOL, STATE_POOL, pool_name
+from cozy.pools import ALL_POOLS, RUNTIME_POOL, STATE_POOL, pool_name
 
 from .cache import Cache
 
@@ -190,9 +190,13 @@ class BehaviorIndex(object):
             s += "  " + line + "\n"
         return s
 
+def contains_estatevar(e):
+    return any(isinstance(ee, EStateVar) for ee in all_exps(e))
+
 class Learner(object):
-    def __init__(self, target, assumptions, binders, args, legal_free_vars, examples, cost_model, builder, stop_callback):
+    def __init__(self, target, assumptions, binders, state_vars, args, legal_free_vars, examples, cost_model, builder, stop_callback):
         self.binders = OrderedSet(binders)
+        self.state_vars = OrderedSet(state_vars)
         self.args = OrderedSet(args)
         self.legal_free_vars = legal_free_vars
         self.stop_callback = stop_callback
@@ -245,6 +249,13 @@ class Learner(object):
         self._check_seen_wf()
         print("finished fixing seen set")
 
+    def is_legal_in_pool(self, e, pool):
+        if pool == RUNTIME_POOL:
+            return all(v not in self.state_vars for v in free_vars(e, descend_into_estatevar=False))
+        else:
+            assert pool == STATE_POOL
+            return all(v not in self.args for v in free_vars(e)) and not contains_estatevar(e)
+
     def watch(self, new_target):
         self._check_seen_wf()
         self.backlog_counter = 0
@@ -252,8 +263,10 @@ class Learner(object):
         self.update_watched_exps()
         self.roots = []
         for (e, r, cost, a, pool, bound) in self.watched_exps:
-            _on_exp(e, "new root", pool_name(pool))
-            self.roots.append((e, pool))
+            for pool in ALL_POOLS:
+                if self.is_legal_in_pool(e, pool):
+                    _on_exp(e, "new root", pool_name(pool))
+                    self.roots.append((e, pool))
         self.roots.sort(key = lambda tup: tup[0].size())
         # new_roots = []
         # for e in itertools.chain(all_exps(new_target), all_exps(self.assumptions)):
@@ -647,7 +660,7 @@ def improve(
 
     if examples is None:
         examples = []
-    learner = Learner(target, assumptions, binders, args, vars + binders, examples, cost_model, builder, stop_callback)
+    learner = Learner(target, assumptions, binders, state_vars, args, vars + binders, examples, cost_model, builder, stop_callback)
     try:
         while True:
             # 1. find any potential improvement to any sub-exp of target

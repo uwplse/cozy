@@ -343,7 +343,7 @@ def free_funcs(e : syntax.Exp) -> dict:
                 res[x.func] = t
     return res
 
-def free_vars(exp, counts=False):
+def free_vars(exp, counts=False, descend_into_estatevar=True):
     res = collections.OrderedDict()
     bound = collections.defaultdict(int)
 
@@ -362,6 +362,8 @@ def free_vars(exp, counts=False):
         elif isinstance(x, syntax.EVar):
             if not bound[x]:
                 res[x] = res.get(x, 0) + 1
+        elif isinstance(x, target_syntax.EStateVar) and not descend_into_estatevar:
+            continue
         elif isinstance(x, target_syntax.ELambda):
             bound[x.arg] += 1
             stk.append(Unbind(x.arg))
