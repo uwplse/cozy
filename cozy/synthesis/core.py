@@ -740,9 +740,10 @@ def improve(
             counterexample = satisfy(formula, vars=vars, funcs=funcs)
             if counterexample is not None:
                 if counterexample in examples:
-                    print("duplicate example: {}".format(repr(counterexample)))
-                    print("old target = {}".format(pprint(target)))
-                    print("new target = {}".format(pprint(new_target)))
+                    print("assumptions = {!r}".format(assumptions))
+                    print("duplicate example: {!r}".format(counterexample))
+                    print("old target = {!r}".format(target))
+                    print("new target = {!r}".format(new_target))
                     print("old fp = {}".format(learner._fingerprint(old_e)))
                     print("new fp = {}".format(learner._fingerprint(new_e)))
                     print("old target fp = {}".format(learner._fingerprint(target)))
