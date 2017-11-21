@@ -193,6 +193,21 @@ class BehaviorIndex(object):
 def contains_estatevar(e):
     return any(isinstance(ee, EStateVar) for ee in all_exps(e))
 
+def find_naked_statevar(e, state_vars):
+    for (a, e, r, bound, pool) in enumerate_fragments_and_pools(e):
+        if e in state_vars and pool != STATE_POOL:
+            return (e, r)
+    return None
+
+def wrap_naked_statevars(e, state_vars):
+    while True:
+        x = find_naked_statevar(e, state_vars)
+        if x is None:
+            break
+        sv, r = x
+        e = r(EStateVar(sv).with_type(sv.type))
+    return e
+
 class Learner(object):
     def __init__(self, target, assumptions, binders, state_vars, args, legal_free_vars, examples, cost_model, builder, stop_callback):
         self.binders = OrderedSet(binders)
@@ -692,6 +707,7 @@ def improve(
         yield construct_value(target.type)
         return
 
+    target = wrap_naked_statevars(target, state_vars=OrderedSet(state_vars))
     binders = list(binders)
     target = fixup_binders(target, binders, allow_add=False)
     assumptions = fixup_binders(assumptions, binders, allow_add=False)
