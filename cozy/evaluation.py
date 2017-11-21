@@ -195,7 +195,7 @@ def _uneval(t, value):
     elif isinstance(t, TBag) or isinstance(t, TSet):
         e = EEmptyList().with_type(t)
         for x in value:
-            e = EBinOp(e, "+", ESingleton(uneval(x, t.t)).with_type(t)).with_type(t)
+            e = EBinOp(e, "+", ESingleton(uneval(t.t, x)).with_type(t)).with_type(t)
         return e
     elif isinstance(t, TString):
         return EStr(value).with_type(t)
