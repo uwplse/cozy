@@ -1,5 +1,5 @@
 from collections import UserDict, defaultdict, namedtuple
-from functools import total_ordering, cmp_to_key
+from functools import total_ordering, cmp_to_key, lru_cache
 
 from cozy.target_syntax import *
 from cozy.syntax_tools import equal, pprint, free_vars, free_funcs, all_exps
@@ -146,6 +146,7 @@ def eq(t, v1, v2):
 def eval(e, env, *args, **kwargs):
     return eval_bulk(e, (env,), *args, **kwargs)[0]
 
+@lru_cache(maxsize=None)
 def mkval(type : Type):
     """
     Produce an arbitrary value of the given type.
