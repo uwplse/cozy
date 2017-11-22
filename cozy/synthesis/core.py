@@ -723,6 +723,13 @@ def improve(
                         ENot(EBinOp(old_e,  "===", new_e).with_type(BOOL))]),
                     vars=vars, funcs=funcs)
                 if counterexample is None:
+                    print("!!! unable to satisfy top- and sub-expressions")
+                    print("assumptions = {!r}".format(assumptions))
+                    print("local_assumptions = {!r}".format(EAll(local_assumptions)))
+                    print("old_e = {!r}".format(old_e))
+                    print("target = {!r}".format(target))
+                    print("new_e = {!r}".format(new_e))
+                    print("new_target = {!r}".format(new_target))
                     raise Exception("unable to find an example that differentiates both the toplevel- and sub-expressions")
 
                 if counterexample in examples:
