@@ -68,6 +68,7 @@ def run():
         # print(syntax_tools.pprint(ast))
 
         ast = desugar.desugar(ast)
+        ast = invariant_preservation.add_implicit_handle_assumptions(ast)
         # print(syntax_tools.pprint(ast))
 
         print("Checking assumptions...")

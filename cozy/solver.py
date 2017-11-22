@@ -109,7 +109,6 @@ class ToZ3(Visitor):
         self.int_one  = z3.IntVal(1, self.ctx)
         self.true = z3.BoolVal(True, self.ctx)
         self.false = z3.BoolVal(False, self.ctx)
-        self.handle_vars = []
     def distinct(self, t, *values):
         if len(values) <= 1:
             return z3.BoolVal(True, self.ctx)
@@ -738,7 +737,6 @@ class ToZ3(Visitor):
         elif isinstance(type, THandle):
             h = z3.Int(fresh_name(), ctx)
             v = (h, self.mkvar(collection_depth, type.value_type))
-            self.handle_vars.append((type.value_type,) + v)
             return v
         elif isinstance(type, TFunc):
             return z3.Function(fresh_name(),
@@ -850,18 +848,6 @@ def satisfy(e, vars = None, funcs = None, collection_depth : int = 2, validate_m
                 collection_depth=repr(collection_depth),
                 validate_model=repr(validate_model)))
             raise
-
-        # Handles implement reference equality... so if the references are the same,
-        # the values must be also. TODO: we could eliminiate the need for this by
-        # encoding handles as ints plus an uninterpreted "read_value" function for
-        # each handle type.
-        handle_vars = visitor.handle_vars
-        for i in range(len(handle_vars)):
-            for j in range(i + 1, len(handle_vars)):
-                h1type, h1, v1 = handle_vars[i]
-                h2type, h2, v2 = handle_vars[j]
-                if h1type == h2type:
-                    solver.add(z3.Implies(h1 == h2, visitor.eq(h1type, v1, v2, _env), ctx))
 
         # print(solver.assertions())
         res = solver.check()
