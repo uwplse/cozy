@@ -501,9 +501,10 @@ COMMUTATIVE_OPERATORS = set(("==", "and", "or", "+"))
 ATTRS_TO_PRESERVE = ("_accel", "_tag")
 
 class FixedBuilder(ExpBuilder):
-    def __init__(self, wrapped_builder, binders_to_use, assumptions : Exp):
+    def __init__(self, wrapped_builder, state_vars, binders_to_use, assumptions : Exp):
         self.wrapped_builder = wrapped_builder
         self.binders_to_use = binders_to_use
+        self.state_vars = OrderedSet(state_vars)
         self.assumptions = assumptions
     def build(self, cache, size):
         for (e, pool) in self.wrapped_builder.build(cache, size):
@@ -534,14 +535,16 @@ class FixedBuilder(ExpBuilder):
                 continue
             x = e
             if isinstance(x, EMakeMap2) and isinstance(x.type.v, TBag):
-                k1 = fresh_var(x.type.k)
-                k2 = fresh_var(x.type.k)
-                v  = fresh_var(x.type.v.t)
-                s  = EAll([
+                from cozy.typecheck import is_collection
+                all_collections = [sv for sv in self.state_vars if is_collection(sv.type)]
+                total_size = ENum(0).with_type(INT)
+                for c in all_collections:
+                    total_size = EBinOp(total_size, "+", EUnaryOp(UOp.Length, c).with_type(INT)).with_type(INT)
+                s = EAll([
                     self.assumptions,
-                    ENot(EEq(k1, k2)),
-                    EIn(v, EMapGet(x, k1).with_type(x.type.v)),
-                    EIn(v, EMapGet(x, k2).with_type(x.type.v))])
+                    EBinOp(
+                        total_size, "<",
+                        EUnaryOp(UOp.Length, EFlatMap(x.e, x.value).with_type(x.type.v)).with_type(INT)).with_type(BOOL)])
                 if satisfiable(s):
                     _on_exp(x, "rejecting non-polynomial-sized map")
                     continue
@@ -682,7 +685,7 @@ def improve(
     binders = list(binders)
     target = fixup_binders(target, binders, allow_add=False)
     assumptions = fixup_binders(assumptions, binders, allow_add=False)
-    builder = FixedBuilder(builder, binders, assumptions)
+    builder = FixedBuilder(builder, state_vars, binders, assumptions)
 
     if eliminate_vars.value and can_elim_vars(target, assumptions, state_vars):
         builder = StateElimBuilder(builder)
