@@ -31,43 +31,14 @@ class ExpBuilder(object):
     def build(self, cache, size):
         raise NotImplementedError()
 
-def _instantiate_examples(examples, binder, possible_values):
-    for e in examples:
-        found = 0
-        if binder.id in e:
-            yield e
-            continue
-            found += 1
-        for possible_value in possible_values:
-            # print("possible value for {}: {}".format(pprint(binder.type), repr(possible_value)))
-            e2 = dict(e)
-            e2[binder.id] = possible_value
-            yield e2
-            found += 1
-        # print("got {} ways to instantiate {}".format(found, binder.id))
-        if not found:
-            e2 = dict(e)
-            e2[binder.id] = mkval(binder.type)
-            yield e2
-
 def instantiate_examples(watched_targets, examples, binders : [EVar]):
     res = []
     for ex in examples:
-        # collect all the values that flow into the binders
-        vals_by_type = defaultdict(OrderedSet)
-        for e in watched_targets:
-            eval(e, ex,
-                bind_callback=lambda arg, val: vals_by_type[arg.type].add(val),
-                use_default_values_for_undefined_vars = True)
-        # print(vals_by_type)
-        # instantiate examples with each possible combination of values
-        x = [ex]
-        for v in binders:
-            x = list(_instantiate_examples(x, v, vals_by_type.get(v.type, ())))
-        # print("Got {} instantiated examples".format(len(examples)), file=sys.stderr)
-        # for ex in examples:
-        #     print(" ---> " + repr(ex), file=sys.stderr)
-        res.extend(x)
+        ex = dict(ex)
+        for b in binders:
+            if b.id not in ex:
+                ex[b.id] = mkval(b.type)
+        res.append(ex)
     return res
 
 def fingerprint(e, examples):
@@ -374,7 +345,7 @@ class Learner(object):
             if not cost.sometimes_better_than(watched_cost):
                 _on_exp(e, "skipped possible replacement", pool_name(pool), watched_e)
                 continue
-            yield (watched_e, e, r)
+            yield (watched_e, e, assumptions, r)
 
     def pre_optimize(self, e, pool):
         """
@@ -726,7 +697,7 @@ def improve(
         while True:
             # 1. find any potential improvement to any sub-exp of target
             try:
-                old_e, new_e, repl = learner.next()
+                old_e, new_e, local_assumptions, repl = learner.next()
             except NoMoreImprovements:
                 break
 
@@ -739,6 +710,18 @@ def improve(
             formula = EAll([assumptions, ENot(EBinOp(target, "===", new_target).with_type(BOOL))])
             counterexample = satisfy(formula, vars=vars, funcs=funcs)
             if counterexample is not None:
+
+                # Ok they aren't equal.  Now we need an example that
+                # differentiates BOTH target/new_target AND old_e/new_e.
+                counterexample = satisfy(EAll([
+                        assumptions,
+                        EAll(local_assumptions),
+                        ENot(EBinOp(target, "===", new_target).with_type(BOOL)),
+                        ENot(EBinOp(old_e,  "===", new_e).with_type(BOOL))]),
+                    vars=vars, funcs=funcs)
+                if counterexample is None:
+                    raise Exception("unable to find an example that differentiates both the toplevel- and sub-expressions")
+
                 if counterexample in examples:
                     print("assumptions = {!r}".format(assumptions))
                     print("duplicate example: {!r}".format(counterexample))

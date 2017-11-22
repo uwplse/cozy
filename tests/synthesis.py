@@ -16,18 +16,6 @@ zero = ENum(0).with_type(INT)
 
 class TestSynthesisCore(unittest.TestCase):
 
-    def test_instantiate_examples(self):
-        bag = Bag((handle1, handle2, handle3))
-        examples = [{ "x": bag }]
-        x = EVar("x").with_type(TBag(handle_type))
-        binder = EVar("binder").with_type(handle_type)
-        target = EFilter(x, ELambda(binder, T)).with_type(x.type)
-        new_examples = list(instantiate_examples((target,), examples, [binder]))
-        assert new_examples == [
-            { "x": bag, "binder": handle1 },
-            { "x": bag, "binder": handle2 },
-            { "x": bag, "binder": handle3 }], "new_examples={}".format(repr(new_examples))
-
     def test_instantiate_examples_empty(self):
         bag = Bag((handle1, handle2, handle3))
         examples = [{ "x": bag }]
