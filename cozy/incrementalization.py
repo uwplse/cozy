@@ -4,6 +4,7 @@ from cozy import target_syntax
 from cozy.syntax_tools import free_vars, pprint, fresh_var, mk_lambda, alpha_equivalent, strip_EStateVar
 from cozy.desugar import desugar_exp
 from cozy.typecheck import is_numeric
+from cozy.solver import valid
 
 def delta_form(members : [(str, syntax.Type)], op : syntax.Op) -> { str : syntax.Exp }:
     """
@@ -118,7 +119,7 @@ def sketch_update(
     subgoals (new queries that appear in the code).
     """
 
-    if alpha_equivalent(old_value, new_value):
+    if valid(syntax.EImplies(syntax.EAll(assumptions), syntax.EEq(old_value, new_value))):
         return (syntax.SNoOp(), [])
 
     subgoals = []
