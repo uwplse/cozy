@@ -113,7 +113,7 @@ class ImproveQueryJob(jobs.Job):
 @typechecked
 def improve_implementation(
         impl              : Implementation,
-        per_query_timeout : datetime.timedelta = datetime.timedelta(seconds=60),
+        timeout           : datetime.timedelta = datetime.timedelta(seconds=60),
         progress_callback = None) -> Implementation:
 
     # we statefully modify `impl`, so let's make a defensive copy
@@ -173,7 +173,7 @@ def improve_implementation(
         reconcile_jobs()
 
         # wait for results
-        timeout = Timeout(per_query_timeout)
+        timeout = Timeout(timeout)
         done = False
         while not done and not timeout.is_timed_out():
             for j in improvement_jobs:

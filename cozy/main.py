@@ -101,7 +101,7 @@ def run():
             server.start_async()
         ast = synthesis.improve_implementation(
             ast,
-            per_query_timeout = datetime.timedelta(seconds=args.timeout),
+            timeout           = datetime.timedelta(seconds=args.timeout),
             progress_callback = callback)
         if server is not None:
             server.join()
