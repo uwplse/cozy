@@ -34,6 +34,13 @@ def EIsSingleton(e):
     arg = EVar(fresh_name()).with_type(e.type.t)
     return EBinOp(EUnaryOp(UOp.Sum, EMap(e, ELambda(arg, ONE)).with_type(TBag(INT))).with_type(INT), "<=", ONE).with_type(BOOL)
 
+def EDeepIn(e1, e2):
+    from cozy.syntax_tools import free_vars, fresh_var
+    arg = fresh_var(e1.type, omit=free_vars(e2))
+    return EUnaryOp(UOp.Any,
+        EMap(e2, ELambda(arg,
+            EBinOp(arg, "===", e1).with_type(BOOL))).with_type(BOOL_BAG)).with_type(BOOL)
+
 # Fixed-length vectors
 TVector    = declare_case(Type, "TVector", ["t", "n"])
 EVectorGet = declare_case(Exp, "EVectorGet", ["e", "i"])
