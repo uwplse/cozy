@@ -28,13 +28,13 @@ def add_implicit_handle_assumptions(spec : Spec) -> Spec:
         handles = reachable_handles_at_method(spec, m)
         new_assumptions = []
         for t, bag in handles.items():
-            print("handles of type {}: {}".format(pprint(t), pprint(bag)))
+            # print("handles of type {}: {}".format(pprint(t), pprint(bag)))
             new_assumptions.append(
                 EForall(bag, lambda h1: EForall(bag, lambda h2:
                     EImplies(EEq(h1, h2),
                         EEq(EGetField(h1, "val").with_type(h1.type.value_type),
                             EGetField(h2, "val").with_type(h2.type.value_type))))))
-            print("adding assumption to {}: {}".format(m.name, pprint(new_assumptions[-1])))
+            # print("adding assumption to {}: {}".format(m.name, pprint(new_assumptions[-1])))
         m = shallow_copy(m)
         m.assumptions = list(m.assumptions) + new_assumptions
         new_methods.append(m)

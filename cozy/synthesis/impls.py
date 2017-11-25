@@ -99,9 +99,9 @@ class Implementation(object):
         """
         for op in self.op_specs:
             handles = reachable_handles_at_method(self.spec, op)
-            print("-"*60)
+            # print("-"*60)
             for t, bag in handles.items():
-                print("  {} : {}".format(pprint(t), pprint(bag)))
+                # print("  {} : {}".format(pprint(t), pprint(bag)))
                 h = fresh_var(t)
                 delta = inc.delta_form(self.spec.statevars + op.args + [(h.id, h.type)], op)
                 lval = EGetField(h, "val").with_type(t.value_type)
@@ -122,8 +122,8 @@ class Implementation(object):
                     new_val,
                     self.abstract_state,
                     list(op.assumptions) + [EDeepIn(h, bag), EIn(h, modified_handles.ret)])
-                print("  got {} subqueries".format(len(subqueries)))
-                print("  to update {} in {}, use\n{}".format(pprint(t), op.name, pprint(state_update_stm)))
+                # print("  got {} subqueries".format(len(subqueries)))
+                # print("  to update {} in {}, use\n{}".format(pprint(t), op.name, pprint(state_update_stm)))
                 for sub_q in subqueries:
                     state_update_stm = self._add_subquery(sub_q=sub_q, used_by=state_update_stm)
                 state_update_stm = SForEach(h, ECall(modified_handles.name, query_vars).with_type(bag.type), state_update_stm)
