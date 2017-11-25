@@ -15,8 +15,8 @@ from cozy import syntax
 from cozy import target_syntax
 from cozy import pools
 
-def fresh_var(type, hint="var"):
-    return syntax.EVar(common.fresh_name(hint)).with_type(type)
+def fresh_var(type, hint="var", **kwargs):
+    return syntax.EVar(common.fresh_name(hint, **kwargs)).with_type(type)
 
 def mk_lambda(t, l):
     v = fresh_var(t)

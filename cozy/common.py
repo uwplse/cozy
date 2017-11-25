@@ -231,10 +231,16 @@ def nested_dict(n, t):
     return OrderedDefaultDict(lambda: nested_dict(n-1, t))
 
 _i = Value(ctypes.c_uint64, 0)
-def fresh_name(hint="name"):
-    with _i.get_lock():
-        _i.value += 1
-        return "_{}{}".format(hint, _i.value)
+def fresh_name(hint="name", omit=None):
+    if omit is not None:
+        i = 0
+        while ("_{}{}".format(hint, i)) in omit:
+            i += 1
+        return "_{}{}".format(hint, i)
+    else:
+        with _i.get_lock():
+            _i.value += 1
+            return "_{}{}".format(hint, _i.value)
 
 def capitalize(s):
     return (s[0].upper() + s[1:]) if s else s
