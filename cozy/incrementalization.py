@@ -5,6 +5,10 @@ from cozy.syntax_tools import free_vars, pprint, fresh_var, mk_lambda, alpha_equ
 from cozy.desugar import desugar_exp
 from cozy.typecheck import is_numeric
 from cozy.solver import valid
+from cozy.opts import Option
+
+skip_stateless_synthesis = Option("skip-stateless-synthesis", bool, False,
+    description="Do not waste time optimizing expressions that do not depend on the data structure state")
 
 def delta_form(members : [(str, syntax.Type)], op : syntax.Op) -> { str : syntax.Exp }:
     """
@@ -127,7 +131,7 @@ def sketch_update(
     def make_subgoal(e, a=[]):
         e = strip_EStateVar(e)
         e = desugar_exp(e)
-        if not any(v in ctx for v in free_vars(e)):
+        if skip_stateless_synthesis.value and not any(v in ctx for v in free_vars(e)):
             return e
         query_name = fresh_name("query")
         query = syntax.Query(query_name, syntax.Visibility.Internal, [], assumptions + a, e)
