@@ -11,7 +11,7 @@ from cozy.cost_model import CostModel, Cost
 from cozy.opts import Option
 from cozy.pools import ALL_POOLS, RUNTIME_POOL, STATE_POOL, pool_name
 
-from .cache import Cache
+from .cache import Cache, SeenSet
 
 save_testcases = Option("save-testcases", str, "", metavar="PATH")
 hyperaggressive_culling = Option("hyperaggressive-culling", bool, False)
@@ -188,7 +188,7 @@ class Learner(object):
         self.stop_callback = stop_callback
         self.cost_model = cost_model
         self.builder = builder
-        self.seen = { } # map of { (pool, fingerprint) : (cost, [(e, size)]) }
+        self.seen = SeenSet()
         self.assumptions = assumptions
         self.reset(examples, update_watched_exps=False)
         self.watch(target)
@@ -208,29 +208,21 @@ class Learner(object):
 
     def _check_seen_wf(self):
         if enforce_seen_wf.value:
-            for ((pool, fp), (cost, exps)) in self.seen.items():
-                for (e, size) in exps:
-                    fpnow = self._fingerprint(e)
-                    if fp != fpnow:
-                        print("#" * 40)
-                        print(pprint(e))
-                        print(fp)
-                        print(fpnow)
-                        assert False
+            for (e, pool, fp, size, cost) in self.seen.items():
+                fpnow = self._fingerprint(e)
+                if fp != fpnow:
+                    print("#" * 40)
+                    print(pprint(e))
+                    print(fp)
+                    print(fpnow)
+                    assert False
 
     def fix_seen(self):
         print("fixing seen set...")
-        new_seen = { }
-        for ((pool, fp), (cost, exps)) in self.seen.items():
-            for item in exps:
-                e, size = item
-                fpnow = self._fingerprint(e)
-                k = (pool, fpnow)
-                val = new_seen.get(k)
-                if val is not None:
-                    val[1].append(item)
-                else:
-                    new_seen[k] = (cost, [item])
+        new_seen = SeenSet()
+        for (e, pool, fp, size, cost) in self.seen.items():
+            fpnow = self._fingerprint(e)
+            new_seen.add(e, pool, fp, size, cost)
         self.seen = new_seen
         self._check_seen_wf()
         print("finished fixing seen set")
@@ -366,10 +358,10 @@ class Learner(object):
                 return ELambda(e.arg, super().visit_ADT(e.body)) # optimize children
             def visit_Exp(_, e): # do not shadow `self`
                 fp = self._fingerprint(e)
-                prev = self.seen.get((pool, fp))
+                prev = self.seen.find_one(pool, fp)
                 if prev is None:
                     return super().visit_ADT(e) # optimize children
-                prev_cost, prev_exps = prev
+                prev_exp, prev_size, prev_cost = prev
                 cost = self.cost_model.cost(e, pool)
                 ordering = cost.compare_to(prev_cost, self.assumptions)
                 if ordering == Cost.BETTER:
@@ -377,10 +369,9 @@ class Learner(object):
                 else:
                     # NOTE: no need to optimize children; if it is cached, then
                     # it is presumably already the best possible.
-                    pe = prev_exps[0][0]
-                    # if not alpha_equivalent(e, pe):
-                    #     print("*** rewriting {} to {}".format(pprint(e), pprint(pe)), file=sys.stderr)
-                    return pe
+                    # if not alpha_equivalent(e, prev_exp):
+                    #     print("*** rewriting {} to {}".format(pprint(e), pprint(prev_exp)), file=sys.stderr)
+                    return prev_exp
         try:
             return V().visit(e)
         except:
@@ -414,33 +405,32 @@ class Learner(object):
                 #     continue
 
                 fp = self._fingerprint(e)
-                prev = self.seen.get((pool, fp))
-
-                if prev is None:
-                    self.seen[(pool, fp)] = (cost, [(e, self.current_size)])
-                    self.cache.add(e, pool=pool, size=self.current_size)
-                    self.last_progress = self.current_size
+                prev = list(self.seen.find_all(pool, fp))
+                should_add = True
+                if not prev:
                     _on_exp(e, "new", pool_name(pool))
+                elif any(alpha_equivalent(e, ee) for (ee, _, _) in prev):
+                    _on_exp(e, "duplicate")
+                    should_add = False
                 else:
-                    prev_cost, prev_exps = prev
-                    if any(alpha_equivalent(e, ee) for (ee, size) in prev_exps):
-                        _on_exp(e, "duplicate")
-                        continue
-                    ordering = cost.compare_to(prev_cost, self.assumptions)
-                    assert ordering in (Cost.WORSE, Cost.BETTER, Cost.UNORDERED)
-                    if enforce_strong_progress.value and ordering != Cost.WORSE:
-                        bad = find_one(all_exps(e), lambda ee: any(alpha_equivalent(ee, pe) for (pe, sz) in prev_exps))
-                        if bad:
-                            _on_exp(e, "failed strong progress requirement", bad)
+                    better_than = None
+                    worse_than = None
+                    for prev_exp, prev_size, prev_cost in prev:
+                        ordering = cost.compare_to(prev_cost, self.assumptions)
+                        assert ordering in (Cost.WORSE, Cost.BETTER, Cost.UNORDERED)
+                        if enforce_strong_progress.value and ordering != Cost.WORSE:
+                            bad = find_one(all_exps(e), lambda ee: alpha_equivalent(ee, prev_exp))
+                            if bad:
+                                _on_exp(e, "failed strong progress requirement", bad)
+                                should_add = False
+                                break
+                        _on_exp(e, ordering, pool_name(pool), prev_exp)
+                        if ordering == Cost.UNORDERED:
                             continue
-                    _on_exp(e, ordering, pool_name(pool), *[e for (e, cost) in prev_exps])
-                    if ordering == Cost.UNORDERED:
-                        self.cache.add(e, pool=pool, size=self.current_size)
-                        self.seen[(pool, fp)][1].append((e, self.current_size))
-                        self.last_progress = self.current_size
-                    elif ordering == Cost.BETTER:
-                        for (prev_exp, prev_size) in prev_exps:
+                        elif ordering == Cost.BETTER:
+                            better_than = (prev_exp, prev_size, prev_cost)
                             self.cache.evict(prev_exp, size=prev_size, pool=pool)
+                            self.seen.remove(prev_exp, pool, fp)
                             if (self.cost_model.is_monotonic() or hyperaggressive_culling.value) and hyperaggressive_eviction.value:
                                 for (cached_e, size, p) in list(self.cache):
                                     if p != pool:
@@ -448,11 +438,26 @@ class Learner(object):
                                     if prev_exp in all_exps(cached_e):
                                         _on_exp(cached_e, "evicted since it contains", prev_exp)
                                         self.cache.evict(cached_e, size=size, pool=pool)
-                        self.cache.add(e, pool=pool, size=self.current_size)
-                        self.seen[(pool, fp)] = (cost, [(e, self.current_size)])
-                        self.last_progress = self.current_size
-                    else:
-                        continue
+                        else:
+                            should_add = False
+                            worse_than = (prev_exp, prev_size, prev_cost)
+                            # break
+                    if worse_than and better_than:
+                        print("Uh-oh! Strange cost relationship between")
+                        print("  (1) this exp: {}".format(pprint(e)))
+                        print("  (2) prev. A:  {}".format(pprint(worse_than[0])))
+                        print("  (2) prev. B:  {}".format(pprint(better_than[0])))
+                        print("(1) vs (2): {}".format(cost.compare_to(worse_than[2], self.assumptions)))
+                        print("(2) vs (3): {}".format(worse_than[2].compare_to(better_than[2], self.assumptions)))
+                        print("(3) vs (1): {}".format(better_than[2].compare_to(cost, self.assumptions)))
+                        raise Exception("insane cost model behavior")
+
+                if should_add:
+                    self.cache.add(e, pool=pool, size=self.current_size)
+                    self.seen.add(e, pool, fp, self.current_size, cost)
+                    self.last_progress = self.current_size
+                else:
+                    continue
 
                 improvements = list(self._possible_replacements(e, pool, cost, fp))
                 if improvements:

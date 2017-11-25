@@ -1,7 +1,10 @@
-from cozy.common import nested_dict, find_one
+from collections import OrderedDict
+
+from cozy.common import nested_dict, find_one, typechecked
 from cozy.target_syntax import Exp, EVar, EStateVar
 from cozy.syntax_tools import free_vars, pprint, alpha_equivalent
 from cozy.pools import RUNTIME_POOL, STATE_POOL, ALL_POOLS
+from cozy.cost_model import Cost
 from cozy.opts import Option
 
 enforce_wf = Option("enforce-cache-wf", bool, False)
@@ -121,3 +124,43 @@ class Cache(object):
         import random
         es = [ e for (e, size, pool) in self ]
         return random.sample(es, min(n, len(es)))
+
+class SeenSet(object):
+    def __init__(self):
+        self.data = OrderedDict() # maps (pool, fingerprint) to list of (e, size, cost)
+    def _find(self, pool, fingerprint, create=False):
+        key = (pool, fingerprint)
+        l = self.data.get(key)
+        if l is None:
+            if create:
+                l = []
+                self.data[key] = l
+            else:
+                return ()
+        return l
+    @typechecked
+    def add(self, e : Exp, pool : int, fingerprint : tuple, size : int, cost : Cost):
+        l = self._find(pool, fingerprint, create=True)
+        assert all(v[0] != e for v in l)
+        l.append((e, size, cost))
+    def find_all(self, pool, fingerprint):
+        """yields (e, size, cost) tuples"""
+        yield from self._find(pool, fingerprint)
+    def find_one(self, pool, fingerprint):
+        """returns first-seen (e, size, cost) with given pool and fingerprint, or None"""
+        for x in self.find_all(pool, fingerprint):
+            return x
+        return None
+    def items(self):
+        """yields (e, pool, fingerprint, size, cost) tuples"""
+        for (pool, fp), l in self.data.items():
+            for (e, size, cost) in l:
+                yield (e, pool, fp, size, cost)
+    def remove(self, e, pool, fingerprint):
+        l = self._find(pool, fingerprint)
+        for i in range(len(l)):
+            if l[i][0] is e:
+                del l[i]
+                return
+    def clear(self):
+        self.data.clear()
