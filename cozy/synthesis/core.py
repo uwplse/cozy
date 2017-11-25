@@ -688,6 +688,7 @@ def improve(
     builder = FixedBuilder(builder, state_vars, binders, assumptions)
 
     if eliminate_vars.value and can_elim_vars(target, assumptions, state_vars):
+        print("This job does not depend on state_vars.")
         builder = StateElimBuilder(builder)
 
     vars = list(free_vars(target) | free_vars(assumptions))
