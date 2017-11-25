@@ -169,8 +169,8 @@ def sketch_update(
             recurse(get(lval, i), get(old_value, i), get(new_value, i), ctx, assumptions)
             for i in range(len(t.fields))])
     elif isinstance(t, syntax.THandle):
-        get_val = lambda val: syntax.EGetField(val, "val").with_type(t.value_type)
-        stm = recurse(get_val(lval), get_val(old_value), get_val(new_value), ctx, assumptions)
+        # handles are tricky, and are dealt with at a higher level
+        stm = syntax.SNoOp()
     elif isinstance(t, syntax.TMap):
         value_at = lambda m, k: target_syntax.EMapGet(m, k).with_type(lval.type.v)
 

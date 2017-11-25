@@ -122,7 +122,8 @@ def improve_implementation(
         list(impl.concrete_state),
         list(impl.query_specs),
         OrderedDict(impl.query_impls),
-        defaultdict(SNoOp, impl.updates))
+        defaultdict(SNoOp, impl.updates),
+        defaultdict(SNoOp, impl.handle_updates))
 
     # gather root types
     types = list(all_types(impl.spec))
