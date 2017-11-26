@@ -840,10 +840,18 @@ class CxxPrinter(common.Visitor):
             s += "{indent}}};\n".format(indent=indent)
             return s
         elif isinstance(t, TRecord):
-            return "{indent}struct {name} {{\n{fields}{indent}}};\n".format(
+            s = "{indent}struct {name} {{\n{fields}".format(
                 indent=indent,
                 name=name,
                 fields="".join("{indent}{field_decl};\n".format(indent=indent+INDENT, field_decl=self.visit(t, f)) for (f, t) in t.fields))
+            s += indent + INDENT + "inline bool operator==(const {name}& other) {{\n".format(name=name)
+            s += indent + INDENT*2 + "return {};\n".format(
+                "true" if not t.fields else
+                " && ".join("({f} == other.{f})".format(f=f) for (f, t) in t.fields))
+            s += indent + INDENT + "}\n"
+            s += indent + INDENT + "inline bool operator!=(const {name}& other) {{ return !(*this == other); }}\n".format(name=name)
+            s += indent + "};\n"
+            return s
         elif isinstance(t, TTuple):
             return self.define_type(toplevel_name, TRecord(tuple(("_{}".format(i), t.ts[i]) for i in range(len(t.ts)))), name, indent, sharing);
         else:
