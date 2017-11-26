@@ -472,6 +472,7 @@ class CxxPrinter(common.Visitor):
         elif isinstance(iterable, ECond):
             v = fresh_var(iterable.type.t, "v")
             new_body = body(v)
+            assert isinstance(new_body, Stm)
             return self.visit(SIf(iterable.cond,
                 SForEach(v, iterable.then_branch, new_body),
                 SForEach(v, iterable.else_branch, new_body)), indent=indent)
@@ -499,9 +500,12 @@ class CxxPrinter(common.Visitor):
             setup, e = self.visit(EBinOp(iterable.e1, "-", iterable.e2).with_type(t), indent)
             return setup + self.for_each(EEscape(e, (), ()).with_type(t), body, indent)
         elif isinstance(iterable, EFlatMap):
-            # TODO: properly handle breaks inside body
-            # TODO: indents get messed up here
-            return self.for_each(EFlatten(EMap(iterable.e, iterable.f).with_type(TBag(iterable.type))).with_type(iterable.type), body, indent)
+            from cozy.syntax_tools import shallow_copy
+            v = fresh_var(iterable.type.t)
+            new_body = body(v)
+            assert isinstance(new_body, Stm)
+            return self.for_each(iterable.e, indent=indent,
+                body=lambda bag: SForEach(v, iterable.f.apply_to(bag), new_body))
         elif isinstance(iterable, ECall) and iterable.func in self.queries:
             q = self.queries[iterable.func]
             return self.for_each(subst(q.ret, { a : v for ((a, t), v) in zip(q.args, iterable.args) }), body, indent=indent)
