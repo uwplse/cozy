@@ -790,13 +790,6 @@ def alpha_equivalent(e1 : syntax.Exp, e2 : syntax.Exp) -> bool:
             if not isinstance(e2, syntax.EVar):
                 return False
             return self.remap_l.get(e1, e1) == self.remap_r.get(e2, e2)
-        def visit_ETuple(self, e1, e2):
-            if not isinstance(e2, syntax.ETuple):
-                return False
-            return all(self.visit(ee1, ee2) for (ee1, ee2) in zip(e1.es, e2.es))
-        def visit_EMakeRecord(self, e1, e2):
-            return (isinstance(e2, syntax.EMakeRecord) and
-                all(k1 == k2 and self.visit(v1, v2) for ((k1, v1), (k2, v2)) in zip(e1.fields, e2.fields)))
         def visit_ELambda(self, e1, e2):
             if not isinstance(e2, target_syntax.ELambda):
                 return False
@@ -826,10 +819,8 @@ def alpha_equivalent(e1 : syntax.Exp, e2 : syntax.Exp) -> bool:
             return s1 == s2
         def visit_int(self, i1, i2):
             return i1 == i2
-        def visit_ECall(self, e1, e2):
-            if not isinstance(e2, syntax.ECall):
-                return False
-            return e1.func == e2.func and len(e1.args) == len(e2.args) and all(self.visit(a1, a2) for (a1, a2) in zip(e1.args, e2.args))
+        def visit_tuple(self, t1, t2):
+            return len(t1) == len(t2) and all(self.visit(x, y) for x, y in zip(t1, t2))
         def visit_Exp(self, e1, e2):
             if type(e1) is not type(e2):
                 return False
