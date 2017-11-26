@@ -22,6 +22,7 @@ from cozy import sharing
 from cozy import opts
 
 save_failed_codegen_inputs = opts.Option("save-failed-codegen-inputs", str, "/tmp/failed_codegen.py", metavar="PATH")
+enable_autotuning = opts.Option("enable-autotuning", bool, False)
 
 def run():
     parser = argparse.ArgumentParser(description='Data structure synthesizer.')
@@ -120,18 +121,23 @@ def run():
             pickle.dump(ast, f)
             print("Saved implementation to file {}".format(args.save))
 
-    print("Generating final concrete implementation...")
-    lib = library.Library()
-    impls = list(autotuning.enumerate_impls(code, state_map, lib, assumptions=ast.spec.assumptions))
-    print("# impls: {}".format(len(impls)))
+    if enable_autotuning.value:
+        print("Generating final concrete implementation...")
+        lib = library.Library()
+        impls = list(autotuning.enumerate_impls(code, state_map, lib, assumptions=ast.spec.assumptions))
+        print("# impls: {}".format(len(impls)))
 
-    impl = impls[0] # TODO: autotuning
-    for (v, t) in impl.statevars:
-        print("{} ~~> {}".format(v, syntax_tools.pprint(t)))
-    share_info = sharing.compute_sharing(state_map, dict(impl.statevars))
+        impl = impls[0] # TODO: autotuning
+        for (v, t) in impl.statevars:
+            print("{} ~~> {}".format(v, syntax_tools.pprint(t)))
+        share_info = sharing.compute_sharing(state_map, dict(impl.statevars))
 
-    print()
-    print(impl.statevars)
+        print()
+        print(impl.statevars)
+    else:
+        from collections import defaultdict
+        impl = code
+        share_info = defaultdict(list)
 
     try:
         java = args.java
