@@ -5,7 +5,7 @@ from .core import ExpBuilder
 from cozy.target_syntax import *
 from cozy.syntax_tools import free_vars, break_conj, all_exps, replace, pprint, enumerate_fragments, mk_lambda, strip_EStateVar, alpha_equivalent, subst
 from cozy.desugar import desugar_exp
-from cozy.typecheck import is_numeric
+from cozy.typecheck import is_numeric, is_collection
 from cozy.pools import RUNTIME_POOL, STATE_POOL
 
 def _as_conjunction_of_equalities(p):
@@ -68,7 +68,7 @@ def break_plus_minus(e):
             yield from break_plus_minus(r(x.e1))
             # print("accel --> {}".format(pprint(r(x.e2))))
             yield from break_plus_minus(r(x.e2))
-            if e.type == INT or isinstance(e.type, TBag):
+            if e.type == INT or is_collection(e.type):
                 ee = EBinOp(r(x.e1), x.op, r(x.e2)).with_type(e.type)
                 if e.type == INT and x.op == "-":
                     ee.op = "+"
@@ -85,25 +85,6 @@ def break_or(e):
             return
     yield e
 
-class Aggregation(object):
-    def __init__(self, op=None, f=None):
-        self.op = op
-        self.f = f
-
-def as_aggregation_of_filter(e):
-    if isinstance(e, EFilter):
-        yield (Aggregation(), e.p, e.e)
-    elif isinstance(e, EMap):
-        for (agg, p, res) in as_aggregation_of_filter(e.e):
-            if agg.op is None:
-                yield (Aggregation(f=compose(e.f, agg.f) if agg.f else e.f), p, res)
-    elif isinstance(e, EUnaryOp) and e.op in (UOp.Sum, UOp.Distinct, UOp.AreUnique, UOp.All, UOp.Any, UOp.Exists, UOp.Length, UOp.Empty):
-        for (agg, p, res) in as_aggregation_of_filter(e.e):
-            if agg.op is None:
-                yield (Aggregation(op=e.op, f=agg.f), p, res)
-    elif isinstance(e.type, TBag):
-        yield (Aggregation(), mk_lambda(e.type.t, lambda x: T), e)
-
 def map_accelerate(e, state_vars, binders, args, cache, size):
     for (_, arg, f, bound) in enumerate_fragments(strip_EStateVar(e)):
         if any(v in state_vars for v in free_vars(arg)):
@@ -112,7 +93,7 @@ def map_accelerate(e, state_vars, binders, args, cache, size):
             value = f(binder)
             if any(v not in state_vars and v not in binders for v in free_vars(value)):
                 continue
-            for bag in cache.find(pool=STATE_POOL, size=size, type=TBag(arg.type)):
+            for bag in cache.find_collections(pool=STATE_POOL, size=size, of=arg.type):
                 if isinstance(bag, EEmptyList):
                     continue
                 m = EMakeMap2(bag,
@@ -157,7 +138,7 @@ def accelerate_filter(bag, p, state_vars, binders, args, cache, size):
                     yield (EFilter(e, ELambda(p.arg, EAll(rest))).with_type(bag.type), RUNTIME_POOL)
 
 def break_bag(e):
-    assert isinstance(e.type, TBag)
+    assert is_collection(e.type)
     if isinstance(e, EBinOp):
         if e.op == "+":
             yield from break_bag(e.e1)
@@ -249,7 +230,7 @@ class AcceleratedBuilder(ExpBuilder):
                 yield self.check(e2, RUNTIME_POOL)
 
         # Fixup EFilter(\x -> ECond...)
-        for e in cache.find(pool=RUNTIME_POOL, size=size-1, type=TBag):
+        for e in cache.find_collections(pool=RUNTIME_POOL, size=size-1):
             if isinstance(e, EFilter):
                 for (_, x, r, _) in enumerate_fragments(e.p.body):
                     if isinstance(x, ECond):
@@ -287,10 +268,10 @@ class AcceleratedBuilder(ExpBuilder):
                     for x, pool in accelerate_filter(e.e, e.p, self.state_vars, self.binders, self.args, cache, sz2):
                         yield self.check(x, pool)
 
-        for bag in itertools.chain(cache.find(pool=RUNTIME_POOL, type=TBag, size=size-1), cache.find(pool=RUNTIME_POOL, type=TSet, size=size-1)):
+        for bag in cache.find_collections(pool=RUNTIME_POOL, size=size-1):
             for a in self.args:
                 for v in self.state_vars:
-                    if TBag(a.type) == v.type:
+                    if is_collection(v.type) and v.type == a.type:
                         v = EStateVar(v).with_type(v.type)
                         cond = EBinOp(a, BOp.In, v).with_type(BOOL)
                         yield self.check(EFilter(bag, mk_lambda(bag.type.t, lambda _:      cond )).with_type(bag.type), RUNTIME_POOL)
@@ -317,7 +298,7 @@ class AcceleratedBuilder(ExpBuilder):
                     bag_binder = find_one(self.binders, lambda b: b.type == key_proj.type and b != binder)
                     if bag_binder:
                         m = strip_EStateVar(EMakeMap2(
-                            EMap(bag.e, ELambda(binder, key_proj)).with_type(TBag(key_proj.type)),
+                            EMap(bag.e, ELambda(binder, key_proj)).with_type(bag.type),
                             ELambda(bag_binder, EFilter(bag.e, ELambda(binder, EEq(key_proj, bag_binder))).with_type(bag.type))).with_type(TMap(key_proj.type, bag.type)))
                         assert not any(v in self.args for v in free_vars(m))
                         yield self.check(m, STATE_POOL)
