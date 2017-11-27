@@ -1,8 +1,9 @@
 from collections import OrderedDict
 
 from cozy.common import nested_dict, find_one, typechecked
-from cozy.target_syntax import Exp, EVar, EStateVar
+from cozy.target_syntax import Type, Exp, EVar, EStateVar
 from cozy.syntax_tools import free_vars, pprint, alpha_equivalent
+from cozy.typecheck import COLLECTION_TYPES
 from cozy.pools import RUNTIME_POOL, STATE_POOL, ALL_POOLS
 from cozy.cost_model import Cost
 from cozy.opts import Option
@@ -99,6 +100,10 @@ class Cache(object):
             for y in (x.values() if type is None else [x.get(type, {})]):
                 for z in (y.values() if size is None else [y.get(size, [])]):
                     yield from z
+    def find_collections(self, pool, of : Type = None, size : int = None):
+        for ct in COLLECTION_TYPES:
+            t = ct(of) if of is not None else ct
+            yield from self.find(pool=pool, type=t, size=size)
     def find(self, pool, type=None, size=None):
         res = []
         res.extend(self._raw_find(pool, type, size))

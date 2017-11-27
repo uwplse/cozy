@@ -36,8 +36,9 @@ DEFAULT_TYPE = object()
 def is_numeric(t):
     return t in (INT, LONG)
 
+COLLECTION_TYPES = (syntax.TBag, syntax.TSet, syntax.TList)
 def is_collection(t):
-    return any(isinstance(t, ct) for ct in (syntax.TBag, syntax.TSet, syntax.TList))
+    return any(isinstance(t, ct) for ct in COLLECTION_TYPES)
 
 def to_abstract(t):
     if isinstance(t, syntax.TBag):
