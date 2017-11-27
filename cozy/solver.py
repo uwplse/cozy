@@ -8,6 +8,7 @@ import z3
 
 from cozy.target_syntax import *
 from cozy.syntax_tools import pprint, free_vars, free_funcs
+from cozy.typecheck import is_collection
 from cozy.common import declare_case, fresh_name, Visitor, FrozenDict, typechecked, extend
 from cozy import evaluation
 from cozy.opts import Option
@@ -657,7 +658,7 @@ class ToZ3(Visitor):
             return z3.IntVal(value, ctx)
         elif isinstance(type, TBool):
             return self.true if value else self.false
-        elif isinstance(type, TBag):
+        elif is_collection(type):
             masks = [self.true for v in value]
             values = [self.unreconstruct(v, type.t) for v in value]
             return (masks, values)
