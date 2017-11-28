@@ -69,6 +69,7 @@ class Implementation(object):
         return [EVar(name).with_type(t) for (name, t) in self.spec.statevars]
 
     def _add_subquery(self, sub_q : Query, used_by : Stm) -> Stm:
+        print("Adding new query {}...".format(sub_q.name))
         # orig_ret = sub_q.ret
         # print("rewritng ret for {}".format(pprint(orig_ret)))
         sub_q = rewrite_ret(sub_q, simplify)
