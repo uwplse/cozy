@@ -247,9 +247,8 @@ class CxxPrinter(common.Visitor):
         return SNoOp() # C++ does default-initialization
 
     def visit_EListGet(self, e, indent):
-        if e.index == ENum(0):
-            return self.find_one(e.e, indent)
-        raise NotImplementedError(e)
+        assert type(e.e.type) is TList
+        return self.visit(EEscape("{l}[{i}]", ["l", "i"], [e.e, e.index]))
 
     def visit_ENative(self, e, indent):
         assert e.e == ENum(0)
