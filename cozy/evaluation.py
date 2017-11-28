@@ -1,10 +1,11 @@
 from collections import UserDict, defaultdict, namedtuple
 from functools import total_ordering, cmp_to_key, lru_cache
+import itertools
 
 from cozy.target_syntax import *
 from cozy.syntax_tools import equal, pprint, free_vars, free_funcs, all_exps
 from cozy.common import FrozenDict, OrderedSet, extend
-from cozy.typecheck import is_numeric
+from cozy.typecheck import is_numeric, is_collection
 
 @total_ordering
 class Map(object):
@@ -53,7 +54,7 @@ class Map(object):
 @total_ordering
 class Bag(object):
     def __init__(self, iterable=()):
-        self.elems = tuple(iterable)
+        self.elems = iterable if isinstance(iterable, tuple) else tuple(iterable)
     def __hash__(self):
         return hash(tuple(sorted(self.elems)))
     def __add__(self, other):
@@ -166,9 +167,7 @@ def construct_value(t : Type) -> Exp:
         e = F
     elif t == STRING:
         e = EStr("")
-    elif isinstance(t, TBag):
-        e = EEmptyList()
-    elif isinstance(t, TList):
+    elif is_collection(t):
         e = EEmptyList()
     elif isinstance(t, TTuple):
         e = ETuple(tuple(construct_value(tt) for tt in t.ts))
@@ -193,7 +192,7 @@ def _uneval(t, value):
         return ENum(value).with_type(t)
     elif t == BOOL:
         return EBool(value).with_type(t)
-    elif isinstance(t, TBag) or isinstance(t, TSet):
+    elif is_collection(t):
         e = EEmptyList().with_type(t)
         for x in value:
             e = EBinOp(e, "+", ESingleton(uneval(t.t, x)).with_type(t)).with_type(t)
@@ -279,10 +278,15 @@ def read_map(stk):
 def read_map_keys(stk):
     stk.append(Bag(stk.pop().keys()))
 
-def binaryop_add(stk):
+def binaryop_add_numbers(stk):
     v2 = stk.pop()
     v1 = stk.pop()
     stk.append(v1 + v2)
+
+def binaryop_add_collections(stk):
+    v2 = stk.pop()
+    v1 = stk.pop()
+    stk.append(Bag(itertools.chain(v1, v2)))
 
 def binaryop_mul(stk):
     v2 = stk.pop()
@@ -594,7 +598,10 @@ def _compile(e, env : {str:int}, out, bind_callback):
         _compile(e.e2, env, out, bind_callback=bind_callback)
         e1type = e.e1.type
         if e.op == "+":
-            out.append(binaryop_add)
+            if is_collection(e.type):
+                out.append(binaryop_add_collections)
+            else:
+                out.append(binaryop_add_numbers)
         elif e.op == "*":
             out.append(binaryop_mul)
         elif e.op == "-":
@@ -681,12 +688,7 @@ def _compile(e, env : {str:int}, out, bind_callback):
                 ops.append(append_to_result(res_idx))
             return ops
         out.append(do_map)
-        if isinstance(e.type, TList):
-            out.append(iterable_to_list)
-        elif isinstance(e.type, TBag):
-            out.append(iterable_to_bag)
-        else:
-            raise NotImplementedError(e.type)
+        out.append(iterable_to_bag)
     elif isinstance(e, EFlatMap):
         _compile(EMap(e.e, e.f).with_type(TBag(e.type.t)), env, out, bind_callback=bind_callback)
         out.append(do_concat)
@@ -766,6 +768,8 @@ def _compile(e, env : {str:int}, out, bind_callback):
             _compile(e.f.body, env, out, bind_callback=bind_callback)
     else:
         raise NotImplementedError(type(e))
+    if hasattr(e, "type") and isinstance(e.type, TList):
+        out.append(iterable_to_list)
 
 def free_vars_and_funcs(e):
     for v in free_vars(e):
