@@ -727,7 +727,7 @@ def _compile(e, env : {str:int}, out, bind_callback):
         out.append(initialize)
         out.append(loop)
     elif isinstance(e, EMakeMap2):
-        _compile(EMap(e.e, ELambda(e.value.arg, ETuple((e.value.arg, e.value.body)))).with_type(TBag(TTuple((e.value.arg.type, e.value.body.type)))), env, out, bind_callback=bind_callback)
+        _compile(EMap(e.e, ELambda(e.value.arg, ETuple((e.value.arg, e.value.body)).with_type(TTuple((e.value.arg.type, e.value.body.type))))).with_type(TBag(TTuple((e.value.arg.type, e.value.body.type)))), env, out, bind_callback=bind_callback)
         default = mkval(e.type.v)
         def make_map(stk):
             res = Map(e.type, default)
