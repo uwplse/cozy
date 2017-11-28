@@ -3,7 +3,8 @@ import itertools
 import sys
 
 from cozy.target_syntax import *
-from cozy.syntax_tools import subst, pprint, free_vars, free_funcs, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda, enumerate_fragments_and_pools, exp_wf, is_scalar
+from cozy.syntax_tools import subst, pprint, free_vars, free_funcs, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda, enumerate_fragments_and_pools
+from cozy.wf import ExpIsNotWf, exp_wf, exp_wf_nonrecursive
 from cozy.common import OrderedSet, ADT, Visitor, fresh_name, typechecked, unique, pick_to_sum, cross_product, OrderedDefaultDict, OrderedSet, group_by, find_one
 from cozy.solver import satisfy, satisfiable, valid
 from cozy.evaluation import eval, eval_bulk, mkval, construct_value, uneval
@@ -161,9 +162,6 @@ class BehaviorIndex(object):
             s += "  " + line + "\n"
         return s
 
-def contains_estatevar(e):
-    return any(isinstance(ee, EStateVar) for ee in all_exps(e))
-
 def find_naked_statevar(e, state_vars):
     for (a, e, r, bound, pool) in enumerate_fragments_and_pools(e):
         if e in state_vars and pool != STATE_POOL:
@@ -228,11 +226,10 @@ class Learner(object):
         print("finished fixing seen set")
 
     def is_legal_in_pool(self, e, pool):
-        if pool == RUNTIME_POOL:
-            return all(v not in self.state_vars for v in free_vars(e, descend_into_estatevar=False))
-        else:
-            assert pool == STATE_POOL
-            return all(v not in self.args for v in free_vars(e)) and not contains_estatevar(e)
+        try:
+            return exp_wf(e, state_vars=self.state_vars, args=self.args, pool=pool, assumptions=self.assumptions)
+        except ExpIsNotWf as exc:
+            return False
 
     def watch(self, new_target):
         self._check_seen_wf()
@@ -506,10 +503,11 @@ COMMUTATIVE_OPERATORS = set(("==", "and", "or", "+"))
 ATTRS_TO_PRESERVE = ("_accel", "_tag")
 
 class FixedBuilder(ExpBuilder):
-    def __init__(self, wrapped_builder, state_vars, binders_to_use, assumptions : Exp):
+    def __init__(self, wrapped_builder, state_vars, args, binders_to_use, assumptions : Exp):
         self.wrapped_builder = wrapped_builder
-        self.binders_to_use = binders_to_use
         self.state_vars = OrderedSet(state_vars)
+        self.args = OrderedSet(args)
+        self.binders_to_use = binders_to_use
         self.assumptions = assumptions
     def build(self, cache, size):
         for (e, pool) in self.wrapped_builder.build(cache, size):
@@ -529,58 +527,18 @@ class FixedBuilder(ExpBuilder):
                 _on_exp(e, "rejecting symmetric use of commutative operator")
                 continue
 
-            # various filtering
-            if isinstance(e.type, TBag) and isinstance(e.type.t, TBag):
-                _on_exp(e, "rejecting bag-of-bags")
+            try:
+                # Acceleration rules can produce arbitrary expressions, so we
+                # need to recursively check them.  The regular grammar only
+                # produces expressions "one level deep"---all subexpressions
+                # have already been checked.
+                if hasattr(e, "_accel"):
+                    exp_wf(e, self.state_vars, self.args, pool, assumptions=self.assumptions)
+                else:
+                    exp_wf_nonrecursive(e, self.state_vars, self.args, pool, assumptions=self.assumptions)
+            except ExpIsNotWf as exc:
+                _on_exp(e, exc.reason, exc.offending_subexpression)
                 continue
-
-            # various filtering on maps
-            if isinstance(e.type, TMap) and not (is_scalar(e.type.k) and ((is_scalar(e.type.v) or (isinstance(e.type.v, TBag) and is_scalar(e.type.v.t))))):
-                _on_exp(e, "rejecting ill-typed map")
-                continue
-            x = e
-            if isinstance(x, EMakeMap2) and isinstance(x.type.v, TBag):
-                from cozy.typecheck import is_collection
-                all_collections = [sv for sv in self.state_vars if is_collection(sv.type)]
-                total_size = ENum(0).with_type(INT)
-                for c in all_collections:
-                    total_size = EBinOp(total_size, "+", EUnaryOp(UOp.Length, c).with_type(INT)).with_type(INT)
-                s = EAll([
-                    self.assumptions,
-                    EBinOp(
-                        total_size, "<",
-                        EUnaryOp(UOp.Length, EFlatMap(x.e, x.value).with_type(x.type.v)).with_type(INT)).with_type(BOOL)])
-                if satisfiable(s):
-                    _on_exp(x, "rejecting non-polynomial-sized map")
-                    continue
-
-            # all sets must have distinct values
-            if isinstance(e.type, TSet):
-                if not valid(implies(self.assumptions, EUnaryOp(UOp.AreUnique, e).with_type(BOOL))):
-                    raise Exception("insanity: values of {} are not distinct".format(e))
-            if isinstance(e.type, TBag):
-                if not valid(implies(self.assumptions, EUnaryOp(UOp.AreUnique, e).with_type(BOOL))):
-                    _on_exp(x, "rejecting bag with duplicates")
-                    continue
-
-            # experimental criterion: "the" must be a 0- or 1-sized collection
-            if isinstance(e, EUnaryOp) and e.op == "the":
-                len = EUnaryOp("sum", EMap(e.e, mk_lambda(e.type, lambda x: ENum(1).with_type(INT))).with_type(TBag(INT))).with_type(INT)
-                if not valid(implies(self.assumptions, EBinOp(len, "<=", ENum(1).with_type(INT)).with_type(BOOL))):
-                    _on_exp(e, "rejecting illegal application of 'the': could have >1 elems")
-                    continue
-
-            # # map gets must be provably in the map
-            # if isinstance(e, EMapGet):
-            #     if not valid(implies(self.assumptions, EBinOp(e.key, BOp.In, EMapKeys(e.map).with_type(TBag(e.map.type.k))).with_type(BOOL))):
-            #         _on_exp(e, "rejecting potential map lookup miss")
-            #         continue
-
-            # # constructed maps cannot always be empty
-            # if isinstance(e, EMakeMap):
-            #     if not satisfiable(EAll([self.assumptions, EUnaryOp(UOp.Exists, e.e).with_type(BOOL)])):
-            #         _on_exp(e, "rejecting empty map")
-            #         continue
 
             yield (e, pool)
 
@@ -690,7 +648,7 @@ def improve(
     binders = list(binders)
     target = fixup_binders(target, binders, allow_add=False)
     assumptions = fixup_binders(assumptions, binders, allow_add=False)
-    builder = FixedBuilder(builder, state_vars, binders, assumptions)
+    builder = FixedBuilder(builder, state_vars, args, binders, assumptions)
 
     if eliminate_vars.value and can_elim_vars(target, assumptions, state_vars):
         print("This job does not depend on state_vars.")

@@ -1,7 +1,7 @@
 from cozy.common import Visitor
 from cozy import syntax
 from cozy import target_syntax
-from cozy.syntax_tools import pprint, all_exps
+from cozy.syntax_tools import pprint, all_exps, is_scalar
 
 def typecheck(ast, env=None):
     """
