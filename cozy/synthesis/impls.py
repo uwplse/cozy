@@ -127,8 +127,9 @@ class Implementation(object):
                 # print("  to update {} in {}, use\n{}".format(pprint(t), op.name, pprint(state_update_stm)))
                 for sub_q in subqueries:
                     state_update_stm = self._add_subquery(sub_q=sub_q, used_by=state_update_stm)
-                state_update_stm = SForEach(h, ECall(modified_handles.name, query_vars).with_type(bag.type), state_update_stm)
-                state_update_stm = self._add_subquery(sub_q=modified_handles, used_by=state_update_stm)
+                if state_update_stm != SNoOp():
+                    state_update_stm = SForEach(h, ECall(modified_handles.name, query_vars).with_type(bag.type), state_update_stm)
+                    state_update_stm = self._add_subquery(sub_q=modified_handles, used_by=state_update_stm)
                 self.handle_updates[(t, op.name)] = state_update_stm
 
     def set_impl(self, q : Query, rep : [(EVar, Exp)], ret : Exp):
