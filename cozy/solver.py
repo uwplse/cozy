@@ -133,7 +133,7 @@ class ToZ3(Visitor):
             assert isinstance(e1, z3.AstRef), "{}".format(repr(e1))
             assert isinstance(e2, z3.AstRef), "{}".format(repr(e2))
             return e1 == e2
-        elif isinstance(t, TList):
+        elif isinstance(t, TList) or (is_collection(t) and deep):
             elem_type = t.t
             lhs_mask, lhs_elems = e1
             rhs_mask, rhs_elems = e2

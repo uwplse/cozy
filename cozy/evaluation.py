@@ -115,8 +115,12 @@ def cmp(t, v1, v2, deep=False):
             else:        return GT
         elif isinstance(t, TBag) or isinstance(t, TSet):
             # TODO: if deep, handle "the"?
-            elems1 = list(sorted(v1))
-            elems2 = list(sorted(v2))
+            if deep:
+                elems1 = list(v1)
+                elems2 = list(v2)
+            else:
+                elems1 = list(sorted(v1))
+                elems2 = list(sorted(v2))
             if len(elems1) < len(elems2): return LT
             if len(elems1) > len(elems2): return GT
             stk.extend(reversed([(t.t, x, y) for (x, y) in zip(elems1, elems2)]))
