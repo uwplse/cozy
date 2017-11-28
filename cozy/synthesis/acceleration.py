@@ -298,7 +298,7 @@ class AcceleratedBuilder(ExpBuilder):
                     bag_binder = find_one(self.binders, lambda b: b.type == key_proj.type and b != binder)
                     if bag_binder:
                         m = strip_EStateVar(EMakeMap2(
-                            EMap(bag.e, ELambda(binder, key_proj)).with_type(bag.type),
+                            EMap(bag.e, ELambda(binder, key_proj)).with_type(type(bag.type)(key_proj.type)),
                             ELambda(bag_binder, EFilter(bag.e, ELambda(binder, EEq(key_proj, bag_binder))).with_type(bag.type))).with_type(TMap(key_proj.type, bag.type)))
                         assert not any(v in self.args for v in free_vars(m))
                         yield self.check(m, STATE_POOL)

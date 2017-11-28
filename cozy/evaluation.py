@@ -689,7 +689,7 @@ def _compile(e, env : {str:int}, out, bind_callback):
         out.append(do_map)
         out.append(iterable_to_bag)
     elif isinstance(e, EFlatMap):
-        _compile(EMap(e.e, e.f).with_type(TBag(e.type.t)), env, out, bind_callback=bind_callback)
+        _compile(EMap(e.e, e.f).with_type(TBag(e.type)), env, out, bind_callback=bind_callback)
         out.append(do_concat)
     elif isinstance(e, EArgMin) or isinstance(e, EArgMax):
         # stack layout:
