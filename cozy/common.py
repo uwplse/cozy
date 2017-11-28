@@ -40,7 +40,7 @@ def check_type(value, ty, value_name="value"):
             check_type(k, kt, value_name)
             check_type(v, vt, "{}[{}]".format(value_name, k))
     elif type(ty) is set:
-        assert isinstance(value, set), "{} has type {}, not {}".format(value_name, type(value).__name__, "set")
+        assert isinstance(value, set) or isinstance(value, OrderedSet), "{} has type {}, not {}".format(value_name, type(value).__name__, "set")
         subty, = ty
         for x in value:
             check_type(x, subty, "{} in {}".format(x, value_name))
