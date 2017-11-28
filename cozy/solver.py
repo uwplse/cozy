@@ -14,6 +14,7 @@ from cozy import evaluation
 from cozy.opts import Option
 
 save_solver_testcases = Option("save-solver-testcases", str, "", metavar="PATH")
+collection_depth_opt = Option("collection-depth", int, 2, metavar="N", description="Bound for bounded verification")
 
 class SolverReportedUnknown(Exception):
     pass
@@ -760,7 +761,9 @@ def mkconst(ctx, solver, val):
         raise NotImplementedError(repr(val))
 
 _LOCK = threading.Lock()
-def satisfy(e, vars = None, funcs = None, collection_depth : int = 2, validate_model : bool = True, model_callback = None, logic : str = None, timeout : float = None):
+def satisfy(e, vars = None, funcs = None, collection_depth : int = None, validate_model : bool = True, model_callback = None, logic : str = None, timeout : float = None):
+    if collection_depth is None:
+        collection_depth = collection_depth_opt.value
     start = datetime.now()
     with _LOCK:
         # print("Checking sat (|e|={}); time to acquire lock = {}".format(e.size(), datetime.now() - start))
