@@ -326,15 +326,29 @@ class Learner(object):
         Yields watched expressions that appear as worse versions of the given
         expression. There may be more than one.
         """
-        for (watched_e, r, watched_cost, assumptions, p, bound) in self.behavior_index.search(fp):
+        for (assumptions, watched_e, r, bound, p) in enumerate_fragments_and_pools(self.target):
+            if e.type != watched_e.type:
+                continue
             if p != pool:
                 continue
             if e == watched_e:
                 continue
+            watched_cost = self.cost_model.cost(watched_e, pool=pool)
             if not cost.sometimes_better_than(watched_cost):
                 _on_exp(e, "skipped possible replacement", pool_name(pool), watched_e)
                 continue
-            yield (watched_e, e, assumptions, r)
+            if all(eval_bulk(EImplies(self.assumptions, EEq(self.target, r(e))), self.all_examples)):
+                yield (watched_e, e, assumptions, r)
+
+        # for (watched_e, r, watched_cost, assumptions, p, bound) in self.behavior_index.search(fp):
+        #     if p != pool:
+        #         continue
+        #     if e == watched_e:
+        #         continue
+        #     if not cost.sometimes_better_than(watched_cost):
+        #         _on_exp(e, "skipped possible replacement", pool_name(pool), watched_e)
+        #         continue
+        #     yield (watched_e, e, assumptions, r)
 
     def pre_optimize(self, e, pool):
         """
@@ -674,7 +688,7 @@ def improve(
             new_target = repl(new_e)
 
             # 3. check
-            formula = EAll([assumptions, ENot(EBinOp(target, "===", new_target).with_type(BOOL))])
+            formula = EAll([assumptions, ENot(EBinOp(target, "==", new_target).with_type(BOOL))])
             counterexample = satisfy(formula, vars=vars, funcs=funcs)
             if counterexample is not None:
 
@@ -683,7 +697,7 @@ def improve(
                 counterexample = satisfy(EAll([
                         assumptions,
                         EAll(local_assumptions),
-                        ENot(EBinOp(target, "===", new_target).with_type(BOOL)),
+                        ENot(EBinOp(target, "==", new_target).with_type(BOOL)),
                         ENot(EBinOp(old_e,  "===", new_e).with_type(BOOL))]),
                     vars=vars, funcs=funcs)
                 if counterexample is None:
