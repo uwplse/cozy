@@ -5,6 +5,7 @@ import itertools
 from cozy.common import typechecked, partition
 from cozy.target_syntax import *
 from cozy.syntax_tools import BottomUpExplorer, pprint, equal, fresh_var, mk_lambda, free_vars, subst, alpha_equivalent
+from cozy.typecheck import is_collection
 from cozy.pools import RUNTIME_POOL, STATE_POOL
 from cozy.solver import valid, satisfiable, REAL, SolverReportedUnknown
 from cozy.evaluation import eval
@@ -237,11 +238,11 @@ class CompositeCostModel(CostModel, BottomUpExplorer):
         costs = [ONE, c1, c2]
         if e.op == BOp.In:
             costs.append(self.cardinality(e.e2))
-        elif e.op == "==" and isinstance(e.e1.type, TBag):
+        elif e.op == "==" and is_collection(e.e1.type):
             costs.append(EXTREME_COST)
             costs.append(self.cardinality(e.e1))
             costs.append(self.cardinality(e.e2))
-        elif e.op == "-" and isinstance(e.type, TBag):
+        elif e.op == "-" and is_collection(e.type):
             costs.append(EXTREME_COST)
             costs.append(self.cardinality(e.e1))
             costs.append(self.cardinality(e.e2))
@@ -273,7 +274,7 @@ class CompositeCostModel(CostModel, BottomUpExplorer):
             min_cardinality = ENum(1000).with_type(INT)
             if assume_large_cardinalities.value:
                 for v in free_vars(e):
-                    if isinstance(v.type, TBag) or isinstance(v.type, TSet):
+                    if is_collection(v.type):
                         self.assumptions.append(EBinOp(self.cardinality(v), ">", min_cardinality).with_type(BOOL))
             self.secondaries = 0
             f = self.visit(e)
