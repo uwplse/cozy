@@ -408,12 +408,11 @@ def unaryop_areunique(elem_type):
     return unaryop_areunique
 
 def unaryop_distinct(elem_type):
-    keyfunc = cmp_to_key(lambda v1, v2: cmp(elem_type, v1, v2))
     def unaryop_distinct(stk):
         v = stk.pop()
         res = []
-        for x in sorted(v, key=keyfunc):
-            if not res or not eq(elem_type, res[-1], x):
+        for x in v:
+            if not any(eq(elem_type, x, y) for y in res):
                 res.append(x)
         stk.append(Bag(res))
     return unaryop_distinct
