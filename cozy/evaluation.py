@@ -56,15 +56,13 @@ class Bag(object):
     def __init__(self, iterable=()):
         self.elems = iterable if isinstance(iterable, tuple) else tuple(iterable)
     def __hash__(self):
-        return hash(tuple(sorted(self.elems)))
+        return hash(self.elems)
     def __add__(self, other):
         return Bag(self.elems + other.elems)
     def __eq__(self, other):
-        if not isinstance(other, Bag):
-            return False
-        return sorted(self.elems) == sorted(other.elems)
+        return self.elems == other.elems
     def __lt__(self, other):
-        return sorted(self.elems) < sorted(other.elems)
+        return self.elems < other.elems
     def __len__(self):
         return len(self.elems)
     def __getitem__(self, i):
