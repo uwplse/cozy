@@ -247,6 +247,8 @@ class CompositeCostModel(CostModel, BottomUpExplorer):
             costs.append(self.cardinality(e.e1))
             costs.append(self.cardinality(e.e2))
         return ESum(costs)
+    def visit_EMapGet(self, e):
+        return ESum((TWO, self.visit(e.map), self.visit(e.key)))
     def visit_EMakeMap2(self, e):
         return ESum((EXTREME_COST, self.visit(e.e), EBinOp(self.cardinality(e.e, plus_one=True), "*", self.visit(e.value.body)).with_type(INT)))
     def visit_EFilter(self, e):
