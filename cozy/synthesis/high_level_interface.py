@@ -203,10 +203,23 @@ def improve_implementation(
             if killed:
                 print(" --> dropped {} worse solutions".format(killed))
 
+            improvements = list(improved_queries_by_name.values())
+            def index_of(l, p):
+                if not isinstance(l, list):
+                    l = list(l)
+                for i in range(len(l)):
+                    if p(l[i]):
+                        return i
+                return -1
+            improvements.sort(key = lambda i: index_of(impl.query_specs, lambda qq: qq.name == i[0].name))
+            print("update order:")
+            for (q, _, _) in improvements:
+                print("  --> {}".format(q.name))
+
             # update query implementations
             i = 1
-            for (q, new_rep, new_ret) in improved_queries_by_name.values():
-                print("considering update {}/{}...".format(i, len(improved_queries_by_name)))
+            for (q, new_rep, new_ret) in improvements:
+                print("considering update {}/{}...".format(i, len(improvements)))
                 i += 1
                 # this guard might be false if a better solution was
                 # enqueued but the job has already been cleaned up
