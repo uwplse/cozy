@@ -40,7 +40,7 @@ class Job(object):
         return self._flags[0]
     @property
     def done(self):
-        return self._flags[1]
+        return self._flags[1] or (self._thread.exitcode is not None)
     @property
     def successful(self):
         return self._flags[2]
