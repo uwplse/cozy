@@ -357,6 +357,7 @@ class Learner(object):
         """
         if not hasattr(e, "_accel"):
             return e
+        top_level = e
         class V(BottomUpRewriter):
             def visit_EStateVar(_, e):
                 return EStateVar(self.pre_optimize(e.e, STATE_POOL)).with_type(e.type)
@@ -368,6 +369,8 @@ class Learner(object):
                     return e
                 return ELambda(e.arg, super().visit_ADT(e.body)) # optimize children
             def visit_Exp(_, e): # do not shadow `self`
+                if e is top_level:
+                    return super().visit_ADT(e) # optimize children
                 fp = self._fingerprint(e)
                 prev = self.seen.find_one(pool, fp)
                 if prev is None:
@@ -406,7 +409,10 @@ class Learner(object):
                 if self.stop_callback():
                     raise StopException()
 
-                e = self.pre_optimize(e, pool)
+                new_e = self.pre_optimize(e, pool)
+                if new_e != e:
+                    _on_exp(e, "preoptimized", new_e)
+                    e = new_e
 
                 cost = self.cost_model.cost(e, pool)
 
