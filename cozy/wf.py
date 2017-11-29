@@ -41,12 +41,16 @@ def exp_wf_nonrecursive(e : Exp, state_vars : {EVar}, args : {EVar}, pool = RUNT
         total_size = ENum(0).with_type(INT)
         for c in all_collections:
             total_size = EBinOp(total_size, "+", EUnaryOp(UOp.Length, c).with_type(INT)).with_type(INT)
-        s = EAll([
+        my_size = EUnaryOp(UOp.Length, EFlatMap(EUnaryOp(UOp.Distinct, e.e).with_type(e.e.type), e.value).with_type(e.type.v)).with_type(INT)
+        s = EImplies(
             assumptions,
-            EBinOp(
-                total_size, "<=",
-                EUnaryOp(UOp.Length, EFlatMap(e.e, e.value).with_type(e.type.v)).with_type(INT)).with_type(BOOL)])
+            EBinOp(total_size, ">=", my_size).with_type(BOOL))
         if not valid(s, collection_depth=3):
+            # from cozy.evaluation import eval
+            # from cozy.solver import satisfy
+            # model = satisfy(EAll([assumptions, EBinOp(total_size, "<", my_size).with_type(BOOL)]), collection_depth=3, validate_model=True)
+            # assert model is not None
+            # raise ExpIsNotWf(e, e, "non-polynomial-sized map ({}); total_size={}, this_size={}".format(model, eval(total_size, model), eval(my_size, model)))
             raise ExpIsNotWf(e, e, "non-polynomial-sized map")
 
 @typechecked
