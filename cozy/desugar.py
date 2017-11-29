@@ -18,64 +18,8 @@ def predicate_is_normal(p):
     return True
 
 @typechecked
-def desugar_exp(e : Exp) -> Exp:
+def desugar_list_comprehensions(e : Exp) -> Exp:
     class V(BottomUpRewriter):
-        def visit_EMap(self, e):
-            bag = self.visit(e.e)
-            if isinstance(bag, EBinOp) and bag.op == "+":
-                return self.visit(EBinOp(
-                    EMap(bag.e1, e.f).with_type(e.type), "+",
-                    EMap(bag.e2, e.f).with_type(e.type)).with_type(e.type))
-            fbody = self.visit(e.f.body)
-            if fbody == e.f.arg:
-                return bag
-            if isinstance(bag, EMap):
-                return EMap(bag.e, compose(ELambda(e.f.arg, fbody), bag.f)).with_type(e.type)
-            return EMap(bag, ELambda(e.f.arg, fbody)).with_type(e.type)
-        def mk_filter_of_conjunction(self, bag : Exp, arg : EVar, conds : [Exp]) -> EFilter:
-            return EFilter(bag, ELambda(arg, EAll(conds))).with_type(bag.type)
-        def break_filter(self, e):
-            if not break_disjunctive_filters.value or predicate_is_normal(e.p.body):
-                # print("breaking normal-form filter: {}".format(pprint(e)))
-                return e
-            t = e.type
-            arg = e.p.arg
-            cases = dnf(nnf(e.p.body))
-            negate = []
-            res = None
-            for case in cases:
-                if res is None:
-                    res = self.mk_filter_of_conjunction(e.e, arg, case)
-                else:
-                    res = EBinOp(res, "+", self.mk_filter_of_conjunction(e.e, arg, negate + case)).with_type(TBag(t.t))
-                negate.append(ENot(EAll(case)))
-            assert res is not None
-            return res
-        def visit_EFilter(self, e):
-            # assert not hasattr(e, "broken")
-            bag = self.visit(e.e)
-            if isinstance(bag, EBinOp) and bag.op == "+":
-                return self.visit(EBinOp(
-                    EFilter(bag.e1, e.p).with_type(e.type), "+",
-                    EFilter(bag.e2, e.p).with_type(e.type)).with_type(e.type))
-            pbody = self.visit(e.p.body)
-            if isinstance(bag, EFilter):
-                return self.visit(EFilter(bag.e, ELambda(e.p.arg, EAll([pbody, bag.p.apply_to(e.p.arg)]))).with_type(e.type))
-            if isinstance(bag, EMap):
-                return self.visit(EMap(EFilter(bag.e, compose(ELambda(e.p.arg, pbody), bag.f)).with_type(bag.e.type), bag.f).with_type(e.type))
-            return self.break_filter(EFilter(bag, ELambda(e.p.arg, pbody)).with_type(e.type))
-        def visit_EFlatMap(self, e):
-            bag = self.visit(e.e)
-            fbody = self.visit(e.f.body)
-            if isinstance(bag, EMap):
-                e = EFlatMap(bag.e, compose(ELambda(e.f.arg, fbody), bag.f)).with_type(e.type)
-            else:
-                e = EFlatMap(bag, ELambda(e.f.arg, fbody)).with_type(e.type)
-            bag = e.e
-            fbody = e.f.body
-            if isinstance(fbody, EMap):
-                e = EMap(EFlatMap(bag, ELambda(e.f.arg, fbody.e)).with_type(TBag(fbody.e.type.t)), fbody.f).with_type(e.type)
-            return e
         def visit_EListComprehension(self, e):
             res, _, _ = self.visit_clauses(e.clauses, self.visit(e.e))
             return self.visit(res)
@@ -102,78 +46,6 @@ def desugar_exp(e : Exp) -> Exp:
                 return rest, guards + [clause.e], pulls
             else:
                 raise NotImplementedError(clause)
-        def visit_EUnaryOp(self, e):
-            sub = self.visit(e.e)
-            if e.op == UOp.Any:
-                arg = fresh_var(BOOL)
-                return self.visit(ENot(EUnaryOp(UOp.Empty, EFilter(e.e, ELambda(arg, arg)).with_type(e.e.type)).with_type(e.type)))
-            elif e.op == UOp.All:
-                arg = fresh_var(BOOL)
-                return self.visit(EUnaryOp(UOp.Empty, EFilter(e.e, ELambda(arg, ENot(arg))).with_type(e.e.type)).with_type(e.type))
-            elif e.op == UOp.Length:
-                # Rewrite to sum of mapping 1 over subexpression.
-                map_expr = EMap(
-                    sub, mk_lambda(sub.type.t, lambda x: ENum(1).with_type(INT))
-                    ).with_type(TBag(INT))
-                return self.visit(EUnaryOp(UOp.Sum, map_expr).with_type(INT))
-            elif e.op == UOp.Sum:
-                if isinstance(sub, EBinOp) and sub.op == "+":
-                    return self.visit(EBinOp(
-                        EUnaryOp(UOp.Sum, sub.e1).with_type(e.type), "+",
-                        EUnaryOp(UOp.Sum, sub.e2).with_type(e.type)).with_type(e.type))
-            return EUnaryOp(e.op, sub).with_type(e.type)
-        def visit_EBinOp(self, e):
-            e1 = self.visit(e.e1)
-            e2 = self.visit(e.e2)
-            op = e.op
-            if op == "!=":
-                return self.visit(ENot(EEq(e1, e2)))
-            elif op == "-" and is_numeric(e.type):
-                return self.visit(EBinOp(e1, "+", EUnaryOp("-", e2).with_type(e.type)).with_type(e.type))
-            else:
-                return EBinOp(e1, op, e2).with_type(e.type)
-
-        # recognize immediate construction-destruction
-
-        def visit_EMapGet(self, e):
-            m = self.visit(e.map)
-            k = self.visit(e.key)
-            if isinstance(m, ECond):
-                return self.visit(ECond(m.cond,
-                    EMapGet(m.then_branch, k).with_type(e.type),
-                    EMapGet(m.else_branch, k).with_type(e.type)).with_type(e.type))
-            elif isinstance(m, EMakeMap2):
-                return self.visit(ECond(
-                    EBinOp(k, BOp.In, m.e).with_type(BOOL),
-                    m.value.apply_to(k),
-                    construct_value(e.type)).with_type(e.type))
-            else:
-                return EMapGet(m, k).with_type(e.type)
-
-        def visit_EMapKeys(self, e):
-            ee = self.visit(e.e)
-            if isinstance(ee, ECond):
-                return self.visit(ECond(ee.cond,
-                    EMapKeys(ee.then_branch).with_type(e.type),
-                    EMapKeys(ee.else_branch).with_type(e.type)).with_type(e.type))
-            elif isinstance(ee, EMakeMap2):
-                return EUnaryOp(UOp.Distinct, ee.e).with_type(e.type)
-            else:
-                return EMapKeys(ee).with_type(e.type)
-
-        def visit_EGetField(self, e):
-            ee = self.visit(e.e)
-            if isinstance(ee, ECond):
-                return self.visit(ECond(ee.cond,
-                    EGetField(ee.then_branch, e.f).with_type(e.type),
-                    EGetField(ee.else_branch, e.f).with_type(e.type)).with_type(e.type))
-            elif isinstance(ee, EMakeRecord):
-                return dict(ee.fields)[e.f]
-            elif isinstance(ee, EWithAlteredValue) and e.f == "val":
-                return ee.new_value
-            else:
-                return EGetField(ee, e.f).with_type(e.type)
-
     return V().visit(e)
 
 @typechecked
@@ -205,7 +77,7 @@ def desugar(spec : Spec) -> Spec:
             t = TBag(t.t)
             spec.statevars[i] = (v, t)
             v = EVar(v).with_type(t)
-            spec.assumptions.append(EUnaryOp("unique", v).with_type(BOOL))
+            spec.assumptions.append(EUnaryOp(UOp.AreUnique, v).with_type(BOOL))
 
     assert retypecheck(spec, env={})
 
@@ -224,7 +96,7 @@ def desugar(spec : Spec) -> Spec:
 
     class V(BottomUpRewriter):
         def visit_Exp(self, e):
-            return desugar_exp(e)
+            return desugar_list_comprehensions(e)
     spec = V().visit(spec)
 
     assert retypecheck(spec, env={})
