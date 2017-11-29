@@ -68,6 +68,9 @@ class BinderBuilder(ExpBuilder):
                 yield self.check(EUnaryOp(UOp.Not, e).with_type(BOOL), pool)
             for e in cache.find(pool=pool, type=INT, size=size-1):
                 yield self.check(EUnaryOp("-", e).with_type(INT), pool)
+                if isinstance(e, EUnaryOp) and e.op == UOp.Length:
+                    # is-singleton?
+                    yield self.check(EEq(e, ONE), pool)
 
             for (sz1, sz2) in pick_to_sum(2, size - 1):
                 for a1 in cache.find(pool=pool, type=INT, size=sz1):
@@ -105,14 +108,12 @@ class BinderBuilder(ExpBuilder):
 
             for bag in cache.find_collections(pool=pool, size=size-1):
                 # len of bag
-                count = EUnaryOp(UOp.Sum, EMap(bag, mk_lambda(bag.type.t, lambda x: ENum(1).with_type(INT))).with_type(TBag(INT))).with_type(INT)
+                count = EUnaryOp(UOp.Length, bag).with_type(INT)
                 yield self.check(count, pool)
                 # empty?
                 yield self.check(EUnaryOp(UOp.Empty, bag).with_type(BOOL), pool)
                 # exists?
                 yield self.check(EUnaryOp(UOp.Exists, bag).with_type(BOOL), pool)
-                # is-singleton?
-                yield self.check(EEq(count, ENum(1).with_type(INT)).with_type(BOOL), pool)
 
             for (sz1, sz2) in pick_to_sum(2, size - 1):
                 for bag in cache.find_collections(pool=pool, size=sz1):
