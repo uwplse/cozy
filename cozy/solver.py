@@ -484,6 +484,8 @@ class ToZ3(Visitor):
             return z3.Or(v1, v2, self.ctx)
         elif e.op == "==":
             return self.eq(e.e1.type, v1, v2, env)
+        elif e.op == "!=":
+            return z3.Not(self.eq(e.e1.type, v1, v2, env), ctx=self.ctx)
         elif e.op == "===":
             return self.eq(e.e1.type, v1, v2, env, deep=True)
         elif e.op == ">":
