@@ -9,7 +9,7 @@ they store various other information to aid synthesis.
 import itertools
 from collections import OrderedDict, defaultdict
 
-from cozy.common import fresh_name, find_one, typechecked
+from cozy.common import fresh_name, find_one, typechecked, OrderedSet
 from cozy.syntax import *
 from cozy.target_syntax import EFilter, EDeepIn
 from cozy.syntax_tools import subst, free_vars, fresh_var, alpha_equivalent, all_exps, BottomUpRewriter, BottomUpExplorer, pprint
@@ -198,8 +198,8 @@ class Implementation(object):
         """
 
         # sort of like mark-and-sweep
-        queries_to_keep = set(q.name for q in self.query_specs if q.visibility == Visibility.Public)
-        state_vars_to_keep = set()
+        queries_to_keep = OrderedSet(q.name for q in self.query_specs if q.visibility == Visibility.Public)
+        state_vars_to_keep = OrderedSet()
         changed = True
         while changed:
             changed = False
