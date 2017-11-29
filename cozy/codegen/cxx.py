@@ -6,7 +6,6 @@ from cozy.common import fresh_name, declare_case
 from cozy.target_syntax import *
 from cozy.syntax_tools import all_types, fresh_var, subst, free_vars, is_scalar, mk_lambda, alpha_equivalent
 from cozy.typecheck import is_collection
-from cozy.simplification import simplify
 
 from .misc import *
 
@@ -498,6 +497,8 @@ class CxxPrinter(common.Visitor):
 
     def for_each(self, iterable : Exp, body, indent="") -> str:
         """Body is function: exp -> stm"""
+        while isinstance(iterable, EDropFront) or isinstance(iterable, EDropBack):
+            iterable = iterable.e
         if isinstance(iterable, EEmptyList):
             return ""
         elif isinstance(iterable, ESingleton):
@@ -720,14 +721,11 @@ class CxxPrinter(common.Visitor):
         return (s, "std::move({})".format(e))
 
     def visit_SAssign(self, s, indent=""):
-        if alpha_equivalent(simplify(s.lhs), simplify(s.rhs)):
-            stm = SNoOp()
-        else:
-            v = fresh_var(s.lhs.type)
-            stm = seq([
-                SEscape("{indent}" + self.visit(v.type, v.id) + ";\n", (), ()),
-                self.construct_concrete(s.lhs.type, s.rhs, v),
-                SEscape("{indent}{lhs} = {v};\n", ("lhs", "v",), (s.lhs, EMove(v).with_type(v.type),))])
+        v = fresh_var(s.lhs.type)
+        stm = seq([
+            SEscape("{indent}" + self.visit(v.type, v.id) + ";\n", (), ()),
+            self.construct_concrete(s.lhs.type, s.rhs, v),
+            SEscape("{indent}{lhs} = {v};\n", ("lhs", "v",), (s.lhs, EMove(v).with_type(v.type),))])
         return self.visit(stm, indent)
 
     def visit_SDecl(self, s, indent=""):
@@ -754,10 +752,9 @@ class CxxPrinter(common.Visitor):
         return res + "\n"
 
     def visit_ECond(self, e, indent=""):
-        scond = simplify(e.cond)
-        if scond == T:
+        if e.cond == T:
             return self.visit(e.then_branch, indent)
-        elif scond == F:
+        elif e.cond == F:
             return self.visit(e.else_branch, indent)
         v = fresh_var(e.type, "v")
         return (
