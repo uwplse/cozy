@@ -1,7 +1,7 @@
 from cozy.target_syntax import *
 from cozy.syntax_tools import BottomUpRewriter, alpha_equivalent, cse
 from cozy.evaluation import construct_value
-from cozy.solver import valid
+from cozy.solver import valid, satisfy
 
 class _V(BottomUpRewriter):
     def __init__(self, debug=False):
@@ -41,12 +41,6 @@ class _V(BottomUpRewriter):
         elif alpha_equivalent(self.visit(e.then_branch), self.visit(e.else_branch)):
             return self.visit(e.then_branch)
         return ECond(cond, self.visit(e.then_branch), self.visit(e.else_branch)).with_type(e.type)
-    def visit_EMapGet(self, e):
-        if isinstance(e.map, EMakeMap2):
-            return self.visit(ECond(EIn(e.key, e.map.e),
-                e.map.value.apply_to(e.key),
-                construct_value(e.type)).with_type(e.type))
-        return EMapGet(self.visit(e.map), self.visit(e.key)).with_type(e.type)
     def visit_EWithAlteredValue(self, e):
         t = e.type
         addr = self.visit(e.handle)
@@ -71,9 +65,11 @@ class _V(BottomUpRewriter):
     def visit(self, e):
         new = super().visit(e)
         if self.debug and isinstance(e, Exp) and not isinstance(e, ELambda):
-            if not valid(EBinOp(e, "===", new).with_type(BOOL)):
+            model = satisfy(ENot(EBinOp(e, "===", new).with_type(BOOL)))
+            if model is not None:
                 from cozy.syntax_tools import pprint
-                raise Exception("bad simplification: {} ---> {}".format(pprint(e), pprint(new)))
+                from cozy.evaluation import eval
+                raise Exception("bad simplification: {} ---> {} (under model {!r}, got {!r} and {!r})".format(pprint(e), pprint(new), model, eval(e, model), eval(new, model)))
         return new
 
 def simplify(e, debug=False):
