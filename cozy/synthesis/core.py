@@ -377,6 +377,8 @@ class Learner(object):
     def next(self):
         while True:
             if self.backlog is not None:
+                if self.stop_callback():
+                    raise StopException()
                 (e, pool, cost) = self.backlog
                 improvements = list(self._possible_replacements(e, pool, cost, self._fingerprint(e)))
                 if self.backlog_counter < len(improvements):
