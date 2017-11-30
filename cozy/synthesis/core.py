@@ -291,41 +291,12 @@ class Learner(object):
     def _fingerprint(self, e):
         return fingerprint(e, self._examples_for(e))
 
-    def _doctor_for_context(self, e : Exp, bound_vars : {EVar}):
-        """
-        Fix an expression so that it has no bad free variables.
-
-        Binders are not allowed to be free in output expressions. Since no
-        binders are free in the input expression, it is actually OK to replace
-        them with arbitrary expressions of the correct type without affecting
-        correctness.
-
-        In order to ensure that the synthesizer continues to make progress, we
-        pull the "arbitrary expression" from the set of things we have seen the
-        value get bound to in the past. If the binder is incorrect here, then
-        the verifier will produce a counterexample in which it gets bound to
-        something else.
-        """
-        orig_e = e
-        value_by_var = { }
-        eval_bulk(self.target, self.examples,
-            bind_callback=lambda var, val: value_by_var.update({var:val}),
-            use_default_values_for_undefined_vars = True)
-        v = find_one(fv for fv in free_vars(e) if fv in self.binders and fv not in bound_vars)
-        while v:
-            e = subst(e, { v.id : uneval(v.type, value_by_var.get(v, mkval(v.type))) })
-            v = find_one(fv for fv in free_vars(e) if fv in self.binders and fv not in bound_vars)
-        if e != orig_e:
-            print("*** doctoring took place; ctx=[{}]".format(", ".join(v.id for v in bound_vars)))
-            print("    original --> {}".format(pprint(e)))
-            print("    modified --> {}".format(pprint(orig_e)))
-        return e
-
     def _possible_replacements(self, e, pool, cost, fp):
         """
         Yields watched expressions that appear as worse versions of the given
         expression. There may be more than one.
         """
+        free_binders = OrderedSet(v for v in free_vars(e) if v in self.binders)
         for (assumptions, watched_e, r, bound, p) in enumerate_fragments_and_pools(self.target):
             if e.type != watched_e.type:
                 continue
@@ -333,9 +304,13 @@ class Learner(object):
                 continue
             if e == watched_e:
                 continue
+            unbound_binders = [b for b in free_binders if b not in bound]
+            if unbound_binders:
+                _on_exp(e, "skipped exp with free binders", ", ".join(b.id for b in unbound_binders))
+                continue
             watched_cost = self.cost_model.cost(watched_e, pool=pool)
-            if not cost.sometimes_better_than(watched_cost):
-                _on_exp(e, "skipped possible replacement", pool_name(pool), watched_e)
+            if cost.compare_to(watched_cost) == Cost.WORSE:
+                _on_exp(e, "skipped worse replacement", pool_name(pool), watched_e)
                 continue
             if all(eval_bulk(EImplies(self.assumptions, EEq(self.target, r(e))), self.all_examples)):
                 yield (watched_e, e, assumptions, r)
@@ -759,21 +734,15 @@ def improve(
                     # continue
                 print("found improvement: {} -----> {}".format(pprint(old_e), pprint(new_e)))
                 print("cost: {} -----> {}".format(old_cost, new_cost))
+
+                # binders are not allowed to "leak" out
+                assert not any(v in binders for v in free_vars(new_target))
+                yield new_target
+
                 if reset_on_success.value:
                     learner.reset(examples, update_watched_exps=False)
                 learner.watch(new_target)
                 target = new_target
-
-                # if binders appear free, let's fix it
-                new_target2 = learner._doctor_for_context(new_target, {})
-                # if new_target2 != new_target:
-                #     if not valid(EImplies(assumptions, EBinOp(target, "===", new_target2).with_type(BOOL))):
-                #         print("OOPS!")
-                #         print("correct: {}".format(pprint(new_target)))
-                #         print("wrong:   {}".format(pprint(new_target2)))
-                #         assert False
-
-                yield new_target2
 
                 if heuristic_done(new_target, args):
                     print("target now matches doneness heuristic")
