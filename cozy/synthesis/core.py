@@ -429,6 +429,7 @@ class Learner(object):
                             continue
                         elif ordering == Cost.BETTER:
                             better_than = (prev_exp, prev_size, prev_cost)
+                            _on_exp(prev_exp, "found better alternative", e)
                             self.cache.evict(prev_exp, size=prev_size, pool=pool)
                             self.seen.remove(prev_exp, pool, fp)
                             if (self.cost_model.is_monotonic() or hyperaggressive_culling.value) and hyperaggressive_eviction.value:
