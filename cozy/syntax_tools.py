@@ -931,7 +931,7 @@ class Aeq(object):
     def __ne__(self, other):
         return not (self == other)
 
-def cse(e):
+def cse(e, verify=False):
     """
     Common subexpression elimination. Replaces re-used expressions with ELet,
     e.g. "(x+1) + (x+1)" ---> "let a = x+1 in a+a".
@@ -990,16 +990,35 @@ def cse(e):
         def visit_ELambda(self, e):
             old_avail = self.avail
             old_avail_by_id = self.avail_by_id
-            invalid = [e.arg]
-            self.avail = collections.OrderedDict([(k, v) for (k, v) in self.avail.items() if k not in invalid])
+            self.avail = collections.OrderedDict([(k, v) for (k, v) in self.avail.items() if e.arg not in free_vars(k)])
             self.avail_by_id = collections.OrderedDict()
             body = self.visit(e.body)
+
+            precious = set((e.arg,))
+            dirty = True
+            while dirty:
+                dirty = False
+                for (k, v) in self.avail.items():
+                    if any(vv in precious for vv in free_vars(k)):
+                        if v not in precious:
+                            precious.add(v)
+                            dirty = True
+            for (k, v) in list(self.avail.items()):
+                if v not in precious:
+                    old_avail[k] = v
+                    del self.avail[k]
+
             body = finish(body, self.avail)
-            self.avail = old_avail # TODO: we can copy over exprs that don't use the arg
+            self.avail = old_avail
             self.avail_by_id = old_avail_by_id
             return target_syntax.ELambda(e.arg, body)
 
     v = V()
     res = v.visit(e)
     res = finish(res, v.avail)
+    if verify:
+        from cozy.solver import valid
+        if not valid(syntax.EBinOp(e, "===", res).with_type(syntax.BOOL), model_callback=print):
+            print(repr(e))
+            assert False
     return res
