@@ -183,7 +183,7 @@ def construct_value(t : Type) -> Exp:
         e = ENative(construct_value(INT))
     elif isinstance(t, TMap):
         e = EMakeMap2(
-            EEmptyList().with_type(t.k),
+            EEmptyList().with_type(TBag(t.k)),
             ELambda(EVar("x").with_type(t.k), construct_value(t.v)))
     else:
         raise NotImplementedError(pprint(t))
