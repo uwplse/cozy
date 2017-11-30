@@ -1,7 +1,7 @@
 from cozy.common import fresh_name
 from cozy import syntax
 from cozy import target_syntax
-from cozy.syntax_tools import free_vars, pprint, fresh_var, mk_lambda, alpha_equivalent, strip_EStateVar
+from cozy.syntax_tools import free_vars, pprint, fresh_var, mk_lambda, alpha_equivalent, strip_EStateVar, subst
 from cozy.typecheck import is_numeric
 from cozy.solver import valid
 from cozy.opts import Option
@@ -66,7 +66,7 @@ def _delta_form(res : { str : syntax.Exp }, op : syntax.Stm) -> { str : syntax.E
                 res[key] = syntax.ECond(op.cond, then_val, else_val).with_type(then_val.type)
     elif isinstance(op, syntax.SSeq):
         _delta_form(res, op.s1)
-        _delta_form(res, op.s2)
+        _delta_form(res, subst(op.s2, res))
     else:
         raise NotImplementedError(type(op))
 
