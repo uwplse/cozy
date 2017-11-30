@@ -232,11 +232,11 @@ def improve_implementation(
                     print("-" * 40)
                     impl.set_impl(q, new_rep, new_ret)
 
-                # clean up
-                impl.cleanup()
-                if progress_callback is not None:
-                    progress_callback((impl.code, impl.concretization_functions))
-                reconcile_jobs()
+                    # clean up
+                    impl.cleanup()
+                    if progress_callback is not None:
+                        progress_callback((impl.code, impl.concretization_functions))
+                    reconcile_jobs()
 
         # stop jobs
         print("Stopping jobs")
