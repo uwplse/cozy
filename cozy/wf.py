@@ -21,6 +21,8 @@ def exp_wf_nonrecursive(e : Exp, state_vars : {EVar}, args : {EVar}, pool = RUNT
         raise ExpIsNotWf(e, e, "EStateVar in state pool position")
     if isinstance(e, EWithAlteredValue) and not at_runtime:
         raise ExpIsNotWf(e, e, "EWithAlteredValue in state position")
+    if isinstance(e, EFlatMap) and not at_runtime:
+        raise ExpIsNotWf(e, e, "EFlatMap in state position")
     if isinstance(e, EVar):
         if at_runtime and e in state_vars:
             raise ExpIsNotWf(e, e, "state var at runtime")
