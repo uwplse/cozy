@@ -237,11 +237,17 @@ class Learner(object):
         self.target = new_target
         self.update_watched_exps()
         self.roots = []
+        types = OrderedSet()
         for (e, r, cost, a, pool, bound) in self.watched_exps:
             for pool in ALL_POOLS:
                 if self.is_legal_in_pool(e, pool):
                     _on_exp(e, "new root", pool_name(pool))
                     self.roots.append((e, pool))
+                    types.add(e.type)
+        for b in self.binders:
+            types.add(b.type)
+        for t in types:
+            self.roots.append((construct_value(t), RUNTIME_POOL))
         self.roots.sort(key = lambda tup: tup[0].size())
         # new_roots = []
         # for e in itertools.chain(all_exps(new_target), all_exps(self.assumptions)):
