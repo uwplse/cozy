@@ -1,0 +1,16 @@
+ReadAfterWrite:
+
+    state x : Int
+    state l : Bag<Int>
+
+    invariant true;
+
+    query getx()
+        x
+
+    query elems()
+        l
+
+    op do_thing(n : Int)
+        x = x + n;
+        l.add(x);

@@ -20,7 +20,9 @@ files = [
     "map",
     "nested-map",
     "in",
-    "polyupdate"]
+    "polyupdate",
+    "read-after-write",
+    "boundsbug2"]
 
 for filename in files:
     def setup(filename):
