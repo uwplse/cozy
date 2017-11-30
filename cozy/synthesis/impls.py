@@ -12,7 +12,7 @@ from collections import OrderedDict, defaultdict
 from cozy.common import fresh_name, find_one, typechecked, OrderedSet
 from cozy.syntax import *
 from cozy.target_syntax import EFilter, EDeepIn
-from cozy.syntax_tools import subst, free_vars, fresh_var, alpha_equivalent, all_exps, BottomUpRewriter, BottomUpExplorer, pprint
+from cozy.syntax_tools import subst, free_vars, fresh_var, alpha_equivalent, all_exps, BottomUpRewriter, BottomUpExplorer, pprint, replace
 from cozy.handle_tools import reachable_handles_at_method
 import cozy.incrementalization as inc
 from cozy.opts import Option
@@ -161,12 +161,43 @@ class Implementation(object):
 
     @property
     def code(self) -> Spec:
+        state_read_by_query = {}
+
+        for query_name, query in self.query_impls.items():
+            state_read_by_query[query_name] = free_vars(query)
+
+        # list of SDecls
+        temps = []
+        updates = dict(self.updates)
+
+        for operator in self.op_specs:
+            things_updated = []
+
+            for v, _ in self.concrete_state:
+                things_updated.append(v)
+                stm = updates[(v, operator.name)]
+                print(v, pprint(stm))
+
+                for e in all_exps(stm):
+                    if isinstance(e, ECall) and e.func in [q.name for q in self.query_specs]:
+                        print(" > {}".format(e.func))
+
+                        problems = set(things_updated) & state_read_by_query[e.func]
+                        if problems:
+                            name = fresh_name()
+                            temps.append(SDecl(name, e))
+                            stm = replace(stm, e, EVar(name).with_type(e.type))
+                            updates[(v, operator.name)] = stm
+
+                            print(" > problem! {}".format(problems))
+
         # construct new op implementations
         new_ops = []
         for op in self.op_specs:
-            stms = [ self.updates[(v, op.name)] for (v, _) in self.concrete_state ]
+
+            stms = [ updates[(v, op.name)] for (v, _) in self.concrete_state ]
             stms.extend(hup for ((t, op_name), hup) in self.handle_updates.items() if op.name == op_name)
-            new_stms = seq(stms)
+            new_stms = seq(temps + stms)
             new_ops.append(Op(
                 op.name,
                 op.args,
