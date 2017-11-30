@@ -110,6 +110,12 @@ class TestSolver(unittest.TestCase):
         a = EVar("a").with_type(TBag(INT))
         assert valid(implies(EUnaryOp("unique", a).with_type(BOOL), equal(a, EUnaryOp("distinct", a).with_type(TBag(INT)))), validate_model=True)
 
+    def test_distinct_of_empty(self):
+        for t in (TSet, TBag, TList):
+            e = EEmptyList().with_type(t(INT))
+            x = EVar("x").with_type(e.type)
+            assert satisfiable(EEq(x, EUnaryOp(UOp.Distinct, e).with_type(e.type)), validate_model=True)
+
     def test_map_keys_unique(self):
         a = EVar("a").with_type(TMap(INT, INT))
         e = EUnaryOp(UOp.AreUnique, EMapKeys(a).with_type(TBag(INT))).with_type(BOOL)
