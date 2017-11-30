@@ -1,0 +1,14 @@
+BoundsBug2:
+    state executions : Int
+    state bugHappened : Bool
+
+    op exec()
+        executions = 1;
+
+        if (executions == 0) {
+            bugHappened = true;
+        }
+
+    query didBugHappen()
+       bugHappened
+
