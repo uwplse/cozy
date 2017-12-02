@@ -643,6 +643,11 @@ def replace(exp, old_exp, new_exp):
             return super().visit(e)
     return Replacer().visit(exp)
 
+def subst_lval(lval, replacements):
+    # Currently we only allow vars and lval.field as l-values.
+    # Neither requires attention during substitution.
+    return lval
+
 def subst(exp, replacements):
     """
     Performs capture-avoiding substitution.
@@ -740,6 +745,15 @@ def subst(exp, replacements):
                 o.args,
                 [subst(a, m) for a in o.assumptions],
                 subst(o.body, m))
+        def visit_SAssign(self, s):
+            return syntax.SAssign(
+                subst_lval(s.lhs, replacements),
+                self.visit(s.rhs))
+        def visit_SCall(self, s):
+            return syntax.SCall(
+                subst_lval(s.target, replacements),
+                s.func,
+                self.visit(s.args))
         def visit(self, x, *args, **kwargs):
             res = super().visit(x, *args, **kwargs)
             if isinstance(res, syntax.Exp) and hasattr(x, "type") and not hasattr(res, "type"):
