@@ -749,8 +749,9 @@ class ToZ3(Visitor):
         else:
             raise NotImplementedError(type)
 
-def decideable(t):
-    return type(t) in [TInt, TLong, TBool, TString, TEnum, TNative, TReal]
+DECIDABLE_TYPES = set([TInt, TLong, TBool, TString, TEnum, TNative, TReal])
+def decideable(t : Type):
+    return type(t) in DECIDABLE_TYPES
 
 def mkconst(ctx, solver, val):
     if type(val) == int:

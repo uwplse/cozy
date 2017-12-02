@@ -51,7 +51,7 @@ class TestSolver(unittest.TestCase):
 
     def test_function_extraction(self):
         x = EVar("x").with_type(TNative("Foo"))
-        e = ECall("f", [x]).with_type(TBool())
+        e = ECall("f", (x,)).with_type(TBool())
         model = satisfy(e)
         assert "x" in model
         assert "f" in model
