@@ -169,7 +169,7 @@ class Implementation(object):
             state_read_by_query[query_name] = free_vars(query)
 
         # list of SDecls
-        temps = []
+        temps = defaultdict(list)
         updates = dict(self.updates)
 
         for operator in self.op_specs:
@@ -185,7 +185,7 @@ class Implementation(object):
 
                         if problems:
                             name = fresh_name()
-                            temps.append(SDecl(name, e))
+                            temps[operator.name].append(SDecl(name, e))
                             stm = replace(stm, e, EVar(name).with_type(e.type))
                             updates[(v, operator.name)] = stm
 
@@ -195,7 +195,7 @@ class Implementation(object):
 
             stms = [ updates[(v, op.name)] for (v, _) in self.concrete_state ]
             stms.extend(hup for ((t, op_name), hup) in self.handle_updates.items() if op.name == op_name)
-            new_stms = seq(temps + stms)
+            new_stms = seq(temps[op.name] + stms)
             new_ops.append(Op(
                 op.name,
                 op.args,
