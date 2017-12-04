@@ -216,6 +216,9 @@ def EEmpty(e):
 def EEq(e1, e2):
     return EBinOp(e1, "==", e2).with_type(BOOL)
 
+def EGt(e1, e2):
+    return EBinOp(e1, ">", e2).with_type(BOOL)
+
 def EIn(e1, e2):
     return EBinOp(e1, BOp.In, e2).with_type(BOOL)
 

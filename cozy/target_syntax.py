@@ -41,6 +41,13 @@ def EDeepIn(e1, e2):
         EMap(e2, ELambda(arg,
             EBinOp(arg, "===", e1).with_type(BOOL))).with_type(BOOL_BAG)).with_type(BOOL)
 
+def ECountIn(e, collection):
+    """Count the number of times e occurs in the collection"""
+    from cozy.syntax_tools import free_vars, fresh_var
+    assert e.type == collection.type.t
+    arg = fresh_var(e.type, omit=free_vars(e))
+    return EUnaryOp(UOp.Length, EFilter(collection, ELambda(arg, EEq(arg, e))).with_type(collection.type)).with_type(INT)
+
 # Fixed-length vectors
 TVector    = declare_case(Type, "TVector", ["t", "n"])
 EVectorGet = declare_case(Exp, "EVectorGet", ["e", "i"])

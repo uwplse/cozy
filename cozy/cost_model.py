@@ -22,9 +22,14 @@ class CostModel(object):
 @lru_cache(maxsize=2**16)
 @typechecked
 def cardinality_le(c1 : Exp, c2 : Exp, assumptions : Exp) -> bool:
+    """
+    Is |c1| <= |c2|?
+    Yes, iff there exists v such that v occurs more times in c2 than in c1.
+    """
     assert c1.type == c2.type
     v = fresh_var(c1.type.t)
-    return valid(EImplies(assumptions, EImplies(EIn(v, c1), EIn(v, c2))))
+    return valid(EImplies(assumptions,
+        EGt(ECountIn(v, c2), ECountIn(v, c1))))
 
 @lru_cache(maxsize=2**16)
 @typechecked
@@ -155,6 +160,11 @@ def debug_comparison(e1, c1, e2, c2):
     print("  c1 = {}".format(c1))
     print("  e2 = {}".format(pprint(e2)))
     print("  c2 = {}".format(c2))
+    print("  c1 compare_to c2 = {}".format(c1.compare_to(c2)))
+    print("  c2 compare_to c1 = {}".format(c2.compare_to(c1)))
+    print("variable meanings...")
+    for v, e in itertools.chain(c1.cardinalities.items(), c2.cardinalities.items()):
+        print("  {v} = len {e}".format(v=pprint(v), e=pprint(e)))
     print("joint orderings...")
     cards = c1.order_cardinalities(c2, assumptions=T)
     print("  {}".format(pprint(cards)))
