@@ -614,6 +614,15 @@ class CxxPrinter(common.Visitor):
                 SDecl(res.id, ENum(0).with_type(type)),
                 SForEach(x, e.e, SAssign(res, EBinOp(res, "+", x).with_type(type)))]), indent)
             return (setup, res.id)
+        elif op == UOp.Length:
+            arg = EVar("x").with_type(e.e.type.t)
+            return self.visit(EUnaryOp(UOp.Sum, EMap(e.e, ELambda(arg, ONE)).with_type(INT_BAG)).with_type(INT), indent)
+        elif op == UOp.All:
+            arg = EVar("x").with_type(e.e.type.t)
+            return self.visit(EUnaryOp(UOp.Empty, EFilter(e.e, ELambda(arg, ENot(arg))).with_type(INT_BAG)).with_type(INT), indent)
+        elif op == UOp.Any:
+            arg = EVar("x").with_type(e.e.type.t)
+            return self.visit(EUnaryOp(UOp.Exists, EFilter(e.e, ELambda(arg, arg)).with_type(INT_BAG)).with_type(INT), indent)
         elif op == UOp.Empty:
             iterable = e.e
             v = fresh_var(BOOL, "v")

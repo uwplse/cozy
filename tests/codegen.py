@@ -88,3 +88,17 @@ class TestCodegen(unittest.TestCase):
             code, res = codgen.visit(EUnaryOp(UOp.Length, bag).with_type(TNativeSet(INT)), indent="")
             print(code)
             print("return {}".format(res))
+
+    def test_all(self):
+        for codgen in (CxxPrinter(), JavaPrinter()):
+            bag = EMap(EVar("v").with_type(TBag(INT)), mk_lambda(INT, lambda x: EBinOp(x, ">", ZERO))).with_type(TBag(BOOL))
+            code, res = codgen.visit(EUnaryOp(UOp.All, bag).with_type(TNativeSet(INT)), indent="")
+            print(code)
+            print("return {}".format(res))
+
+    def test_any(self):
+        for codgen in (CxxPrinter(), JavaPrinter()):
+            bag = EMap(EVar("v").with_type(TBag(INT)), mk_lambda(INT, lambda x: EBinOp(x, ">", ZERO))).with_type(TBag(BOOL))
+            code, res = codgen.visit(EUnaryOp(UOp.Any, bag).with_type(TNativeSet(INT)), indent="")
+            print(code)
+            print("return {}".format(res))
