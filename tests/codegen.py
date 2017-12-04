@@ -81,3 +81,10 @@ class TestCodegen(unittest.TestCase):
             code, res = codgen.visit(EUnaryOp(UOp.Distinct, bag).with_type(TNativeSet(INT)), indent="")
             print(code)
             print("return {}".format(res))
+
+    def test_len(self):
+        for codgen in (CxxPrinter(), JavaPrinter()):
+            bag = EFilter(EVar("v").with_type(TBag(INT)), mk_lambda(INT, lambda x: EBinOp(x, ">", ZERO))).with_type(TBag(INT))
+            code, res = codgen.visit(EUnaryOp(UOp.Length, bag).with_type(TNativeSet(INT)), indent="")
+            print(code)
+            print("return {}".format(res))
