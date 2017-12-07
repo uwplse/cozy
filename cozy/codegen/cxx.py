@@ -5,7 +5,7 @@ from cozy import common, library, evaluation
 from cozy.common import fresh_name, declare_case
 from cozy.target_syntax import *
 from cozy.syntax_tools import all_types, fresh_var, subst, free_vars, is_scalar, mk_lambda, alpha_equivalent
-from cozy.typecheck import is_collection
+from cozy.typecheck import is_collection, is_numeric
 
 from .misc import *
 
@@ -36,6 +36,9 @@ class CxxPrinter(common.Visitor):
 
     def visit_TLong(self, t, name):
         return "long {}".format(name)
+
+    def visit_TFloat(self, t, name):
+        return "float {}".format(name)
 
     def visit_TBool(self, t, name):
         return "bool {}".format(name)
@@ -218,7 +221,7 @@ class CxxPrinter(common.Visitor):
                 self.construct_map(t, e, out))
         elif isinstance(t, THandle):
             return SEscape("{indent}{lhs} = {rhs};\n", ["lhs", "rhs"], [out, self.addr_of(e)])
-        elif type(t) in [TBool, TInt, TNative, TLong, TString, TEnum, TTuple, TRecord]:
+        elif is_numeric(t) or type(t) in [TBool, TNative, TString, TEnum, TTuple, TRecord]:
             return SEscape("{indent}{lhs} = {rhs};\n", ["lhs", "rhs"], [out, e])
         raise NotImplementedError(t, e, out)
 
