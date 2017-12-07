@@ -270,6 +270,8 @@ class ToZ3(Visitor):
         return z3.IntSort(self.ctx)
     def visit_TLong(self, t):
         return z3.IntSort(self.ctx)
+    def visit_TFloat(self, t):
+        return z3.RealSort(self.ctx)
     def visit_TString(self, t):
         return z3.IntSort(self.ctx)
     def visit_TNative(self, t):
@@ -283,6 +285,8 @@ class ToZ3(Visitor):
     def visit_ENum(self, n, env):
         if n.type in (INT, LONG):
             return z3.IntVal(n.val, self.ctx)
+        elif n.type in (REAL, FLOAT):
+            return z3.RealVal(n.val, self.ctx)
         raise NotImplementedError(n.type)
     def visit_EStr(self, s, env):
         if s.val == "":
@@ -659,6 +663,8 @@ class ToZ3(Visitor):
         ctx = self.ctx
         if type == INT or type == LONG:
             return z3.IntVal(value, ctx)
+        elif type == REAL or type == FLOAT:
+            return z3.RealVal(value, ctx)
         elif isinstance(type, TBool):
             return self.true if value else self.false
         elif is_collection(type):
@@ -686,61 +692,65 @@ class ToZ3(Visitor):
         else:
             raise NotImplementedError(type)
 
-    def mkvar(self, collection_depth, type):
+    def mkvar(self, collection_depth, type, on_z3_var=None, on_z3_assertion=None):
         ctx = self.ctx
         solver = self.solver
+        if on_z3_var is None:
+            on_z3_var = lambda v: v
+        if on_z3_assertion is None:
+            on_z3_assertion = solver.add
         if type == INT or type == LONG or isinstance(type, TNative):
-            return z3.Int(fresh_name(), ctx=ctx)
-        elif type == REAL:
-            return z3.Real(fresh_name(), ctx=ctx)
+            return on_z3_var(z3.Int(fresh_name(), ctx=ctx))
+        elif type == REAL or type == FLOAT:
+            return on_z3_var(z3.Real(fresh_name(), ctx=ctx))
         elif type == STRING:
-            i = z3.Int(fresh_name(), ctx=ctx)
-            solver.add(i >= 0)
+            i = on_z3_var(z3.Int(fresh_name(), ctx=ctx))
+            on_z3_assertion(i >= 0)
             return i
         elif type == BOOL:
-            return z3.Bool(fresh_name(), ctx=ctx)
+            return on_z3_var(z3.Bool(fresh_name(), ctx=ctx))
         elif isinstance(type, TEnum):
             ncases = len(type.cases)
-            n = z3.Int(fresh_name(), ctx=ctx)
-            solver.add(n >= 0)
-            solver.add(n < ncases)
+            n = on_z3_var(z3.Int(fresh_name(), ctx=ctx))
+            on_z3_assertion(n >= 0)
+            on_z3_assertion(n < ncases)
             return n
         elif isinstance(type, TSet):
-            res = self.mkvar(collection_depth, TBag(type.t))
+            res = self.mkvar(collection_depth, TBag(type.t), on_z3_var, on_z3_assertion)
             mask, elems = res
             for i in range(1, len(mask)):
-                solver.add(z3.Implies(mask[i], self.distinct(type.t, *(elems[:(i+1)])), ctx))
+                on_z3_assertion(z3.Implies(mask[i], self.distinct(type.t, *(elems[:(i+1)])), ctx))
             return res
         elif isinstance(type, TBag) or isinstance(type, TList):
-            mask = [self.mkvar(collection_depth, BOOL) for i in range(collection_depth)]
-            elems = [self.mkvar(collection_depth, type.t) for i in range(collection_depth)]
+            mask = [self.mkvar(collection_depth, BOOL, on_z3_var, on_z3_assertion) for i in range(collection_depth)]
+            elems = [self.mkvar(collection_depth, type.t, on_z3_var, on_z3_assertion) for i in range(collection_depth)]
             # symmetry breaking
             for i in range(len(mask) - 1):
-                solver.add(z3.Implies(mask[i], mask[i+1], ctx))
+                on_z3_assertion(z3.Implies(mask[i], mask[i+1], ctx))
             return (mask, elems)
         elif isinstance(type, TMap):
             default = self.mkval(type.v)
-            mask = [self.mkvar(collection_depth, BOOL) for i in range(collection_depth)]
+            mask = [self.mkvar(collection_depth, BOOL, on_z3_var, on_z3_assertion) for i in range(collection_depth)]
             # symmetry breaking
             for i in range(len(mask) - 1):
-                solver.add(z3.Implies(mask[i], mask[i+1], ctx))
+                on_z3_assertion(z3.Implies(mask[i], mask[i+1], ctx))
             return {
                 "mapping": [(
                     mask[i],
-                    self.mkvar(collection_depth, type.k),
-                    self.mkvar(collection_depth, type.v))
+                    self.mkvar(collection_depth, type.k, on_z3_var, on_z3_assertion),
+                    self.mkvar(collection_depth, type.v, on_z3_var, on_z3_assertion))
                     for i in range(collection_depth)],
                 "default":
                     default }
         elif isinstance(type, TRecord):
             # TODO: use Z3 ADTs
-            return { field : self.mkvar(collection_depth, t) for (field, t) in type.fields }
+            return { field : self.mkvar(collection_depth, t, on_z3_var, on_z3_assertion) for (field, t) in type.fields }
         elif isinstance(type, TTuple):
             # TODO: use Z3 ADTs
-            return tuple(self.mkvar(collection_depth, t) for t in type.ts)
+            return tuple(self.mkvar(collection_depth, t, on_z3_var, on_z3_assertion) for t in type.ts)
         elif isinstance(type, THandle):
-            h = z3.Int(fresh_name(), ctx)
-            v = (h, self.mkvar(collection_depth, type.value_type))
+            h = on_z3_var(z3.Int(fresh_name(), ctx=ctx))
+            v = (h, self.mkvar(collection_depth, type.value_type, on_z3_var, on_z3_assertion))
             return v
         elif isinstance(type, TFunc):
             return z3.Function(fresh_name(),
@@ -749,7 +759,7 @@ class ToZ3(Visitor):
         else:
             raise NotImplementedError(type)
 
-DECIDABLE_TYPES = set([TInt, TLong, TBool, TString, TEnum, TNative, TReal])
+DECIDABLE_TYPES = set([TInt, TLong, TBool, TString, TEnum, TNative, TReal, TFloat])
 def decideable(t : Type):
     return type(t) in DECIDABLE_TYPES
 
@@ -784,7 +794,7 @@ def satisfy(e, vars = None, funcs = None, collection_depth : int = None, validat
         def reconstruct(model, value, type):
             if type == INT or type == LONG:
                 return model.eval(value, model_completion=True).as_long()
-            elif type == REAL:
+            elif type == REAL or type == FLOAT:
                 return model.eval(value, model_completion=True).as_fraction()
             elif isinstance(type, TNative):
                 return (type.name, model.eval(value, model_completion=True).as_long())

@@ -159,7 +159,8 @@ def break_bag(e):
         yield True, e
 
 def break_sum(e):
-    assert e.type == INT
+    if not is_numeric(e.type):
+        return
     if isinstance(e, EBinOp):
         if e.op == "+":
             yield from break_sum(e.e1)
@@ -171,7 +172,7 @@ def break_sum(e):
                 yield (not pos, x)
     elif isinstance(e, EUnaryOp) and e.op == UOp.Sum:
         for pos, b in break_bag(e.e):
-            yield pos, EUnaryOp(UOp.Sum, b).with_type(INT)
+            yield pos, EUnaryOp(UOp.Sum, b).with_type(e.type)
     elif isinstance(e, EUnaryOp) and e.op == "-":
         for pos, x in break_sum(e.e):
             yield (not pos, x)

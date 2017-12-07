@@ -3,7 +3,7 @@ import itertools
 from cozy.common import pick_to_sum, cross_product, group_by, find_one
 from cozy.target_syntax import *
 from cozy.syntax_tools import subst, mk_lambda, free_vars, is_scalar, pprint, strip_EStateVar
-from cozy.typecheck import is_collection
+from cozy.typecheck import is_collection, is_numeric
 from cozy.pools import STATE_POOL, RUNTIME_POOL, ALL_POOLS
 from cozy.opts import Option
 
@@ -55,8 +55,9 @@ class BinderBuilder(ExpBuilder):
             for e in cache.find(pool=pool, type=TRecord, size=size-1):
                 for (f,t) in e.type.fields:
                     yield self.check(EGetField(e, f).with_type(t), pool)
-            for e in cache.find_collections(pool=pool, of=INT, size=size-1):
-                yield self.check(EUnaryOp(UOp.Sum, e).with_type(INT), pool)
+            for e in cache.find_collections(pool=pool, size=size-1):
+                if is_numeric(e.type.t):
+                    yield self.check(EUnaryOp(UOp.Sum, e).with_type(e.type.t), pool)
             for e in cache.find_collections(pool=pool, size=size-1):
                 yield self.check(EUnaryOp(UOp.The, e).with_type(e.type.t), pool)
             for e in cache.find(pool=pool, type=THandle, size=size-1):
@@ -73,8 +74,10 @@ class BinderBuilder(ExpBuilder):
                     yield self.check(EEq(e, ONE), pool)
 
             for (sz1, sz2) in pick_to_sum(2, size - 1):
-                for a1 in cache.find(pool=pool, type=INT, size=sz1):
-                    for a2 in cache.find(pool=pool, type=INT, size=sz2):
+                for a1 in cache.find(pool=pool, size=sz1):
+                    if not is_numeric(a1.type):
+                        continue
+                    for a2 in cache.find(pool=pool, type=a1.type, size=sz2):
                         yield self.check(EBinOp(a1, "+", a2).with_type(INT), pool)
                         yield self.check(EBinOp(a1, "-", a2).with_type(INT), pool)
                         yield self.check(EBinOp(a1, ">", a2).with_type(BOOL), pool)

@@ -3,6 +3,8 @@ from cozy import syntax
 from cozy import target_syntax
 from cozy.syntax_tools import pprint, all_exps, is_scalar
 
+from cozy.syntax import BOOL, INT, LONG, FLOAT, STRING
+
 def typecheck(ast, env=None):
     """
     Typecheck the syntax tree.
@@ -27,14 +29,10 @@ def retypecheck(exp, env=None):
             print(" --> {}".format(e))
     return not errs
 
-BOOL = syntax.BOOL
-INT = syntax.INT
-LONG = syntax.LONG
-STRING = syntax.STRING
 DEFAULT_TYPE = object()
 
 def is_numeric(t):
-    return t in (INT, LONG)
+    return t in (INT, LONG, syntax.FLOAT)
 
 COLLECTION_TYPES = (syntax.TBag, syntax.TSet, syntax.TList)
 def is_collection(t):
@@ -53,11 +51,12 @@ class Typechecker(Visitor):
 
     def __init__(self, env):
         self.tenv = {
-            "Int": INT,
-            "Bound": INT, # TODO?
-            "Long": LONG,
-            "Bool": BOOL,
-            "String": STRING }
+            "Int":    syntax.INT,
+            "Bound":  syntax.INT, # TODO?
+            "Float":  syntax.FLOAT,
+            "Long":   syntax.LONG,
+            "Bool":   syntax.BOOL,
+            "String": syntax.STRING }
 
         self.env = dict(env)
         self.funcs = dict()
@@ -151,6 +150,9 @@ class Typechecker(Visitor):
     def visit_TLong(self, t):
         return t
 
+    def visit_TFloat(self, t):
+        return t
+
     def visit_TNative(self, t):
         return t
 
@@ -200,7 +202,7 @@ class Typechecker(Visitor):
         if t1 == t2:
             return t1
         if is_numeric(t1) and is_numeric(t2):
-            return self.numeric_lub(t1, t2)
+            return self.numeric_lub(src, t1, t2)
         if isinstance(t1, syntax.TList) and isinstance(t2, syntax.TList):
             return syntax.TList(t1.t)
         if is_collection(t1) and is_collection(t2):
@@ -208,10 +210,15 @@ class Typechecker(Visitor):
         self.report_err(src, "cannot unify types {} and {} ({})".format(pprint(t1), pprint(t2), explanation))
         return DEFAULT_TYPE
 
-    def numeric_lub(self, t1, t2):
+    def numeric_lub(self, src, t1, t2):
         if t1 == LONG or t2 == LONG:
             return LONG
-        return INT
+        if t1 == INT and t2 == INT:
+            return INT
+        if t1 == FLOAT and t2 == FLOAT:
+            return FLOAT
+        self.report_err(src, "cannot unify types {} and {}".format(pprint(t1), pprint(t2)))
+        return DEFAULT_TYPE
 
     def get_collection_type(self, e):
         """if e has a collection type, e.g. List<Int>, this returns the inner type, e.g. Int"""
@@ -342,7 +349,7 @@ class Typechecker(Visitor):
         elif e.op in ["+", "-"]:
             if is_numeric(e.e1.type):
                 self.ensure_numeric(e.e2)
-                e.type = self.numeric_lub(e.e1.type, e.e2.type)
+                e.type = self.numeric_lub(e, e.e1.type, e.e2.type)
             else:
                 t1 = self.get_collection_type(e.e1)
                 t2 = self.get_collection_type(e.e2)

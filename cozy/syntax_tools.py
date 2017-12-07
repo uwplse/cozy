@@ -152,6 +152,9 @@ class PrettyPrinter(common.Visitor):
     def visit_TLong(self, t):
         return "Long"
 
+    def visit_TFloat(self, t):
+        return "Float"
+
     def visit_TBool(self, t):
         return "Bool"
 

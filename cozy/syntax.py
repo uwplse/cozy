@@ -19,6 +19,7 @@ Query               = declare_case(Method, "Query", ["name", "visibility", "args
 class Type(ADT): pass
 TInt                = declare_case(Type, "TInt")
 TLong               = declare_case(Type, "TLong")
+TFloat              = declare_case(Type, "TFloat")
 TBool               = declare_case(Type, "TBool")
 TString             = declare_case(Type, "TString")
 TNative             = declare_case(Type, "TNative", ["name"])
@@ -143,6 +144,7 @@ SIf                 = declare_case(Stm, "SIf",      ["cond", "then_branch", "els
 BOOL = TBool()
 INT = TInt()
 LONG = TLong()
+FLOAT = TFloat()
 STRING = TString()
 BOOL_BAG = TBag(BOOL)
 INT_BAG = TBag(INT)
