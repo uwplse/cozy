@@ -26,14 +26,15 @@ def compose(f1 : target_syntax.ELambda, f2 : target_syntax.ELambda) -> target_sy
     return mk_lambda(f2.arg.type, lambda v: f1.apply_to(f2.apply_to(v)))
 
 _SCALAR_TYPES = set((
-    syntax.TInt,
-    syntax.TLong,
     syntax.TBool,
     syntax.TString,
     syntax.TNative,
     syntax.THandle,
     syntax.TEnum))
 def is_scalar(t : syntax.Type):
+    from cozy.typecheck import is_numeric
+    if is_numeric(t):
+        return True
     if type(t) in _SCALAR_TYPES:
         return True
     if isinstance(t, syntax.TTuple):
