@@ -23,7 +23,7 @@ class JavaPrinter(CxxPrinter):
         yield
         self.boxed = oldboxed
 
-    def visit_Spec(self, spec, state_exps, sharing):
+    def visit_Spec(self, spec, state_exps, sharing, abstract_state=()):
         self.state_exps = state_exps
         self.funcs = { f.name: f for f in spec.extern_funcs }
         self.queries = { q.name: q for q in spec.methods if isinstance(q, Query) }
@@ -43,6 +43,17 @@ class JavaPrinter(CxxPrinter):
             "{indent}public {name}() {{\n{indent2}clear();\n{indent}}}\n\n"
             .format(indent=INDENT, indent2=INDENT+INDENT, name=spec.name)
         )
+
+        # explicit constructor
+        if abstract_state:
+            s += INDENT + "public {name}({args}) {{\n".format(
+                name=spec.name,
+                args=", ".join(self.visit(t, v) for (v, t) in abstract_state))
+            for name, t in spec.statevars:
+                initial_value = state_exps[name]
+                setup = self.construct_concrete(t, initial_value, EVar(name).with_type(t))
+                s += self.visit(setup, INDENT + INDENT)
+            s += INDENT + "}\n"
 
         # clear
         s += "{}public void clear() {{\n".format(INDENT, spec.name)
