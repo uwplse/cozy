@@ -223,8 +223,10 @@ class JavaPrinter(CxxPrinter):
                 res = "((int)({e})) ^ ((int)(({e}) >> 32))".format(e=e)
             elif t == BOOL:
                 res = "({e}) ? 1 : 0".format(e=e)
+            elif t == FLOAT:
+                res = "Float.floatToIntBits({e})".format(e=e)
             elif isinstance(t, TNative):
-                res =  {
+                res = {
                     "boolean": "{e} ? 1 : 0",
                     "byte":    "{e}",
                     "char":    "{e}",
@@ -364,9 +366,12 @@ class JavaPrinter(CxxPrinter):
     def visit_TLong(self, t, name):
         return "{} {}".format("Long" if self.boxed else "int", name)
 
+    def visit_TFloat(self, t, name):
+        return "{} {}".format("Float" if self.boxed else "float", name)
+
     def is_primitive(self, t):
         return (
-            t in (INT, LONG, BOOL) or
+            t in {INT, LONG, BOOL, FLOAT} or
             (isinstance(t, TNative) and t.name.strip() in JAVA_PRIMITIVE_TYPES))
 
     def trovename(self, t):
