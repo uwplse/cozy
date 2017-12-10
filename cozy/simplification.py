@@ -12,8 +12,6 @@ class _V(BottomUpRewriter):
                 return self.visit(EAny([EIn(e.e1, e.e2.e1), EIn(e.e1, e.e2.e2)]))
             elif isinstance(e.e2, EUnaryOp) and e.e2.op == UOp.Distinct:
                 return self.visit(EIn(e.e1, e.e2.e))
-            elif isinstance(e.e2, EFilter):
-                return self.visit(EAll([EIn(e.e1, e.e2.e), e.e2.p.apply_to(e.e1)]))
         elif e.op in ("==", "==="):
             e1 = self.visit(e.e1)
             e2 = self.visit(e.e2)
@@ -72,13 +70,13 @@ class _V(BottomUpRewriter):
                 raise Exception("bad simplification: {} ---> {} (under model {!r}, got {!r} and {!r})".format(pprint(e), pprint(new), model, eval(e, model), eval(new, model)))
         return new
 
-def simplify(e, debug=False):
+def simplify(e, validate=True, debug=False):
     visitor = _V(debug)
     orig = e
     e = visitor.visit(e)
     # e = cse(e)
-    if not valid(EBinOp(orig, "===", e).with_type(BOOL)):
+    if validate and not valid(EBinOp(orig, "===", e).with_type(BOOL)):
         import sys
-        print("simplify did something stupid!\nto reproduce:\nsimplify({e!r}, debug=True)".format(e=orig), file=sys.stderr)
+        print("simplify did something stupid!\nto reproduce:\nsimplify({e!r}, validate=True, debug=True)".format(e=orig), file=sys.stderr)
         return orig
     return e
