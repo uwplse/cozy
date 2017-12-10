@@ -106,7 +106,7 @@ class Implementation(object):
                 h = fresh_var(t)
                 delta = inc.delta_form(self.spec.statevars + op.args + [(h.id, h.type)], op)
                 lval = EGetField(h, "val").with_type(t.value_type)
-                new_val = subst(lval, delta)
+                new_val = simplify(subst(lval, delta))
 
                 # get set of modified handles
                 modified_handles = Query(
