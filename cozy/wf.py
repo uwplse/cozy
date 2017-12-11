@@ -3,7 +3,7 @@ import itertools
 from cozy.common import typechecked
 from cozy.typecheck import is_collection, is_scalar
 from cozy.target_syntax import *
-from cozy.syntax_tools import enumerate_fragments_and_pools
+from cozy.syntax_tools import enumerate_fragments_and_pools, pprint
 from cozy.solver import valid
 from cozy.pools import RUNTIME_POOL, STATE_POOL
 
