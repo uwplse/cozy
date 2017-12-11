@@ -567,7 +567,7 @@ class CxxPrinter(common.Visitor):
         id = for_each.id
         iter = for_each.iter
         body = for_each.body
-        return self.for_each(iter, lambda x: subst(body, {id.id : x}), indent)
+        return self.for_each(iter, lambda x: SSeq(SDecl(id.id, x), body), indent)
 
     def find_one(self, iterable, indent=""):
         v = fresh_var(iterable.type.t, "v")
