@@ -2,6 +2,7 @@ from collections import namedtuple, deque, defaultdict, OrderedDict
 import datetime
 import itertools
 import sys
+import os
 from queue import Empty
 
 from cozy.common import typechecked, fresh_name, pick_to_sum, nested_dict, find_one
@@ -23,6 +24,8 @@ from .acceleration import AcceleratedBuilder
 from .misc import rewrite_ret, queries_equivalent
 
 accelerate = Option("acceleration-rules", bool, True)
+nice_children = Option("nice-children", bool, False)
+log_dir = Option("log-dir", str, "/tmp")
 SynthCtx = namedtuple("SynthCtx", ["all_types", "basic_types"])
 LINE_BUFFER_MODE = 1 # see help for open() function
 
@@ -52,10 +55,14 @@ class ImproveQueryJob(jobs.Job):
         return "ImproveQueryJob[{}]".format(self.q.name)
     def run(self):
         print("STARTING IMPROVEMENT JOB {} (|examples|={})".format(self.q.name, len(self.examples or ())))
-        with open("/tmp/{}.log".format(self.q.name), "w", buffering=LINE_BUFFER_MODE) as f:
+        os.makedirs(log_dir.value, exist_ok=True)
+        with open(os.path.join(log_dir.value, "{}.log".format(self.q.name)), "w", buffering=LINE_BUFFER_MODE) as f:
             sys.stdout = f
             print("STARTING IMPROVEMENT JOB {} (|examples|={})".format(self.q.name, len(self.examples or ())))
             print(pprint(self.q))
+
+            if nice_children.value:
+                os.nice(20)
 
             all_types = self.ctx.all_types
             n_binders = 1
