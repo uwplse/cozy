@@ -56,6 +56,7 @@ _fates = defaultdict(int)
 def _on_exp(e, fate, *args):
     _fates[fate] += 1
     return
+    outfile = sys.stdout
     # if (isinstance(e, EMapGet) or
     #         isinstance(e, EFilter) or
     #         (isinstance(e, EBinOp) and e.op == "==" and (isinstance(e.e1, EVar) or isinstance(e.e2, EVar))) or
@@ -71,7 +72,7 @@ def _on_exp(e, fate, *args):
     # if oracle is not None and any(alpha_equivalent(e, x) for x in all_exps(oracle)):
     # if oracle is not None and any(e.type == x.type and valid(equal(e, x)) for x in all_exps(oracle) if not isinstance(x, ELambda)):
     if hasattr(e, "_tag"):
-        print(" ---> [{}, {}] {}; {}".format(fate, pprint(e.type), pprint(e), ", ".join((pprint(e) if isinstance(e, ADT) else str(e)) for e in args)), file=sys.stderr)
+        print(" ---> [{}, {}] {}; {}".format(fate, pprint(e.type), pprint(e), ", ".join((pprint(e) if isinstance(e, ADT) else str(e)) for e in args)), file=outfile)
 
 class ContextMap(object):
     VALUE = "value"
@@ -232,13 +233,17 @@ class Learner(object):
             return False
 
     def watch(self, new_target):
+        print("watching new target...")
         self._check_seen_wf()
         self.backlog_counter = 0
         self.target = new_target
         self.update_watched_exps()
         self.roots = []
         types = OrderedSet()
+        i = 0
         for (e, r, cost, a, pool, bound) in self.watched_exps:
+            i += 1
+            print("shredding exp {}/{}".format(i, len(self.watched_exps)))
             for pool in ALL_POOLS:
                 if self.is_legal_in_pool(e, pool):
                     _on_exp(e, "new root", pool_name(pool))
@@ -272,6 +277,7 @@ class Learner(object):
         #     if n:
         #         print("evicted {} elements".format(n))
         self._check_seen_wf()
+        print("done!")
 
     def update_watched_exps(self):
         # self.cost_ceiling = self.cost_model.cost(self.target, RUNTIME_POOL)
@@ -304,32 +310,35 @@ class Learner(object):
         """
         free_binders = OrderedSet(v for v in free_vars(e) if v in self.binders)
         for (assumptions, watched_e, r, bound, p) in enumerate_fragments_and_pools(self.target):
+            # _on_exp(e, "considering replacement of", watched_e)
             if e.type != watched_e.type:
+                # _on_exp(e, "wrong type")
                 continue
             if p != pool:
+                # _on_exp(e, "wrong pool")
                 continue
             if e == watched_e:
+                # _on_exp(e, "no change")
                 continue
-            unbound_binders = [b for b in free_binders if b not in bound]
-            if unbound_binders:
-                _on_exp(e, "skipped exp with free binders", ", ".join(b.id for b in unbound_binders))
-                continue
+            # NOTE: this check *seems* like a really good idea, but it isn't!
+            # It is possible that an expression with unbound binders---e.g.
+            # just `b`---looks better than something useful---e.g. m[x].  We
+            # will then skip m[x] in favor of `b`, but never observe that `b`
+            # is wrong.  So, we need to allow `b` through here.
+            # unbound_binders = [b for b in free_binders if b not in bound]
+            # if unbound_binders:
+            #     _on_exp(e, "skipped exp with free binders", ", ".join(b.id for b in unbound_binders))
+            #     continue
             watched_cost = self.cost_model.cost(watched_e, pool=pool)
-            if cost.compare_to(watched_cost) == Cost.WORSE:
+            ordering = cost.compare_to(watched_cost)
+            if ordering == Cost.WORSE:
                 _on_exp(e, "skipped worse replacement", pool_name(pool), watched_e)
+                continue
+            if ordering == Cost.UNORDERED:
+                _on_exp(e, "skipped equivalent replacement", pool_name(pool), watched_e)
                 continue
             if all(eval_bulk(EImplies(self.assumptions, EEq(self.target, r(e))), self.all_examples)):
                 yield (watched_e, e, assumptions, r)
-
-        # for (watched_e, r, watched_cost, assumptions, p, bound) in self.behavior_index.search(fp):
-        #     if p != pool:
-        #         continue
-        #     if e == watched_e:
-        #         continue
-        #     if not cost.sometimes_better_than(watched_cost):
-        #         _on_exp(e, "skipped possible replacement", pool_name(pool), watched_e)
-        #         continue
-        #     yield (watched_e, e, assumptions, r)
 
     def pre_optimize(self, e, pool):
         """
@@ -368,11 +377,14 @@ class Learner(object):
                     #     print("*** rewriting {} to {}".format(pprint(e), pprint(prev_exp)), file=sys.stderr)
                     return prev_exp
         try:
-            return V().visit(e)
+            res = V().visit(e)
+            if hasattr(e, "_tag"):
+                res._tag = e._tag
+            return res
         except:
             print("FAILED TO PREOPTIMIZE {}".format(pprint(e)))
             print(repr(e))
-            raise
+            return e
 
     def next(self):
         while True:
@@ -448,10 +460,13 @@ class Learner(object):
                         print("  (1) this exp: {}".format(pprint(e)))
                         print("  (2) prev. A:  {}".format(pprint(worse_than[0])))
                         print("  (2) prev. B:  {}".format(pprint(better_than[0])))
+                        print("e1 = {}".format(repr(e)))
+                        print("e2 = {}".format(repr(worse_than[0])))
+                        print("e3 = {}".format(repr(better_than[0])))
                         print("(1) vs (2): {}".format(cost.compare_to(worse_than[2], self.assumptions)))
                         print("(2) vs (3): {}".format(worse_than[2].compare_to(better_than[2], self.assumptions)))
                         print("(3) vs (1): {}".format(better_than[2].compare_to(cost, self.assumptions)))
-                        raise Exception("insane cost model behavior")
+                        # raise Exception("insane cost model behavior")
 
                 if should_add:
                     self.cache.add(e, pool=pool, size=self.current_size)
@@ -740,15 +755,20 @@ def improve(
                     continue
                 elif ordering == Cost.UNORDERED:
                     print("*** cost is unchanged")
+                    print(repr(target))
+                    print(repr(new_target))
                     # continue
                 print("found improvement: {} -----> {}".format(pprint(old_e), pprint(new_e)))
                 print("cost: {} -----> {}".format(old_cost, new_cost))
 
                 # binders are not allowed to "leak" out
-                assert not any(v in binders for v in free_vars(new_target))
-                yield new_target
+                to_yield = new_target
+                if any(v in binders for v in free_vars(new_target)):
+                    print("WARNING: stripping binders in {}".format(pprint(new_target)), file=sys.stderr)
+                    to_yield = subst(new_target, { b.id : construct_value(b.type) for b in binders })
+                yield to_yield
 
-                if reset_on_success.value:
+                if reset_on_success.value and ordering != Cost.UNORDERED:
                     learner.reset(examples, update_watched_exps=False)
                 learner.watch(new_target)
                 target = new_target
