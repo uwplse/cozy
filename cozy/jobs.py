@@ -49,6 +49,8 @@ class Job(object):
         self._flags[0] = True
     def join(self, timeout=None):
         self._thread.join(timeout=timeout)
+    def kill(self):
+        self._thread.terminate()
 
 def stop_jobs(jobs):
     jobs = list(jobs)
