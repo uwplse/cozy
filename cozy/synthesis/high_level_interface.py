@@ -188,7 +188,8 @@ def improve_implementation(
                     if j.successful:
                         j.join()
                     else:
-                        raise Exception("failed job: {}".format(j))
+                        print("failed job: {}".format(j), file=sys.stderr)
+                        # raise Exception("failed job: {}".format(j))
 
             done = all(j.done for j in improvement_jobs)
 
