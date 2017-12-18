@@ -21,6 +21,8 @@ def exp_wf_nonrecursive(e : Exp, state_vars : {EVar}, args : {EVar}, pool = RUNT
         raise ExpIsNotWf(e, e, "EStateVar in state pool position")
     if isinstance(e, EWithAlteredValue) and not at_runtime:
         raise ExpIsNotWf(e, e, "EWithAlteredValue in state position")
+    if (isinstance(e, EDropFront) or isinstance(e, EDropBack)) and not at_runtime:
+        raise ExpIsNotWf(e, e, "EDrop* in state position")
     if isinstance(e, EFlatMap) and not at_runtime:
         raise ExpIsNotWf(e, e, "EFlatMap in state position")
     if isinstance(e, EVar):
@@ -38,6 +40,12 @@ def exp_wf_nonrecursive(e : Exp, state_vars : {EVar}, args : {EVar}, pool = RUNT
         len = EUnaryOp(UOp.Length, e.e).with_type(INT)
         if not valid(EImplies(assumptions, EBinOp(len, "<=", ENum(1).with_type(INT)).with_type(BOOL))):
             raise ExpIsNotWf(e, e, "illegal application of 'the': could have >1 elems")
+    if not at_runtime and isinstance(e, EBinOp) and e.op == "-" and is_collection(e.type):
+        raise ExpIsNotWf(e, e, "collection subtraction in state position")
+    if not at_runtime and isinstance(e, ESingleton):
+        raise ExpIsNotWf(e, e, "singleton in state position")
+    if not at_runtime and isinstance(e, ENum) and e.val != 0:
+        raise ExpIsNotWf(e, e, "nonzero numerical constant in state position")
     if isinstance(e, EMakeMap2) and is_collection(e.type.v):
         all_collections = [sv for sv in state_vars if is_collection(sv.type)]
         total_size = ENum(0).with_type(INT)
