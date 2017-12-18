@@ -95,6 +95,19 @@ def match(value, binders):
 _protect = set()
 _protect_lock = threading.RLock()
 
+def my_caller(up=0):
+    """
+    Returns an info object of caller function.
+    You might care about these properties:
+        .filename
+        .function
+        .lineno
+    """
+    stack = inspect.stack()
+    frame = stack[up+2] # caller of caller of this function
+    frame = frame[0]
+    return inspect.getframeinfo(frame)
+
 @total_ordering
 class ADT(object):
     def children(self):
@@ -125,12 +138,16 @@ class ADT(object):
                 # remove my_id, but do not throw an exception on failure
                 _protect.difference_update({my_id})
     def __hash__(self):
-        return hash(self.children())
+        if not hasattr(self, "_hash"):
+            self._hash = hash(self.children())
+        return self._hash
     def __eq__(self, other):
+        if self is other: return True
         return type(self) is type(other) and self.children() == other.children()
     def __ne__(self, other):
         return not self.__eq__(other)
     def __lt__(self, other):
+        if self is other: return False
         return (self.children() < other.children()) if (type(self) is type(other)) else (type(self).__name__ < type(other).__name__)
 
 class Visitor(object):
