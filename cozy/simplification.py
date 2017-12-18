@@ -60,6 +60,12 @@ class _V(BottomUpRewriter):
         if isinstance(record, EMakeRecord):
             return dict(record.fields)[e.f]
         return EGetField(record, e.f).with_type(e.type)
+    def visit_EUnaryOp(self, e):
+        ee = self.visit(e.e)
+        if e.op == "not":
+            if isinstance(ee, EBool):
+                return F if ee.val else T
+        return EUnaryOp(e.op, ee).with_type(e.type)
     def visit(self, e):
         new = super().visit(e)
         if self.debug and isinstance(e, Exp) and not isinstance(e, ELambda):
