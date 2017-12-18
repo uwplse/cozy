@@ -21,15 +21,29 @@ class CostModel(object):
 
 @lru_cache(maxsize=2**16)
 @typechecked
-def cardinality_le(c1 : Exp, c2 : Exp, assumptions : Exp) -> bool:
+def cardinality_le(c1 : Exp, c2 : Exp, assumptions : Exp, debug : bool = False) -> bool:
     """
     Is |c1| <= |c2|?
-    Yes, iff there exists v such that v occurs more times in c2 than in c1.
+    Yes, iff there are no v such that v occurs more times in c2 than in c1.
     """
     assert c1.type == c2.type
     v = fresh_var(c1.type.t)
-    return valid(EImplies(assumptions,
-        EGt(ECountIn(v, c2), ECountIn(v, c1))))
+    f = EImplies(assumptions,
+        ENot(EGt(ECountIn(v, c1), ECountIn(v, c2))))
+    if debug:
+        from cozy.solver import satisfy
+        from cozy.simplification import simplify
+        model = satisfy(ENot(f))
+        print("attempting to satisfy {}...".format(pprint(simplify(ENot(f)))))
+        if model is not None:
+            print(model)
+            print(eval(ECountIn(v, c1), model))
+            print(eval(ECountIn(v, c2), model))
+        else:
+            print("no way to satisfy")
+        return model is None
+    else:
+        return valid(f)
 
 @lru_cache(maxsize=2**16)
 @typechecked
@@ -82,7 +96,7 @@ class Cost(object):
         return EAll(res)
 
     @typechecked
-    def always(self, op, other, assumptions : Exp, cards = None, **kwargs) -> bool:
+    def always(self, op, other, assumptions : Exp = T, cards = None, **kwargs) -> bool:
         """
         Partial order on costs subject to assumptions.
         """
@@ -110,17 +124,19 @@ class Cost(object):
 
     def compare_to(self, other, assumptions : Exp = T) -> bool:
         cards = self.order_cardinalities(other, assumptions)
-        if self.sometimes_worse_than(other, assumptions, cards) and not other.sometimes_worse_than(self, assumptions, cards):
-            return Cost.WORSE
-        elif self.sometimes_better_than(other, assumptions, cards) and not other.sometimes_better_than(self, assumptions, cards):
+        o1 = self.always("<=", other, cards=cards)
+        o2 = other.always("<=", self, cards=cards)
+
+        if o1 and not o2:
             return Cost.BETTER
+        elif o2 and not o1:
+            return Cost.WORSE
+        elif not o1 and not o2:
+            return Cost.UNORDERED
         else:
-            if self.always("==", other, assumptions, cards):
-                return (
-                    Cost.WORSE if self.secondary > other.secondary else
+            return (Cost.WORSE if self.secondary > other.secondary else
                     Cost.BETTER if self.secondary < other.secondary else
                     Cost.UNORDERED)
-            return Cost.UNORDERED
 
     def always_worse_than(self, other, assumptions : Exp = T, cards : Exp = None) -> bool:
         # it is NOT possible that `self` takes less time than `other`
@@ -137,9 +153,6 @@ class Cost(object):
     def sometimes_better_than(self, other, assumptions : Exp = T, cards : Exp = None) -> bool:
         # it is possible that `self` takes less time than `other`
         return not self.always(">=", other, assumptions, cards)
-
-    # def equivalent_to(self, other, assumptions : Exp = T) -> bool:
-    #     return not self.always_worse_than(other) and not other.always_worse_than(self)
 
     def __str__(self):
         return "cost[{} subject to {}, {}]".format(
@@ -165,6 +178,9 @@ def debug_comparison(e1, c1, e2, c2):
     print("variable meanings...")
     for v, e in itertools.chain(c1.cardinalities.items(), c2.cardinalities.items()):
         print("  {v} = len {e}".format(v=pprint(v), e=pprint(e)))
+    print("explicit assumptions...")
+    print("  {}".format(pprint(c1.assumptions)))
+    print("  {}".format(pprint(c2.assumptions)))
     print("joint orderings...")
     cards = c1.order_cardinalities(c2, assumptions=T)
     print("  {}".format(pprint(cards)))
@@ -229,8 +245,19 @@ class CompositeCostModel(CostModel, BottomUpExplorer):
         else:
             v = fresh_var(INT)
             self.cardinalities[e] = v
-            if isinstance(e, EFilter) or (isinstance(e, EUnaryOp) and e.op == UOp.Distinct):
+            if isinstance(e, EFilter):
                 self.assumptions.append(EBinOp(v, "<=", self.cardinality(e.e)).with_type(BOOL))
+            if isinstance(e, EUnaryOp) and e.op == UOp.Distinct:
+                cc = self.cardinality(e.e)
+                self.assumptions.append(EBinOp(v, "<=", cc).with_type(BOOL))
+                # self.assumptions.append(EImplies(EGt(cc, ZERO), EGt(v, ZERO)))
+                self.assumptions.append(EBinOp(
+                    EBinOp(v,  "*", ENum(5).with_type(INT)).with_type(INT), ">=",
+                    EBinOp(cc, "*", ENum(4).with_type(INT)).with_type(INT)).with_type(BOOL)) # heuristic: (xs) large implies (distinct xs) large
+            if isinstance(e, EBinOp) and e.op == "-":
+                self.assumptions.append(EBinOp(v, "<=", self.cardinality(e.e1)).with_type(BOOL))
+            if isinstance(e, ECond):
+                self.assumptions.append(EAny([EEq(v, self.cardinality(e.then_branch)), EEq(v, self.cardinality(e.else_branch))]))
             return v
     def statecost(self, e : Exp) -> float:
         return e.size() / 100
@@ -257,20 +284,24 @@ class CompositeCostModel(CostModel, BottomUpExplorer):
             costs.append(self.cardinality(e.e1))
             costs.append(self.cardinality(e.e2))
         return ESum(costs)
+    def visit_ELambda(self, e):
+        # avoid name collisions with fresh_var
+        return self.visit(e.apply_to(fresh_var(e.arg.type)))
     def visit_EMapGet(self, e):
-        return ESum((TWO, self.visit(e.map), self.visit(e.key)))
+        # mild penalty here because we want "x.f" < "map.get(x)"
+        return ESum((MILD_PENALTY, self.visit(e.map), self.visit(e.key)))
     def visit_EMakeMap2(self, e):
-        return ESum((EXTREME_COST, self.visit(e.e), EBinOp(self.cardinality(e.e, plus_one=True), "*", self.visit(e.value.body)).with_type(INT)))
+        return ESum((EXTREME_COST, self.visit(e.e), EBinOp(self.cardinality(e.e, plus_one=True), "*", self.visit(e.value)).with_type(INT)))
     def visit_EFilter(self, e):
-        return ESum((TWO, self.visit(e.e), EBinOp(self.cardinality(e.e, plus_one=True), "*", self.visit(e.p.body)).with_type(INT)))
+        return ESum((TWO, self.visit(e.e), EBinOp(self.cardinality(e.e, plus_one=True), "*", self.visit(e.p)).with_type(INT)))
     def visit_EFlatMap(self, e):
         return self.visit(EMap(e.e, e.f))
     def visit_EMap(self, e):
-        return ESum((TWO, self.visit(e.e), EBinOp(self.cardinality(e.e, plus_one=True), "*", self.visit(e.f.body)).with_type(INT)))
+        return ESum((TWO, self.visit(e.e), EBinOp(self.cardinality(e.e, plus_one=True), "*", self.visit(e.f)).with_type(INT)))
     def visit_EArgMin(self, e):
-        return ESum((TWO, self.visit(e.e), EBinOp(self.cardinality(e.e, plus_one=True), "*", self.visit(e.f.body)).with_type(INT)))
+        return ESum((TWO, self.visit(e.e), EBinOp(self.cardinality(e.e, plus_one=True), "*", self.visit(e.f)).with_type(INT)))
     def visit_EArgMax(self, e):
-        return ESum((TWO, self.visit(e.e), EBinOp(self.cardinality(e.e, plus_one=True), "*", self.visit(e.f.body)).with_type(INT)))
+        return ESum((TWO, self.visit(e.e), EBinOp(self.cardinality(e.e, plus_one=True), "*", self.visit(e.f)).with_type(INT)))
     def visit_EDropFront(self, e):
         return ESum((MILD_PENALTY, self.visit(e.e), self.cardinality(e.e, plus_one=True).with_type(INT)))
     def visit_EDropBack(self, e):
