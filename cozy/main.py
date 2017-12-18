@@ -92,11 +92,18 @@ def run():
             state = ["Initializing..."]
             def callback(res):
                 ast, state_map = res
-                s = ""
+                s = "<!DOCTYPE html>\n"
+                s += "<html>"
+                s += "<head><style>"
+                s += ".kw { color: #909; font-weight: bold; }"
+                s += ".builtin { color: #009; font-weight: bold; }"
+                s += "</style></head>"
+                s += "<body><pre>"
                 for v, e in state_map.items():
-                    s += "{} : {} = {}\n".format(v, syntax_tools.pprint(e.type), syntax_tools.pprint(e))
+                    s += "{} : {} = {}\n".format(v, syntax_tools.pprint(e.type, format="html"), syntax_tools.pprint(e, format="html"))
                 s += "\n"
-                s += syntax_tools.pprint(ast)
+                s += syntax_tools.pprint(ast, format="html")
+                s += "</pre></body></html>"
                 state[0] = s
             server = progress_server.ProgressServer(port=args.port, callback=lambda: state[0])
             server.start_async()

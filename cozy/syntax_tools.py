@@ -96,20 +96,40 @@ def all_types(ast):
     return common.unique(TypeCollector().visit(ast))
 
 class PrettyPrinter(common.Visitor):
+    def __init__(self):
+        # settings
+        self.format = "plain" # or "html"
+
+    def format_keyword(self, kw):
+        if self.format == "html":
+            return '<span class="kw">{}</span>'.format(kw)
+        return kw
+
+    def format_builtin(self, builtin):
+        if self.format == "html":
+            return '<span class="builtin">{}</span>'.format(builtin)
+        return builtin
+
+    def format_lt(self):
+        return "&lt;" if self.format == "html" else "<"
+
+    def format_gt(self):
+        return "&gt;" if self.format == "html" else ">"
+
     def visit_Spec(self, spec):
         s = spec.name + ":\n"
         for name, t in spec.types:
-            s += "  type {} = {}\n".format(name, self.visit(t))
+            s += "  {} {} = {}\n".format(self.format_keyword("type"), name, self.visit(t))
         for name, t in spec.statevars:
-            s += "  state {} : {}\n".format(name, self.visit(t))
+            s += "  {} {} : {}\n".format(self.format_keyword("state"), name, self.visit(t))
         for e in spec.assumptions:
-            s += "  assume {};\n".format(self.visit(e))
+            s += "  {} {};\n".format(self.format_keyword("assume"), self.visit(e))
         for op in spec.methods:
             s += str(self.visit(op))
         return s
 
     def visit_TEnum(self, enum):
-        return "enum {{ {} }}".format(", ".join(enum.cases))
+        return "{} {{ {} }}".format(self.format_keyword("enum"), ", ".join(enum.cases))
 
     def visit_TNamed(self, named):
         return named.id
@@ -118,34 +138,34 @@ class PrettyPrinter(common.Visitor):
         return t.name
 
     def visit_TApp(self, app):
-        return "{}<{}>".format(app.t, self.visit(app.args))
+        return "{}{lt}{}{gt}".format(app.t, self.visit(app.args), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_TBag(self, s):
-        return "Bag<{}>".format(self.visit(s.t))
+        return "Bag{lt}{}{gt}".format(self.visit(s.t), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_TSet(self, s):
-        return "Set<{}>".format(self.visit(s.t))
+        return "Set{lt}{}{gt}".format(self.visit(s.t), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_TList(self, s):
-        return "List<{}>".format(self.visit(s.t))
+        return "List{lt}{}{gt}".format(self.visit(s.t), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_TMap(self, m):
-        return "Map<{}, {}>".format(self.visit(m.k), self.visit(m.v))
+        return "Map{lt}{}, {}{gt}".format(self.visit(m.k), self.visit(m.v), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_THeap(self, h):
-        return "Heap<{}>".format(self.visit(h.t))
+        return "Heap{lt}{}{gt}".format(self.visit(h.t), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_TIntrusiveLinkedList(self, h):
-        return "IntrusiveLinkedList<{}>".format(self.visit(h.t))
+        return "IntrusiveLinkedList{lt}{}{gt}".format(self.visit(h.t), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_TNativeSet(self, h):
-        return "NativeSet<{}>".format(self.visit(h.t))
+        return "NativeSet{lt}{}{gt}".format(self.visit(h.t), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_TNativeList(self, h):
-        return "NativeList<{}>".format(self.visit(h.t))
+        return "NativeList{lt}{}{gt}".format(self.visit(h.t), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_THashMap(self, h):
-        return "HashMap<{}, {}>".format(self.visit(h.k), self.visit(h.v))
+        return "HashMap{lt}{}, {}{gt}".format(self.visit(h.k), self.visit(h.v), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_TInt(self, t):
         return "Int"
@@ -175,16 +195,16 @@ class PrettyPrinter(common.Visitor):
         return t.prettyprint()
 
     def visit_Query(self, q):
-        s = "  query {}({}):\n".format(q.name, ", ".join("{} : {}".format(name, self.visit(t)) for name, t in q.args))
+        s = "  {} {}({}):\n".format(self.format_keyword("query"), q.name, ", ".join("{} : {}".format(name, self.visit(t)) for name, t in q.args))
         for e in q.assumptions:
-            s += "    assume {};\n".format(self.visit(e))
+            s += "    {} {};\n".format(self.format_keyword("assume"), self.visit(e))
         s += "    {}\n".format(self.visit(q.ret))
         return s
 
     def visit_Op(self, q):
-        s = "  op {}({}):\n".format(q.name, ", ".join("{} : {}".format(name, self.visit(t)) for name, t in q.args))
+        s = "  {} {}({}):\n".format(self.format_keyword("op"), q.name, ", ".join("{} : {}".format(name, self.visit(t)) for name, t in q.args))
         for e in q.assumptions:
-            s += "    assume {};\n".format(self.visit(e))
+            s += "    {} {};\n".format(self.format_keyword("assume"), self.visit(e))
         s += "{}\n".format(self.visit(q.body, "    "))
         return s
 
@@ -192,7 +212,7 @@ class PrettyPrinter(common.Visitor):
         return e.id
 
     def visit_EBool(self, e):
-        return "true" if e.val else "false"
+        return self.format_builtin("true" if e.val else "false")
 
     def visit_EStr(self, e):
         return repr(e.val)
@@ -204,10 +224,10 @@ class PrettyPrinter(common.Visitor):
         return e.name
 
     def visit_ENull(self, e):
-        return "NULL"
+        return self.format_builtin("null")
 
     def visit_ELambda(self, e):
-        return "(\\{} -> {})".format(e.arg.id, self.visit(e.body))
+        return "{} -> {}".format(e.arg.id, self.visit(e.body))
 
     def visit_EApp(self, e):
         return "{}({})".format(self.visit(e.f), self.visit(e.arg))
@@ -219,19 +239,20 @@ class PrettyPrinter(common.Visitor):
         return "{}[{}]".format(self.visit(e.e), self.visit(e.index))
 
     def visit_EMakeMap(self, e):
-        return "MkMap({}, {}, {})".format(self.visit(e.e), self.visit(e.key), self.visit(e.value))
+        return "{}({}, {}, {})".format(self.format_builtin("MkMap"), self.visit(e.e), self.visit(e.key), self.visit(e.value))
 
     def visit_EMap(self, e):
-        return "Map {{{}}} ({})".format(self.visit(e.f), self.visit(e.e))
+        return "{} {{{}}} ({})".format(self.format_builtin("Map"), self.visit(e.f), self.visit(e.e))
 
     def visit_EFilter(self, e):
-        return "Filter {{{}}} ({})".format(self.visit(e.p), self.visit(e.e))
+        return "{} {{{}}} ({})".format(self.format_builtin("Filter"), self.visit(e.p), self.visit(e.e))
 
     def visit_EFlatMap(self, e):
-        return "FlatMap({}, {})".format(self.visit(e.e), self.visit(e.f))
+        return "{}({}, {})".format(self.format_builtin("FlatMap"), self.visit(e.e), self.visit(e.f))
 
     def visit_EBinOp(self, e):
-        return "({} {} {})".format(self.visit(e.e1), e.op, self.visit(e.e2))
+        op = e.op.replace("<", self.format_lt()).replace(">", self.format_gt())
+        return "({} {} {})".format(self.visit(e.e1), op, self.visit(e.e2))
 
     def visit_ECond(self, e):
         return "({} ? {} : {})".format(self.visit(e.cond), self.visit(e.then_branch), self.visit(e.else_branch))
@@ -241,15 +262,15 @@ class PrettyPrinter(common.Visitor):
 
     def visit_EArgMin(self, e):
         if e.f.body == e.f.arg:
-            return "min {}".format(self.visit(e.e))
+            return "{} {}".format(self.format_builtin("min"), self.visit(e.e))
         else:
-            return "argmin {{{}}} {}".format(self.visit(e.f), self.visit(e.e))
+            return "{} {{{}}} {}".format(self.format_builtin("argmin"), self.visit(e.f), self.visit(e.e))
 
     def visit_EArgMax(self, e):
         if e.f.body == e.f.arg:
-            return "max {}".format(self.visit(e.e))
+            return "{} {}".format(self.format_builtin("max"), self.visit(e.e))
         else:
-            return "argmax {{{}}} {}".format(self.visit(e.f), self.visit(e.e))
+            return "{} {{{}}} {}".format(self.format_builtin("argmax"), self.visit(e.f), self.visit(e.e))
 
     def visit_EGetField(self, e):
         return "({}).{}".format(self.visit(e.e), e.f)
@@ -267,7 +288,7 @@ class PrettyPrinter(common.Visitor):
         return "[{} | {}]".format(self.visit(e.e), ", ".join(self.visit(clause) for clause in e.clauses))
 
     def visit_EAlloc(self, e):
-        return "new {}({})".format(self.visit(e.t), ", ".join(self.visit(arg) for arg in e.args))
+        return "{} {}({})".format(self.format_keyword("new"), self.visit(e.t), ", ".join(self.visit(arg) for arg in e.args))
 
     def visit_ECall(self, e):
         return "{}({})".format(e.func, ", ".join(self.visit(arg) for arg in e.args))
@@ -279,10 +300,10 @@ class PrettyPrinter(common.Visitor):
         return "({}).{}".format(self.visit(e.e), e.n)
 
     def visit_ELet(self, e):
-        return "let {} = {} in {}".format(e.f.arg.id, self.visit(e.e), self.visit(e.f.body))
+        return "{} {} = {} in {}".format(self.format_keyword("let"), e.f.arg.id, self.visit(e.e), self.visit(e.f.body))
 
     def visit_CPull(self, c):
-        return "{} <- {}".format(c.id, self.visit(c.e))
+        return "{} {lt}- {}".format(c.id, self.visit(c.e), lt=self.format_lt())
 
     def visit_CCond(self, c):
         return self.visit(c.e)
@@ -295,7 +316,7 @@ class PrettyPrinter(common.Visitor):
         return repr(e)
 
     def visit_SNoOp(self, s, indent=""):
-        return "{}pass;".format(indent)
+        return "{}{};".format(indent, self.format_keyword("pass"))
 
     def visit_SCall(self, s, indent=""):
         return "{}{}.{}({});".format(indent, self.visit(s.target), s.func, ", ".join(self.visit(arg) for arg in s.args))
@@ -304,14 +325,16 @@ class PrettyPrinter(common.Visitor):
         return "{}{} = {};".format(indent, self.visit(s.lhs), self.visit(s.rhs))
 
     def visit_SDecl(self, s, indent=""):
-        return "{}var {} : {} = {};".format(indent, s.id, self.visit(s.val.type), self.visit(s.val))
+        return "{}{} {} : {} = {};".format(indent, self.format_keyword("var"), s.id, self.visit(s.val.type), self.visit(s.val))
 
     def visit_SSeq(self, s, indent=""):
         return "{}\n{}".format(self.visit(s.s1, indent), self.visit(s.s2, indent))
 
     def visit_SMapUpdate(self, s, indent=""):
-        return "{indent}with {} as {}:\n{}".format(
+        return "{indent}{} {} {} {}:\n{}".format(
+            self.format_keyword("with"),
             self.visit(target_syntax.EMapGet(s.map, s.key)),
+            self.format_keyword("as"),
             s.val_var.id,
             self.visit(s.change, indent + "  "),
             indent=indent)
@@ -323,20 +346,28 @@ class PrettyPrinter(common.Visitor):
             indent=indent)
 
     def visit_SMapDel(self, s, indent=""):
-        return "{indent}del {};".format(
+        return "{indent}{} {};".format(
+            self.format_keyword("del"),
             self.visit(target_syntax.EMapGet(s.map, s.key)),
             indent=indent)
 
     def visit_SForEach(self, s, indent=""):
-        return "{}for {} in {}:\n{}".format(indent, s.id.id, self.visit(s.iter), self.visit(s.body, indent + "  "))
+        return "{}{For} {} {In} {}:\n{}".format(
+            indent,
+            s.id.id,
+            self.visit(s.iter),
+            self.visit(s.body, indent + "  "),
+            For=self.format_keyword("for"),
+            In=self.format_keyword("in"))
 
     def visit_SIf(self, s, indent=""):
         if isinstance(s.else_branch, syntax.SNoOp):
-            return "{indent}if {} {{\n{}\n{indent}}}".format(self.visit(s.cond), self.visit(s.then_branch, indent + "  "), indent=indent)
-        return "{indent}if {} {{\n{}\n{indent}}} else {{\n{}\n}}".format(self.visit(s.cond), self.visit(s.then_branch, indent + "  "), self.visit(s.else_branch, indent + "  "), indent=indent)
+            return "{indent}{If} {} {{\n{}\n{indent}}}".format(self.visit(s.cond), self.visit(s.then_branch, indent + "  "), indent=indent, If=self.format_keyword("if"))
+        return "{indent}{If} {} {{\n{}\n{indent}}} {Else} {{\n{}\n}}".format(self.visit(s.cond), self.visit(s.then_branch, indent + "  "), self.visit(s.else_branch, indent + "  "), indent=indent, If=self.format_keyword("if"), Else=self.format_keyword("else"))
 
 _PRETTYPRINTER = PrettyPrinter()
-def pprint(ast):
+def pprint(ast, format="plain"):
+    _PRETTYPRINTER.format = format
     return _PRETTYPRINTER.visit(ast)
 
 def free_funcs(e : syntax.Exp) -> dict:
