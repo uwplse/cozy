@@ -20,7 +20,7 @@ class TestSynthesisCore(unittest.TestCase):
         bag = Bag((handle1, handle2, handle3))
         examples = [{ "x": bag }]
         binder = EVar("binder").with_type(BOOL)
-        new_examples = list(instantiate_examples((zero,), examples, [binder]))
+        new_examples = list(instantiate_examples(examples, [binder]))
         assert new_examples == [
             { "x": bag, "binder": False }]
 

@@ -32,7 +32,7 @@ class ExpBuilder(object):
     def build(self, cache, size):
         raise NotImplementedError()
 
-def instantiate_examples(watched_targets, examples, binders : [EVar]):
+def instantiate_examples(examples, binders : [EVar]):
     res = []
     for ex in examples:
         ex = dict(ex)
@@ -105,64 +105,6 @@ class ContextMap(object):
     def __str__(self):
         return "\n".join(self._print(self.m))
 
-class BehaviorIndex(object):
-    VALUE = object()
-    def __init__(self):
-        self.data = OrderedDict()
-    def put(self, e, assumptions, examples, data):
-        ok      = [True] + eval_bulk(assumptions, examples)
-        results = [e.type] + eval_bulk(e, examples)
-        m = self.data
-        for b, r in zip(ok, results):
-            k = any if not b else r
-            m2 = m.get(k)
-            if m2 is None:
-                m2 = OrderedDict()
-                m[k] = m2
-            m = m2
-        l = m.get(BehaviorIndex.VALUE)
-        if l is None:
-            l = []
-            m[BehaviorIndex.VALUE] = l
-        l.append(data)
-    def rsearch(self, p, m=None):
-        """
-        Useful only for debugging.
-        """
-        if m is None:
-            m = self.data
-        for (k, v) in m.items():
-            if k is BehaviorIndex.VALUE:
-                for val in v:
-                    if p(val):
-                        yield ()
-            else:
-                for res in self.rsearch(p, m=v):
-                    yield (k,) + res
-    def search(self, behavior):
-        q = [(0, self.data)]
-        while q:
-            (i, m) = q.pop()
-            if m is None:
-                continue
-            if i >= len(behavior):
-                yield from m.get(BehaviorIndex.VALUE, [])
-            else:
-                q.append((i+1, m.get(any)))
-                q.append((i+1, m.get(behavior[i])))
-    def _pr(self, m):
-        if BehaviorIndex.VALUE in m:
-            yield str(m[BehaviorIndex.VALUE])
-            return
-        for k, v in m.items():
-            for s in self._pr(v):
-                yield "{} > {}".format("*" if k is any else pprint(k) if isinstance(k, ADT) else repr(k), s)
-    def __str__(self):
-        s = "Behavior Index\n"
-        for line in self._pr(self.data):
-            s += "  " + line + "\n"
-        return s
-
 def find_naked_statevar(e, state_vars):
     for (a, e, r, bound, pool) in enumerate_fragments_and_pools(e):
         if e in state_vars and pool != STATE_POOL:
@@ -189,21 +131,20 @@ class Learner(object):
         self.builder = builder
         self.seen = SeenSet()
         self.assumptions = assumptions
-        self.reset(examples, update_watched_exps=False)
+        self.reset(examples)
         self.watch(target)
 
-    def reset(self, examples, update_watched_exps=True):
+    def reset(self, examples):
         _fates.clear()
         self.cache = Cache(binders=self.binders, args=self.args)
         self.current_size = -1
-        self.examples = examples
+        self.examples = list(examples)
+        self.all_examples = instantiate_examples(self.examples, self.binders)
         self.seen.clear()
         self.builder_iter = ()
         self.last_progress = 0
         self.backlog = None
         self.backlog_counter = 0
-        if update_watched_exps:
-            self.update_watched_exps()
 
     def _check_seen_wf(self):
         if enforce_seen_wf.value:
@@ -216,16 +157,6 @@ class Learner(object):
                     print(fpnow)
                     assert False
 
-    def fix_seen(self):
-        print("fixing seen set...")
-        new_seen = SeenSet()
-        for (e, pool, fp, size, cost) in self.seen.items():
-            fpnow = self._fingerprint(e)
-            new_seen.add(e, pool, fp, size, cost)
-        self.seen = new_seen
-        self._check_seen_wf()
-        print("finished fixing seen set")
-
     def is_legal_in_pool(self, e, pool):
         try:
             return exp_wf(e, state_vars=self.state_vars, args=self.args, pool=pool, assumptions=self.assumptions)
@@ -234,18 +165,15 @@ class Learner(object):
 
     def watch(self, new_target):
         print("watching new target...")
-        self._check_seen_wf()
         self.backlog_counter = 0
         self.target = new_target
-        self.update_watched_exps()
         self.roots = []
         types = OrderedSet()
         i = 0
-        for (e, r, cost, a, pool, bound) in self.watched_exps:
+        for (a, e, r, bound, pool) in enumerate_fragments_and_pools(self.target):
             i += 1
-            print("shredding exp {}/{}".format(i, len(self.watched_exps)))
             for pool in ALL_POOLS:
-                if self.is_legal_in_pool(e, pool):
+                if all(v in self.legal_free_vars for v in free_vars(e)) and self.is_legal_in_pool(e, pool):
                     _on_exp(e, "new root", pool_name(pool))
                     self.roots.append((e, pool))
                     types.add(e.type)
@@ -254,15 +182,6 @@ class Learner(object):
         for t in types:
             self.roots.append((construct_value(t), RUNTIME_POOL))
         self.roots.sort(key = lambda tup: tup[0].size())
-        # new_roots = []
-        # for e in itertools.chain(all_exps(new_target), all_exps(self.assumptions)):
-        #     if e in new_roots:
-        #         continue
-        #     if not isinstance(e, ELambda) and all(v in self.legal_free_vars for v in free_vars(e)):
-        #         self._fingerprint(e)
-        #         new_roots.append(e)
-        # self.roots = new_roots
-
         ## TODO: fix this up for symbolic cost model
         # if self.cost_model.is_monotonic() or hyperaggressive_culling.value:
         #     seen = list(self.seen.items())
@@ -276,32 +195,10 @@ class Learner(object):
         #             del self.seen[(pool, fp)]
         #     if n:
         #         print("evicted {} elements".format(n))
-        self._check_seen_wf()
         print("done!")
 
-    def update_watched_exps(self):
-        # self.cost_ceiling = self.cost_model.cost(self.target, RUNTIME_POOL)
-        self.watched_exps = []
-        self.all_examples = instantiate_examples((self.target,), self.examples, self.binders)
-        self.behavior_index = BehaviorIndex()
-        print("|all_examples|={}".format(len(self.all_examples)))
-        for (a, e, r, bound, pool) in enumerate_fragments_and_pools(self.target):
-            if isinstance(e, ELambda) or any(v not in self.legal_free_vars for v in free_vars(e)):
-                continue
-            a = [aa for aa in a if all(v in self.legal_free_vars for v in free_vars(aa))]
-            cost = self.cost_model.cost(e, pool)
-            info = (e, r, cost, a, pool, bound)
-            self.watched_exps.append(info)
-            self.behavior_index.put(e, EAll(a), self.all_examples, info)
-        self.fix_seen()
-
-    def _examples_for(self, e):
-        # binders = [b for b in free_vars(e) if b in self.binders]
-        # return instantiate_examples((self.target,), self.examples, self.binders)
-        return self.all_examples
-
     def _fingerprint(self, e):
-        return fingerprint(e, self._examples_for(e))
+        return fingerprint(e, self.all_examples)
 
     def _possible_replacements(self, e, pool, cost, fp):
         """
@@ -487,7 +384,7 @@ class Learner(object):
             self.current_size += 1
             self.builder_iter = self.builder.build(self.cache, self.current_size)
             if self.current_size == 0:
-                self.builder_iter = itertools.chain(self.builder_iter, iter(self.roots))
+                self.builder_iter = itertools.chain(self.builder_iter, list(self.roots))
             for f, ct in sorted(_fates.items(), key=lambda x: x[1], reverse=True):
                 print("  {:6} | {}".format(ct, f))
             _fates.clear()
@@ -769,7 +666,7 @@ def improve(
                 yield to_yield
 
                 if reset_on_success.value and ordering != Cost.UNORDERED:
-                    learner.reset(examples, update_watched_exps=False)
+                    learner.reset(examples)
                 learner.watch(new_target)
                 target = new_target
 
