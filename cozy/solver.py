@@ -1,5 +1,5 @@
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 import itertools
 import threading
 from functools import lru_cache
@@ -25,13 +25,89 @@ class ModelValidationError(Exception):
 TReal = declare_case(Type, "TReal", [])
 REAL = TReal()
 
+# Encoding Cozy-types for Z3.
+#   mkvar:   T -> [z3var]
+#   flatten: T -> obj -> [z3exp]
+#   pack:    T -> [z3exp] -> obj
+
+class DetFlatVis(BottomUpExplorer):
+    def join(self, x, new_children):
+        if is_collection(x) or isinstance(x, TMap) or isinstance(x, TFunc):
+            return False
+        return all(new_children)
+_DET_FLAT_VIS = DetFlatVis().visit
+def deterministic_flattenable(t):
+    """
+    Does self.flatten(t, x) return the same number of expressions no matter
+    what `x` is?
+    """
+    return _DET_FLAT_VIS(t)
+
+def flatten(t, x):
+    # MUST agree with pack()
+    if decideable(t):
+        yield x
+    elif isinstance(t, TTuple):
+        for y, tt in zip(x, t.ts):
+            yield from flatten(tt, y)
+    elif isinstance(t, TRecord):
+        for f, tt in t.fields:
+            yield from flatten(tt, x[f])
+    elif isinstance(t, THandle):
+        yield from flatten(INT, x[0])
+        yield from flatten(t.value_type, x[1])
+    elif is_collection(t):
+        yield len(x[0])
+        for mask, elem in zip(*x):
+            yield from flatten(BOOL, mask)
+            yield from flatten(t.t, elem)
+    elif isinstance(t, TMap):
+        yield len(x["mapping"])
+        yield from flatten(t.v, x["default"])
+        for (m, k, v) in x["mapping"]:
+            yield from flatten(BOOL, m)
+            yield from flatten(t.k, k)
+            yield from flatten(t.v, v)
+    else:
+        raise NotImplementedError(t)
+
+def pack(t, it):
+    # MUST agree with flatten()
+    if decideable(t):
+        return next(it)
+    elif isinstance(t, TTuple):
+        return tuple(pack(tt, it) for tt in t.ts)
+    elif isinstance(t, TRecord):
+        return { f : pack(tt, it) for f, tt in t.fields }
+    elif isinstance(t, THandle):
+        return (pack(INT, it), pack(t.value_type, it))
+    elif is_collection(t):
+        n = next(it)
+        mask = []
+        elems = []
+        for i in range(n):
+            mask.append(pack(BOOL, it))
+            elems.append(pack(t.t, it))
+        return (mask, elems)
+    elif isinstance(t, TMap):
+        n = next(it)
+        default = pack(t.v, it)
+        mapping = []
+        for i in range(n):
+            mapping.append((
+                pack(BOOL, it),
+                pack(t.k, it),
+                pack(t.v, it)))
+        return {"default": default, "mapping": mapping}
+    raise NotImplementedError(t)
+
 @typechecked
 def ite(ty : Type, cond : z3.AstRef, then_branch, else_branch):
     ctx = cond.ctx
     assert isinstance(ctx, z3.Context)
     if decideable(ty):
         return z3.If(cond, then_branch, else_branch, ctx)
-    elif isinstance(ty, TBag) or isinstance(ty, TList):
+    elif is_collection(ty):
         assert isinstance(then_branch, tuple)
         assert isinstance(else_branch, tuple)
         # print("CONSTRUCTING SYMBOLIC UNION [cond=({})]".format(cond))
@@ -302,8 +378,6 @@ class ToZ3(Visitor):
         return (self.visit(e.addr, env), self.visit(e.value, env))
     def visit_ENull(self, e, env):
         return (self.false, self.mkval(e.type.t))
-    def visit_ELet(self, e, env):
-        return self.apply(e.f, self.visit(e.e, env), env)
     def visit_ECall(self, call, env):
         args = [self.visit(x, env) for x in call.args]
         return env[call.func](*args)
@@ -610,9 +684,50 @@ class ToZ3(Visitor):
         return self._map_get(e.map.type, map, key, env)
     def visit_EApp(self, e, env):
         return self.apply(e.f, self.visit(e.arg, env), env)
+    def visit_ELet(self, e, env):
+        return self.apply(e.f, self.visit(e.e, env), env)
     def apply(self, lam : ELambda, arg : object, env):
         with extend(env, lam.arg.id, arg):
             return self.visit(lam.body, env)
+        if not hasattr(self, "_lambdacache"):
+            self._lambdacache = {}
+
+        use_forall = False
+
+        arg_type = lam.arg.type
+        body_type = lam.body.type
+        argv = list(flatten(arg_type, arg))
+        key = (len(argv), lam)
+        funcs = self._lambdacache.get(key)
+
+        if funcs is None:
+            # print("creating lambda: {}@{} -> {}".format(pprint(arg_type), len(argv), pprint(body_type)))
+            symb_argv = [v if isinstance(v, int) else z3.Const(fresh_name(), v.sort()) for v in argv]
+            z3_vars = [v for v in symb_argv if not isinstance(v, int)]
+            symb_arg = pack(arg_type, iter(symb_argv))
+            with extend(env, lam.arg.id, symb_arg):
+                res = self.visit(lam.body, env)
+            funcs = []
+            for z3_body in flatten(body_type, res):
+                if isinstance(z3_body, int):
+                    funcs.append(z3_body)
+                else:
+                    fname = fresh_name("f")
+                    f = z3.Function(fname, *[v.sort() for v in z3_vars], z3_body.sort())
+                    if use_forall:
+                        self.solver.add(z3.ForAll(z3_vars, f(*z3_vars) == z3_body))
+                    funcs.append((f, z3_vars, z3_body))
+            self._lambdacache[key] = funcs
+
+        if funcs is not None:
+            # print("calling {} with {}".format(funcs, argv))
+            if use_forall:
+                return pack(body_type, (f if isinstance(f, int) else f[0](*[v for v in argv if not isinstance(v, int)]) for f in funcs))
+            else:
+                return pack(body_type, (f if isinstance(f, int) else z3.substitute(f[2], *zip(f[1], [x for x in argv if not isinstance(x, int)])) for f in funcs))
+        else:
+            with extend(env, lam.arg.id, arg):
+                return self.visit(lam.body, env)
     def visit_clauses(self, clauses, e, env):
         if not clauses:
             return [True], [self.visit(e, env)]
@@ -649,6 +764,9 @@ class ToZ3(Visitor):
             return super().visit(e, *args)
         except:
             print("failed to convert {}".format(pprint(e)))
+            print("  ---> {!r}".format(e))
+            print("  ---> src:  {}".format(getattr(e, "_src", "?")))
+            print("  ---> type: {}".format(getattr(e, "_type_src", "?")))
             raise
 
     def mkval(self, type):
