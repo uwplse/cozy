@@ -46,11 +46,10 @@ class BinderBuilder(ExpBuilder):
             if not build_exprs.value:
                 return
 
-            for t in list(cache.types()):
-                if is_collection(t):
-                    yield self.check(EEmptyList().with_type(t), pool)
-                    for e in cache.find(pool=pool, type=t.t, size=size-1):
-                        yield self.check(ESingleton(e).with_type(t), pool)
+            for e in cache.find(pool=pool, size=size-1):
+                t = TBag(e.type)
+                yield self.check(EEmptyList().with_type(t), pool)
+                yield self.check(ESingleton(e).with_type(t), pool)
 
             for e in cache.find(pool=pool, type=TRecord, size=size-1):
                 for (f,t) in e.type.fields:
@@ -58,8 +57,6 @@ class BinderBuilder(ExpBuilder):
             for e in cache.find_collections(pool=pool, size=size-1):
                 if is_numeric(e.type.t):
                     yield self.check(EUnaryOp(UOp.Sum, e).with_type(e.type.t), pool)
-            for e in cache.find_collections(pool=pool, size=size-1):
-                yield self.check(EUnaryOp(UOp.The, e).with_type(e.type.t), pool)
             for e in cache.find(pool=pool, type=THandle, size=size-1):
                 yield self.check(EGetField(e, "val").with_type(e.type.value_type), pool)
             for e in cache.find(pool=pool, type=TTuple, size=size-1):
@@ -69,9 +66,9 @@ class BinderBuilder(ExpBuilder):
                 yield self.check(EUnaryOp(UOp.Not, e).with_type(BOOL), pool)
             for e in cache.find(pool=pool, type=INT, size=size-1):
                 yield self.check(EUnaryOp("-", e).with_type(INT), pool)
-                if isinstance(e, EUnaryOp) and e.op == UOp.Length:
-                    # is-singleton?
-                    yield self.check(EEq(e, ONE), pool)
+
+            for m in cache.find(pool=pool, type=TMap, size=size-1):
+                yield self.check(EMapKeys(m).with_type(TBag(m.type.k)), pool)
 
             for (sz1, sz2) in pick_to_sum(2, size - 1):
                 for a1 in cache.find(pool=pool, size=sz1):
@@ -102,12 +99,11 @@ class BinderBuilder(ExpBuilder):
                     for k in cache.find(pool=pool, type=m.type.k, size=sz2):
                         yield self.check(EMapGet(m, k).with_type(m.type.v), pool)
 
-            if pool == RUNTIME_POOL:
-                for (sz1, sz2, sz3) in pick_to_sum(3, size-1):
-                    for cond in cache.find(pool=pool, type=BOOL, size=sz1):
-                        for then_branch in cache.find(pool=pool, size=sz2):
-                            for else_branch in cache.find(pool=pool, size=sz3, type=then_branch.type):
-                                yield self.check(ECond(cond, then_branch, else_branch).with_type(then_branch.type), pool)
+            for (sz1, sz2, sz3) in pick_to_sum(3, size-1):
+                for cond in cache.find(pool=pool, type=BOOL, size=sz1):
+                    for then_branch in cache.find(pool=pool, size=sz2):
+                        for else_branch in cache.find(pool=pool, size=sz3, type=then_branch.type):
+                            yield self.check(ECond(cond, then_branch, else_branch).with_type(then_branch.type), pool)
 
             for bag in cache.find_collections(pool=pool, size=size-1):
                 # len of bag
@@ -117,6 +113,16 @@ class BinderBuilder(ExpBuilder):
                 yield self.check(EUnaryOp(UOp.Empty, bag).with_type(BOOL), pool)
                 # exists?
                 yield self.check(EUnaryOp(UOp.Exists, bag).with_type(BOOL), pool)
+                # singleton?
+                yield self.check(EEq(count, ONE), pool)
+
+                yield self.check(EUnaryOp(UOp.The, bag).with_type(bag.type.t), pool)
+                yield self.check(EUnaryOp(UOp.Distinct, bag).with_type(bag.type), pool)
+                yield self.check(EUnaryOp(UOp.AreUnique, bag).with_type(BOOL), pool)
+
+                if bag.type.t == BOOL:
+                    yield self.check(EUnaryOp(UOp.Any, bag).with_type(BOOL), pool)
+                    yield self.check(EUnaryOp(UOp.All, bag).with_type(BOOL), pool)
 
             for (sz1, sz2) in pick_to_sum(2, size - 1):
                 for bag in cache.find_collections(pool=pool, size=sz1):
