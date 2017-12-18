@@ -197,7 +197,12 @@ def EAll(exps):
     return build_balanced_tree(BOOL, BOp.And, exps)
 
 def EAny(exps):
-    return ENot(EAll([ENot(e) for e in exps]))
+    exps = [ e for e in exps if e != F ]
+    if any(e == T for e in exps):
+        return T
+    if not exps:
+        return F
+    return build_balanced_tree(BOOL, BOp.Or, exps)
 
 def ENot(e):
     if isinstance(e, EUnaryOp) and e.op == "not":
@@ -220,6 +225,9 @@ def EEq(e1, e2):
 
 def EGt(e1, e2):
     return EBinOp(e1, ">", e2).with_type(BOOL)
+
+def ELt(e1, e2):
+    return EBinOp(e1, "<", e2).with_type(BOOL)
 
 def EIn(e1, e2):
     return EBinOp(e1, BOp.In, e2).with_type(BOOL)
