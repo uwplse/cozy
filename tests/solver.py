@@ -420,3 +420,16 @@ class TestSolver(unittest.TestCase):
             EUnaryOp(UOp.Empty, EDropFront(xs).with_type(xs.type)).with_type(BOOL),
             EUnaryOp(UOp.Exists, xs).with_type(BOOL)])
         assert satisfiable(e, collection_depth=2, validate_model=True)
+
+    def test_var_under_estatevar(self):
+        # wow, very tricky!
+        # EStateVar(...) needs to be "separable" from the parent, so bound vars
+        # get cleared.  Thus, if EStateVar(x) appears somewhere, then `x` is
+        # is free, even if it appears in e.g. \x -> EStateVar(x).
+        x = EVar("x").with_type(INT)
+        e = EUnaryOp(UOp.Exists, EFilter(ESingleton(ONE), ELambda(x, EStateVar(EEq(x, ZERO)))))
+        print(pprint(e))
+        assert retypecheck(e)
+        model = satisfy(e, validate_model=True)
+        print(model)
+        assert model is not None

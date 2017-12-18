@@ -7,7 +7,7 @@ from functools import lru_cache
 import z3
 
 from cozy.target_syntax import *
-from cozy.syntax_tools import pprint, free_vars, free_funcs
+from cozy.syntax_tools import BottomUpExplorer, pprint, free_vars, free_funcs, cse, all_exps, purify
 from cozy.typecheck import is_collection
 from cozy.common import declare_case, fresh_name, Visitor, FrozenDict, typechecked, extend
 from cozy import evaluation
@@ -773,14 +773,38 @@ def mkconst(ctx, solver, val):
     else:
         raise NotImplementedError(repr(val))
 
+_start = None
+_debug_duration = timedelta(seconds=5)
+def _tick():
+    global _start
+    _start = datetime.now()
+
+def _tock(e, event):
+    global _start
+    now = datetime.now()
+    # print("tock({}) @ {}".format(event, now))
+    elapsed = now - _start
+    _start = now
+    if elapsed > _debug_duration:
+        import sys
+        print("took {elapsed}s to {event}".format(event=event, elapsed=elapsed.total_seconds()), file=sys.stderr)
+        # print("e = {}".format(pprint(e)), file=sys.stderr)
+        # print(repr(e), file=sys.stderr)
+        # raise NotImplementedError()
+
 _LOCK = threading.Lock()
 def satisfy(e, vars = None, funcs = None, collection_depth : int = None, validate_model : bool = True, model_callback = None, logic : str = None, timeout : float = None):
     if collection_depth is None:
         collection_depth = collection_depth_opt.value
-    start = datetime.now()
+    _tick()
     with _LOCK:
-        # print("Checking sat (|e|={}); time to acquire lock = {}".format(e.size(), datetime.now() - start))
-        start = datetime.now()
+        _tock(e, "acquire lock")
+        orig_size = len(list(all_exps(e)))
+        orig_e = e
+        e = purify(e)
+        e = cse(e, verify=False)
+        _tock(e, "cse (size: {} --> {})".format(orig_size, len(list(all_exps(e)))))
+        # print(pprint(e))
         # print("sat? {}".format(pprint(e)))
         assert e.type == BOOL
 
@@ -860,15 +884,16 @@ def satisfy(e, vars = None, funcs = None, collection_depth : int = None, validat
             solver.add(visitor.visit(e, _env))
         except Exception:
             print(" ---> to reproduce: satisfy({e}, vars={vars}, collection_depth={collection_depth}, validate_model={validate_model})".format(
-                e=repr(e),
+                e=repr(orig_e),
                 vars=repr(vars),
                 collection_depth=repr(collection_depth),
                 validate_model=repr(validate_model)))
             raise
 
         # print(solver.assertions())
+        _tock(e, "encode")
         res = solver.check()
-        # print("Checked (res={}); time to encode/solve = {}".format(res, datetime.now() - start))
+        _tock(e, "solve")
         if res == z3.unsat:
             return None
         elif res == z3.unknown:
@@ -892,7 +917,7 @@ def satisfy(e, vars = None, funcs = None, collection_depth : int = None, validat
             if model_callback is not None:
                 model_callback(res)
             if validate_model:
-                x = evaluation.eval(e, res)
+                x = evaluation.eval(orig_e, res)
                 if x is not True:
                     print("bad example: {}".format(res))
                     print(" ---> formula: {}".format(pprint(e)))
@@ -912,16 +937,16 @@ def satisfy(e, vars = None, funcs = None, collection_depth : int = None, validat
                                 collection_depth=repr(collection_depth),
                                 validate_model=repr(validate_model)))
                             f.write("\n")
-                    from cozy.syntax_tools import all_exps, equal
                     wq = [(e, _env, res)]
                     while wq:
+                        # print("checking ?/{}...".format(len(wq)))
                         x, solver_env, eval_env = wq.pop()
-                        for x in sorted(all_exps(e), key=lambda xx: xx.size()):
+                        for x in sorted(all_exps(x), key=lambda xx: xx.size()):
                             if all(v.id in eval_env for v in free_vars(x)) and not isinstance(x, ELambda):
                                 solver_val = reconstruct(model, visitor.visit(x, solver_env), x.type)
                                 v = fresh_name("tmp")
                                 eval_env[v] = solver_val
-                                eval_val = evaluation.eval(equal(x, EVar(v).with_type(x.type)), eval_env)
+                                eval_val = evaluation.eval(EEq(x, EVar(v).with_type(x.type)), eval_env)
                                 if not eval_val:
                                     print(" ---> disagreement on {}".format(pprint(x)))
                                     print(" ---> Solver: {}".format(solver_val))
@@ -943,8 +968,16 @@ def satisfy(e, vars = None, funcs = None, collection_depth : int = None, validat
                                                 senv[x.p.arg.id] = elem
                                                 eenv[x.p.arg.id] = reconstruct(model, elem, x.type.t)
                                                 wq.append((x.p.body, senv, eenv))
+                                    elif isinstance(x, ELet):
+                                        z = visitor.visit(x.e, solver_env)
+                                        senv = dict(solver_env)
+                                        eenv = dict(eval_env)
+                                        senv[x.f.arg.id] = z
+                                        eenv[x.f.arg.id] = reconstruct(model, z, x.e.type)
+                                        wq.append((x.f.body, senv, eenv))
                                     break
                     raise ModelValidationError("model validation failed")
+            _tock(e, "extract model")
             return res
 
 def satisfiable(e, **opts):

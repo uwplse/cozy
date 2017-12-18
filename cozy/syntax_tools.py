@@ -381,7 +381,7 @@ def free_funcs(e : syntax.Exp) -> dict:
                 res[x.func] = t
     return res
 
-def free_vars(exp, counts=False, descend_into_estatevar=True):
+def free_vars(exp, counts=False):
     res = collections.OrderedDict()
     bound = collections.defaultdict(int)
 
@@ -400,8 +400,10 @@ def free_vars(exp, counts=False, descend_into_estatevar=True):
         elif isinstance(x, syntax.EVar):
             if not bound[x]:
                 res[x] = res.get(x, 0) + 1
-        elif isinstance(x, target_syntax.EStateVar) and not descend_into_estatevar:
-            continue
+        elif isinstance(x, target_syntax.EStateVar):
+            subres = free_vars(x.e, counts=True)
+            for k, v in subres.items():
+                res[k] = res.get(k, 0) + v
         elif isinstance(x, target_syntax.ELambda):
             bound[x.arg] += 1
             stk.append(Unbind(x.arg))
@@ -683,7 +685,34 @@ def subst_lval(lval, replacements):
     # Neither requires attention during substitution.
     return lval
 
-def subst(exp, replacements):
+@common.typechecked
+def tease_apart(exp : syntax.Exp) -> ([(syntax.EVar, syntax.Exp)], syntax.Exp):
+    new_state = []
+    dirty = True
+    while dirty:
+        dirty = False
+        for (_, e, r, _) in enumerate_fragments(exp):
+            if isinstance(e, target_syntax.EStateVar):
+                e = e.e
+                x = common.find_one(x for x in new_state if alpha_equivalent(x[1], e))
+                if x is not None:
+                    v = x[0]
+                else:
+                    v = fresh_var(e.type)
+                    new_state.append((v, e))
+                exp = r(v)
+                dirty = True
+                break
+    return (new_state, exp)
+
+@common.typechecked
+def purify(exp : syntax.Exp) -> syntax.Exp:
+    st, exp = tease_apart(exp)
+    for v, e in st:
+        exp = target_syntax.ELet(e, target_syntax.ELambda(v, exp)).with_type(exp.type)
+    return exp
+
+def subst(exp, replacements, tease=True):
     """
     Performs capture-avoiding substitution.
     Input:
@@ -696,6 +725,13 @@ def subst(exp, replacements):
     allfvs = set()
     for val in replacements.values():
         allfvs |= {fv.id for fv in free_vars(val)}
+
+    if tease and any(isinstance(e, target_syntax.EStateVar) for e in all_exps(exp)):
+        st, exp = tease_apart(exp)
+        for i in range(len(st)):
+            st[i] = (st[i][0], subst(st[i][1], replacements))
+        exp = subst(exp, replacements, tease=False)
+        return subst(exp, { v.id : target_syntax.EStateVar(e).with_type(e.type) for (v, e) in st }, tease=False)
 
     class Subst(common.Visitor):
         def visit_EVar(self, var):
@@ -728,6 +764,8 @@ def subst(exp, replacements):
             elif isinstance(c, syntax.CCond):
                 clauses[i] = syntax.CCond(self.visit(c.e))
                 return self.visit_lcmp(clauses, i + 1, e)
+        def visit_EStateVar(self, e):
+            return target_syntax.EStateVar(subst(e.e, replacements))
         def visit_ELambda(self, e):
             m = replacements
             if e.arg.id in replacements:

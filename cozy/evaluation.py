@@ -3,7 +3,7 @@ from functools import total_ordering, cmp_to_key, lru_cache
 import itertools
 
 from cozy.target_syntax import *
-from cozy.syntax_tools import equal, pprint, free_vars, free_funcs, all_exps
+from cozy.syntax_tools import equal, pprint, free_vars, free_funcs, all_exps, purify
 from cozy.common import FrozenDict, OrderedSet, extend
 from cozy.typecheck import is_numeric, is_collection
 
@@ -779,6 +779,7 @@ def free_vars_and_funcs(e):
         yield f
 
 def eval_bulk(e, envs, bind_callback=None, use_default_values_for_undefined_vars : bool = False):
+    e = purify(e)
     if bind_callback is None:
         bind_callback = lambda arg, val: None
     # return [eval(e, env, bind_callback=bind_callback) for env in envs]
