@@ -570,7 +570,7 @@ class FragmentEnumerator(common.Visitor):
 
     def rebuild(self, obj, new_children):
         res = type(obj)(*new_children)
-        if isinstance(obj, syntax.Exp) and hasattr(obj, "type"):
+        if isinstance(obj, syntax.Exp):
             res = res.with_type(obj.type)
         return res
 
@@ -1024,7 +1024,7 @@ def cse(e, verify=False):
     e.g. "(x+1) + (x+1)" ---> "let a = x+1 in a+a".
     """
     def finish(e, avail):
-        ravail = collections.OrderedDict([(v, k) for (k, v) in avail.items() if v is not None])
+        ravail = collections.OrderedDict([(v, k) for ((t, k), v) in avail.items() if v is not None])
         counts = free_vars(e, counts=True)
         for var, value in reversed(ravail.items()):
             for (vv, ct) in free_vars(value, counts=True).items():
@@ -1059,34 +1059,41 @@ def cse(e, verify=False):
         def __init__(self):
             super().__init__()
             self.avail = collections.OrderedDict() # maps expressions --> variables
-            self.avail_by_id = collections.OrderedDict() # maps ids -> variables
+            # self.avail_by_id = collections.OrderedDict() # maps ids -> variables
         def visit_Exp(self, e):
-            if id(e) in self.avail_by_id:
-                return self.avail_by_id[id(e)]
-            ee = type(e)(*[self.visit(c) for c in e.children()])
-            res = self.avail.get(ee)
+            # if id(e) in self.avail_by_id:
+                # return self.avail_by_id[id(e)]
+            ee = type(e)(*[self.visit(c) for c in e.children()]).with_type(e.type)
+            res = self.avail.get((e.type, ee))
             if res is not None:
                 return res
-            v = syntax.EVar(common.fresh_name("tmp"))
-            if hasattr(e, "type"):
-                ee = ee.with_type(e.type)
-                v = v.with_type(e.type)
-            self.avail[ee] = v
-            self.avail_by_id[id(e)] = v
+            v = fresh_var(e.type, hint="tmp")
+            ee = ee.with_type(e.type)
+            self.avail[(e.type, ee)] = v
+            # self.avail_by_id[id(e)] = v
             return v
+        def visit_EListComprehension(self, e):
+            raise NotImplementedError()
+        def _fvs(self, e):
+            if not hasattr(e, "_fvs"):
+                e._fvs = free_vars(e)
+            return e._fvs
         def visit_ELambda(self, e):
             old_avail = self.avail
-            old_avail_by_id = self.avail_by_id
-            self.avail = collections.OrderedDict([(k, v) for (k, v) in self.avail.items() if e.arg not in free_vars(k)])
-            self.avail_by_id = collections.OrderedDict()
+            # old_avail_by_id = self.avail_by_id
+            self.avail = collections.OrderedDict([(k, v) for (k, v) in self.avail.items() if e.arg not in self._fvs(k[1])])
+            # self.avail_by_id = collections.OrderedDict()
             body = self.visit(e.body)
 
             precious = set((e.arg,))
+            # print("computing fvs x{}...".format(len(self.avail.items())))
+            fvs = { v : self._fvs(k) for ((t, k), v) in self.avail.items() }
+            # print("done")
             dirty = True
             while dirty:
                 dirty = False
-                for (k, v) in self.avail.items():
-                    if any(vv in precious for vv in free_vars(k)):
+                for v in self.avail.values():
+                    if any(vv in precious for vv in fvs[v]):
                         if v not in precious:
                             precious.add(v)
                             dirty = True
@@ -1097,7 +1104,7 @@ def cse(e, verify=False):
 
             body = finish(body, self.avail)
             self.avail = old_avail
-            self.avail_by_id = old_avail_by_id
+            # self.avail_by_id = old_avail_by_id
             return target_syntax.ELambda(e.arg, body)
 
     v = V()
