@@ -12,8 +12,8 @@ from collections import OrderedDict, defaultdict
 from cozy.common import fresh_name, find_one, typechecked, OrderedSet
 from cozy.syntax import *
 from cozy.target_syntax import EFilter, EDeepIn
-from cozy.syntax_tools import subst, free_vars, fresh_var, alpha_equivalent, all_exps, BottomUpRewriter, BottomUpExplorer, pprint, replace
-from cozy.handle_tools import reachable_handles_at_method
+from cozy.syntax_tools import subst, free_vars, fresh_var, alpha_equivalent, all_exps, BottomUpRewriter, BottomUpExplorer, pprint, replace, shallow_copy
+from cozy.handle_tools import reachable_handles_at_method, implicit_handle_assumptions_for_method
 import cozy.incrementalization as inc
 from cozy.opts import Option
 from cozy.simplification import simplify
@@ -72,10 +72,17 @@ class Implementation(object):
         print("Adding new query {}...".format(sub_q.name))
         # orig_ret = sub_q.ret
         # print("rewritng ret for {}".format(pprint(orig_ret)))
-        sub_q = rewrite_ret(sub_q, simplify)
+        sub_q = shallow_copy(sub_q)
+        sub_q.assumptions += tuple(
+            implicit_handle_assumptions_for_method(
+                reachable_handles_at_method(self.spec, sub_q),
+                sub_q))
+        sub_q.ret = simplify(sub_q.ret)
+        # sub_q = rewrite_ret(sub_q, simplify)
         # if sub_q.ret != orig_ret:
         #     print("rewrote ret")
         #     print(" --> {}".format(pprint(sub_q.ret)))
+
         qq = find_one(self.query_specs, lambda qq: dedup_queries.value and queries_equivalent(qq, sub_q))
         if qq is not None:
             print("########### subgoal {} is equivalent to {}".format(sub_q.name, qq.name))

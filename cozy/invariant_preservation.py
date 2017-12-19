@@ -5,14 +5,11 @@ from cozy.target_syntax import *
 from cozy.typecheck import is_collection
 from cozy.solver import valid
 from cozy.syntax_tools import pprint, subst, enumerate_fragments, cse, shallow_copy, mk_lambda
-from cozy.handle_tools import reachable_handles_at_method
+from cozy.handle_tools import reachable_handles_at_method, implicit_handle_assumptions_for_method
 from cozy.incrementalization import delta_form
 from cozy.opts import Option
 
 invariant_preservation_check = Option("invariant-preservation-check", bool, True)
-
-def EForall(e, p):
-    return EUnaryOp(UOp.All, EMap(e, mk_lambda(e.type.t, p)).with_type(type(e.type)(BOOL))).with_type(BOOL)
 
 @typechecked
 def add_implicit_handle_assumptions(spec : Spec) -> Spec:
@@ -26,15 +23,7 @@ def add_implicit_handle_assumptions(spec : Spec) -> Spec:
     new_methods = []
     for m in spec.methods:
         handles = reachable_handles_at_method(spec, m)
-        new_assumptions = []
-        for t, bag in handles.items():
-            # print("handles of type {}: {}".format(pprint(t), pprint(bag)))
-            new_assumptions.append(
-                EForall(bag, lambda h1: EForall(bag, lambda h2:
-                    EImplies(EEq(h1, h2),
-                        EEq(EGetField(h1, "val").with_type(h1.type.value_type),
-                            EGetField(h2, "val").with_type(h2.type.value_type))))))
-            # print("adding assumption to {}: {}".format(m.name, pprint(new_assumptions[-1])))
+        new_assumptions = implicit_handle_assumptions_for_method(handles, m)
         m = shallow_copy(m)
         m.assumptions = list(m.assumptions) + new_assumptions
         new_methods.append(m)
