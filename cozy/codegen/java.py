@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+import json
 
 from cozy import common, library, evaluation
 from cozy.target_syntax import *
