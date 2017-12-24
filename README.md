@@ -164,7 +164,7 @@ check them; instead, it assumes that they will be true at each call site. That
 means it is up to you, the developer, to ensure that your assumptions are
 correct!
 
-In this example, the query `empty` will always return false under the given
+In this example, the query `isempty` will always return false under the given
 assumption. Cozy can exploit this fact to produce the trivial, obvious
 implementation.
 
@@ -173,7 +173,7 @@ implementation.
         op add(i : Int)
             assume i > 0;
             ints.add(i);
-        query empty()
+        query isempty()
             assume not empty ints;
             empty ints
 
