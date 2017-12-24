@@ -49,6 +49,9 @@ class CxxPrinter(common.Visitor):
     def visit_THandle(self, t, name):
         return "{} *{}".format(self.typename(t), name)
 
+    def visit_TString(self, t, name):
+        return "std::string {}".format(name)
+
     def visit_TNativeMap(self, t, name):
         if self.use_qhash:
             return "QHash< {}, {} > {}".format(self.visit(t.k, ""), self.visit(t.v, ""), name)
@@ -882,6 +885,7 @@ class CxxPrinter(common.Visitor):
         s += "#include <algorithm>\n"
         s += "#include <vector>\n"
         s += "#include <unordered_set>\n"
+        s += "#include <string>\n"
         if self.use_qhash:
             s += "#include <QHash>\n"
         else:
