@@ -108,16 +108,26 @@ def my_caller(up=0):
     frame = frame[0]
     return inspect.getframeinfo(frame)
 
+def _size(x):
+    wq = [x]
+    res = 0
+    while wq:
+        x = wq.pop()
+        res += 1
+        if isinstance(x, ADT):
+            wq.extend(x.children())
+        elif isinstance(x, list) or isinstance(x, tuple):
+            wq.extend(x)
+        elif isinstance(x, dict):
+            wq.extend(x.items())
+    return res
+
 @total_ordering
 class ADT(object):
     def children(self):
         return ()
     def size(self):
-        s = 1
-        for child in self.children():
-            if isinstance(child, ADT):
-                s += child.size()
-        return s
+        return _size(self)
     def contains_subtree(self, tree):
         if self == tree:
             return True
