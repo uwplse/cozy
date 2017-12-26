@@ -200,7 +200,8 @@ class Implementation(object):
                 op.name,
                 op.args,
                 [],
-                new_stms))
+                new_stms,
+                op.docstring))
 
         # assemble final result
         new_statevars = [(v.id, e.type) for (v, e) in self.concrete_state]
@@ -212,7 +213,8 @@ class Implementation(object):
             [],
             list(self.query_impls.values()) + new_ops,
             self.spec.header,
-            self.spec.footer)
+            self.spec.footer,
+            self.spec.docstring)
 
     @property
     def concretization_functions(self) -> { str : Exp }:

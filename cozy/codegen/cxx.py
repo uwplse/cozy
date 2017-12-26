@@ -130,7 +130,9 @@ class CxxPrinter(common.Visitor):
         ret_type = q.ret.type
         if is_collection(ret_type):
             x = EVar(common.fresh_name("x")).with_type(ret_type.t)
-            s  = "{indent}template <class F>\n".format(indent=indent)
+            s  = "{docstring}{indent}template <class F>\n".format(
+                    docstring=indent_lines(q.docstring, indent) + "\n" if q.docstring else "",
+                    indent=indent)
             s += "{indent}inline void {name} ({args}const F& _callback) const {{\n{body}  }}\n\n".format(
                 indent=indent,
                 name=q.name,
@@ -139,7 +141,8 @@ class CxxPrinter(common.Visitor):
             return s
         else:
             body, out = self.visit(q.ret, indent+INDENT)
-            return "{indent}inline {type} {name} ({args}) const {{\n{body}    return {out};\n  }}\n\n".format(
+            return "{docstring}{indent}inline {type} {name} ({args}) const {{\n{body}    return {out};\n  }}\n\n".format(
+                docstring=indent_lines(q.docstring, indent) + "\n" if q.docstring else "",
                 indent=indent,
                 type=self.visit(ret_type, ""),
                 name=q.name,
@@ -148,7 +151,8 @@ class CxxPrinter(common.Visitor):
                 body=body)
 
     def visit_Op(self, q, indent=""):
-        s = "{}inline void {} ({}) {{\n{}  }}\n\n".format(
+        s = "{}{}inline void {} ({}) {{\n{}  }}\n\n".format(
+            indent_lines(q.docstring, indent) + "\n" if q.docstring else "",
             indent,
             q.name,
             ", ".join(self.visit(t, name) for name, t in q.args),
@@ -894,6 +898,10 @@ class CxxPrinter(common.Visitor):
         else:
             s += "#include <unordered_map>\n"
         s += spec.header
+
+        if spec.docstring:
+            s += "\n" + spec.docstring
+
         s += "\nclass {} {{\n".format(spec.name)
         s += "public:\n"
 

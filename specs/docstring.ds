@@ -1,0 +1,39 @@
+
+
+{{ package foo; }}
+
+/**
+ * This is the docstring for the WordBag type.
+ * All of its @contents are included <verbatim />.
+ */
+WordBag:
+    extern PW() : String = "\"password\""
+    state words : Set<String>
+
+    // A regular comment here.
+
+    /**
+     * Adds a word to the bag.
+     */
+    // Another comment. Shouldn't interfere w/ doc comment.
+    op addWord(w : String)
+        assume not (w in words);
+        words.add(w);
+
+    /* ----- */
+
+    /**
+     * Returns the frobnicated statistic on the primary magnitude quotient.
+     */
+    /* Whooop. Should not interfere with above doc comment. */
+    query length()
+        len words
+
+    query containsPassword()
+        /*
+            Note here that I just want a multiline comment.
+        */
+        PW() in words
+
+    query containsPassword2()
+        "password" in words

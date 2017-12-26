@@ -4,7 +4,7 @@ AST definitions.
 
 from cozy.common import ADT, declare_case, typechecked
 
-Spec                = declare_case(ADT, "Spec", ["name", "types", "extern_funcs", "statevars", "assumptions", "methods", "header", "footer"])
+Spec                = declare_case(ADT, "Spec", ["name", "types", "extern_funcs", "statevars", "assumptions", "methods", "header", "footer", "docstring"])
 ExternFunc          = declare_case(ADT, "ExternFunc", ["name", "args", "out_type", "body_string"])
 
 class Visibility(object):
@@ -13,8 +13,8 @@ class Visibility(object):
     Internal = "internal" # helper used by op definitions
 
 class Method(ADT): pass
-Op                  = declare_case(Method, "Op",    ["name", "args", "assumptions", "body"])
-Query               = declare_case(Method, "Query", ["name", "visibility", "args", "assumptions", "ret"])
+Op                  = declare_case(Method, "Op",    ["name", "args", "assumptions", "body", "docstring"])
+Query               = declare_case(Method, "Query", ["name", "visibility", "args", "assumptions", "ret", "docstring"])
 
 class Type(ADT): pass
 TInt                = declare_case(Type, "TInt")

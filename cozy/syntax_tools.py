@@ -737,7 +737,8 @@ def subst(exp, replacements):
                 q.visibility,
                 q.args,
                 [subst(a, m) for a in q.assumptions],
-                subst(q.ret, m))
+                subst(q.ret, m),
+                q.docstring)
         def visit_Op(self, o):
             m = { name: repl for (name, repl) in replacements.items() if not any(n == name for (n, t) in o.args) }
             for (a, t) in o.args:
@@ -748,7 +749,8 @@ def subst(exp, replacements):
                 o.name,
                 o.args,
                 [subst(a, m) for a in o.assumptions],
-                subst(o.body, m))
+                subst(o.body, m),
+                o.docstring)
         def visit_SAssign(self, s):
             return syntax.SAssign(
                 subst_lval(s.lhs, replacements),
