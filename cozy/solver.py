@@ -671,7 +671,7 @@ class ToZ3(Visitor):
     def _map_get(self, map_type, map, key, env):
         res = map["default"]
         # print("map get {} on {}".format(key, map))
-        for (mask, k, v) in map["mapping"]:
+        for (mask, k, v) in reversed(map["mapping"]):
             # print("   k   = {}".format(repr(k)))
             # print("   key = {}".format(repr(key)))
             # print("   v   = {}".format(repr(v)))

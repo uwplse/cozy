@@ -33,7 +33,7 @@ class Map(object):
     def items(self):
         yield from self._items
     def keys(self):
-        for (k, v) in self._items:
+        for (k, v) in reversed(self._items):
             yield k
     def values(self):
         for (k, v) in self._items:
@@ -734,7 +734,7 @@ def _compile(e, env : {str:int}, out, bind_callback):
         default = mkval(e.type.v)
         def make_map(stk):
             res = Map(e.type, default)
-            for (k, v) in stk.pop():
+            for (k, v) in reversed(list(stk.pop())):
                 res[k] = v
             stk.append(res)
         out.append(make_map)
