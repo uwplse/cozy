@@ -8,7 +8,7 @@ import z3
 
 from cozy.target_syntax import *
 from cozy.syntax_tools import BottomUpExplorer, pprint, free_vars, free_funcs, cse, all_exps, purify
-from cozy.typecheck import is_collection
+from cozy.typecheck import is_collection, is_numeric
 from cozy.common import declare_case, fresh_name, Visitor, FrozenDict, typechecked, extend
 from cozy import evaluation
 from cozy.opts import Option
@@ -581,7 +581,7 @@ class ToZ3(Visitor):
                 return (v1[0] + v2[0], v1[1] + v2[1])
             elif isinstance(e.type, TSet):
                 return self.visit(EUnaryOp(UOp.Distinct, EBinOp(e.e1, "+", e.e2).with_type(TBag(e.type.t))).with_type(TBag(e.type.t)), env)
-            elif isinstance(e.type, TInt):
+            elif is_numeric(e.type):
                 return v1 + v2
             else:
                 raise NotImplementedError(e.type)

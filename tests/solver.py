@@ -433,3 +433,11 @@ class TestSolver(unittest.TestCase):
         model = satisfy(e, validate_model=True)
         print(model)
         assert model is not None
+
+    def test_floats(self):
+        x = EVar("x").with_type(FLOAT)
+        y = EVar("y").with_type(FLOAT)
+        z = EVar("z").with_type(FLOAT)
+        for op in ("+", "-", "*"):
+            e = EEq(EBinOp(x, op, y).with_type(FLOAT), z)
+            assert satisfiable(e, validate_model=True)
