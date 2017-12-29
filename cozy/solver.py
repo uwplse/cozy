@@ -294,10 +294,13 @@ class ToZ3(Visitor):
                 self.distinct_bag_elems(e2keys, t.k, env),
                 env,
                 deep=False))
-            for (mask, k, v) in e1["mapping"]:
-                conds.append(z3.Implies(mask, self.eq(t.v, self._map_get(t, e1, k, env), self._map_get(t, e2, k, env), env, deep=deep), self.ctx))
-            for (mask, k, v) in e2["mapping"]:
-                conds.append(z3.Implies(mask, self.eq(t.v, self._map_get(t, e1, k, env), self._map_get(t, e2, k, env), env, deep=deep), self.ctx))
+            for (mask, k, v) in e1["mapping"] + e2["mapping"]:
+                conds.append(z3.Implies(mask, self.eq(
+                    t.v,
+                    self._map_get(t, e1, k, env),
+                    self._map_get(t, e2, k, env),
+                    env,
+                    deep=deep), self.ctx))
             return z3.And(*conds, self.ctx)
         elif isinstance(t, THandle):
             h1, val1 = e1
@@ -964,12 +967,12 @@ def satisfy(e, vars = None, funcs = None, collection_depth : int = None, validat
                 default = reconstruct(model, value["default"], type.v)
                 res = evaluation.Map(type, default)
                 for (mask, k, v) in value["mapping"]:
-                    # K/V pairs appearing later in value["mapping"] have precedence,
-                    # so overwriting here is the correct move.
+                    # K/V pairs appearing earlier in value["mapping"] have precedence
                     if reconstruct(model, mask, BOOL):
                         k = reconstruct(model, k, type.k)
-                        v = reconstruct(model, v, type.v)
-                        res[k] = v
+                        if k not in res.keys():
+                            v = reconstruct(model, v, type.v)
+                            res[k] = v
                 return res
             elif isinstance(type, TEnum):
                 val = model.eval(value, model_completion=True).as_long()
