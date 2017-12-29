@@ -288,10 +288,16 @@ class ToZ3(Visitor):
                 return ([mask for (mask, k, v) in m["mapping"]], [k for (mask, k, v) in m["mapping"]])
             e1keys = map_keys(e1)
             e2keys = map_keys(e2)
+            conds.append(self.eq(
+                TBag(t.k),
+                self.distinct_bag_elems(e1keys, t.k, env),
+                self.distinct_bag_elems(e2keys, t.k, env),
+                env,
+                deep=False))
             for (mask, k, v) in e1["mapping"]:
-                conds.append(z3.Implies(mask, z3.And(self.is_in(t.k, e2keys, k, env), self.eq(t.v, self._map_get(t, e1, k, env), self._map_get(t, e2, k, env), env, deep=deep), self.ctx), self.ctx))
+                conds.append(z3.Implies(mask, self.eq(t.v, self._map_get(t, e1, k, env), self._map_get(t, e2, k, env), env, deep=deep), self.ctx))
             for (mask, k, v) in e2["mapping"]:
-                conds.append(z3.Implies(mask, z3.And(self.is_in(t.k, e1keys, k, env), self.eq(t.v, self._map_get(t, e1, k, env), self._map_get(t, e2, k, env), env, deep=deep), self.ctx), self.ctx))
+                conds.append(z3.Implies(mask, self.eq(t.v, self._map_get(t, e1, k, env), self._map_get(t, e2, k, env), env, deep=deep), self.ctx))
             return z3.And(*conds, self.ctx)
         elif isinstance(t, THandle):
             h1, val1 = e1
@@ -1043,7 +1049,7 @@ def satisfy(e, vars = None, funcs = None, collection_depth : int = None, validat
                     print(" ---> model: {}".format(model))
                     print(" ---> assertions: {}".format(solver.assertions()))
                     print(" ---> to reproduce: satisfy({e}, vars={vars}, collection_depth={collection_depth}, validate_model={validate_model})".format(
-                        e=repr(e),
+                        e=repr(orig_e),
                         vars=repr(vars),
                         collection_depth=repr(collection_depth),
                         validate_model=repr(validate_model)))
