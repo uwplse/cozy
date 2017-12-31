@@ -688,22 +688,20 @@ def subst_lval(lval, replacements):
 @common.typechecked
 def tease_apart(exp : syntax.Exp) -> ([(syntax.EVar, syntax.Exp)], syntax.Exp):
     new_state = []
-    dirty = True
-    while dirty:
-        dirty = False
-        for (_, e, r, _) in enumerate_fragments(exp):
-            if isinstance(e, target_syntax.EStateVar):
-                e = e.e
-                x = common.find_one(x for x in new_state if alpha_equivalent(x[1], e))
-                if x is not None:
-                    v = x[0]
-                else:
-                    v = fresh_var(e.type)
-                    new_state.append((v, e))
-                exp = r(v)
-                dirty = True
-                break
-    return (new_state, exp)
+
+    class V(BottomUpRewriter):
+        def visit_EStateVar(self, e):
+            e = e.e
+            x = common.find_one(x for x in new_state if alpha_equivalent(x[1], e))
+            if x is not None:
+                return x[0]
+            else:
+                v = fresh_var(e.type)
+                new_state.append((v, e))
+                return v
+
+    new_exp = V().visit(exp)
+    return (new_state, new_exp)
 
 @common.typechecked
 def purify(exp : syntax.Exp) -> syntax.Exp:
