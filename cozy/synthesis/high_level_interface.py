@@ -8,11 +8,10 @@ from queue import Empty
 from cozy.common import typechecked, fresh_name, pick_to_sum, nested_dict, find_one
 from cozy.target_syntax import *
 import cozy.syntax_tools
-from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, BottomUpRewriter, free_vars, pprint, subst, implies, fresh_var, mk_lambda, all_exps, equal, is_scalar
+from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, BottomUpRewriter, free_vars, pprint, subst, implies, fresh_var, mk_lambda, all_exps, equal, is_scalar, tease_apart
 import cozy.incrementalization as inc
 from cozy.timeouts import Timeout, TimeoutException
 from cozy.cost_model import CompositeCostModel
-from cozy.rep_inference import infer_rep
 from cozy import jobs
 from cozy.solver import valid
 from cozy.opts import Option
@@ -28,10 +27,6 @@ nice_children = Option("nice-children", bool, False)
 log_dir = Option("log-dir", str, "/tmp")
 SynthCtx = namedtuple("SynthCtx", ["all_types", "basic_types"])
 LINE_BUFFER_MODE = 1 # see help for open() function
-
-@typechecked
-def pick_rep(q_ret : Exp, state : [EVar]) -> ([(EVar, Exp)], Exp):
-    return find_one(infer_rep(state, q_ret))
 
 class ImproveQueryJob(jobs.Job):
     def __init__(self,
@@ -108,10 +103,8 @@ class ImproveQueryJob(jobs.Job):
                         builder=b,
                         stop_callback=lambda: self.stop_requested)):
 
-                    r = pick_rep(expr, self.state)
-                    if r is not None:
-                        new_rep, new_ret = r
-                        self.k(new_rep, new_ret)
+                    new_rep, new_ret = tease_apart(expr)
+                    self.k(new_rep, new_ret)
                 print("PROVED OPTIMALITY FOR {}".format(self.q.name))
             except core.StopException:
                 print("stopping synthesis of {}".format(self.q.name))

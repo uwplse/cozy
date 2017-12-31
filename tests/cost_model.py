@@ -6,7 +6,6 @@ from cozy.typecheck import INT, retypecheck
 from cozy.target_syntax import *
 from cozy.syntax_tools import equal, implies, pprint, fresh_var, mk_lambda, replace, subst
 from cozy.solver import valid
-from cozy.rep_inference import pprint_reps, infer_rep
 from cozy.pools import RUNTIME_POOL
 
 cm = CompositeCostModel()
@@ -131,16 +130,6 @@ class TestCostModel(unittest.TestCase):
         e2 = EBinOp(ys, "+", EEmptyList().with_type(ys.type))
         assert retypecheck(e1)
         assert retypecheck(e2)
-
-        from cozy.rep_inference import infer_rep
-        for ex in [e1, e2]:
-            print("="*50 + " " + pprint(ex))
-            for (st, e) in infer_rep([ys], ex):
-                for (v, p) in st:
-                    print("  {} : {} = {}".format(v.id, pprint(v.type), pprint(p)))
-                print("  return {} : {}".format(pprint(e), pprint(e.type)))
-
-        print("_" * 80)
         assert cost_of(e1).always_better_than(cost_of(e2)), "{} vs {}".format(cost_of(e1), cost_of(e2))
 
     def test_sum_empty(self):
