@@ -175,9 +175,6 @@ class JavaPrinter(CxxPrinter):
     def visit_ENull(self, e, indent=""):
         return ("", "null")
 
-    def visit_EStr(self, e, indent=""):
-        return ("", json.dumps(e.val))
-
     def visit_ENum(self, e, indent=""):
         suffix = ""
         if e.type == TLong():

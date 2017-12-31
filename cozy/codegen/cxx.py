@@ -358,7 +358,7 @@ class CxxPrinter(common.Visitor):
         return ("", str(e.val))
 
     def visit_EStr(self, e, indent=""):
-        return ("", '"{0}"'.format(e.val))
+        return ("", json.dumps(e.val))
 
     def visit_EEnumToInt(self, e, indent=""):
         setup, e = self.visit(e.e, indent)
