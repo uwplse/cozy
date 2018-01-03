@@ -236,7 +236,7 @@ def improve_implementation(
                     # clean up
                     impl.cleanup()
                     if progress_callback is not None:
-                        progress_callback((impl.code, impl.concretization_functions))
+                        progress_callback((impl, impl.code, impl.concretization_functions))
                     reconcile_jobs()
 
         # stop jobs

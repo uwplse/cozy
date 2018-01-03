@@ -4,9 +4,11 @@
 Main entry point for synthesis. Run with --help for options.
 """
 
+from collections import defaultdict
 import sys
 import argparse
 import datetime
+import pickle
 
 from cozy import parse
 from cozy import codegen
@@ -23,6 +25,7 @@ from cozy import opts
 
 save_failed_codegen_inputs = opts.Option("save-failed-codegen-inputs", str, "/tmp/failed_codegen.py", metavar="PATH")
 enable_autotuning = opts.Option("enable-autotuning", bool, False)
+checkpoint_prefix = opts.Option("checkpoint-prefix", str, "")
 
 def run():
     parser = argparse.ArgumentParser(description='Data structure synthesizer.')
@@ -48,7 +51,6 @@ def run():
     opts.read(args)
 
     if args.resume:
-        import pickle
         if args.file is None:
             ast = pickle.load(sys.stdin.buffer)
         else:
@@ -84,14 +86,29 @@ def run():
 
         ast = synthesis.construct_initial_implementation(ast)
 
+    start = datetime.datetime.now()
     if not args.simple:
         callback = None
         server = None
+        if checkpoint_prefix.value:
+            def callback(res):
+                impl, ast, state_map = res
+                assert isinstance(impl, synthesis.Implementation)
+                now = datetime.datetime.now()
+                elapsed = now - start
+                fname = "{}{:010d}.synthesized".format(checkpoint_prefix.value, int(elapsed.total_seconds()))
+                with open(fname, "wb") as f:
+                    pickle.dump(impl, f)
+                    print("Saved checkpoint {}".format(fname))
+
         if args.port:
             from cozy import progress_server
             state = ["Initializing..."]
+            orig_callback = callback
             def callback(res):
-                ast, state_map = res
+                if orig_callback is not None:
+                    orig_callback(res)
+                impl, ast, state_map = res
                 s = "<!DOCTYPE html>\n"
                 s += "<html>"
                 s += "<head><style>"
@@ -124,7 +141,6 @@ def run():
 
     if args.save:
         with open(args.save, "wb") as f:
-            import pickle
             pickle.dump(ast, f)
             print("Saved implementation to file {}".format(args.save))
 
@@ -142,7 +158,6 @@ def run():
         print()
         print(impl.statevars)
     else:
-        from collections import defaultdict
         impl = code
         share_info = defaultdict(list)
 
