@@ -74,12 +74,6 @@ class Exp(ADT):
     def with_type(self, t):
         self.type = t
         return self
-    # def __setattr__(self, name, val):
-    #     if name == "type" and isinstance(self, EEnumEntry) and not isinstance(val, TEnum):
-    #         raise Exception("set {}.type = {}".format(self, val))
-    #     super().__setattr__(name, val)
-    # def __getattr__(self, name):
-    #     raise AttributeError("expression {} has no {} field".format(self, name))
     def __repr__(self):
         s = super().__repr__()
         if hasattr(self, "type"):
