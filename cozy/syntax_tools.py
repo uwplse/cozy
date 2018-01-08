@@ -1071,7 +1071,6 @@ class ExpMap(object):
         for k, v in self.items():
             yield v
 
-@task
 def cse(e, verify=False):
     """
     Common subexpression elimination. Replaces re-used expressions with ELet,
