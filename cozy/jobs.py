@@ -1,5 +1,5 @@
 from multiprocessing import Process, Array, Queue
-from queue import Queue as PlainQueue, Empty
+from queue import Queue as PlainQueue, Empty, Full
 import time
 import threading
 import sys
@@ -94,13 +94,17 @@ class SafeQueue(object):
         self.thread.start()
         return self
     def __exit__(self, *args, **kwargs):
+        print("Stopping SafeQueue...")
         self.stop_requested = True
         self.thread.join()
+        print("Done!")
     def _copy_items(self):
         while not self.stop_requested:
             try:
-                self.sideq.put(self.q.get(timeout=0.5))
+                self.sideq.put(self.q.get(timeout=1), timeout=1)
             except Empty:
+                pass
+            except Full:
                 pass
     def put(self, item, block=False, timeout=None):
         return self.q.put(item, block=block, timeout=timeout)
