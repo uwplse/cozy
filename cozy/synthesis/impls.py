@@ -141,9 +141,12 @@ class Implementation(object):
 
     def set_impl(self, q : Query, rep : [(EVar, Exp)], ret : Exp):
         to_remove = set()
+        from cozy.solver import valid
         for (v, e) in rep:
-            aeq = find_one(vv for (vv, ee) in self.concrete_state if alpha_equivalent(e, ee))
+            aeq = find_one(vv for (vv, ee) in self.concrete_state if e.type == ee.type and valid(EImplies(EAll(self.spec.assumptions), EEq(e, ee))))
+            # aeq = find_one(vv for (vv, ee) in self.concrete_state if e.type == ee.type and alpha_equivalent(e, ee))
             if aeq is not None:
+                print("########### state var {} is equivalent to {}".format(v.id, aeq.id))
                 ret = subst(ret, { v.id : aeq })
                 to_remove.add(v)
         rep = [ x for x in rep if x[0] not in to_remove ]
