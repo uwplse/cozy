@@ -33,8 +33,16 @@ def cardinality_le(c1 : Exp, c2 : Exp, assumptions : Exp = T, as_f : bool = Fals
     Yes, iff there are no v such that v occurs more times in c2 than in c1.
     """
     assert c1.type == c2.type
-    v = fresh_var(c1.type.t)
-    f = EBinOp(ECountIn(v, c1), "<=", ECountIn(v, c2)).with_type(BOOL)
+    if True:
+        f = EBinOp(ELen(c1), "<=", ELen(c2)).with_type(BOOL)
+    else:
+        # Oh heck.
+        # This isn't actually very smart if:
+        #   x = [y]
+        #   a = Filter (!= y) b
+        # This method can't prove that |x| <= |a|, even though |a| is likely huge
+        v = fresh_var(c1.type.t)
+        f = EBinOp(ECountIn(v, c1), "<=", ECountIn(v, c2)).with_type(BOOL)
     if as_f:
         return f
     return solver.valid(EImplies(assumptions, f))
@@ -248,8 +256,8 @@ class CompositeCostModel(CostModel, BottomUpExplorer):
     def __repr__(self):
         return "CompositeCostModel()"
     def cardinality(self, e : Exp, plus_one=False) -> Exp:
-        if plus_one:
-            return ESum((self.cardinality(e, plus_one=False), ONE))
+        # if plus_one:
+        #     return ESum((self.cardinality(e, plus_one=False), ONE))
         if isinstance(e, EEmptyList):
             return ZERO
         if isinstance(e, ESingleton):
@@ -287,12 +295,21 @@ class CompositeCostModel(CostModel, BottomUpExplorer):
             return v
     def statecost(self, e : Exp) -> float:
         return e.size() / 100
+    def sizeof(self, e : Exp) -> Exp:
+        """
+        The cost of storing `e` on the data structure
+        """
+        if is_collection(e.type):
+            return self.cardinality(e, plus_one=True)
+        # if isinstance(e.type, TMap):
+        #     return EBinOp(
+        #         self.cardinality(EMapKeys(e).with_type(TBag(e.type.k))),
+        #         "*",
+        #         self.sizeof(EMapGet(e, fresh_var(e.type.k)).with_type(e.type.v))).with_type(INT)
+        return ONE
     def visit_EStateVar(self, e):
         self.secondaries += self.statecost(e.e)
-        if is_collection(e.type):
-            return self.cardinality(e.e, plus_one=True)
-        # TODO: maps
-        return ONE
+        return self.sizeof(e.e)
     def visit_EUnaryOp(self, e):
         costs = [ONE, self.visit(e.e)]
         if e.op in (UOp.Sum, UOp.Distinct, UOp.AreUnique, UOp.All, UOp.Any, UOp.Length):

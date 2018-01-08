@@ -228,3 +228,6 @@ def EIn(e1, e2):
 
 def EImplies(e1, e2):
     return EBinOp(ENot(e1), BOp.Or, e2).with_type(BOOL)
+
+def ELen(e):
+    return EUnaryOp(UOp.Length, e).with_type(INT)
