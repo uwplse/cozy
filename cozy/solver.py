@@ -101,8 +101,27 @@ def pack(t, it):
         return {"default": default, "mapping": mapping}
     raise NotImplementedError(t)
 
+def to_bool(e : z3.AstRef):
+    """
+    If `e` is a boolean literal, return its value (True or False).
+    Otherwise, return None.
+    """
+    # I'm not sure what is the "right" way to check whether `cond` is
+    # exactly Z3 true or Z3 false.  This seems to work on v4.5.0.
+    if isinstance(e, z3.BoolRef):
+        decl = str(e.decl())
+        if decl == "True":
+            return True
+        if decl == "False":
+            return False
+    return None
+
 @typechecked
 def ite(ty : Type, cond : z3.AstRef, then_branch, else_branch):
+    b = to_bool(cond)
+    if b is not None:
+        return then_branch if b else else_branch
+
     ctx = cond.ctx
     assert isinstance(ctx, z3.Context)
     if decideable(ty):
@@ -187,24 +206,59 @@ class ToZ3(Visitor):
         self.int_one  = z3.IntVal(1, self.ctx)
         self.true = z3.BoolVal(True, self.ctx)
         self.false = z3.BoolVal(False, self.ctx)
+
+    def bool_to_z3(self, b):
+        return self.true if b else self.false
+
+    def bfold(self, xs : [z3.AstRef], f, identity : bool, bottom : bool):
+        xs = make_random_access(xs)
+        bs = [to_bool(c) for c in xs]
+        if any(b is bottom for b in bs):
+            return self.bool_to_z3(bottom)
+        xs = [c for (c, b) in zip(xs, bs) if b is not identity]
+        if not xs:
+            return self.bool_to_z3(identity)
+        return f(*xs, self.ctx)
+
+    def all(self, *conds): return self.bfold(conds, z3.And, True, False)
+    def any(self, *conds): return self.bfold(conds, z3.Or,  False, True)
+    def neg(self, cond):
+        b = to_bool(cond)
+        if b is True:  return self.false
+        if b is False: return self.true
+        return z3.Not(cond, self.ctx)
+    def implies(self, l, r):
+        b = to_bool(l)
+        if b is True:  return r
+        if b is False: return self.true
+        b = to_bool(r)
+        if b is True:  return self.true
+        if b is False: return self.neg(l)
+        return z3.Implies(l, r, self.ctx)
+
     def distinct(self, t, *values):
         if len(values) <= 1:
             return z3.BoolVal(True, self.ctx)
-        return z3.And(
+        return self.all(
             self.distinct(t, values[1:]),
-            *[z3.Not(self.eq(t, values[0], v1, {}), self.ctx) for v1 in values[1:]],
-            self.ctx)
+            *[self.neg(self.eq(t, values[0], v1, {})) for v1 in values[1:]])
     def lt(self, t, e1, e2, env, deep=False):
+        if e1 is e2:
+            return self.false
         if decideable(t):
             return e1 < e2
         else:
             raise NotImplementedError()
     def gt(self, t, e1, e2, env, deep=False):
+        if e1 is e2:
+            return self.false
         if decideable(t):
             return e1 > e2
         else:
             raise NotImplementedError()
     def eq(self, t, e1, e2, env, deep=False):
+        if e1 is e2:
+            return self.true
         if decideable(t):
             assert isinstance(e1, z3.AstRef), "{}".format(repr(e1))
             assert isinstance(e2, z3.AstRef), "{}".format(repr(e2))
@@ -228,15 +282,13 @@ class ToZ3(Visitor):
             # > > > T
             res[len(lhs_mask)][len(rhs_mask)] = self.true
             for row in reversed(range(len(lhs_mask))):
-                res[row][len(rhs_mask)] = z3.And(
+                res[row][len(rhs_mask)] = self.all(
                     res[row+1][len(rhs_mask)],
-                    z3.Not(lhs_mask[row], self.ctx),
-                    self.ctx)
+                    self.neg(lhs_mask[row]))
             for col in reversed(range(len(rhs_mask))):
-                res[len(lhs_mask)][col] = z3.And(
+                res[len(lhs_mask)][col] = self.all(
                     res[len(lhs_mask)][col+1],
-                    z3.Not(rhs_mask[col], self.ctx),
-                    self.ctx)
+                    self.neg(rhs_mask[col]))
 
             for row in reversed(range(len(lhs_mask))):
                 for col in reversed(range(len(rhs_mask))):
@@ -246,7 +298,7 @@ class ToZ3(Visitor):
                         ite(BOOL, lhs_m,
                             ite(BOOL, rhs_m,
                                 # both masks are true
-                                z3.And(eqs[row][col], res[row+1][col+1], self.ctx),
+                                self.all(eqs[row][col], res[row+1][col+1]),
                                 # only lhs mask: skip rhs
                                 res[row][col+1]),
                             ite(BOOL, rhs_m,
@@ -281,7 +333,7 @@ class ToZ3(Visitor):
                 # TODO: the(e1) == the(e2)
                 pass
 
-            return z3.And(*conds, self.ctx)
+            return self.all(*conds)
         elif isinstance(t, TMap):
             conds = [self.eq(t.v, e1["default"], e2["default"], env, deep=deep)]
             def map_keys(m):
@@ -295,26 +347,26 @@ class ToZ3(Visitor):
                 env,
                 deep=False))
             for (mask, k, v) in e1["mapping"] + e2["mapping"]:
-                conds.append(z3.Implies(mask, self.eq(
+                conds.append(self.implies(mask, self.eq(
                     t.v,
                     self._map_get(t, e1, k, env),
                     self._map_get(t, e2, k, env),
                     env,
-                    deep=deep), self.ctx))
-            return z3.And(*conds, self.ctx)
+                    deep=deep)))
+            return self.all(*conds)
         elif isinstance(t, THandle):
             h1, val1 = e1
             h2, val2 = e2
             res = h1 == h2
             if deep:
-                res = z3.And(res, self.eq(t.value_type, val1, val2, env, deep=deep), self.ctx)
+                res = self.all(res, self.eq(t.value_type, val1, val2, env, deep=deep))
             return res
         elif isinstance(t, TRecord):
             conds = [self.eq(tt, e1[f], e2[f], env, deep=deep) for (f, tt) in t.fields]
-            return z3.And(*conds, self.ctx)
+            return self.all(*conds)
         elif isinstance(t, TTuple):
             conds = [self.eq(t, x, y, env, deep=deep) for (t, x, y) in zip(t.ts, e1, e2)]
-            return z3.And(*conds, self.ctx)
+            return self.all(*conds)
         else:
             raise NotImplementedError(t)
     def count_in(self, t, bag, x, env, deep=False):
@@ -329,7 +381,7 @@ class ToZ3(Visitor):
         bag_mask, bag_elems = bag
         l = self.int_zero
         for i in range(len(bag_elems)):
-            l = z3.If(z3.And(bag_mask[i], self.eq(t, x, bag_elems[i], env, deep=deep), self.ctx), self.int_one, self.int_zero, ctx=self.ctx) + l
+            l = ite(INT, self.all(bag_mask[i], self.eq(t, x, bag_elems[i], env, deep=deep)), self.int_one, self.int_zero) + l
         return l
     def is_in(self, t, bag, x, env, deep=False):
         """
@@ -342,14 +394,14 @@ class ToZ3(Visitor):
         """
         bag_mask, bag_elems = bag
         conds = [
-            z3.And(mask, self.eq(t, x, elem, env, deep=deep), self.ctx)
+            self.all(mask, self.eq(t, x, elem, env, deep=deep))
             for (mask, elem) in zip(bag_mask, bag_elems)]
-        return z3.Or(*conds, self.ctx)
+        return self.any(*conds)
     def len_of(self, val):
         bag_mask, bag_elems = val
         l = self.int_zero
         for i in range(len(bag_elems)):
-            l = z3.If(bag_mask[i], self.int_one, self.int_zero, ctx=self.ctx) + l
+            l = ite(INT, bag_mask[i], self.int_one, self.int_zero) + l
         return l
     def visit_TInt(self, t):
         return z3.IntSort(self.ctx)
@@ -382,7 +434,7 @@ class ToZ3(Visitor):
     def visit_EEmptyList(self, e, env):
         return ([], [])
     def visit_ESingleton(self, e, env):
-        return ([z3.BoolVal(True, self.ctx)], [self.visit(e.e, env)])
+        return ([self.true], [self.visit(e.e, env)])
     def visit_EHandle(self, e, env):
         return (self.visit(e.addr, env), self.visit(e.value, env))
     def visit_ENull(self, e, env):
@@ -405,7 +457,7 @@ class ToZ3(Visitor):
         for m, es in zip(mask, elems):
             sub_mask, sub_elems = es
             for mm, ee in zip(sub_mask, sub_elems):
-                res_mask.append(z3.And(m, mm, self.ctx))
+                res_mask.append(self.all(m, mm))
                 res_elems.append(ee)
         return (res_mask, res_elems)
     def visit_ECond(self, e, env):
@@ -418,19 +470,19 @@ class ToZ3(Visitor):
         if elems:
             rest_mask, rest_elems = self.raw_filter(
                 self.distinct_bag_elems((mask[1:], elems[1:]), elem_type, env),
-                lambda x: z3.Implies(mask[0], z3.Not(self.eq(elem_type, elems[0], x, env), self.ctx), self.ctx))
+                lambda x: self.implies(mask[0], self.neg(self.eq(elem_type, elems[0], x, env))))
             return ([mask[0]] + rest_mask, [elems[0]] + rest_elems)
         else:
             return bag
     def visit_EUnaryOp(self, e, env):
         if e.op == UOp.Not:
-            return z3.Not(self.visit(e.e, env), ctx=self.ctx)
+            return self.neg(self.visit(e.e, env))
         elif e.op == UOp.Sum:
             bag = self.visit(e.e, env)
             bag_mask, bag_elems = bag
             sum = self.int_zero
             for i in range(len(bag_elems)):
-                sum = z3.If(bag_mask[i], bag_elems[i], self.int_zero, ctx=self.ctx) + sum
+                sum = ite(INT, bag_mask[i], bag_elems[i], self.int_zero) + sum
             return sum
         elif e.op == UOp.Length:
             v = EVar("v").with_type(e.e.type.t)
@@ -440,25 +492,24 @@ class ToZ3(Visitor):
                 bag_mask, bag_elems = bag
                 rest = (bag_mask[1:], bag_elems[1:])
                 if bag_elems:
-                    return z3.And(
-                        z3.Implies(bag_mask[0], z3.Not(self.is_in(e.e.type.t, rest, bag_elems[0], env), self.ctx), self.ctx),
-                        is_unique(rest),
-                        self.ctx)
+                    return self.all(
+                        self.implies(bag_mask[0], self.neg(self.is_in(e.e.type.t, rest, bag_elems[0], env))),
+                        is_unique(rest))
                 else:
                     return self.true
             return is_unique(self.visit(e.e, env))
         elif e.op == UOp.Empty:
             mask, elems = self.visit(e.e, env)
-            return z3.Not(z3.Or(*mask, self.ctx), self.ctx)
+            return self.neg(self.any(*mask))
         elif e.op == UOp.Exists:
             mask, elems = self.visit(e.e, env)
-            return z3.Or(*mask, self.ctx)
+            return self.any(*mask)
         elif e.op == UOp.All:
             mask, elems = self.visit(e.e, env)
-            return z3.And(*[z3.Implies(m, e, self.ctx) for (m, e) in zip(mask, elems)], self.ctx)
+            return self.all(*[self.implies(m, e) for (m, e) in zip(mask, elems)])
         elif e.op == UOp.Any:
             mask, elems = self.visit(e.e, env)
-            return z3.Or(*[z3.And(m, e, self.ctx) for (m, e) in zip(mask, elems)], self.ctx)
+            return self.any(*[self.all(m, e) for (m, e) in zip(mask, elems)])
         elif e.op == UOp.Distinct:
             elem_type = e.type.t
             return self.distinct_bag_elems(self.visit(e.e, env), elem_type, env)
@@ -468,7 +519,7 @@ class ToZ3(Visitor):
             t = e.type
             bag = self.visit(e.e, env)
             mask, elems = bag
-            exists = z3.Or(*mask, self.ctx)
+            exists = self.any(*mask)
             elem = self.mkval(t)
             for (m, e) in reversed(list(zip(mask, elems))):
                 elem = ite(t, m, e, elem)
@@ -501,10 +552,10 @@ class ToZ3(Visitor):
                 legal = m
             else:
                 bestkey = ite(keytype,
-                    z3.Or(z3.And(m, cmp(keytype, key, bestkey, env), self.ctx), z3.Not(legal, self.ctx), self.ctx),
+                    self.any(self.all(m, cmp(keytype, key, bestkey, env)), self.neg(legal)),
                     key,
                     bestkey)
-                legal = z3.Or(m, legal, self.ctx)
+                legal = self.any(m, legal)
         # print(" -> bestkey={}".format(bestkey))
 
         # 2nd pass: find the first elem having that key
@@ -518,10 +569,10 @@ class ToZ3(Visitor):
                 legal = m
             else:
                 res = ite(e.type,
-                    z3.Or(z3.And(m, self.eq(keytype, key, bestkey, env), self.ctx), z3.Not(legal, self.ctx), self.ctx),
+                    self.any(self.all(m, self.eq(keytype, key, bestkey, env)), self.neg(legal)),
                     x,
                     res)
-                legal = z3.Or(m, legal, self.ctx)
+                legal = self.any(m, legal)
         # print(" -> res={}".format(res))
 
         return ite(e.type, legal, res, self.mkval(e.type))
@@ -545,7 +596,7 @@ class ToZ3(Visitor):
         if not masks:
             return bag
         rest_masks, rest_elems = self.remove_one(bag_type, (masks[1:], elems[1:]), elem, env)
-        return ite(bag_type, z3.And(masks[0], self.eq(bag_type.t, elems[0], elem, env), self.ctx),
+        return ite(bag_type, self.all(masks[0], self.eq(bag_type.t, elems[0], elem, env)),
             (masks[1:], elems[1:]),
             ([masks[0]] + rest_masks, [elems[0]] + rest_elems))
     def remove_all(self, bag_type, bag, to_remove, env):
@@ -566,13 +617,13 @@ class ToZ3(Visitor):
         v1 = self.visit(e.e1, env)
         v2 = self.visit(e.e2, env)
         if e.op == BOp.And:
-            return z3.And(v1, v2, self.ctx)
+            return self.all(v1, v2)
         elif e.op == BOp.Or:
-            return z3.Or(v1, v2, self.ctx)
+            return self.any(v1, v2)
         elif e.op == "==":
             return self.eq(e.e1.type, v1, v2, env)
         elif e.op == "!=":
-            return z3.Not(self.eq(e.e1.type, v1, v2, env), ctx=self.ctx)
+            return self.neg(self.eq(e.e1.type, v1, v2, env))
         elif e.op == "===":
             return self.eq(e.e1.type, v1, v2, env, deep=True)
         elif e.op == ">":
@@ -647,7 +698,7 @@ class ToZ3(Visitor):
         bag_mask, bag_elems = bag
         res_mask = []
         for mask, x in zip(bag_mask, bag_elems):
-            res_mask.append(z3.And(mask, p(x), self.ctx))
+            res_mask.append(self.all(mask, p(x)))
         return res_mask, bag_elems
     def visit_EFilter(self, e, env):
         return self.do_filter(self.visit(e.e, env), e.p, env)
@@ -685,7 +736,7 @@ class ToZ3(Visitor):
             # print("   key = {}".format(repr(key)))
             # print("   v   = {}".format(repr(v)))
             # print("   res = {}".format(repr(res)))
-            res = ite(map_type.v, z3.And(mask, self.eq(map_type.k, k, key, env), self.ctx), v, res)
+            res = ite(map_type.v, self.all(mask, self.eq(map_type.k, k, key, env)), v, res)
         return res
     def visit_EMapGet(self, e, env):
         map = self.visit(e.map, env)
@@ -745,7 +796,7 @@ class ToZ3(Visitor):
             bag_mask, bag_elems = self.visit_clauses(clauses[1:], e, env)
             res_mask = []
             for i in range(len(bag_elems)):
-                incl_this = z3.And(bag_mask[i], self.visit(c.e, env), self.ctx)
+                incl_this = self.all(bag_mask[i], self.visit(c.e, env))
                 res_mask += [incl_this]
             return res_mask, bag_elems
         elif isinstance(c, CPull):
@@ -756,7 +807,7 @@ class ToZ3(Visitor):
                 env2 = dict(env)
                 env2[c.id] = bag_elems[i]
                 bag2_mask, bag2_elems = self.visit_clauses(clauses[1:], e, env2)
-                res_mask += [z3.And(incl_this, bit, self.ctx) for bit in bag2_mask]
+                res_mask += [self.all(incl_this, bit) for bit in bag2_mask]
                 res_elems += bag2_elems
             return res_mask, res_elems
     def visit_EStateVar(self, e, env):
@@ -846,21 +897,21 @@ class ToZ3(Visitor):
             res = self.mkvar(collection_depth, TBag(type.t), on_z3_var, on_z3_assertion)
             mask, elems = res
             for i in range(1, len(mask)):
-                on_z3_assertion(z3.Implies(mask[i], self.distinct(type.t, *(elems[:(i+1)])), ctx))
+                on_z3_assertion(self.implies(mask[i], self.distinct(type.t, *(elems[:(i+1)]))))
             return res
         elif isinstance(type, TBag) or isinstance(type, TList):
             mask = [self.mkvar(collection_depth, BOOL, on_z3_var, on_z3_assertion) for i in range(collection_depth)]
             elems = [self.mkvar(collection_depth, type.t, on_z3_var, on_z3_assertion) for i in range(collection_depth)]
             # symmetry breaking
             for i in range(len(mask) - 1):
-                on_z3_assertion(z3.Implies(mask[i], mask[i+1], ctx))
+                on_z3_assertion(self.implies(mask[i], mask[i+1]))
             return (mask, elems)
         elif isinstance(type, TMap):
             default = self.mkval(type.v)
             mask = [self.mkvar(collection_depth, BOOL, on_z3_var, on_z3_assertion) for i in range(collection_depth)]
             # symmetry breaking
             for i in range(len(mask) - 1):
-                on_z3_assertion(z3.Implies(mask[i], mask[i+1], ctx))
+                on_z3_assertion(self.implies(mask[i], mask[i+1]))
             return {
                 "mapping": [(
                     mask[i],
