@@ -215,8 +215,12 @@ class Learner(object):
         Yields watched expressions that appear as worse versions of the given
         expression. There may be more than one.
         """
-        free_binders = OrderedSet(v for v in free_vars(e) if v in self.binders)
-        for (assumptions, watched_e, r, bound, p) in enumerate_fragments_and_pools(self.target):
+        # free_binders = OrderedSet(v for v in free_vars(e) if v in self.binders)
+        for ctx in sorted(list(enumerate_fragments2(self.target)), key=lambda ctx: -ctx.e.size()):
+            watched_e = ctx.e
+            p = ctx.pool
+            r = ctx.replace_e_with
+
             # _on_exp(e, "considering replacement of", watched_e)
             if e.type != watched_e.type:
                 # _on_exp(e, "wrong type")
@@ -243,9 +247,12 @@ class Learner(object):
                 continue
             if ordering == Cost.UNORDERED:
                 _on_exp(e, "skipped equivalent replacement", pool_name(pool), watched_e)
+                # print("    e1 = {!r}".format(e))
+                # print("    e2 = {!r}".format(watched_e))
                 continue
+            # TODO: can optimize by pre-computing target fingerprint
             if all(eval_bulk(EImplies(self.assumptions, EEq(self.target, r(e))), self.all_examples)):
-                yield (watched_e, e, assumptions, r)
+                yield (watched_e, e, ctx.facts, r)
 
     def pre_optimize(self, e, pool):
         """
