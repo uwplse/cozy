@@ -23,6 +23,7 @@ reset_on_success = Option("reset-on-success", bool, False)
 enforce_seen_wf = Option("enforce-seen-set-well-formed", bool, False)
 enforce_strong_progress = Option("enforce-strong-progress", bool, False)
 enforce_exprs_wf = Option("enforce-expressions-well-formed", bool, False)
+preopt = Option("optimize-accelerated-exps", bool, True)
 
 class ExpBuilder(object):
     def check(self, e, pool):
@@ -301,7 +302,7 @@ class Learner(object):
                 if self.stop_callback():
                     raise StopException()
 
-                new_e = self.pre_optimize(e, pool)
+                new_e = self.pre_optimize(e, pool) if preopt.value else e
                 if new_e != e:
                     _on_exp(e, "preoptimized", new_e)
                     e = new_e
