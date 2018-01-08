@@ -136,7 +136,7 @@ def sketch_update(
         query_vars = [v for v in free_vars(query) if v not in ctx]
         query.args = [(arg.id, arg.type) for arg in query_vars]
         subgoals.append(query)
-        return syntax.ECall(query_name, query_vars).with_type(e.type)
+        return syntax.ECall(query_name, tuple(query_vars)).with_type(e.type)
 
     def recurse(*args, **kwargs):
         (code, sgs) = sketch_update(*args, **kwargs)
