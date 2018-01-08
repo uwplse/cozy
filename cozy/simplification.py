@@ -60,14 +60,85 @@ class _V(BottomUpRewriter):
         if isinstance(record, EMakeRecord):
             return dict(record.fields)[e.f]
         return EGetField(record, e.f).with_type(e.type)
-    def visit_EUnaryOp(self, e):
+    def visit_EFilter(self, e):
         ee = self.visit(e.e)
-        if e.op == "not":
+        f = self.visit(e.p)
+        if isinstance(ee, EBinOp) and ee.op == "+":
+            return self.visit(EBinOp(EFilter(ee.e1, f).with_type(ee.e1.type), ee.op, EFilter(ee.e2, f).with_type(ee.e2.type)).with_type(e.type))
+        elif isinstance(ee, ESingleton):
+            return self.visit(ECond(
+                f.apply_to(ee.e),
+                ee,
+                EEmptyList().with_type(e.type)).with_type(e.type))
+        return EFilter(ee, f).with_type(e.type)
+    def visit_EMap(self, e):
+        ee = self.visit(e.e)
+        f = self.visit(e.f)
+        if isinstance(ee, EBinOp) and ee.op == "+":
+            return self.visit(EBinOp(EMap(ee.e1, f).with_type(e.type), ee.op, EMap(ee.e2, f).with_type(e.type)).with_type(e.type))
+        elif isinstance(ee, ESingleton):
+            return self.visit(ESingleton(f.apply_to(ee.e)).with_type(e.type))
+        return EMap(ee, f).with_type(e.type)
+    def visit_EArgMin(self, e):
+        ee = self.visit(e.e)
+        f = self.visit(e.f)
+        argmin = type(e)
+        if isinstance(ee, EBinOp) and ee.op == "+":
+            xs = ee.e1
+            ys = ee.e2
+            res =   ECond(self.visit(EUnaryOp(UOp.Empty, xs).with_type(BOOL)), argmin(ys, f).with_type(e.type),
+                    ECond(self.visit(EUnaryOp(UOp.Empty, ys).with_type(BOOL)), argmin(xs, f).with_type(e.type),
+                        argmin(EBinOp(
+                            ESingleton(argmin(xs, f).with_type(e.type)).with_type(TBag(e.type)),
+                            "+",
+                            ESingleton(argmin(ys, f).with_type(e.type)).with_type(TBag(e.type))).with_type(TBag(e.type)), f).with_type(e.type)).with_type(e.type)).with_type(e.type)
+            return res
+        return argmin(ee, f).with_type(e.type)
+    def visit_EArgMax(self, e):
+        return self.visit_EArgMin(e)
+    def visit_EUnaryOp(self, e):
+        if isinstance(e.e, ECond):
+            return self.visit(ECond(
+                e.e.cond,
+                EUnaryOp(e.op, e.e.then_branch).with_type(e.type),
+                EUnaryOp(e.op, e.e.else_branch).with_type(e.type)).with_type(e.type))
+        ee = self.visit(e.e)
+        if e.op == UOp.Not:
             if isinstance(ee, EBool):
                 return F if ee.val else T
+        elif e.op in (UOp.Length, UOp.Sum):
+            if isinstance(ee, EBinOp) and ee.op == "+":
+                return self.visit(EBinOp(EUnaryOp(e.op, ee.e1).with_type(e.type), "+", EUnaryOp(e.op, ee.e2).with_type(e.type)).with_type(e.type))
+            elif isinstance(ee, ESingleton):
+                if e.op == UOp.Length:
+                    return ONE
+                elif e.op == UOp.Sum:
+                    return ee.e
+            elif isinstance(ee, EEmptyList):
+                return ZERO
+            elif isinstance(ee, EMap) and e.op == UOp.Length:
+                return self.visit(EUnaryOp(e.op, ee.e).with_type(e.type))
+        elif e.op in (UOp.Exists, UOp.Empty):
+            if isinstance(ee, EMap) or (isinstance(ee, EUnaryOp) and ee.op == UOp.Distinct):
+                return self.visit(EUnaryOp(e.op, ee.e).with_type(e.type))
+            elif isinstance(ee, EBinOp) and ee.op == "+":
+                if e.op == UOp.Exists:
+                    return self.visit(EAny([
+                        EUnaryOp(e.op, ee.e1).with_type(BOOL),
+                        EUnaryOp(e.op, ee.e2).with_type(BOOL)]))
+                elif e.op == UOp.Empty:
+                    return self.visit(EAll([
+                        EUnaryOp(e.op, ee.e1).with_type(BOOL),
+                        EUnaryOp(e.op, ee.e2).with_type(BOOL)]))
+            elif isinstance(ee, EEmptyList):
+                return T if e.op == UOp.Empty else F
+            elif isinstance(ee, ESingleton):
+                return T if e.op == UOp.Exists else F
         return EUnaryOp(e.op, ee).with_type(e.type)
     def visit(self, e):
+        if isinstance(e, Exp) and not isinstance(e, ELambda): t = e.type
         new = super().visit(e)
+        if isinstance(e, Exp) and not isinstance(e, ELambda): assert new.type == e.type, repr(e)
         if self.debug and isinstance(e, Exp) and not isinstance(e, ELambda):
             model = satisfy(ENot(EBinOp(e, "===", new).with_type(BOOL)))
             if model is not None:
@@ -77,12 +148,17 @@ class _V(BottomUpRewriter):
         return new
 
 def simplify(e, validate=True, debug=False):
-    visitor = _V(debug)
-    orig = e
-    e = visitor.visit(e)
-    # e = cse(e)
-    if validate and not valid(EBinOp(orig, "===", e).with_type(BOOL)):
-        import sys
-        print("simplify did something stupid!\nto reproduce:\nsimplify({e!r}, validate=True, debug=True)".format(e=orig), file=sys.stderr)
-        return orig
-    return e
+    try:
+        visitor = _V(debug)
+        orig = e
+        e = visitor.visit(e)
+        # e = cse(e)
+        if validate and not valid(EBinOp(orig, "===", e).with_type(BOOL)):
+            import sys
+            print("simplify did something stupid!\nto reproduce:\nsimplify({e!r}, validate=True, debug=True)".format(e=orig), file=sys.stderr)
+            return orig
+        return e
+    except:
+        print("SIMPL FAILED")
+        print(repr(e))
+        raise
