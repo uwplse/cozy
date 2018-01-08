@@ -1141,15 +1141,15 @@ class IncrementalSolver(object):
                         print(" ---> to reproduce: satisfy({e}, vars={vars}, collection_depth={collection_depth}, validate_model={validate_model})".format(
                             e=repr(e),
                             vars=repr(vars),
-                            collection_depth=repr(collection_depth),
-                            validate_model=repr(validate_model)))
+                            collection_depth=repr(self.collection_depth),
+                            validate_model=repr(self.validate_model)))
                         if save_solver_testcases.value:
                             with open(save_solver_testcases.value, "a") as f:
                                 f.write("satisfy({e}, vars={vars}, collection_depth={collection_depth}, validate_model={validate_model})".format(
                                     e=repr(e),
                                     vars=repr(vars),
-                                    collection_depth=repr(collection_depth),
-                                    validate_model=repr(validate_model)))
+                                    collection_depth=repr(self.collection_depth),
+                                    validate_model=repr(self.validate_model)))
                                 f.write("\n")
                         wq = [(e, _env, res)]
                         while wq:
