@@ -34,6 +34,7 @@ class BinderBuilder(ExpBuilder):
                 yield self.check(T, pool)
                 yield self.check(F, pool)
                 yield self.check(ZERO, pool)
+                yield self.check(ONE, pool)
                 for b in self.binders:
                     yield self.check(b, pool)
                 if pool == STATE_POOL:
@@ -45,6 +46,9 @@ class BinderBuilder(ExpBuilder):
 
             if not build_exprs.value:
                 return
+
+            for e in cache.find(pool=STATE_POOL, size=size-1):
+                yield self.check(EStateVar(e).with_type(e.type), RUNTIME_POOL)
 
             for e in cache.find(pool=pool, size=size-1):
                 t = TBag(e.type)

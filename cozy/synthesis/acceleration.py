@@ -253,13 +253,6 @@ class AcceleratedBuilder(ExpBuilder):
                         for e2 in cache.find(pool=pool, type=v.type, size=sz2):
                             yield self.check(subst(e1, {v.id:e2}), pool)
 
-        # state var conversion
-        for e in cache.find(pool=RUNTIME_POOL, size=size-1):
-            if all(v in self.state_vars for v in free_vars(e)):
-                x = strip_EStateVar(e)
-                yield self.check(x, STATE_POOL)
-                yield self.check(EStateVar(x).with_type(x.type), RUNTIME_POOL)
-
         for (sz1, sz2) in pick_to_sum(2, size-1):
             for e in cache.find(pool=RUNTIME_POOL, size=sz1):
                 for x, pool in map_accelerate(e, self.state_vars, self.binders, self.args, cache, sz2):
