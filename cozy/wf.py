@@ -1,7 +1,7 @@
 import itertools
 
 from cozy.common import typechecked
-from cozy.typecheck import is_collection, is_scalar
+from cozy.typecheck import is_collection, is_scalar, is_numeric
 from cozy.target_syntax import *
 from cozy.syntax_tools import enumerate_fragments_and_pools, pprint
 from cozy.solver import valid
@@ -25,6 +25,12 @@ def exp_wf_nonrecursive(e : Exp, state_vars : {EVar}, args : {EVar}, pool = RUNT
         raise ExpIsNotWf(e, e, "EDrop* in state position")
     if isinstance(e, EFlatMap) and not at_runtime:
         raise ExpIsNotWf(e, e, "EFlatMap in state position")
+    if not at_runtime and isinstance(e, EBinOp) and is_numeric(e.type):
+        raise ExpIsNotWf(e, e, "arithmetic in state position")
+    # if isinstance(e, EUnaryOp) and e.op == UOp.Distinct and not at_runtime:
+    #     raise ExpIsNotWf(e, e, "'distinct' in state position")
+    # if isinstance(e, EMapKeys) and not at_runtime:
+    #     raise ExpIsNotWf(e, e, "'mapkeys' in state position")
     if isinstance(e, EVar):
         if at_runtime and e in state_vars:
             raise ExpIsNotWf(e, e, "state var at runtime")
