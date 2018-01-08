@@ -177,11 +177,12 @@ class Learner(object):
                 exp = e
                 if pool == STATE_POOL:
                     exp = strip_EStateVar(e)
-                if all(v in self.legal_free_vars for v in free_vars(exp)) and self.is_legal_in_pool(exp, pool):
+                fvs = free_vars(exp)
+                if all(v in self.legal_free_vars for v in fvs) and self.is_legal_in_pool(exp, pool):
                     _on_exp(exp, "new root", pool_name(pool))
                     exp._root = True
                     self.roots.add((exp, pool))
-                    if pool == STATE_POOL:
+                    if pool == STATE_POOL and all(v in self.state_vars for v in fvs):
                         self.roots.add((EStateVar(exp).with_type(exp.type), RUNTIME_POOL))
                     types.add(exp.type)
                 else:
@@ -319,6 +320,16 @@ class Learner(object):
             for (e, pool) in self.builder_iter:
                 if self.stop_callback():
                     raise StopException()
+
+                # Stopgap measure... long story --Calvin
+                bad = False
+                for x in all_exps(e):
+                    if isinstance(x, EStateVar):
+                        if any(v not in self.state_vars for v in free_vars(x.e)):
+                            bad = True
+                            _on_exp(e, "skipping due to illegal free vars under EStateVar")
+                if bad:
+                    continue
 
                 new_e = self.pre_optimize(e, pool) if preopt.value else e
                 if new_e != e:

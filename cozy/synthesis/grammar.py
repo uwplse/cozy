@@ -48,7 +48,8 @@ class BinderBuilder(ExpBuilder):
                 return
 
             for e in cache.find(pool=STATE_POOL, size=size-1):
-                yield self.check(EStateVar(e).with_type(e.type), RUNTIME_POOL)
+                if all(v in self.state_vars for v in free_vars(e)):
+                    yield self.check(EStateVar(e).with_type(e.type), RUNTIME_POOL)
 
             for e in cache.find(pool=pool, size=size-1):
                 t = TBag(e.type)
