@@ -675,6 +675,25 @@ def enumerate_fragments_and_pools(e : syntax.Exp, pre_visit=None, post_visit=Non
     for (a, x, r, bound) in enumerate_fragments(e, new_pre_visit, new_post_visit, include_lambdas=include_lambdas):
         yield (a, x, r, bound, pool(x))
 
+
+Context = collections.namedtuple("Context", [
+    "toplevel",
+    "e",
+    "facts",
+    "replace_e_with",
+    "bound_vars",
+    "pool"])
+
+def enumerate_fragments2(e : syntax.Exp):
+    for (a, x, r, bound, pool) in enumerate_fragments_and_pools(e):
+        yield Context(
+            toplevel=e,
+            e=x,
+            facts=a,
+            replace_e_with=r,
+            bound_vars=bound,
+            pool=pool)
+
 def replace(exp, old_exp, new_exp):
     class Replacer(BottomUpRewriter):
         def visit_ELambda(self, e):
