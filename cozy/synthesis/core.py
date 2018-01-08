@@ -280,6 +280,8 @@ class Learner(object):
                 if prev is None:
                     return super().visit_ADT(e) # optimize children
                 prev_exp, prev_size, prev_cost = prev
+                if prev_exp == e:
+                    return prev_exp
                 cost = self.cost_model.cost(e, pool)
                 ordering = cost.compare_to(prev_cost, self.assumptions)
                 if ordering == Cost.BETTER:
