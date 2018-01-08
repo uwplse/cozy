@@ -584,6 +584,7 @@ def improve(
     target = fixup_binders(target, binders, allow_add=False)
     assumptions = fixup_binders(assumptions, binders, allow_add=False)
     builder = FixedBuilder(builder, state_vars, args, binders, assumptions)
+    target_cost = cost_model.cost(target, RUNTIME_POOL)
 
     if eliminate_vars.value and can_elim_vars(target, assumptions, state_vars):
         print("This job does not depend on state_vars.")
@@ -649,9 +650,8 @@ def improve(
             else:
                 # b. if correct: yield it, watch the new target, goto 1
 
-                old_cost = cost_model.cost(target, RUNTIME_POOL)
                 new_cost = cost_model.cost(new_target, RUNTIME_POOL)
-                ordering = new_cost.compare_to(old_cost)
+                ordering = new_cost.compare_to(target_cost)
                 if ordering == Cost.WORSE:
                     print("WHOOPS! COST GOT WORSE!")
                     if save_testcases.value:
@@ -675,7 +675,8 @@ def improve(
                     print(repr(new_target))
                     # continue
                 print("found improvement: {} -----> {}".format(pprint(old_e), pprint(new_e)))
-                print("cost: {} -----> {}".format(old_cost, new_cost))
+                print("cost: {} -----> {}".format(target_cost, new_cost))
+                target_cost = new_cost
 
                 # binders are not allowed to "leak" out
                 to_yield = new_target
