@@ -3,7 +3,7 @@ import itertools
 import sys
 
 from cozy.target_syntax import *
-from cozy.syntax_tools import subst, pprint, free_vars, free_funcs, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda, enumerate_fragments_and_pools
+from cozy.syntax_tools import subst, pprint, free_vars, free_funcs, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda, enumerate_fragments_and_pools, enumerate_fragments2, strip_EStateVar
 from cozy.wf import ExpIsNotWf, exp_wf, exp_wf_nonrecursive
 from cozy.common import OrderedSet, ADT, Visitor, fresh_name, typechecked, unique, pick_to_sum, cross_product, OrderedDefaultDict, OrderedSet, group_by, find_one
 from cozy.solver import satisfy, satisfiable, valid
@@ -168,20 +168,29 @@ class Learner(object):
         print("watching new target...")
         self.backlog_counter = 0
         self.target = new_target
-        self.roots = []
+        self.roots = OrderedSet()
         types = OrderedSet()
-        i = 0
-        for (a, e, r, bound, pool) in enumerate_fragments_and_pools(self.target):
-            i += 1
+        for e in all_exps(new_target):
+            if isinstance(e, ELambda):
+                continue
             for pool in ALL_POOLS:
-                if all(v in self.legal_free_vars for v in free_vars(e)) and self.is_legal_in_pool(e, pool):
-                    _on_exp(e, "new root", pool_name(pool))
-                    self.roots.append((e, pool))
-                    types.add(e.type)
+                exp = e
+                if pool == STATE_POOL:
+                    exp = strip_EStateVar(e)
+                if all(v in self.legal_free_vars for v in free_vars(exp)) and self.is_legal_in_pool(exp, pool):
+                    _on_exp(exp, "new root", pool_name(pool))
+                    exp._root = True
+                    self.roots.add((exp, pool))
+                    if pool == STATE_POOL:
+                        self.roots.add((EStateVar(exp).with_type(exp.type), RUNTIME_POOL))
+                    types.add(exp.type)
+                else:
+                    _on_exp(exp, "rejected root", pool_name(pool))
         for b in self.binders:
             types.add(b.type)
         for t in types:
-            self.roots.append((construct_value(t), RUNTIME_POOL))
+            self.roots.add((construct_value(t), RUNTIME_POOL))
+        self.roots = list(self.roots)
         self.roots.sort(key = lambda tup: tup[0].size())
         ## TODO: fix this up for symbolic cost model
         # if self.cost_model.is_monotonic() or hyperaggressive_culling.value:
