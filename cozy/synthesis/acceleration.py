@@ -202,6 +202,9 @@ def simplify_sum(e):
         res = EBinOp(res, "+", parts[i]).with_type(INT)
     return res
 
+def is_root(e):
+    return hasattr(e, "_root")
+
 class AcceleratedBuilder(ExpBuilder):
 
     def __init__(self, wrapped : ExpBuilder, binders : [EVar], state_vars : [EVar], args : [EVar]):
@@ -225,12 +228,16 @@ class AcceleratedBuilder(ExpBuilder):
     def build(self, cache, size):
 
         for e in cache.find(pool=RUNTIME_POOL, size=size-1, type=INT):
+            if not is_root(e):
+                continue
             e2 = simplify_sum(e)
             if e != e2:
                 yield self.check(e2, RUNTIME_POOL)
 
         # Fixup EFilter(\x -> ECond...)
         for e in cache.find_collections(pool=RUNTIME_POOL, size=size-1):
+            if not is_root(e):
+                continue
             if isinstance(e, EFilter):
                 for (_, x, r, _) in enumerate_fragments(e.p.body):
                     if isinstance(x, ECond):
@@ -247,6 +254,8 @@ class AcceleratedBuilder(ExpBuilder):
         for pool in (STATE_POOL, RUNTIME_POOL):
             for (sz1, sz2) in pick_to_sum(2, size-1):
                 for e1 in cache.find(pool=pool, size=sz1):
+                    if not is_root(e1):
+                        continue
                     for v in free_vars(e1):
                         if pool == RUNTIME_POOL:
                             e1 = subst(strip_EStateVar(e1), { sv.id : EStateVar(sv).with_type(sv.type) for sv in self.state_vars if sv != v })
@@ -255,6 +264,8 @@ class AcceleratedBuilder(ExpBuilder):
 
         for (sz1, sz2) in pick_to_sum(2, size-1):
             for e in cache.find(pool=RUNTIME_POOL, size=sz1):
+                if not is_root(e):
+                    continue
                 for x, pool in map_accelerate(e, self.state_vars, self.binders, self.args, cache, sz2):
                     yield self.check(x, pool)
                 if isinstance(e, EFilter) and not any(v in self.binders for v in free_vars(e)):
@@ -262,6 +273,8 @@ class AcceleratedBuilder(ExpBuilder):
                         yield self.check(x, pool)
 
         for bag in cache.find_collections(pool=RUNTIME_POOL, size=size-1):
+            if not is_root(bag):
+                continue
             for a in self.args:
                 for v in self.state_vars:
                     if is_collection(v.type) and v.type == a.type:
