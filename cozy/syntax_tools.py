@@ -458,6 +458,7 @@ class FragmentEnumerator(common.Visitor):
         self.post_visit = post_visit
         self.bound = collections.OrderedDict()
         self.assumptions = []
+        self.a_fvs = []
 
     def currently_bound(self):
         return common.OrderedSet(self.bound.keys())
@@ -468,20 +469,23 @@ class FragmentEnumerator(common.Visitor):
     @contextmanager
     @common.typechecked
     def push_assumptions(self, new_assumptions : [syntax.Exp] = []):
-        old_assumptions = self.assumptions
-        self.assumptions = self.assumptions + new_assumptions
-        yield
-        self.assumptions = old_assumptions
+        with common.save_property(self, "assumptions"):
+            with common.save_property(self, "a_fvs"):
+                self.assumptions = self.assumptions + new_assumptions
+                self.a_fvs = self.a_fvs + [free_vars(a) for a in new_assumptions]
+                yield
 
     @contextmanager
     @common.typechecked
     def intro_vars(self, vars : [syntax.EVar], source):
         vars = common.OrderedSet(vars)
-        old_assumptions = self.assumptions
-        self.assumptions = [a for a in self.assumptions if not (free_vars(a) & vars)]
-        with common.extend_multi(self.bound, [(v, source) for v in vars]):
-            yield
-        self.assumptions = old_assumptions
+        with common.save_property(self, "assumptions"):
+            with common.save_property(self, "a_fvs"):
+                to_keep = [i for i in range(len(self.assumptions)) if not common.intersects(self.a_fvs[i], vars)]
+                self.assumptions = [self.assumptions[i] for i in to_keep]
+                self.a_fvs       = [self.a_fvs[i]       for i in to_keep]
+                with common.extend_multi(self.bound, [(v, source) for v in vars]):
+                    yield
 
     def visit_assumptions_seq(self, assumptions, i=0):
         if i >= len(assumptions):
@@ -489,6 +493,7 @@ class FragmentEnumerator(common.Visitor):
         for info in self.visit(assumptions[i]):
             yield (lambda i, a, x, r, bound: (a, x, lambda x: tuple(assumptions[:i]) + (x,) + tuple(assumptions[i:]), bound))(i, *info)
         self.assumptions.append(assumptions[i])
+        self.a_fvs.append(free_vars(assumptions[i]))
         yield from self.visit_assumptions_seq(assumptions, i+1)
 
     def recurse_with_assumptions_about_bound_var(self, e : target_syntax.ELambda, assume : [syntax.Exp]):
