@@ -153,9 +153,9 @@ def sketch_update(
             syntax.SForEach(v, to_add, syntax.SCall(lval, "add", [v]))])
     # elif isinstance(t, syntax.TList):
     #     raise NotImplementedError()
-    elif is_numeric(t):
-        change = make_subgoal(syntax.EBinOp(new_value, "-", old_value).with_type(t))
-        stm = syntax.SAssign(lval, syntax.EBinOp(lval, "+", change).with_type(t))
+    # elif is_numeric(t):
+    #     change = make_subgoal(syntax.EBinOp(new_value, "-", old_value).with_type(t))
+    #     stm = syntax.SAssign(lval, syntax.EBinOp(lval, "+", change).with_type(t))
     elif isinstance(t, syntax.TTuple):
         get = lambda val, i: syntax.ETupleGet(val, i).with_type(t.ts[i])
         stm = syntax.seq([
