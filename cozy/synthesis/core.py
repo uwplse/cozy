@@ -426,7 +426,7 @@ def fixup_binders(e : Exp, binders_to_use : [EVar], allow_add=False, throw=False
     class V(BottomUpRewriter):
         def visit_ELambda(self, e):
             if e.arg in binders_by_type[e.arg.type]:
-                return ELambda(e.arg, self.visit(e.body))
+                return super().visit_ADT(e)
             fvs = free_vars(e.body)
             legal_repls = [ b for b in binders_by_type[e.arg.type] if b not in fvs ]
             if not legal_repls:
