@@ -1,4 +1,5 @@
 from collections import defaultdict, OrderedDict, MutableSet
+from contextlib import contextmanager
 from functools import total_ordering, wraps
 import sys
 import os
@@ -407,6 +408,17 @@ def make_random_access(iter):
     if isinstance(iter, list) or isinstance(iter, tuple):
         return iter
     return list(iter)
+
+def intersects(s1 : set, s2 : set):
+    if len(s1) > len(s2):
+        s1, s2 = s2, s1
+    return any(x in s2 for x in s1)
+
+@contextmanager
+def save_property(x, prop_name):
+    old_val = getattr(x, prop_name)
+    yield
+    setattr(x, prop_name, old_val)
 
 def cross_product(iters, i=0):
     """

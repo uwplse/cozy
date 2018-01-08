@@ -1040,13 +1040,45 @@ class Aeq(object):
     def __ne__(self, other):
         return not (self == other)
 
+class ExpMap(object):
+    def __init__(self, items=(), ordered=True):
+        self.by_id = collections.OrderedDict()
+        self.by_hash = collections.OrderedDict()
+        for k, v in items:
+            self[k] = v
+    def _hash(self, k):
+        return (type(k), k.type, k)
+    def _unhash(self, h):
+        return h[2]
+    def get(self, k):
+        i = id(k)
+        try:
+            return self.by_id[i]
+        except KeyError:
+            return self.by_hash.get(self._hash(k))
+    def __setitem__(self, k, v):
+        self.by_id[id(k)] = v
+        self.by_hash[self._hash(k)] = v
+    def __delitem__(self, k):
+        i = id(k)
+        if i in self.by_id:
+            del self.by_id[i]
+        del self.by_hash[self._hash(k)]
+    def items(self):
+        for (k, v) in self.by_hash.items():
+            yield (self._unhash(k), v)
+    def values(self):
+        for k, v in self.items():
+            yield v
+
+@task
 def cse(e, verify=False):
     """
     Common subexpression elimination. Replaces re-used expressions with ELet,
     e.g. "(x+1) + (x+1)" ---> "let a = x+1 in a+a".
     """
     def finish(e, avail):
-        ravail = collections.OrderedDict([(v, k) for ((t, k), v) in avail.items() if v is not None])
+        ravail = collections.OrderedDict([(v, k) for (k, v) in avail.items() if v is not None])
         counts = free_vars(e, counts=True)
         for var, value in reversed(ravail.items()):
             for (vv, ct) in free_vars(value, counts=True).items():
@@ -1080,19 +1112,30 @@ def cse(e, verify=False):
     class V(BottomUpRewriter):
         def __init__(self):
             super().__init__()
-            self.avail = collections.OrderedDict() # maps expressions --> variables
-            # self.avail_by_id = collections.OrderedDict() # maps ids -> variables
+            self.avail = ExpMap() # maps expressions --> variables
+        def visit_EVar(self, e):
+            return e
+        def visit_ENum(self, e):
+            return e
+        def visit_EEnumEntry(self, e):
+            return e
+        def visit_EEmptyList(self, e):
+            return e
+        def visit_EStr(self, e):
+            return e
+        def visit_EBool(self, e):
+            return e
+        def visit_ENative(self, e):
+            return e
+        def visit_ENull(self, e):
+            return e
         def visit_Exp(self, e):
-            # if id(e) in self.avail_by_id:
-                # return self.avail_by_id[id(e)]
             ee = type(e)(*[self.visit(c) for c in e.children()]).with_type(e.type)
-            res = self.avail.get((e.type, ee))
+            res = self.avail.get(ee)
             if res is not None:
                 return res
             v = fresh_var(e.type, hint="tmp")
-            ee = ee.with_type(e.type)
-            self.avail[(e.type, ee)] = v
-            # self.avail_by_id[id(e)] = v
+            self.avail[ee] = v
             return v
         def visit_EListComprehension(self, e):
             raise NotImplementedError()
@@ -1102,14 +1145,12 @@ def cse(e, verify=False):
             return e._fvs
         def visit_ELambda(self, e):
             old_avail = self.avail
-            # old_avail_by_id = self.avail_by_id
-            self.avail = collections.OrderedDict([(k, v) for (k, v) in self.avail.items() if e.arg not in self._fvs(k[1])])
-            # self.avail_by_id = collections.OrderedDict()
+            self.avail = ExpMap([(k, v) for (k, v) in self.avail.items() if e.arg not in self._fvs(k)])
             body = self.visit(e.body)
 
             precious = set((e.arg,))
             # print("computing fvs x{}...".format(len(self.avail.items())))
-            fvs = { v : self._fvs(k) for ((t, k), v) in self.avail.items() }
+            fvs = { v : self._fvs(k) for (k, v) in self.avail.items() }
             # print("done")
             dirty = True
             while dirty:
@@ -1126,7 +1167,6 @@ def cse(e, verify=False):
 
             body = finish(body, self.avail)
             self.avail = old_avail
-            # self.avail_by_id = old_avail_by_id
             return target_syntax.ELambda(e.arg, body)
 
     v = V()
