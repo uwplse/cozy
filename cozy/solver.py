@@ -1,4 +1,4 @@
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 from datetime import datetime, timedelta
 import itertools
 import threading
@@ -9,7 +9,7 @@ import z3
 from cozy.target_syntax import *
 from cozy.syntax_tools import BottomUpExplorer, pprint, free_vars, free_funcs, cse, all_exps, purify
 from cozy.typecheck import is_collection, is_numeric
-from cozy.common import declare_case, fresh_name, Visitor, FrozenDict, typechecked, extend
+from cozy.common import declare_case, fresh_name, Visitor, FrozenDict, typechecked, extend, OrderedSet, make_random_access
 from cozy import evaluation
 from cozy.opts import Option
 
@@ -970,196 +970,243 @@ def _tock(e, event):
         # print(repr(e), file=sys.stderr)
         # raise NotImplementedError()
 
-_LOCK = threading.Lock()
-def satisfy(e, vars = None, funcs = None, collection_depth : int = None, validate_model : bool = True, model_callback = None, logic : str = None, timeout : float = None):
-    if collection_depth is None:
-        collection_depth = collection_depth_opt.value
-    _tick()
-    with _LOCK:
-        _tock(e, "acquire lock")
+_LOCK = threading.RLock()
+
+class IncrementalSolver(object):
+    def __init__(self,
+            vars = None,
+            funcs = None,
+            collection_depth : int = None,
+            validate_model : bool = True,
+            model_callback = None,
+            logic : str = None,
+            timeout : float = None):
+
+        if collection_depth is None:
+            collection_depth = collection_depth_opt.value
+
+        self.vars = OrderedSet()
+        self.funcs = OrderedDict()
+        self.collection_depth = collection_depth
+        self.validate_model = validate_model
+        self.model_callback = model_callback
+        self._env = OrderedDict()
+
+        with _LOCK:
+            ctx = z3.Context()
+            solver = z3.Solver(ctx=ctx) if logic is None else z3.SolverFor(logic, ctx=ctx)
+            if timeout is not None:
+                solver.set("timeout", int(timeout * 1000))
+            solver.set("core.validate", validate_model)
+            visitor = ToZ3(ctx, solver)
+
+            self.visitor = visitor
+            self.z3_solver = solver
+            self._create_vars(vars=vars or (), funcs=funcs or {})
+
+    def _create_vars(self, vars, funcs):
+        for f, t in funcs.items():
+            if f not in self._env:
+                self._env[f] = self.visitor.mkvar(self.collection_depth, t)
+                self.funcs[f] = t
+        for v in vars:
+            if v.id not in self._env:
+                self._env[v.id] = self.visitor.mkvar(self.collection_depth, v.type)
+                self.vars.add(v)
+
+    def _convert(self, e):
+        _tick()
         orig_size = len(list(all_exps(e)))
         orig_e = e
         e = purify(e)
         e = cse(e, verify=False)
         _tock(e, "cse (size: {} --> {})".format(orig_size, len(list(all_exps(e)))))
-        # print(pprint(e))
-        # print("sat? {}".format(pprint(e)))
-        assert e.type == BOOL
+        with _LOCK:
+            self._create_vars(vars=free_vars(e), funcs=free_funcs(e))
+            return self.visitor.visit(e, self._env)
 
-        ctx = z3.Context()
-        solver = z3.Solver(ctx=ctx) if logic is None else z3.SolverFor(logic, ctx=ctx)
-        if timeout is not None:
-            solver.set("timeout", int(timeout * 1000))
-        solver.set("core.validate", validate_model)
-        visitor = ToZ3(ctx, solver)
-
-        def reconstruct(model, value, type):
-            if type == INT or type == LONG:
-                return model.eval(value, model_completion=True).as_long()
-            elif type == REAL or type == FLOAT:
-                return model.eval(value, model_completion=True).as_fraction()
-            elif isinstance(type, TNative):
-                return (type.name, model.eval(value, model_completion=True).as_long())
-            elif type == STRING:
-                i = model.eval(value, model_completion=True).as_long()
-                return "a" * i
-            elif type == BOOL:
-                return bool(model.eval(value, model_completion=True))
-            elif isinstance(type, TBag) or isinstance(type, TSet) or isinstance(type, TList):
-                mask, elems = value
-                real_val = []
-                for i in range(len(elems)):
-                    if reconstruct(model, mask[i], BOOL):
-                        real_val.append(reconstruct(model, elems[i], type.t))
-                if isinstance(type, TList):
-                    return tuple(real_val)
-                return evaluation.Bag(real_val)
-            elif isinstance(type, TMap):
-                default = reconstruct(model, value["default"], type.v)
-                res = evaluation.Map(type, default)
-                for (mask, k, v) in value["mapping"]:
-                    # K/V pairs appearing earlier in value["mapping"] have precedence
-                    if reconstruct(model, mask, BOOL):
-                        k = reconstruct(model, k, type.k)
-                        if k not in res.keys():
-                            v = reconstruct(model, v, type.v)
-                            res[k] = v
-                return res
-            elif isinstance(type, TEnum):
-                val = model.eval(value, model_completion=True).as_long()
-                return type.cases[val]
-            elif isinstance(type, THandle):
-                id, val = value
-                id = reconstruct(model, id, INT)
-                val = reconstruct(model, val, type.value_type)
-                return evaluation.Handle(id, val)
-            elif isinstance(type, TRecord):
-                res = defaultdict(lambda: None)
-                for (field, t) in type.fields:
-                    res[field] = reconstruct(model, value[field], t)
-                return FrozenDict(res)
-            elif isinstance(type, TTuple):
-                return tuple(reconstruct(model, v, t) for (v, t) in zip(value, type.ts))
-            else:
-                raise NotImplementedError(type)
-
-        _env = { }
-        if funcs is None:
-            funcs = free_funcs(e)
-        for f, t in funcs.items():
-            _env[f] = visitor.mkvar(collection_depth, t)
-        fvs = free_vars(e)
-        if vars is None:
-            vars = fvs
-        else:
-            vars = list(vars) + [v for v in fvs if v not in vars]
-        for v in vars:
-            # print("{} : {}".format(pprint(v), pprint(v.type)))
-            _env[v.id] = visitor.mkvar(collection_depth, v.type)
-        # print(_env)
-
+    def add_assumption(self, e):
+        # print("adding assumption {} to {}".format(pprint(e), id(self)))
         try:
-            solver.add(visitor.visit(e, _env))
+            with _LOCK:
+                self.z3_solver.add(self._convert(e))
         except Exception:
-            print(" ---> to reproduce: satisfy({e}, vars={vars}, collection_depth={collection_depth}, validate_model={validate_model})".format(
-                e=repr(orig_e),
-                vars=repr(vars),
-                collection_depth=repr(collection_depth),
-                validate_model=repr(validate_model)))
+            print(" ---> to reproduce: satisfy({e!r}, vars={vars!r}, collection_depth={collection_depth!r}, validate_model={validate_model!r})".format(
+                e=e,
+                vars=self.vars,
+                collection_depth=self.collection_depth,
+                validate_model=self.validate_model))
             raise
 
-        # print(solver.assertions())
-        _tock(e, "encode")
-        res = solver.check()
-        _tock(e, "solve")
-        if res == z3.unsat:
-            return None
-        elif res == z3.unknown:
-            raise SolverReportedUnknown("z3 reported unknown")
-        else:
-            def mkfunc(f, arg_types, out_type):
-                @lru_cache(maxsize=None)
-                def extracted_func(*args):
-                    return reconstruct(model, f(*[visitor.unreconstruct(v, t) for (v, t) in zip(args, arg_types)]), out_type)
-                return extracted_func
-            model = solver.model()
-            # print(model)
-            res = { }
-            for name, t in funcs.items():
-                f = _env[name]
-                out_type = t.ret_type
-                arg_types = t.arg_types
-                res[name] = mkfunc(f, arg_types, out_type)
-            for v in vars:
-                res[v.id] = reconstruct(model, _env[v.id], v.type)
-            if model_callback is not None:
-                model_callback(res)
-            if validate_model:
-                x = evaluation.eval(orig_e, res)
-                if x is not True:
-                    print("bad example: {}".format(res))
-                    print(" ---> formula: {}".format(pprint(e)))
-                    print(" ---> got {}".format(repr(x)))
-                    print(" ---> model: {}".format(model))
-                    print(" ---> assertions: {}".format(solver.assertions()))
-                    print(" ---> to reproduce: satisfy({e}, vars={vars}, collection_depth={collection_depth}, validate_model={validate_model})".format(
-                        e=repr(orig_e),
-                        vars=repr(vars),
-                        collection_depth=repr(collection_depth),
-                        validate_model=repr(validate_model)))
-                    if save_solver_testcases.value:
-                        with open(save_solver_testcases.value, "a") as f:
-                            f.write("satisfy({e}, vars={vars}, collection_depth={collection_depth}, validate_model={validate_model})".format(
-                                e=repr(e),
-                                vars=repr(vars),
-                                collection_depth=repr(collection_depth),
-                                validate_model=repr(validate_model)))
-                            f.write("\n")
-                    wq = [(e, _env, res)]
-                    while wq:
-                        # print("checking ?/{}...".format(len(wq)))
-                        x, solver_env, eval_env = wq.pop()
-                        for x in sorted(all_exps(x), key=lambda xx: xx.size()):
-                            if all(v.id in eval_env for v in free_vars(x)) and not isinstance(x, ELambda):
-                                solver_val = reconstruct(model, visitor.visit(x, solver_env), x.type)
-                                v = fresh_name("tmp")
-                                eval_env[v] = solver_val
-                                eval_val = evaluation.eval(EEq(x, EVar(v).with_type(x.type)), eval_env)
-                                if not eval_val:
-                                    print(" ---> disagreement on {}".format(pprint(x)))
-                                    print(" ---> Solver: {}".format(solver_val))
-                                    print(" ---> Eval'r: {}".format(evaluation.eval(x, eval_env)))
-                                    for v in free_vars(x):
-                                        print(" ---> s[{}] = {}".format(v.id, solver_env[v.id]))
-                                        print(" ---> e[{}] = {}".format(v.id, eval_env[v.id]))
-                                    for i, c in enumerate(x.children()):
-                                        if isinstance(c, Exp) and not isinstance(c, ELambda):
-                                            print(" ---> solver arg[{}] = {}".format(i, reconstruct(model, visitor.visit(c, solver_env), c.type)))
-                                            print(" ---> eval'r arg[{}] = {}".format(i, evaluation.eval(c, eval_env)))
-                                    if isinstance(x, EFilter):
-                                        smask, selems = visitor.visit(x.e, solver_env)
-                                        for (mask, elem) in zip(smask, selems):
-                                            if reconstruct(model, mask, BOOL):
-                                                # print("recursing on {}".format(elem))
-                                                senv = dict(solver_env)
-                                                eenv = dict(eval_env)
-                                                senv[x.p.arg.id] = elem
-                                                eenv[x.p.arg.id] = reconstruct(model, elem, x.type.t)
-                                                wq.append((x.p.body, senv, eenv))
-                                    elif isinstance(x, ELet):
-                                        z = visitor.visit(x.e, solver_env)
-                                        senv = dict(solver_env)
-                                        eenv = dict(eval_env)
-                                        senv[x.f.arg.id] = z
-                                        eenv[x.f.arg.id] = reconstruct(model, z, x.e.type)
-                                        wq.append((x.f.body, senv, eenv))
-                                    break
-                    raise ModelValidationError("model validation failed")
-            _tock(e, "extract model")
-            return res
+    def satisfy(self, e):
+        # print(pprint(e))
+        # print("sat? {}".format(pprint(e)))
+        # assert e.type == BOOL
+
+        _env = self._env
+        solver = self.z3_solver
+        vars = self.vars
+        visitor = self.visitor
+
+        with _LOCK:
+            _tick()
+
+            def reconstruct(model, value, type):
+                if type == INT or type == LONG:
+                    return model.eval(value, model_completion=True).as_long()
+                elif type == REAL or type == FLOAT:
+                    return model.eval(value, model_completion=True).as_fraction()
+                elif isinstance(type, TNative):
+                    return (type.name, model.eval(value, model_completion=True).as_long())
+                elif type == STRING:
+                    i = model.eval(value, model_completion=True).as_long()
+                    return "a" * i
+                elif type == BOOL:
+                    return bool(model.eval(value, model_completion=True))
+                elif isinstance(type, TBag) or isinstance(type, TSet) or isinstance(type, TList):
+                    mask, elems = value
+                    real_val = []
+                    for i in range(len(elems)):
+                        if reconstruct(model, mask[i], BOOL):
+                            real_val.append(reconstruct(model, elems[i], type.t))
+                    if isinstance(type, TList):
+                        return tuple(real_val)
+                    return evaluation.Bag(real_val)
+                elif isinstance(type, TMap):
+                    default = reconstruct(model, value["default"], type.v)
+                    res = evaluation.Map(type, default)
+                    for (mask, k, v) in value["mapping"]:
+                        # K/V pairs appearing earlier in value["mapping"] have precedence
+                        if reconstruct(model, mask, BOOL):
+                            k = reconstruct(model, k, type.k)
+                            if k not in res.keys():
+                                v = reconstruct(model, v, type.v)
+                                res[k] = v
+                    return res
+                elif isinstance(type, TEnum):
+                    val = model.eval(value, model_completion=True).as_long()
+                    return type.cases[val]
+                elif isinstance(type, THandle):
+                    id, val = value
+                    id = reconstruct(model, id, INT)
+                    val = reconstruct(model, val, type.value_type)
+                    return evaluation.Handle(id, val)
+                elif isinstance(type, TRecord):
+                    res = defaultdict(lambda: None)
+                    for (field, t) in type.fields:
+                        res[field] = reconstruct(model, value[field], t)
+                    return FrozenDict(res)
+                elif isinstance(type, TTuple):
+                    return tuple(reconstruct(model, v, t) for (v, t) in zip(value, type.ts))
+                else:
+                    raise NotImplementedError(type)
+
+            solver.push()
+            self.add_assumption(e)
+
+            # print(solver.assertions())
+            _tock(e, "encode")
+            res = solver.check()
+            _tock(e, "solve")
+            if res == z3.unsat:
+                return None
+            elif res == z3.unknown:
+                raise SolverReportedUnknown("z3 reported unknown")
+            else:
+                def mkfunc(f, arg_types, out_type):
+                    @lru_cache(maxsize=None)
+                    def extracted_func(*args):
+                        return reconstruct(model, f(*[visitor.unreconstruct(v, t) for (v, t) in zip(args, arg_types)]), out_type)
+                    return extracted_func
+                model = solver.model()
+                # print(model)
+                res = { }
+                for name, t in self.funcs.items():
+                    f = _env[name]
+                    out_type = t.ret_type
+                    arg_types = t.arg_types
+                    res[name] = mkfunc(f, arg_types, out_type)
+                for v in vars:
+                    res[v.id] = reconstruct(model, _env[v.id], v.type)
+                if self.model_callback is not None:
+                    self.model_callback(res)
+                if self.validate_model:
+                    x = evaluation.eval(e, res)
+                    if x is not True:
+                        print("bad example: {}".format(res))
+                        print(" ---> formula: {}".format(pprint(e)))
+                        print(" ---> got {}".format(repr(x)))
+                        print(" ---> model: {}".format(model))
+                        print(" ---> assertions: {}".format(solver.assertions()))
+                        print(" ---> to reproduce: satisfy({e}, vars={vars}, collection_depth={collection_depth}, validate_model={validate_model})".format(
+                            e=repr(e),
+                            vars=repr(vars),
+                            collection_depth=repr(collection_depth),
+                            validate_model=repr(validate_model)))
+                        if save_solver_testcases.value:
+                            with open(save_solver_testcases.value, "a") as f:
+                                f.write("satisfy({e}, vars={vars}, collection_depth={collection_depth}, validate_model={validate_model})".format(
+                                    e=repr(e),
+                                    vars=repr(vars),
+                                    collection_depth=repr(collection_depth),
+                                    validate_model=repr(validate_model)))
+                                f.write("\n")
+                        wq = [(e, _env, res)]
+                        while wq:
+                            # print("checking ?/{}...".format(len(wq)))
+                            x, solver_env, eval_env = wq.pop()
+                            for x in sorted(all_exps(x), key=lambda xx: xx.size()):
+                                if all(v.id in eval_env for v in free_vars(x)) and not isinstance(x, ELambda):
+                                    solver_val = reconstruct(model, visitor.visit(x, solver_env), x.type)
+                                    v = fresh_name("tmp")
+                                    eval_env[v] = solver_val
+                                    eval_val = evaluation.eval(EEq(x, EVar(v).with_type(x.type)), eval_env)
+                                    if not eval_val:
+                                        print(" ---> disagreement on {}".format(pprint(x)))
+                                        print(" ---> Solver: {}".format(solver_val))
+                                        print(" ---> Eval'r: {}".format(evaluation.eval(x, eval_env)))
+                                        for v in free_vars(x):
+                                            print(" ---> s[{}] = {}".format(v.id, solver_env[v.id]))
+                                            print(" ---> e[{}] = {}".format(v.id, eval_env[v.id]))
+                                        for i, c in enumerate(x.children()):
+                                            if isinstance(c, Exp) and not isinstance(c, ELambda):
+                                                print(" ---> solver arg[{}] = {}".format(i, reconstruct(model, visitor.visit(c, solver_env), c.type)))
+                                                print(" ---> eval'r arg[{}] = {}".format(i, evaluation.eval(c, eval_env)))
+                                        if isinstance(x, EFilter):
+                                            smask, selems = visitor.visit(x.e, solver_env)
+                                            for (mask, elem) in zip(smask, selems):
+                                                if reconstruct(model, mask, BOOL):
+                                                    # print("recursing on {}".format(elem))
+                                                    senv = dict(solver_env)
+                                                    eenv = dict(eval_env)
+                                                    senv[x.p.arg.id] = elem
+                                                    eenv[x.p.arg.id] = reconstruct(model, elem, x.type.t)
+                                                    wq.append((x.p.body, senv, eenv))
+                                        elif isinstance(x, ELet):
+                                            z = visitor.visit(x.e, solver_env)
+                                            senv = dict(solver_env)
+                                            eenv = dict(eval_env)
+                                            senv[x.f.arg.id] = z
+                                            eenv[x.f.arg.id] = reconstruct(model, z, x.e.type)
+                                            wq.append((x.f.body, senv, eenv))
+                                        break
+                        raise ModelValidationError("model validation failed")
+                _tock(e, "extract model")
+                solver.pop()
+                return res
+
+    def satisfiable(self, e):
+        return self.satisfy(e) is not None
+
+    def valid(self, e):
+        return not satisfiable(ENot(e))
+
+def satisfy(e, **opts):
+    s = IncrementalSolver(**opts)
+    return s.satisfy(e)
 
 def satisfiable(e, **opts):
     return satisfy(e, **opts) is not None
 
 def valid(e, **opts):
-    return satisfy(EUnaryOp("not", e).with_type(BOOL), **opts) is None
+    return satisfy(ENot(e), **opts) is None
