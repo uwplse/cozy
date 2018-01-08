@@ -61,16 +61,18 @@ class BottomUpExplorer(common.Visitor):
 class BottomUpRewriter(BottomUpExplorer):
     def join(self, x, new_children):
         if isinstance(x, common.ADT):
+            if all(a is b for (a, b) in zip(x.children(), new_children)):
+                return x
             out = type(x)(*new_children)
+            if isinstance(x, syntax.Exp) and hasattr(x, "type"):
+                out.type = x.type
+            return out
         elif type(x) in [list, tuple, dict]:
-            out = type(x)(new_children)
+            if type(x) in [list, tuple] and all(a is b for (a, b) in zip(x, new_children)):
+                return x
+            return type(x)(new_children)
         else:
-            out = x
-        if isinstance(x, syntax.Exp) and hasattr(x, "type"):
-            out.type = x.type
-        if isinstance(x, syntax.THandle) and hasattr(x, "value_type"):
-            out.value_type = x.value_type
-        return out
+            return x
 
 def strip_EStateVar(e : syntax.Exp):
     class V(BottomUpRewriter):
