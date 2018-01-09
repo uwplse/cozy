@@ -3,7 +3,7 @@ import json
 
 from cozy import common, library, evaluation
 from cozy.target_syntax import *
-from cozy.syntax_tools import fresh_var, free_vars, subst, is_scalar
+from cozy.syntax_tools import free_vars, subst, is_scalar, all_exps
 
 from .cxx import CxxPrinter
 from .misc import *
@@ -28,6 +28,7 @@ class JavaPrinter(CxxPrinter):
         self.state_exps = state_exps
         self.funcs = { f.name: f for f in spec.extern_funcs }
         self.queries = { q.name: q for q in spec.methods if isinstance(q, Query) }
+        self.vars = set(e.id for e in all_exps(spec) if isinstance(e, EVar))
         self.setup_types(spec, state_exps, sharing)
 
         s = spec.header
@@ -94,7 +95,7 @@ class JavaPrinter(CxxPrinter):
             return ""
         ret_type = q.ret.type
         if isinstance(ret_type, TBag):
-            x = EVar(common.fresh_name("x")).with_type(ret_type.t)
+            x = EVar(self.fn("x")).with_type(ret_type.t)
             def body(x):
                 return SEscape("{indent}_callback.accept({x});\n", ["x"], [x])
             return "{indent}public void {name} ({args}java.util.function.Consumer<{t}> _callback) {{\n{body}  }}\n\n".format(
@@ -177,9 +178,13 @@ class JavaPrinter(CxxPrinter):
 
     def visit_ENum(self, e, indent=""):
         suffix = ""
-        if e.type == TLong():
+        val = e.val
+        if e.type == LONG:
             suffix = "L"
-        return ("", str(e.val) + suffix)
+        if e.type == FLOAT:
+            val = float(e.val)
+            suffix = "f"
+        return ("", repr(e.val) + suffix)
 
     def visit_EEnumEntry(self, e, indent=""):
         return ("", "{}.{}".format(self.typename(e.type), e.name))
@@ -244,7 +249,7 @@ class JavaPrinter(CxxPrinter):
             res=res)
 
     def compute_hash(self, fields : [(str, Type)], indent : str) -> (str, str):
-        hc = fresh_var(INT, "hash_code")
+        hc = self.fv(INT, "hash_code")
         s = indent + "int " + hc.id + " = 0;\n"
         for f, ft in fields:
             s += self.compute_hash_1(f, ft, hc, indent)
@@ -305,7 +310,7 @@ class JavaPrinter(CxxPrinter):
                         args.extend(aa)
                         exps.append(ETuple(tuple(ee)).with_type(ft))
                     else:
-                        v = fresh_var(ft, "v")
+                        v = self.fv(ft, "v")
                         args.append((v.id, ft))
                         exps.append(v)
                 return args, exps
@@ -418,6 +423,14 @@ class JavaPrinter(CxxPrinter):
             return self.visit(t.rep_type(), name)
         return self.visit_TNativeList(t, name)
 
+    def visit_SAssign(self, s, indent):
+        if self.is_primitive(s.lhs.type):
+            s1, lval = self.visit(s.lhs, indent)
+            s2, rval = self.visit(s.rhs, indent)
+            return s1 + s2 + "{indent}{lval} = {rval};\n".format(indent=indent, lval=lval, rval=rval)
+        else:
+            return super().visit_SAssign(s, indent)
+
     def visit_SCall(self, call, indent=""):
         if type(call.target.type) in (library.TNativeList, TBag, library.TNativeSet, TSet):
             if call.func == "add":
@@ -500,10 +513,27 @@ class JavaPrinter(CxxPrinter):
                 indent2=indent+INDENT)
         return super().for_each_native(x, iterable, body, indent)
 
+    def visit_SMapPut(self, update, indent=""):
+        if isinstance(update.map.type, library.TNativeMap) or type(update.map.type) is TMap:
+            asetup = ""
+            if update.map.type.k == INT:
+                asetup = self.array_resize_for_index(update.map.type.v, update.map, update.key, indent)
+            msetup, map = self.visit(update.map, indent)
+            ksetup, key = self.visit(update.key, indent)
+            vsetup = ""
+            if update.map.type.k == INT:
+                do_put = self.visit(self.array_put(update.map.type.v, EEscape(map, [], []).with_type(update.map.type), EEscape(key, [], []).with_type(update.key.type), update.value), indent)
+            else:
+                vsetup, val = self.visit(update.value, indent)
+                do_put = "{indent}{map}.put({key}, {val});\n".format(indent=indent, map=map, key=key, val=v)
+            return asetup + msetup + ksetup + vsetup + do_put
+        else:
+            return super().visit_SMapPut(update, indent)
+
     def visit_SMapUpdate(self, update, indent=""):
         if isinstance(update.change, SNoOp):
             return ""
-        if isinstance(update.map.type, library.TNativeMap):
+        if isinstance(update.map.type, library.TNativeMap) or type(update.map.type) is TMap:
             asetup = ""
             if update.map.type.k == INT:
                 asetup = self.array_resize_for_index(update.map.type.v, update.map, update.key, indent)
@@ -569,7 +599,7 @@ class JavaPrinter(CxxPrinter):
                 # Le sigh...
                 (smap, emap) = self.visit(e.map, indent)
                 (skey, ekey) = self.visit(e.key, indent)
-                v = fresh_var(e.map.type.v, hint="v")
+                v = self.fv(e.map.type.v, hint="v")
                 with self.boxed_mode():
                     decl = self.visit(SDecl(v.id, EEscape("{emap}.get({ekey})".format(emap=emap, ekey=ekey), [], []).with_type(e.type)), indent=indent)
                 s, e = self.visit(ECond(EEq(v, ENull().with_type(v.type)), evaluation.construct_value(e.map.type.v), v).with_type(e.type), indent=indent)
@@ -582,13 +612,13 @@ class JavaPrinter(CxxPrinter):
         else:
             (smap, emap) = self.visit(e.map, indent)
             (skey, ekey) = self.visit(e.key, indent)
-            edefault = fresh_var(e.type, "lookup_result")
+            edefault = self.fv(e.type, "lookup_result")
             sdefault = indent + self.visit(edefault.type, edefault.id) + ";\n"
             sdefault += self.visit(default_value(edefault), indent)
             return (smap + skey + sdefault, "{emap}.getOrDefault({ekey}, {edefault})".format(emap=emap, ekey=ekey, edefault=edefault.id))
             # (smap, emap) = self.visit(e.map, indent)
             # (skey, ekey) = self.visit(e.key, indent)
-            # edefault = fresh_var(e.type, "default_val")
+            # edefault = self.fv(e.type, "default_val")
             # sdefault = indent + self.visit(edefault.type, edefault.id) + ";\n"
             # sdefault += self.visit(default_value(edefault), indent)
             # (srest, res) = self.visit(ECond(

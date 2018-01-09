@@ -1,15 +1,17 @@
 from collections import OrderedDict
 import json
+import itertools
 
 from cozy import common, library, evaluation
 from cozy.common import fresh_name, declare_case
 from cozy.target_syntax import *
-from cozy.syntax_tools import all_types, fresh_var, subst, free_vars, is_scalar, mk_lambda, alpha_equivalent
+from cozy.syntax_tools import all_types, fresh_var, subst, free_vars, is_scalar, mk_lambda, alpha_equivalent, all_exps
 from cozy.typecheck import is_collection, is_numeric
 
 from .misc import *
 
 EMove = declare_case(Exp, "EMove", ["e"])
+SScoped = declare_case(Stm, "SScoped", ["s"])
 
 class CxxPrinter(common.Visitor):
 
@@ -18,6 +20,17 @@ class CxxPrinter(common.Visitor):
         self.funcs = {}
         self.queries = {}
         self.use_qhash = use_qhash
+        self.vars = set() # set of strings
+
+    def fn(self, hint="var"):
+        n = common.fresh_name(hint, omit=self.vars)
+        self.vars.add(n)
+        return n
+
+    def fv(self, t, hint="var"):
+        n = fresh_var(t, hint=hint, omit=self.vars)
+        self.vars.add(n.id)
+        return n
 
     def typename(self, t):
         return self.types[t]
@@ -59,6 +72,8 @@ class CxxPrinter(common.Visitor):
             return "std::unordered_map< {}, {} > {}".format(self.visit(t.k, ""), self.visit(t.v, ""), name)
 
     def visit_TMap(self, t, name):
+        if type(t) is TMap:
+            return self.visit_TNativeMap(t, name)
         return self.visit(t.rep_type(), name)
 
     def visit_TList(self, t, name):
@@ -129,7 +144,7 @@ class CxxPrinter(common.Visitor):
             return ""
         ret_type = q.ret.type
         if is_collection(ret_type):
-            x = EVar(common.fresh_name("x")).with_type(ret_type.t)
+            x = EVar(self.fn("x")).with_type(ret_type.t)
             s  = "{indent}template <class F>\n".format(indent=indent)
             s += "{indent}inline void {name} ({args}const F& _callback) const {{\n{body}  }}\n\n".format(
                 indent=indent,
@@ -177,8 +192,8 @@ class CxxPrinter(common.Visitor):
         (skey, ekey) = self.visit(e.key, indent)
         if self.use_qhash:
             return (smap + skey, "{}.value({})".format(emap, ekey))
-        iterator = fresh_var(TNative("auto"), "map_iterator")
-        res = fresh_var(e.type, "lookup_result")
+        iterator = self.fv(TNative("auto"), "map_iterator")
+        res = self.fv(e.type, "lookup_result")
         setup_default = self.visit(default_value(res), indent+INDENT)
         s  = "{indent}{declare_res};\n".format(indent=indent, declare_res=self.visit(res.type, res.id))
         s += smap + skey
@@ -207,18 +222,18 @@ class CxxPrinter(common.Visitor):
             return t.construct_concrete(e, out)
         elif isinstance(t, library.TNativeList) or type(t) is TBag or type(t) is TList:
             assert out not in free_vars(e)
-            x = fresh_var(t.t, "x")
+            x = self.fv(t.t, "x")
             return SSeq(
                 self.initialize_native_list(out),
                 SForEach(x, e, SCall(out, "add", [x])))
         elif isinstance(t, library.TNativeSet) or type(t) is TSet:
             if isinstance(e, EUnaryOp) and e.op == UOp.Distinct:
                 return self.construct_concrete(t, e.e, out)
-            x = fresh_var(t.t, "x")
+            x = self.fv(t.t, "x")
             return SSeq(
                 self.initialize_native_set(out),
                 SForEach(x, e, SCall(out, "add", [x])))
-        elif isinstance(t, library.TNativeMap):
+        elif isinstance(t, library.TNativeMap) or type(t) is TMap:
             return SSeq(
                 self.initialize_native_map(out),
                 self.construct_map(t, e, out))
@@ -234,8 +249,8 @@ class CxxPrinter(common.Visitor):
                 construct_map(t, e.then_branch, out),
                 construct_map(t, e.else_branch, out))
         elif isinstance(e, EMakeMap2):
-            k = fresh_var(t.k, "k")
-            v = fresh_var(t.v, "v")
+            k = self.fv(t.k, "k")
+            v = self.fv(t.v, "v")
             return SForEach(k, e.e,
                 SMapUpdate(out, k, v,
                     self.construct_concrete(t.v, e.value.apply_to(k), v)))
@@ -294,7 +309,7 @@ class CxxPrinter(common.Visitor):
                     EMapGet(e.map.then_branch, k).with_type(e.type),
                     EMapGet(e.map.else_branch, k).with_type(e.type)).with_type(e.type))).with_type(e.type), indent=indent)
         elif isinstance(e.map, EVar):
-            if isinstance(e.map.type, library.TNativeMap):
+            if isinstance(e.map.type, library.TNativeMap) or type(e.map.type) is TMap:
                 return self.native_map_get(
                     e,
                     lambda out: self.construct_concrete(
@@ -310,7 +325,7 @@ class CxxPrinter(common.Visitor):
     def visit_SMapUpdate(self, update, indent=""):
         if isinstance(update.change, SNoOp):
             return ""
-        if isinstance(update.map.type, library.TNativeMap):
+        if isinstance(update.map.type, library.TNativeMap) or type(update.map.type) is TMap:
             msetup, map = self.visit(update.map, indent)
             ksetup, key = self.visit(update.key, indent)
             s = "{indent}{decl} = {map}[{key}];\n".format(
@@ -323,10 +338,10 @@ class CxxPrinter(common.Visitor):
             return self.visit(update.map.type.update_key(update.map, update.key, update.val_var, update.change), indent)
 
     def visit_SMapPut(self, update, indent=""):
-        if isinstance(update.map.type, library.TNativeMap):
+        if isinstance(update.map.type, library.TNativeMap) or type(update.map.type) is TMap:
             msetup, map = self.visit(update.map, indent)
             ksetup, key = self.visit(update.key, indent)
-            ref = fresh_var(update.map.type.v, "ref")
+            ref = self.fv(update.map.type.v, "ref")
             s = "{indent}{decl} = {map}[{key}];\n".format(
                 indent=indent,
                 map=map,
@@ -355,7 +370,8 @@ class CxxPrinter(common.Visitor):
         return ("", e.name)
 
     def visit_ENum(self, e, indent=""):
-        return ("", str(e.val))
+        val = float(e.val) if isinstance(e.type, TFloat) else e.val
+        return ("", repr(e.val))
 
     def visit_EStr(self, e, indent=""):
         return ("", json.dumps(e.val))
@@ -392,9 +408,9 @@ class CxxPrinter(common.Visitor):
 
     def histogram(self, e, indent) -> (str, EVar):
         t = library.TNativeMap(e.type.t, INT)
-        hist = fresh_var(t, "hist")
-        x = fresh_var(e.type.t)
-        val = fresh_var(INT, "val")
+        hist = self.fv(t, "hist")
+        x = self.fv(e.type.t)
+        val = self.fv(INT, "val")
         decl = self.visit(t, hist.id)
         s = self.visit(SForEach(x, e,
             SMapUpdate(hist, x, val,
@@ -464,8 +480,8 @@ class CxxPrinter(common.Visitor):
                     return self.visit(e.e2.type.contains(e.e1), indent)
             else:
                 t = TBool()
-                res = fresh_var(t, "found")
-                x = fresh_var(e.e1.type, "x")
+                res = self.fv(t, "found")
+                x = self.fv(e.e1.type, "x")
                 label = fresh_name("label")
                 setup = self.visit(seq([
                     SDecl(res.id, EBool(False).with_type(t)),
@@ -479,8 +495,8 @@ class CxxPrinter(common.Visitor):
             t = e.type
             if type(t) is TBag:
                 t = library.TNativeList(t.t)
-            v = fresh_var(t, "v")
-            x = fresh_var(t.t, "x")
+            v = self.fv(t, "v")
+            x = self.fv(t.t, "x")
             stm = self.visit(SForEach(x, e.e2, SCall(v, "remove", [x])), indent)
             return ("{}{};\n".format(indent, self.visit(v.type, v.id)) + self.visit(self.construct_concrete(v.type, e.e1, v), indent) + stm, v.id)
         elif op == BOp.Or:
@@ -504,6 +520,9 @@ class CxxPrinter(common.Visitor):
     def test_set_containment_native(self, set : Exp, elem : Exp, indent) -> (str, str):
         return self.visit(EEscape("{set}.find({elem}) != {set}.end()", ["set", "elem"], [set, elem]).with_type(BOOL), indent)
 
+    def visit_SScoped(self, s, indent):
+        return "{indent}{{\n{s}{indent}}}\n".format(indent=indent, s=self.visit(s.s, indent=indent+INDENT))
+
     def for_each(self, iterable : Exp, body, indent="") -> str:
         """Body is function: exp -> stm"""
         while isinstance(iterable, EDropFront) or isinstance(iterable, EDropBack):
@@ -511,9 +530,9 @@ class CxxPrinter(common.Visitor):
         if isinstance(iterable, EEmptyList):
             return ""
         elif isinstance(iterable, ESingleton):
-            return self.visit(body(iterable.e), indent=indent)
+            return self.visit(SScoped(body(iterable.e)), indent=indent)
         elif isinstance(iterable, ECond):
-            v = fresh_var(iterable.type.t, "v")
+            v = self.fv(iterable.type.t, "v")
             new_body = body(v)
             assert isinstance(new_body, Stm)
             return self.visit(SIf(iterable.cond,
@@ -525,7 +544,7 @@ class CxxPrinter(common.Visitor):
                 lambda v: body(iterable.f.apply_to(v)),
                 indent=indent)
         elif isinstance(iterable, EUnaryOp) and iterable.op == UOp.Distinct:
-            tmp = fresh_var(library.TNativeSet(iterable.type.t), "tmp")
+            tmp = self.fv(library.TNativeSet(iterable.type.t), "tmp")
             return "".join((
                 "{indent}{decl};\n".format(indent=indent, decl=self.visit(tmp.type, tmp.id)),
                 self.visit(self.initialize_native_set(tmp), indent),
@@ -544,7 +563,7 @@ class CxxPrinter(common.Visitor):
             return setup + self.for_each(EEscape(e, (), ()).with_type(t), body, indent)
         elif isinstance(iterable, EFlatMap):
             from cozy.syntax_tools import shallow_copy
-            v = fresh_var(iterable.type.t)
+            v = self.fv(iterable.type.t)
             new_body = body(v)
             assert isinstance(new_body, Stm)
             return self.for_each(iterable.e, indent=indent,
@@ -555,7 +574,7 @@ class CxxPrinter(common.Visitor):
         elif isinstance(iterable, ELet):
             return self.for_each(iterable.f.apply_to(iterable.e), body, indent=indent)
         else:
-            x = fresh_var(iterable.type.t, "x")
+            x = self.fv(iterable.type.t, "x")
             if type(iterable.type) in (TBag, library.TNativeList, TSet, library.TNativeSet, TList):
                 return self.for_each_native(x, iterable, body(x), indent)
             return self.visit(iterable.type.for_each(x, iterable, body(x)), indent=indent)
@@ -576,9 +595,9 @@ class CxxPrinter(common.Visitor):
         return self.for_each(iter, lambda x: SSeq(SDecl(id.id, x), body), indent)
 
     def find_one(self, iterable, indent=""):
-        v = fresh_var(iterable.type.t, "v")
+        v = self.fv(iterable.type.t, "v")
         label = fresh_name("label")
-        x = fresh_var(iterable.type.t, "x")
+        x = self.fv(iterable.type.t, "x")
         decl = SDecl(v.id, evaluation.construct_value(v.type))
         find = SEscapableBlock(label,
             SForEach(x, iterable, seq([
@@ -587,9 +606,9 @@ class CxxPrinter(common.Visitor):
         return (self.visit(seq([decl, find]), indent), v.id)
 
     def min_or_max(self, op, e, f, indent=""):
-        out = fresh_var(e.type.t, "min" if op == "<" else "max")
-        first = fresh_var(BOOL, "first")
-        x = fresh_var(e.type.t, "x")
+        out = self.fv(e.type.t, "min" if op == "<" else "max")
+        first = self.fv(BOOL, "first")
+        x = self.fv(e.type.t, "x")
         decl1 = SDecl(out.id, evaluation.construct_value(out.type))
         decl2 = SDecl(first.id, T)
         find = SForEach(x, e,
@@ -617,8 +636,8 @@ class CxxPrinter(common.Visitor):
             return self.find_one(e.e, indent=indent)
         elif op == UOp.Sum:
             type = e.e.type.t
-            res = fresh_var(type, "sum")
-            x = fresh_var(type, "x")
+            res = self.fv(type, "sum")
+            x = self.fv(type, "x")
             setup = self.visit(seq([
                 SDecl(res.id, ENum(0).with_type(type)),
                 SForEach(x, e.e, SAssign(res, EBinOp(res, "+", x).with_type(type)))]), indent)
@@ -634,9 +653,9 @@ class CxxPrinter(common.Visitor):
             return self.visit(EUnaryOp(UOp.Exists, EFilter(e.e, ELambda(arg, arg)).with_type(INT_BAG)).with_type(INT), indent)
         elif op == UOp.Empty:
             iterable = e.e
-            v = fresh_var(BOOL, "v")
+            v = self.fv(BOOL, "v")
             label = fresh_name("label")
-            x = fresh_var(iterable.type.t, "x")
+            x = self.fv(iterable.type.t, "x")
             decl = SDecl(v.id, T)
             find = SEscapableBlock(label,
                 SForEach(x, iterable, seq([
@@ -650,11 +669,11 @@ class CxxPrinter(common.Visitor):
             op_str = "!" if op == UOp.Not else str(op)
             return (ce, "({op}{ee})".format(op=op_str, ee=ee))
         elif op == UOp.Distinct:
-            v = fresh_var(e.type, "v")
+            v = self.fv(e.type, "v")
             stm = self.construct_concrete(e.type, e, v)
             return ("{}{};\n".format(indent, self.visit(e.type, v.id)) + self.visit(stm, indent), v.id)
         elif op == UOp.Reversed:
-            v = fresh_var(e.type, "v")
+            v = self.fv(e.type, "v")
             stm = self.construct_concrete(e.type, e.e, v)
             stm = seq([stm, self.reverse_inplace(v)])
             return ("{}{};\n".format(indent, self.visit(e.type, v.id)) + self.visit(stm, indent), v.id)
@@ -698,7 +717,7 @@ class CxxPrinter(common.Visitor):
             raise Exception("unknown function {}".format(repr(e.func)))
 
     def visit_ELet(self, e, indent=""):
-        v = fresh_var(e.e.type, "v")
+        v = self.fv(e.e.type, "v")
         setup1 = self.visit(SDecl(v.id, e.e), indent=indent)
         setup2, res = self.visit(e.f.apply_to(v), indent=indent)
         return (setup1 + setup2, res)
@@ -728,7 +747,7 @@ class CxxPrinter(common.Visitor):
     def copy_to(self, lhs, rhs, indent=""):
         if isinstance(lhs.type, TBag):
             cl, el = self.visit(lhs, indent)
-            x = fresh_var(lhs.type.t, "x")
+            x = self.fv(lhs.type.t, "x")
             # TODO: hacky use of EVar ahead! We need an EEscape, like SEscape
             return cl + self.visit(SForEach(x, rhs, SCall(EVar(el).with_type(lhs.type), "add", [x])), indent=indent)
         else:
@@ -739,7 +758,7 @@ class CxxPrinter(common.Visitor):
         return (s, "std::move({})".format(e))
 
     def visit_SAssign(self, s, indent=""):
-        v = fresh_var(s.lhs.type)
+        v = self.fv(s.lhs.type)
         stm = seq([
             SEscape("{indent}" + self.visit(v.type, v.id) + ";\n", (), ()),
             self.construct_concrete(s.lhs.type, s.rhs, v),
@@ -774,7 +793,7 @@ class CxxPrinter(common.Visitor):
             return self.visit(e.then_branch, indent)
         elif e.cond == F:
             return self.visit(e.else_branch, indent)
-        v = fresh_var(e.type, "v")
+        v = self.fv(e.type, "v")
         return (
             "{indent}{decl};\n".format(indent=indent, decl=self.visit(v.type, v.id)) +
             self.visit(SIf(e.cond, SAssign(v, e.then_branch), SAssign(v, e.else_branch)), indent),
@@ -874,15 +893,17 @@ class CxxPrinter(common.Visitor):
     def setup_types(self, spec, state_exps, sharing):
         self.types.clear()
         names = { t : name for (name, t) in spec.types }
-        for t in all_types(spec):
+        for t in itertools.chain(all_types(spec), *[all_types(e) for v, e in state_exps.items()]):
             if t not in self.types and type(t) in [THandle, TRecord, TTuple, TEnum]:
-                name = names.get(t, common.fresh_name("Type"))
+                name = names.get(t, self.fn("Type"))
                 self.types[t] = name
 
-    def visit_Spec(self, spec, state_exps, sharing, abstract_state=()):
+    @typechecked
+    def visit_Spec(self, spec : Spec, state_exps : { str : Exp }, sharing, abstract_state=()):
         self.state_exps = state_exps
         self.funcs = { f.name: f for f in spec.extern_funcs }
         self.queries = { q.name: q for q in spec.methods if isinstance(q, Query) }
+        self.vars = set(e.id for e in all_exps(spec) if isinstance(e, EVar))
 
         s = "#pragma once\n"
         s += "#include <algorithm>\n"
