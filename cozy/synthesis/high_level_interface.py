@@ -29,6 +29,7 @@ SynthCtx = namedtuple("SynthCtx", ["all_types", "basic_types"])
 LINE_BUFFER_MODE = 1 # see help for open() function
 
 class ImproveQueryJob(jobs.Job):
+    @typechecked
     def __init__(self,
             ctx : SynthCtx,
             state : [EVar],
@@ -39,10 +40,13 @@ class ImproveQueryJob(jobs.Job):
             examples : [dict] = None):
         super().__init__()
         self.ctx = ctx
+        print(repr(state))
+        print(pprint(q))
+        print(", ".join(pprint(v) for v in free_vars(q)))
         self.state = state
         self.assumptions = assumptions
         self.q = q
-        assert all(v in state for v in free_vars(q)), str([v for v in free_vars(q) if v not in state])
+        assert all(v in state for v in free_vars(q)), "Oops, query looks malformed due to {}:\n{}\nfree_vars({})".format([v for v in free_vars(q) if v not in state], pprint(q), repr(q))
         self.hints = hints
         self.examples = examples
         self.k = k

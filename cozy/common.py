@@ -152,6 +152,11 @@ class ADT(object):
         if not hasattr(self, "_hash"):
             self._hash = hash(self.children())
         return self._hash
+    def __getstate__(self):
+        d = dict(self.__dict__)
+        if "_hash" in d:
+            del d["_hash"]
+        return d
     def __eq__(self, other):
         if self is other: return True
         return type(self) is type(other) and self.children() == other.children()
