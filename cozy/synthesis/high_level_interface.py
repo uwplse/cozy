@@ -40,9 +40,6 @@ class ImproveQueryJob(jobs.Job):
             examples : [dict] = None):
         super().__init__()
         self.ctx = ctx
-        print(repr(state))
-        print(pprint(q))
-        print(", ".join(pprint(v) for v in free_vars(q)))
         self.state = state
         self.assumptions = assumptions
         self.q = q
