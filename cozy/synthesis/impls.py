@@ -32,6 +32,35 @@ def _queries_used_by(thing):
     V().visit(thing)
     return qs
 
+def safe_feedback_arc_set(g, method):
+    """
+    Compute the feedback arc set for `g`.
+
+    This function works around a potential segfault in igraph:
+    https://github.com/igraph/igraph/issues/858
+    """
+
+    orig_g = g
+    g = g.copy()
+
+    # Add a "terminal" node with an edge from every vertex.
+    # This should not affect the feedback arc set.
+    new_vertex_id = g.vcount()
+    g.add_vertices(1)
+    g.add_edges([(v, new_vertex_id) for v in range(new_vertex_id)])
+
+    edge_ids = g.feedback_arc_set(method=method)
+
+    # I assume the edge ids are the same between g and its copy?
+    # Let's do a little bit of checking just in case.
+    g.delete_vertices([new_vertex_id])
+    to_check = [g.es[e].source for e in edge_ids]
+    d1 = orig_g.degree(to_check)
+    d2 = g.degree(to_check)
+    assert d1 == d2, "{!r} vs {!r}".format(d1, d2)
+
+    return edge_ids
+
 class Implementation(object):
 
     @typechecked
@@ -210,7 +239,7 @@ class Implementation(object):
 
             # Find the minimum set of edges we need to break (see "feedback arc
             # set problem")
-            edges_to_break = g.feedback_arc_set(method="ip")
+            edges_to_break = safe_feedback_arc_set(g, method="ip")
             g.delete_edges(edges_to_break)
             ordered_concrete_state = [self.concrete_state[i] for i in g.topological_sorting(mode="OUT")]
 
