@@ -1,0 +1,29 @@
+ClauseDB:
+
+    state N          : Bound
+    state clauses    : Set<Set<Bound>>
+    state falselits  : Set<Bound>
+
+    invariant empty [l | l <- falselits, l >= N];
+
+    op addClause(c : Set<Bound>)
+        assume not (c in clauses);
+        clauses.add(c);
+
+    op falsify(l : Bound)
+        assume not (l in falselits);
+        assume l < N;
+        falselits.add(l);
+
+    op unfalsify(l : Bound)
+        assume l in falselits;
+        falselits.remove(l);
+
+    private query nonfalse(c : Set<Bound>)
+        [l | l <- c, not (l in falselits)]
+
+    query unsat()
+        not empty [c | c <- clauses, empty nonfalse(c)]
+
+    query unit()
+        [c | c <- clauses, sum [1 | l <- c, not (l in falselits)] == 1]

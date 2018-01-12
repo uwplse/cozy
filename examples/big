@@ -1,7 +1,0 @@
-fields locale : String, currency : String, price : int, quality : double
-query q(expectedLocale : String, expectedCurrency : String, minPrice : int, maxPrice : int, qualityCutoff : double)
-    locale == expectedLocale and
-    currency == expectedCurrency and
-    price >= minPrice and
-    price <= maxPrice and
-    quality > qualityCutoff

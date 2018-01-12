@@ -1,0 +1,7 @@
+Structure:
+    extern f(i : Int) : Int = "{i} + 1"
+    state x : Int
+    op setX(y : Int)
+        x = y;
+    query foo()
+        f(x)

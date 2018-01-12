@@ -1,4 +1,0 @@
-fields start, end, id : String
-assume start <= end
-query q(val)
-    start <= val and val <= end

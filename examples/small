@@ -1,5 +1,0 @@
-fields locale currency price quality
-query q(expectedLocale, expectedCurrency, minPrice, maxPrice, qualityCutoff)
-    price >= minPrice and
-    price <= maxPrice and
-    quality > qualityCutoff

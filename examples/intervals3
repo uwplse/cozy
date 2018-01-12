@@ -1,4 +1,0 @@
-fields val : long
-query q(start : long, end : long)
-    assume start <= end
-    start <= val and val <= end

@@ -1,3 +1,0 @@
-fields src : int, dst : int, weight : double
-query q(node : int, w : double)
-    (src == node or dst == node) and weight >= w

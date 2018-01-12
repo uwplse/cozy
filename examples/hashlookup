@@ -1,3 +1,0 @@
-fields name : String
-query q(expectedName : String)
-    name == expectedName

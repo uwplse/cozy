@@ -1,0 +1,27 @@
+ClauseDB:
+    state ints : Set<Int>
+
+    op add(i : Int)
+        assume not(i in ints);
+        ints.add(i);
+
+    op remove(i : Int)
+        ints.remove(i);
+
+//    query minVal()
+//        min ints
+//
+//    query maxVal()
+//        max ints
+
+    query contains(i : Int)
+        i in ints
+
+//    query floor(i : Int)
+//        max [x | x <- ints, x <= i]
+//
+//    query ceil(i : Int)
+//        min [x | x <- ints, x >= i]
+
+    query size()
+        len ints
