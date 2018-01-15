@@ -83,7 +83,6 @@ class Exp(ADT):
 EVar                = declare_case(Exp, "EVar",               ["id"])
 EBool               = declare_case(Exp, "EBool",              ["val"])
 ENum                = declare_case(Exp, "ENum",               ["val"])
-EFloat              = declare_case(Exp, "EFloat",             ["val"])
 EStr                = declare_case(Exp, "EStr",               ["val"])
 ENative             = declare_case(Exp, "ENative",            ["e"])
 EEnumEntry          = declare_case(Exp, "EEnumEntry",         ["name"])

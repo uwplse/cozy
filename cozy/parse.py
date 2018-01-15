@@ -108,10 +108,9 @@ def make_lexer():
         pass
 
     def t_FLOAT(t):
-        r"""(\d+\.\d*[fF]?)
-            | (\d+[fF])"""
+        r"(\d+(\.\d+)?[fF])"
         # ".1" not doable since it would create ambiguity w/ foo.1 syntax.
-        t.value = syntax.EFloat(float(t.value.rstrip("fF"))).with_type(syntax.TFloat())
+        t.value = syntax.ENum(float(t.value.rstrip("fF"))).with_type(syntax.TFloat())
         return t
 
     def t_NUM(t):

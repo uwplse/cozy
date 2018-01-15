@@ -32,7 +32,7 @@ def retypecheck(exp, env=None):
 DEFAULT_TYPE = object()
 
 def is_numeric(t):
-    return t in (INT, LONG, syntax.FLOAT)
+    return t in (INT, LONG, FLOAT)
 
 COLLECTION_TYPES = (syntax.TBag, syntax.TSet, syntax.TList)
 def is_collection(t):
@@ -51,12 +51,12 @@ class Typechecker(Visitor):
 
     def __init__(self, env):
         self.tenv = {
-            "Int":    syntax.INT,
-            "Bound":  syntax.INT, # TODO?
-            "Float":  syntax.FLOAT,
-            "Long":   syntax.LONG,
-            "Bool":   syntax.BOOL,
-            "String": syntax.STRING }
+            "Int":    INT,
+            "Bound":  INT, # TODO?
+            "Float":  FLOAT,
+            "Long":   LONG,
+            "Bool":   BOOL,
+            "String": STRING }
 
         self.env = dict(env)
         self.funcs = dict()
@@ -335,7 +335,7 @@ class Typechecker(Visitor):
         self.visit(e.e1)
         self.visit(e.e2)
         if e.op in ["==", "===", "!=", "<", "<=", ">", ">="]:
-            if not all([t in (INT, LONG) for t in [e.e1.type, e.e2.type]]):
+            if not all(is_numeric(t) for t in [e.e1.type, e.e2.type]):
                 self.ensure_type(e.e2, e.e1.type)
             e.type = BOOL
         elif e.op in [syntax.BOp.And, syntax.BOp.Or, "=>"]:
@@ -475,14 +475,14 @@ class Typechecker(Visitor):
 
     def visit_ENative(self, e):
         self.visit(e.e)
-        self.ensure_type(e.e, syntax.INT)
+        self.ensure_type(e.e, INT)
         if not hasattr(e, "type"):
             self.report_err(e, "not enough information to construct type for ENative expression")
             e.type = DEFAULT_TYPE
 
     def visit_EHandle(self, e):
         self.visit(e.addr)
-        self.ensure_type(e.addr, syntax.INT)
+        self.ensure_type(e.addr, INT)
         self.visit(e.value)
         if hasattr(e, "type"):
             self.ensure_type(e.value, e.type.value_type)

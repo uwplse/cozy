@@ -104,17 +104,3 @@ class TestParser(unittest.TestCase):
         assert isinstance(foo.body, syntax.SIf)
         assert isinstance(foo.body.then_branch.else_branch, syntax.SCall)
         assert isinstance(foo.body.else_branch, syntax.SNoOp)
-
-    def __test_numeric_add(self):
-        sample = """Test:
-           state i : Int
-           state f : Float
-
-           query addLiterals()
-                10 + 2.0f
-        """
-
-        ast = parse(sample)
-        foo = ast.methods[0]
-        print(foo.ret)
-        # assert False
