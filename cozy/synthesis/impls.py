@@ -220,9 +220,6 @@ class Implementation(object):
 
         # prevent read-after-write by lifting reads before writes.
 
-        for q, fvs in state_read_by_query.items():
-            print("{} uses {}".format(q, ", ".join(v.id for v in fvs)))
-
         # list of SDecls
         temps = defaultdict(list)
         updates = dict(self.updates)
