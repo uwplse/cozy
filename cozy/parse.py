@@ -84,7 +84,7 @@ for kw in _KEYWORDS:
     tokens.append(keyword_token_name(kw))
 for opname, op in _OPERATORS:
     tokens.append(op_token_name(opname))
-tokens += ["WORD", "NUM", "STRINGLITERAL", "EXTERNCODETOKEN"]
+tokens += ["WORD", "NUM", "FLOAT", "STRINGLITERAL", "EXTERNCODETOKEN"]
 tokens = tuple(tokens) # freeze tokens
 
 def make_lexer():
@@ -92,6 +92,7 @@ def make_lexer():
     # programmatically produce token productions, but I don't know what it is.
     for kw in _KEYWORDS:
         locals()["t_{}".format(keyword_token_name(kw))] = re.escape(kw)
+
     for opname, op in _OPERATORS:
         locals()["t_{}".format(op_token_name(opname))] = re.escape(op)
 
@@ -105,6 +106,13 @@ def make_lexer():
     def t_COMMENT(t):
         r"\/\/[^\n]*"
         pass
+
+    def t_FLOAT(t):
+        r"""(\d+\.\d*[fF]?)
+            | (\d+[fF])"""
+        # ".1" not doable since it would create ambiguity w/ foo.1 syntax.
+        t.value = syntax.EFloat(float(t.value.rstrip("fF"))).with_type(syntax.TFloat())
+        return t
 
     def t_NUM(t):
         r"\d+(l|L)?"
@@ -251,6 +259,7 @@ def make_parser():
 
     def p_exp(p):
         """exp : NUM
+               | FLOAT
                | WORD
                | WORD OP_OPEN_PAREN exp_list OP_CLOSE_PAREN
                | KW_TRUE

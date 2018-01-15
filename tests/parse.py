@@ -6,7 +6,7 @@ from cozy.parse import parse
 from cozy.typecheck import typecheck
 from cozy import syntax
 
-class TestParser(unittest.TestCase):
+class TestSpecs(unittest.TestCase):
     pass
 
 files = [
@@ -38,10 +38,10 @@ for filename in files:
             assert not errs
 
         f.__name__ = "test_{}".format(filename.replace("-", "_"))
-        setattr(TestParser, f.__name__, f)
+        setattr(TestSpecs, f.__name__, f)
     setup(filename)
 
-class TestLen(unittest.TestCase):
+class TestParser(unittest.TestCase):
     def test_parse_len_old(self):
         sample = """
         In:
@@ -60,7 +60,6 @@ class TestLen(unittest.TestCase):
         """
         parse(sample)
 
-class TestEnhancedModifications(unittest.TestCase):
     def test_parse_method_call_with_expr(self):
         sample = """
         Test:
@@ -106,3 +105,16 @@ class TestEnhancedModifications(unittest.TestCase):
         assert isinstance(foo.body.then_branch.else_branch, syntax.SCall)
         assert isinstance(foo.body.else_branch, syntax.SNoOp)
 
+    def __test_numeric_add(self):
+        sample = """Test:
+           state i : Int
+           state f : Float
+
+           query addLiterals()
+                10 + 2.0f
+        """
+
+        ast = parse(sample)
+        foo = ast.methods[0]
+        print(foo.ret)
+        # assert False
