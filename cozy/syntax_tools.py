@@ -426,7 +426,7 @@ def free_vars(exp, counts=False):
             stk.extend(reversed(x.children()))
         elif isinstance(x, list) or isinstance(x, tuple):
             stk.extend(reversed(x))
-        elif isinstance(x, str) or isinstance(x, int):
+        elif isinstance(x, (str, int, float)):
             continue
         else:
             raise NotImplementedError(repr(x))
