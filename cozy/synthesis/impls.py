@@ -34,11 +34,17 @@ def _queries_used_by(thing):
 
 def safe_feedback_arc_set(g, method):
     """
-    Compute the feedback arc set for `g`.
+    Compute the feedback arc set for directed graph `g`.
 
     This function works around a potential segfault in igraph:
     https://github.com/igraph/igraph/issues/858
     """
+
+    assert g.is_directed()
+
+    # No verts? No problem!
+    if g.vcount() == 0:
+        return []
 
     orig_g = g
     g = g.copy()
