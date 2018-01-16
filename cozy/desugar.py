@@ -1,21 +1,7 @@
-from cozy.common import typechecked, fresh_name
+from cozy.common import typechecked
 from cozy.target_syntax import *
-from cozy.typecheck import retypecheck, is_numeric
-from cozy.syntax_tools import BottomUpRewriter, subst, fresh_var, all_types, all_exps, equal, implies, mk_lambda, compose, nnf, dnf, break_conj, pprint
-from cozy.solver import valid
-from cozy.opts import Option
-from cozy.evaluation import construct_value
-
-break_disjunctive_filters = Option("break-disjunctive-filters", bool, False)
-
-def predicate_is_normal(p):
-    for part in break_conj(p):
-        if isinstance(part, EUnaryOp) and part.op == "not":
-            if not predicate_is_normal(part.e):
-                return False
-        elif isinstance(part, EBinOp) and part.op == "or":
-            return False
-    return True
+from cozy.typecheck import retypecheck
+from cozy.syntax_tools import BottomUpRewriter, subst, all_types
 
 @typechecked
 def desugar_list_comprehensions(e : Exp) -> Exp:
