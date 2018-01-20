@@ -31,8 +31,16 @@ class JavaPrinter(CxxPrinter):
         self.vars = set(e.id for e in all_exps(spec) if isinstance(e, EVar))
         self.setup_types(spec, state_exps, sharing)
 
-        s = spec.header
-        s += "\npublic class {} implements java.io.Serializable {{\n".format(spec.name)
+        s = ""
+
+        if spec.header:
+            s += spec.header.strip() + "\n"
+
+        if spec.docstring:
+            s += "\n" + spec.docstring + "\n"
+
+        s += "public class {} implements java.io.Serializable {{\n".format(spec.name)
+
         for name, t in spec.types:
             self.types[t] = name
 
@@ -83,7 +91,8 @@ class JavaPrinter(CxxPrinter):
         return s
 
     def visit_Op(self, q, indent=""):
-        s = "{}public void {} ({}) {{\n{}  }}\n\n".format(
+        s = "{}{}public void {} ({}) {{\n{}  }}\n\n".format(
+            indent_lines(q.docstring, indent) + "\n" if q.docstring else "",
             indent,
             q.name,
             ", ".join(self.visit(t, name) for name, t in q.args),
@@ -98,7 +107,8 @@ class JavaPrinter(CxxPrinter):
             x = EVar(self.fn("x")).with_type(ret_type.t)
             def body(x):
                 return SEscape("{indent}_callback.accept({x});\n", ["x"], [x])
-            return "{indent}public void {name} ({args}java.util.function.Consumer<{t}> _callback) {{\n{body}  }}\n\n".format(
+            return "{doc}{indent}public void {name} ({args}java.util.function.Consumer<{t}> _callback) {{\n{body}  }}\n\n".format(
+                doc=indent_lines(q.docstring, indent) + "\n" if q.docstring else "",
                 indent=indent,
                 type=self.visit(ret_type, ""),
                 name=q.name,
@@ -107,7 +117,8 @@ class JavaPrinter(CxxPrinter):
                 body=self.for_each(q.ret, body, indent=indent+INDENT))
         else:
             body, out = self.visit(q.ret, indent+INDENT)
-            return "{indent}public {type} {name} ({args}) {{\n{body}    return {out};\n  }}\n\n".format(
+            return "{doc}{indent}public {type} {name} ({args}) {{\n{body}    return {out};\n  }}\n\n".format(
+                doc=indent_lines(q.docstring, indent) + "\n" if q.docstring else "",
                 indent=indent,
                 type=self.visit(ret_type, ""),
                 name=q.name,

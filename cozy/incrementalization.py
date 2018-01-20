@@ -132,7 +132,7 @@ def sketch_update(
         if skip_stateless_synthesis.value and not any(v in ctx for v in free_vars(e)):
             return e
         query_name = fresh_name("query")
-        query = syntax.Query(query_name, syntax.Visibility.Internal, [], assumptions + a, e)
+        query = syntax.Query(query_name, syntax.Visibility.Internal, [], assumptions + a, e, None)
         query_vars = [v for v in free_vars(query) if v not in ctx]
         query.args = [(arg.id, arg.type) for arg in query_vars]
         subgoals.append(query)

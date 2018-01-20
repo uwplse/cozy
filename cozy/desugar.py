@@ -68,7 +68,8 @@ def desugar(spec : Spec) -> Spec:
         list(spec.assumptions),
         list(spec.methods),
         spec.header,
-        spec.footer)
+        spec.footer,
+        spec.docstring)
 
     for i in range(len(spec.statevars)):
         v, t = spec.statevars[i]

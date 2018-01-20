@@ -5,10 +5,11 @@ The key function to look at is:
     parse(string) -> AST
 """
 
-# buitin
+# builtin
 import re
 import sys
 import ast
+import inspect
 
 # 3rd party
 from ply import lex, yacc
@@ -84,7 +85,7 @@ for kw in _KEYWORDS:
     tokens.append(keyword_token_name(kw))
 for opname, op in _OPERATORS:
     tokens.append(op_token_name(opname))
-tokens += ["WORD", "NUM", "FLOAT", "STRINGLITERAL", "EXTERNCODETOKEN"]
+tokens += ["WORD", "NUM", "FLOAT", "STRINGLITERAL", "EXTERNCODETOKEN", "DOCCOMMENT"]
 tokens = tuple(tokens) # freeze tokens
 
 def make_lexer():
@@ -104,7 +105,17 @@ def make_lexer():
         return t
 
     def t_COMMENT(t):
-        r"\/\/[^\n]*"
+        r"//[^\n]*"
+        pass
+
+    def t_DOCCOMMENT(t):
+        r"/\*\*(?:(?!\*/)(.|\n))*\*/"
+        # Normalize the doc comment, removing leading indentation/etc.
+        t.value = inspect.cleandoc(t.value)
+        return t
+
+    def t_MULTILINECOMMENT(t):
+        r"/\* (?:(?!\*/) (.|\n) )* \*/"
         pass
 
     def t_FLOAT(t):
@@ -161,8 +172,13 @@ def make_parser():
     start = "spec"
 
     def p_spec(p):
-        """spec : externcode WORD OP_COLON typedecls funcdecls states invariants methods externcode"""
-        p[0] = syntax.Spec(p[2], p[4], p[5], p[6], p[7], p[8], p[1], p[9])
+        """spec : externcode doccomment WORD OP_COLON typedecls funcdecls states invariants methods externcode"""
+        p[0] = syntax.Spec(p[3], p[5], p[6], p[7], p[8], p[9], p[1], p[10], p[2])
+
+    def p_doccomment(p):
+        """doccomment :
+                      | DOCCOMMENT"""
+        p[0] = p[1] if len(p) > 1 else ""
 
     def p_externcode(p):
         """externcode :
@@ -386,12 +402,12 @@ def make_parser():
             p[0] = syntax.Visibility.Public
 
     def p_method(p):
-        """method : empty      KW_OP    WORD OP_OPEN_PAREN typednames OP_CLOSE_PAREN assumes stm
-                  | visibility KW_QUERY WORD OP_OPEN_PAREN typednames OP_CLOSE_PAREN assumes exp"""
+        """method : doccomment            KW_OP    WORD OP_OPEN_PAREN typednames OP_CLOSE_PAREN assumes stm
+                  | doccomment visibility KW_QUERY WORD OP_OPEN_PAREN typednames OP_CLOSE_PAREN assumes exp"""
         if p[2] == "op":
-            p[0] = syntax.Op(p[3], p[5], p[7], p[8])
+            p[0] = syntax.Op(p[3], p[5], p[7], p[8], p[1])
         else:
-            p[0] = syntax.Query(p[3], p[1], p[5], p[7], p[8])
+            p[0] = syntax.Query(p[4], p[2], p[6], p[8], p[9], p[1])
 
     parsetools.multi(locals(), "methods", "method")
 

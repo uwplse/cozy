@@ -34,11 +34,17 @@ def _queries_used_by(thing):
 
 def safe_feedback_arc_set(g, method):
     """
-    Compute the feedback arc set for `g`.
+    Compute the feedback arc set for directed graph `g`.
 
     This function works around a potential segfault in igraph:
     https://github.com/igraph/igraph/issues/858
     """
+
+    assert g.is_directed()
+
+    # No verts? No problem!
+    if g.vcount() == 0:
+        return []
 
     orig_g = g
     g = g.copy()
@@ -214,9 +220,6 @@ class Implementation(object):
 
         # prevent read-after-write by lifting reads before writes.
 
-        for q, fvs in state_read_by_query.items():
-            print("{} uses {}".format(q, ", ".join(v.id for v in fvs)))
-
         # list of SDecls
         temps = defaultdict(list)
         updates = dict(self.updates)
@@ -270,7 +273,8 @@ class Implementation(object):
                 op.name,
                 op.args,
                 [],
-                new_stms))
+                new_stms,
+                op.docstring))
 
         # assemble final result
         new_statevars = [(v.id, e.type) for (v, e) in ordered_concrete_state]
@@ -282,7 +286,8 @@ class Implementation(object):
             [],
             list(self.query_impls.values()) + new_ops,
             self.spec.header,
-            self.spec.footer)
+            self.spec.footer,
+            self.spec.docstring)
 
     @property
     def concretization_functions(self) -> { str : Exp }:

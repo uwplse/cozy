@@ -22,7 +22,8 @@ files = [
     "in",
     "polyupdate",
     "read-after-write",
-    "boundsbug2"]
+    "boundsbug2",
+    "docstring"]
 
 for filename in files:
     def setup(filename):

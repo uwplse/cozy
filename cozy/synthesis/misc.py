@@ -7,7 +7,8 @@ def rewrite_ret(q : Query, repl, keep_assumptions=True) -> Query:
         q.visibility,
         q.args,
         q.assumptions if keep_assumptions else (),
-        repl(q.ret))
+        repl(q.ret),
+        q.docstring)
 
 def queries_equivalent(q1 : Query, q2 : Query):
     if q1.ret.type != q2.ret.type:
