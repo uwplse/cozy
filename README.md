@@ -261,7 +261,7 @@ Cozy supports single and multi-line comments.
        lines.
     */
 
-Cozy specs also allow JavaDoc and Doxygen-style documentation comments.
+Cozy specs also allow Javadoc and Doxygen-style documentation comments.
 These may be placed on the top-level data structure definition and on the
 `op` and `query` definitions:
 
