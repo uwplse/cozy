@@ -9,6 +9,7 @@ The key function to look at is:
 import re
 import sys
 import ast
+import inspect
 
 # 3rd party
 from ply import lex, yacc
@@ -108,7 +109,8 @@ def make_lexer():
 
     def t_DOCCOMMENT(t):
         r"/\*\*(?:(?!\*/)(.|\n))*\*/"
-        t.value = parsetools.unindent(t.value, t.lexpos, t.lexer.lexdata)
+        # Normalize the doc comment, removing leading indentation/etc.
+        t.value = inspect.cleandoc(t.value)
         return t
 
     def t_MULTILINECOMMENT(t):
