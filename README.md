@@ -250,6 +250,46 @@ extended:
         query miscapitalized()
             [n | n <- names, not isUpperCase(firstCharacter(n))]
 
+#### Documentation
+
+Cozy supports single and multi-line comments.
+
+    // Single line.
+    
+    /*
+       Multiple
+       lines.
+    */
+
+Cozy specs also allow Javadoc and Doxygen-style documentation comments.
+These may be placed on the top-level data structure definition and on the
+`op` and `query` definitions:
+
+    /**
+     * A collection of items.
+     * @author Jeff Q. Public
+     */
+    MyCollection:
+        // ...
+
+        /**
+         * Adds an item to the collection.
+         * @param  i the item to add
+         * @see empty
+         */
+        op add(i : Int)
+            // ...
+        
+        /**
+         * Reveals whether the collection is empty.
+         * @see add
+         */
+        query empty()
+            // ...
+
+These documentation comments are emitted on the corresponding classes and
+methods of the generated code.
+
 ## Tests
 
 The `tests` folder contains a few tests written with Python's
