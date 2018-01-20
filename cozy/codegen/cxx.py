@@ -918,12 +918,14 @@ class CxxPrinter(common.Visitor):
             s += "#include <QHash>\n"
         else:
             s += "#include <unordered_map>\n"
-        s += spec.header
 
-        if spec.docstring:
-            s += "\n" + spec.docstring
+        if spec.header:
+            s += "\n" + spec.header.strip() + "\n"
 
-        s += "\nclass {} {{\n".format(spec.name)
+        s += "{}\nclass {} {{\n".format(
+            ("\n" + spec.docstring) if spec.docstring else "",
+            spec.name)
+
         s += "public:\n"
 
         self.setup_types(spec, state_exps, sharing)

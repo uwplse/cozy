@@ -1,10 +1,44 @@
-
-
-{{ package foo; }}
+{{
+package foo;
+}}
 
 /**
- * This is the docstring for the WordBag type.
- * All of its @contents are included <verbatim />.
+ * This class consists exclusively of static methods that operate on or return
+ * collections.  It contains polymorphic algorithms that operate on
+ * collections, "wrappers", which return a new collection backed by a
+ * specified collection, and a few other odds and ends.
+ *
+ * <p>The methods of this class all throw a <tt>NullPointerException</tt>
+ * if the collections or class objects provided to them are null.
+ *
+ * <p>The documentation for the polymorphic algorithms contained in this class
+ * generally includes a brief description of the <i>implementation</i>.  Such
+ * descriptions should be regarded as <i>implementation notes</i>, rather than
+ * parts of the <i>specification</i>.  Implementors should feel free to
+ * substitute other algorithms, so long as the specification itself is adhered
+ * to.  (For example, the algorithm used by <tt>sort</tt> does not have to be
+ * a mergesort, but it does have to be <i>stable</i>.)
+ *
+ * <p>The "destructive" algorithms contained in this class, that is, the
+ * algorithms that modify the collection on which they operate, are specified
+ * to throw <tt>UnsupportedOperationException</tt> if the collection does not
+ * support the appropriate mutation primitive(s), such as the <tt>set</tt>
+ * method.  These algorithms may, but are not required to, throw this
+ * exception if an invocation would have no effect on the collection.  For
+ * example, invoking the <tt>sort</tt> method on an unmodifiable list that is
+ * already sorted may or may not throw <tt>UnsupportedOperationException</tt>.
+ *
+ * <p>This class is a member of the
+ * <a href="{@docRoot}/../technotes/guides/collections/index.html">
+ * Java Collections Framework</a>.
+ *
+ * @author  Josh Bloch
+ * @author  Neal Gafter
+ * @see     Collection
+ * @see     Set
+ * @see     List
+ * @see     Map
+ * @since   1.2
  */
 WordBag:
     extern PW() : String = "\"password\""
@@ -36,14 +70,26 @@ WordBag:
         PW() in words
 
     /**
-    <pre>
-    Good Hamlet, cast thy nighted colour off,
-    And let thine eye look like a friend on Denmark.
-    Do not for ever with thy vailed lids
-    Seek for thy noble father in the dust:
-    Thou know'st 'tis common; all that lives must die,
-    Passing through nature to eternity.
-    </pre>
-    */
+     * Returns the minimum element of the given collection, according to the
+     * order induced by the specified comparator.  All elements in the
+     * collection must be <i>mutually comparable</i> by the specified
+     * comparator (that is, <tt>comp.compare(e1, e2)</tt> must not throw a
+     * <tt>ClassCastException</tt> for any elements <tt>e1</tt> and
+     * <tt>e2</tt> in the collection).<p>
+     *
+     * This method iterates over the entire collection, hence it requires
+     * time proportional to the size of the collection.
+     *
+     * @param  coll the collection whose minimum element is to be determined.
+     * @param  comp the comparator with which to determine the minimum element.
+     *         A <tt>null</tt> value indicates that the elements' <i>natural
+     *         ordering</i> should be used.
+     * @return the minimum element of the given collection, according
+     *         to the specified comparator.
+     * @throws ClassCastException if the collection contains elements that are
+     *         not <i>mutually comparable</i> using the specified comparator.
+     * @throws NoSuchElementException if the collection is empty.
+     * @see Comparable
+     */
     query containsPassword2()
         "password" in words
