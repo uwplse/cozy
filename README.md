@@ -84,7 +84,7 @@ From a specification like this, Cozy will produce a much better implementation:
 
  - `Bool`: booleans
  - `Int`: 32-bit integers
- - `Float`: floats
+ - `Float`: floats, with corresponding literals expressed as 1.0f
  - `String`: strings
  - `(T1, T2, ...)`: tuples, e.g. `(Int, Int)` is a pair of ints
  - `{f1 : T1, f2 : T2, ...}`: records
