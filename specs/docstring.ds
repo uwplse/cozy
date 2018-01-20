@@ -63,12 +63,6 @@ WordBag:
                         query length()
                             len words
 
-    query containsPassword()
-        /*
-            Note here that I just want a multiline comment.
-        */
-        PW() in words
-
     /**
      * Returns the minimum element of the given collection, according to the
      * order induced by the specified comparator.  All elements in the
@@ -91,5 +85,8 @@ WordBag:
      * @throws NoSuchElementException if the collection is empty.
      * @see Comparable
      */
-    query containsPassword2()
-        "password" in words
+    query containsPassword()
+        /*
+            Note here that I just want a multiline comment.
+        */
+        PW() in words
