@@ -3,7 +3,7 @@ import itertools
 import sys
 
 from cozy.target_syntax import *
-from cozy.syntax_tools import subst, pprint, free_vars, free_funcs, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda, enumerate_fragments_and_pools
+from cozy.syntax_tools import subst, pprint, free_vars, free_funcs, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda, enumerate_fragments_and_pools, enumerate_fragments2, strip_EStateVar
 from cozy.wf import ExpIsNotWf, exp_wf, exp_wf_nonrecursive
 from cozy.common import OrderedSet, ADT, Visitor, fresh_name, typechecked, unique, pick_to_sum, cross_product, OrderedDefaultDict, OrderedSet, group_by, find_one
 from cozy.solver import satisfy, satisfiable, valid
@@ -23,6 +23,7 @@ reset_on_success = Option("reset-on-success", bool, False)
 enforce_seen_wf = Option("enforce-seen-set-well-formed", bool, False)
 enforce_strong_progress = Option("enforce-strong-progress", bool, False)
 enforce_exprs_wf = Option("enforce-expressions-well-formed", bool, False)
+preopt = Option("optimize-accelerated-exps", bool, True)
 
 class ExpBuilder(object):
     def check(self, e, pool):
@@ -32,7 +33,7 @@ class ExpBuilder(object):
     def build(self, cache, size):
         raise NotImplementedError()
 
-def instantiate_examples(watched_targets, examples, binders : [EVar]):
+def instantiate_examples(examples, binders : [EVar]):
     res = []
     for ex in examples:
         ex = dict(ex)
@@ -56,6 +57,7 @@ _fates = defaultdict(int)
 def _on_exp(e, fate, *args):
     _fates[fate] += 1
     return
+    outfile = sys.stdout
     # if (isinstance(e, EMapGet) or
     #         isinstance(e, EFilter) or
     #         (isinstance(e, EBinOp) and e.op == "==" and (isinstance(e.e1, EVar) or isinstance(e.e2, EVar))) or
@@ -71,7 +73,7 @@ def _on_exp(e, fate, *args):
     # if oracle is not None and any(alpha_equivalent(e, x) for x in all_exps(oracle)):
     # if oracle is not None and any(e.type == x.type and valid(equal(e, x)) for x in all_exps(oracle) if not isinstance(x, ELambda)):
     if hasattr(e, "_tag"):
-        print(" ---> [{}, {}] {}; {}".format(fate, pprint(e.type), pprint(e), ", ".join((pprint(e) if isinstance(e, ADT) else str(e)) for e in args)), file=sys.stderr)
+        print(" ---> [{}, {}] {}; {}".format(fate, pprint(e.type), pprint(e), ", ".join((pprint(e) if isinstance(e, ADT) else str(e)) for e in args)), file=outfile)
 
 class ContextMap(object):
     VALUE = "value"
@@ -104,64 +106,6 @@ class ContextMap(object):
     def __str__(self):
         return "\n".join(self._print(self.m))
 
-class BehaviorIndex(object):
-    VALUE = object()
-    def __init__(self):
-        self.data = OrderedDict()
-    def put(self, e, assumptions, examples, data):
-        ok      = [True] + eval_bulk(assumptions, examples)
-        results = [e.type] + eval_bulk(e, examples)
-        m = self.data
-        for b, r in zip(ok, results):
-            k = any if not b else r
-            m2 = m.get(k)
-            if m2 is None:
-                m2 = OrderedDict()
-                m[k] = m2
-            m = m2
-        l = m.get(BehaviorIndex.VALUE)
-        if l is None:
-            l = []
-            m[BehaviorIndex.VALUE] = l
-        l.append(data)
-    def rsearch(self, p, m=None):
-        """
-        Useful only for debugging.
-        """
-        if m is None:
-            m = self.data
-        for (k, v) in m.items():
-            if k is BehaviorIndex.VALUE:
-                for val in v:
-                    if p(val):
-                        yield ()
-            else:
-                for res in self.rsearch(p, m=v):
-                    yield (k,) + res
-    def search(self, behavior):
-        q = [(0, self.data)]
-        while q:
-            (i, m) = q.pop()
-            if m is None:
-                continue
-            if i >= len(behavior):
-                yield from m.get(BehaviorIndex.VALUE, [])
-            else:
-                q.append((i+1, m.get(any)))
-                q.append((i+1, m.get(behavior[i])))
-    def _pr(self, m):
-        if BehaviorIndex.VALUE in m:
-            yield str(m[BehaviorIndex.VALUE])
-            return
-        for k, v in m.items():
-            for s in self._pr(v):
-                yield "{} > {}".format("*" if k is any else pprint(k) if isinstance(k, ADT) else repr(k), s)
-    def __str__(self):
-        s = "Behavior Index\n"
-        for line in self._pr(self.data):
-            s += "  " + line + "\n"
-        return s
-
 def find_naked_statevar(e, state_vars):
     for (a, e, r, bound, pool) in enumerate_fragments_and_pools(e):
         if e in state_vars and pool != STATE_POOL:
@@ -188,21 +132,20 @@ class Learner(object):
         self.builder = builder
         self.seen = SeenSet()
         self.assumptions = assumptions
-        self.reset(examples, update_watched_exps=False)
+        self.reset(examples)
         self.watch(target)
 
-    def reset(self, examples, update_watched_exps=True):
+    def reset(self, examples):
         _fates.clear()
         self.cache = Cache(binders=self.binders, args=self.args)
         self.current_size = -1
-        self.examples = examples
+        self.examples = list(examples)
+        self.all_examples = instantiate_examples(self.examples, self.binders)
         self.seen.clear()
         self.builder_iter = ()
         self.last_progress = 0
         self.backlog = None
         self.backlog_counter = 0
-        if update_watched_exps:
-            self.update_watched_exps()
 
     def _check_seen_wf(self):
         if enforce_seen_wf.value:
@@ -215,16 +158,6 @@ class Learner(object):
                     print(fpnow)
                     assert False
 
-    def fix_seen(self):
-        print("fixing seen set...")
-        new_seen = SeenSet()
-        for (e, pool, fp, size, cost) in self.seen.items():
-            fpnow = self._fingerprint(e)
-            new_seen.add(e, pool, fp, size, cost)
-        self.seen = new_seen
-        self._check_seen_wf()
-        print("finished fixing seen set")
-
     def is_legal_in_pool(self, e, pool):
         try:
             return exp_wf(e, state_vars=self.state_vars, args=self.args, pool=pool, assumptions=self.assumptions)
@@ -232,32 +165,34 @@ class Learner(object):
             return False
 
     def watch(self, new_target):
-        self._check_seen_wf()
+        print("watching new target...")
         self.backlog_counter = 0
         self.target = new_target
-        self.update_watched_exps()
-        self.roots = []
+        self.roots = OrderedSet()
         types = OrderedSet()
-        for (e, r, cost, a, pool, bound) in self.watched_exps:
+        for e in all_exps(new_target):
+            if isinstance(e, ELambda):
+                continue
             for pool in ALL_POOLS:
-                if self.is_legal_in_pool(e, pool):
-                    _on_exp(e, "new root", pool_name(pool))
-                    self.roots.append((e, pool))
-                    types.add(e.type)
+                exp = e
+                if pool == STATE_POOL:
+                    exp = strip_EStateVar(e)
+                fvs = free_vars(exp)
+                if all(v in self.legal_free_vars for v in fvs) and self.is_legal_in_pool(exp, pool):
+                    _on_exp(exp, "new root", pool_name(pool))
+                    exp._root = True
+                    self.roots.add((exp, pool))
+                    if pool == STATE_POOL and all(v in self.state_vars for v in fvs):
+                        self.roots.add((EStateVar(exp).with_type(exp.type), RUNTIME_POOL))
+                    types.add(exp.type)
+                else:
+                    _on_exp(exp, "rejected root", pool_name(pool))
         for b in self.binders:
             types.add(b.type)
         for t in types:
-            self.roots.append((construct_value(t), RUNTIME_POOL))
+            self.roots.add((construct_value(t), RUNTIME_POOL))
+        self.roots = list(self.roots)
         self.roots.sort(key = lambda tup: tup[0].size())
-        # new_roots = []
-        # for e in itertools.chain(all_exps(new_target), all_exps(self.assumptions)):
-        #     if e in new_roots:
-        #         continue
-        #     if not isinstance(e, ELambda) and all(v in self.legal_free_vars for v in free_vars(e)):
-        #         self._fingerprint(e)
-        #         new_roots.append(e)
-        # self.roots = new_roots
-
         ## TODO: fix this up for symbolic cost model
         # if self.cost_model.is_monotonic() or hyperaggressive_culling.value:
         #     seen = list(self.seen.items())
@@ -271,65 +206,54 @@ class Learner(object):
         #             del self.seen[(pool, fp)]
         #     if n:
         #         print("evicted {} elements".format(n))
-        self._check_seen_wf()
-
-    def update_watched_exps(self):
-        # self.cost_ceiling = self.cost_model.cost(self.target, RUNTIME_POOL)
-        self.watched_exps = []
-        self.all_examples = instantiate_examples((self.target,), self.examples, self.binders)
-        self.behavior_index = BehaviorIndex()
-        print("|all_examples|={}".format(len(self.all_examples)))
-        for (a, e, r, bound, pool) in enumerate_fragments_and_pools(self.target):
-            if isinstance(e, ELambda) or any(v not in self.legal_free_vars for v in free_vars(e)):
-                continue
-            a = [aa for aa in a if all(v in self.legal_free_vars for v in free_vars(aa))]
-            cost = self.cost_model.cost(e, pool)
-            info = (e, r, cost, a, pool, bound)
-            self.watched_exps.append(info)
-            self.behavior_index.put(e, EAll(a), self.all_examples, info)
-        self.fix_seen()
-
-    def _examples_for(self, e):
-        # binders = [b for b in free_vars(e) if b in self.binders]
-        # return instantiate_examples((self.target,), self.examples, self.binders)
-        return self.all_examples
+        print("done!")
 
     def _fingerprint(self, e):
-        return fingerprint(e, self._examples_for(e))
+        return fingerprint(e, self.all_examples)
 
     def _possible_replacements(self, e, pool, cost, fp):
         """
         Yields watched expressions that appear as worse versions of the given
         expression. There may be more than one.
         """
-        free_binders = OrderedSet(v for v in free_vars(e) if v in self.binders)
-        for (assumptions, watched_e, r, bound, p) in enumerate_fragments_and_pools(self.target):
+        # free_binders = OrderedSet(v for v in free_vars(e) if v in self.binders)
+        for ctx in sorted(list(enumerate_fragments2(self.target)), key=lambda ctx: -ctx.e.size()):
+            watched_e = ctx.e
+            p = ctx.pool
+            r = ctx.replace_e_with
+
+            # _on_exp(e, "considering replacement of", watched_e)
             if e.type != watched_e.type:
+                # _on_exp(e, "wrong type")
                 continue
             if p != pool:
+                # _on_exp(e, "wrong pool")
                 continue
             if e == watched_e:
+                # _on_exp(e, "no change")
                 continue
-            unbound_binders = [b for b in free_binders if b not in bound]
-            if unbound_binders:
-                _on_exp(e, "skipped exp with free binders", ", ".join(b.id for b in unbound_binders))
-                continue
+            # NOTE: this check *seems* like a really good idea, but it isn't!
+            # It is possible that an expression with unbound binders---e.g.
+            # just `b`---looks better than something useful---e.g. m[x].  We
+            # will then skip m[x] in favor of `b`, but never observe that `b`
+            # is wrong.  So, we need to allow `b` through here.
+            # unbound_binders = [b for b in free_binders if b not in bound]
+            # if unbound_binders:
+            #     _on_exp(e, "skipped exp with free binders", ", ".join(b.id for b in unbound_binders))
+            #     continue
             watched_cost = self.cost_model.cost(watched_e, pool=pool)
-            if cost.compare_to(watched_cost) == Cost.WORSE:
+            ordering = cost.compare_to(watched_cost)
+            if ordering == Cost.WORSE:
                 _on_exp(e, "skipped worse replacement", pool_name(pool), watched_e)
                 continue
+            if ordering == Cost.UNORDERED:
+                _on_exp(e, "skipped equivalent replacement", pool_name(pool), watched_e)
+                # print("    e1 = {!r}".format(e))
+                # print("    e2 = {!r}".format(watched_e))
+                continue
+            # TODO: can optimize by pre-computing target fingerprint
             if all(eval_bulk(EImplies(self.assumptions, EEq(self.target, r(e))), self.all_examples)):
-                yield (watched_e, e, assumptions, r)
-
-        # for (watched_e, r, watched_cost, assumptions, p, bound) in self.behavior_index.search(fp):
-        #     if p != pool:
-        #         continue
-        #     if e == watched_e:
-        #         continue
-        #     if not cost.sometimes_better_than(watched_cost):
-        #         _on_exp(e, "skipped possible replacement", pool_name(pool), watched_e)
-        #         continue
-        #     yield (watched_e, e, assumptions, r)
+                yield (watched_e, e, ctx.facts, r)
 
     def pre_optimize(self, e, pool):
         """
@@ -357,6 +281,8 @@ class Learner(object):
                 if prev is None:
                     return super().visit_ADT(e) # optimize children
                 prev_exp, prev_size, prev_cost = prev
+                if prev_exp == e:
+                    return prev_exp
                 cost = self.cost_model.cost(e, pool)
                 ordering = cost.compare_to(prev_cost, self.assumptions)
                 if ordering == Cost.BETTER:
@@ -368,11 +294,14 @@ class Learner(object):
                     #     print("*** rewriting {} to {}".format(pprint(e), pprint(prev_exp)), file=sys.stderr)
                     return prev_exp
         try:
-            return V().visit(e)
+            res = V().visit(e)
+            if hasattr(e, "_tag"):
+                res._tag = e._tag
+            return res
         except:
             print("FAILED TO PREOPTIMIZE {}".format(pprint(e)))
             print(repr(e))
-            raise
+            return e
 
     def next(self):
         while True:
@@ -392,7 +321,17 @@ class Learner(object):
                 if self.stop_callback():
                     raise StopException()
 
-                new_e = self.pre_optimize(e, pool)
+                # Stopgap measure... long story --Calvin
+                bad = False
+                for x in all_exps(e):
+                    if isinstance(x, EStateVar):
+                        if any(v not in self.state_vars for v in free_vars(x.e)):
+                            bad = True
+                            _on_exp(e, "skipping due to illegal free vars under EStateVar")
+                if bad:
+                    continue
+
+                new_e = self.pre_optimize(e, pool) if preopt.value else e
                 if new_e != e:
                     _on_exp(e, "preoptimized", new_e)
                     e = new_e
@@ -448,10 +387,13 @@ class Learner(object):
                         print("  (1) this exp: {}".format(pprint(e)))
                         print("  (2) prev. A:  {}".format(pprint(worse_than[0])))
                         print("  (2) prev. B:  {}".format(pprint(better_than[0])))
+                        print("e1 = {}".format(repr(e)))
+                        print("e2 = {}".format(repr(worse_than[0])))
+                        print("e3 = {}".format(repr(better_than[0])))
                         print("(1) vs (2): {}".format(cost.compare_to(worse_than[2], self.assumptions)))
                         print("(2) vs (3): {}".format(worse_than[2].compare_to(better_than[2], self.assumptions)))
                         print("(3) vs (1): {}".format(better_than[2].compare_to(cost, self.assumptions)))
-                        raise Exception("insane cost model behavior")
+                        # raise Exception("insane cost model behavior")
 
                 if should_add:
                     self.cache.add(e, pool=pool, size=self.current_size)
@@ -472,7 +414,7 @@ class Learner(object):
             self.current_size += 1
             self.builder_iter = self.builder.build(self.cache, self.current_size)
             if self.current_size == 0:
-                self.builder_iter = itertools.chain(self.builder_iter, iter(self.roots))
+                self.builder_iter = itertools.chain(self.builder_iter, list(self.roots))
             for f, ct in sorted(_fates.items(), key=lambda x: x[1], reverse=True):
                 print("  {:6} | {}".format(ct, f))
             _fates.clear()
@@ -484,7 +426,7 @@ def fixup_binders(e : Exp, binders_to_use : [EVar], allow_add=False, throw=False
     class V(BottomUpRewriter):
         def visit_ELambda(self, e):
             if e.arg in binders_by_type[e.arg.type]:
-                return ELambda(e.arg, self.visit(e.body))
+                return super().visit_ADT(e)
             fvs = free_vars(e.body)
             legal_repls = [ b for b in binders_by_type[e.arg.type] if b not in fvs ]
             if not legal_repls:
@@ -653,6 +595,7 @@ def improve(
     target = fixup_binders(target, binders, allow_add=False)
     assumptions = fixup_binders(assumptions, binders, allow_add=False)
     builder = FixedBuilder(builder, state_vars, args, binders, assumptions)
+    target_cost = cost_model.cost(target, RUNTIME_POOL)
 
     if eliminate_vars.value and can_elim_vars(target, assumptions, state_vars):
         print("This job does not depend on state_vars.")
@@ -718,9 +661,8 @@ def improve(
             else:
                 # b. if correct: yield it, watch the new target, goto 1
 
-                old_cost = cost_model.cost(target, RUNTIME_POOL)
                 new_cost = cost_model.cost(new_target, RUNTIME_POOL)
-                ordering = new_cost.compare_to(old_cost)
+                ordering = new_cost.compare_to(target_cost)
                 if ordering == Cost.WORSE:
                     print("WHOOPS! COST GOT WORSE!")
                     if save_testcases.value:
@@ -740,16 +682,22 @@ def improve(
                     continue
                 elif ordering == Cost.UNORDERED:
                     print("*** cost is unchanged")
+                    print(repr(target))
+                    print(repr(new_target))
                     # continue
                 print("found improvement: {} -----> {}".format(pprint(old_e), pprint(new_e)))
-                print("cost: {} -----> {}".format(old_cost, new_cost))
+                print("cost: {} -----> {}".format(target_cost, new_cost))
+                target_cost = new_cost
 
                 # binders are not allowed to "leak" out
-                assert not any(v in binders for v in free_vars(new_target))
-                yield new_target
+                to_yield = new_target
+                if any(v in binders for v in free_vars(new_target)):
+                    print("WARNING: stripping binders in {}".format(pprint(new_target)), file=sys.stderr)
+                    to_yield = subst(new_target, { b.id : construct_value(b.type) for b in binders })
+                yield to_yield
 
-                if reset_on_success.value:
-                    learner.reset(examples, update_watched_exps=False)
+                if reset_on_success.value and ordering != Cost.UNORDERED:
+                    learner.reset(examples)
                 learner.watch(new_target)
                 target = new_target
 

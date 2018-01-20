@@ -3,7 +3,7 @@ from functools import total_ordering, cmp_to_key, lru_cache
 import itertools
 
 from cozy.target_syntax import *
-from cozy.syntax_tools import equal, pprint, free_vars, free_funcs, all_exps
+from cozy.syntax_tools import equal, pprint, free_vars, free_funcs, all_exps, purify
 from cozy.common import FrozenDict, OrderedSet, extend
 from cozy.typecheck import is_numeric, is_collection
 
@@ -33,7 +33,7 @@ class Map(object):
     def items(self):
         yield from self._items
     def keys(self):
-        for (k, v) in self._items:
+        for (k, v) in reversed(self._items):
             yield k
     def values(self):
         for (k, v) in self._items:
@@ -734,7 +734,7 @@ def _compile(e, env : {str:int}, out, bind_callback):
         default = mkval(e.type.v)
         def make_map(stk):
             res = Map(e.type, default)
-            for (k, v) in stk.pop():
+            for (k, v) in reversed(list(stk.pop())):
                 res[k] = v
             stk.append(res)
         out.append(make_map)
@@ -779,6 +779,7 @@ def free_vars_and_funcs(e):
         yield f
 
 def eval_bulk(e, envs, bind_callback=None, use_default_values_for_undefined_vars : bool = False):
+    e = purify(e)
     if bind_callback is None:
         bind_callback = lambda arg, val: None
     # return [eval(e, env, bind_callback=bind_callback) for env in envs]

@@ -9,11 +9,13 @@ they store various other information to aid synthesis.
 import itertools
 from collections import OrderedDict, defaultdict
 
+import igraph
+
 from cozy.common import fresh_name, find_one, typechecked, OrderedSet
 from cozy.syntax import *
 from cozy.target_syntax import EFilter, EDeepIn
-from cozy.syntax_tools import subst, free_vars, fresh_var, alpha_equivalent, all_exps, BottomUpRewriter, BottomUpExplorer, pprint, replace
-from cozy.handle_tools import reachable_handles_at_method
+from cozy.syntax_tools import subst, free_vars, fresh_var, alpha_equivalent, all_exps, BottomUpRewriter, BottomUpExplorer, pprint, replace, shallow_copy
+from cozy.handle_tools import reachable_handles_at_method, implicit_handle_assumptions_for_method
 import cozy.incrementalization as inc
 from cozy.opts import Option
 from cozy.simplification import simplify
@@ -29,6 +31,41 @@ def _queries_used_by(thing):
             qs.add(e.func)
     V().visit(thing)
     return qs
+
+def safe_feedback_arc_set(g, method):
+    """
+    Compute the feedback arc set for directed graph `g`.
+
+    This function works around a potential segfault in igraph:
+    https://github.com/igraph/igraph/issues/858
+    """
+
+    assert g.is_directed()
+
+    # No verts? No problem!
+    if g.vcount() == 0:
+        return []
+
+    orig_g = g
+    g = g.copy()
+
+    # Add a "terminal" node with an edge from every vertex.
+    # This should not affect the feedback arc set.
+    new_vertex_id = g.vcount()
+    g.add_vertices(1)
+    g.add_edges([(v, new_vertex_id) for v in range(new_vertex_id)])
+
+    edge_ids = g.feedback_arc_set(method=method)
+
+    # I assume the edge ids are the same between g and its copy?
+    # Let's do a little bit of checking just in case.
+    g.delete_vertices([new_vertex_id])
+    to_check = [g.es[e].source for e in edge_ids]
+    d1 = orig_g.degree(to_check)
+    d2 = g.degree(to_check)
+    assert d1 == d2, "{!r} vs {!r}".format(d1, d2)
+
+    return edge_ids
 
 class Implementation(object):
 
@@ -72,10 +109,17 @@ class Implementation(object):
         print("Adding new query {}...".format(sub_q.name))
         # orig_ret = sub_q.ret
         # print("rewritng ret for {}".format(pprint(orig_ret)))
-        sub_q = rewrite_ret(sub_q, simplify)
+        sub_q = shallow_copy(sub_q)
+        sub_q.assumptions += tuple(
+            implicit_handle_assumptions_for_method(
+                reachable_handles_at_method(self.spec, sub_q),
+                sub_q))
+        sub_q.ret = simplify(sub_q.ret)
+        # sub_q = rewrite_ret(sub_q, simplify)
         # if sub_q.ret != orig_ret:
         #     print("rewrote ret")
         #     print(" --> {}".format(pprint(sub_q.ret)))
+
         qq = find_one(self.query_specs, lambda qq: dedup_queries.value and queries_equivalent(qq, sub_q))
         if qq is not None:
             print("########### subgoal {} is equivalent to {}".format(sub_q.name, qq.name))
@@ -134,9 +178,12 @@ class Implementation(object):
 
     def set_impl(self, q : Query, rep : [(EVar, Exp)], ret : Exp):
         to_remove = set()
+        from cozy.solver import valid
         for (v, e) in rep:
-            aeq = find_one(vv for (vv, ee) in self.concrete_state if alpha_equivalent(e, ee))
+            aeq = find_one(vv for (vv, ee) in self.concrete_state if e.type == ee.type and valid(EImplies(EAll(self.spec.assumptions), EEq(e, ee))))
+            # aeq = find_one(vv for (vv, ee) in self.concrete_state if e.type == ee.type and alpha_equivalent(e, ee))
             if aeq is not None:
+                print("########### state var {} is equivalent to {}".format(v.id, aeq.id))
                 ret = subst(ret, { v.id : aeq })
                 to_remove.add(v)
         rep = [ x for x in rep if x[0] not in to_remove ]
@@ -161,21 +208,47 @@ class Implementation(object):
 
     @property
     def code(self) -> Spec:
+
+        state_read_by_query = {
+            query_name : free_vars(query)
+            for query_name, query in self.query_impls.items() }
+
+        def queries_used_by(stm):
+            for e in all_exps(stm):
+                if isinstance(e, ECall) and e.func in [q.name for q in self.query_specs]:
+                    yield e.func
+
         # prevent read-after-write by lifting reads before writes.
-
-        state_read_by_query = {}
-
-        for query_name, query in self.query_impls.items():
-            state_read_by_query[query_name] = free_vars(query)
 
         # list of SDecls
         temps = defaultdict(list)
         updates = dict(self.updates)
 
         for operator in self.op_specs:
-            things_updated = []
+            # Compute order constraints between statements:
+            #   v1 -> v2 means that the update code for v1 should (if possible)
+            #   appear before the update code for v2
+            #   (i.e. the update code for v1 reads v2)
+            g = igraph.Graph().as_directed()
+            g.add_vertices(len(self.concrete_state))
+            for (i, (v1, _)) in enumerate(self.concrete_state):
+                v1_update_code = self.updates[(v1, operator.name)]
+                v1_queries = list(queries_used_by(v1_update_code))
+                for (j, (v2, _)) in enumerate(self.concrete_state):
+                    # if v1_update_code reads v2...
+                    if any(v2 in state_read_by_query[q] for q in v1_queries):
+                        # then v1->v2
+                        g.add_edges([(i, j)])
 
-            for v, _ in self.concrete_state:
+            # Find the minimum set of edges we need to break (see "feedback arc
+            # set problem")
+            edges_to_break = safe_feedback_arc_set(g, method="ip")
+            g.delete_edges(edges_to_break)
+            ordered_concrete_state = [self.concrete_state[i] for i in g.topological_sorting(mode="OUT")]
+
+            # Lift auxiliary declarations as needed
+            things_updated = []
+            for v, _ in ordered_concrete_state:
                 things_updated.append(v)
                 stm = updates[(v, operator.name)]
 
@@ -193,7 +266,7 @@ class Implementation(object):
         new_ops = []
         for op in self.op_specs:
 
-            stms = [ updates[(v, op.name)] for (v, _) in self.concrete_state ]
+            stms = [ updates[(v, op.name)] for (v, _) in ordered_concrete_state ]
             stms.extend(hup for ((t, op_name), hup) in self.handle_updates.items() if op.name == op_name)
             new_stms = seq(temps[op.name] + stms)
             new_ops.append(Op(
@@ -204,7 +277,7 @@ class Implementation(object):
                 op.docstring))
 
         # assemble final result
-        new_statevars = [(v.id, e.type) for (v, e) in self.concrete_state]
+        new_statevars = [(v.id, e.type) for (v, e) in ordered_concrete_state]
         return Spec(
             self.spec.name,
             self.spec.types,

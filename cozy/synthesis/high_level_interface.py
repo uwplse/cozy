@@ -2,16 +2,16 @@ from collections import namedtuple, deque, defaultdict, OrderedDict
 import datetime
 import itertools
 import sys
+import os
 from queue import Empty
 
 from cozy.common import typechecked, fresh_name, pick_to_sum, nested_dict, find_one
 from cozy.target_syntax import *
 import cozy.syntax_tools
-from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, BottomUpRewriter, free_vars, pprint, subst, implies, fresh_var, mk_lambda, all_exps, equal, is_scalar
+from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, BottomUpRewriter, free_vars, pprint, subst, implies, fresh_var, mk_lambda, all_exps, equal, is_scalar, tease_apart
 import cozy.incrementalization as inc
 from cozy.timeouts import Timeout, TimeoutException
 from cozy.cost_model import CompositeCostModel
-from cozy.rep_inference import infer_rep
 from cozy import jobs
 from cozy.solver import valid
 from cozy.opts import Option
@@ -23,14 +23,13 @@ from .acceleration import AcceleratedBuilder
 from .misc import rewrite_ret, queries_equivalent
 
 accelerate = Option("acceleration-rules", bool, True)
+nice_children = Option("nice-children", bool, False)
+log_dir = Option("log-dir", str, "/tmp")
 SynthCtx = namedtuple("SynthCtx", ["all_types", "basic_types"])
 LINE_BUFFER_MODE = 1 # see help for open() function
 
-@typechecked
-def pick_rep(q_ret : Exp, state : [EVar]) -> ([(EVar, Exp)], Exp):
-    return find_one(infer_rep(state, q_ret))
-
 class ImproveQueryJob(jobs.Job):
+    @typechecked
     def __init__(self,
             ctx : SynthCtx,
             state : [EVar],
@@ -44,7 +43,7 @@ class ImproveQueryJob(jobs.Job):
         self.state = state
         self.assumptions = assumptions
         self.q = q
-        assert all(v in state for v in free_vars(q)), str([v for v in free_vars(q) if v not in state])
+        assert all(v in state for v in free_vars(q)), "Oops, query looks malformed due to {}:\n{}\nfree_vars({})".format([v for v in free_vars(q) if v not in state], pprint(q), repr(q))
         self.hints = hints
         self.examples = examples
         self.k = k
@@ -52,10 +51,14 @@ class ImproveQueryJob(jobs.Job):
         return "ImproveQueryJob[{}]".format(self.q.name)
     def run(self):
         print("STARTING IMPROVEMENT JOB {} (|examples|={})".format(self.q.name, len(self.examples or ())))
-        with open("/tmp/{}.log".format(self.q.name), "w", buffering=LINE_BUFFER_MODE) as f:
+        os.makedirs(log_dir.value, exist_ok=True)
+        with open(os.path.join(log_dir.value, "{}.log".format(self.q.name)), "w", buffering=LINE_BUFFER_MODE) as f:
             sys.stdout = f
             print("STARTING IMPROVEMENT JOB {} (|examples|={})".format(self.q.name, len(self.examples or ())))
             print(pprint(self.q))
+
+            if nice_children.value:
+                os.nice(20)
 
             all_types = self.ctx.all_types
             n_binders = 1
@@ -101,10 +104,8 @@ class ImproveQueryJob(jobs.Job):
                         builder=b,
                         stop_callback=lambda: self.stop_requested)):
 
-                    r = pick_rep(expr, self.state)
-                    if r is not None:
-                        new_rep, new_ret = r
-                        self.k(new_rep, new_ret)
+                    new_rep, new_ret = tease_apart(expr)
+                    self.k(new_rep, new_ret)
                 print("PROVED OPTIMALITY FOR {}".format(self.q.name))
             except core.StopException:
                 print("stopping synthesis of {}".format(self.q.name))
@@ -181,7 +182,8 @@ def improve_implementation(
                     if j.successful:
                         j.join()
                     else:
-                        raise Exception("failed job: {}".format(j))
+                        print("failed job: {}".format(j), file=sys.stderr)
+                        # raise Exception("failed job: {}".format(j))
 
             done = all(j.done for j in improvement_jobs)
 
@@ -235,7 +237,7 @@ def improve_implementation(
                     # clean up
                     impl.cleanup()
                     if progress_callback is not None:
-                        progress_callback((impl.code, impl.concretization_functions))
+                        progress_callback((impl, impl.code, impl.concretization_functions))
                     reconcile_jobs()
 
         # stop jobs

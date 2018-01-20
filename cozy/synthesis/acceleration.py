@@ -202,6 +202,9 @@ def simplify_sum(e):
         res = EBinOp(res, "+", parts[i]).with_type(INT)
     return res
 
+def is_root(e):
+    return hasattr(e, "_root")
+
 class AcceleratedBuilder(ExpBuilder):
 
     def __init__(self, wrapped : ExpBuilder, binders : [EVar], state_vars : [EVar], args : [EVar]):
@@ -225,12 +228,106 @@ class AcceleratedBuilder(ExpBuilder):
     def build(self, cache, size):
 
         for e in cache.find(pool=RUNTIME_POOL, size=size-1, type=INT):
+            if not is_root(e):
+                continue
             e2 = simplify_sum(e)
             if e != e2:
                 yield self.check(e2, RUNTIME_POOL)
 
+        # for e in cache.find(pool=RUNTIME_POOL, size=size-1):
+        #     if isinstance(e, EMapGet) and isinstance(e.map, EMakeMap2):
+        #         x = e.map.value.apply_to(e.key)
+        #         x._tag = True
+        #         yield self.check(x, RUNTIME_POOL)
+
+        # [x] - ys
+        for e in cache.find_collections(pool=RUNTIME_POOL, size=size-1):
+            if not is_root(e):
+                continue
+            if isinstance(e, EBinOp) and e.op == "-" and isinstance(e.e1, ESingleton):
+                x = e.e1.e
+                y = e.e2
+                x = ECond(
+                    EBinOp(x, BOp.In, y).with_type(BOOL),
+                    EEmptyList().with_type(e.type),
+                    e.e1).with_type(e.type)
+                yield self.check(x, RUNTIME_POOL)
+            elif isinstance(e, EUnaryOp) and e.op == UOp.Distinct:
+                e = strip_EStateVar(e)
+                m = EMakeMap2(e.e, mk_lambda(e.type.t, lambda x: T)).with_type(TMap(e.type.t, BOOL))
+                yield self.check(m, STATE_POOL)
+                m = EStateVar(m).with_type(m.type)
+                yield self.check(m, RUNTIME_POOL)
+                x = EMapKeys(m).with_type(e.type)
+                # x._tag = True
+                yield self.check(x, RUNTIME_POOL)
+
+        # # x in ys ----> (count x in ys) > 0
+        # for e in cache.find(pool=RUNTIME_POOL, type=BOOL, size=size-1):
+        #     if isinstance(e, EBinOp) and e.op == BOp.In:
+        #         for b in self.binders:
+        #             if b.type != e.e1.type:
+        #                 continue
+        #             x = EGt(
+        #                 EUnaryOp(UOp.Length, EFilter(e.e2, ELambda(b, EEq(e.e1, b))).with_type(e.e2.type)).with_type(INT),
+        #                 ZERO)
+        #             x._tag = True
+        #             yield self.check(x, RUNTIME_POOL)
+
+        for e in cache.find(pool=RUNTIME_POOL, size=size-1):
+            if not is_root(e):
+                continue
+            if (isinstance(e, EArgMin) or isinstance(e, EArgMax)) and isinstance(e.e, EBinOp) and e.e.op == "+":
+                l = e.e.e1
+                r = e.e.e2
+                op = e.e.op
+                f = lambda x: type(e)(x, e.f).with_type(e.type)
+                ll = EStateVar(f(l.e)).with_type(e.type) if isinstance(l, EStateVar) else f(l)
+                rr = EStateVar(f(r.e)).with_type(e.type) if isinstance(r, EStateVar) else f(r)
+                x = ECond(EUnaryOp(UOp.Exists, l).with_type(BOOL),
+                    ECond(EUnaryOp(UOp.Exists, r).with_type(BOOL),
+                        f(EBinOp(ESingleton(ll).with_type(e.e.type), op, ESingleton(rr).with_type(e.e.type)).with_type(e.e.type)),
+                        ll).with_type(e.type),
+                    rr).with_type(e.type)
+                # from cozy.solver import valid
+                # assert valid(EEq(e, x), model_callback=print)
+                x._tag = True
+                yield self.check(x, RUNTIME_POOL)
+
+        # is-last(x, l)
+        for (sz1, sz2) in pick_to_sum(2, size-1):
+            for e1 in cache.find(pool=RUNTIME_POOL, size=sz1):
+                if not is_root(e1):
+                    continue
+                for e2 in cache.find_collections(pool=STATE_POOL, size=sz2, of=e1.type):
+                    for b in self.binders:
+                        if b.type != e1.type:
+                            continue
+                        m = EMakeMap2(e2,
+                            mk_lambda(e2.type.t, lambda x:
+                                EUnaryOp(UOp.Length, EFilter(e2,
+                                    mk_lambda(e2.type.t, lambda y: EEq(x, y))).with_type(e2.type)).with_type(INT))).with_type(TMap(e2.type.t, INT))
+                        # filt = EFilter(e2, ELambda(b, EEq(e1, b))).with_type(e2.type)
+                        # x = EEq(
+                        #     EUnaryOp(UOp.Length, filt).with_type(INT),
+                        #     ONE)
+                        x = EGt(EMapGet(EStateVar(m).with_type(m.type), e1).with_type(INT), ONE)
+                        # x._tag = True
+                        yield self.check(x, RUNTIME_POOL)
+
+        # histogram
+        # for e in cache.find_collections(pool=STATE_POOL, size=size-1):
+        #     m = EMakeMap2(e,
+        #         mk_lambda(e.type.t, lambda x:
+        #             EUnaryOp(UOp.Length, EFilter(e,
+        #                 mk_lambda(e.type.t, lambda y: EEq(x, y))).with_type(e.type)).with_type(INT))).with_type(TMap(e.type.t, INT))
+        #     m._tag = True
+        #     yield self.check(m, STATE_POOL)
+
         # Fixup EFilter(\x -> ECond...)
         for e in cache.find_collections(pool=RUNTIME_POOL, size=size-1):
+            if not is_root(e):
+                continue
             if isinstance(e, EFilter):
                 for (_, x, r, _) in enumerate_fragments(e.p.body):
                     if isinstance(x, ECond):
@@ -247,21 +344,18 @@ class AcceleratedBuilder(ExpBuilder):
         for pool in (STATE_POOL, RUNTIME_POOL):
             for (sz1, sz2) in pick_to_sum(2, size-1):
                 for e1 in cache.find(pool=pool, size=sz1):
+                    if not is_root(e1):
+                        continue
                     for v in free_vars(e1):
                         if pool == RUNTIME_POOL:
                             e1 = subst(strip_EStateVar(e1), { sv.id : EStateVar(sv).with_type(sv.type) for sv in self.state_vars if sv != v })
                         for e2 in cache.find(pool=pool, type=v.type, size=sz2):
                             yield self.check(subst(e1, {v.id:e2}), pool)
 
-        # state var conversion
-        for e in cache.find(pool=RUNTIME_POOL, size=size-1):
-            if all(v in self.state_vars for v in free_vars(e)):
-                x = strip_EStateVar(e)
-                yield self.check(x, STATE_POOL)
-                yield self.check(EStateVar(x).with_type(x.type), RUNTIME_POOL)
-
         for (sz1, sz2) in pick_to_sum(2, size-1):
             for e in cache.find(pool=RUNTIME_POOL, size=sz1):
+                if not is_root(e):
+                    continue
                 for x, pool in map_accelerate(e, self.state_vars, self.binders, self.args, cache, sz2):
                     yield self.check(x, pool)
                 if isinstance(e, EFilter) and not any(v in self.binders for v in free_vars(e)):
@@ -269,6 +363,8 @@ class AcceleratedBuilder(ExpBuilder):
                         yield self.check(x, pool)
 
         for bag in cache.find_collections(pool=RUNTIME_POOL, size=size-1):
+            if not is_root(bag):
+                continue
             for a in self.args:
                 for v in self.state_vars:
                     if is_collection(v.type) and v.type == a.type:

@@ -14,10 +14,10 @@ def handler_class(callback):
                 return
             content = callback()
             self.send_response(200)
-            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Type", "text/html")
             self.send_header("Content-Length", str(len(content)))
             self.end_headers()
-            self.wfile.write(content.encode("utf-8"))
+            self.wfile.write(content.encode("ascii"))
     return Handler
 
 class ProgressServer(HTTPServer):

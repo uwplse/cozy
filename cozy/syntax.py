@@ -74,12 +74,6 @@ class Exp(ADT):
     def with_type(self, t):
         self.type = t
         return self
-    # def __setattr__(self, name, val):
-    #     if name == "type" and isinstance(self, EEnumEntry) and not isinstance(val, TEnum):
-    #         raise Exception("set {}.type = {}".format(self, val))
-    #     super().__setattr__(name, val)
-    # def __getattr__(self, name):
-    #     raise AttributeError("expression {} has no {} field".format(self, name))
     def __repr__(self):
         s = super().__repr__()
         if hasattr(self, "type"):
@@ -197,7 +191,12 @@ def EAll(exps):
     return build_balanced_tree(BOOL, BOp.And, exps)
 
 def EAny(exps):
-    return ENot(EAll([ENot(e) for e in exps]))
+    exps = [ e for e in exps if e != F ]
+    if any(e == T for e in exps):
+        return T
+    if not exps:
+        return F
+    return build_balanced_tree(BOOL, BOp.Or, exps)
 
 def ENot(e):
     if isinstance(e, EUnaryOp) and e.op == "not":
@@ -221,8 +220,14 @@ def EEq(e1, e2):
 def EGt(e1, e2):
     return EBinOp(e1, ">", e2).with_type(BOOL)
 
+def ELt(e1, e2):
+    return EBinOp(e1, "<", e2).with_type(BOOL)
+
 def EIn(e1, e2):
     return EBinOp(e1, BOp.In, e2).with_type(BOOL)
 
 def EImplies(e1, e2):
     return EBinOp(ENot(e1), BOp.Or, e2).with_type(BOOL)
+
+def ELen(e):
+    return EUnaryOp(UOp.Length, e).with_type(INT)

@@ -7,9 +7,8 @@ handling handles.
 from collections import OrderedDict
 
 from cozy.common import typechecked
-from cozy.syntax import Spec, Method, Exp, THandle, TTuple, TRecord, TMap, TBag, EVar, EBinOp, ESingleton, EGetField, ELambda, ETupleGet, EGetField
-from cozy.target_syntax import EFlatMap
-from cozy.syntax_tools import fresh_var
+from cozy.target_syntax import *
+from cozy.syntax_tools import fresh_var, mk_lambda
 from cozy.typecheck import is_collection
 
 @typechecked
@@ -65,3 +64,18 @@ def reachable_handles_at_method(spec : Spec, m : Method) -> {THandle:Exp}:
     for v, t in m.args:
         res = _merge(res, reachable_handles_by_type(EVar(v).with_type(t)))
     return res
+
+def EForall(e, p):
+    return EUnaryOp(UOp.All, EMap(e, mk_lambda(e.type.t, p)).with_type(type(e.type)(BOOL))).with_type(BOOL)
+
+@typechecked
+def implicit_handle_assumptions_for_method(handles : {THandle:Exp}, m : Method) -> [Exp]:
+    # for instance: implicit_handle_assumptions_for_method(reachable_handles_at_method(spec, m), m)
+    new_assumptions = []
+    for t, bag in handles.items():
+        new_assumptions.append(
+            EForall(bag, lambda h1: EForall(bag, lambda h2:
+                EImplies(EEq(h1, h2),
+                    EEq(EGetField(h1, "val").with_type(h1.type.value_type),
+                        EGetField(h2, "val").with_type(h2.type.value_type))))))
+    return new_assumptions

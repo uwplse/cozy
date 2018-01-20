@@ -91,3 +91,30 @@ class TestSyntaxTools(unittest.TestCase):
         e.e = e
         print(repr(e))
         assert repr(e) == "EStateVar(<<recursive>>)"
+
+    def test_var_under_estatevar(self):
+        # wow, very tricky!
+        # EStateVar(...) needs to be "separable" from the parent, so bound vars
+        # get cleared.  Thus, if EStateVar(x) appears somewhere, then `x` is
+        # is free, even if it appears in e.g. \x -> EStateVar(x).
+        x = EVar("x").with_type(INT)
+        e = EUnaryOp(UOp.Exists, EFilter(ESingleton(ONE), ELambda(x, EStateVar(EEq(x, ZERO)))))
+        print(pprint(e))
+        assert retypecheck(e)
+        assert x in free_vars(e), free_vars(e)
+        sub = subst(e, {"x":ZERO})
+        assert sub == EUnaryOp(UOp.Exists, EFilter(ESingleton(ONE), ELambda(x, EStateVar(EEq(ZERO, ZERO))))), pprint(sub)
+
+    def test_query_fvs(self):
+        fvs = free_vars(Query('__isDistinct', 'public', [('startOffset', TInt())], [], EBinOp(EVar('startOffset').with_type(TInt()), '>=', EArgMax(EMap(EMap(EFilter(EVar('tokens').with_type(TBag(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool()))))))), ELambda(EVar('t').with_type(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))))), EGetField(ETupleGet(EVar('t').with_type(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))))), 1).with_type(TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))), 'important').with_type(TBool()))).with_type(TBag(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool()))))))), ELambda(EVar('t').with_type(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))))), EVar('t').with_type(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))))))).with_type(TBag(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool()))))))), ELambda(EVar('tok').with_type(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))))), EGetField(ETupleGet(EVar('tok').with_type(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))))), 1).with_type(TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))), 'endOffset').with_type(TInt()))).with_type(TBag(TInt())), ELambda(EVar('x').with_type(TInt()), EVar('x').with_type(TInt()))).with_type(TInt())).with_type(TBool())))
+        assert EVar("startOffset") not in fvs
+
+    def test_pickling(self):
+        import pickle
+        e = EVar("foo").with_type(INT)
+        orig_hash = hash(e)
+        ee = pickle.loads(pickle.dumps(e))
+        assert not hasattr(ee, "_hash") # hash code should not be saved, since it is different each time Python is invoked
+        assert e == ee
+        assert orig_hash == hash(ee)
+        assert e.type == ee.type

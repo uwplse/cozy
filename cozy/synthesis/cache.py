@@ -57,8 +57,8 @@ class Cache(object):
     def contains(self, e, pool):
         return find_one(self.find(pool=pool, type=e.type), lambda x: alpha_equivalent(x, e)) is not None
     def add(self, e, size, pool):
-        if isinstance(e, EStateVar) and self.contains(e.e, STATE_POOL):
-            return # already implicitly exists
+        # if isinstance(e, EStateVar) and self.contains(e.e, STATE_POOL):
+        #     return # already implicitly exists
         if enforce_wf.value:
             assert not self.contains(e, pool)
             if pool == STATE_POOL:
@@ -107,7 +107,7 @@ class Cache(object):
     def find(self, pool, type=None, size=None):
         res = []
         res.extend(self._raw_find(pool, type, size))
-        if pool == RUNTIME_POOL:
+        if False and pool == RUNTIME_POOL:
             for e in self._raw_find(STATE_POOL, type, size):
                 if all(v not in self.binders for v in free_vars(e)):
                     res.append(EStateVar(e).with_type(e.type))

@@ -7,11 +7,17 @@ from cozy.target_syntax import *
 from cozy.syntax_tools import BottomUpExplorer, pprint, equal, fresh_var, mk_lambda, free_vars, subst, alpha_equivalent
 from cozy.typecheck import is_collection
 from cozy.pools import RUNTIME_POOL, STATE_POOL
-from cozy.solver import valid, satisfiable, REAL, SolverReportedUnknown
+from cozy.solver import valid, satisfiable, REAL, SolverReportedUnknown, IncrementalSolver
 from cozy.evaluation import eval
 from cozy.opts import Option
 
 assume_large_cardinalities = Option("assume-large-cardinalities", bool, True)
+simple_cost_model = Option("simple-cost-model", bool, False)
+
+# In principle these settings are supposed to improve performance; in practice,
+# they do not.
+incremental = False
+use_indicators = False
 
 class CostModel(object):
     def cost(self, e, pool):
@@ -20,16 +26,26 @@ class CostModel(object):
         raise NotImplementedError()
 
 @lru_cache(maxsize=2**16)
-@typechecked
-def cardinality_le(c1 : Exp, c2 : Exp, assumptions : Exp) -> bool:
+# @typechecked
+def cardinality_le(c1 : Exp, c2 : Exp, assumptions : Exp = T, as_f : bool = False, solver : IncrementalSolver = IncrementalSolver()) -> bool:
     """
     Is |c1| <= |c2|?
-    Yes, iff there exists v such that v occurs more times in c2 than in c1.
+    Yes, iff there are no v such that v occurs more times in c2 than in c1.
     """
     assert c1.type == c2.type
-    v = fresh_var(c1.type.t)
-    return valid(EImplies(assumptions,
-        EGt(ECountIn(v, c2), ECountIn(v, c1))))
+    if True:
+        f = EBinOp(ELen(c1), "<=", ELen(c2)).with_type(BOOL)
+    else:
+        # Oh heck.
+        # This isn't actually very smart if:
+        #   x = [y]
+        #   a = Filter (!= y) b
+        # This method can't prove that |x| <= |a|, even though |a| is likely huge
+        v = fresh_var(c1.type.t)
+        f = EBinOp(ECountIn(v, c1), "<=", ECountIn(v, c2)).with_type(BOOL)
+    if as_f:
+        return f
+    return solver.valid(EImplies(assumptions, f))
 
 @lru_cache(maxsize=2**16)
 @typechecked
@@ -61,10 +77,15 @@ class Cost(object):
         self.assumptions = assumptions
         self.cardinalities = cardinalities or { }
 
-    def order_cardinalities(self, other, assumptions):
+    def order_cardinalities(self, other, assumptions : Exp):
+        if incremental:
+            s = IncrementalSolver()
+
         cardinalities = OrderedDict()
         cardinalities.update(self.cardinalities)
         cardinalities.update(other.cardinalities)
+
+        conds = []
         res = []
         for (v1, c1) in cardinalities.items():
             res.append(EBinOp(v1, ">=", ZERO).with_type(BOOL))
@@ -73,16 +94,34 @@ class Cost(object):
                     continue
                 if alpha_equivalent(c1, c2):
                     res.append(EEq(v1, v2))
-                elif cardinality_le(c1, c2, assumptions):
-                    if cardinality_le_implies_lt(c1, c2, assumptions):
-                        res.append(EBinOp(v1, "<", v2).with_type(BOOL))
+                    continue
+
+                if incremental and use_indicators:
+                    conds.append((v1, v2, fresh_var(BOOL), cardinality_le(c1, c2, as_f=True)))
+                else:
+                    if incremental:
+                        le = cardinality_le(c1, c2, solver=s)
                     else:
-                        res.append(EBinOp(v1, "<=", v2).with_type(BOOL))
+                        le = cardinality_le(c1, c2, assumptions=assumptions)
+                    if le:
+                        if cardinality_le_implies_lt(c1, c2, assumptions):
+                            res.append(EBinOp(v1, "<", v2).with_type(BOOL))
+                        else:
+                            res.append(EBinOp(v1, "<=", v2).with_type(BOOL))
+
+        if incremental and use_indicators:
+            s.add_assumption(EAll(
+                [assumptions] +
+                [EEq(indicator, f) for (v1, v2, indicator, f) in conds]))
+            for (v1, v2, indicator, f) in conds:
+                if s.valid(indicator):
+                    res.append(EBinOp(v1, "<=", v2).with_type(BOOL))
+
         # print("cards: {}".format(pprint(EAll(res))))
         return EAll(res)
 
     @typechecked
-    def always(self, op, other, assumptions : Exp, cards = None, **kwargs) -> bool:
+    def always(self, op, other, assumptions : Exp = T, cards = None, **kwargs) -> bool:
         """
         Partial order on costs subject to assumptions.
         """
@@ -110,17 +149,19 @@ class Cost(object):
 
     def compare_to(self, other, assumptions : Exp = T) -> bool:
         cards = self.order_cardinalities(other, assumptions)
-        if self.sometimes_worse_than(other, assumptions, cards) and not other.sometimes_worse_than(self, assumptions, cards):
-            return Cost.WORSE
-        elif self.sometimes_better_than(other, assumptions, cards) and not other.sometimes_better_than(self, assumptions, cards):
+        o1 = self.always("<=", other, cards=cards)
+        o2 = other.always("<=", self, cards=cards)
+
+        if o1 and not o2:
             return Cost.BETTER
+        elif o2 and not o1:
+            return Cost.WORSE
+        elif not o1 and not o2:
+            return Cost.UNORDERED
         else:
-            if self.always("==", other, assumptions, cards):
-                return (
-                    Cost.WORSE if self.secondary > other.secondary else
+            return (Cost.WORSE if self.secondary > other.secondary else
                     Cost.BETTER if self.secondary < other.secondary else
                     Cost.UNORDERED)
-            return Cost.UNORDERED
 
     def always_worse_than(self, other, assumptions : Exp = T, cards : Exp = None) -> bool:
         # it is NOT possible that `self` takes less time than `other`
@@ -137,9 +178,6 @@ class Cost(object):
     def sometimes_better_than(self, other, assumptions : Exp = T, cards : Exp = None) -> bool:
         # it is possible that `self` takes less time than `other`
         return not self.always(">=", other, assumptions, cards)
-
-    # def equivalent_to(self, other, assumptions : Exp = T) -> bool:
-    #     return not self.always_worse_than(other) and not other.always_worse_than(self)
 
     def __str__(self):
         return "cost[{} subject to {}, {}]".format(
@@ -162,9 +200,15 @@ def debug_comparison(e1, c1, e2, c2):
     print("  c2 = {}".format(c2))
     print("  c1 compare_to c2 = {}".format(c1.compare_to(c2)))
     print("  c2 compare_to c1 = {}".format(c2.compare_to(c1)))
+    print("secondaries...")
+    print("  s1 = {}".format(c1.secondary))
+    print("  s2 = {}".format(c2.secondary))
     print("variable meanings...")
     for v, e in itertools.chain(c1.cardinalities.items(), c2.cardinalities.items()):
         print("  {v} = len {e}".format(v=pprint(v), e=pprint(e)))
+    print("explicit assumptions...")
+    print("  {}".format(pprint(c1.assumptions)))
+    print("  {}".format(pprint(c2.assumptions)))
     print("joint orderings...")
     cards = c1.order_cardinalities(c2, assumptions=T)
     print("  {}".format(pprint(cards)))
@@ -212,8 +256,8 @@ class CompositeCostModel(CostModel, BottomUpExplorer):
     def __repr__(self):
         return "CompositeCostModel()"
     def cardinality(self, e : Exp, plus_one=False) -> Exp:
-        if plus_one:
-            return ESum((self.cardinality(e, plus_one=False), ONE))
+        # if plus_one:
+        #     return ESum((self.cardinality(e, plus_one=False), ONE))
         if isinstance(e, EEmptyList):
             return ZERO
         if isinstance(e, ESingleton):
@@ -229,14 +273,43 @@ class CompositeCostModel(CostModel, BottomUpExplorer):
         else:
             v = fresh_var(INT)
             self.cardinalities[e] = v
-            if isinstance(e, EFilter) or (isinstance(e, EUnaryOp) and e.op == UOp.Distinct):
-                self.assumptions.append(EBinOp(v, "<=", self.cardinality(e.e)).with_type(BOOL))
+            if isinstance(e, EFilter):
+                cc = self.cardinality(e.e)
+                self.assumptions.append(EBinOp(v, "<=", cc).with_type(BOOL))
+                # heuristic: (xs) large implies (filter_p xs) large
+                self.assumptions.append(EBinOp(
+                    EBinOp(v,  "*", ENum(5).with_type(INT)).with_type(INT), ">=",
+                    EBinOp(cc, "*", ENum(4).with_type(INT)).with_type(INT)).with_type(BOOL))
+            if isinstance(e, EUnaryOp) and e.op == UOp.Distinct:
+                cc = self.cardinality(e.e)
+                self.assumptions.append(EBinOp(v, "<=", cc).with_type(BOOL))
+                # self.assumptions.append(EImplies(EGt(cc, ZERO), EGt(v, ZERO)))
+                # heuristic: (xs) large implies (distinct xs) large
+                self.assumptions.append(EBinOp(
+                    EBinOp(v,  "*", ENum(5).with_type(INT)).with_type(INT), ">=",
+                    EBinOp(cc, "*", ENum(4).with_type(INT)).with_type(INT)).with_type(BOOL))
+            if isinstance(e, EBinOp) and e.op == "-":
+                self.assumptions.append(EBinOp(v, "<=", self.cardinality(e.e1)).with_type(BOOL))
+            if isinstance(e, ECond):
+                self.assumptions.append(EAny([EEq(v, self.cardinality(e.then_branch)), EEq(v, self.cardinality(e.else_branch))]))
             return v
     def statecost(self, e : Exp) -> float:
         return e.size() / 100
+    def sizeof(self, e : Exp) -> Exp:
+        """
+        The cost of storing `e` on the data structure
+        """
+        if is_collection(e.type):
+            return self.cardinality(e, plus_one=True)
+        # if isinstance(e.type, TMap):
+        #     return EBinOp(
+        #         self.cardinality(EMapKeys(e).with_type(TBag(e.type.k))),
+        #         "*",
+        #         self.sizeof(EMapGet(e, fresh_var(e.type.k)).with_type(e.type.v))).with_type(INT)
+        return ONE
     def visit_EStateVar(self, e):
         self.secondaries += self.statecost(e.e)
-        return ONE
+        return self.sizeof(e.e)
     def visit_EUnaryOp(self, e):
         costs = [ONE, self.visit(e.e)]
         if e.op in (UOp.Sum, UOp.Distinct, UOp.AreUnique, UOp.All, UOp.Any, UOp.Length):
@@ -257,20 +330,24 @@ class CompositeCostModel(CostModel, BottomUpExplorer):
             costs.append(self.cardinality(e.e1))
             costs.append(self.cardinality(e.e2))
         return ESum(costs)
+    def visit_ELambda(self, e):
+        # avoid name collisions with fresh_var
+        return self.visit(e.apply_to(fresh_var(e.arg.type)))
     def visit_EMapGet(self, e):
-        return ESum((TWO, self.visit(e.map), self.visit(e.key)))
+        # mild penalty here because we want "x.f" < "map.get(x)"
+        return ESum((MILD_PENALTY, self.visit(e.map), self.visit(e.key)))
     def visit_EMakeMap2(self, e):
-        return ESum((EXTREME_COST, self.visit(e.e), EBinOp(self.cardinality(e.e, plus_one=True), "*", self.visit(e.value.body)).with_type(INT)))
+        return ESum((EXTREME_COST, self.visit(e.e), EBinOp(self.cardinality(e.e, plus_one=True), "*", self.visit(e.value)).with_type(INT)))
     def visit_EFilter(self, e):
-        return ESum((TWO, self.visit(e.e), EBinOp(self.cardinality(e.e, plus_one=True), "*", self.visit(e.p.body)).with_type(INT)))
+        return ESum((TWO, self.visit(e.e), EBinOp(self.cardinality(e.e, plus_one=True), "*", self.visit(e.p)).with_type(INT)))
     def visit_EFlatMap(self, e):
         return self.visit(EMap(e.e, e.f))
     def visit_EMap(self, e):
-        return ESum((TWO, self.visit(e.e), EBinOp(self.cardinality(e.e, plus_one=True), "*", self.visit(e.f.body)).with_type(INT)))
+        return ESum((TWO, self.visit(e.e), EBinOp(self.cardinality(e.e, plus_one=True), "*", self.visit(e.f)).with_type(INT)))
     def visit_EArgMin(self, e):
-        return ESum((TWO, self.visit(e.e), EBinOp(self.cardinality(e.e, plus_one=True), "*", self.visit(e.f.body)).with_type(INT)))
+        return ESum((TWO, self.visit(e.e), EBinOp(self.cardinality(e.e, plus_one=True), "*", self.visit(e.f)).with_type(INT)))
     def visit_EArgMax(self, e):
-        return ESum((TWO, self.visit(e.e), EBinOp(self.cardinality(e.e, plus_one=True), "*", self.visit(e.f.body)).with_type(INT)))
+        return ESum((TWO, self.visit(e.e), EBinOp(self.cardinality(e.e, plus_one=True), "*", self.visit(e.f)).with_type(INT)))
     def visit_EDropFront(self, e):
         return ESum((MILD_PENALTY, self.visit(e.e), self.cardinality(e.e, plus_one=True).with_type(INT)))
     def visit_EDropBack(self, e):
@@ -284,6 +361,8 @@ class CompositeCostModel(CostModel, BottomUpExplorer):
     def is_monotonic(self):
         return False
     def cost(self, e, pool):
+        if simple_cost_model.value:
+            return Cost(e, pool, ZERO, secondary=e.size())
         if pool == RUNTIME_POOL:
             self.cardinalities = OrderedDict()
             self.assumptions = []

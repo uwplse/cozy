@@ -1,4 +1,5 @@
 from collections import defaultdict, OrderedDict, MutableSet
+from contextlib import contextmanager
 from functools import total_ordering, wraps
 import sys
 import os
@@ -95,16 +96,39 @@ def match(value, binders):
 _protect = set()
 _protect_lock = threading.RLock()
 
+def my_caller(up=0):
+    """
+    Returns an info object of caller function.
+    You might care about these properties:
+        .filename
+        .function
+        .lineno
+    """
+    stack = inspect.stack()
+    frame = stack[up+2] # caller of caller of this function
+    frame = frame[0]
+    return inspect.getframeinfo(frame)
+
+def _size(x):
+    wq = [x]
+    res = 0
+    while wq:
+        x = wq.pop()
+        res += 1
+        if isinstance(x, ADT):
+            wq.extend(x.children())
+        elif isinstance(x, list) or isinstance(x, tuple):
+            wq.extend(x)
+        elif isinstance(x, dict):
+            wq.extend(x.items())
+    return res
+
 @total_ordering
 class ADT(object):
     def children(self):
         return ()
     def size(self):
-        s = 1
-        for child in self.children():
-            if isinstance(child, ADT):
-                s += child.size()
-        return s
+        return _size(self)
     def contains_subtree(self, tree):
         if self == tree:
             return True
@@ -125,12 +149,21 @@ class ADT(object):
                 # remove my_id, but do not throw an exception on failure
                 _protect.difference_update({my_id})
     def __hash__(self):
-        return hash(self.children())
+        if not hasattr(self, "_hash"):
+            self._hash = hash(self.children())
+        return self._hash
+    def __getstate__(self):
+        d = dict(self.__dict__)
+        if "_hash" in d:
+            del d["_hash"]
+        return d
     def __eq__(self, other):
+        if self is other: return True
         return type(self) is type(other) and self.children() == other.children()
     def __ne__(self, other):
         return not self.__eq__(other)
     def __lt__(self, other):
+        if self is other: return False
         return (self.children() < other.children()) if (type(self) is type(other)) else (type(self).__name__ < type(other).__name__)
 
 class Visitor(object):
@@ -380,6 +413,17 @@ def make_random_access(iter):
     if isinstance(iter, list) or isinstance(iter, tuple):
         return iter
     return list(iter)
+
+def intersects(s1 : set, s2 : set):
+    if len(s1) > len(s2):
+        s1, s2 = s2, s1
+    return any(x in s2 for x in s1)
+
+@contextmanager
+def save_property(x, prop_name):
+    old_val = getattr(x, prop_name)
+    yield
+    setattr(x, prop_name, old_val)
 
 def cross_product(iters, i=0):
     """

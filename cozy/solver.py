@@ -1,5 +1,5 @@
-from collections import defaultdict
-from datetime import datetime
+from collections import defaultdict, OrderedDict
+from datetime import datetime, timedelta
 import itertools
 import threading
 from functools import lru_cache
@@ -7,9 +7,9 @@ from functools import lru_cache
 import z3
 
 from cozy.target_syntax import *
-from cozy.syntax_tools import pprint, free_vars, free_funcs
-from cozy.typecheck import is_collection
-from cozy.common import declare_case, fresh_name, Visitor, FrozenDict, typechecked, extend
+from cozy.syntax_tools import BottomUpExplorer, pprint, free_vars, free_funcs, cse, all_exps, purify
+from cozy.typecheck import is_collection, is_numeric
+from cozy.common import declare_case, fresh_name, Visitor, FrozenDict, typechecked, extend, OrderedSet, make_random_access
 from cozy import evaluation
 from cozy.opts import Option
 
@@ -25,13 +25,108 @@ class ModelValidationError(Exception):
 TReal = declare_case(Type, "TReal", [])
 REAL = TReal()
 
+# Encoding Cozy-types for Z3.
+#   mkvar:   T -> [z3var]
+#   flatten: T -> obj -> [z3exp]
+#   pack:    T -> [z3exp] -> obj
+
+class DetFlatVis(BottomUpExplorer):
+    def join(self, x, new_children):
+        if is_collection(x) or isinstance(x, TMap) or isinstance(x, TFunc):
+            return False
+        return all(new_children)
+_DET_FLAT_VIS = DetFlatVis().visit
+def deterministic_flattenable(t):
+    """
+    Does self.flatten(t, x) return the same number of expressions no matter
+    what `x` is?
+    """
+    return _DET_FLAT_VIS(t)
+
+def flatten(t, x):
+    # MUST agree with pack()
+    if decideable(t):
+        yield x
+    elif isinstance(t, TTuple):
+        for y, tt in zip(x, t.ts):
+            yield from flatten(tt, y)
+    elif isinstance(t, TRecord):
+        for f, tt in t.fields:
+            yield from flatten(tt, x[f])
+    elif isinstance(t, THandle):
+        yield from flatten(INT, x[0])
+        yield from flatten(t.value_type, x[1])
+    elif is_collection(t):
+        yield len(x[0])
+        for mask, elem in zip(*x):
+            yield from flatten(BOOL, mask)
+            yield from flatten(t.t, elem)
+    elif isinstance(t, TMap):
+        yield len(x["mapping"])
+        yield from flatten(t.v, x["default"])
+        for (m, k, v) in x["mapping"]:
+            yield from flatten(BOOL, m)
+            yield from flatten(t.k, k)
+            yield from flatten(t.v, v)
+    else:
+        raise NotImplementedError(t)
+
+def pack(t, it):
+    # MUST agree with flatten()
+    if decideable(t):
+        return next(it)
+    elif isinstance(t, TTuple):
+        return tuple(pack(tt, it) for tt in t.ts)
+    elif isinstance(t, TRecord):
+        return { f : pack(tt, it) for f, tt in t.fields }
+    elif isinstance(t, THandle):
+        return (pack(INT, it), pack(t.value_type, it))
+    elif is_collection(t):
+        n = next(it)
+        mask = []
+        elems = []
+        for i in range(n):
+            mask.append(pack(BOOL, it))
+            elems.append(pack(t.t, it))
+        return (mask, elems)
+    elif isinstance(t, TMap):
+        n = next(it)
+        default = pack(t.v, it)
+        mapping = []
+        for i in range(n):
+            mapping.append((
+                pack(BOOL, it),
+                pack(t.k, it),
+                pack(t.v, it)))
+        return {"default": default, "mapping": mapping}
+    raise NotImplementedError(t)
+
+def to_bool(e : z3.AstRef):
+    """
+    If `e` is a boolean literal, return its value (True or False).
+    Otherwise, return None.
+    """
+    # I'm not sure what is the "right" way to check whether `cond` is
+    # exactly Z3 true or Z3 false.  This seems to work on v4.5.0.
+    if isinstance(e, z3.BoolRef):
+        decl = str(e.decl())
+        if decl == "True":
+            return True
+        if decl == "False":
+            return False
+    return None
+
 @typechecked
 def ite(ty : Type, cond : z3.AstRef, then_branch, else_branch):
+    b = to_bool(cond)
+    if b is not None:
+        return then_branch if b else else_branch
+
     ctx = cond.ctx
     assert isinstance(ctx, z3.Context)
     if decideable(ty):
         return z3.If(cond, then_branch, else_branch, ctx)
-    elif isinstance(ty, TBag) or isinstance(ty, TList):
+    elif is_collection(ty):
         assert isinstance(then_branch, tuple)
         assert isinstance(else_branch, tuple)
         # print("CONSTRUCTING SYMBOLIC UNION [cond=({})]".format(cond))
@@ -111,24 +206,59 @@ class ToZ3(Visitor):
         self.int_one  = z3.IntVal(1, self.ctx)
         self.true = z3.BoolVal(True, self.ctx)
         self.false = z3.BoolVal(False, self.ctx)
+
+    def bool_to_z3(self, b):
+        return self.true if b else self.false
+
+    def bfold(self, xs : [z3.AstRef], f, identity : bool, bottom : bool):
+        xs = make_random_access(xs)
+        bs = [to_bool(c) for c in xs]
+        if any(b is bottom for b in bs):
+            return self.bool_to_z3(bottom)
+        xs = [c for (c, b) in zip(xs, bs) if b is not identity]
+        if not xs:
+            return self.bool_to_z3(identity)
+        return f(*xs, self.ctx)
+
+    def all(self, *conds): return self.bfold(conds, z3.And, True, False)
+    def any(self, *conds): return self.bfold(conds, z3.Or,  False, True)
+    def neg(self, cond):
+        b = to_bool(cond)
+        if b is True:  return self.false
+        if b is False: return self.true
+        return z3.Not(cond, self.ctx)
+    def implies(self, l, r):
+        b = to_bool(l)
+        if b is True:  return r
+        if b is False: return self.true
+        b = to_bool(r)
+        if b is True:  return self.true
+        if b is False: return self.neg(l)
+        return z3.Implies(l, r, self.ctx)
+
     def distinct(self, t, *values):
         if len(values) <= 1:
             return z3.BoolVal(True, self.ctx)
-        return z3.And(
+        return self.all(
             self.distinct(t, values[1:]),
-            *[z3.Not(self.eq(t, values[0], v1, {}), self.ctx) for v1 in values[1:]],
-            self.ctx)
+            *[self.neg(self.eq(t, values[0], v1, {})) for v1 in values[1:]])
     def lt(self, t, e1, e2, env, deep=False):
+        if e1 is e2:
+            return self.false
         if decideable(t):
             return e1 < e2
         else:
             raise NotImplementedError()
     def gt(self, t, e1, e2, env, deep=False):
+        if e1 is e2:
+            return self.false
         if decideable(t):
             return e1 > e2
         else:
             raise NotImplementedError()
     def eq(self, t, e1, e2, env, deep=False):
+        if e1 is e2:
+            return self.true
         if decideable(t):
             assert isinstance(e1, z3.AstRef), "{}".format(repr(e1))
             assert isinstance(e2, z3.AstRef), "{}".format(repr(e2))
@@ -152,15 +282,13 @@ class ToZ3(Visitor):
             # > > > T
             res[len(lhs_mask)][len(rhs_mask)] = self.true
             for row in reversed(range(len(lhs_mask))):
-                res[row][len(rhs_mask)] = z3.And(
+                res[row][len(rhs_mask)] = self.all(
                     res[row+1][len(rhs_mask)],
-                    z3.Not(lhs_mask[row], self.ctx),
-                    self.ctx)
+                    self.neg(lhs_mask[row]))
             for col in reversed(range(len(rhs_mask))):
-                res[len(lhs_mask)][col] = z3.And(
+                res[len(lhs_mask)][col] = self.all(
                     res[len(lhs_mask)][col+1],
-                    z3.Not(rhs_mask[col], self.ctx),
-                    self.ctx)
+                    self.neg(rhs_mask[col]))
 
             for row in reversed(range(len(lhs_mask))):
                 for col in reversed(range(len(rhs_mask))):
@@ -170,7 +298,7 @@ class ToZ3(Visitor):
                         ite(BOOL, lhs_m,
                             ite(BOOL, rhs_m,
                                 # both masks are true
-                                z3.And(eqs[row][col], res[row+1][col+1], self.ctx),
+                                self.all(eqs[row][col], res[row+1][col+1]),
                                 # only lhs mask: skip rhs
                                 res[row][col+1]),
                             ite(BOOL, rhs_m,
@@ -205,31 +333,40 @@ class ToZ3(Visitor):
                 # TODO: the(e1) == the(e2)
                 pass
 
-            return z3.And(*conds, self.ctx)
+            return self.all(*conds)
         elif isinstance(t, TMap):
             conds = [self.eq(t.v, e1["default"], e2["default"], env, deep=deep)]
             def map_keys(m):
                 return ([mask for (mask, k, v) in m["mapping"]], [k for (mask, k, v) in m["mapping"]])
             e1keys = map_keys(e1)
             e2keys = map_keys(e2)
-            for (mask, k, v) in e1["mapping"]:
-                conds.append(z3.Implies(mask, z3.And(self.is_in(t.k, e2keys, k, env), self.eq(t.v, self._map_get(t, e1, k, env), self._map_get(t, e2, k, env), env, deep=deep), self.ctx), self.ctx))
-            for (mask, k, v) in e2["mapping"]:
-                conds.append(z3.Implies(mask, z3.And(self.is_in(t.k, e1keys, k, env), self.eq(t.v, self._map_get(t, e1, k, env), self._map_get(t, e2, k, env), env, deep=deep), self.ctx), self.ctx))
-            return z3.And(*conds, self.ctx)
+            conds.append(self.eq(
+                TBag(t.k),
+                self.distinct_bag_elems(e1keys, t.k, env),
+                self.distinct_bag_elems(e2keys, t.k, env),
+                env,
+                deep=False))
+            for (mask, k, v) in e1["mapping"] + e2["mapping"]:
+                conds.append(self.implies(mask, self.eq(
+                    t.v,
+                    self._map_get(t, e1, k, env),
+                    self._map_get(t, e2, k, env),
+                    env,
+                    deep=deep)))
+            return self.all(*conds)
         elif isinstance(t, THandle):
             h1, val1 = e1
             h2, val2 = e2
             res = h1 == h2
             if deep:
-                res = z3.And(res, self.eq(t.value_type, val1, val2, env, deep=deep), self.ctx)
+                res = self.all(res, self.eq(t.value_type, val1, val2, env, deep=deep))
             return res
         elif isinstance(t, TRecord):
             conds = [self.eq(tt, e1[f], e2[f], env, deep=deep) for (f, tt) in t.fields]
-            return z3.And(*conds, self.ctx)
+            return self.all(*conds)
         elif isinstance(t, TTuple):
             conds = [self.eq(t, x, y, env, deep=deep) for (t, x, y) in zip(t.ts, e1, e2)]
-            return z3.And(*conds, self.ctx)
+            return self.all(*conds)
         else:
             raise NotImplementedError(t)
     def count_in(self, t, bag, x, env, deep=False):
@@ -244,7 +381,7 @@ class ToZ3(Visitor):
         bag_mask, bag_elems = bag
         l = self.int_zero
         for i in range(len(bag_elems)):
-            l = z3.If(z3.And(bag_mask[i], self.eq(t, x, bag_elems[i], env, deep=deep), self.ctx), self.int_one, self.int_zero, ctx=self.ctx) + l
+            l = ite(INT, self.all(bag_mask[i], self.eq(t, x, bag_elems[i], env, deep=deep)), self.int_one, self.int_zero) + l
         return l
     def is_in(self, t, bag, x, env, deep=False):
         """
@@ -257,14 +394,14 @@ class ToZ3(Visitor):
         """
         bag_mask, bag_elems = bag
         conds = [
-            z3.And(mask, self.eq(t, x, elem, env, deep=deep), self.ctx)
+            self.all(mask, self.eq(t, x, elem, env, deep=deep))
             for (mask, elem) in zip(bag_mask, bag_elems)]
-        return z3.Or(*conds, self.ctx)
+        return self.any(*conds)
     def len_of(self, val):
         bag_mask, bag_elems = val
         l = self.int_zero
         for i in range(len(bag_elems)):
-            l = z3.If(bag_mask[i], self.int_one, self.int_zero, ctx=self.ctx) + l
+            l = ite(INT, bag_mask[i], self.int_one, self.int_zero) + l
         return l
     def visit_TInt(self, t):
         return z3.IntSort(self.ctx)
@@ -297,13 +434,11 @@ class ToZ3(Visitor):
     def visit_EEmptyList(self, e, env):
         return ([], [])
     def visit_ESingleton(self, e, env):
-        return ([z3.BoolVal(True, self.ctx)], [self.visit(e.e, env)])
+        return ([self.true], [self.visit(e.e, env)])
     def visit_EHandle(self, e, env):
         return (self.visit(e.addr, env), self.visit(e.value, env))
     def visit_ENull(self, e, env):
         return (self.false, self.mkval(e.type.t))
-    def visit_ELet(self, e, env):
-        return self.apply(e.f, self.visit(e.e, env), env)
     def visit_ECall(self, call, env):
         args = [self.visit(x, env) for x in call.args]
         return env[call.func](*args)
@@ -322,7 +457,7 @@ class ToZ3(Visitor):
         for m, es in zip(mask, elems):
             sub_mask, sub_elems = es
             for mm, ee in zip(sub_mask, sub_elems):
-                res_mask.append(z3.And(m, mm, self.ctx))
+                res_mask.append(self.all(m, mm))
                 res_elems.append(ee)
         return (res_mask, res_elems)
     def visit_ECond(self, e, env):
@@ -335,19 +470,19 @@ class ToZ3(Visitor):
         if elems:
             rest_mask, rest_elems = self.raw_filter(
                 self.distinct_bag_elems((mask[1:], elems[1:]), elem_type, env),
-                lambda x: z3.Implies(mask[0], z3.Not(self.eq(elem_type, elems[0], x, env), self.ctx), self.ctx))
+                lambda x: self.implies(mask[0], self.neg(self.eq(elem_type, elems[0], x, env))))
             return ([mask[0]] + rest_mask, [elems[0]] + rest_elems)
         else:
             return bag
     def visit_EUnaryOp(self, e, env):
         if e.op == UOp.Not:
-            return z3.Not(self.visit(e.e, env), ctx=self.ctx)
+            return self.neg(self.visit(e.e, env))
         elif e.op == UOp.Sum:
             bag = self.visit(e.e, env)
             bag_mask, bag_elems = bag
             sum = self.int_zero
             for i in range(len(bag_elems)):
-                sum = z3.If(bag_mask[i], bag_elems[i], self.int_zero, ctx=self.ctx) + sum
+                sum = ite(INT, bag_mask[i], bag_elems[i], self.int_zero) + sum
             return sum
         elif e.op == UOp.Length:
             v = EVar("v").with_type(e.e.type.t)
@@ -357,25 +492,24 @@ class ToZ3(Visitor):
                 bag_mask, bag_elems = bag
                 rest = (bag_mask[1:], bag_elems[1:])
                 if bag_elems:
-                    return z3.And(
-                        z3.Implies(bag_mask[0], z3.Not(self.is_in(e.e.type.t, rest, bag_elems[0], env), self.ctx), self.ctx),
-                        is_unique(rest),
-                        self.ctx)
+                    return self.all(
+                        self.implies(bag_mask[0], self.neg(self.is_in(e.e.type.t, rest, bag_elems[0], env))),
+                        is_unique(rest))
                 else:
                     return self.true
             return is_unique(self.visit(e.e, env))
         elif e.op == UOp.Empty:
             mask, elems = self.visit(e.e, env)
-            return z3.Not(z3.Or(*mask, self.ctx), self.ctx)
+            return self.neg(self.any(*mask))
         elif e.op == UOp.Exists:
             mask, elems = self.visit(e.e, env)
-            return z3.Or(*mask, self.ctx)
+            return self.any(*mask)
         elif e.op == UOp.All:
             mask, elems = self.visit(e.e, env)
-            return z3.And(*[z3.Implies(m, e, self.ctx) for (m, e) in zip(mask, elems)], self.ctx)
+            return self.all(*[self.implies(m, e) for (m, e) in zip(mask, elems)])
         elif e.op == UOp.Any:
             mask, elems = self.visit(e.e, env)
-            return z3.Or(*[z3.And(m, e, self.ctx) for (m, e) in zip(mask, elems)], self.ctx)
+            return self.any(*[self.all(m, e) for (m, e) in zip(mask, elems)])
         elif e.op == UOp.Distinct:
             elem_type = e.type.t
             return self.distinct_bag_elems(self.visit(e.e, env), elem_type, env)
@@ -385,7 +519,7 @@ class ToZ3(Visitor):
             t = e.type
             bag = self.visit(e.e, env)
             mask, elems = bag
-            exists = z3.Or(*mask, self.ctx)
+            exists = self.any(*mask)
             elem = self.mkval(t)
             for (m, e) in reversed(list(zip(mask, elems))):
                 elem = ite(t, m, e, elem)
@@ -418,10 +552,10 @@ class ToZ3(Visitor):
                 legal = m
             else:
                 bestkey = ite(keytype,
-                    z3.Or(z3.And(m, cmp(keytype, key, bestkey, env), self.ctx), z3.Not(legal, self.ctx), self.ctx),
+                    self.any(self.all(m, cmp(keytype, key, bestkey, env)), self.neg(legal)),
                     key,
                     bestkey)
-                legal = z3.Or(m, legal, self.ctx)
+                legal = self.any(m, legal)
         # print(" -> bestkey={}".format(bestkey))
 
         # 2nd pass: find the first elem having that key
@@ -435,10 +569,10 @@ class ToZ3(Visitor):
                 legal = m
             else:
                 res = ite(e.type,
-                    z3.Or(z3.And(m, self.eq(keytype, key, bestkey, env), self.ctx), z3.Not(legal, self.ctx), self.ctx),
+                    self.any(self.all(m, self.eq(keytype, key, bestkey, env)), self.neg(legal)),
                     x,
                     res)
-                legal = z3.Or(m, legal, self.ctx)
+                legal = self.any(m, legal)
         # print(" -> res={}".format(res))
 
         return ite(e.type, legal, res, self.mkval(e.type))
@@ -462,7 +596,7 @@ class ToZ3(Visitor):
         if not masks:
             return bag
         rest_masks, rest_elems = self.remove_one(bag_type, (masks[1:], elems[1:]), elem, env)
-        return ite(bag_type, z3.And(masks[0], self.eq(bag_type.t, elems[0], elem, env), self.ctx),
+        return ite(bag_type, self.all(masks[0], self.eq(bag_type.t, elems[0], elem, env)),
             (masks[1:], elems[1:]),
             ([masks[0]] + rest_masks, [elems[0]] + rest_elems))
     def remove_all(self, bag_type, bag, to_remove, env):
@@ -483,13 +617,13 @@ class ToZ3(Visitor):
         v1 = self.visit(e.e1, env)
         v2 = self.visit(e.e2, env)
         if e.op == BOp.And:
-            return z3.And(v1, v2, self.ctx)
+            return self.all(v1, v2)
         elif e.op == BOp.Or:
-            return z3.Or(v1, v2, self.ctx)
+            return self.any(v1, v2)
         elif e.op == "==":
             return self.eq(e.e1.type, v1, v2, env)
         elif e.op == "!=":
-            return z3.Not(self.eq(e.e1.type, v1, v2, env), ctx=self.ctx)
+            return self.neg(self.eq(e.e1.type, v1, v2, env))
         elif e.op == "===":
             return self.eq(e.e1.type, v1, v2, env, deep=True)
         elif e.op == ">":
@@ -507,7 +641,7 @@ class ToZ3(Visitor):
                 return (v1[0] + v2[0], v1[1] + v2[1])
             elif isinstance(e.type, TSet):
                 return self.visit(EUnaryOp(UOp.Distinct, EBinOp(e.e1, "+", e.e2).with_type(TBag(e.type.t))).with_type(TBag(e.type.t)), env)
-            elif isinstance(e.type, TInt):
+            elif is_numeric(e.type):
                 return v1 + v2
             else:
                 raise NotImplementedError(e.type)
@@ -564,7 +698,7 @@ class ToZ3(Visitor):
         bag_mask, bag_elems = bag
         res_mask = []
         for mask, x in zip(bag_mask, bag_elems):
-            res_mask.append(z3.And(mask, p(x), self.ctx))
+            res_mask.append(self.all(mask, p(x)))
         return res_mask, bag_elems
     def visit_EFilter(self, e, env):
         return self.do_filter(self.visit(e.e, env), e.p, env)
@@ -597,12 +731,12 @@ class ToZ3(Visitor):
     def _map_get(self, map_type, map, key, env):
         res = map["default"]
         # print("map get {} on {}".format(key, map))
-        for (mask, k, v) in map["mapping"]:
+        for (mask, k, v) in reversed(map["mapping"]):
             # print("   k   = {}".format(repr(k)))
             # print("   key = {}".format(repr(key)))
             # print("   v   = {}".format(repr(v)))
             # print("   res = {}".format(repr(res)))
-            res = ite(map_type.v, z3.And(mask, self.eq(map_type.k, k, key, env), self.ctx), v, res)
+            res = ite(map_type.v, self.all(mask, self.eq(map_type.k, k, key, env)), v, res)
         return res
     def visit_EMapGet(self, e, env):
         map = self.visit(e.map, env)
@@ -610,9 +744,50 @@ class ToZ3(Visitor):
         return self._map_get(e.map.type, map, key, env)
     def visit_EApp(self, e, env):
         return self.apply(e.f, self.visit(e.arg, env), env)
+    def visit_ELet(self, e, env):
+        return self.apply(e.f, self.visit(e.e, env), env)
     def apply(self, lam : ELambda, arg : object, env):
         with extend(env, lam.arg.id, arg):
             return self.visit(lam.body, env)
+        if not hasattr(self, "_lambdacache"):
+            self._lambdacache = {}
+
+        use_forall = False
+
+        arg_type = lam.arg.type
+        body_type = lam.body.type
+        argv = list(flatten(arg_type, arg))
+        key = (len(argv), lam)
+        funcs = self._lambdacache.get(key)
+
+        if funcs is None:
+            # print("creating lambda: {}@{} -> {}".format(pprint(arg_type), len(argv), pprint(body_type)))
+            symb_argv = [v if isinstance(v, int) else z3.Const(fresh_name(), v.sort()) for v in argv]
+            z3_vars = [v for v in symb_argv if not isinstance(v, int)]
+            symb_arg = pack(arg_type, iter(symb_argv))
+            with extend(env, lam.arg.id, symb_arg):
+                res = self.visit(lam.body, env)
+            funcs = []
+            for z3_body in flatten(body_type, res):
+                if isinstance(z3_body, int):
+                    funcs.append(z3_body)
+                else:
+                    fname = fresh_name("f")
+                    f = z3.Function(fname, *[v.sort() for v in z3_vars], z3_body.sort())
+                    if use_forall:
+                        self.solver.add(z3.ForAll(z3_vars, f(*z3_vars) == z3_body))
+                    funcs.append((f, z3_vars, z3_body))
+            self._lambdacache[key] = funcs
+
+        if funcs is not None:
+            # print("calling {} with {}".format(funcs, argv))
+            if use_forall:
+                return pack(body_type, (f if isinstance(f, int) else f[0](*[v for v in argv if not isinstance(v, int)]) for f in funcs))
+            else:
+                return pack(body_type, (f if isinstance(f, int) else z3.substitute(f[2], *zip(f[1], [x for x in argv if not isinstance(x, int)])) for f in funcs))
+        else:
+            with extend(env, lam.arg.id, arg):
+                return self.visit(lam.body, env)
     def visit_clauses(self, clauses, e, env):
         if not clauses:
             return [True], [self.visit(e, env)]
@@ -621,7 +796,7 @@ class ToZ3(Visitor):
             bag_mask, bag_elems = self.visit_clauses(clauses[1:], e, env)
             res_mask = []
             for i in range(len(bag_elems)):
-                incl_this = z3.And(bag_mask[i], self.visit(c.e, env), self.ctx)
+                incl_this = self.all(bag_mask[i], self.visit(c.e, env))
                 res_mask += [incl_this]
             return res_mask, bag_elems
         elif isinstance(c, CPull):
@@ -632,7 +807,7 @@ class ToZ3(Visitor):
                 env2 = dict(env)
                 env2[c.id] = bag_elems[i]
                 bag2_mask, bag2_elems = self.visit_clauses(clauses[1:], e, env2)
-                res_mask += [z3.And(incl_this, bit, self.ctx) for bit in bag2_mask]
+                res_mask += [self.all(incl_this, bit) for bit in bag2_mask]
                 res_elems += bag2_elems
             return res_mask, res_elems
     def visit_EStateVar(self, e, env):
@@ -649,6 +824,9 @@ class ToZ3(Visitor):
             return super().visit(e, *args)
         except:
             print("failed to convert {}".format(pprint(e)))
+            print("  ---> {!r}".format(e))
+            print("  ---> src:  {}".format(getattr(e, "_src", "?")))
+            print("  ---> type: {}".format(getattr(e, "_type_src", "?")))
             raise
 
     def mkval(self, type):
@@ -719,21 +897,21 @@ class ToZ3(Visitor):
             res = self.mkvar(collection_depth, TBag(type.t), on_z3_var, on_z3_assertion)
             mask, elems = res
             for i in range(1, len(mask)):
-                on_z3_assertion(z3.Implies(mask[i], self.distinct(type.t, *(elems[:(i+1)])), ctx))
+                on_z3_assertion(self.implies(mask[i], self.distinct(type.t, *(elems[:(i+1)]))))
             return res
         elif isinstance(type, TBag) or isinstance(type, TList):
             mask = [self.mkvar(collection_depth, BOOL, on_z3_var, on_z3_assertion) for i in range(collection_depth)]
             elems = [self.mkvar(collection_depth, type.t, on_z3_var, on_z3_assertion) for i in range(collection_depth)]
             # symmetry breaking
             for i in range(len(mask) - 1):
-                on_z3_assertion(z3.Implies(mask[i], mask[i+1], ctx))
+                on_z3_assertion(self.implies(mask[i], mask[i+1]))
             return (mask, elems)
         elif isinstance(type, TMap):
             default = self.mkval(type.v)
             mask = [self.mkvar(collection_depth, BOOL, on_z3_var, on_z3_assertion) for i in range(collection_depth)]
             # symmetry breaking
             for i in range(len(mask) - 1):
-                on_z3_assertion(z3.Implies(mask[i], mask[i+1], ctx))
+                on_z3_assertion(self.implies(mask[i], mask[i+1]))
             return {
                 "mapping": [(
                     mask[i],
@@ -773,182 +951,262 @@ def mkconst(ctx, solver, val):
     else:
         raise NotImplementedError(repr(val))
 
-_LOCK = threading.Lock()
-def satisfy(e, vars = None, funcs = None, collection_depth : int = None, validate_model : bool = True, model_callback = None, logic : str = None, timeout : float = None):
-    if collection_depth is None:
-        collection_depth = collection_depth_opt.value
-    start = datetime.now()
-    with _LOCK:
-        # print("Checking sat (|e|={}); time to acquire lock = {}".format(e.size(), datetime.now() - start))
-        start = datetime.now()
-        # print("sat? {}".format(pprint(e)))
-        assert e.type == BOOL
+_start = None
+_debug_duration = timedelta(seconds=5)
+def _tick():
+    global _start
+    _start = datetime.now()
 
-        ctx = z3.Context()
-        solver = z3.Solver(ctx=ctx) if logic is None else z3.SolverFor(logic, ctx=ctx)
-        if timeout is not None:
-            solver.set("timeout", int(timeout * 1000))
-        solver.set("core.validate", validate_model)
-        visitor = ToZ3(ctx, solver)
+def _tock(e, event):
+    global _start
+    now = datetime.now()
+    # print("tock({}) @ {}".format(event, now))
+    elapsed = now - _start
+    _start = now
+    if elapsed > _debug_duration:
+        import sys
+        print("took {elapsed}s to {event}".format(event=event, elapsed=elapsed.total_seconds()), file=sys.stderr)
+        # print("e = {}".format(pprint(e)), file=sys.stderr)
+        # print(repr(e), file=sys.stderr)
+        # raise NotImplementedError()
 
-        def reconstruct(model, value, type):
-            if type == INT or type == LONG:
-                return model.eval(value, model_completion=True).as_long()
-            elif type == REAL or type == FLOAT:
-                return model.eval(value, model_completion=True).as_fraction()
-            elif isinstance(type, TNative):
-                return (type.name, model.eval(value, model_completion=True).as_long())
-            elif type == STRING:
-                i = model.eval(value, model_completion=True).as_long()
-                return "a" * i
-            elif type == BOOL:
-                return bool(model.eval(value, model_completion=True))
-            elif isinstance(type, TBag) or isinstance(type, TSet) or isinstance(type, TList):
-                mask, elems = value
-                real_val = []
-                for i in range(len(elems)):
-                    if reconstruct(model, mask[i], BOOL):
-                        real_val.append(reconstruct(model, elems[i], type.t))
-                if isinstance(type, TList):
-                    return tuple(real_val)
-                return evaluation.Bag(real_val)
-            elif isinstance(type, TMap):
-                default = reconstruct(model, value["default"], type.v)
-                res = evaluation.Map(type, default)
-                for (mask, k, v) in value["mapping"]:
-                    # K/V pairs appearing later in value["mapping"] have precedence,
-                    # so overwriting here is the correct move.
-                    if reconstruct(model, mask, BOOL):
-                        k = reconstruct(model, k, type.k)
-                        v = reconstruct(model, v, type.v)
-                        res[k] = v
-                return res
-            elif isinstance(type, TEnum):
-                val = model.eval(value, model_completion=True).as_long()
-                return type.cases[val]
-            elif isinstance(type, THandle):
-                id, val = value
-                id = reconstruct(model, id, INT)
-                val = reconstruct(model, val, type.value_type)
-                return evaluation.Handle(id, val)
-            elif isinstance(type, TRecord):
-                res = defaultdict(lambda: None)
-                for (field, t) in type.fields:
-                    res[field] = reconstruct(model, value[field], t)
-                return FrozenDict(res)
-            elif isinstance(type, TTuple):
-                return tuple(reconstruct(model, v, t) for (v, t) in zip(value, type.ts))
-            else:
-                raise NotImplementedError(type)
+_LOCK = threading.RLock()
 
-        _env = { }
-        if funcs is None:
-            funcs = free_funcs(e)
+class IncrementalSolver(object):
+    def __init__(self,
+            vars = None,
+            funcs = None,
+            collection_depth : int = None,
+            validate_model : bool = True,
+            model_callback = None,
+            logic : str = None,
+            timeout : float = None):
+
+        if collection_depth is None:
+            collection_depth = collection_depth_opt.value
+
+        self.vars = OrderedSet()
+        self.funcs = OrderedDict()
+        self.collection_depth = collection_depth
+        self.validate_model = validate_model
+        self.model_callback = model_callback
+        self._env = OrderedDict()
+
+        with _LOCK:
+            ctx = z3.Context()
+            solver = z3.Solver(ctx=ctx) if logic is None else z3.SolverFor(logic, ctx=ctx)
+            if timeout is not None:
+                solver.set("timeout", int(timeout * 1000))
+            solver.set("core.validate", validate_model)
+            visitor = ToZ3(ctx, solver)
+
+            self.visitor = visitor
+            self.z3_solver = solver
+            self._create_vars(vars=vars or (), funcs=funcs or {})
+
+    def _create_vars(self, vars, funcs):
         for f, t in funcs.items():
-            _env[f] = visitor.mkvar(collection_depth, t)
-        fvs = free_vars(e)
-        if vars is None:
-            vars = fvs
-        else:
-            vars = list(vars) + [v for v in fvs if v not in vars]
+            if f not in self._env:
+                self._env[f] = self.visitor.mkvar(self.collection_depth, t)
+                self.funcs[f] = t
         for v in vars:
-            # print("{} : {}".format(pprint(v), pprint(v.type)))
-            _env[v.id] = visitor.mkvar(collection_depth, v.type)
-        # print(_env)
+            if v.id not in self._env:
+                self._env[v.id] = self.visitor.mkvar(self.collection_depth, v.type)
+                self.vars.add(v)
 
+    def _convert(self, e):
+        _tick()
+        orig_size = len(list(all_exps(e)))
+        orig_e = e
+        e = purify(e)
+        e = cse(e, verify=False)
+        _tock(e, "cse (size: {} --> {})".format(orig_size, len(list(all_exps(e)))))
+        with _LOCK:
+            self._create_vars(vars=free_vars(e), funcs=free_funcs(e))
+            return self.visitor.visit(e, self._env)
+
+    def add_assumption(self, e):
+        # print("adding assumption {} to {}".format(pprint(e), id(self)))
         try:
-            solver.add(visitor.visit(e, _env))
+            with _LOCK:
+                self.z3_solver.add(self._convert(e))
         except Exception:
-            print(" ---> to reproduce: satisfy({e}, vars={vars}, collection_depth={collection_depth}, validate_model={validate_model})".format(
-                e=repr(e),
-                vars=repr(vars),
-                collection_depth=repr(collection_depth),
-                validate_model=repr(validate_model)))
+            print(" ---> to reproduce: satisfy({e!r}, vars={vars!r}, collection_depth={collection_depth!r}, validate_model={validate_model!r})".format(
+                e=e,
+                vars=self.vars,
+                collection_depth=self.collection_depth,
+                validate_model=self.validate_model))
             raise
 
-        # print(solver.assertions())
-        res = solver.check()
-        # print("Checked (res={}); time to encode/solve = {}".format(res, datetime.now() - start))
-        if res == z3.unsat:
-            return None
-        elif res == z3.unknown:
-            raise SolverReportedUnknown("z3 reported unknown")
-        else:
-            def mkfunc(f, arg_types, out_type):
-                @lru_cache(maxsize=None)
-                def extracted_func(*args):
-                    return reconstruct(model, f(*[visitor.unreconstruct(v, t) for (v, t) in zip(args, arg_types)]), out_type)
-                return extracted_func
-            model = solver.model()
-            # print(model)
-            res = { }
-            for name, t in funcs.items():
-                f = _env[name]
-                out_type = t.ret_type
-                arg_types = t.arg_types
-                res[name] = mkfunc(f, arg_types, out_type)
-            for v in vars:
-                res[v.id] = reconstruct(model, _env[v.id], v.type)
-            if model_callback is not None:
-                model_callback(res)
-            if validate_model:
-                x = evaluation.eval(e, res)
-                if x is not True:
-                    print("bad example: {}".format(res))
-                    print(" ---> formula: {}".format(pprint(e)))
-                    print(" ---> got {}".format(repr(x)))
-                    print(" ---> model: {}".format(model))
-                    print(" ---> assertions: {}".format(solver.assertions()))
-                    print(" ---> to reproduce: satisfy({e}, vars={vars}, collection_depth={collection_depth}, validate_model={validate_model})".format(
-                        e=repr(e),
-                        vars=repr(vars),
-                        collection_depth=repr(collection_depth),
-                        validate_model=repr(validate_model)))
-                    if save_solver_testcases.value:
-                        with open(save_solver_testcases.value, "a") as f:
-                            f.write("satisfy({e}, vars={vars}, collection_depth={collection_depth}, validate_model={validate_model})".format(
-                                e=repr(e),
-                                vars=repr(vars),
-                                collection_depth=repr(collection_depth),
-                                validate_model=repr(validate_model)))
-                            f.write("\n")
-                    from cozy.syntax_tools import all_exps, equal
-                    wq = [(e, _env, res)]
-                    while wq:
-                        x, solver_env, eval_env = wq.pop()
-                        for x in sorted(all_exps(e), key=lambda xx: xx.size()):
-                            if all(v.id in eval_env for v in free_vars(x)) and not isinstance(x, ELambda):
-                                solver_val = reconstruct(model, visitor.visit(x, solver_env), x.type)
-                                v = fresh_name("tmp")
-                                eval_env[v] = solver_val
-                                eval_val = evaluation.eval(equal(x, EVar(v).with_type(x.type)), eval_env)
-                                if not eval_val:
-                                    print(" ---> disagreement on {}".format(pprint(x)))
-                                    print(" ---> Solver: {}".format(solver_val))
-                                    print(" ---> Eval'r: {}".format(evaluation.eval(x, eval_env)))
-                                    for v in free_vars(x):
-                                        print(" ---> s[{}] = {}".format(v.id, solver_env[v.id]))
-                                        print(" ---> e[{}] = {}".format(v.id, eval_env[v.id]))
-                                    for i, c in enumerate(x.children()):
-                                        if isinstance(c, Exp) and not isinstance(c, ELambda):
-                                            print(" ---> solver arg[{}] = {}".format(i, reconstruct(model, visitor.visit(c, solver_env), c.type)))
-                                            print(" ---> eval'r arg[{}] = {}".format(i, evaluation.eval(c, eval_env)))
-                                    if isinstance(x, EFilter):
-                                        smask, selems = visitor.visit(x.e, solver_env)
-                                        for (mask, elem) in zip(smask, selems):
-                                            if reconstruct(model, mask, BOOL):
-                                                # print("recursing on {}".format(elem))
-                                                senv = dict(solver_env)
-                                                eenv = dict(eval_env)
-                                                senv[x.p.arg.id] = elem
-                                                eenv[x.p.arg.id] = reconstruct(model, elem, x.type.t)
-                                                wq.append((x.p.body, senv, eenv))
-                                    break
-                    raise ModelValidationError("model validation failed")
-            return res
+    def satisfy(self, e):
+        # print(pprint(e))
+        # print("sat? {}".format(pprint(e)))
+        # assert e.type == BOOL
+
+        _env = self._env
+        solver = self.z3_solver
+        vars = self.vars
+        visitor = self.visitor
+
+        with _LOCK:
+            _tick()
+
+            def reconstruct(model, value, type):
+                if type == INT or type == LONG:
+                    return model.eval(value, model_completion=True).as_long()
+                elif type == REAL or type == FLOAT:
+                    return model.eval(value, model_completion=True).as_fraction()
+                elif isinstance(type, TNative):
+                    return (type.name, model.eval(value, model_completion=True).as_long())
+                elif type == STRING:
+                    i = model.eval(value, model_completion=True).as_long()
+                    return "a" * i
+                elif type == BOOL:
+                    return bool(model.eval(value, model_completion=True))
+                elif isinstance(type, TBag) or isinstance(type, TSet) or isinstance(type, TList):
+                    mask, elems = value
+                    real_val = []
+                    for i in range(len(elems)):
+                        if reconstruct(model, mask[i], BOOL):
+                            real_val.append(reconstruct(model, elems[i], type.t))
+                    if isinstance(type, TList):
+                        return tuple(real_val)
+                    return evaluation.Bag(real_val)
+                elif isinstance(type, TMap):
+                    default = reconstruct(model, value["default"], type.v)
+                    res = evaluation.Map(type, default)
+                    for (mask, k, v) in value["mapping"]:
+                        # K/V pairs appearing earlier in value["mapping"] have precedence
+                        if reconstruct(model, mask, BOOL):
+                            k = reconstruct(model, k, type.k)
+                            if k not in res.keys():
+                                v = reconstruct(model, v, type.v)
+                                res[k] = v
+                    return res
+                elif isinstance(type, TEnum):
+                    val = model.eval(value, model_completion=True).as_long()
+                    return type.cases[val]
+                elif isinstance(type, THandle):
+                    id, val = value
+                    id = reconstruct(model, id, INT)
+                    val = reconstruct(model, val, type.value_type)
+                    return evaluation.Handle(id, val)
+                elif isinstance(type, TRecord):
+                    res = defaultdict(lambda: None)
+                    for (field, t) in type.fields:
+                        res[field] = reconstruct(model, value[field], t)
+                    return FrozenDict(res)
+                elif isinstance(type, TTuple):
+                    return tuple(reconstruct(model, v, t) for (v, t) in zip(value, type.ts))
+                else:
+                    raise NotImplementedError(type)
+
+            solver.push()
+            self.add_assumption(e)
+
+            # print(solver.assertions())
+            _tock(e, "encode")
+            res = solver.check()
+            _tock(e, "solve")
+            if res == z3.unsat:
+                return None
+            elif res == z3.unknown:
+                raise SolverReportedUnknown("z3 reported unknown")
+            else:
+                def mkfunc(f, arg_types, out_type):
+                    @lru_cache(maxsize=None)
+                    def extracted_func(*args):
+                        return reconstruct(model, f(*[visitor.unreconstruct(v, t) for (v, t) in zip(args, arg_types)]), out_type)
+                    return extracted_func
+                model = solver.model()
+                # print(model)
+                res = { }
+                for name, t in self.funcs.items():
+                    f = _env[name]
+                    out_type = t.ret_type
+                    arg_types = t.arg_types
+                    res[name] = mkfunc(f, arg_types, out_type)
+                for v in vars:
+                    res[v.id] = reconstruct(model, _env[v.id], v.type)
+                if self.model_callback is not None:
+                    self.model_callback(res)
+                if self.validate_model:
+                    x = evaluation.eval(e, res)
+                    if x is not True:
+                        print("bad example: {}".format(res))
+                        print(" ---> formula: {}".format(pprint(e)))
+                        print(" ---> got {}".format(repr(x)))
+                        print(" ---> model: {}".format(model))
+                        print(" ---> assertions: {}".format(solver.assertions()))
+                        print(" ---> to reproduce: satisfy({e}, vars={vars}, collection_depth={collection_depth}, validate_model={validate_model})".format(
+                            e=repr(e),
+                            vars=repr(vars),
+                            collection_depth=repr(self.collection_depth),
+                            validate_model=repr(self.validate_model)))
+                        if save_solver_testcases.value:
+                            with open(save_solver_testcases.value, "a") as f:
+                                f.write("satisfy({e}, vars={vars}, collection_depth={collection_depth}, validate_model={validate_model})".format(
+                                    e=repr(e),
+                                    vars=repr(vars),
+                                    collection_depth=repr(self.collection_depth),
+                                    validate_model=repr(self.validate_model)))
+                                f.write("\n")
+                        wq = [(e, _env, res)]
+                        while wq:
+                            # print("checking ?/{}...".format(len(wq)))
+                            x, solver_env, eval_env = wq.pop()
+                            for x in sorted(all_exps(x), key=lambda xx: xx.size()):
+                                if all(v.id in eval_env for v in free_vars(x)) and not isinstance(x, ELambda):
+                                    solver_val = reconstruct(model, visitor.visit(x, solver_env), x.type)
+                                    v = fresh_name("tmp")
+                                    eval_env[v] = solver_val
+                                    eval_val = evaluation.eval(EEq(x, EVar(v).with_type(x.type)), eval_env)
+                                    if not eval_val:
+                                        print(" ---> disagreement on {}".format(pprint(x)))
+                                        print(" ---> Solver: {}".format(solver_val))
+                                        print(" ---> Eval'r: {}".format(evaluation.eval(x, eval_env)))
+                                        for v in free_vars(x):
+                                            print(" ---> s[{}] = {}".format(v.id, solver_env[v.id]))
+                                            print(" ---> e[{}] = {}".format(v.id, eval_env[v.id]))
+                                        for i, c in enumerate(x.children()):
+                                            if isinstance(c, Exp) and not isinstance(c, ELambda):
+                                                print(" ---> solver arg[{}] = {}".format(i, reconstruct(model, visitor.visit(c, solver_env), c.type)))
+                                                print(" ---> eval'r arg[{}] = {}".format(i, evaluation.eval(c, eval_env)))
+                                        if isinstance(x, EFilter):
+                                            smask, selems = visitor.visit(x.e, solver_env)
+                                            for (mask, elem) in zip(smask, selems):
+                                                if reconstruct(model, mask, BOOL):
+                                                    # print("recursing on {}".format(elem))
+                                                    senv = dict(solver_env)
+                                                    eenv = dict(eval_env)
+                                                    senv[x.p.arg.id] = elem
+                                                    eenv[x.p.arg.id] = reconstruct(model, elem, x.type.t)
+                                                    wq.append((x.p.body, senv, eenv))
+                                        elif isinstance(x, ELet):
+                                            z = visitor.visit(x.e, solver_env)
+                                            senv = dict(solver_env)
+                                            eenv = dict(eval_env)
+                                            senv[x.f.arg.id] = z
+                                            eenv[x.f.arg.id] = reconstruct(model, z, x.e.type)
+                                            wq.append((x.f.body, senv, eenv))
+                                        break
+                        raise ModelValidationError("model validation failed")
+                _tock(e, "extract model")
+                solver.pop()
+                return res
+
+    def satisfiable(self, e):
+        return self.satisfy(e) is not None
+
+    def valid(self, e):
+        return not satisfiable(ENot(e))
+
+def satisfy(e, **opts):
+    s = IncrementalSolver(**opts)
+    return s.satisfy(e)
 
 def satisfiable(e, **opts):
     return satisfy(e, **opts) is not None
 
 def valid(e, **opts):
-    return satisfy(EUnaryOp("not", e).with_type(BOOL), **opts) is None
+    return satisfy(ENot(e), **opts) is None

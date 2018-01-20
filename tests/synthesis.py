@@ -20,7 +20,7 @@ class TestSynthesisCore(unittest.TestCase):
         bag = Bag((handle1, handle2, handle3))
         examples = [{ "x": bag }]
         binder = EVar("binder").with_type(BOOL)
-        new_examples = list(instantiate_examples((zero,), examples, [binder]))
+        new_examples = list(instantiate_examples(examples, [binder]))
         assert new_examples == [
             { "x": bag, "binder": False }]
 
@@ -33,10 +33,11 @@ class TestSynthesisCore(unittest.TestCase):
         assert retypecheck(target)
         assert retypecheck(assumptions)
         def should_stop():
-            return isinstance(res, EVar)
+            return res == EStateVar(EVar("xs"))
         for r in improve(target, assumptions, [x], [xs], [], CompositeCostModel(), BinderBuilder([x], [xs], []), stop_callback=should_stop):
             print(pprint(r))
             res = r
+        assert should_stop()
 
     def test_incomplete_binders_list(self):
         res = None
@@ -47,10 +48,11 @@ class TestSynthesisCore(unittest.TestCase):
         assert retypecheck(target)
         assert retypecheck(assumptions)
         def should_stop():
-            return isinstance(res, EVar)
+            return res == EStateVar(EVar("xs"))
         for r in improve(target, assumptions, [], [xs], [], CompositeCostModel(), BinderBuilder([], [xs], []), stop_callback=should_stop):
             print(pprint(r))
             res = r
+        assert should_stop()
 
     def test_incomplete_binders_list_2(self):
         res = None
@@ -61,7 +63,8 @@ class TestSynthesisCore(unittest.TestCase):
         assert retypecheck(target)
         assert retypecheck(assumptions)
         def should_stop():
-            return isinstance(res, EVar)
+            return res == EStateVar(EVar("xs"))
         for r in improve(target, assumptions, [], [xs], [], CompositeCostModel(), BinderBuilder([], [xs], []), stop_callback=should_stop):
             print(pprint(r))
             res = r
+        assert should_stop()

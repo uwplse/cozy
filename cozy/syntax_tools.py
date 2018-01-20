@@ -61,16 +61,18 @@ class BottomUpExplorer(common.Visitor):
 class BottomUpRewriter(BottomUpExplorer):
     def join(self, x, new_children):
         if isinstance(x, common.ADT):
+            if all(a is b for (a, b) in zip(x.children(), new_children)):
+                return x
             out = type(x)(*new_children)
+            if isinstance(x, syntax.Exp) and hasattr(x, "type"):
+                out.type = x.type
+            return out
         elif type(x) in [list, tuple, dict]:
-            out = type(x)(new_children)
+            if type(x) in [list, tuple] and all(a is b for (a, b) in zip(x, new_children)):
+                return x
+            return type(x)(new_children)
         else:
-            out = x
-        if isinstance(x, syntax.Exp) and hasattr(x, "type"):
-            out.type = x.type
-        if isinstance(x, syntax.THandle) and hasattr(x, "value_type"):
-            out.value_type = x.value_type
-        return out
+            return x
 
 def strip_EStateVar(e : syntax.Exp):
     class V(BottomUpRewriter):
@@ -96,20 +98,40 @@ def all_types(ast):
     return common.unique(TypeCollector().visit(ast))
 
 class PrettyPrinter(common.Visitor):
+    def __init__(self):
+        # settings
+        self.format = "plain" # or "html"
+
+    def format_keyword(self, kw):
+        if self.format == "html":
+            return '<span class="kw">{}</span>'.format(kw)
+        return kw
+
+    def format_builtin(self, builtin):
+        if self.format == "html":
+            return '<span class="builtin">{}</span>'.format(builtin)
+        return builtin
+
+    def format_lt(self):
+        return "&lt;" if self.format == "html" else "<"
+
+    def format_gt(self):
+        return "&gt;" if self.format == "html" else ">"
+
     def visit_Spec(self, spec):
         s = spec.name + ":\n"
         for name, t in spec.types:
-            s += "  type {} = {}\n".format(name, self.visit(t))
+            s += "  {} {} = {}\n".format(self.format_keyword("type"), name, self.visit(t))
         for name, t in spec.statevars:
-            s += "  state {} : {}\n".format(name, self.visit(t))
+            s += "  {} {} : {}\n".format(self.format_keyword("state"), name, self.visit(t))
         for e in spec.assumptions:
-            s += "  assume {};\n".format(self.visit(e))
+            s += "  {} {};\n".format(self.format_keyword("assume"), self.visit(e))
         for op in spec.methods:
             s += str(self.visit(op))
         return s
 
     def visit_TEnum(self, enum):
-        return "enum {{ {} }}".format(", ".join(enum.cases))
+        return "{} {{ {} }}".format(self.format_keyword("enum"), ", ".join(enum.cases))
 
     def visit_TNamed(self, named):
         return named.id
@@ -118,34 +140,34 @@ class PrettyPrinter(common.Visitor):
         return t.name
 
     def visit_TApp(self, app):
-        return "{}<{}>".format(app.t, self.visit(app.args))
+        return "{}{lt}{}{gt}".format(app.t, self.visit(app.args), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_TBag(self, s):
-        return "Bag<{}>".format(self.visit(s.t))
+        return "Bag{lt}{}{gt}".format(self.visit(s.t), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_TSet(self, s):
-        return "Set<{}>".format(self.visit(s.t))
+        return "Set{lt}{}{gt}".format(self.visit(s.t), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_TList(self, s):
-        return "List<{}>".format(self.visit(s.t))
+        return "List{lt}{}{gt}".format(self.visit(s.t), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_TMap(self, m):
-        return "Map<{}, {}>".format(self.visit(m.k), self.visit(m.v))
+        return "Map{lt}{}, {}{gt}".format(self.visit(m.k), self.visit(m.v), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_THeap(self, h):
-        return "Heap<{}>".format(self.visit(h.t))
+        return "Heap{lt}{}{gt}".format(self.visit(h.t), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_TIntrusiveLinkedList(self, h):
-        return "IntrusiveLinkedList<{}>".format(self.visit(h.t))
+        return "IntrusiveLinkedList{lt}{}{gt}".format(self.visit(h.t), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_TNativeSet(self, h):
-        return "NativeSet<{}>".format(self.visit(h.t))
+        return "NativeSet{lt}{}{gt}".format(self.visit(h.t), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_TNativeList(self, h):
-        return "NativeList<{}>".format(self.visit(h.t))
+        return "NativeList{lt}{}{gt}".format(self.visit(h.t), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_THashMap(self, h):
-        return "HashMap<{}, {}>".format(self.visit(h.k), self.visit(h.v))
+        return "HashMap{lt}{}, {}{gt}".format(self.visit(h.k), self.visit(h.v), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_TInt(self, t):
         return "Int"
@@ -175,16 +197,16 @@ class PrettyPrinter(common.Visitor):
         return t.prettyprint()
 
     def visit_Query(self, q):
-        s = "  query {}({}):\n".format(q.name, ", ".join("{} : {}".format(name, self.visit(t)) for name, t in q.args))
+        s = "  {} {}({}):\n".format(self.format_keyword("query"), q.name, ", ".join("{} : {}".format(name, self.visit(t)) for name, t in q.args))
         for e in q.assumptions:
-            s += "    assume {};\n".format(self.visit(e))
+            s += "    {} {};\n".format(self.format_keyword("assume"), self.visit(e))
         s += "    {}\n".format(self.visit(q.ret))
         return s
 
     def visit_Op(self, q):
-        s = "  op {}({}):\n".format(q.name, ", ".join("{} : {}".format(name, self.visit(t)) for name, t in q.args))
+        s = "  {} {}({}):\n".format(self.format_keyword("op"), q.name, ", ".join("{} : {}".format(name, self.visit(t)) for name, t in q.args))
         for e in q.assumptions:
-            s += "    assume {};\n".format(self.visit(e))
+            s += "    {} {};\n".format(self.format_keyword("assume"), self.visit(e))
         s += "{}\n".format(self.visit(q.body, "    "))
         return s
 
@@ -192,7 +214,7 @@ class PrettyPrinter(common.Visitor):
         return e.id
 
     def visit_EBool(self, e):
-        return "true" if e.val else "false"
+        return self.format_builtin("true" if e.val else "false")
 
     def visit_EStr(self, e):
         return repr(e.val)
@@ -204,10 +226,10 @@ class PrettyPrinter(common.Visitor):
         return e.name
 
     def visit_ENull(self, e):
-        return "NULL"
+        return self.format_builtin("null")
 
     def visit_ELambda(self, e):
-        return "(\\{} -> {})".format(e.arg.id, self.visit(e.body))
+        return "{} -> {}".format(e.arg.id, self.visit(e.body))
 
     def visit_EApp(self, e):
         return "{}({})".format(self.visit(e.f), self.visit(e.arg))
@@ -219,19 +241,20 @@ class PrettyPrinter(common.Visitor):
         return "{}[{}]".format(self.visit(e.e), self.visit(e.index))
 
     def visit_EMakeMap(self, e):
-        return "MkMap({}, {}, {})".format(self.visit(e.e), self.visit(e.key), self.visit(e.value))
+        return "{}({}, {}, {})".format(self.format_builtin("MkMap"), self.visit(e.e), self.visit(e.key), self.visit(e.value))
 
     def visit_EMap(self, e):
-        return "Map {{{}}} ({})".format(self.visit(e.f), self.visit(e.e))
+        return "{} {{{}}} ({})".format(self.format_builtin("Map"), self.visit(e.f), self.visit(e.e))
 
     def visit_EFilter(self, e):
-        return "Filter {{{}}} ({})".format(self.visit(e.p), self.visit(e.e))
+        return "{} {{{}}} ({})".format(self.format_builtin("Filter"), self.visit(e.p), self.visit(e.e))
 
     def visit_EFlatMap(self, e):
-        return "FlatMap({}, {})".format(self.visit(e.e), self.visit(e.f))
+        return "{}({}, {})".format(self.format_builtin("FlatMap"), self.visit(e.e), self.visit(e.f))
 
     def visit_EBinOp(self, e):
-        return "({} {} {})".format(self.visit(e.e1), e.op, self.visit(e.e2))
+        op = e.op.replace("<", self.format_lt()).replace(">", self.format_gt())
+        return "({} {} {})".format(self.visit(e.e1), op, self.visit(e.e2))
 
     def visit_ECond(self, e):
         return "({} ? {} : {})".format(self.visit(e.cond), self.visit(e.then_branch), self.visit(e.else_branch))
@@ -241,15 +264,15 @@ class PrettyPrinter(common.Visitor):
 
     def visit_EArgMin(self, e):
         if e.f.body == e.f.arg:
-            return "min {}".format(self.visit(e.e))
+            return "{} {}".format(self.format_builtin("min"), self.visit(e.e))
         else:
-            return "argmin {{{}}} {}".format(self.visit(e.f), self.visit(e.e))
+            return "{} {{{}}} {}".format(self.format_builtin("argmin"), self.visit(e.f), self.visit(e.e))
 
     def visit_EArgMax(self, e):
         if e.f.body == e.f.arg:
-            return "max {}".format(self.visit(e.e))
+            return "{} {}".format(self.format_builtin("max"), self.visit(e.e))
         else:
-            return "argmax {{{}}} {}".format(self.visit(e.f), self.visit(e.e))
+            return "{} {{{}}} {}".format(self.format_builtin("argmax"), self.visit(e.f), self.visit(e.e))
 
     def visit_EGetField(self, e):
         return "({}).{}".format(self.visit(e.e), e.f)
@@ -267,7 +290,7 @@ class PrettyPrinter(common.Visitor):
         return "[{} | {}]".format(self.visit(e.e), ", ".join(self.visit(clause) for clause in e.clauses))
 
     def visit_EAlloc(self, e):
-        return "new {}({})".format(self.visit(e.t), ", ".join(self.visit(arg) for arg in e.args))
+        return "{} {}({})".format(self.format_keyword("new"), self.visit(e.t), ", ".join(self.visit(arg) for arg in e.args))
 
     def visit_ECall(self, e):
         return "{}({})".format(e.func, ", ".join(self.visit(arg) for arg in e.args))
@@ -279,10 +302,10 @@ class PrettyPrinter(common.Visitor):
         return "({}).{}".format(self.visit(e.e), e.n)
 
     def visit_ELet(self, e):
-        return "let {} = {} in {}".format(e.f.arg.id, self.visit(e.e), self.visit(e.f.body))
+        return "{} {} = {} in {}".format(self.format_keyword("let"), e.f.arg.id, self.visit(e.e), self.visit(e.f.body))
 
     def visit_CPull(self, c):
-        return "{} <- {}".format(c.id, self.visit(c.e))
+        return "{} {lt}- {}".format(c.id, self.visit(c.e), lt=self.format_lt())
 
     def visit_CCond(self, c):
         return self.visit(c.e)
@@ -295,7 +318,7 @@ class PrettyPrinter(common.Visitor):
         return repr(e)
 
     def visit_SNoOp(self, s, indent=""):
-        return "{}pass;".format(indent)
+        return "{}{};".format(indent, self.format_keyword("pass"))
 
     def visit_SCall(self, s, indent=""):
         return "{}{}.{}({});".format(indent, self.visit(s.target), s.func, ", ".join(self.visit(arg) for arg in s.args))
@@ -304,14 +327,16 @@ class PrettyPrinter(common.Visitor):
         return "{}{} = {};".format(indent, self.visit(s.lhs), self.visit(s.rhs))
 
     def visit_SDecl(self, s, indent=""):
-        return "{}var {} : {} = {};".format(indent, s.id, self.visit(s.val.type), self.visit(s.val))
+        return "{}{} {} : {} = {};".format(indent, self.format_keyword("var"), s.id, self.visit(s.val.type), self.visit(s.val))
 
     def visit_SSeq(self, s, indent=""):
         return "{}\n{}".format(self.visit(s.s1, indent), self.visit(s.s2, indent))
 
     def visit_SMapUpdate(self, s, indent=""):
-        return "{indent}with {} as {}:\n{}".format(
+        return "{indent}{} {} {} {}:\n{}".format(
+            self.format_keyword("with"),
             self.visit(target_syntax.EMapGet(s.map, s.key)),
+            self.format_keyword("as"),
             s.val_var.id,
             self.visit(s.change, indent + "  "),
             indent=indent)
@@ -323,20 +348,28 @@ class PrettyPrinter(common.Visitor):
             indent=indent)
 
     def visit_SMapDel(self, s, indent=""):
-        return "{indent}del {};".format(
+        return "{indent}{} {};".format(
+            self.format_keyword("del"),
             self.visit(target_syntax.EMapGet(s.map, s.key)),
             indent=indent)
 
     def visit_SForEach(self, s, indent=""):
-        return "{}for {} in {}:\n{}".format(indent, s.id.id, self.visit(s.iter), self.visit(s.body, indent + "  "))
+        return "{}{For} {} {In} {}:\n{}".format(
+            indent,
+            s.id.id,
+            self.visit(s.iter),
+            self.visit(s.body, indent + "  "),
+            For=self.format_keyword("for"),
+            In=self.format_keyword("in"))
 
     def visit_SIf(self, s, indent=""):
         if isinstance(s.else_branch, syntax.SNoOp):
-            return "{indent}if {} {{\n{}\n{indent}}}".format(self.visit(s.cond), self.visit(s.then_branch, indent + "  "), indent=indent)
-        return "{indent}if {} {{\n{}\n{indent}}} else {{\n{}\n}}".format(self.visit(s.cond), self.visit(s.then_branch, indent + "  "), self.visit(s.else_branch, indent + "  "), indent=indent)
+            return "{indent}{If} {} {{\n{}\n{indent}}}".format(self.visit(s.cond), self.visit(s.then_branch, indent + "  "), indent=indent, If=self.format_keyword("if"))
+        return "{indent}{If} {} {{\n{}\n{indent}}} {Else} {{\n{}\n}}".format(self.visit(s.cond), self.visit(s.then_branch, indent + "  "), self.visit(s.else_branch, indent + "  "), indent=indent, If=self.format_keyword("if"), Else=self.format_keyword("else"))
 
 _PRETTYPRINTER = PrettyPrinter()
-def pprint(ast):
+def pprint(ast, format="plain"):
+    _PRETTYPRINTER.format = format
     return _PRETTYPRINTER.visit(ast)
 
 def free_funcs(e : syntax.Exp) -> dict:
@@ -350,7 +383,7 @@ def free_funcs(e : syntax.Exp) -> dict:
                 res[x.func] = t
     return res
 
-def free_vars(exp, counts=False, descend_into_estatevar=True):
+def free_vars(exp, counts=False):
     res = collections.OrderedDict()
     bound = collections.defaultdict(int)
 
@@ -369,8 +402,10 @@ def free_vars(exp, counts=False, descend_into_estatevar=True):
         elif isinstance(x, syntax.EVar):
             if not bound[x]:
                 res[x] = res.get(x, 0) + 1
-        elif isinstance(x, target_syntax.EStateVar) and not descend_into_estatevar:
-            continue
+        elif isinstance(x, target_syntax.EStateVar):
+            subres = free_vars(x.e, counts=True)
+            for k, v in subres.items():
+                res[k] = res.get(k, 0) + v
         elif isinstance(x, target_syntax.ELambda):
             bound[x.arg] += 1
             stk.append(Unbind(x.arg))
@@ -425,6 +460,7 @@ class FragmentEnumerator(common.Visitor):
         self.post_visit = post_visit
         self.bound = collections.OrderedDict()
         self.assumptions = []
+        self.a_fvs = []
 
     def currently_bound(self):
         return common.OrderedSet(self.bound.keys())
@@ -435,20 +471,23 @@ class FragmentEnumerator(common.Visitor):
     @contextmanager
     @common.typechecked
     def push_assumptions(self, new_assumptions : [syntax.Exp] = []):
-        old_assumptions = self.assumptions
-        self.assumptions = self.assumptions + new_assumptions
-        yield
-        self.assumptions = old_assumptions
+        with common.save_property(self, "assumptions"):
+            with common.save_property(self, "a_fvs"):
+                self.assumptions = self.assumptions + new_assumptions
+                self.a_fvs = self.a_fvs + [free_vars(a) for a in new_assumptions]
+                yield
 
     @contextmanager
     @common.typechecked
     def intro_vars(self, vars : [syntax.EVar], source):
         vars = common.OrderedSet(vars)
-        old_assumptions = self.assumptions
-        self.assumptions = [a for a in self.assumptions if not (free_vars(a) & vars)]
-        with common.extend_multi(self.bound, [(v, source) for v in vars]):
-            yield
-        self.assumptions = old_assumptions
+        with common.save_property(self, "assumptions"):
+            with common.save_property(self, "a_fvs"):
+                to_keep = [i for i in range(len(self.assumptions)) if not common.intersects(self.a_fvs[i], vars)]
+                self.assumptions = [self.assumptions[i] for i in to_keep]
+                self.a_fvs       = [self.a_fvs[i]       for i in to_keep]
+                with common.extend_multi(self.bound, [(v, source) for v in vars]):
+                    yield
 
     def visit_assumptions_seq(self, assumptions, i=0):
         if i >= len(assumptions):
@@ -456,6 +495,7 @@ class FragmentEnumerator(common.Visitor):
         for info in self.visit(assumptions[i]):
             yield (lambda i, a, x, r, bound: (a, x, lambda x: tuple(assumptions[:i]) + (x,) + tuple(assumptions[i:]), bound))(i, *info)
         self.assumptions.append(assumptions[i])
+        self.a_fvs.append(free_vars(assumptions[i]))
         yield from self.visit_assumptions_seq(assumptions, i+1)
 
     def recurse_with_assumptions_about_bound_var(self, e : target_syntax.ELambda, assume : [syntax.Exp]):
@@ -537,7 +577,7 @@ class FragmentEnumerator(common.Visitor):
 
     def rebuild(self, obj, new_children):
         res = type(obj)(*new_children)
-        if isinstance(obj, syntax.Exp) and hasattr(obj, "type"):
+        if isinstance(obj, syntax.Exp):
             res = res.with_type(obj.type)
         return res
 
@@ -637,6 +677,25 @@ def enumerate_fragments_and_pools(e : syntax.Exp, pre_visit=None, post_visit=Non
     for (a, x, r, bound) in enumerate_fragments(e, new_pre_visit, new_post_visit, include_lambdas=include_lambdas):
         yield (a, x, r, bound, pool(x))
 
+
+Context = collections.namedtuple("Context", [
+    "toplevel",
+    "e",
+    "facts",
+    "replace_e_with",
+    "bound_vars",
+    "pool"])
+
+def enumerate_fragments2(e : syntax.Exp):
+    for (a, x, r, bound, pool) in enumerate_fragments_and_pools(e):
+        yield Context(
+            toplevel=e,
+            e=x,
+            facts=a,
+            replace_e_with=r,
+            bound_vars=bound,
+            pool=pool)
+
 def replace(exp, old_exp, new_exp):
     class Replacer(BottomUpRewriter):
         def visit_ELambda(self, e):
@@ -652,7 +711,32 @@ def subst_lval(lval, replacements):
     # Neither requires attention during substitution.
     return lval
 
-def subst(exp, replacements):
+@common.typechecked
+def tease_apart(exp : syntax.Exp) -> ([(syntax.EVar, syntax.Exp)], syntax.Exp):
+    new_state = []
+
+    class V(BottomUpRewriter):
+        def visit_EStateVar(self, e):
+            e = e.e
+            x = common.find_one(x for x in new_state if alpha_equivalent(x[1], e))
+            if x is not None:
+                return x[0]
+            else:
+                v = fresh_var(e.type)
+                new_state.append((v, e))
+                return v
+
+    new_exp = V().visit(exp)
+    return (new_state, new_exp)
+
+@common.typechecked
+def purify(exp : syntax.Exp) -> syntax.Exp:
+    st, exp = tease_apart(exp)
+    for v, e in st:
+        exp = target_syntax.ELet(e, target_syntax.ELambda(v, exp)).with_type(exp.type)
+    return exp
+
+def subst(exp, replacements, tease=True):
     """
     Performs capture-avoiding substitution.
     Input:
@@ -665,6 +749,13 @@ def subst(exp, replacements):
     allfvs = set()
     for val in replacements.values():
         allfvs |= {fv.id for fv in free_vars(val)}
+
+    if tease and any(isinstance(e, target_syntax.EStateVar) for e in all_exps(exp)):
+        st, exp = tease_apart(exp)
+        for i in range(len(st)):
+            st[i] = (st[i][0], subst(st[i][1], replacements))
+        exp = subst(exp, replacements, tease=False)
+        return subst(exp, { v.id : target_syntax.EStateVar(e).with_type(e.type) for (v, e) in st }, tease=False)
 
     class Subst(common.Visitor):
         def visit_EVar(self, var):
@@ -697,6 +788,8 @@ def subst(exp, replacements):
             elif isinstance(c, syntax.CCond):
                 clauses[i] = syntax.CCond(self.visit(c.e))
                 return self.visit_lcmp(clauses, i + 1, e)
+        def visit_EStateVar(self, e):
+            return target_syntax.EStateVar(subst(e.e, replacements))
         def visit_ELambda(self, e):
             m = replacements
             if e.arg.id in replacements:
@@ -951,6 +1044,37 @@ class Aeq(object):
     def __ne__(self, other):
         return not (self == other)
 
+class ExpMap(object):
+    def __init__(self, items=(), ordered=True):
+        self.by_id = collections.OrderedDict()
+        self.by_hash = collections.OrderedDict()
+        for k, v in items:
+            self[k] = v
+    def _hash(self, k):
+        return (type(k), k.type, k)
+    def _unhash(self, h):
+        return h[2]
+    def get(self, k):
+        i = id(k)
+        try:
+            return self.by_id[i]
+        except KeyError:
+            return self.by_hash.get(self._hash(k))
+    def __setitem__(self, k, v):
+        self.by_id[id(k)] = v
+        self.by_hash[self._hash(k)] = v
+    def __delitem__(self, k):
+        i = id(k)
+        if i in self.by_id:
+            del self.by_id[i]
+        del self.by_hash[self._hash(k)]
+    def items(self):
+        for (k, v) in self.by_hash.items():
+            yield (self._unhash(k), v)
+    def values(self):
+        for k, v in self.items():
+            yield v
+
 def cse(e, verify=False):
     """
     Common subexpression elimination. Replaces re-used expressions with ELet,
@@ -991,35 +1115,51 @@ def cse(e, verify=False):
     class V(BottomUpRewriter):
         def __init__(self):
             super().__init__()
-            self.avail = collections.OrderedDict() # maps expressions --> variables
-            self.avail_by_id = collections.OrderedDict() # maps ids -> variables
+            self.avail = ExpMap() # maps expressions --> variables
+        def visit_EVar(self, e):
+            return e
+        def visit_ENum(self, e):
+            return e
+        def visit_EEnumEntry(self, e):
+            return e
+        def visit_EEmptyList(self, e):
+            return e
+        def visit_EStr(self, e):
+            return e
+        def visit_EBool(self, e):
+            return e
+        def visit_ENative(self, e):
+            return e
+        def visit_ENull(self, e):
+            return e
         def visit_Exp(self, e):
-            if id(e) in self.avail_by_id:
-                return self.avail_by_id[id(e)]
-            ee = type(e)(*[self.visit(c) for c in e.children()])
+            ee = type(e)(*[self.visit(c) for c in e.children()]).with_type(e.type)
             res = self.avail.get(ee)
             if res is not None:
                 return res
-            v = syntax.EVar(common.fresh_name("tmp"))
-            if hasattr(e, "type"):
-                ee = ee.with_type(e.type)
-                v = v.with_type(e.type)
+            v = fresh_var(e.type, hint="tmp")
             self.avail[ee] = v
-            self.avail_by_id[id(e)] = v
             return v
+        def visit_EListComprehension(self, e):
+            raise NotImplementedError()
+        def _fvs(self, e):
+            if not hasattr(e, "_fvs"):
+                e._fvs = free_vars(e)
+            return e._fvs
         def visit_ELambda(self, e):
             old_avail = self.avail
-            old_avail_by_id = self.avail_by_id
-            self.avail = collections.OrderedDict([(k, v) for (k, v) in self.avail.items() if e.arg not in free_vars(k)])
-            self.avail_by_id = collections.OrderedDict()
+            self.avail = ExpMap([(k, v) for (k, v) in self.avail.items() if e.arg not in self._fvs(k)])
             body = self.visit(e.body)
 
             precious = set((e.arg,))
+            # print("computing fvs x{}...".format(len(self.avail.items())))
+            fvs = { v : self._fvs(k) for (k, v) in self.avail.items() }
+            # print("done")
             dirty = True
             while dirty:
                 dirty = False
-                for (k, v) in self.avail.items():
-                    if any(vv in precious for vv in free_vars(k)):
+                for v in self.avail.values():
+                    if any(vv in precious for vv in fvs[v]):
                         if v not in precious:
                             precious.add(v)
                             dirty = True
@@ -1030,7 +1170,6 @@ def cse(e, verify=False):
 
             body = finish(body, self.avail)
             self.avail = old_avail
-            self.avail_by_id = old_avail_by_id
             return target_syntax.ELambda(e.arg, body)
 
     v = V()
