@@ -34,10 +34,10 @@ class JavaPrinter(CxxPrinter):
         s = ""
 
         if spec.header:
-            s += spec.header.strip() + "\n"
+            s += spec.header.strip() + "\n\n"
 
         if spec.docstring:
-            s += "\n" + spec.docstring + "\n"
+            s += spec.docstring + "\n"
 
         s += "public class {} implements java.io.Serializable {{\n".format(spec.name)
 
