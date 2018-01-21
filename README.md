@@ -252,13 +252,13 @@ extended:
 
 #### Documentation
 
-Cozy supports single and multi-line comments.
+Cozy supports single and multi-line comments:
 
-    // Single line.
+    // Single-line.
     
     /*
-       Multiple
-       lines.
+       Multi-
+       line.
     */
 
 Cozy specs also allow Javadoc and Doxygen-style documentation comments.
@@ -287,7 +287,7 @@ These may be placed on the top-level data structure definition and on the
         query empty()
             // ...
 
-These documentation comments are emitted on the corresponding classes and
+These documentation comments are emitted verbatim on the corresponding classes and
 methods of the generated code.
 
 ## Tests
