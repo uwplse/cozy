@@ -161,6 +161,10 @@ def run():
         impl = code
         share_info = defaultdict(list)
 
+    impl = syntax_tools.inline_calls(impl)
+    print()
+    print(syntax_tools.pprint(impl))
+
     try:
         java = args.java
         if java is not None:

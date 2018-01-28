@@ -1181,3 +1181,26 @@ def cse(e, verify=False):
             print(repr(e))
             assert False
     return res
+
+def inline_calls(spec):
+    extern_func_names = set(e.name for e in spec.extern_funcs)
+    queries = {}
+
+    class V(BottomUpRewriter):
+        def visit_Query(self, q):
+            # Don't want to inline calls to extern functions.
+            if q.name not in extern_func_names:
+                queries[q.name] = q
+            return q
+
+        def visit_ECall(self, e):
+            query = queries.get(e.func)
+
+            if query is None:
+                return e
+
+            return subst(query.ret,
+                {arg: exp for ((arg, argtype), exp) in zip(query.args, e.args)})
+
+    rewriter = V()
+    return rewriter.visit(spec)
