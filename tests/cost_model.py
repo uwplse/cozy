@@ -528,7 +528,7 @@ class TestCostModel(unittest.TestCase):
 
     def test_filter(self):
         e1 = EStateVar(EVar("xs").with_type(INT_BAG)).with_type(INT_BAG)
-        e2 = EStateVar(EFilter(e1, mk_lambda(INT, lambda x: EEq(x, ZERO))).with_type(INT_BAG)).with_type(INT_BAG)
+        e2 = EStateVar(EFilter(e1.e, mk_lambda(INT, lambda x: EEq(x, ZERO))).with_type(INT_BAG)).with_type(INT_BAG)
         assert_cmp(e1, cost_of(e1), e2, cost_of(e2), Cost.WORSE)
 
     def test_var_vs_len(self):
@@ -549,3 +549,13 @@ class TestCostModel(unittest.TestCase):
         e2 = EGetField(ETupleGet(EArgMin(EFilter(EFilter(EVar('tokens').with_type(TBag(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool()))))))), ELambda(EVar('_var685').with_type(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))))), EGetField(ETupleGet(EVar('_var685').with_type(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))))), 1).with_type(TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))), 'important').with_type(TBool()))).with_type(TBag(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool()))))))), ELambda(EVar('_var685').with_type(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))))), EBinOp(EGetField(ETupleGet(EVar('_var685').with_type(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))))), 1).with_type(TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))), 'score').with_type(TFloat()), '>', ECall('floatZero', ()).with_type(TFloat())).with_type(TBool()))).with_type(TBag(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool()))))))), ELambda(EVar('_var685').with_type(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))))), EGetField(ETupleGet(EVar('_var685').with_type(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))))), 1).with_type(TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))), 'startOffset').with_type(TInt()))).with_type(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))))), 1).with_type(TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))), 'startOffset').with_type(TInt())
         assert valid(EImplies(EBinOp(EUnaryOp('unique', EMap(EVar('tokens').with_type(TBag(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool()))))))), ELambda(EVar('s').with_type(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))))), ETupleGet(EVar('s').with_type(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))))), 0).with_type(TInt()))).with_type(TBag(TInt()))).with_type(TBool()), 'and', EBinOp(EBinOp(ECall('MAX_TOKENS', ()).with_type(TInt()), '>', ENum(0).with_type(TInt())).with_type(TBool()), 'and', EUnaryOp('unique', EVar('tokens').with_type(TBag(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))))))).with_type(TBool())).with_type(TBool())).with_type(TBool()), EEq(e1, e2)), model_callback=print)
         assert_cmp(e1, cost_of(e1, pool=pool), e2, cost_of(e2, pool=pool), Cost.WORSE)
+
+    def test_esv_empty(self):
+        e1 = EEmptyList().with_type(INT_BAG)
+        e2 = EStateVar(e1).with_type(e1.type)
+        assert_cmp(e1, cost_of(e1), e2, cost_of(e2), Cost.BETTER)
+
+    def test_esv_constant(self):
+        e1 = ZERO
+        e2 = EStateVar(e1).with_type(e1.type)
+        assert_cmp(e1, cost_of(e1), e2, cost_of(e2), Cost.BETTER)

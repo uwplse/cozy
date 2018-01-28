@@ -309,7 +309,7 @@ class CompositeCostModel(CostModel, BottomUpExplorer):
         return ONE
     def visit_EStateVar(self, e):
         self.secondaries += self.statecost(e.e)
-        return self.sizeof(e.e)
+        return ESum([ONE, self.sizeof(e.e)])
     def visit_EUnaryOp(self, e):
         costs = [ONE, self.visit(e.e)]
         if e.op in (UOp.Sum, UOp.Distinct, UOp.AreUnique, UOp.All, UOp.Any, UOp.Length):

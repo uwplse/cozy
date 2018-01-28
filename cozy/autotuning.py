@@ -4,8 +4,8 @@ import itertools
 from cozy.common import typechecked
 from cozy.typecheck import typecheck
 from cozy.library import Library
-from cozy.syntax import Spec, Exp, EVar, EAll, EEq, T
-from cozy.syntax_tools import subst, deep_copy, all_types
+from cozy.syntax import Spec, Exp, EVar, EAll, EEq
+from cozy.syntax_tools import deep_copy
 
 def find_refinement(ast, state_map, lib, assumptions):
     assumptions = EAll(itertools.chain(
