@@ -300,6 +300,8 @@ class AcceleratedBuilder(ExpBuilder):
                 if not is_root(e1):
                     continue
                 for e2 in cache.find_collections(pool=STATE_POOL, size=sz2, of=e1.type):
+                    if not is_root(e2):
+                        continue
                     for b in self.binders:
                         if b.type != e1.type:
                             continue
