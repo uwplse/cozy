@@ -1,14 +1,11 @@
 from collections import OrderedDict
 
 from cozy.common import nested_dict, find_one, typechecked
-from cozy.target_syntax import Type, Exp, EVar, EStateVar
-from cozy.syntax_tools import free_vars, pprint, alpha_equivalent
+from cozy.target_syntax import Type, Exp, EVar
+from cozy.syntax_tools import alpha_equivalent
 from cozy.typecheck import COLLECTION_TYPES
-from cozy.pools import RUNTIME_POOL, STATE_POOL, ALL_POOLS
+from cozy.pools import ALL_POOLS
 from cozy.cost_model import Cost
-from cozy.opts import Option
-
-enforce_wf = Option("enforce-cache-wf", bool, False)
 
 class NatDict(object):
     def __init__(self, factory):
@@ -57,28 +54,6 @@ class Cache(object):
     def contains(self, e, pool):
         return find_one(self.find(pool=pool, type=e.type), lambda x: alpha_equivalent(x, e)) is not None
     def add(self, e, size, pool):
-        # if isinstance(e, EStateVar) and self.contains(e.e, STATE_POOL):
-        #     return # already implicitly exists
-        if enforce_wf.value:
-            assert not self.contains(e, pool)
-            if pool == STATE_POOL:
-                assert not isinstance(e, EStateVar), "adding {} to state pool".format(pprint(e))
-                assert not any(v in self.args for v in free_vars(e)), "bad vars: {}".format(pprint(e))
-            else:
-                # state vars must be wrapped
-                from cozy.syntax_tools import enumerate_fragments
-                z = e
-                dirty = True
-                while dirty:
-                    dirty = False
-                    for (_, x, r, _) in enumerate_fragments(z):
-                        if isinstance(x, EStateVar):
-                            from cozy.target_syntax import ZERO
-                            z = r(ZERO)
-                            dirty = True
-                            break
-                bad = find_one(free_vars(z), lambda v: not (v in self.binders or v in self.args))
-                assert not bad, "state var `{}` not wrapped in: {!r}".format(bad.id, e)
         self.data[pool][self.tag(e.type)][e.type][size].append(e)
         self.size += 1
     def evict(self, e, size, pool):
@@ -105,13 +80,7 @@ class Cache(object):
             t = ct(of) if of is not None else ct
             yield from self.find(pool=pool, type=t, size=size)
     def find(self, pool, type=None, size=None):
-        res = []
-        res.extend(self._raw_find(pool, type, size))
-        if False and pool == RUNTIME_POOL:
-            for e in self._raw_find(STATE_POOL, type, size):
-                if all(v not in self.binders for v in free_vars(e)):
-                    res.append(EStateVar(e).with_type(e.type))
-        return res
+        return list(self._raw_find(pool, type, size))
     def types(self):
         for p in ALL_POOLS:
             for y in self.data[p].values():
