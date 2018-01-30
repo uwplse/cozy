@@ -5,16 +5,17 @@ import sys
 import os
 from queue import Empty
 
-from cozy.common import typechecked, fresh_name, pick_to_sum, nested_dict, find_one
+from cozy.common import typechecked, fresh_name, pick_to_sum, nested_dict, find_one, OrderedSet
 from cozy.target_syntax import *
 import cozy.syntax_tools
-from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, BottomUpRewriter, free_vars, pprint, subst, implies, fresh_var, mk_lambda, all_exps, equal, is_scalar, tease_apart
+from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, BottomUpRewriter, free_vars, pprint, subst, implies, fresh_var, mk_lambda, all_exps, equal, is_scalar, tease_apart, shallow_copy, enumerate_fragments2
 import cozy.incrementalization as inc
 from cozy.timeouts import Timeout, TimeoutException
 from cozy.cost_model import CompositeCostModel
 from cozy import jobs
 from cozy.solver import valid
 from cozy.opts import Option
+from cozy.pools import STATE_POOL
 
 from . import core
 from .impls import Implementation
@@ -27,6 +28,21 @@ nice_children = Option("nice-children", bool, False)
 log_dir = Option("log-dir", str, "/tmp")
 SynthCtx = namedtuple("SynthCtx", ["all_types", "basic_types"])
 LINE_BUFFER_MODE = 1 # see help for open() function
+
+def find_naked_statevar(e, state_vars):
+    for ctx in enumerate_fragments2(e):
+        if isinstance(ctx.e, EVar) and ctx.e in state_vars and ctx.pool != STATE_POOL:
+            return (ctx.e, ctx.replace_e_with)
+    return None
+
+def wrap_naked_statevars(e, state_vars):
+    while True:
+        x = find_naked_statevar(e, state_vars)
+        if x is None:
+            break
+        sv, r = x
+        e = r(EStateVar(sv).with_type(sv.type))
+    return e
 
 class ImproveQueryJob(jobs.Job):
     @typechecked
@@ -42,8 +58,9 @@ class ImproveQueryJob(jobs.Job):
         self.ctx = ctx
         self.state = state
         self.assumptions = assumptions
-        self.q = q
+        self.q = shallow_copy(q)
         assert all(v in state for v in free_vars(q)), "Oops, query looks malformed due to {}:\n{}\nfree_vars({})".format([v for v in free_vars(q) if v not in state], pprint(q), repr(q))
+        q.ret = wrap_naked_statevars(q.ret, OrderedSet(state))
         self.hints = hints
         self.examples = examples
         self.k = k

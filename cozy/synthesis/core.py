@@ -106,21 +106,6 @@ class ContextMap(object):
     def __str__(self):
         return "\n".join(self._print(self.m))
 
-def find_naked_statevar(e, state_vars):
-    for (a, e, r, bound, pool) in enumerate_fragments_and_pools(e):
-        if e in state_vars and pool != STATE_POOL:
-            return (e, r)
-    return None
-
-def wrap_naked_statevars(e, state_vars):
-    while True:
-        x = find_naked_statevar(e, state_vars)
-        if x is None:
-            break
-        sv, r = x
-        e = r(EStateVar(sv).with_type(sv.type))
-    return e
-
 class Learner(object):
     def __init__(self, target, assumptions, binders, state_vars, args, legal_free_vars, examples, cost_model, builder, stop_callback):
         self.binders = OrderedSet(binders)
@@ -505,6 +490,7 @@ def truncate(s):
     return s
 
 def can_elim_vars(spec : Exp, assumptions : Exp, vs : [EVar]):
+    spec = strip_EStateVar(spec)
     sub = { v.id : fresh_var(v.type) for v in vs }
     return valid(EImplies(
         EAll([assumptions, subst(assumptions, sub)]),
@@ -585,12 +571,17 @@ def improve(
     print("subject to: {}".format(pprint(assumptions)))
     print()
 
+    assert exp_wf(
+        target,
+        state_vars=set(state_vars),
+        args=set(args),
+        assumptions=assumptions)
+
     if not satisfiable(assumptions):
         print("assumptions are unsat; this query will never be called")
         yield construct_value(target.type)
         return
 
-    target = wrap_naked_statevars(target, state_vars=OrderedSet(state_vars))
     binders = list(binders)
     target = fixup_binders(target, binders, allow_add=False)
     assumptions = fixup_binders(assumptions, binders, allow_add=False)
