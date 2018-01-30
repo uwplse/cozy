@@ -155,7 +155,8 @@ class Implementation(object):
                 modified_handles = Query(
                     fresh_name("modified_handles"),
                     Visibility.Internal, [], op.assumptions,
-                    EFilter(EUnaryOp(UOp.Distinct, bag).with_type(bag.type), ELambda(h, ENot(EEq(lval, new_val)))).with_type(bag.type))
+                    EFilter(EUnaryOp(UOp.Distinct, bag).with_type(bag.type), ELambda(h, ENot(EEq(lval, new_val)))).with_type(bag.type),
+                    "")
                 query_vars = [v for v in free_vars(modified_handles) if v not in self.abstract_state]
                 modified_handles.args = [(arg.id, arg.type) for arg in query_vars]
 
