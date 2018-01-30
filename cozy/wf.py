@@ -52,7 +52,7 @@ def exp_wf_nonrecursive(e : Exp, state_vars : {EVar}, args : {EVar}, pool = RUNT
         raise ExpIsNotWf(e, e, "singleton in state position")
     if not at_runtime and isinstance(e, ENum) and e.val != 0:
         raise ExpIsNotWf(e, e, "nonzero numerical constant in state position")
-    if isinstance(e, EMakeMap2) and is_collection(e.type.v):
+    if not at_runtime and isinstance(e, EMakeMap2) and is_collection(e.type.v):
         all_collections = [sv for sv in state_vars if is_collection(sv.type)]
         total_size = ENum(0).with_type(INT)
         for c in all_collections:
