@@ -13,8 +13,8 @@ import igraph
 
 from cozy.common import fresh_name, find_one, typechecked, OrderedSet
 from cozy.syntax import *
-from cozy.target_syntax import EFilter, EDeepIn
-from cozy.syntax_tools import subst, free_vars, fresh_var, alpha_equivalent, all_exps, BottomUpRewriter, BottomUpExplorer, pprint, replace, shallow_copy
+from cozy.target_syntax import EFilter, EDeepIn, EStateVar
+from cozy.syntax_tools import subst, free_vars, fresh_var, alpha_equivalent, all_exps, BottomUpRewriter, BottomUpExplorer, pprint, replace, shallow_copy, tease_apart
 from cozy.handle_tools import reachable_handles_at_method, implicit_handle_assumptions_for_method
 import cozy.incrementalization as inc
 from cozy.opts import Option
@@ -93,8 +93,7 @@ class Implementation(object):
         fvs = free_vars(q)
         # initial rep
         qargs = set(EVar(a).with_type(t) for (a, t) in q.args)
-        rep = [(fresh_var(v.type), v) for v in fvs if v not in qargs]
-        ret = subst(q.ret, { sv.id:v for (v, sv) in rep })
+        rep, ret = tease_apart(q.ret)
         self.set_impl(q, rep, ret)
 
     @property
