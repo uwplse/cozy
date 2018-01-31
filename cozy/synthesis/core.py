@@ -107,7 +107,7 @@ class ContextMap(object):
         return "\n".join(self._print(self.m))
 
 class Learner(object):
-    def __init__(self, target, assumptions, binders, state_vars, args, legal_free_vars, examples, cost_model, builder, stop_callback):
+    def __init__(self, target, assumptions, binders, state_vars, args, legal_free_vars, examples, cost_model, builder, stop_callback, hints):
         self.binders = OrderedSet(binders)
         self.state_vars = OrderedSet(state_vars)
         self.args = OrderedSet(args)
@@ -117,6 +117,7 @@ class Learner(object):
         self.builder = builder
         self.seen = SeenSet()
         self.assumptions = assumptions
+        self.hints = list(hints)
         self.reset(examples)
         self.watch(target)
 
@@ -155,7 +156,7 @@ class Learner(object):
         self.target = new_target
         self.roots = OrderedSet()
         types = OrderedSet()
-        for e in all_exps(new_target):
+        for e in itertools.chain(all_exps(new_target), *[all_exps(h) for h in self.hints]):
             if isinstance(e, ELambda):
                 continue
             for pool in ALL_POOLS:
@@ -585,6 +586,7 @@ def improve(
 
     binders = list(binders)
     target = fixup_binders(target, binders, allow_add=False)
+    hints = [fixup_binders(h, binders, allow_add=False) for h in (hints or ())]
     assumptions = fixup_binders(assumptions, binders, allow_add=False)
     builder = FixedBuilder(builder, state_vars, args, binders, assumptions)
     target_cost = cost_model.cost(target, RUNTIME_POOL)
@@ -598,7 +600,7 @@ def improve(
 
     if examples is None:
         examples = []
-    learner = Learner(target, assumptions, binders, state_vars, args, vars + binders, examples, cost_model, builder, stop_callback)
+    learner = Learner(target, assumptions, binders, state_vars, args, vars + binders, examples, cost_model, builder, stop_callback, hints)
     try:
         while True:
             # 1. find any potential improvement to any sub-exp of target
