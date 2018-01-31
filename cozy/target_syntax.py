@@ -78,4 +78,4 @@ EMapGet    = declare_case(Exp, "EMapGet", ["map", "key"])
 EMapKeys   = declare_case(Exp, "EMapKeys", ["e"])
 SMapPut    = declare_case(Stm, "SMapPut", ["map", "key", "value"])
 SMapDel    = declare_case(Stm, "SMapDel", ["map", "key"])
-SMapUpdate = declare_case(Stm, "SMapUpdate", ["map", "key", "val_var", "change"])
+SMapUpdate = declare_case(Stm, "SMapUpdate", ["map", "key", "val_var", "change"]) # val_var is EVar
