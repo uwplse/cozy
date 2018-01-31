@@ -118,6 +118,9 @@ class PrettyPrinter(common.Visitor):
     def format_gt(self):
         return "&gt;" if self.format == "html" else ">"
 
+    def format_comment(self, comment):
+        return '<span class="comment">{}</span>'.format(comment)
+
     def visit_Spec(self, spec):
         s = spec.name + ":\n"
         for name, t in spec.types:
@@ -197,14 +200,18 @@ class PrettyPrinter(common.Visitor):
         return t.prettyprint()
 
     def visit_Query(self, q):
-        s = "  {} {}({}):\n".format(self.format_keyword("query"), q.name, ", ".join("{} : {}".format(name, self.visit(t)) for name, t in q.args))
+        s = "\n"
+        if q.docstring:
+            s += "  {}\n".format(self.format_comment("/** {} */".format(q.docstring)))
+        s += "  {} {}({}):\n".format(self.format_keyword("query"), q.name, ", ".join("{} : {}".format(name, self.visit(t)) for name, t in q.args))
         for e in q.assumptions:
             s += "    {} {};\n".format(self.format_keyword("assume"), self.visit(e))
         s += "    {}\n".format(self.visit(q.ret))
         return s
 
     def visit_Op(self, q):
-        s = "  {} {}({}):\n".format(self.format_keyword("op"), q.name, ", ".join("{} : {}".format(name, self.visit(t)) for name, t in q.args))
+        s = "\n"
+        s += "  {} {}({}):\n".format(self.format_keyword("op"), q.name, ", ".join("{} : {}".format(name, self.visit(t)) for name, t in q.args))
         for e in q.assumptions:
             s += "    {} {};\n".format(self.format_keyword("assume"), self.visit(e))
         s += "{}\n".format(self.visit(q.body, "    "))
