@@ -175,7 +175,8 @@ def improve_implementation(
                         impl.abstract_state,
                         list(impl.spec.assumptions) + list(q.assumptions),
                         q,
-                        k=(lambda q: lambda new_rep, new_ret: solutions_q.put((q, new_rep, new_ret)))(q)))
+                        k=(lambda q: lambda new_rep, new_ret: solutions_q.put((q, new_rep, new_ret)))(q),
+                        hints=[EStateVar(c).with_type(c.type) for c in impl.concretization_functions.values()]))
 
             # figure out what old jobs we can stop
             impl_query_names = set(q.name for q in impl.query_specs)
