@@ -201,7 +201,7 @@ class Learner(object):
         Yields watched expressions that appear as worse versions of the given
         expression. There may be more than one.
         """
-        # free_binders = OrderedSet(v for v in free_vars(e) if v in self.binders)
+        free_binders = OrderedSet(v for v in free_vars(e) if v in self.binders)
         for ctx in sorted(list(enumerate_fragments2(self.target)), key=lambda ctx: -ctx.e.size()):
             watched_e = ctx.e
             p = ctx.pool
@@ -222,10 +222,11 @@ class Learner(object):
             # just `b`---looks better than something useful---e.g. m[x].  We
             # will then skip m[x] in favor of `b`, but never observe that `b`
             # is wrong.  So, we need to allow `b` through here.
-            # unbound_binders = [b for b in free_binders if b not in bound]
-            # if unbound_binders:
-            #     _on_exp(e, "skipped exp with free binders", ", ".join(b.id for b in unbound_binders))
-            #     continue
+            if p == STATE_POOL:
+                unbound_binders = [b for b in free_binders if b not in ctx.bound_vars]
+                if unbound_binders:
+                    _on_exp(e, "skipped exp with free binders", ", ".join(b.id for b in unbound_binders))
+                    continue
             watched_cost = self.cost_model.cost(watched_e, pool=pool)
             ordering = cost.compare_to(watched_cost)
             if ordering == Cost.WORSE:
