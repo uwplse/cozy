@@ -119,7 +119,7 @@ class PrettyPrinter(common.Visitor):
         return "&gt;" if self.format == "html" else ">"
 
     def format_comment(self, comment):
-        return '<span class="comment">{}</span>'.format(comment)
+        return '<span class="comment">{}</span>'.format(comment) if self.format == "html" else comment
 
     def visit_Spec(self, spec):
         s = spec.name + ":\n"
