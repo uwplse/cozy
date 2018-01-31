@@ -299,8 +299,8 @@ class CompositeCostModel(CostModel, BottomUpExplorer):
         """
         The cost of storing `e` on the data structure
         """
-        if is_collection(e.type):
-            return self.cardinality(e, plus_one=True)
+        # if is_collection(e.type):
+        #     return self.cardinality(e, plus_one=True)
         # if isinstance(e.type, TMap):
         #     return EBinOp(
         #         self.cardinality(EMapKeys(e).with_type(TBag(e.type.k))),
