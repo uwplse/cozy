@@ -1,5 +1,5 @@
 from cozy.target_syntax import *
-from cozy.syntax_tools import BottomUpRewriter, alpha_equivalent, cse
+from cozy.syntax_tools import BottomUpRewriter, alpha_equivalent, cse, compose
 from cozy.evaluation import construct_value
 from cozy.solver import valid, satisfy
 
@@ -70,6 +70,8 @@ class _V(BottomUpRewriter):
                 f.apply_to(ee.e),
                 ee,
                 EEmptyList().with_type(e.type)).with_type(e.type))
+        elif isinstance(ee, EMap):
+            return self.visit(EMap(EFilter(ee.e, compose(f, ee.f)).with_type(ee.type), ee.f).with_type(e.type))
         return EFilter(ee, f).with_type(e.type)
     def visit_EMap(self, e):
         ee = self.visit(e.e)
@@ -78,6 +80,8 @@ class _V(BottomUpRewriter):
             return self.visit(EBinOp(EMap(ee.e1, f).with_type(e.type), ee.op, EMap(ee.e2, f).with_type(e.type)).with_type(e.type))
         elif isinstance(ee, ESingleton):
             return self.visit(ESingleton(f.apply_to(ee.e)).with_type(e.type))
+        elif isinstance(ee, EMap):
+            return self.visit(EMap(ee.e, compose(f, ee.f)).with_type(e.type))
         return EMap(ee, f).with_type(e.type)
     def visit_EArgMin(self, e):
         ee = self.visit(e.e)
