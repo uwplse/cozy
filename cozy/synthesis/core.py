@@ -24,6 +24,7 @@ enforce_seen_wf = Option("enforce-seen-set-well-formed", bool, False)
 enforce_strong_progress = Option("enforce-strong-progress", bool, False)
 enforce_exprs_wf = Option("enforce-expressions-well-formed", bool, False)
 preopt = Option("optimize-accelerated-exps", bool, True)
+check_depth = Option("proof-depth", int, 4)
 
 class ExpBuilder(object):
     def check(self, e, pool):
@@ -616,7 +617,7 @@ def improve(
 
             # 3. check
             formula = EAll([assumptions, ENot(EBinOp(target, "==", new_target).with_type(BOOL))])
-            counterexample = satisfy(formula, vars=vars, funcs=funcs)
+            counterexample = satisfy(formula, vars=vars, funcs=funcs, collection_depth=check_depth.value)
             if counterexample is not None:
 
                 # Ok they aren't equal.  Now we need an example that
@@ -626,7 +627,7 @@ def improve(
                         EAll(local_assumptions),
                         ENot(EBinOp(target, "==", new_target).with_type(BOOL)),
                         ENot(EBinOp(old_e,  "===", new_e).with_type(BOOL))]),
-                    vars=vars, funcs=funcs)
+                    vars=vars, funcs=funcs, collection_depth=check_depth.value)
                 if counterexample is None:
                     print("!!! unable to satisfy top- and sub-expressions")
                     print("assumptions = {!r}".format(assumptions))
