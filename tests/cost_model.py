@@ -48,7 +48,7 @@ class TestCostModel(unittest.TestCase):
         c1 = cost_of(e1)
         c2 = cost_of(e2)
         print(c1.compare_to(c2))
-        assert c1.always_worse_than(c2), "{} @ {} > {} @ {}".format(pprint(e1), c1, pprint(e2), c2)
+        assert_cmp(e1, c1, e2, c2, Cost.WORSE)
 
     def test_map_vs_const_filter(self):
         # e1 = Filter {(\_var11 : xs.Handle -> ((_var11).val == z))} ((xs + []))
@@ -66,7 +66,7 @@ class TestCostModel(unittest.TestCase):
 
         c1 = cost_of(e1)
         c2 = cost_of(e2)
-        assert c1.always_better_than(c2), "{} @ {} > {} @ {}".format(pprint(e1), c1, pprint(e2), c2)
+        assert_cmp(e1, c1, e2, c2, Cost.BETTER)
 
     def test_true_filter(self):
         x = EVar("x").with_type(INT)
@@ -119,23 +119,18 @@ class TestCostModel(unittest.TestCase):
         assert cost_of(e1).compare_to(cost_of(e2)) == Cost.BETTER
         assert cost_of(e2).compare_to(cost_of(e1)) == Cost.WORSE
 
-    def test_basics(self):
-        ys = EVar('ys').with_type(TBag(THandle('ys', TInt())))
-        e = EBinOp(EUnaryOp('sum', EFlatMap(EBinOp(ys, '+', EEmptyList().with_type(TBag(THandle('ys', TInt())))).with_type(TBag(THandle('ys', TInt()))), ELambda(EVar('_var12').with_type(THandle('ys', TInt())), ESingleton(ENum(1).with_type(TInt())).with_type(TBag(TInt())))).with_type(TBag(TInt()))).with_type(TInt()), '==', ENum(0).with_type(TInt())).with_type(TBool())
-        assert cost_of(e).always_worse_than(Cost.ZERO)
-
     def test_add_empty(self):
         ys = EVar('ys').with_type(TBag(THandle('ys', TInt())))
         e1 = ys
         e2 = EBinOp(ys, "+", EEmptyList().with_type(ys.type))
         assert retypecheck(e1)
         assert retypecheck(e2)
-        assert cost_of(e1).always_better_than(cost_of(e2)), "{} vs {}".format(cost_of(e1), cost_of(e2))
+        assert_cmp(e1, cost_of(e1), e2, cost_of(e2), Cost.BETTER)
 
     def test_sum_empty(self):
         e1 = ENum(0).with_type(TInt())
         e2 = EUnaryOp("sum", EEmptyList().with_type(TBag(TInt()))).with_type(TInt())
-        assert cost_of(e1).always_better_than(cost_of(e2)), "{} vs {}".format(cost_of(e1), cost_of(e2))
+        assert_cmp(e1, cost_of(e1), e2, cost_of(e2), Cost.BETTER)
 
     def test_identity_map(self):
         xs = EVar("xs").with_type(TBag(INT))
@@ -146,14 +141,14 @@ class TestCostModel(unittest.TestCase):
         assert valid(equal(e1, e2))
         cost1 = cost_of(e1)
         cost2 = cost_of(e2)
-        assert cost1.always_better_than(cost2), "{} vs {}".format(cost1, cost2)
+        assert_cmp(e1, cost1, e2, cost2, Cost.BETTER)
 
     def test_tuples(self):
         sv = EVar("sv").with_type(THandle("T", INT))
         x = EVar("x").with_type(sv.type)
         e = ETupleGet(ETuple((sv, x)), 1)
         assert retypecheck(e)
-        assert cost_of(e).always_worse_than(cost_of(x)), "cost of {} = {}, cost of {} = {}".format(pprint(e), cost_of(e), pprint(x), cost_of(x))
+        assert_cmp(e, cost_of(e), x, cost_of(x), Cost.WORSE)
 
     def test_improvement_to_tuple(self):
         l = EUnaryOp(UOp.Length, fresh_var(INT_BAG))
@@ -179,8 +174,8 @@ class TestCostModel(unittest.TestCase):
         assert retypecheck(e1), pprint(e1)
         assert retypecheck(e2), pprint(e2)
         assert valid(equal(e1, e2))
-        assert cost_of(p1).always_better_than(cost_of(p2)), "cost_of(p1) == {}; cost_of(p2) == {}".format(cost_of(p1), cost_of(p2))
-        assert cost_of(e1).always_better_than(cost_of(e2)), "cost_of(e1) == {}; cost_of(e2) == {}".format(cost_of(e1), cost_of(e2))
+        assert_cmp(p1, cost_of(p1), p2, cost_of(p2), Cost.BETTER)
+        assert_cmp(e1, cost_of(e1), e2, cost_of(e2), Cost.BETTER)
 
     def test_flatmap(self):
         costmodel = CompositeCostModel()
@@ -195,10 +190,7 @@ class TestCostModel(unittest.TestCase):
         assert retypecheck(e2)
         cost1 = costmodel.cost(e1, RUNTIME_POOL)
         cost2 = costmodel.cost(e2, RUNTIME_POOL)
-        if not (cost1.always_better_than(cost2)):
-            print("cost( {} ) = {}".format(pprint(e1), cost1))
-            print("cost( {} ) = {}".format(pprint(e2), cost2))
-            assert False
+        assert_cmp(e1, cost1, e2, cost2, Cost.BETTER)
 
     def test_filter_singleton(self):
         x = EVar("x").with_type(INT)
@@ -212,15 +204,6 @@ class TestCostModel(unittest.TestCase):
         print("cost( {} ) = {}".format(pprint(e1), cost1))
         print("cost( {} ) = {}".format(pprint(e2), cost2))
         assumptions = EIn(x, xs)
-
-        for x1, x2 in (("cost1", "cost2"), ("cost2", "cost1")):
-            for f in ("always_better_than", "always_worse_than", "sometimes_better_than", "sometimes_worse_than"):
-                print("@> {}.{}({}) = {}\n".format(x1, f, x2, getattr(locals()[x1], f)(locals()[x2], assumptions)))
-
-        for op in "==", "<", "<=", ">", ">=":
-            print("-"*10)
-            print("cost1 {} cost2 = {}".format(op, cost1.always(op, cost2, T)))
-            print("-"*10)
 
         ordering1 = cost1.compare_to(cost2, assumptions=assumptions)
         ordering2 = cost2.compare_to(cost1, assumptions=assumptions)
