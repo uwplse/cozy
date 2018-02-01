@@ -71,7 +71,7 @@ class _V(BottomUpRewriter):
                 ee,
                 EEmptyList().with_type(e.type)).with_type(e.type))
         elif isinstance(ee, EMap):
-            return self.visit(EMap(EFilter(ee.e, compose(f, ee.f)).with_type(ee.type), ee.f).with_type(e.type))
+            return self.visit(EMap(EFilter(ee.e, compose(f, ee.f)).with_type(ee.e.type), ee.f).with_type(e.type))
         return EFilter(ee, f).with_type(e.type)
     def visit_EMap(self, e):
         ee = self.visit(e.e)
