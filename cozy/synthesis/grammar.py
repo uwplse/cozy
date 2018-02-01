@@ -100,6 +100,7 @@ class BinderBuilder(ExpBuilder):
                     if not isinstance(a1.type, TMap):
                         for a2 in cache.find(pool=pool, type=a1.type, size=sz2):
                             yield self.check(EEq(a1, a2), pool)
+                            yield self.check(EBinOp(a1, "!=", a2).with_type(BOOL), pool)
                 for m in cache.find(pool=pool, type=TMap, size=sz1):
                     for k in cache.find(pool=pool, type=m.type.k, size=sz2):
                         yield self.check(EMapGet(m, k).with_type(m.type.v), pool)
