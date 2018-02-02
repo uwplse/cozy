@@ -1199,7 +1199,7 @@ class IncrementalSolver(object):
         return self.satisfy(e) is not None
 
     def valid(self, e):
-        return not satisfiable(ENot(e))
+        return not self.satisfiable(ENot(e))
 
 def satisfy(e, **opts):
     s = IncrementalSolver(**opts)
