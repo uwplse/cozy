@@ -1058,6 +1058,37 @@ class ExpMap(object):
         i = id(k)
         try:
             return self.by_id[i]
+        def visit_EListComprehension(self, e):
+            raise NotImplementedError()
+        def _fvs(self, e):
+            if not hasattr(e, "_fvs"):
+                e._fvs = free_vars(e)
+            return e._fvs
+        def visit_ELambda(self, e):
+            old_avail = self.avail
+            self.avail = ExpMap([(k, v) for (k, v) in self.avail.items() if e.arg not in self._fvs(k)])
+            body = self.visit(e.body)
+
+            precious = set((e.arg,))
+            # print("computing fvs x{}...".format(len(self.avail.items())))
+            fvs = { v : self._fvs(k) for (k, v) in self.avail.items() }
+            # print("done")
+            dirty = True
+            while dirty:
+                dirty = False
+                for v in self.avail.values():
+                    if any(vv in precious for vv in fvs[v]):
+                        if v not in precious:
+                            precious.add(v)
+                            dirty = True
+            for (k, v) in list(self.avail.items()):
+                if v not in precious:
+                    old_avail[k] = v
+                    del self.avail[k]
+
+            body = finish(body, self.avail)
+            self.avail = old_avail
+            return target_syntax.ELambda(e.arg, body)
         except KeyError:
             return self.by_hash.get(self._hash(k))
     def __setitem__(self, k, v):
@@ -1186,7 +1217,7 @@ def inline_calls(spec):
     extern_func_names = set(e.name for e in spec.extern_funcs)
     queries = {}
 
-    class V(BottomUpRewriter):
+    class CallInliner(BottomUpRewriter):
         def visit_Query(self, q):
             # Don't want to inline calls to extern functions.
             if q.name not in extern_func_names:
@@ -1200,7 +1231,110 @@ def inline_calls(spec):
                 return e
 
             return subst(query.ret,
-                {arg: exp for ((arg, argtype), exp) in zip(query.args, e.args)})
+                {arg: expr for ((arg, argtype), expr) in zip(query.args, e.args)})
 
-    rewriter = V()
+    rewriter = CallInliner()
     return rewriter.visit(spec)
+
+def eliminate_common_subexpressions(spec):
+    class Eliminator(BottomUpRewriter):
+        def __init__(self):
+            super().__init__()
+            self.available = ExpMap()
+        def visit_EVar(self, e):
+            return e
+        def visit_ENum(self, e):
+            return e
+        def visit_EEnumEntry(self, e):
+            return e
+        def visit_EEmptyList(self, e):
+            return e
+        def visit_EStr(self, e):
+            return e
+        def visit_EBool(self, e):
+            return e
+        def visit_ENative(self, e):
+            return e
+        def visit_ENull(self, e):
+            return e
+        def visit_Exp(self, e):
+            ee = type(e)(*[self.visit(c) for c in e.children()]).with_type(e.type)
+            res = self.available.get(ee)
+            if res is not None:
+                return res
+            v = fresh_var(e.type, hint="tmp")
+            self.available[ee] = v
+            return v
+        def visit_EListComprehension(self, e):
+            raise NotImplementedError()
+        def _fvs(self, e):
+            if not hasattr(e, "_fvs"):
+                e._fvs = free_vars(e)
+            return e._fvs
+        def visit_ELambda(self, e):
+            old_avail = self.available
+            self.available = ExpMap([(k, v) for (k, v) in self.available.items() if e.arg not in self._fvs(k)])
+            body = self.visit(e.body)
+
+            precious = set((e.arg,))
+            # print("computing fvs x{}...".format(len(self.avail.items())))
+            fvs = { v : self._fvs(k) for (k, v) in self.available.items() }
+            # print("done")
+            dirty = True
+            while dirty:
+                dirty = False
+                for v in self.available.values():
+                    if any(vv in precious for vv in fvs[v]):
+                        if v not in precious:
+                            precious.add(v)
+                            dirty = True
+            for (k, v) in list(self.available.items()):
+                if v not in precious:
+                    old_avail[k] = v
+                    del self.available[k]
+
+            body = inject_vars(body, self.available)
+            self.available = old_avail
+            return target_syntax.ELambda(e.arg, body)
+
+    def inject_vars(e, avail):
+        ravail = collections.OrderedDict([(v, k) for (k, v) in avail.items() if v is not None])
+        counts = free_vars(e, counts=True)
+        for var, value in reversed(ravail.items()):
+            for (vv, ct) in free_vars(value, counts=True).items():
+                counts[vv] = counts.get(vv, 0) + ct
+        to_inline = common.OrderedSet(v for v in ravail if counts.get(v, 0) <= 1 or ravail[v].size() < 2)
+        sub = { v : ravail[v] for v in to_inline }
+
+        skip = { }
+        class V(BottomUpRewriter):
+            def visit_EVar(self, var):
+                if var in sub and var not in skip:
+                    return self.visit(sub[var])
+                return var
+            def visit_ELambda(self, lam):
+                with common.extend(skip, lam.arg, True):
+                    return target_syntax.ELambda(lam.arg, self.visit(lam.body))
+
+        inliner = V()
+        e = inliner.visit(e)
+
+        for var, value in reversed(ravail.items()):
+            if var in to_inline:
+                continue
+            value = inliner.visit(value)
+            ee = syntax.ELet(value, target_syntax.ELambda(var, e))
+            if hasattr(e, "type"):
+                ee = ee.with_type(e.type)
+            e = ee
+        return e
+
+    class OpVisitor(BottomUpRewriter):
+        def visit_Op(self, s):
+            eliminator = Eliminator()
+            s2 = eliminator.visit(s)
+            return inject_vars(s2, eliminator.available)
+
+    vee = OpVisitor()
+    spec2 = vee.visit(spec)
+    return spec2
