@@ -387,17 +387,35 @@ def free_vars(exp, counts=False):
     res = collections.OrderedDict()
     bound = collections.defaultdict(int)
 
-    class Unbind(object):
+    scopes = [[]]
+
+    def push_scope():
+        scopes.append([])
+
+    def bind(x):
+        bound[x] += 1
+        scopes[-1].append(x)
+
+    class Bind(object):
         def __init__(self, var):
             self.var = var
         def exec(self):
-            bound[self.var] -= 1
+            bind(self.var)
+
+    class PopScope():
+        def exec(self):
+            scope = scopes.pop()
+            for v in scope:
+                bound[v] -= 1
+
+    class PushScope():
+        def exec(self):
+            push_scope()
 
     stk = [exp]
     while stk:
-        x = stk[-1]
-        del stk[-1]
-        if isinstance(x, Unbind):
+        x = stk.pop()
+        if isinstance(x, PushScope) or isinstance(x, PopScope) or isinstance(x, Bind):
             x.exec()
         elif isinstance(x, syntax.EVar):
             if not bound[x]:
@@ -407,21 +425,60 @@ def free_vars(exp, counts=False):
             for k, v in subres.items():
                 res[k] = res.get(k, 0) + v
         elif isinstance(x, target_syntax.ELambda):
-            bound[x.arg] += 1
-            stk.append(Unbind(x.arg))
+            push_scope()
+            bind(x.arg)
+            stk.append(PopScope())
             stk.append(x.body)
         elif isinstance(x, syntax.EListComprehension):
             raise NotImplementedError()
         elif isinstance(x, syntax.Method):
+            push_scope()
             args = [syntax.EVar(a).with_type(t) for (a, t) in x.args]
             for a in args:
-                bound[a] += 1
-            stk.extend(Unbind(a) for a in args)
+                bind(a)
+            stk.append(PopScope())
             if isinstance(x, syntax.Query):
                 stk.extend(reversed(x.assumptions))
                 stk.append(x.ret)
+            elif isinstance(x, syntax.Op):
+                stk.extend(reversed(x.assumptions))
+                stk.append(x.body)
             else:
                 raise NotImplementedError()
+        elif isinstance(x, syntax.SDecl):
+            v = syntax.EVar(x.id)
+            if hasattr(x.val, "type"):
+                v = v.with_type(x.val.type)
+            stk.append(Bind(v))
+            stk.append(x.val)
+        elif isinstance(x, syntax.SIf):
+            for branch in (x.then_branch, x.else_branch):
+                stk.append(PopScope())
+                stk.append(branch)
+                stk.append(PushScope())
+            stk.append(x.cond)
+        elif isinstance(x, syntax.SForEach):
+            stk.append(PopScope())
+            stk.append(x.body)
+            stk.append(Bind(x.id))
+            stk.append(PushScope())
+            stk.append(x.iter)
+        elif isinstance(x, target_syntax.SWhile):
+            stk.append(PopScope())
+            stk.append(x.body)
+            stk.append(PushScope())
+            stk.append(x.e)
+        elif isinstance(x, target_syntax.SEscapableBlock):
+            push_scope()
+            stk.append(PopScope())
+            stk.append(x.body)
+        elif isinstance(x, target_syntax.SMapUpdate):
+            stk.append(PopScope())
+            stk.append(x.change)
+            stk.append(Bind(x.val_var))
+            stk.append(PushScope())
+            stk.append(x.key)
+            stk.append(x.map)
         elif isinstance(x, common.ADT):
             stk.extend(reversed(x.children()))
         elif isinstance(x, list) or isinstance(x, tuple):

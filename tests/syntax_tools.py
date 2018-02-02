@@ -118,3 +118,19 @@ class TestSyntaxTools(unittest.TestCase):
         assert e == ee
         assert orig_hash == hash(ee)
         assert e.type == ee.type
+
+    def test_stm_fvs(self):
+        use_x = SCall(ONE, "f", (EVar("x"),))
+        assert list(free_vars(SDecl("x", EVar("x")))) == [EVar("x")]
+        assert list(free_vars(SSeq(
+            SDecl("x", ONE),
+            use_x))) == []
+        assert list(free_vars(SIf(T, SDecl("x", ONE), SNoOp()))) == []
+        assert list(free_vars(SSeq(
+            SIf(T, SDecl("x", ONE), SNoOp()),
+            use_x))) == [EVar("x")]
+        assert list(free_vars(SForEach(EVar("x"), EEmptyList(), use_x))) == []
+        assert list(free_vars(SSeq(SForEach(EVar("x"), EEmptyList(), use_x), use_x))) == [EVar("x")]
+        assert list(free_vars(SEscapableBlock("label", SDecl("x", ONE)))) == []
+        assert list(free_vars(SWhile(T, SDecl("x", ONE)))) == []
+        assert list(free_vars(SMapUpdate(T, T, EVar("x"), SSeq(SDecl("y", ONE), use_x)))) == []

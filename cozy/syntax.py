@@ -128,8 +128,8 @@ SNoOp               = declare_case(Stm, "SNoOp")
 SSeq                = declare_case(Stm, "SSeq",     ["s1", "s2"])
 SCall               = declare_case(Stm, "SCall",    ["target", "func", "args"])
 SAssign             = declare_case(Stm, "SAssign",  ["lhs", "rhs"])
-SDecl               = declare_case(Stm, "SDecl",    ["id", "val"])
-SForEach            = declare_case(Stm, "SForEach", ["id", "iter", "body"])
+SDecl               = declare_case(Stm, "SDecl",    ["id", "val"]) # str id
+SForEach            = declare_case(Stm, "SForEach", ["id", "iter", "body"]) # EVar id
 SIf                 = declare_case(Stm, "SIf",      ["cond", "then_branch", "else_branch"])
 
 # -----------------------------------------------------------------------------
