@@ -1115,37 +1115,6 @@ class ExpMap(object):
         i = id(k)
         try:
             return self.by_id[i]
-        def visit_EListComprehension(self, e):
-            raise NotImplementedError()
-        def _fvs(self, e):
-            if not hasattr(e, "_fvs"):
-                e._fvs = free_vars(e)
-            return e._fvs
-        def visit_ELambda(self, e):
-            old_avail = self.avail
-            self.avail = ExpMap([(k, v) for (k, v) in self.avail.items() if e.arg not in self._fvs(k)])
-            body = self.visit(e.body)
-
-            precious = set((e.arg,))
-            # print("computing fvs x{}...".format(len(self.avail.items())))
-            fvs = { v : self._fvs(k) for (k, v) in self.avail.items() }
-            # print("done")
-            dirty = True
-            while dirty:
-                dirty = False
-                for v in self.avail.values():
-                    if any(vv in precious for vv in fvs[v]):
-                        if v not in precious:
-                            precious.add(v)
-                            dirty = True
-            for (k, v) in list(self.avail.items()):
-                if v not in precious:
-                    old_avail[k] = v
-                    del self.avail[k]
-
-            body = finish(body, self.avail)
-            self.avail = old_avail
-            return target_syntax.ELambda(e.arg, body)
         except KeyError:
             return self.by_hash.get(self._hash(k))
     def __setitem__(self, k, v):
