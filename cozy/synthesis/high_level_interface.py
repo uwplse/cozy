@@ -134,6 +134,8 @@ def improve_implementation(
         timeout           : datetime.timedelta = datetime.timedelta(seconds=60),
         progress_callback = None) -> Implementation:
 
+    start_time = datetime.datetime.now()
+
     # we statefully modify `impl`, so let's make a defensive copy
     impl = Implementation(
         impl.spec,
@@ -244,7 +246,8 @@ def improve_implementation(
                 # this guard might be false if a better solution was
                 # enqueued but the job has already been cleaned up
                 if q.name in [qq.name for qq in impl.query_specs]:
-                    print("SOLUTION FOR {} [size={}]".format(q.name, new_ret.size() + sum(proj.size() for (v, proj) in new_rep)))
+                    elapsed = datetime.datetime.now() - start_time
+                    print("SOLUTION FOR {} AT {} [size={}]".format(q.name, elapsed, new_ret.size() + sum(proj.size() for (v, proj) in new_rep)))
                     print("-" * 40)
                     for (sv, proj) in new_rep:
                         print("  {} : {} = {}".format(sv.id, pprint(sv.type), pprint(proj)))
