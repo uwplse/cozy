@@ -6,6 +6,9 @@ from cozy.target_syntax import *
 from cozy.syntax_tools import enumerate_fragments_and_pools, pprint
 from cozy.solver import valid
 from cozy.pools import RUNTIME_POOL, STATE_POOL
+from cozy.opts import Option
+
+allow_conditional_state = Option("allow-conditional-state", bool, False)
 
 class ExpIsNotWf(Exception):
     def __init__(self, e, offending_subexpression, reason):
@@ -52,6 +55,8 @@ def exp_wf_nonrecursive(e : Exp, state_vars : {EVar}, args : {EVar}, pool = RUNT
         raise ExpIsNotWf(e, e, "singleton in state position")
     if not at_runtime and isinstance(e, ENum) and e.val != 0:
         raise ExpIsNotWf(e, e, "nonzero numerical constant in state position")
+    if not allow_conditional_state.value and not at_runtime and isinstance(e, ECond):
+        raise ExpIsNotWf(e, e, "conditional in state position")
     if not at_runtime and isinstance(e, EMakeMap2) and is_collection(e.type.v):
         all_collections = [sv for sv in state_vars if is_collection(sv.type)]
         total_size = ENum(0).with_type(INT)
