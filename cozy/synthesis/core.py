@@ -26,6 +26,10 @@ enforce_exprs_wf = Option("enforce-expressions-well-formed", bool, False)
 preopt = Option("optimize-accelerated-exps", bool, True)
 check_depth = Option("proof-depth", int, 4)
 
+# When are costs checked?
+CHECK_FINAL_COST = True  # compare overall cost of each candidiate to target
+CHECK_SUBST_COST = False # compare cost of each subexp. to its replacement
+
 class ExpBuilder(object):
     def check(self, e, pool):
         if enforce_exprs_wf.value:
@@ -229,16 +233,17 @@ class Learner(object):
                 if unbound_binders:
                     _on_exp(e, "skipped exp with free binders", ", ".join(b.id for b in unbound_binders))
                     continue
-            watched_cost = self.cost_model.cost(watched_e, pool=pool)
-            ordering = cost.compare_to(watched_cost)
-            if ordering == Cost.WORSE:
-                _on_exp(e, "skipped worse replacement", pool_name(pool), watched_e)
-                continue
-            if ordering == Cost.UNORDERED:
-                _on_exp(e, "skipped equivalent replacement", pool_name(pool), watched_e)
-                # print("    e1 = {!r}".format(e))
-                # print("    e2 = {!r}".format(watched_e))
-                continue
+            if CHECK_SUBST_COST:
+                watched_cost = self.cost_model.cost(watched_e, pool=pool)
+                ordering = cost.compare_to(watched_cost, self.assumptions)
+                if ordering == Cost.WORSE:
+                    _on_exp(e, "skipped worse replacement", pool_name(pool), watched_e)
+                    continue
+                if ordering == Cost.UNORDERED:
+                    _on_exp(e, "skipped equivalent replacement", pool_name(pool), watched_e)
+                    # print("    e1 = {!r}".format(e))
+                    # print("    e2 = {!r}".format(watched_e))
+                    continue
             # TODO: can optimize by pre-computing target fingerprint
             if all(eval_bulk(EImplies(self.assumptions, EEq(self.target, r(e))), self.all_examples)):
                 yield (watched_e, e, ctx.facts, r)
@@ -656,33 +661,39 @@ def improve(
             else:
                 # b. if correct: yield it, watch the new target, goto 1
 
-                new_cost = cost_model.cost(new_target, RUNTIME_POOL)
-                ordering = new_cost.compare_to(target_cost)
-                if ordering == Cost.WORSE:
-                    print("WHOOPS! COST GOT WORSE!")
-                    if save_testcases.value:
-                        with open(save_testcases.value, "a") as f:
-                            f.write("def testcase():\n")
-                            f.write("    costmodel = {}\n".format(repr(cost_model)))
-                            f.write("    old_e = {}\n".format(repr(old_e)))
-                            f.write("    new_e = {}\n".format(repr(new_e)))
-                            f.write("    target = {}\n".format(repr(target)))
-                            f.write("    new_target = {}\n".format(repr(new_target)))
-                            f.write("    if costmodel.cost(new_e, RUNTIME_POOL) <= costmodel.cost(old_e, RUNTIME_POOL) and costmodel.cost(new_target, RUNTIME_POOL) > costmodel.cost(target, RUNTIME_POOL):\n")
-                            f.write('        for name, x in zip(["old_e", "new_e", "target", "new_target"], [old_e, new_e, target, new_target]):\n')
-                            f.write('            print("{}: {}".format(name, pprint(x)))\n')
-                            f.write('            print("    cost = {}".format(costmodel.cost(x, RUNTIME_POOL)))\n')
-                            f.write("        assert False\n")
-                    # raise Exception("detected nonmonotonicity")
-                    continue
-                elif ordering == Cost.UNORDERED:
-                    print("*** cost is unchanged")
-                    print(repr(target))
-                    print(repr(new_target))
-                    # continue
+                if CHECK_FINAL_COST:
+                    new_cost = cost_model.cost(new_target, RUNTIME_POOL)
+                    print("cost: {} -----> {}".format(target_cost, new_cost))
+                    ordering = new_cost.compare_to(target_cost, assumptions)
+                    if ordering == Cost.WORSE:
+                        if CHECK_SUBST_COST:
+                            print("WHOOPS! COST GOT WORSE!")
+                            if save_testcases.value:
+                                with open(save_testcases.value, "a") as f:
+                                    f.write("def testcase():\n")
+                                    f.write("    costmodel = {}\n".format(repr(cost_model)))
+                                    f.write("    old_e = {}\n".format(repr(old_e)))
+                                    f.write("    new_e = {}\n".format(repr(new_e)))
+                                    f.write("    target = {}\n".format(repr(target)))
+                                    f.write("    new_target = {}\n".format(repr(new_target)))
+                                    f.write("    if costmodel.cost(new_e, RUNTIME_POOL) <= costmodel.cost(old_e, RUNTIME_POOL) and costmodel.cost(new_target, RUNTIME_POOL) > costmodel.cost(target, RUNTIME_POOL):\n")
+                                    f.write('        for name, x in zip(["old_e", "new_e", "target", "new_target"], [old_e, new_e, target, new_target]):\n')
+                                    f.write('            print("{}: {}".format(name, pprint(x)))\n')
+                                    f.write('            print("    cost = {}".format(costmodel.cost(x, RUNTIME_POOL)))\n')
+                                    f.write("        assert False\n")
+                            # raise Exception("detected nonmonotonicity")
+                        else:
+                            print("*** cost is worse")
+                        continue
+                    elif ordering == Cost.UNORDERED:
+                        print("*** cost is unchanged")
+                        print(repr(target))
+                        print(repr(new_target))
+                        continue
+                    target_cost = new_cost
                 print("found improvement: {} -----> {}".format(pprint(old_e), pprint(new_e)))
-                print("cost: {} -----> {}".format(target_cost, new_cost))
-                target_cost = new_cost
+                print(repr(target))
+                print(repr(new_target))
 
                 # binders are not allowed to "leak" out
                 to_yield = new_target
@@ -691,7 +702,7 @@ def improve(
                     to_yield = subst(new_target, { b.id : construct_value(b.type) for b in binders })
                 yield to_yield
 
-                if reset_on_success.value and ordering != Cost.UNORDERED:
+                if reset_on_success.value and (not CHECK_FINAL_COST or ordering != Cost.UNORDERED):
                     learner.reset(examples)
                 learner.watch(new_target)
                 target = new_target
