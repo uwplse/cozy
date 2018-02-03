@@ -100,6 +100,11 @@ class _V(BottomUpRewriter):
         return argmin(ee, f).with_type(e.type)
     def visit_EArgMax(self, e):
         return self.visit_EArgMin(e)
+    def visit_EMapKeys(self, e):
+        ee = self.visit(e.e)
+        if isinstance(ee, EMakeMap2):
+            return self.visit(EUnaryOp(UOp.Distinct, ee.e).with_type(e.type))
+        return EMapKeys(ee).with_type(e.type)
     def visit_EUnaryOp(self, e):
         if isinstance(e.e, ECond):
             return self.visit(ECond(
