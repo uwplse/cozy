@@ -552,12 +552,22 @@ class Typechecker(Visitor):
         k, v = self.get_map_type(e.e)
         e.type = syntax.TBag(k)
 
+    def visit_EHasKey(self, e):
+        self.visit(e.map)
+        self.visit(e.key)
+        if isinstance(e.map.type, syntax.TMap):
+            self.ensure_type(e.key, e.map.type.k)
+        else:
+            self.report_err(e, "{} is not a map".format(e.map))
+        e.type = BOOL
+
     def visit_EMapGet(self, e):
         self.visit(e.map)
         self.visit(e.key)
         if not isinstance(e.map.type, syntax.TMap):
             self.report_err(e, "{} is not a map".format(e.map))
             e.type = DEFAULT_TYPE
+            return
         self.ensure_type(e.key, e.map.type.k)
         e.type = e.map.type.v
 

@@ -104,6 +104,7 @@ class BinderBuilder(ExpBuilder):
                 for m in cache.find(pool=pool, type=TMap, size=sz1):
                     for k in cache.find(pool=pool, type=m.type.k, size=sz2):
                         yield self.check(EMapGet(m, k).with_type(m.type.v), pool)
+                        yield self.check(EHasKey(m, k).with_type(BOOL), pool)
 
             for (sz1, sz2, sz3) in pick_to_sum(3, size-1):
                 for cond in cache.find(pool=pool, type=BOOL, size=sz1):

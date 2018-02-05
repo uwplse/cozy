@@ -742,6 +742,8 @@ class ToZ3(Visitor):
         map = self.visit(e.map, env)
         key = self.visit(e.key, env)
         return self._map_get(e.map.type, map, key, env)
+    def visit_EHasKey(self, e, env):
+        return self.visit(EIn(e.key, EMapKeys(e.map).with_type(TSet(e.map.type.k))), env)
     def visit_EApp(self, e, env):
         return self.apply(e.f, self.visit(e.arg, env), env)
     def visit_ELet(self, e, env):

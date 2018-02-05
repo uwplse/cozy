@@ -79,3 +79,10 @@ class SemanticsTests(unittest.TestCase):
         assert retypecheck(e1)
         assert retypecheck(e2)
         self.assert_same(e1, e2)
+
+    def test_haskey(self):
+        m = EVar("m").with_type(TMap(INT, INT))
+        k = EVar("k").with_type(INT)
+        e1 = EHasKey(m, k).with_type(BOOL)
+        e2 = EIn(k, EMapKeys(m).with_type(TSet(INT)))
+        self.assert_same(e1, e2)

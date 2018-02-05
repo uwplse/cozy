@@ -277,6 +277,13 @@ def read_map(stk):
     m = stk.pop()
     stk.append(m[k])
 
+def has_key(key_type):
+    def _has_key(stk):
+        k = stk.pop()
+        m = stk.pop()
+        stk.append(any(eq(key_type, k, kk) for kk in m.keys()))
+    return _has_key
+
 def read_map_keys(stk):
     stk.append(Bag(stk.pop().keys()))
 
@@ -742,6 +749,10 @@ def _compile(e, env : {str:int}, out, bind_callback):
         _compile(e.map, env, out, bind_callback=bind_callback)
         _compile(e.key, env, out, bind_callback=bind_callback)
         out.append(read_map)
+    elif isinstance(e, EHasKey):
+        _compile(e.map, env, out, bind_callback=bind_callback)
+        _compile(e.key, env, out, bind_callback=bind_callback)
+        out.append(has_key(e.key.type))
     elif isinstance(e, EMapKeys):
         _compile(e.e, env, out, bind_callback=bind_callback)
         out.append(read_map_keys)
