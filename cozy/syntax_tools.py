@@ -365,7 +365,13 @@ class PrettyPrinter(common.Visitor):
     def visit_SIf(self, s, indent=""):
         if isinstance(s.else_branch, syntax.SNoOp):
             return "{indent}{If} {} {{\n{}\n{indent}}}".format(self.visit(s.cond), self.visit(s.then_branch, indent + "  "), indent=indent, If=self.format_keyword("if"))
-        return "{indent}{If} {} {{\n{}\n{indent}}} {Else} {{\n{}\n}}".format(self.visit(s.cond), self.visit(s.then_branch, indent + "  "), self.visit(s.else_branch, indent + "  "), indent=indent, If=self.format_keyword("if"), Else=self.format_keyword("else"))
+        return "{indent}{If} {} {{\n{}\n{indent}}} {Else} {{\n{}\n}}".format(
+            self.visit(s.cond),
+            self.visit(s.then_branch, indent + "  "),
+            self.visit(s.else_branch, indent + "  "),
+            indent=indent,
+            If=self.format_keyword("if"),
+            Else=self.format_keyword("else"))
 
 _PRETTYPRINTER = PrettyPrinter()
 def pprint(ast, format="plain"):
@@ -1143,7 +1149,7 @@ def cse(e, verify=False):
         for var, value in reversed(ravail.items()):
             for (vv, ct) in free_vars(value, counts=True).items():
                 counts[vv] = counts.get(vv, 0) + ct
-        to_inline = common.OrderedSet(v for v in ravail if counts.get(v, 0) <= 1 or ravail[v].size() < 2)
+        to_inline = common.OrderedSet(v for v in ravail if counts.get(v, 0) < 2 or ravail[v].size() < 2)
         sub = { v : ravail[v] for v in to_inline }
 
         skip = { }
@@ -1163,6 +1169,7 @@ def cse(e, verify=False):
             if var in to_inline:
                 continue
             value = inliner.visit(value)
+
             ee = syntax.ELet(value, target_syntax.ELambda(var, e))
             if hasattr(e, "type"):
                 ee = ee.with_type(e.type)
@@ -1349,9 +1356,12 @@ def eliminate_common_subexpressions(spec):
             if var in to_inline:
                 continue
             value = inliner.visit(value)
-            ee = syntax.ELet(value, target_syntax.ELambda(var, e))
+
+            ee = syntax.SSeq(syntax.SDecl(var.id, value), e)
+
             if hasattr(e, "type"):
                 ee = ee.with_type(e.type)
+
             e = ee
         return e
 
@@ -1359,7 +1369,8 @@ def eliminate_common_subexpressions(spec):
         def visit_Op(self, s):
             eliminator = Eliminator()
             s2 = eliminator.visit(s)
-            return inject_vars(s2, eliminator.available)
+            s2.body = inject_vars(s2.body, eliminator.available)
+            return s2
 
     vee = OpVisitor()
     spec2 = vee.visit(spec)

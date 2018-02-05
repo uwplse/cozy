@@ -164,7 +164,9 @@ def run():
     impl = syntax_tools.inline_calls(impl)
     print()
     print(syntax_tools.pprint(impl))
+    print(impl)
     impl = syntax_tools.eliminate_common_subexpressions(impl)
+    print(impl)
     print()
     print(syntax_tools.pprint(impl))
 
