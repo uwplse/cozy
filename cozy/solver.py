@@ -975,6 +975,11 @@ def _tock(e, event):
 _LOCK = threading.RLock()
 
 class IncrementalSolver(object):
+    SAVE_PROPS = [
+        "vars",
+        "funcs",
+        "_env"]
+
     def __init__(self,
             vars = None,
             funcs = None,
@@ -993,6 +998,7 @@ class IncrementalSolver(object):
         self.validate_model = validate_model
         self.model_callback = model_callback
         self._env = OrderedDict()
+        self.stk = []
 
         with _LOCK:
             ctx = z3.Context()
@@ -1005,6 +1011,16 @@ class IncrementalSolver(object):
             self.visitor = visitor
             self.z3_solver = solver
             self._create_vars(vars=vars or (), funcs=funcs or {})
+
+    def push(self):
+        self.stk.append(tuple(type(getattr(self, p))(getattr(self, p)) for p in IncrementalSolver.SAVE_PROPS))
+        self.z3_solver.push()
+
+    def pop(self):
+        x = self.stk.pop()
+        for v, p in zip(x, IncrementalSolver.SAVE_PROPS):
+            setattr(self, p, v)
+        self.z3_solver.pop()
 
     def _create_vars(self, vars, funcs):
         for f, t in funcs.items():
@@ -1103,16 +1119,19 @@ class IncrementalSolver(object):
                 else:
                     raise NotImplementedError(type)
 
+            a = self._convert(e)
             solver.push()
-            self.add_assumption(e)
+            solver.add(a)
 
             # print(solver.assertions())
             _tock(e, "encode")
             res = solver.check()
             _tock(e, "solve")
             if res == z3.unsat:
+                solver.pop()
                 return None
             elif res == z3.unknown:
+                solver.pop()
                 raise SolverReportedUnknown("z3 reported unknown")
             else:
                 def mkfunc(f, arg_types, out_type):
