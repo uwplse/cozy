@@ -286,13 +286,16 @@ class Learner(object):
                     # if not alpha_equivalent(e, prev_exp):
                     #     print("*** rewriting {} to {}".format(pprint(e), pprint(prev_exp)), file=sys.stderr)
                     return prev_exp
+        res = None
         try:
             res = V().visit(e)
+            assert exp_wf(res, state_vars=self.state_vars, args=self.args, pool=pool, assumptions=self.assumptions)
             if hasattr(e, "_tag"):
                 res._tag = e._tag
             return res
         except:
-            print("FAILED TO PREOPTIMIZE {}".format(pprint(e)))
+            traceback.print_exc(file=sys.stdout)
+            print("FAILED TO PREOPTIMIZE {} ---> {}".format(pprint(e), pprint(res)))
             print(repr(e))
             return e
 
