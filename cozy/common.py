@@ -272,6 +272,7 @@ def nested_dict(n, t):
 _i = Value(ctypes.c_uint64, 0)
 def fresh_name(hint="name", omit=None):
     if omit is not None:
+        assert all(isinstance(o, str) for o in omit)
         i = 0
         while ("_{}{}".format(hint, i)) in omit:
             i += 1

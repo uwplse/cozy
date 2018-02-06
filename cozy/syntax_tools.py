@@ -15,8 +15,17 @@ from cozy import syntax
 from cozy import target_syntax
 from cozy import pools
 
-def fresh_var(type, hint="var", **kwargs):
-    return syntax.EVar(common.fresh_name(hint, **kwargs)).with_type(type)
+def var_name(v):
+    if isinstance(v, str):
+        return v
+    if isinstance(v, syntax.EVar):
+        return v.id
+    raise TypeError(v)
+
+def fresh_var(type, hint="var", omit=None):
+    if omit is not None:
+        omit = { var_name(v) for v in omit }
+    return syntax.EVar(common.fresh_name(hint, omit=omit)).with_type(type)
 
 def mk_lambda(t, l):
     v = fresh_var(t)
