@@ -36,7 +36,7 @@ def EIsSingleton(e):
 
 def EDeepIn(e1, e2):
     from cozy.syntax_tools import free_vars, fresh_var
-    arg = fresh_var(e1.type, omit=free_vars(e2))
+    arg = fresh_var(e1.type, omit=free_vars(e1))
     return EUnaryOp(UOp.Any,
         EMap(e2, ELambda(arg,
             EBinOp(arg, "===", e1).with_type(BOOL))).with_type(BOOL_BAG)).with_type(BOOL)

@@ -1,7 +1,7 @@
 import unittest
 
 from cozy.target_syntax import *
-from cozy.syntax_tools import mk_lambda, pprint
+from cozy.syntax_tools import mk_lambda, pprint, fresh_var, free_vars
 from cozy.typecheck import retypecheck
 from cozy.solver import satisfy, valid
 from cozy.evaluation import eval, construct_value
@@ -86,3 +86,12 @@ class SemanticsTests(unittest.TestCase):
         e1 = EHasKey(m, k).with_type(BOOL)
         e2 = EIn(k, EMapKeys(m).with_type(TSet(INT)))
         self.assert_same(e1, e2)
+
+    def test_edeepin(self):
+        ht = THandle("H", INT)
+        hb = EVar("hb").with_type(TBag(ht))
+        h = fresh_var(ht, omit=free_vars(hb))
+        arg = fresh_var(ht, omit=free_vars(h)|free_vars(hb))
+        f1 = EDeepIn(h, hb)
+        f2 = EUnaryOp(UOp.Any, EMap(hb, ELambda(arg, EBinOp(arg, "===", h).with_type(BOOL))).with_type(BOOL_BAG)).with_type(BOOL)
+        self.assert_same(f1, f2)
