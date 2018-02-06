@@ -8,7 +8,7 @@ from queue import Empty
 from cozy.common import typechecked, fresh_name, pick_to_sum, nested_dict, find_one, OrderedSet
 from cozy.target_syntax import *
 import cozy.syntax_tools
-from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, BottomUpRewriter, free_vars, pprint, subst, implies, fresh_var, mk_lambda, all_exps, equal, is_scalar, tease_apart, shallow_copy, enumerate_fragments2
+from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, BottomUpRewriter, free_vars, pprint, subst, implies, fresh_var, mk_lambda, all_exps, equal, is_scalar, tease_apart, shallow_copy, enumerate_fragments2, wrap_naked_statevars
 import cozy.incrementalization as inc
 from cozy.timeouts import Timeout, TimeoutException
 from cozy.cost_model import CompositeCostModel
@@ -28,21 +28,6 @@ nice_children = Option("nice-children", bool, False)
 log_dir = Option("log-dir", str, "/tmp")
 SynthCtx = namedtuple("SynthCtx", ["all_types", "basic_types"])
 LINE_BUFFER_MODE = 1 # see help for open() function
-
-def find_naked_statevar(e, state_vars):
-    for ctx in enumerate_fragments2(e):
-        if isinstance(ctx.e, EVar) and ctx.e in state_vars and ctx.pool != STATE_POOL:
-            return (ctx.e, ctx.replace_e_with)
-    return None
-
-def wrap_naked_statevars(e, state_vars):
-    while True:
-        x = find_naked_statevar(e, state_vars)
-        if x is None:
-            break
-        sv, r = x
-        e = r(EStateVar(sv).with_type(sv.type))
-    return e
 
 class ImproveQueryJob(jobs.Job):
     @typechecked

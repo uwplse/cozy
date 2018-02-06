@@ -809,6 +809,21 @@ def purify(exp : syntax.Exp) -> syntax.Exp:
         exp = target_syntax.ELet(e, target_syntax.ELambda(v, exp)).with_type(exp.type)
     return exp
 
+def find_naked_statevar(e, state_vars):
+    for ctx in enumerate_fragments2(e):
+        if isinstance(ctx.e, syntax.EVar) and ctx.e in state_vars and ctx.pool != pools.STATE_POOL:
+            return (ctx.e, ctx.replace_e_with)
+    return None
+
+def wrap_naked_statevars(e, state_vars):
+    while True:
+        x = find_naked_statevar(e, state_vars)
+        if x is None:
+            break
+        sv, r = x
+        e = r(target_syntax.EStateVar(sv).with_type(sv.type))
+    return e
+
 def subst(exp, replacements, tease=True):
     """
     Performs capture-avoiding substitution.
