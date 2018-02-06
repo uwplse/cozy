@@ -3,7 +3,7 @@ import itertools
 from cozy.common import typechecked
 from cozy.typecheck import is_collection, is_scalar, is_numeric
 from cozy.target_syntax import *
-from cozy.syntax_tools import enumerate_fragments_and_pools, pprint
+from cozy.syntax_tools import enumerate_fragments2, pprint, free_vars
 from cozy.solver import valid
 from cozy.pools import RUNTIME_POOL, STATE_POOL
 from cozy.opts import Option
@@ -79,10 +79,10 @@ def exp_wf(e : Exp, state_vars : {EVar}, args : {EVar}, pool = RUNTIME_POOL, ass
     """
     Returns True or throws exception indicating why `e` is not well-formed.
     """
-    for (a, x, r, bound, p) in enumerate_fragments_and_pools(e):
-        p = p if pool == RUNTIME_POOL else STATE_POOL
+    for ctx in enumerate_fragments2(e):
+        p = ctx.pool if pool == RUNTIME_POOL else STATE_POOL
         try:
-            exp_wf_nonrecursive(x, state_vars, args, p, assumptions=EAll(itertools.chain(a, (assumptions,))))
+            exp_wf_nonrecursive(ctx.e, state_vars, args, p, assumptions=EAll(itertools.chain(ctx.facts, (assumptions,))))
         except ExpIsNotWf as exc:
-            raise ExpIsNotWf(e, x, exc.reason)
+            raise ExpIsNotWf(e, ctx.e, exc.reason)
     return True
