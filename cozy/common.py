@@ -156,7 +156,13 @@ class ADT(object):
         d = dict(self.__dict__)
         if "_hash" in d:
             del d["_hash"]
+        if hasattr(self, "__slots__"):
+            for a in self.__slots__:
+                d[a] = getattr(self, a)
         return d
+    def __setstate__(self, d):
+        for k, v in d.items():
+            setattr(self, k, v)
     def __eq__(self, other):
         if self is other: return True
         return type(self) is type(other) and self.children() == other.children()
@@ -455,6 +461,8 @@ def declare_case(supertype, name, attrs=()):
     Creates a new class (CaseName) that is a subclass of SuperType and has all
     the given members.
     """
+    if not isinstance(attrs, tuple):
+        attrs = tuple(attrs)
     def __init__(self, *args):
         assert len(args) == len(attrs), "{} expects {} args, was given {}".format(name, len(attrs), len(args))
         for attr, val in zip(attrs, args):
@@ -463,6 +471,7 @@ def declare_case(supertype, name, attrs=()):
         return tuple(getattr(self, a) for a in attrs)
     t = type(name, (supertype,), {
         "__init__": __init__,
+        "__slots__": attrs,
         "children": children })
     globals()[name] = t
     return t
