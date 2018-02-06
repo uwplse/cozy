@@ -116,6 +116,12 @@ class TestSolver(unittest.TestCase):
             x = EVar("x").with_type(e.type)
             assert satisfiable(EEq(x, EUnaryOp(UOp.Distinct, e).with_type(e.type)), validate_model=True)
 
+    def test_emap(self):
+        e = EEq(
+            EVar("xs").with_type(INT_BAG),
+            EMap(EVar("ys").with_type(INT_BAG), mk_lambda(INT, lambda x: EBinOp(x, "+", ONE).with_type(INT))).with_type(INT_BAG))
+        assert satisfiable(e, validate_model=True)
+
     def test_map_keys_unique(self):
         a = EVar("a").with_type(TMap(INT, INT))
         e = EUnaryOp(UOp.AreUnique, EMapKeys(a).with_type(TBag(INT))).with_type(BOOL)
