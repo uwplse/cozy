@@ -22,6 +22,10 @@ def exp_wf_nonrecursive(e : Exp, state_vars : {EVar}, args : {EVar}, pool = RUNT
     at_runtime = pool == RUNTIME_POOL
     if isinstance(e, EStateVar) and not at_runtime:
         raise ExpIsNotWf(e, e, "EStateVar in state pool position")
+    if isinstance(e, EStateVar):
+        bad = [v for v in free_vars(e.e) if v not in state_vars]
+        if bad:
+            raise ExpIsNotWf(e, e, "free non-statevars in state position: {}".format(", ".join(v.id for v in bad)))
     if isinstance(e, EWithAlteredValue) and not at_runtime:
         raise ExpIsNotWf(e, e, "EWithAlteredValue in state position")
     if (isinstance(e, EDropFront) or isinstance(e, EDropBack)) and not at_runtime:
