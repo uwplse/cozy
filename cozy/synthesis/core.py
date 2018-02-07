@@ -201,7 +201,8 @@ class Learner(object):
         print("done!")
 
     def _fingerprint(self, e):
-        return fingerprint(e, self.all_examples)
+        bs = (len(free_vars(e) & self.binders),)
+        return fingerprint(e, self.all_examples) + bs
 
     def _possible_replacements(self, e, pool, cost, fp):
         """
@@ -224,16 +225,10 @@ class Learner(object):
             if e == watched_e:
                 # _on_exp(e, "no change")
                 continue
-            # NOTE: this check *seems* like a really good idea, but it isn't!
-            # It is possible that an expression with unbound binders---e.g.
-            # just `b`---looks better than something useful---e.g. m[x].  We
-            # will then skip m[x] in favor of `b`, but never observe that `b`
-            # is wrong.  So, we need to allow `b` through here.
-            if p == STATE_POOL:
-                unbound_binders = [b for b in free_binders if b not in ctx.bound_vars]
-                if unbound_binders:
-                    _on_exp(e, "skipped exp with free binders", ", ".join(b.id for b in unbound_binders))
-                    continue
+            unbound_binders = [b for b in free_binders if b not in ctx.bound_vars]
+            if unbound_binders:
+                _on_exp(e, "skipped exp with free binders", ", ".join(b.id for b in unbound_binders))
+                continue
             if CHECK_SUBST_COST:
                 watched_cost = self.cost_model.cost(watched_e, pool=pool)
                 ordering = cost.compare_to(watched_cost, self.assumptions)
