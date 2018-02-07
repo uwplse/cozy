@@ -87,15 +87,22 @@ class _V(BottomUpRewriter):
         ee = self.visit(e.e)
         f = self.visit(e.f)
         argmin = type(e)
-        if isinstance(ee, EBinOp) and ee.op == "+":
+        if isinstance(ee, ESingleton):
+            return ee.e
+        elif isinstance(ee, EBinOp) and ee.op == "+":
             xs = ee.e1
             ys = ee.e2
+            # A bit of trickery here since `argmin {...} (x+y)` produces an
+            # expression of shape `argmin {...} (a+b)`.  If we aren't careful
+            # we could get into an infinite loop.
+            fallback = argmin(EBinOp(
+                ESingleton(argmin(xs, f).with_type(e.type)).with_type(TBag(e.type)),
+                "+",
+                ESingleton(argmin(ys, f).with_type(e.type)).with_type(TBag(e.type))).with_type(TBag(e.type)), f).with_type(e.type)
+            fallback._nosimpl = True
             res =   ECond(self.visit(EUnaryOp(UOp.Empty, xs).with_type(BOOL)), argmin(ys, f).with_type(e.type),
                     ECond(self.visit(EUnaryOp(UOp.Empty, ys).with_type(BOOL)), argmin(xs, f).with_type(e.type),
-                        argmin(EBinOp(
-                            ESingleton(argmin(xs, f).with_type(e.type)).with_type(TBag(e.type)),
-                            "+",
-                            ESingleton(argmin(ys, f).with_type(e.type)).with_type(TBag(e.type))).with_type(TBag(e.type)), f).with_type(e.type)).with_type(e.type)).with_type(e.type)
+                        fallback).with_type(e.type)).with_type(e.type)
             return res
         return argmin(ee, f).with_type(e.type)
     def visit_EArgMax(self, e):
@@ -145,6 +152,7 @@ class _V(BottomUpRewriter):
                 return T if e.op == UOp.Exists else F
         return EUnaryOp(e.op, ee).with_type(e.type)
     def visit(self, e):
+        if hasattr(e, "_nosimpl"): return e
         if isinstance(e, Exp) and not isinstance(e, ELambda): t = e.type
         new = super().visit(e)
         if isinstance(e, Exp) and not isinstance(e, ELambda): assert new.type == e.type, repr(e)
