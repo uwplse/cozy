@@ -12,7 +12,7 @@ from cozy.evaluation import eval
 from cozy.opts import Option
 
 assume_large_cardinalities = Option("assume-large-cardinalities", int, 1000)
-integer_cardinalities = Option("try-integer-cardinalities", bool, False)
+integer_cardinalities = Option("try-integer-cardinalities", bool, True)
 
 # In principle these settings are supposed to improve performance; in practice,
 # they do not.
