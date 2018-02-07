@@ -1,13 +1,14 @@
 from collections import defaultdict, OrderedDict
+import datetime
 import itertools
 import sys
 import traceback
 
 from cozy.target_syntax import *
-from cozy.syntax_tools import subst, pprint, free_vars, free_funcs, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda, enumerate_fragments_and_pools, enumerate_fragments2, strip_EStateVar
+from cozy.syntax_tools import subst, pprint, free_vars, free_funcs, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda, enumerate_fragments2, strip_EStateVar
 from cozy.wf import ExpIsNotWf, exp_wf, exp_wf_nonrecursive
 from cozy.common import OrderedSet, ADT, Visitor, fresh_name, typechecked, unique, pick_to_sum, cross_product, OrderedDefaultDict, OrderedSet, group_by, find_one
-from cozy.solver import satisfy, satisfiable, valid
+from cozy.solver import satisfy, satisfiable, valid, IncrementalSolver
 from cozy.evaluation import eval, eval_bulk, mkval, construct_value, uneval
 from cozy.cost_model import CostModel, Cost
 from cozy.opts import Option
@@ -26,6 +27,7 @@ enforce_strong_progress = Option("enforce-strong-progress", bool, False)
 enforce_exprs_wf = Option("enforce-expressions-well-formed", bool, False)
 preopt = Option("optimize-accelerated-exps", bool, True)
 check_depth = Option("proof-depth", int, 4)
+incremental = Option("incremental", bool, False, description="Experimental option that can greatly improve performance.")
 
 # When are costs checked?
 CHECK_FINAL_COST = True  # compare overall cost of each candidiate to target
@@ -58,11 +60,11 @@ class StopException(Exception):
 class NoMoreImprovements(Exception):
     pass
 
-oracle = None
+oracle = EFilter(EVar("groups"), ELambda(EVar("x"), EEq(EGetField(EGetField(EVar("x"), "val"), "rosterMode"), EEnumEntry("EVERYBODY"))))
 _fates = defaultdict(int)
 def _on_exp(e, fate, *args):
     _fates[fate] += 1
-    return
+    # return
     outfile = sys.stdout
     # if (isinstance(e, EMapGet) or
     #         isinstance(e, EFilter) or
@@ -79,6 +81,8 @@ def _on_exp(e, fate, *args):
     # if oracle is not None and any(alpha_equivalent(e, x) for x in all_exps(oracle)):
     # if oracle is not None and any(e.type == x.type and valid(equal(e, x)) for x in all_exps(oracle) if not isinstance(x, ELambda)):
     if hasattr(e, "_tag"):
+    # if True:
+    # if "expensive" in fate:
         print(" ---> [{}, {}] {}; {}".format(fate, pprint(e.type), pprint(e), ", ".join((pprint(e) if isinstance(e, ADT) else str(e)) for e in args)), file=outfile)
 
 class ContextMap(object):
@@ -113,7 +117,7 @@ class ContextMap(object):
         return "\n".join(self._print(self.m))
 
 class Learner(object):
-    def __init__(self, target, assumptions, binders, state_vars, args, legal_free_vars, examples, cost_model, builder, stop_callback, hints):
+    def __init__(self, target, assumptions, binders, state_vars, args, legal_free_vars, examples, cost_model, builder, stop_callback, hints, solver):
         self.binders = OrderedSet(binders)
         self.state_vars = OrderedSet(state_vars)
         self.args = OrderedSet(args)
@@ -124,8 +128,17 @@ class Learner(object):
         self.seen = SeenSet()
         self.assumptions = assumptions
         self.hints = list(hints)
+        self.solver = solver
         self.reset(examples)
         self.watch(target)
+
+    def compare_costs(self, c1, c2):
+        self._on_cost_cmp()
+        solver = self.solver
+        if solver is not None:
+            return c1.compare_to(c2, solver=solver)
+        else:
+            return c1.compare_to(c2, assumptions=self.assumptions)
 
     def reset(self, examples):
         _fates.clear()
@@ -138,6 +151,7 @@ class Learner(object):
         self.last_progress = 0
         self.backlog = None
         self.backlog_counter = 0
+        self._start_minor_it()
 
     def _check_seen_wf(self):
         if enforce_seen_wf.value:
@@ -185,43 +199,43 @@ class Learner(object):
             self.roots.add((construct_value(t), RUNTIME_POOL))
         self.roots = list(self.roots)
         self.roots.sort(key = lambda tup: tup[0].size())
-        ## TODO: fix this up for symbolic cost model
-        # if self.cost_model.is_monotonic() or hyperaggressive_culling.value:
-        #     seen = list(self.seen.items())
-        #     n = 0
-        #     for ((pool, fp), (cost, exps)) in seen:
-        #         if cost > self.cost_ceiling:
-        #             for (e, size) in exps:
-        #                 _on_exp(e, "evicted due to lowered cost ceiling [cost={}, ceiling={}]".format(cost, self.cost_ceiling))
-        #                 self.cache.evict(e, size=size, pool=pool)
-        #                 n += 1
-        #             del self.seen[(pool, fp)]
-        #     if n:
-        #         print("evicted {} elements".format(n))
+        self._watches = group_by(
+            enumerate_fragments2(new_target),
+            k=lambda ctx: (ctx.pool, ctx.e.type),
+            v=lambda ctxs: sorted(ctxs, key=lambda ctx: -ctx.e.size()))
         print("done!")
 
     def _fingerprint(self, e):
+        self.fpcount += 1
+        # bs = tuple(sorted(free_vars(e) & self.binders))
         bs = (len(free_vars(e) & self.binders),)
         return fingerprint(e, self.all_examples) + bs
 
-    def _possible_replacements(self, e, pool, cost, fp):
+    def _watched_contexts(self, pool, type):
+        return self._watches.get((pool, type), ())
+        # return sorted(list(enumerate_fragments2(self.target)), key=lambda ctx: -ctx.e.size())
+
+    def _possible_replacements(self, e, pool, cost):
         """
         Yields watched expressions that appear as worse versions of the given
         expression. There may be more than one.
         """
+        # return
         free_binders = OrderedSet(v for v in free_vars(e) if v in self.binders)
-        for ctx in sorted(list(enumerate_fragments2(self.target)), key=lambda ctx: -ctx.e.size()):
+        for ctx in self._watched_contexts(pool, e.type):
             watched_e = ctx.e
             p = ctx.pool
             r = ctx.replace_e_with
 
-            # _on_exp(e, "considering replacement of", watched_e)
-            if e.type != watched_e.type:
-                # _on_exp(e, "wrong type")
-                continue
-            if p != pool:
-                # _on_exp(e, "wrong pool")
-                continue
+            assert e.type == watched_e.type
+            assert p == pool
+            _on_exp(e, "considering replacement of", watched_e)
+            # if e.type != watched_e.type:
+            #     # _on_exp(e, "wrong type")
+            #     continue
+            # if p != pool:
+            #     # _on_exp(e, "wrong pool")
+            #     continue
             if e == watched_e:
                 # _on_exp(e, "no change")
                 continue
@@ -231,7 +245,7 @@ class Learner(object):
                 continue
             if CHECK_SUBST_COST:
                 watched_cost = self.cost_model.cost(watched_e, pool=pool)
-                ordering = cost.compare_to(watched_cost, self.assumptions)
+                ordering = self.compare_costs(cost, watched_cost)
                 if ordering == Cost.WORSE:
                     _on_exp(e, "skipped worse replacement", pool_name(pool), watched_e)
                     continue
@@ -240,9 +254,11 @@ class Learner(object):
                     # print("    e1 = {!r}".format(e))
                     # print("    e2 = {!r}".format(watched_e))
                     continue
-            # TODO: can optimize by pre-computing target fingerprint
-            if all(eval_bulk(EImplies(self.assumptions, EEq(self.target, r(e))), self.all_examples)):
+            # assert all(eval_bulk(self.assumptions, self.all_examples))
+            if all(eval_bulk(EEq(self.target, r(e)), self.all_examples)):
                 yield (watched_e, e, ctx.facts, r)
+            else:
+                _on_exp(e, "visited pointless replacement", watched_e)
 
     def pre_optimize(self, e, pool):
         """
@@ -273,7 +289,7 @@ class Learner(object):
                 if prev_exp == e:
                     return prev_exp
                 cost = self.cost_model.cost(e, pool)
-                ordering = cost.compare_to(prev_cost, self.assumptions)
+                ordering = self.compare_costs(cost, prev_cost)
                 if ordering == Cost.BETTER:
                     return super().visit_ADT(e) # optimize children
                 else:
@@ -295,13 +311,40 @@ class Learner(object):
             print(repr(e))
             return e
 
+    def _start_minor_it(self):
+        now = datetime.datetime.now()
+        if hasattr(self, "mstart"):
+            duration = now - self.mstart
+            print("> minor duration:   {}".format(duration))
+            print("> next() calls:     {}".format(self.ncount))
+            print("> total exps:       {}".format(self.ecount))
+            print("> exps/s:           {}".format(self.ecount / duration.total_seconds()))
+            print("> cost comparisons: {}".format(self.ccount))
+            print("> fingerprints:     {}".format(self.fpcount))
+        if self.current_size >= 0:
+            print("minor iteration {}, |cache|={}".format(self.current_size, len(self.cache)))
+        self.mstart = now
+        self.ecount = 0
+        self.ccount = 0
+        self.fpcount = 0
+        self.ncount = 0
+
+    def _on_exp(self, e, pool):
+        # print("next() <<< {p:10} {e}".format(e=pprint(e), p=pool_name(pool)))
+        self.ecount += 1
+
+    def _on_cost_cmp(self):
+        self.ccount += 1
+
     def next(self):
+        target_cost = self.cost_model.cost(self.target, RUNTIME_POOL)
+        self.ncount += 1
         while True:
             if self.backlog is not None:
                 if self.stop_callback():
                     raise StopException()
                 (e, pool, cost) = self.backlog
-                improvements = list(self._possible_replacements(e, pool, cost, self._fingerprint(e)))
+                improvements = list(self._possible_replacements(e, pool, cost))
                 if self.backlog_counter < len(improvements):
                     i = improvements[self.backlog_counter]
                     self.backlog_counter += 1
@@ -310,30 +353,30 @@ class Learner(object):
                     self.backlog = None
                     self.backlog_counter = 0
             for (e, pool) in self.builder_iter:
+                self._on_exp(e, pool)
                 if self.stop_callback():
                     raise StopException()
 
-                # Stopgap measure... long story --Calvin
-                bad = False
-                for x in all_exps(e):
-                    if isinstance(x, EStateVar):
-                        if any(v not in self.state_vars for v in free_vars(x.e)):
-                            bad = True
-                            _on_exp(e, "skipping due to illegal free vars under EStateVar")
-                if bad:
-                    continue
+                # # Stopgap measure... long story --Calvin
+                # bad = False
+                # for x in all_exps(e):
+                #     if isinstance(x, EStateVar):
+                #         if any(v not in self.state_vars for v in free_vars(x.e)):
+                #             bad = True
+                #             _on_exp(e, "skipping due to illegal free vars under EStateVar")
+                # if bad:
+                #     continue
 
                 new_e = self.pre_optimize(e, pool) if preopt.value else e
-                if new_e != e:
+                if new_e is not e:
                     _on_exp(e, "preoptimized", new_e)
                     e = new_e
 
                 cost = self.cost_model.cost(e, pool)
 
-                ## TODO: fix this up for symbolic cost model
-                # if (self.cost_model.is_monotonic() or hyperaggressive_culling.value) and cost > self.cost_ceiling:
-                #     _on_exp(e, "too expensive", cost, self.cost_ceiling)
-                #     continue
+                if pool == RUNTIME_POOL and (self.cost_model.is_monotonic() or hyperaggressive_culling.value) and self.compare_costs(cost, target_cost) == Cost.WORSE:
+                    _on_exp(e, "too expensive", cost, target_cost)
+                    continue
 
                 fp = self._fingerprint(e)
                 prev = list(self.seen.find_all(pool, fp))
@@ -347,7 +390,8 @@ class Learner(object):
                     better_than = None
                     worse_than = None
                     for prev_exp, prev_size, prev_cost in prev:
-                        ordering = cost.compare_to(prev_cost, self.assumptions)
+                        self._on_cost_cmp()
+                        ordering = self.compare_costs(cost, prev_cost)
                         assert ordering in (Cost.WORSE, Cost.BETTER, Cost.UNORDERED)
                         if enforce_strong_progress.value and ordering != Cost.WORSE:
                             bad = find_one(all_exps(e), lambda ee: alpha_equivalent(ee, prev_exp))
@@ -394,11 +438,10 @@ class Learner(object):
                 else:
                     continue
 
-                improvements = list(self._possible_replacements(e, pool, cost, fp))
-                if improvements:
+                for pr in self._possible_replacements(e, pool, cost):
                     self.backlog = (e, pool, cost)
                     self.backlog_counter = 1
-                    return improvements[0]
+                    return pr
 
             if self.last_progress < (self.current_size+1) // 2:
                 raise NoMoreImprovements("hit termination condition")
@@ -410,7 +453,7 @@ class Learner(object):
             for f, ct in sorted(_fates.items(), key=lambda x: x[1], reverse=True):
                 print("  {:6} | {}".format(ct, f))
             _fates.clear()
-            print("minor iteration {}, |cache|={}".format(self.current_size, len(self.cache)))
+            self._start_minor_it()
 
 @typechecked
 def fixup_binders(e : Exp, binders_to_use : [EVar], allow_add=False, throw=False) -> Exp:
@@ -584,11 +627,6 @@ def improve(
         args=set(args),
         assumptions=assumptions)
 
-    if not satisfiable(assumptions):
-        print("assumptions are unsat; this query will never be called")
-        yield construct_value(target.type)
-        return
-
     binders = list(binders)
     target = fixup_binders(target, binders, allow_add=False)
     hints = [fixup_binders(h, binders, allow_add=False) for h in (hints or ())]
@@ -603,9 +641,22 @@ def improve(
     vars = list(free_vars(target) | free_vars(assumptions))
     funcs = free_funcs(EAll([target, assumptions]))
 
+    solver = None
+    if incremental.value:
+        solver = IncrementalSolver(vars=vars, funcs=funcs, collection_depth=check_depth.value)
+        solver.add_assumption(assumptions)
+        _sat = solver.satisfy
+    else:
+        _sat = lambda e: satisfy(e, vars=vars, funcs=funcs, collection_depth=check_depth.value)
+
+    if _sat(T) is None:
+        print("assumptions are unsat; this query will never be called")
+        yield construct_value(target.type)
+        return
+
     if examples is None:
         examples = []
-    learner = Learner(target, assumptions, binders, state_vars, args, vars + binders, examples, cost_model, builder, stop_callback, hints)
+    learner = Learner(target, assumptions, binders, state_vars, args, vars + binders, examples, cost_model, builder, stop_callback, hints, solver=solver)
     try:
         while True:
             # 1. find any potential improvement to any sub-exp of target
@@ -620,18 +671,27 @@ def improve(
             new_target = repl(new_e)
 
             # 3. check
-            formula = EAll([assumptions, ENot(EBinOp(target, "==", new_target).with_type(BOOL))])
-            counterexample = satisfy(formula, vars=vars, funcs=funcs, collection_depth=check_depth.value)
+            if incremental.value:
+                solver.push()
+                solver.add_assumption(ENot(EBinOp(target, "==", new_target).with_type(BOOL)))
+                counterexample = _sat(T)
+            else:
+                formula = EAll([assumptions, ENot(EBinOp(target, "==", new_target).with_type(BOOL))])
+                counterexample = _sat(formula)
             if counterexample is not None:
 
                 # Ok they aren't equal.  Now we need an example that
                 # differentiates BOTH target/new_target AND old_e/new_e.
-                counterexample = satisfy(EAll([
-                        assumptions,
-                        EAll(local_assumptions),
-                        ENot(EBinOp(target, "==", new_target).with_type(BOOL)),
-                        ENot(EBinOp(old_e,  "===", new_e).with_type(BOOL))]),
-                    vars=vars, funcs=funcs, collection_depth=check_depth.value)
+                if incremental.value:
+                    counterexample = _sat(EAll([
+                            EAll(local_assumptions),
+                            ENot(EBinOp(old_e,  "===", new_e).with_type(BOOL))]))
+                else:
+                    counterexample = _sat(EAll([
+                            assumptions,
+                            EAll(local_assumptions),
+                            ENot(EBinOp(target, "==", new_target).with_type(BOOL)),
+                            ENot(EBinOp(old_e,  "===", new_e).with_type(BOOL))]))
                 if counterexample is None:
                     print("!!! unable to satisfy top- and sub-expressions")
                     print("assumptions = {!r}".format(assumptions))
@@ -663,7 +723,10 @@ def improve(
                 if CHECK_FINAL_COST:
                     new_cost = cost_model.cost(new_target, RUNTIME_POOL)
                     print("cost: {} -----> {}".format(target_cost, new_cost))
-                    ordering = new_cost.compare_to(target_cost, assumptions)
+                    if incremental.value:
+                        ordering = new_cost.compare_to(target_cost, solver=solver)
+                    else:
+                        ordering = new_cost.compare_to(target_cost, assumptions=assumptions)
                     if ordering == Cost.WORSE:
                         if CHECK_SUBST_COST:
                             print("WHOOPS! COST GOT WORSE!")
@@ -683,16 +746,18 @@ def improve(
                             # raise Exception("detected nonmonotonicity")
                         else:
                             print("*** cost is worse")
+                            # print(repr(target))
+                            # print(repr(new_target))
                         continue
                     elif ordering == Cost.UNORDERED:
                         print("*** cost is unchanged")
-                        print(repr(target))
-                        print(repr(new_target))
+                        # print(repr(target))
+                        # print(repr(new_target))
                         continue
                     target_cost = new_cost
                 print("found improvement: {} -----> {}".format(pprint(old_e), pprint(new_e)))
-                print(repr(target))
-                print(repr(new_target))
+                # print(repr(target))
+                # print(repr(new_target))
 
                 # binders are not allowed to "leak" out
                 to_yield = new_target
@@ -709,6 +774,8 @@ def improve(
                 if heuristic_done(new_target, args):
                     print("target now matches doneness heuristic")
                     break
+            if incremental.value:
+                solver.pop()
 
     except KeyboardInterrupt:
         for e in learner.cache.random_sample(50):
