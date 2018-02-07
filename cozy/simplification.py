@@ -1,6 +1,6 @@
 from cozy.target_syntax import *
-from cozy.syntax_tools import BottomUpRewriter, alpha_equivalent, cse, compose
-from cozy.evaluation import construct_value
+from cozy.syntax_tools import BottomUpRewriter, alpha_equivalent, cse, compose, pprint
+from cozy.evaluation import construct_value, eval
 from cozy.solver import valid, satisfy
 
 class _V(BottomUpRewriter):
@@ -151,8 +151,6 @@ class _V(BottomUpRewriter):
         if self.debug and isinstance(e, Exp) and not isinstance(e, ELambda):
             model = satisfy(ENot(EBinOp(e, "===", new).with_type(BOOL)))
             if model is not None:
-                from cozy.syntax_tools import pprint
-                from cozy.evaluation import eval
                 raise Exception("bad simplification: {} ---> {} (under model {!r}, got {!r} and {!r})".format(pprint(e), pprint(new), model, eval(e, model), eval(new, model)))
         return new
 
