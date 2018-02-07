@@ -575,3 +575,11 @@ class TestCostModel(unittest.TestCase):
         e2 = EFilter(EMap(EVar('xs').with_type(TBag(THandle('H', TNative('Value')))), ELambda(EVar('_var124591').with_type(THandle('H', TNative('Value'))), EVar('_var124589').with_type(TNative('Value')))).with_type(TBag(TNative('Value'))), ELambda(EVar('_var124588').with_type(TNative('Value')), EBinOp(EUnaryOp('len', EVar('xs').with_type(TBag(THandle('H', TNative('Value'))))).with_type(TInt()), '==', ENum(1).with_type(TInt())).with_type(TBool()))).with_type(TBag(TNative('Value')))
         e3 = EFilter(EMap(EVar('xs').with_type(TBag(THandle('H', TNative('Value')))), ELambda(EVar('_var124591').with_type(THandle('H', TNative('Value'))), EGetField(EVar('_var124591').with_type(THandle('H', TNative('Value'))), 'val').with_type(TNative('Value')))).with_type(TBag(TNative('Value'))), ELambda(EVar('_var124588').with_type(TNative('Value')), EBinOp(EVar('_var124589').with_type(TNative('Value')), '==', EVar('_var124588').with_type(TNative('Value'))).with_type(TBool()))).with_type(TBag(TNative('Value')))
         self.check_transitive(e1, e2, e3, assumptions)
+
+    def test_filterfilter(self):
+        xs = EVar("xs").with_type(INT_BAG)
+        x = EVar("x").with_type(INT)
+        e1 = EFilter(EStateVar(xs), ELambda(x, EAll([ENot(EEq(x, ZERO)), ENot(EEq(x, ONE))])))
+        e2 = subst(e1, {"xs" : EFilter(xs, ELambda(x, ENot(EEq(x, ZERO))))})
+        assert retypecheck(e1) and retypecheck(e2)
+        assert_cmp(e1, cost_of(e1), e2, cost_of(e2), Cost.WORSE)
