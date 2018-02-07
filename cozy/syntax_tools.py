@@ -1269,68 +1269,69 @@ def inline_calls(spec):
     rewriter = CallInliner()
     return rewriter.visit(spec)
 
-def eliminate_common_subexpressions(spec):
-    class Eliminator(BottomUpRewriter):
-        def __init__(self):
-            super().__init__()
-            self.available = ExpMap()
-        def visit_EVar(self, e):
-            return e
-        def visit_ENum(self, e):
-            return e
-        def visit_EEnumEntry(self, e):
-            return e
-        def visit_EEmptyList(self, e):
-            return e
-        def visit_EStr(self, e):
-            return e
-        def visit_EBool(self, e):
-            return e
-        def visit_ENative(self, e):
-            return e
-        def visit_ENull(self, e):
-            return e
-        def visit_Exp(self, e):
-            ee = type(e)(*[self.visit(c) for c in e.children()]).with_type(e.type)
-            res = self.available.get(ee)
-            if res is not None:
-                return res
-            v = fresh_var(e.type, hint="tmp")
-            self.available[ee] = v
-            return v
-        def visit_EListComprehension(self, e):
-            raise NotImplementedError()
-        def _fvs(self, e):
-            if not hasattr(e, "_fvs"):
-                e._fvs = free_vars(e)
-            return e._fvs
-        def visit_ELambda(self, e):
-            old_avail = self.available
-            self.available = ExpMap([(k, v) for (k, v) in self.available.items() if e.arg not in self._fvs(k)])
-            body = self.visit(e.body)
 
-            precious = set((e.arg,))
-            # print("computing fvs x{}...".format(len(self.avail.items())))
-            fvs = { v : self._fvs(k) for (k, v) in self.available.items() }
-            # print("done")
-            dirty = True
-            while dirty:
-                dirty = False
-                for v in self.available.values():
-                    if any(vv in precious for vv in fvs[v]):
-                        if v not in precious:
-                            precious.add(v)
-                            dirty = True
-            for (k, v) in list(self.available.items()):
-                if v not in precious:
-                    old_avail[k] = v
-                    del self.available[k]
+class ExprEliminator(BottomUpRewriter):
+    def __init__(self):
+        super().__init__()
+        self.available = ExpMap()
 
-            body = inject_vars(body, self.available)
-            self.available = old_avail
-            return target_syntax.ELambda(e.arg, body)
+    # "literals" below -- no subexpressions.
+    def visit_EVar(self, e):
+        return e
+    def visit_ENum(self, e):
+        return e
+    def visit_EEnumEntry(self, e):
+        return e
+    def visit_EEmptyList(self, e):
+        return e
+    def visit_EStr(self, e):
+        return e
+    def visit_EBool(self, e):
+        return e
+    def visit_ENative(self, e):
+        return e
+    def visit_ENull(self, e):
+        return e
+    def visit_Exp(self, e):
+        ee = type(e)(*[self.visit(c) for c in e.children()]).with_type(e.type)
+        res = self.available.get(ee)
+        if res is not None:
+            return res
+        v = fresh_var(e.type, hint="tmp")
+        self.available[ee] = v
+        return v
+    def visit_EListComprehension(self, e):
+        raise NotImplementedError()
+    def _fvs(self, e):
+        if not hasattr(e, "_fvs"):
+            e._fvs = free_vars(e)
+        return e._fvs
+    def visit_ELambda(self, e):
+        old_avail = self.available
+        self.available = ExpMap([(k, v) for (k, v) in self.available.items() if e.arg not in self._fvs(k)])
+        body = self.visit(e.body)
 
-    def inject_vars(e, avail):
+        precious = set((e.arg,))
+        fvs = { v : self._fvs(k) for (k, v) in self.available.items() }
+        dirty = True
+        while dirty:
+            dirty = False
+            for v in self.available.values():
+                if any(vv in precious for vv in fvs[v]):
+                    if v not in precious:
+                        precious.add(v)
+                        dirty = True
+        for (k, v) in list(self.available.items()):
+            if v not in precious:
+                old_avail[k] = v
+                del self.available[k]
+
+        body = inject_vars(body, self.available)
+        self.available = old_avail
+        return target_syntax.ELambda(e.arg, body)
+
+def eliminate_common_subexpressions_stm(outer, inner=None):
+    def inject_vars(e, avail, statementMode=True):
         ravail = collections.OrderedDict([(v, k) for (k, v) in avail.items() if v is not None])
         counts = free_vars(e, counts=True)
         for var, value in reversed(ravail.items()):
@@ -1338,8 +1339,8 @@ def eliminate_common_subexpressions(spec):
                 counts[vv] = counts.get(vv, 0) + ct
         to_inline = common.OrderedSet(v for v in ravail if counts.get(v, 0) <= 1 or ravail[v].size() < 2)
         sub = { v : ravail[v] for v in to_inline }
-
         skip = { }
+
         class V(BottomUpRewriter):
             def visit_EVar(self, var):
                 if var in sub and var not in skip:
@@ -1357,21 +1358,53 @@ def eliminate_common_subexpressions(spec):
                 continue
             value = inliner.visit(value)
 
-            ee = syntax.SSeq(syntax.SDecl(var.id, value), e)
+            if statementMode:
+                ee = syntax.SSeq(syntax.SDecl(var.id, value), e)
 
-            if hasattr(e, "type"):
-                ee = ee.with_type(e.type)
+                if hasattr(e, "type"):
+                    ee = ee.with_type(e.type)
+            else:
+                ee = syntax.ELet(value, target_syntax.ELambda(var, e))
 
             e = ee
         return e
 
+    eliminator = ExprEliminator()
+    s2 = eliminator.visit(outer)
+
+    print(pprint(s2))
+    print("HHHH", list(eliminator.available.items()))
+
+    class ExprCommonExprHoister(BottomUpRewriter):
+        def visit_Exp(self, e):
+            # common_vars = set.intersection(*[set(eliminator.available.get(c)) for c in e.children()])
+            # ^^ This doesn't quite work. Need to loop over available.items().
+            return inject_vars(e, eliminator.available, False)
+
+    # Recursively pull subexpr availables into ELets.
+
+    print(pprint(s2))
+    print("HHHH", list(eliminator.available.items()))
+    hoister = ExprCommonExprHoister()
+    s2 = hoister.visit(s2)
+
+    print(pprint(s2))
+    print("HHHH", list(eliminator.available.items()))
+
+    if inner is None:
+        inner = s2
+
+    s2 = inject_vars(s2, eliminator.available)
+    return s2
+
+def eliminate_common_subexpressions(spec):
+    """
+    Eliminate common subexprs on a spec. Internally, this applies to Ops.
+    """
     class OpVisitor(BottomUpRewriter):
         def visit_Op(self, s):
-            eliminator = Eliminator()
-            s2 = eliminator.visit(s)
-            s2.body = inject_vars(s2.body, eliminator.available)
-            return s2
-
+            s.body = eliminate_common_subexpressions_stm(s, s.body)
+            return s
     vee = OpVisitor()
     spec2 = vee.visit(spec)
     return spec2
