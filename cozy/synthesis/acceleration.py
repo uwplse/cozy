@@ -380,13 +380,17 @@ class AcceleratedBuilder(ExpBuilder):
                     continue
 
                 # separate filter conds
-                const_parts, other_parts = partition(break_conj(bag.p.body), lambda e:
-                    all((v == bag.p.arg or v in self.state_vars) for v in free_vars(e)))
-                if const_parts and other_parts:
-                    inner_filter = strip_EStateVar(EFilter(bag.e, ELambda(bag.p.arg, EAll(const_parts))).with_type(bag.type))
-                    yield self.check(inner_filter, STATE_POOL)
-                    outer_filter = EFilter(EStateVar(inner_filter).with_type(inner_filter.type), ELambda(bag.p.arg, EAll(other_parts))).with_type(bag.type)
-                    yield self.check(outer_filter, RUNTIME_POOL)
+                if isinstance(bag.p.body, EBinOp) and bag.p.body.op == BOp.And:
+                    p1 = ELambda(bag.p.arg, bag.p.body.e1)
+                    p2 = ELambda(bag.p.arg, bag.p.body.e2)
+                    f1 = EFilter(bag.e, p1).with_type(bag.type)
+                    f2 = EFilter(bag.e, p2).with_type(bag.type)
+                    f3 = EFilter(f1, p2).with_type(bag.type)
+                    f4 = EFilter(f2, p1).with_type(bag.type)
+                    yield self.check(f1, RUNTIME_POOL)
+                    yield self.check(f2, RUNTIME_POOL)
+                    yield self.check(f3, RUNTIME_POOL)
+                    yield self.check(f4, RUNTIME_POOL)
 
                 # construct map lookups
                 binder = bag.p.arg
