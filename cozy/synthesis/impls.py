@@ -277,12 +277,11 @@ class Implementation(object):
                 op.docstring))
 
         # assemble final result
-        new_statevars = [(v.id, e.type) for (v, e) in ordered_concrete_state]
         return Spec(
             self.spec.name,
             self.spec.types,
             self.spec.extern_funcs,
-            new_statevars,
+            [(v.id, e.type) for (v, e) in self.concrete_state],
             [],
             list(self.query_impls.values()) + new_ops,
             self.spec.header,
