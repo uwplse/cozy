@@ -1,6 +1,7 @@
 from collections import defaultdict, OrderedDict
 import itertools
 import sys
+import traceback
 
 from cozy.target_syntax import *
 from cozy.syntax_tools import subst, pprint, free_vars, free_funcs, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda, enumerate_fragments_and_pools, enumerate_fragments2, strip_EStateVar
