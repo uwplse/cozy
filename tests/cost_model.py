@@ -583,3 +583,18 @@ class TestCostModel(unittest.TestCase):
         e2 = subst(e1, {"xs" : EFilter(xs, ELambda(x, ENot(EEq(x, ZERO))))})
         assert retypecheck(e1) and retypecheck(e2)
         assert_cmp(e1, cost_of(e1), e2, cost_of(e2), Cost.WORSE)
+
+    def test_filterfilter_and(self):
+        xs = EVar("xs").with_type(INT_BAG)
+        x = EVar("x").with_type(INT)
+        e1 = EFilter(EStateVar(xs), ELambda(x, EAll([ENot(EEq(x, ZERO)), ENot(EEq(x, ONE))])))
+        e2 = EFilter(EFilter(EStateVar(xs), ELambda(x, ENot(EEq(x, ZERO)))), ELambda(x, ENot(EEq(x, ONE))))
+        assert retypecheck(e1) and retypecheck(e2)
+        assert_cmp(e1, cost_of(e1), e2, cost_of(e2), Cost.WORSE)
+
+    def test_empty_empty(self):
+        v = EVar("xs").with_type(INT_BAG)
+        emp = EEmptyList().with_type(v.type)
+        e1 = EUnaryOp(UOp.Empty, EStateVar(v).with_type(v.type)).with_type(BOOL)
+        e2 = EUnaryOp(UOp.Empty, emp).with_type(BOOL)
+        assert_cmp(e1, cost_of(e1), e2, cost_of(e2), Cost.WORSE)
