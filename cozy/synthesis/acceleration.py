@@ -97,7 +97,7 @@ def map_accelerate(e, state_vars, binders, args, cache, size):
                     continue
                 m = EMakeMap2(bag,
                     ELambda(binder, value)).with_type(TMap(arg.type, e.type))
-                assert not any(v in args for v in free_vars(m))
+                assert not any(v in args for v in free_vars(m)), "oops! {}; args={}".format(pprint(m), ", ".join(pprint(a) for a in args))
                 if any(v in binders for v in free_vars(m)):
                     continue
                 yield (m, STATE_POOL)

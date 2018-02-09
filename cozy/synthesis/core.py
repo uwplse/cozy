@@ -136,7 +136,9 @@ class SubstitutingBuilder(SpecDependentBuilder):
             k=lambda ctx: (ctx.pool, ctx.e.type),
             v=lambda ctxs: sorted(ctxs, key=lambda ctx: -ctx.e.size()))
     def build(self, cache, size):
-        for (e, pool) in self.wrapped.build(cache, size):
+        for tup in self.wrapped.build(cache, size):
+            yield tup
+            e, pool = tup
             free_binders = OrderedSet(v for v in free_vars(e) if v in self.binders)
             for ctx in self._watches.get((pool, e.type), ()):
                 assert e.type == ctx.e.type
@@ -154,8 +156,7 @@ class SubstitutingBuilder(SpecDependentBuilder):
                 #  (1) never cache expressions yielded here or
                 #  (2) only cache expressions if they reduce the total size
                 ee = ctx.replace_e_with(e)
-                yield self.check(ee, pool)
-            yield self.check(e, pool)
+                yield self.check(ee, RUNTIME_POOL)
 
 class StealingBuilder(SpecDependentBuilder):
     def __init__(self, wrapped, state_vars, args, assumptions, target=None):
