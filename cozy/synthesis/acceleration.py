@@ -291,7 +291,7 @@ class AcceleratedBuilder(ExpBuilder):
                     rr).with_type(e.type)
                 # from cozy.solver import valid
                 # assert valid(EEq(e, x), model_callback=print)
-                x._tag = True
+                # x._tag = True
                 yield self.check(x, RUNTIME_POOL)
 
         # is-last(x, l)
