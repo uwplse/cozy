@@ -167,18 +167,6 @@ class PlainCost(Cost):
         else:
             return Cost.UNORDERED
 
-from contextlib import contextmanager
-import datetime
-import sys
-@contextmanager
-def timed(name="anon"):
-    # print("--tick [{}]... ".format(name), end="")
-    sys.stdout.flush()
-    st = datetime.datetime.now()
-    yield
-    duration = datetime.datetime.now() - st
-    # print("tock [{}s]".format(duration.total_seconds()))
-
 class CompositeCost(Cost):
     def __init__(self, *costs):
         self.costs = tuple(costs)
@@ -191,8 +179,7 @@ class CompositeCost(Cost):
         assert len(self.costs) == len(other.costs)
         i = 0
         for c1, c2 in zip(self.costs, other.costs):
-            with timed(type(c1).__name__ + "[{}]".format(i)):
-                order = c1.compare_to(c2, assumptions, solver)
+            order = c1.compare_to(c2, assumptions, solver)
             i += 1
             if order != Cost.UNORDERED:
                 return order
