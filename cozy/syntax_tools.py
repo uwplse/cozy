@@ -266,7 +266,7 @@ class PrettyPrinter(common.Visitor):
         return "{} {{{}}} ({})".format(self.format_builtin("Filter"), self.visit(e.p), self.visit(e.e))
 
     def visit_EFlatMap(self, e):
-        return "{}({}, {})".format(self.format_builtin("FlatMap"), self.visit(e.e), self.visit(e.f))
+        return "{} {{{}}} ({})".format(self.format_builtin("FlatMap"), self.visit(e.f), self.visit(e.e))
 
     def visit_EBinOp(self, e):
         op = e.op.replace("<", self.format_lt()).replace(">", self.format_gt())
