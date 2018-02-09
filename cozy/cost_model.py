@@ -36,9 +36,10 @@ class CostModel(object):
 
 class SymbolicCost(Cost):
     @typechecked
-    def __init__(self, formula : Exp, cardinalities : { Exp : EVar }):
+    def __init__(self, formula : Exp, cardinalities : { Exp : EVar }, heuristics : [Exp]):
         self.formula = formula
         self.cardinalities = cardinalities
+        self.heuristics = list(heuristics)
     def __repr__(self):
         return "SymbolicCost({!r}, {!r})".format(self.formula, self.cardinalities)
     def __str__(self):
@@ -48,7 +49,7 @@ class SymbolicCost(Cost):
         if False:
             s = IncrementalSolver()
             v1, v2 = fresh_var(BOOL), fresh_var(BOOL)
-            s.add_assumption(EAll([
+            s.add_assumption(EAll(self.heuristics + [
                 self.order_cardinalities(other, assumptions, solver),
                 EEq(v1, EBinOp(self.formula, "<=", other.formula).with_type(BOOL)),
                 EEq(v2, EBinOp(other.formula, "<=", self.formula).with_type(BOOL))]))
@@ -123,7 +124,7 @@ class SymbolicCost(Cost):
         """
         if isinstance(self.formula, ENum) and isinstance(other.formula, ENum):
             return eval(EBinOp(self.formula, op, other.formula).with_type(BOOL), env={})
-        f = EImplies(cards, EBinOp(self.formula, op, other.formula).with_type(BOOL))
+        f = EImplies(EAll(self.heuristics + [cards]), EBinOp(self.formula, op, other.formula).with_type(BOOL))
         if integer_cardinalities.value:
             try:
                 return valid(f, logic="QF_LIA", timeout=1, **kwargs)
@@ -197,16 +198,17 @@ class CompositeCostModel(CostModel):
         # for v in free_vars(e):
         #     if is_collection(v.type):
         #         cardinality(v, cards)
+        hint_cache = []
         if pool == STATE_POOL:
             return CompositeCost(
-                sizeof(e, cards),
+                sizeof(e, cards, hint_cache),
                 ast_size(e))
         else:
             assert pool == RUNTIME_POOL
             return CompositeCost(
-                asymptotic_runtime(e),
-                storage_size(e, cards),
-                precise_runtime(e),
+                # asymptotic_runtime(e, hint_cache),
+                # storage_size(e, cards, hint_cache),
+                precise_runtime(e, hint_cache),
                 ast_size(e))
 
 def maybe_inline(e, f):
@@ -238,7 +240,7 @@ def EMax(es):
         # res = ECond(EGt(res, es[i]), res, es[i]).with_type(res.type)
     return res
 
-def asymptotic_runtime(e):
+def asymptotic_runtime(e, hint_cache):
     class V(BottomUpExplorer):
         def __init__(self):
             super().__init__()
@@ -254,7 +256,7 @@ def asymptotic_runtime(e):
                 return ENum(eval(e, {})).with_type(e1.type)
             return e
         def cardinality(self, e : Exp, **kwargs) -> Exp:
-            return cardinality(e, self.cardinalities, **kwargs)
+            return cardinality(e, self.cardinalities, hint_cache, **kwargs)
         def combine(self, costs):
             res = []
             q = list(costs)
@@ -317,27 +319,29 @@ def asymptotic_runtime(e):
     vis = V()
     f = EMax([ONE] + vis.visit(e))
     # f = cse(f)
-    return SymbolicCost(f, vis.cardinalities)
+    return SymbolicCost(f, vis.cardinalities, hint_cache)
 
-def sizeof(e, cardinalities):
+def sizeof(e, cardinalities, hint_cache):
     terms = [ONE]
     if is_collection(e.type):
-        terms.append(cardinality(e, cardinalities))
+        terms.append(cardinality(e, cardinalities, hint_cache))
     elif isinstance(e.type, TMap):
         ks = EMapKeys(e).with_type(TBag(e.type.k))
-        terms.append(cardinality(ks, cardinalities))
+        terms.append(cardinality(ks, cardinalities, hint_cache))
         if is_collection(e.type.v):
             vals = EFlatMap(ks, mk_lambda(e.type.k, lambda k: EMapGet(e, k).with_type(e.type.v))).with_type(e.type.v)
-            terms.append(cardinality(vals, cardinalities))
-    return SymbolicCost(ESum(terms), cardinalities)
+            terms.append(cardinality(vals, cardinalities, hint_cache))
+    return SymbolicCost(ESum(terms), cardinalities, hint_cache)
 
-def storage_size(e, cardinalities):
+def storage_size(e, cardinalities, hint_cache):
     sizes = []
     for x in all_exps(e):
         if isinstance(x, EStateVar):
-            sz_cost = sizeof(x.e, cardinalities)
+            hc = []
+            sz_cost = sizeof(x.e, cardinalities, hc)
             sizes.append(sz_cost.formula)
-    return SymbolicCost(ESum(sizes), cardinalities)
+            hint_cache.extend(hc)
+    return SymbolicCost(ESum(sizes), cardinalities, hint_cache)
 
 # Some kinds of expressions have a massive penalty associated with them if they
 # appear at runtime.
@@ -345,13 +349,13 @@ EXTREME_COST    = ENum(1000).with_type(INT)
 MILD_PENALTY    = ENum(  10).with_type(INT)
 TWO             = ENum(   2).with_type(INT)
 
-def precise_runtime(e):
+def precise_runtime(e, hint_cache):
     class V(BottomUpExplorer):
         def __init__(self):
             super().__init__()
             self.cardinalities = { }
         def cardinality(self, e : Exp, **kwargs) -> Exp:
-            return cardinality(e, self.cardinalities, **kwargs)
+            return cardinality(e, self.cardinalities, hint_cache, **kwargs)
         def visit_EStateVar(self, e):
             return ONE
         def visit_EUnaryOp(self, e):
@@ -404,7 +408,7 @@ def precise_runtime(e):
             return ESum(itertools.chain((ONE,), child_costs))
     vis = V()
     f = vis.visit(e)
-    return SymbolicCost(f, vis.cardinalities)
+    return SymbolicCost(f, vis.cardinalities, hint_cache)
 
 def ast_size(e):
     return PlainCost(e.size())
@@ -412,7 +416,17 @@ def ast_size(e):
 # -----------------------------------------------------------------------------
 
 # @typechecked
-def cardinality(e : Exp, cache : { Exp : EVar }, plus_one=False) -> Exp:
+def cardinality(e : Exp, cache : { Exp : EVar }, heuristics : [Exp], plus_one=False) -> Exp:
+    """
+    Produce a symbolic expression for the cardinality of expression `e`.
+    The free variables in the output expression will all be integers.
+    Params:
+        `e`          - [IN ] the expression
+        `cache`      - [OUT] mapping from free variables in output to
+                             collections whose cardinalities they track
+        `heuristics` - [OUT] hints about free variables in output that help
+                             produce a slightly improved cost model
+    """
     assert is_collection(e.type)
     # if plus_one:
     #     return ESum((self.cardinality(e, plus_one=False), ONE))
@@ -421,36 +435,36 @@ def cardinality(e : Exp, cache : { Exp : EVar }, plus_one=False) -> Exp:
     if isinstance(e, ESingleton):
         return ONE
     if isinstance(e, EBinOp) and e.op == "+":
-        return ESum((cardinality(e.e1, cache), cardinality(e.e2, cache)))
+        return ESum((cardinality(e.e1, cache, heuristics), cardinality(e.e2, cache, heuristics)))
     if isinstance(e, EMap):
-        return cardinality(e.e, cache)
+        return cardinality(e.e, cache, heuristics)
     if isinstance(e, EStateVar):
-        return cardinality(e.e, cache)
+        return cardinality(e.e, cache, heuristics)
     prev = cache.get(e)
     if prev is not None:
         return prev
     else:
         v = fresh_var(INT)
         cache[e] = v
-        # if isinstance(e, EFilter):
-        #     cc = self.cardinality(e.e)
-        #     self.assumptions.append(EBinOp(v, "<=", cc).with_type(BOOL))
-        #     # heuristic: (xs) large implies (filter_p xs) large
-        #     self.assumptions.append(EBinOp(
-        #         EBinOp(v,  "*", ENum(5).with_type(INT)).with_type(INT), ">=",
-        #         EBinOp(cc, "*", ENum(4).with_type(INT)).with_type(INT)).with_type(BOOL))
-        # if isinstance(e, EUnaryOp) and e.op == UOp.Distinct:
-        #     cc = self.cardinality(e.e)
-        #     self.assumptions.append(EBinOp(v, "<=", cc).with_type(BOOL))
-        #     # self.assumptions.append(EImplies(EGt(cc, ZERO), EGt(v, ZERO)))
-        #     # heuristic: (xs) large implies (distinct xs) large
-        #     self.assumptions.append(EBinOp(
-        #         EBinOp(v,  "*", ENum(5).with_type(INT)).with_type(INT), ">=",
-        #         EBinOp(cc, "*", ENum(4).with_type(INT)).with_type(INT)).with_type(BOOL))
+        if isinstance(e, EFilter):
+            cc = cardinality(e.e, cache, heuristics)
+            # heuristics.append(EBinOp(v, "<=", cc).with_type(BOOL))
+            # heuristic: (xs) large implies (filter_p xs) large
+            heuristics.append(EBinOp(
+                EBinOp(v,  "*", ENum(5).with_type(INT)).with_type(INT), ">=",
+                EBinOp(cc, "*", ENum(4).with_type(INT)).with_type(INT)).with_type(BOOL))
+        if isinstance(e, EUnaryOp) and e.op == UOp.Distinct:
+            cc = cardinality(e.e, cache, heuristics)
+            # heuristics.append(EBinOp(v, "<=", cc).with_type(BOOL))
+            # heuristics.append(EImplies(EGt(cc, ZERO), EGt(v, ZERO)))
+            # heuristic: (xs) large implies (distinct xs) large
+            heuristics.append(EBinOp(
+                EBinOp(v,  "*", ENum(5).with_type(INT)).with_type(INT), ">=",
+                EBinOp(cc, "*", ENum(4).with_type(INT)).with_type(INT)).with_type(BOOL))
         # if isinstance(e, EBinOp) and e.op == "-":
-        #     self.assumptions.append(EBinOp(v, "<=", self.cardinality(e.e1)).with_type(BOOL))
+        #     heuristics.append(EBinOp(v, "<=", cardinality(e.e1, cache, heuristics)).with_type(BOOL))
         # if isinstance(e, ECond):
-        #     self.assumptions.append(EAny([EEq(v, self.cardinality(e.then_branch)), EEq(v, self.cardinality(e.else_branch))]))
+        #     heuristics.append(EAny([EEq(v, cardinality(e.then_branch, cache, heuristics)), EEq(v, self.cardinality(e.else_branch))]))
         return v
 
 @lru_cache(maxsize=2**16)
