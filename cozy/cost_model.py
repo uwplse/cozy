@@ -492,6 +492,7 @@ def cardinality_le(c1 : Exp, c2 : Exp, assumptions : Exp = T, as_f : bool = Fals
     return res
 
 def debug_comparison(e1, c1, e2, c2, assumptions : Exp = T):
+    from cozy.syntax_tools import break_conj
     print("-" * 20)
     print("comparing costs...")
     print("  e1 = {}".format(pprint(e1)))
@@ -512,7 +513,11 @@ def debug_comparison(e1, c1, e2, c2, assumptions : Exp = T):
             print("  {v} = len {e}".format(v=pprint(v), e=pprint(e)))
         print("joint orderings...")
         cards = c1.order_cardinalities(c2, assumptions=assumptions)
-        print("  {}".format(pprint(cards)))
+        for o in break_conj(cards):
+            print("  {}".format(pprint(o)))
+        print("heuristics...")
+        for h in itertools.chain(c1.heuristics, c2.heuristics):
+            print("  {}".format(pprint(h)))
         for op in ("<=", "<", ">", ">="):
             print("c1 always {} c2?".format(op))
             x = []
