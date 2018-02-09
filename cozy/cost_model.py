@@ -206,8 +206,8 @@ class CompositeCostModel(CostModel):
         else:
             assert pool == RUNTIME_POOL
             return CompositeCost(
-                # asymptotic_runtime(e, hint_cache),
-                # storage_size(e, cards, hint_cache),
+                asymptotic_runtime(e, hint_cache),
+                storage_size(e, cards, hint_cache),
                 precise_runtime(e, hint_cache),
                 ast_size(e))
 
