@@ -229,15 +229,6 @@ def EMax(es):
         res = maybe_inline(res,   lambda v1:
               maybe_inline(es[i], lambda v2:
                 ECond(EGt(v1, v2), v1, v2).with_type(t)))
-        # v1 = fresh_var(res.type, omit=fvs)
-        # fvs.add(v1.id)
-        # v2 = fresh_var(res.type, omit=fvs)
-        # fvs.add(v2.id)
-        # fvs |= set(v.id for v in free_vars(es[i]))
-        # res = ELet(res,   ELambda(v1,
-        #       ELet(es[i], ELambda(v2,
-        #         ECond(EGt(v1, v2), v1, v2).with_type(res.type))).with_type(res.type))).with_type(res.type)
-        # res = ECond(EGt(res, es[i]), res, es[i]).with_type(res.type)
     return res
 
 def asymptotic_runtime(e, hint_cache):
