@@ -3,7 +3,7 @@ import itertools
 from cozy.common import find_one, partition, pick_to_sum
 from .core import ExpBuilder
 from cozy.target_syntax import *
-from cozy.syntax_tools import free_vars, break_conj, all_exps, replace, pprint, enumerate_fragments, mk_lambda, strip_EStateVar, alpha_equivalent, subst
+from cozy.syntax_tools import free_vars, break_conj, all_exps, replace, pprint, enumerate_fragments, enumerate_fragments2, mk_lambda, strip_EStateVar, alpha_equivalent, subst
 from cozy.typecheck import is_numeric, is_collection
 from cozy.pools import RUNTIME_POOL, STATE_POOL
 
@@ -85,11 +85,12 @@ def break_or(e):
     yield e
 
 def map_accelerate(e, state_vars, binders, args, cache, size):
-    for (_, arg, f, bound) in enumerate_fragments(strip_EStateVar(e)):
-        if any(v in state_vars for v in free_vars(arg)):
+    for ctx in enumerate_fragments2(e):
+        if ctx.pool != RUNTIME_POOL:
             continue
-        for binder in (b for b in binders if b.type == arg.type and b not in bound):
-            value = f(binder)
+        arg = ctx.e
+        for binder in (b for b in binders if b.type == arg.type and b not in ctx.bound_vars):
+            value = ctx.replace_e_with(binder)
             if any(v not in state_vars and v not in binders for v in free_vars(value)):
                 continue
             for bag in cache.find_collections(pool=STATE_POOL, size=size, of=arg.type):
