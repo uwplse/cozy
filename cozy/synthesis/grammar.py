@@ -47,10 +47,6 @@ class BinderBuilder(ExpBuilder):
             if not build_exprs.value:
                 return
 
-            for e in cache.find(pool=STATE_POOL, size=size-1):
-                if all(v in self.state_vars for v in free_vars(e)):
-                    yield self.check(EStateVar(e).with_type(e.type), RUNTIME_POOL)
-
             for e in cache.find(pool=pool, size=size-1):
                 t = TBag(e.type)
                 yield self.check(EEmptyList().with_type(t), pool)
@@ -144,6 +140,21 @@ class BinderBuilder(ExpBuilder):
                             if pool == RUNTIME_POOL and isinstance(body.type, TBag):
                                 yield self.check(EFlatMap(bag, ELambda(binder, body)).with_type(TBag(body.type.t)), pool)
 
+        # Enable use of a state-pool expression at runtime
+        for e in cache.find(pool=STATE_POOL, size=size-1):
+            if all(v in self.state_vars for v in free_vars(e)):
+                yield self.check(EStateVar(e).with_type(e.type), RUNTIME_POOL)
+
+        # Convert a runtime expression to state-pool form
+        for e in cache.find(pool=RUNTIME_POOL, size=size-1):
+            if isinstance(e, EStateVar):
+                continue
+            if all(v in self.state_vars for v in free_vars(e)):
+                e = strip_EStateVar(e)
+                yield self.check(e, STATE_POOL)
+                yield self.check(EStateVar(e).with_type(e.type), RUNTIME_POOL)
+
+        # Create maps
         for (sz1, sz2) in pick_to_sum(2, size - 1):
             for bag in cache.find_collections(pool=STATE_POOL, size=sz1):
                 if not is_scalar(bag.type.t):
