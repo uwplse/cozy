@@ -785,17 +785,22 @@ def subst_lval(lval, replacements):
     return lval
 
 @common.typechecked
-def tease_apart(exp : syntax.Exp) -> ([(syntax.EVar, syntax.Exp)], syntax.Exp):
+def tease_apart(exp : syntax.Exp, avoid : {syntax.EVar} = set()) -> ([(syntax.EVar, syntax.Exp)], syntax.Exp):
     new_state = []
+    omit = set(free_vars(exp) | avoid)
 
     class V(BottomUpRewriter):
+        def visit_ELambda(self, e):
+            omit.add(e.arg)
+            return target_syntax.ELambda(e.arg, self.visit(e.body))
         def visit_EStateVar(self, e):
             e = e.e
             x = common.find_one(x for x in new_state if alpha_equivalent(x[1], e))
             if x is not None:
                 return x[0]
             else:
-                v = fresh_var(e.type)
+                v = fresh_var(e.type, omit=omit)
+                omit.add(v)
                 new_state.append((v, e))
                 return v
 
@@ -839,7 +844,8 @@ def subst(exp, replacements, tease=True):
         allfvs |= {fv.id for fv in free_vars(val)}
 
     if tease and any(isinstance(e, target_syntax.EStateVar) for e in all_exps(exp)):
-        st, exp = tease_apart(exp)
+        rvars = common.OrderedSet(syntax.EVar(v).with_type(e.type) for v, e in replacements.items())
+        st, exp = tease_apart(exp, avoid=rvars)
         for i in range(len(st)):
             st[i] = (st[i][0], subst(st[i][1], replacements))
         exp = subst(exp, replacements, tease=False)

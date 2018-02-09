@@ -270,17 +270,25 @@ def nested_dict(n, t):
     return OrderedDefaultDict(lambda: nested_dict(n-1, t))
 
 _i = Value(ctypes.c_uint64, 0)
+def fresh_names(n : int, hint : str = "name", omit : {str} = None) -> [str]:
+    if omit is None:
+        omit = ()
+
+    res = []
+    with _i.get_lock():
+        i = _i.value
+        for _ in range(n):
+            name = None
+            while name is None or name in omit:
+                name = "_{}{}".format(hint, i)
+                i += 1
+            res.append(name)
+        _i.value = i
+
+    return res
+
 def fresh_name(hint="name", omit=None):
-    if omit is not None:
-        assert all(isinstance(o, str) for o in omit)
-        i = 0
-        while ("_{}{}".format(hint, i)) in omit:
-            i += 1
-        return "_{}{}".format(hint, i)
-    else:
-        with _i.get_lock():
-            _i.value += 1
-            return "_{}{}".format(hint, _i.value)
+    return fresh_names(1, hint=hint, omit=omit)[0]
 
 def capitalize(s):
     return (s[0].upper() + s[1:]) if s else s
