@@ -358,16 +358,6 @@ class Learner(object):
                 if self.stop_callback():
                     raise StopException()
 
-                # # Stopgap measure... long story --Calvin
-                # bad = False
-                # for x in all_exps(e):
-                #     if isinstance(x, EStateVar):
-                #         if any(v not in self.state_vars for v in free_vars(x.e)):
-                #             bad = True
-                #             _on_exp(e, "skipping due to illegal free vars under EStateVar")
-                # if bad:
-                #     continue
-
                 new_e = self.pre_optimize(e, pool) if preopt.value else e
                 if new_e is not e:
                     _on_exp(e, "preoptimized", new_e)
