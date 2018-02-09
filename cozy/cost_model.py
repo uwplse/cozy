@@ -65,7 +65,7 @@ class SymbolicCost(Cost):
         else:
             return Cost.UNORDERED
     def order_cardinalities(self, other, assumptions : Exp = T, solver : IncrementalSolver = None) -> Exp:
-        if solver is None:
+        if incremental and solver is None:
             solver = IncrementalSolver()
         if incremental:
             solver.push()
