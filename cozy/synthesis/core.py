@@ -36,7 +36,8 @@ CHECK_SUBST_COST = False # compare cost of each subexp. to its replacement
 class ExpBuilder(object):
     def check(self, e, pool):
         if enforce_exprs_wf.value:
-            assert exp_wf(e, state_vars=self.state_vars, args=self.args, pool=pool)
+            from cozy.typecheck import retypecheck
+            assert retypecheck(e)
         return (e, pool)
     def build(self, cache, size):
         raise NotImplementedError()
