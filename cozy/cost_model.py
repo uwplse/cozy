@@ -195,9 +195,6 @@ class CompositeCostModel(CostModel):
         return False
     def cost(self, e, pool):
         cards = OrderedDict()
-        # for v in free_vars(e):
-        #     if is_collection(v.type):
-        #         cardinality(v, cards)
         hint_cache = []
         if pool == STATE_POOL:
             return CompositeCost(
