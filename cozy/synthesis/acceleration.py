@@ -93,6 +93,7 @@ def map_accelerate(e, state_vars, binders, args, cache, size):
             value = ctx.replace_e_with(binder)
             if any(v not in state_vars and v not in binders for v in free_vars(value)):
                 continue
+            value = strip_EStateVar(value)
             for bag in cache.find_collections(pool=STATE_POOL, size=size, of=arg.type):
                 if isinstance(bag, EEmptyList):
                     continue
