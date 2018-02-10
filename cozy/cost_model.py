@@ -124,7 +124,12 @@ class SymbolicCost(Cost):
         """
         if isinstance(self.formula, ENum) and isinstance(other.formula, ENum):
             return eval(EBinOp(self.formula, op, other.formula).with_type(BOOL), env={})
-        f = EImplies(EAll(self.heuristics + [cards]), EBinOp(self.formula, op, other.formula).with_type(BOOL))
+        f = EImplies(EAll(
+                itertools.chain(
+                    self.heuristics,
+                    other.heuristics,
+                    (cards,))),
+                EBinOp(self.formula, op, other.formula).with_type(BOOL))
         if integer_cardinalities.value:
             try:
                 return valid(f, logic="QF_LIA", timeout=1, **kwargs)
