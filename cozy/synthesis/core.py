@@ -183,11 +183,12 @@ class StealingBuilder(SpecDependentBuilder):
                 if isinstance(e, ELambda):
                     continue
                 for pool in ALL_POOLS:
-                    if self.is_legal_in_pool(e, pool):
-                        e._root = True
-                        yield self.check(e, pool)
+                    x = strip_EStateVar(e) if pool == STATE_POOL else e
+                    if self.is_legal_in_pool(x, pool):
+                        x._root = True
+                        yield self.check(x, pool)
                         if pool == STATE_POOL:
-                            ee = EStateVar(e).with_type(e.type)
+                            ee = EStateVar(x).with_type(x.type)
                             if self.is_legal_in_pool(ee, RUNTIME_POOL):
                                 yield self.check(ee, RUNTIME_POOL)
         yield from self.wrapped.build(cache, size)
