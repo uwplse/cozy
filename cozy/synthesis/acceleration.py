@@ -228,12 +228,12 @@ class AcceleratedBuilder(ExpBuilder):
 
     def build(self, cache, size):
 
-        for e in cache.find(pool=RUNTIME_POOL, size=size-1, type=INT):
-            if not is_root(e):
-                continue
-            e2 = simplify_sum(e)
-            if e != e2:
-                yield self.check(e2, RUNTIME_POOL)
+        # for e in cache.find(pool=RUNTIME_POOL, size=size-1, type=INT):
+        #     if not is_root(e):
+        #         continue
+        #     e2 = simplify_sum(e)
+        #     if e != e2:
+        #         yield self.check(e2, RUNTIME_POOL)
 
         # for e in cache.find(pool=RUNTIME_POOL, size=size-1):
         #     if isinstance(e, EMapGet) and isinstance(e.map, EMakeMap2):
