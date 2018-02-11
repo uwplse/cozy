@@ -177,15 +177,16 @@ class Visitor(object):
         t = type(x)
         first_visit_func = None
         while t is not None:
-            visit_func = "visit_{}".format(t.__name__)
+            visit_func = "visit_" + t.__name__
             first_visit_func = first_visit_func or visit_func
-            if not hasattr(self, visit_func):
+            f = getattr(self, visit_func, None)
+            if f is None:
                 if t is object:
                     break
                 else:
                     t = t.__base__
                     continue
-            return getattr(self, visit_func)(x, *args, **kwargs)
+            return f(x, *args, **kwargs)
         print("Warning: {} does not implement {}".format(self, first_visit_func), file=sys.stderr)
 
 def ast_find(ast, pred):
