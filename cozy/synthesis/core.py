@@ -152,10 +152,12 @@ class SubstitutingBuilder(SpecDependentBuilder):
                 if unbound_binders:
                     _on_exp(e, "skipped replacement with free binders", ", ".join(b.id for b in unbound_binders))
                     continue
+                ee = ctx.replace_e_with(e)
                 # TODO: it might be a good idea to either
                 #  (1) never cache expressions yielded here or
                 #  (2) only cache expressions if they reduce the total size
-                ee = ctx.replace_e_with(e)
+                # ee._cache = False
+                ee._fullcheck = True
                 yield self.check(ee, RUNTIME_POOL)
 
 class StealingBuilder(SpecDependentBuilder):
@@ -206,6 +208,7 @@ class Learner(object):
         self.builder = builder
         self.builder = SubstitutingBuilder(self.builder, binders=binders, target=target)
         self.builder = StealingBuilder(self.builder, state_vars=state_vars, args=args, assumptions=assumptions, target=target)
+        self.builder = FixedBuilder(self.builder, state_vars, args, binders, assumptions)
         self.seen = SeenSet()
         self.assumptions = assumptions
         self.hints = list(hints)
@@ -444,7 +447,7 @@ def fixup_binders(e : Exp, binders_to_use : [EVar], allow_add=False, throw=False
     return V().visit(e)
 
 COMMUTATIVE_OPERATORS = set(("==", "and", "or", "+"))
-ATTRS_TO_PRESERVE = ("_accel", "_tag")
+ATTRS_TO_PRESERVE = ("_accel", "_tag", "_fullcheck")
 
 class FixedBuilder(ExpBuilder):
     def __init__(self, wrapped_builder, state_vars, args, binders_to_use, assumptions : Exp):
@@ -453,6 +456,9 @@ class FixedBuilder(ExpBuilder):
         self.args = OrderedSet(args)
         self.binders_to_use = binders_to_use
         self.assumptions = assumptions
+    def watch(self, new_target):
+        if isinstance(self.wrapped_builder, SpecDependentBuilder):
+            self.wrapped_builder.watch(new_target)
     def build(self, cache, size):
         for (e, pool) in self.wrapped_builder.build(cache, size):
             try:
@@ -475,7 +481,7 @@ class FixedBuilder(ExpBuilder):
                 # need to recursively check them.  The regular grammar only
                 # produces expressions "one level deep"---all subexpressions
                 # have already been checked.
-                if hasattr(e, "_accel"):
+                if hasattr(e, "_accel") or hasattr(e, "_fullcheck"):
                     exp_wf(e, self.state_vars, self.args, pool, assumptions=self.assumptions)
                 else:
                     exp_wf_nonrecursive(e, self.state_vars, self.args, pool, assumptions=self.assumptions)
@@ -593,7 +599,6 @@ def improve(
     target = fixup_binders(target, binders, allow_add=False)
     hints = [fixup_binders(h, binders, allow_add=False) for h in (hints or ())]
     assumptions = fixup_binders(assumptions, binders, allow_add=False)
-    builder = FixedBuilder(builder, state_vars, args, binders, assumptions)
     target_cost = cost_model.cost(target, RUNTIME_POOL)
 
     if eliminate_vars.value and can_elim_vars(target, assumptions, state_vars):
