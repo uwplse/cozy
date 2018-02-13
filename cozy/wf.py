@@ -49,10 +49,13 @@ def exp_wf_nonrecursive(e : Exp, state_vars : {EVar}, args : {EVar}, pool = RUNT
         raise ExpIsNotWf(e, e, "bad key type {}".format(pprint(e.type.k)))
     if isinstance(e.type, TMap) and isinstance(e.type.v, TMap):
         raise ExpIsNotWf(e, e, "map to map")
-    if isinstance(e, EUnaryOp) and e.op == UOp.The:
-        len = EUnaryOp(UOp.Length, e.e).with_type(INT)
-        if not valid(EImplies(assumptions, EBinOp(len, "<=", ENum(1).with_type(INT)).with_type(BOOL))):
-            raise ExpIsNotWf(e, e, "illegal application of 'the': could have >1 elems")
+    # This check is probably a bad idea: whether `the` is legal may depend on
+    # the contex that the expression is embedded within, so we can't skip it
+    # during synthesis just because it looks invalid now.
+    # if isinstance(e, EUnaryOp) and e.op == UOp.The:
+    #     len = EUnaryOp(UOp.Length, e.e).with_type(INT)
+    #     if not valid(EImplies(assumptions, EBinOp(len, "<=", ENum(1).with_type(INT)).with_type(BOOL))):
+    #         raise ExpIsNotWf(e, e, "illegal application of 'the': could have >1 elems")
     if not at_runtime and isinstance(e, EBinOp) and e.op == "-" and is_collection(e.type):
         raise ExpIsNotWf(e, e, "collection subtraction in state position")
     if not at_runtime and isinstance(e, ESingleton):
