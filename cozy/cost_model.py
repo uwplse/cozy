@@ -2,9 +2,11 @@ from collections import OrderedDict
 from functools import total_ordering, lru_cache
 import itertools
 
-from cozy.common import typechecked, partition, make_random_access
+import igraph
+
+from cozy.common import OrderedSet, typechecked, partition, make_random_access
 from cozy.target_syntax import *
-from cozy.syntax_tools import BottomUpExplorer, pprint, equal, fresh_var, mk_lambda, free_vars, subst, alpha_equivalent, all_exps, cse
+from cozy.syntax_tools import BottomUpExplorer, pprint, equal, fresh_var, mk_lambda, free_vars, subst, alpha_equivalent, all_exps, ExpMap
 from cozy.typecheck import is_collection
 from cozy.pools import RUNTIME_POOL, STATE_POOL
 from cozy.solver import valid, satisfiable, REAL, SolverReportedUnknown, IncrementalSolver
@@ -13,11 +15,6 @@ from cozy.opts import Option
 
 assume_large_cardinalities = Option("assume-large-cardinalities", int, 1000)
 integer_cardinalities = Option("try-integer-cardinalities", bool, True)
-
-# In principle these settings are supposed to improve performance; in practice,
-# they do not.
-incremental = False
-use_indicators = False
 
 class Cost(object):
     WORSE = "worse"
@@ -34,22 +31,114 @@ class CostModel(object):
 
 # -----------------------------------------------------------------------------
 
+class CardinalityLattice(object):
+    """
+    Maintains order amongst cardinalities of expressions.
+
+    Notable properties:
+        facts      - list of Exps expressing provable relations among cardinalities
+        heuristics - list of Exps expressing probable relations among cardinalities
+    """
+
+    def __init__(self, assumptions : Exp = T):
+        self.solver = IncrementalSolver()
+        self.ind1 = fresh_var(BOOL)
+        self.ind2 = fresh_var(BOOL)
+        self.solver.add_assumption(assumptions)
+        self.cardinalities = OrderedDict() # Exp (in terms of collections) -> Exp (in terms of cards)
+        self.dag = igraph.Graph().as_directed()
+        self.facts = []
+        self.heuristics = []
+
+    def cardinality(self, e : Exp) -> Exp:
+        """
+        Add `e` to the lattice and return an expression representing its cardinality
+        """
+
+        res = self.cardinalities.get(e)
+        if res is not None:
+            return res
+
+        assert is_collection(e.type)
+        old = set(self.cardinalities.values())
+        res = cardinality(e, self.cardinalities, self.heuristics)
+        fresh = [item for item in self.cardinalities.items() if item[1] not in old]
+        rcards = { v.id : exp for (exp, v) in self.cardinalities.items() }
+
+        g = self.dag
+
+        for (_, v1var) in fresh:
+            self.facts.append(EBinOp(v1var, ">=", ZERO).with_type(BOOL))
+            v1 = v1var.id
+            g.add_vertex(name=v1)
+            wq = OrderedSet(g.topological_sorting())
+            while wq:
+                vid = next(iter(wq))
+                v2 = g.vs[vid]["name"]
+                v2var = EVar(v2).with_type(INT)
+                wq.remove(vid)
+                if v1 == v2:
+                    continue
+                le = False
+                ge = False
+                s = self.solver
+                ind_le = self.ind1
+                ind_ge = self.ind2
+                c1 = rcards[v1]
+                c2 = rcards[v2]
+                s.push()
+                s.add_assumption(EAll([
+                    EEq(ind_le, EBinOp(ELen(c1), "<=", ELen(c2)).with_type(BOOL)),
+                    EEq(ind_ge, EBinOp(ELen(c2), "<=", ELen(c1)).with_type(BOOL))]))
+
+                if s.valid(ind_le):
+                    g.add_edge(v1, v2)
+                    for vv in g.subcomponent(vid, mode="OUT"): # will include vid as well
+                        try:
+                            wq.remove(vv)
+                        except KeyError:
+                            pass
+                    self.facts.append(EBinOp(v1var, "<=", v2var).with_type(BOOL))
+                    le = True
+                if s.valid(ind_ge):
+                    g.add_edge(v2, v1)
+                    self.facts.append(EBinOp(v1var, ">=", v2var).with_type(BOOL))
+                    ge = True
+                s.pop()
+                if le and ge:
+                    # union
+                    self.cardinalities[rcards[v2]] = v1var
+                    g.delete_vertices([v2])
+                    break
+
+        if assume_large_cardinalities.value > 0:
+            min_cardinality = ENum(assume_large_cardinalities.value).with_type(INT)
+            for v in free_vars(e):
+                if is_collection(v.type):
+                    c = self.cardinality(v)
+                    f = EGt(c, min_cardinality)
+                    self.heuristics.append(f)
+
+        return res
+
 class SymbolicCost(Cost):
     @typechecked
-    def __init__(self, formula : Exp, cardinalities : { Exp : EVar }, heuristics : [Exp]):
+    def __init__(self, formula : Exp, lattice : CardinalityLattice):
         self.formula = formula
-        self.cardinalities = cardinalities
-        self.heuristics = list(heuristics)
+        self.lattice = lattice
     def __repr__(self):
-        return "SymbolicCost({!r}, {!r})".format(self.formula, self.cardinalities)
+        return "SymbolicCost({!r}, {!r})".format(self.formula, self.lattice)
     def __str__(self):
         return pprint(self.formula)
     def compare_to(self, other, assumptions : Exp = T, solver : IncrementalSolver = None):
         assert isinstance(other, SymbolicCost)
+        assert other.lattice is self.lattice
         if False:
+            # TODO: this is much faster, but we need to implement fallback
+            # to real numbers if the solver reports unknown
             s = IncrementalSolver()
             v1, v2 = fresh_var(BOOL), fresh_var(BOOL)
-            s.add_assumption(EAll(self.heuristics + [
+            s.add_assumption(EAll([
                 self.order_cardinalities(other, assumptions, solver),
                 EEq(v1, EBinOp(self.formula, "<=", other.formula).with_type(BOOL)),
                 EEq(v2, EBinOp(other.formula, "<=", self.formula).with_type(BOOL))]))
@@ -66,57 +155,9 @@ class SymbolicCost(Cost):
         else:
             return Cost.UNORDERED
     def order_cardinalities(self, other, assumptions : Exp = T, solver : IncrementalSolver = None) -> Exp:
-        if incremental and solver is None:
-            solver = IncrementalSolver()
-        if incremental:
-            solver.push()
-            solver.add_assumption(assumptions)
-
-        cardinalities = OrderedDict()
-        for m in (self.cardinalities, other.cardinalities):
-            for k, v in m.items():
-                cardinalities[v] = k
-
-        conds = []
-        res = []
-        for (v1, c1) in cardinalities.items():
-            res.append(EBinOp(v1, ">=", ZERO).with_type(BOOL))
-            for (v2, c2) in cardinalities.items():
-                if v1 == v2:
-                    continue
-                if alpha_equivalent(c1, c2):
-                    res.append(EEq(v1, v2))
-                    continue
-
-                if incremental and use_indicators:
-                    conds.append((v1, v2, fresh_var(BOOL), cardinality_le(c1, c2, as_f=True)))
-                else:
-                    if incremental:
-                        le = cardinality_le(c1, c2, solver=solver)
-                    else:
-                        # print("CMP {}: {} / {}".format("<-" if v1 < v2 else "->", pprint(c1), pprint(c2)))
-                        le = cardinality_le(c1, c2, assumptions=assumptions, solver=solver)
-                    if le:
-                        res.append(EBinOp(v1, "<=", v2).with_type(BOOL))
-
-        if incremental and use_indicators:
-            solver.add_assumption(EAll(
-                [EEq(indicator, f) for (v1, v2, indicator, f) in conds]))
-            for (v1, v2, indicator, f) in conds:
-                if solver.valid(indicator):
-                    res.append(EBinOp(v1, "<=", v2).with_type(BOOL))
-
-        if incremental:
-            solver.pop()
-
-        if assume_large_cardinalities.value:
-            min_cardinality = ENum(assume_large_cardinalities.value).with_type(INT)
-            for cvar, exp in cardinalities.items():
-                if isinstance(exp, EVar):
-                    res.append(EBinOp(cvar, ">", min_cardinality).with_type(BOOL))
-
-        # print("cards: {}".format(pprint(EAll(res))))
-        return EAll(res)
+        return EAll(itertools.chain(
+            self.lattice.facts,
+            self.lattice.heuristics))
     @typechecked
     def always(self, op, other, cards : Exp, **kwargs) -> bool:
         """
@@ -124,11 +165,7 @@ class SymbolicCost(Cost):
         """
         if isinstance(self.formula, ENum) and isinstance(other.formula, ENum):
             return eval(EBinOp(self.formula, op, other.formula).with_type(BOOL), env={})
-        f = EImplies(EAll(
-                itertools.chain(
-                    self.heuristics,
-                    other.heuristics,
-                    (cards,))),
+        f = EImplies(cards,
                 EBinOp(self.formula, op, other.formula).with_type(BOOL))
         if integer_cardinalities.value:
             try:
@@ -194,23 +231,25 @@ class CompositeCost(Cost):
 # -----------------------------------------------------------------------------
 
 class CompositeCostModel(CostModel):
+    def __init__(self, assumptions : Exp = T):
+        self.lattice = CardinalityLattice(assumptions=assumptions)
     def __repr__(self):
         return "CompositeCostModel()"
     def is_monotonic(self):
         return False
     def cost(self, e, pool):
-        cards = OrderedDict()
-        hint_cache = []
+        # cards = OrderedDict()
+        # hint_cache = []
         if pool == STATE_POOL:
             return CompositeCost(
-                sizeof(e, cards, hint_cache),
+                sizeof(e, self.lattice),
                 ast_size(e))
         else:
             assert pool == RUNTIME_POOL
             return CompositeCost(
-                asymptotic_runtime(e, hint_cache),
-                storage_size(e, cards, hint_cache),
-                precise_runtime(e, hint_cache),
+                asymptotic_runtime(e, self.lattice),
+                storage_size(e, self.lattice),
+                precise_runtime(e, self.lattice),
                 ast_size(e))
 
 def maybe_inline(e, f):
@@ -233,11 +272,8 @@ def EMax(es):
                 ECond(EGt(v1, v2), v1, v2).with_type(t)))
     return res
 
-def asymptotic_runtime(e, hint_cache):
+def asymptotic_runtime(e, lattice):
     class V(BottomUpExplorer):
-        def __init__(self):
-            super().__init__()
-            self.cardinalities = { }
         def EBinOp(self, e1, op, e2):
             if isinstance(e1, list): e1 = EMax([ONE] + e1)
             if isinstance(e2, list): e2 = EMax([ONE] + e2)
@@ -249,7 +285,7 @@ def asymptotic_runtime(e, hint_cache):
                 return ENum(eval(e, {})).with_type(e1.type)
             return e
         def cardinality(self, e : Exp, **kwargs) -> Exp:
-            return cardinality(e, self.cardinalities, hint_cache, **kwargs)
+            return lattice.cardinality(e)
         def combine(self, costs):
             res = []
             q = list(costs)
@@ -312,29 +348,27 @@ def asymptotic_runtime(e, hint_cache):
     vis = V()
     f = EMax([ONE] + vis.visit(e))
     # f = cse(f)
-    return SymbolicCost(f, vis.cardinalities, hint_cache)
+    return SymbolicCost(f, lattice)
 
-def sizeof(e, cardinalities, hint_cache):
+def sizeof(e, lattice):
     terms = [ONE]
     if is_collection(e.type):
-        terms.append(cardinality(e, cardinalities, hint_cache))
+        terms.append(lattice.cardinality(e))
     elif isinstance(e.type, TMap):
         ks = EMapKeys(e).with_type(TBag(e.type.k))
-        terms.append(cardinality(ks, cardinalities, hint_cache))
+        terms.append(lattice.cardinality(ks))
         if is_collection(e.type.v):
             vals = EFlatMap(ks, mk_lambda(e.type.k, lambda k: EMapGet(e, k).with_type(e.type.v))).with_type(e.type.v)
-            terms.append(cardinality(vals, cardinalities, hint_cache))
-    return SymbolicCost(ESum(terms), cardinalities, hint_cache)
+            terms.append(lattice.cardinality(vals))
+    return SymbolicCost(ESum(terms), lattice)
 
-def storage_size(e, cardinalities, hint_cache):
+def storage_size(e, lattice):
     sizes = []
     for x in all_exps(e):
         if isinstance(x, EStateVar):
-            hc = []
-            sz_cost = sizeof(x.e, cardinalities, hc)
+            sz_cost = sizeof(x.e, lattice)
             sizes.append(sz_cost.formula)
-            hint_cache.extend(hc)
-    return SymbolicCost(ESum(sizes), cardinalities, hint_cache)
+    return SymbolicCost(ESum(sizes), lattice)
 
 # Some kinds of expressions have a massive penalty associated with them if they
 # appear at runtime.
@@ -342,13 +376,13 @@ EXTREME_COST    = ENum(1000).with_type(INT)
 MILD_PENALTY    = ENum(  10).with_type(INT)
 TWO             = ENum(   2).with_type(INT)
 
-def precise_runtime(e, hint_cache):
+def precise_runtime(e, lattice):
     class V(BottomUpExplorer):
         def __init__(self):
             super().__init__()
             self.cardinalities = { }
         def cardinality(self, e : Exp, **kwargs) -> Exp:
-            return cardinality(e, self.cardinalities, hint_cache, **kwargs)
+            return lattice.cardinality(e)
         def visit_EStateVar(self, e):
             return ONE
         def visit_EUnaryOp(self, e):
@@ -401,7 +435,7 @@ def precise_runtime(e, hint_cache):
             return ESum(itertools.chain((ONE,), child_costs))
     vis = V()
     f = vis.visit(e)
-    return SymbolicCost(f, vis.cardinalities, hint_cache)
+    return SymbolicCost(f, lattice)
 
 def ast_size(e):
     return PlainCost(e.size())
@@ -460,30 +494,6 @@ def cardinality(e : Exp, cache : { Exp : EVar }, heuristics : [Exp], plus_one=Fa
         #     heuristics.append(EAny([EEq(v, cardinality(e.then_branch, cache, heuristics)), EEq(v, self.cardinality(e.else_branch))]))
         return v
 
-@lru_cache(maxsize=2**16)
-# @typechecked
-def cardinality_le(c1 : Exp, c2 : Exp, assumptions : Exp = T, as_f : bool = False, solver : IncrementalSolver = None) -> bool:
-    """
-    Is |c1| <= |c2|?
-    Yes, iff there are no v such that v occurs more times in c2 than in c1.
-    """
-    if True:
-        f = EBinOp(ELen(c1), "<=", ELen(c2)).with_type(BOOL)
-    else:
-        assert c1.type == c2.type
-        # Oh heck.
-        # This isn't actually very smart if:
-        #   x = [y]
-        #   a = Filter (!= y) b
-        # This method can't prove that |x| <= |a|, even though |a| is likely huge
-        v = fresh_var(c1.type.t)
-        f = EBinOp(ECountIn(v, c1), "<=", ECountIn(v, c2)).with_type(BOOL)
-    if as_f:
-        return f
-    res = solver.valid(EImplies(assumptions, f)) if solver else valid(EImplies(assumptions, f))
-    # assert res == valid(EImplies(assumptions, f))
-    return res
-
 def debug_comparison(e1, c1, e2, c2, assumptions : Exp = T):
     from cozy.syntax_tools import break_conj
     print("-" * 20)
@@ -502,15 +512,15 @@ def debug_comparison(e1, c1, e2, c2, assumptions : Exp = T):
         print("  c1 compare_to c2 = {}".format(c1.compare_to(c2, assumptions=assumptions)))
         print("  c2 compare_to c1 = {}".format(c2.compare_to(c1, assumptions=assumptions)))
         print("variable meanings...")
-        for e, v in itertools.chain(c1.cardinalities.items(), c2.cardinalities.items()):
+        for e, v in c1.lattice.cardinalities.items():
             print("  {v} = len {e}".format(v=pprint(v), e=pprint(e)))
-        print("joint orderings...")
-        cards = c1.order_cardinalities(c2, assumptions=assumptions)
-        for o in break_conj(cards):
+        print("proven facts...")
+        for o in c1.lattice.facts:
             print("  {}".format(pprint(o)))
         print("heuristics...")
-        for h in itertools.chain(c1.heuristics, c2.heuristics):
-            print("  {}".format(pprint(h)))
+        for o in c1.lattice.heuristics:
+            print("  {}".format(pprint(o)))
+        cards = c1.order_cardinalities(c2, assumptions=assumptions)
         for op in ("<=", "<", ">", ">="):
             print("c1 always {} c2?".format(op))
             x = []

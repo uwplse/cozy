@@ -606,6 +606,13 @@ def improve(
         args=set(args),
         assumptions=assumptions)
 
+    # Bit of a hack, but... a CompositeCostModel needs to be initialized with
+    # the proper assumptions.  It also needs to be local to the synthesis task,
+    # since it is stateful.  This safely prevents misuse by clients.
+    from cozy.cost_model import CompositeCostModel
+    if cost_model is None or isinstance(cost_model, CompositeCostModel):
+        cost_model = CompositeCostModel(assumptions=assumptions)
+
     binders = list(binders)
     target = fixup_binders(target, binders, allow_add=False)
     hints = [fixup_binders(h, binders, allow_add=False) for h in (hints or ())]
