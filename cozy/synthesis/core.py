@@ -301,10 +301,10 @@ class Learner(object):
             if hasattr(e, "_tag"):
                 res._tag = e._tag
             return res
-        except:
-            traceback.print_exc(file=sys.stdout)
-            print("FAILED TO PREOPTIMIZE {} ---> {}".format(pprint(e), pprint(res)))
-            print(repr(e))
+        except Exception as ex:
+            # traceback.print_exc(file=sys.stdout)
+            print("FAILED TO PREOPTIMIZE [exn={}] {} ---> {}".format(ex, pprint(e), pprint(res)))
+            # print(repr(e))
             return e
 
     def _start_minor_it(self):
