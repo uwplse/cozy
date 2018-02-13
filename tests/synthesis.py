@@ -1,18 +1,33 @@
 import unittest
 
-from cozy.syntax_tools import mk_lambda, pprint
+from cozy.syntax_tools import mk_lambda, pprint, alpha_equivalent
 from cozy.target_syntax import *
 from cozy.cost_model import CompositeCostModel
 from cozy.typecheck import retypecheck
 from cozy.evaluation import Bag, mkval
 from cozy.synthesis.core import instantiate_examples, fingerprint, improve
 from cozy.synthesis.grammar import BinderBuilder
+from cozy.solver import valid, satisfy
 
 handle_type = THandle("H", INT)
 handle1 = (1, mkval(INT))
 handle2 = (2, mkval(INT))
 handle3 = (3, mkval(INT))
 zero = ENum(0).with_type(INT)
+
+def check_discovery(spec, expected, state_vars=[], args=[], examples=[]):
+    for r in improve(spec,
+            assumptions=T,
+            binders=[],
+            state_vars=state_vars,
+            args=args,
+            cost_model=CompositeCostModel(),
+            builder=BinderBuilder(args=args, state_vars=state_vars, binders=[]),
+            examples=examples):
+        print("GOT RESULT ==> {}".format(pprint(r)))
+        if alpha_equivalent(r, expected):
+            return True
+    return False
 
 class TestSynthesisCore(unittest.TestCase):
 
@@ -68,3 +83,15 @@ class TestSynthesisCore(unittest.TestCase):
             print(pprint(r))
             res = r
         assert should_stop()
+
+    def test_bag_plus_minus(self):
+        t = THandle("H", INT)
+        x = EVar("x").with_type(t)
+        xs = EVar("xs").with_type(TBag(t))
+        spec = EBinOp(EBinOp(xs, "+", ESingleton(x)), "-", ESingleton(x))
+        expected = xs
+        assert retypecheck(spec)
+        assert valid(EEq(spec, expected))
+        ex = satisfy(ENot(EBinOp(spec, "===", expected).with_type(BOOL)))
+        assert ex is not None
+        assert check_discovery(spec=spec, expected=expected, args=[x, xs], examples=[ex])

@@ -254,7 +254,7 @@ class Learner(object):
         self.fpcount += 1
         # bs = tuple(sorted(free_vars(e) & self.binders))
         bs = (len(free_vars(e) & self.binders),)
-        return fingerprint(e, self.all_examples) + bs
+        return bs + fingerprint(e, self.all_examples)
 
     def pre_optimize(self, e, pool):
         """
@@ -327,6 +327,17 @@ class Learner(object):
 
     def _on_exp(self, e, pool):
         self.ecount += 1
+
+    def matches(self, fp, target_fp):
+        assert isinstance(fp[0], int)
+        assert isinstance(fp[1], Type)
+        assert len(fp) == len(target_fp)
+        if fp[0] != target_fp[0] or fp[1] != target_fp[1]:
+            return False
+        t = fp[1]
+        assert isinstance(t, Type)
+        from cozy.evaluation import eq
+        return all(eq(t, fp[i], target_fp[i]) for i in range(2, len(fp)))
 
     def next(self):
         target_cost = self.cost_model.cost(self.target, RUNTIME_POOL)
@@ -408,7 +419,7 @@ class Learner(object):
                 else:
                     continue
 
-                if pool == RUNTIME_POOL and fp == target_fp and e != self.target:
+                if pool == RUNTIME_POOL and self.matches(fp, target_fp) and e != self.target:
                     return (self.target, e, (), lambda x: x)
 
             if self.last_progress < (self.current_size+1) // 2:
