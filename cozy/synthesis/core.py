@@ -179,8 +179,9 @@ class StealingBuilder(SpecDependentBuilder):
     def check(self, e, pool):
         _on_exp(e, "new root", pool_name(pool))
         e._root = False
-        if hasattr(e, "_accel"):
-            delattr(e, "_accel")
+        for a in ("_accel", "_cache"):
+            if hasattr(e, a):
+                delattr(e, a)
         return super().check(e, pool)
     def build(self, cache, size):
         if size == 0 and self.target is not None:
