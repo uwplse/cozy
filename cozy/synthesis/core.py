@@ -205,8 +205,8 @@ class Learner(object):
         self.stop_callback = stop_callback
         self.cost_model = cost_model
         self.builder = builder
-        self.builder = SubstitutingBuilder(self.builder, binders=binders, target=target)
         self.builder = StealingBuilder(self.builder, state_vars=state_vars, args=args, assumptions=assumptions, target=target)
+        self.builder = SubstitutingBuilder(self.builder, binders=binders, target=target)
         self.builder = FixedBuilder(self.builder, state_vars, args, binders, assumptions)
         self.seen = SeenSet()
         self.assumptions = assumptions
