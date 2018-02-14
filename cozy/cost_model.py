@@ -47,6 +47,7 @@ class CardinalityLattice(object):
         self.solver.add_assumption(assumptions)
         self.cardinalities = OrderedDict() # Exp (in terms of collections) -> Exp (in terms of cards)
         self.dag = igraph.Graph().as_directed()
+        self.vars_seen = set()
         self.facts = []
         self.heuristics = []
 
@@ -114,10 +115,11 @@ class CardinalityLattice(object):
         if assume_large_cardinalities.value > 0:
             min_cardinality = ENum(assume_large_cardinalities.value).with_type(INT)
             for v in free_vars(e):
-                if is_collection(v.type):
+                if is_collection(v.type) and v not in self.vars_seen:
                     c = self.cardinality(v)
                     f = EGt(c, min_cardinality)
                     self.heuristics.append(f)
+                    self.vars_seen.add(v)
 
         return res
 
