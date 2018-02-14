@@ -22,7 +22,6 @@ hyperaggressive_eviction = Option("hyperaggressive-eviction", bool, True)
 reject_symmetric_binops = Option("reject-symmetric-binops", bool, False)
 eliminate_vars = Option("eliminate-vars", bool, True)
 reset_on_success = Option("reset-on-success", bool, False)
-enforce_seen_wf = Option("enforce-seen-set-well-formed", bool, False)
 enforce_exprs_wf = Option("enforce-expressions-well-formed", bool, False)
 preopt = Option("optimize-accelerated-exps", bool, True)
 check_depth = Option("proof-depth", int, 4)
@@ -233,17 +232,6 @@ class Learner(object):
         self.builder_iter = ()
         self.last_progress = 0
         self._start_minor_it()
-
-    def _check_seen_wf(self):
-        if enforce_seen_wf.value:
-            for (e, pool, fp, size, cost) in self.seen.items():
-                fpnow = self._fingerprint(e)
-                if fp != fpnow:
-                    print("#" * 40)
-                    print(pprint(e))
-                    print(fp)
-                    print(fpnow)
-                    assert False
 
     def watch(self, new_target):
         self.target = new_target
