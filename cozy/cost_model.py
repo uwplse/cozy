@@ -110,6 +110,8 @@ class CardinalityLattice(object):
                     # union
                     self.cardinalities[rcards[v2]] = v1var
                     g.delete_vertices([v2])
+                    self.facts = [f for f in self.facts if v2var not in free_vars(f)]
+                    self.heuristics = [f for f in self.heuristics if v2var not in free_vars(f)]
                     break
 
         if assume_large_cardinalities.value > 0:
@@ -475,21 +477,22 @@ def cardinality(e : Exp, cache : { Exp : EVar }, heuristics : [Exp], plus_one=Fa
     else:
         v = fresh_var(INT)
         cache[e] = v
-        if isinstance(e, EFilter):
-            cc = cardinality(e.e, cache, heuristics)
-            # heuristics.append(EBinOp(v, "<=", cc).with_type(BOOL))
-            # heuristic: (xs) large implies (filter_p xs) large
-            heuristics.append(EBinOp(
-                EBinOp(v,  "*", ENum(5).with_type(INT)).with_type(INT), ">=",
-                EBinOp(cc, "*", ENum(4).with_type(INT)).with_type(INT)).with_type(BOOL))
+        # if isinstance(e, EFilter):
+        #     cc = cardinality(e.e, cache, heuristics)
+        #     # heuristics.append(EBinOp(v, "<=", cc).with_type(BOOL))
+        #     # heuristic: (xs) large implies (filter_p xs) large
+        #     heuristics.append(EBinOp(
+        #         EBinOp(v,  "*", ENum(5).with_type(INT)).with_type(INT), ">=",
+        #         EBinOp(cc, "*", ENum(4).with_type(INT)).with_type(INT)).with_type(BOOL))
         if isinstance(e, EUnaryOp) and e.op == UOp.Distinct:
             cc = cardinality(e.e, cache, heuristics)
             # heuristics.append(EBinOp(v, "<=", cc).with_type(BOOL))
             # heuristics.append(EImplies(EGt(cc, ZERO), EGt(v, ZERO)))
             # heuristic: (xs) large implies (distinct xs) large
-            heuristics.append(EBinOp(
-                EBinOp(v,  "*", ENum(5).with_type(INT)).with_type(INT), ">=",
-                EBinOp(cc, "*", ENum(4).with_type(INT)).with_type(INT)).with_type(BOOL))
+            # heuristics.append(EBinOp(
+            #     EBinOp(v,  "*", ENum(5).with_type(INT)).with_type(INT), ">=",
+            #     EBinOp(cc, "*", ENum(4).with_type(INT)).with_type(INT)).with_type(BOOL))
+            heuristics.append(EImplies(EGt(cc, ZERO), EGt(v, ZERO)))
         # if isinstance(e, EBinOp) and e.op == "-":
         #     heuristics.append(EBinOp(v, "<=", cardinality(e.e1, cache, heuristics)).with_type(BOOL))
         # if isinstance(e, ECond):
