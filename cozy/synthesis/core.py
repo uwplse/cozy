@@ -226,7 +226,6 @@ class Learner(object):
             return c1.compare_to(c2, assumptions=self.assumptions)
 
     def reset(self, examples):
-        _fates.clear()
         self.cache = Cache(binders=self.binders, args=self.args)
         self.current_size = -1
         self.examples = list(examples)
@@ -310,6 +309,10 @@ class Learner(object):
 
     def _start_minor_it(self):
         now = datetime.datetime.now()
+        if _fates:
+            for f, ct in sorted(_fates.items(), key=lambda x: x[1], reverse=True):
+                print("  {:6} | {}".format(ct, f))
+            _fates.clear()
         if hasattr(self, "mstart"):
             duration = now - self.mstart
             print("> minor duration:   {}".format(duration))
@@ -428,9 +431,6 @@ class Learner(object):
 
             self.current_size += 1
             self.builder_iter = self.builder.build(self.cache, self.current_size)
-            for f, ct in sorted(_fates.items(), key=lambda x: x[1], reverse=True):
-                print("  {:6} | {}".format(ct, f))
-            _fates.clear()
             self._start_minor_it()
 
 @typechecked
