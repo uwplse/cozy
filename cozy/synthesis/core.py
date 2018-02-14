@@ -23,7 +23,6 @@ reject_symmetric_binops = Option("reject-symmetric-binops", bool, False)
 eliminate_vars = Option("eliminate-vars", bool, True)
 reset_on_success = Option("reset-on-success", bool, False)
 enforce_seen_wf = Option("enforce-seen-set-well-formed", bool, False)
-enforce_strong_progress = Option("enforce-strong-progress", bool, False)
 enforce_exprs_wf = Option("enforce-expressions-well-formed", bool, False)
 preopt = Option("optimize-accelerated-exps", bool, True)
 check_depth = Option("proof-depth", int, 4)
@@ -378,12 +377,6 @@ class Learner(object):
                     for prev_exp, prev_size, prev_cost in prev:
                         ordering = self.compare_costs(cost, prev_cost)
                         assert ordering in (Cost.WORSE, Cost.BETTER, Cost.UNORDERED)
-                        if enforce_strong_progress.value and ordering != Cost.WORSE:
-                            bad = find_one(all_exps(e), lambda ee: alpha_equivalent(ee, prev_exp))
-                            if bad:
-                                _on_exp(e, "failed strong progress requirement", bad)
-                                should_add = False
-                                break
                         _on_exp(e, ordering, pool_name(pool), prev_exp)
                         if ordering == Cost.UNORDERED:
                             continue
