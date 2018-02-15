@@ -15,8 +15,17 @@ from cozy import syntax
 from cozy import target_syntax
 from cozy import pools
 
-def fresh_var(type, hint="var", **kwargs):
-    return syntax.EVar(common.fresh_name(hint, **kwargs)).with_type(type)
+def var_name(v):
+    if isinstance(v, str):
+        return v
+    if isinstance(v, syntax.EVar):
+        return v.id
+    raise TypeError(v)
+
+def fresh_var(type, hint="var", omit=None):
+    if omit is not None:
+        omit = { var_name(v) for v in omit }
+    return syntax.EVar(common.fresh_name(hint, omit=omit)).with_type(type)
 
 def mk_lambda(t, l):
     v = fresh_var(t)
@@ -118,6 +127,9 @@ class PrettyPrinter(common.Visitor):
     def format_gt(self):
         return "&gt;" if self.format == "html" else ">"
 
+    def format_comment(self, comment):
+        return '<span class="comment">{}</span>'.format(comment) if self.format == "html" else comment
+
     def visit_Spec(self, spec):
         s = spec.name + ":\n"
         for name, t in spec.types:
@@ -197,14 +209,18 @@ class PrettyPrinter(common.Visitor):
         return t.prettyprint()
 
     def visit_Query(self, q):
-        s = "  {} {}({}):\n".format(self.format_keyword("query"), q.name, ", ".join("{} : {}".format(name, self.visit(t)) for name, t in q.args))
+        s = "\n"
+        if q.docstring:
+            s += "  {}\n".format(self.format_comment("/** {} */".format(q.docstring)))
+        s += "  {} {}({}):\n".format(self.format_keyword("query"), q.name, ", ".join("{} : {}".format(name, self.visit(t)) for name, t in q.args))
         for e in q.assumptions:
             s += "    {} {};\n".format(self.format_keyword("assume"), self.visit(e))
         s += "    {}\n".format(self.visit(q.ret))
         return s
 
     def visit_Op(self, q):
-        s = "  {} {}({}):\n".format(self.format_keyword("op"), q.name, ", ".join("{} : {}".format(name, self.visit(t)) for name, t in q.args))
+        s = "\n"
+        s += "  {} {}({}):\n".format(self.format_keyword("op"), q.name, ", ".join("{} : {}".format(name, self.visit(t)) for name, t in q.args))
         for e in q.assumptions:
             s += "    {} {};\n".format(self.format_keyword("assume"), self.visit(e))
         s += "{}\n".format(self.visit(q.body, "    "))
@@ -798,6 +814,21 @@ def purify(exp : syntax.Exp) -> syntax.Exp:
     for v, e in st:
         exp = target_syntax.ELet(e, target_syntax.ELambda(v, exp)).with_type(exp.type)
     return exp
+
+def find_naked_statevar(e, state_vars):
+    for ctx in enumerate_fragments2(e):
+        if isinstance(ctx.e, syntax.EVar) and ctx.e in state_vars and ctx.pool != pools.STATE_POOL:
+            return (ctx.e, ctx.replace_e_with)
+    return None
+
+def wrap_naked_statevars(e, state_vars):
+    while True:
+        x = find_naked_statevar(e, state_vars)
+        if x is None:
+            break
+        sv, r = x
+        e = r(target_syntax.EStateVar(sv).with_type(sv.type))
+    return e
 
 def subst(exp, replacements, tease=True):
     """

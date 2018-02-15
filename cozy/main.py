@@ -114,6 +114,7 @@ def run():
                 s += "<head><style>"
                 s += ".kw { color: #909; font-weight: bold; }"
                 s += ".builtin { color: #009; font-weight: bold; }"
+                s += ".comment { color: #999; }"
                 s += "</style></head>"
                 s += "<body><pre>"
                 for v, e in state_map.items():

@@ -127,12 +127,12 @@ def sketch_update(
 
     subgoals = []
 
-    def make_subgoal(e, a=[]):
+    def make_subgoal(e, a=[], docstring=None):
         e = strip_EStateVar(e)
         if skip_stateless_synthesis.value and not any(v in ctx for v in free_vars(e)):
             return e
         query_name = fresh_name("query")
-        query = syntax.Query(query_name, syntax.Visibility.Internal, [], assumptions + a, e, None)
+        query = syntax.Query(query_name, syntax.Visibility.Internal, [], assumptions + a, e, docstring)
         query_vars = [v for v in free_vars(query) if v not in ctx]
         query.args = [(arg.id, arg.type) for arg in query_vars]
         subgoals.append(query)
@@ -145,17 +145,17 @@ def sketch_update(
 
     t = lval.type
     if isinstance(t, syntax.TBag) or isinstance(t, syntax.TSet):
-        to_add = make_subgoal(syntax.EBinOp(new_value, "-", old_value).with_type(t))
-        to_del = make_subgoal(syntax.EBinOp(old_value, "-", new_value).with_type(t))
+        to_add = make_subgoal(syntax.EBinOp(new_value, "-", old_value).with_type(t), docstring="additions to {}".format(pprint(lval)))
+        to_del = make_subgoal(syntax.EBinOp(old_value, "-", new_value).with_type(t), docstring="deletions from {}".format(pprint(lval)))
         v = fresh_var(t.t)
         stm = syntax.seq([
             syntax.SForEach(v, to_del, syntax.SCall(lval, "remove", [v])),
             syntax.SForEach(v, to_add, syntax.SCall(lval, "add", [v]))])
     # elif isinstance(t, syntax.TList):
     #     raise NotImplementedError()
-    # elif is_numeric(t):
-    #     change = make_subgoal(syntax.EBinOp(new_value, "-", old_value).with_type(t))
-    #     stm = syntax.SAssign(lval, syntax.EBinOp(lval, "+", change).with_type(t))
+    elif is_numeric(t):
+        change = make_subgoal(syntax.EBinOp(new_value, "-", old_value).with_type(t), docstring="delta for {}".format(pprint(lval)))
+        stm = syntax.SAssign(lval, syntax.EBinOp(lval, "+", change).with_type(t))
     elif isinstance(t, syntax.TTuple):
         get = lambda val, i: syntax.ETupleGet(val, i).with_type(t.ts[i])
         stm = syntax.seq([
@@ -181,7 +181,7 @@ def sketch_update(
 
             # (1) exit set
             deleted_keys = target_syntax.EFilter(old_keys, target_syntax.ELambda(k, syntax.ENot(syntax.EIn(k, new_keys)))).with_type(key_bag)
-            s1 = syntax.SForEach(k, make_subgoal(deleted_keys),
+            s1 = syntax.SForEach(k, make_subgoal(deleted_keys, docstring="keys removed from {}".format(pprint(lval))),
                 target_syntax.SMapDel(lval, k))
 
             # (2) modify set
@@ -196,13 +196,13 @@ def sketch_update(
                 common_keys,
                 target_syntax.ELambda(k,
                     syntax.ENot(syntax.EEq(value_at(old_value, k), value_at(new_value, k))))).with_type(key_bag)
-            s2 = syntax.SForEach(k, make_subgoal(altered_keys),
+            s2 = syntax.SForEach(k, make_subgoal(altered_keys, docstring="altered keys in {}".format(pprint(lval))),
                 target_syntax.SMapUpdate(lval, k, v, update_value))
 
             # (3) enter set
             fresh_keys = target_syntax.EFilter(new_keys, target_syntax.ELambda(k, syntax.ENot(syntax.EIn(k, old_keys)))).with_type(key_bag)
-            s3 = syntax.SForEach(k, make_subgoal(fresh_keys),
-                target_syntax.SMapPut(lval, k, make_subgoal(value_at(new_value, k), a=[syntax.EIn(k, fresh_keys)])))
+            s3 = syntax.SForEach(k, make_subgoal(fresh_keys, docstring="new keys in {}".format(pprint(lval))),
+                target_syntax.SMapPut(lval, k, make_subgoal(value_at(new_value, k), a=[syntax.EIn(k, fresh_keys)], docstring="new value inserted at {}".format(pprint(target_syntax.EMapGet(lval, k))))))
 
             stm = syntax.seq([s1, s2, s3])
 
@@ -228,6 +228,6 @@ def sketch_update(
                 target_syntax.SMapUpdate(lval, k, v, update_value))
     else:
         # Fallback rule: just compute a new value from scratch
-        stm = syntax.SAssign(lval, make_subgoal(new_value))
+        stm = syntax.SAssign(lval, make_subgoal(new_value, docstring="new value for {}".format(pprint(lval))))
 
     return (stm, subgoals)

@@ -36,7 +36,7 @@ def EIsSingleton(e):
 
 def EDeepIn(e1, e2):
     from cozy.syntax_tools import free_vars, fresh_var
-    arg = fresh_var(e1.type, omit=free_vars(e2))
+    arg = fresh_var(e1.type, omit=free_vars(e1))
     return EUnaryOp(UOp.Any,
         EMap(e2, ELambda(arg,
             EBinOp(arg, "===", e1).with_type(BOOL))).with_type(BOOL_BAG)).with_type(BOOL)
@@ -75,6 +75,7 @@ EWithAlteredValue = declare_case(Exp, "EWithAlteredValue", ["handle", "new_value
 EMakeMap   = declare_case(Exp, "EMakeMap", ["e", "key", "value"])
 EMakeMap2  = declare_case(Exp, "EMakeMap2", ["e", "value"])
 EMapGet    = declare_case(Exp, "EMapGet", ["map", "key"])
+EHasKey    = declare_case(Exp, "EHasKey", ["map", "key"])
 EMapKeys   = declare_case(Exp, "EMapKeys", ["e"])
 SMapPut    = declare_case(Stm, "SMapPut", ["map", "key", "value"])
 SMapDel    = declare_case(Stm, "SMapDel", ["map", "key"])

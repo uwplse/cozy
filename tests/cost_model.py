@@ -17,15 +17,15 @@ INVERT = {
     Cost.WORSE: Cost.BETTER,
     Cost.UNORDERED: Cost.UNORDERED }
 
-def _assert_cmp(e1, c1, e2, c2, cmp):
-    c = c1.compare_to(c2)
+def _assert_cmp(e1, c1, e2, c2, cmp, assumptions):
+    c = c1.compare_to(c2, assumptions=assumptions)
     if c != cmp:
-        debug_comparison(e1, c1, e2, c2)
+        debug_comparison(e1, c1, e2, c2, assumptions=assumptions)
         assert c == cmp, "expected {}, but was {}".format(cmp, c)
 
-def assert_cmp(e1, c1, e2, c2, cmp):
-    _assert_cmp(e1, c1, e2, c2, cmp)
-    _assert_cmp(e2, c2, e1, c1, INVERT[cmp])
+def assert_cmp(e1, c1, e2, c2, cmp, assumptions : Exp = T):
+    _assert_cmp(e1, c1, e2, c2, cmp, assumptions)
+    _assert_cmp(e2, c2, e1, c1, INVERT[cmp], assumptions)
 
 class TestCostModel(unittest.TestCase):
 
@@ -48,7 +48,7 @@ class TestCostModel(unittest.TestCase):
         c1 = cost_of(e1)
         c2 = cost_of(e2)
         print(c1.compare_to(c2))
-        assert c1.always_worse_than(c2), "{} @ {} > {} @ {}".format(pprint(e1), c1, pprint(e2), c2)
+        assert_cmp(e1, c1, e2, c2, Cost.WORSE)
 
     def test_map_vs_const_filter(self):
         # e1 = Filter {(\_var11 : xs.Handle -> ((_var11).val == z))} ((xs + []))
@@ -66,7 +66,7 @@ class TestCostModel(unittest.TestCase):
 
         c1 = cost_of(e1)
         c2 = cost_of(e2)
-        assert c1.always_better_than(c2), "{} @ {} > {} @ {}".format(pprint(e1), c1, pprint(e2), c2)
+        assert_cmp(e1, c1, e2, c2, Cost.BETTER)
 
     def test_true_filter(self):
         x = EVar("x").with_type(INT)
@@ -119,23 +119,18 @@ class TestCostModel(unittest.TestCase):
         assert cost_of(e1).compare_to(cost_of(e2)) == Cost.BETTER
         assert cost_of(e2).compare_to(cost_of(e1)) == Cost.WORSE
 
-    def test_basics(self):
-        ys = EVar('ys').with_type(TBag(THandle('ys', TInt())))
-        e = EBinOp(EUnaryOp('sum', EFlatMap(EBinOp(ys, '+', EEmptyList().with_type(TBag(THandle('ys', TInt())))).with_type(TBag(THandle('ys', TInt()))), ELambda(EVar('_var12').with_type(THandle('ys', TInt())), ESingleton(ENum(1).with_type(TInt())).with_type(TBag(TInt())))).with_type(TBag(TInt()))).with_type(TInt()), '==', ENum(0).with_type(TInt())).with_type(TBool())
-        assert cost_of(e).always_worse_than(Cost.ZERO)
-
     def test_add_empty(self):
         ys = EVar('ys').with_type(TBag(THandle('ys', TInt())))
         e1 = ys
         e2 = EBinOp(ys, "+", EEmptyList().with_type(ys.type))
         assert retypecheck(e1)
         assert retypecheck(e2)
-        assert cost_of(e1).always_better_than(cost_of(e2)), "{} vs {}".format(cost_of(e1), cost_of(e2))
+        assert_cmp(e1, cost_of(e1), e2, cost_of(e2), Cost.BETTER)
 
     def test_sum_empty(self):
         e1 = ENum(0).with_type(TInt())
         e2 = EUnaryOp("sum", EEmptyList().with_type(TBag(TInt()))).with_type(TInt())
-        assert cost_of(e1).always_better_than(cost_of(e2)), "{} vs {}".format(cost_of(e1), cost_of(e2))
+        assert_cmp(e1, cost_of(e1), e2, cost_of(e2), Cost.BETTER)
 
     def test_identity_map(self):
         xs = EVar("xs").with_type(TBag(INT))
@@ -146,14 +141,14 @@ class TestCostModel(unittest.TestCase):
         assert valid(equal(e1, e2))
         cost1 = cost_of(e1)
         cost2 = cost_of(e2)
-        assert cost1.always_better_than(cost2), "{} vs {}".format(cost1, cost2)
+        assert_cmp(e1, cost1, e2, cost2, Cost.BETTER)
 
     def test_tuples(self):
         sv = EVar("sv").with_type(THandle("T", INT))
         x = EVar("x").with_type(sv.type)
         e = ETupleGet(ETuple((sv, x)), 1)
         assert retypecheck(e)
-        assert cost_of(e).always_worse_than(cost_of(x)), "cost of {} = {}, cost of {} = {}".format(pprint(e), cost_of(e), pprint(x), cost_of(x))
+        assert_cmp(e, cost_of(e), x, cost_of(x), Cost.WORSE)
 
     def test_improvement_to_tuple(self):
         l = EUnaryOp(UOp.Length, fresh_var(INT_BAG))
@@ -179,8 +174,8 @@ class TestCostModel(unittest.TestCase):
         assert retypecheck(e1), pprint(e1)
         assert retypecheck(e2), pprint(e2)
         assert valid(equal(e1, e2))
-        assert cost_of(p1).always_better_than(cost_of(p2)), "cost_of(p1) == {}; cost_of(p2) == {}".format(cost_of(p1), cost_of(p2))
-        assert cost_of(e1).always_better_than(cost_of(e2)), "cost_of(e1) == {}; cost_of(e2) == {}".format(cost_of(e1), cost_of(e2))
+        assert_cmp(p1, cost_of(p1), p2, cost_of(p2), Cost.BETTER)
+        assert_cmp(e1, cost_of(e1), e2, cost_of(e2), Cost.BETTER)
 
     def test_flatmap(self):
         costmodel = CompositeCostModel()
@@ -195,10 +190,7 @@ class TestCostModel(unittest.TestCase):
         assert retypecheck(e2)
         cost1 = costmodel.cost(e1, RUNTIME_POOL)
         cost2 = costmodel.cost(e2, RUNTIME_POOL)
-        if not (cost1.always_better_than(cost2)):
-            print("cost( {} ) = {}".format(pprint(e1), cost1))
-            print("cost( {} ) = {}".format(pprint(e2), cost2))
-            assert False
+        assert_cmp(e1, cost1, e2, cost2, Cost.BETTER)
 
     def test_filter_singleton(self):
         x = EVar("x").with_type(INT)
@@ -212,15 +204,6 @@ class TestCostModel(unittest.TestCase):
         print("cost( {} ) = {}".format(pprint(e1), cost1))
         print("cost( {} ) = {}".format(pprint(e2), cost2))
         assumptions = EIn(x, xs)
-
-        for x1, x2 in (("cost1", "cost2"), ("cost2", "cost1")):
-            for f in ("always_better_than", "always_worse_than", "sometimes_better_than", "sometimes_worse_than"):
-                print("@> {}.{}({}) = {}\n".format(x1, f, x2, getattr(locals()[x1], f)(locals()[x2], assumptions)))
-
-        for op in "==", "<", "<=", ">", ">=":
-            print("-"*10)
-            print("cost1 {} cost2 = {}".format(op, cost1.always(op, cost2, T)))
-            print("-"*10)
 
         ordering1 = cost1.compare_to(cost2, assumptions=assumptions)
         ordering2 = cost2.compare_to(cost1, assumptions=assumptions)
@@ -237,16 +220,16 @@ class TestCostModel(unittest.TestCase):
         c2 = cost_of(e2)
         assert_cmp(e1, c1, e2, c2, Cost.BETTER)
 
-    def check_transitive(self, e1, e2, e3):
+    def check_transitive(self, e1, e2, e3, assumptions=T):
         for (e1, e2, e3) in itertools.permutations([e1, e2, e3]):
             c1 = cost_of(e1)
             c2 = cost_of(e2)
             c3 = cost_of(e3)
-            if c1.compare_to(c2) == Cost.WORSE and c2.compare_to(c3) == Cost.WORSE:
-                debug_comparison(e1, c1, e2, c2)
-                debug_comparison(e2, c2, e3, c3)
-                debug_comparison(e1, c1, e3, c3)
-                cmp = c1.compare_to(c3)
+            if c1.compare_to(c2, assumptions) == Cost.WORSE and c2.compare_to(c3, assumptions) == Cost.WORSE:
+                debug_comparison(e1, c1, e2, c2, assumptions)
+                debug_comparison(e2, c2, e3, c3, assumptions)
+                debug_comparison(e1, c1, e3, c3, assumptions)
+                cmp = c1.compare_to(c3, assumptions)
                 assert cmp == Cost.WORSE, cmp
 
     def test_regression2(self):
@@ -526,7 +509,7 @@ class TestCostModel(unittest.TestCase):
         e2 = EStateVar(EGetField(ETupleGet(EArgMin(EFilter(EFilter(EVar('tokens').with_type(TBag(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool()))))))), ELambda(EVar('_var690').with_type(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))))), EGetField(ETupleGet(EVar('_var690').with_type(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))))), 1).with_type(TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))), 'important').with_type(TBool()))).with_type(TBag(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool()))))))), ELambda(EVar('_var690').with_type(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))))), EBinOp(EGetField(EMakeRecord((('score', EGetField(EMakeRecord((('score', EGetField(ETupleGet(EVar('_var690').with_type(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))))), 1).with_type(TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))), 'score').with_type(TFloat())), ('startOffset', ENum(0).with_type(TInt())), ('endOffset', ENum(0).with_type(TInt())), ('important', EBool(False).with_type(TBool())))).with_type(TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))), 'score').with_type(TFloat())), ('startOffset', ENum(0).with_type(TInt())), ('endOffset', ENum(0).with_type(TInt())), ('important', EBool(False).with_type(TBool())))).with_type(TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))), 'score').with_type(TFloat()), '>', ECall('floatZero', ()).with_type(TFloat())).with_type(TBool()))).with_type(TBag(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool()))))))), ELambda(EVar('_var690').with_type(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))))), EGetField(ETupleGet(EVar('_var690').with_type(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))))), 1).with_type(TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))), 'startOffset').with_type(TInt()))).with_type(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))))), 1).with_type(TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))), 'startOffset').with_type(TInt())).with_type(TInt())
         assert_cmp(e1, cost_of(e1), e2, cost_of(e2), Cost.BETTER)
 
-    def test_filter(self):
+    def test_smaller_state_var(self):
         e1 = EStateVar(EVar("xs").with_type(INT_BAG)).with_type(INT_BAG)
         e2 = EStateVar(EFilter(e1.e, mk_lambda(INT, lambda x: EEq(x, ZERO))).with_type(INT_BAG)).with_type(INT_BAG)
         assert_cmp(e1, cost_of(e1), e2, cost_of(e2), Cost.WORSE)
@@ -559,3 +542,59 @@ class TestCostModel(unittest.TestCase):
         e1 = ZERO
         e2 = EStateVar(e1).with_type(e1.type)
         assert_cmp(e1, cost_of(e1), e2, cost_of(e2), Cost.BETTER)
+
+    def test_pointless_map(self):
+        e1 = EEmptyList().with_type(INT_BAG)
+        e2 = EMap(e1, mk_lambda(INT, lambda x: ZERO)).with_type(INT_BAG)
+        assert_cmp(e1, cost_of(e1), e2, cost_of(e2), Cost.BETTER)
+
+    def test_map_singleton(self):
+        t = THandle("T", INT)
+        x = EVar("x").with_type(t)
+        e1 = ESingleton(EGetField(x, "val").with_type(INT)).with_type(INT_BAG)
+        e2 = EMap(ESingleton(x).with_type(TBag(t)), mk_lambda(t, lambda x: EGetField(x, "val").with_type(INT)))
+        assert_cmp(e1, cost_of(e1), e2, cost_of(e2), Cost.BETTER)
+
+    def test_map_value_size_matters(self):
+        xs = EVar("xs").with_type(INT_BAG)
+        e1 = EMakeMap2(xs, mk_lambda(INT, lambda _: EBinOp(EEmptyList().with_type(INT_BAG), "+", EEmptyList().with_type(INT_BAG)).with_type(INT_BAG))).with_type(TMap(INT, INT_BAG))
+        e2 = EMakeMap2(xs, mk_lambda(INT, lambda _: ESingleton(ONE).with_type(INT_BAG))).with_type(TMap(INT, INT_BAG))
+        e1 = EStateVar(e1).with_type(e1.type)
+        e2 = EStateVar(e2).with_type(e2.type)
+        assert e1.size() > e2.size()
+        assert_cmp(e1, cost_of(e1), e2, cost_of(e2), Cost.BETTER)
+
+    def test_regression41(self):
+        e1 = ECond(EBinOp(EMapGet(EStateVar(EMakeMap2(EMap(EVar('xs').with_type(TBag(THandle('H', TNative('Value')))), ELambda(EVar('_var3821').with_type(THandle('H', TNative('Value'))), EGetField(EVar('_var3821').with_type(THandle('H', TNative('Value'))), 'val').with_type(TNative('Value')))).with_type(TBag(TNative('Value'))), ELambda(EVar('_var3818').with_type(TNative('Value')), EUnaryOp('len', EFilter(EMap(EVar('xs').with_type(TBag(THandle('H', TNative('Value')))), ELambda(EVar('_var3821').with_type(THandle('H', TNative('Value'))), EGetField(EVar('_var3821').with_type(THandle('H', TNative('Value'))), 'val').with_type(TNative('Value')))).with_type(TBag(TNative('Value'))), ELambda(EVar('_var3819').with_type(TNative('Value')), EBinOp(EVar('_var3818').with_type(TNative('Value')), '==', EVar('_var3819').with_type(TNative('Value'))).with_type(TBool()))).with_type(TBag(TNative('Value')))).with_type(TInt()))).with_type(TMap(TNative('Value'), TInt()))).with_type(TMap(TNative('Value'), TInt())), EGetField(EVar('x').with_type(THandle('H', TNative('Value'))), 'val').with_type(TNative('Value'))).with_type(TInt()), '>', ENum(1).with_type(TInt())).with_type(TBool()), EEmptyList().with_type(TBag(TNative('Value'))), ESingleton(EGetField(EVar('x').with_type(THandle('H', TNative('Value'))), 'val').with_type(TNative('Value'))).with_type(TBag(TNative('Value')))).with_type(TBag(TNative('Value')))
+        e2 = ECond(EBinOp(EMapGet(EStateVar(EMakeMap2(EVar('xs').with_type(TBag(THandle('H', TNative('Value')))), ELambda(EVar('_var3821').with_type(THandle('H', TNative('Value'))), EMapGet(EMakeMap2(EMap(EVar('xs').with_type(TBag(THandle('H', TNative('Value')))), ELambda(EVar('_var3821').with_type(THandle('H', TNative('Value'))), EGetField(EVar('_var3821').with_type(THandle('H', TNative('Value'))), 'val').with_type(TNative('Value')))).with_type(TBag(TNative('Value'))), ELambda(EVar('_var3818').with_type(TNative('Value')), EUnaryOp('len', EFilter(EMap(EVar('xs').with_type(TBag(THandle('H', TNative('Value')))), ELambda(EVar('_var3821').with_type(THandle('H', TNative('Value'))), EGetField(EVar('_var3821').with_type(THandle('H', TNative('Value'))), 'val').with_type(TNative('Value')))).with_type(TBag(TNative('Value'))), ELambda(EVar('_var3819').with_type(TNative('Value')), EBinOp(EVar('_var3818').with_type(TNative('Value')), '==', EVar('_var3819').with_type(TNative('Value'))).with_type(TBool()))).with_type(TBag(TNative('Value')))).with_type(TInt()))).with_type(TMap(TNative('Value'), TInt())), EGetField(EVar('_var3821').with_type(THandle('H', TNative('Value'))), 'val').with_type(TNative('Value'))).with_type(TInt()))).with_type(TMap(THandle('H', TNative('Value')), TInt()))).with_type(TMap(THandle('H', TNative('Value')), TInt())), EVar('x').with_type(THandle('H', TNative('Value')))).with_type(TInt()), '>', ENum(1).with_type(TInt())).with_type(TBool()), EEmptyList().with_type(TBag(TNative('Value'))), ESingleton(EGetField(EVar('x').with_type(THandle('H', TNative('Value'))), 'val').with_type(TNative('Value'))).with_type(TBag(TNative('Value')))).with_type(TBag(TNative('Value')))
+        assert_cmp(e1, cost_of(e1), e2, cost_of(e2), Cost.BETTER, assumptions=EBinOp(EBinOp(EUnaryOp('unique', EVar('xs').with_type(TBag(THandle('H', TNative('Value'))))).with_type(TBool()), 'and', EBinOp(EVar('x').with_type(THandle('H', TNative('Value'))), 'in', EVar('xs').with_type(TBag(THandle('H', TNative('Value'))))).with_type(TBool())).with_type(TBool()), 'and', EBinOp(EUnaryOp('all', EMap(EBinOp(EFlatMap(EVar('xs').with_type(TBag(THandle('H', TNative('Value')))), ELambda(EVar('_var19').with_type(THandle('H', TNative('Value'))), ESingleton(EVar('_var19').with_type(THandle('H', TNative('Value')))).with_type(TBag(THandle('H', TNative('Value')))))).with_type(TBag(THandle('H', TNative('Value')))), '+', ESingleton(EVar('x').with_type(THandle('H', TNative('Value')))).with_type(TBag(THandle('H', TNative('Value'))))).with_type(TBag(THandle('H', TNative('Value')))), ELambda(EVar('_var20').with_type(THandle('H', TNative('Value'))), EUnaryOp('all', EMap(EBinOp(EFlatMap(EVar('xs').with_type(TBag(THandle('H', TNative('Value')))), ELambda(EVar('_var19').with_type(THandle('H', TNative('Value'))), ESingleton(EVar('_var19').with_type(THandle('H', TNative('Value')))).with_type(TBag(THandle('H', TNative('Value')))))).with_type(TBag(THandle('H', TNative('Value')))), '+', ESingleton(EVar('x').with_type(THandle('H', TNative('Value')))).with_type(TBag(THandle('H', TNative('Value'))))).with_type(TBag(THandle('H', TNative('Value')))), ELambda(EVar('_var21').with_type(THandle('H', TNative('Value'))), EBinOp(EUnaryOp('not', EBinOp(EVar('_var20').with_type(THandle('H', TNative('Value'))), '==', EVar('_var21').with_type(THandle('H', TNative('Value')))).with_type(TBool())).with_type(TBool()), 'or', EBinOp(EGetField(EVar('_var20').with_type(THandle('H', TNative('Value'))), 'val').with_type(TNative('Value')), '==', EGetField(EVar('_var21').with_type(THandle('H', TNative('Value'))), 'val').with_type(TNative('Value'))).with_type(TBool())).with_type(TBool()))).with_type(TBag(TBool()))).with_type(TBool()))).with_type(TBag(TBool()))).with_type(TBool()), 'and', EUnaryOp('all', EMap(EBinOp(EFlatMap(EVar('xs').with_type(TBag(THandle('H', TNative('Value')))), ELambda(EVar('_var3097').with_type(THandle('H', TNative('Value'))), ESingleton(EVar('_var3097').with_type(THandle('H', TNative('Value')))).with_type(TBag(THandle('H', TNative('Value')))))).with_type(TBag(THandle('H', TNative('Value')))), '+', ESingleton(EVar('x').with_type(THandle('H', TNative('Value')))).with_type(TBag(THandle('H', TNative('Value'))))).with_type(TBag(THandle('H', TNative('Value')))), ELambda(EVar('_var3098').with_type(THandle('H', TNative('Value'))), EUnaryOp('all', EMap(EBinOp(EFlatMap(EVar('xs').with_type(TBag(THandle('H', TNative('Value')))), ELambda(EVar('_var3097').with_type(THandle('H', TNative('Value'))), ESingleton(EVar('_var3097').with_type(THandle('H', TNative('Value')))).with_type(TBag(THandle('H', TNative('Value')))))).with_type(TBag(THandle('H', TNative('Value')))), '+', ESingleton(EVar('x').with_type(THandle('H', TNative('Value')))).with_type(TBag(THandle('H', TNative('Value'))))).with_type(TBag(THandle('H', TNative('Value')))), ELambda(EVar('_var3099').with_type(THandle('H', TNative('Value'))), EBinOp(EUnaryOp('not', EBinOp(EVar('_var3098').with_type(THandle('H', TNative('Value'))), '==', EVar('_var3099').with_type(THandle('H', TNative('Value')))).with_type(TBool())).with_type(TBool()), 'or', EBinOp(EGetField(EVar('_var3098').with_type(THandle('H', TNative('Value'))), 'val').with_type(TNative('Value')), '==', EGetField(EVar('_var3099').with_type(THandle('H', TNative('Value'))), 'val').with_type(TNative('Value'))).with_type(TBool())).with_type(TBool()))).with_type(TBag(TBool()))).with_type(TBool()))).with_type(TBag(TBool()))).with_type(TBool())).with_type(TBool())).with_type(TBool()))
+
+    def test_regression42(self):
+        assumptions = EBinOp(EBinOp(EUnaryOp('unique', EVar('xs').with_type(TBag(THandle('H', TNative('Value'))))).with_type(TBool()), 'and', EUnaryOp('not', EBinOp(EVar('x').with_type(THandle('H', TNative('Value'))), 'in', EVar('xs').with_type(TBag(THandle('H', TNative('Value'))))).with_type(TBool())).with_type(TBool())).with_type(TBool()), 'and', EBinOp(EUnaryOp('all', EMap(EBinOp(EFlatMap(EVar('xs').with_type(TBag(THandle('H', TNative('Value')))), ELambda(EVar('_var16').with_type(THandle('H', TNative('Value'))), ESingleton(EVar('_var16').with_type(THandle('H', TNative('Value')))).with_type(TBag(THandle('H', TNative('Value')))))).with_type(TBag(THandle('H', TNative('Value')))), '+', ESingleton(EVar('x').with_type(THandle('H', TNative('Value')))).with_type(TBag(THandle('H', TNative('Value'))))).with_type(TBag(THandle('H', TNative('Value')))), ELambda(EVar('_var17').with_type(THandle('H', TNative('Value'))), EUnaryOp('all', EMap(EBinOp(EFlatMap(EVar('xs').with_type(TBag(THandle('H', TNative('Value')))), ELambda(EVar('_var16').with_type(THandle('H', TNative('Value'))), ESingleton(EVar('_var16').with_type(THandle('H', TNative('Value')))).with_type(TBag(THandle('H', TNative('Value')))))).with_type(TBag(THandle('H', TNative('Value')))), '+', ESingleton(EVar('x').with_type(THandle('H', TNative('Value')))).with_type(TBag(THandle('H', TNative('Value'))))).with_type(TBag(THandle('H', TNative('Value')))), ELambda(EVar('_var18').with_type(THandle('H', TNative('Value'))), EBinOp(EUnaryOp('not', EBinOp(EVar('_var17').with_type(THandle('H', TNative('Value'))), '==', EVar('_var18').with_type(THandle('H', TNative('Value')))).with_type(TBool())).with_type(TBool()), 'or', EBinOp(EGetField(EVar('_var17').with_type(THandle('H', TNative('Value'))), 'val').with_type(TNative('Value')), '==', EGetField(EVar('_var18').with_type(THandle('H', TNative('Value'))), 'val').with_type(TNative('Value'))).with_type(TBool())).with_type(TBool()))).with_type(TBag(TBool()))).with_type(TBool()))).with_type(TBag(TBool()))).with_type(TBool()), 'and', EUnaryOp('all', EMap(EBinOp(EFlatMap(EVar('xs').with_type(TBag(THandle('H', TNative('Value')))), ELambda(EVar('_var112915').with_type(THandle('H', TNative('Value'))), ESingleton(EVar('_var112915').with_type(THandle('H', TNative('Value')))).with_type(TBag(THandle('H', TNative('Value')))))).with_type(TBag(THandle('H', TNative('Value')))), '+', ESingleton(EVar('x').with_type(THandle('H', TNative('Value')))).with_type(TBag(THandle('H', TNative('Value'))))).with_type(TBag(THandle('H', TNative('Value')))), ELambda(EVar('_var112918').with_type(THandle('H', TNative('Value'))), EUnaryOp('all', EMap(EBinOp(EFlatMap(EVar('xs').with_type(TBag(THandle('H', TNative('Value')))), ELambda(EVar('_var112915').with_type(THandle('H', TNative('Value'))), ESingleton(EVar('_var112915').with_type(THandle('H', TNative('Value')))).with_type(TBag(THandle('H', TNative('Value')))))).with_type(TBag(THandle('H', TNative('Value')))), '+', ESingleton(EVar('x').with_type(THandle('H', TNative('Value')))).with_type(TBag(THandle('H', TNative('Value'))))).with_type(TBag(THandle('H', TNative('Value')))), ELambda(EVar('_var112919').with_type(THandle('H', TNative('Value'))), EBinOp(EUnaryOp('not', EBinOp(EVar('_var112918').with_type(THandle('H', TNative('Value'))), '==', EVar('_var112919').with_type(THandle('H', TNative('Value')))).with_type(TBool())).with_type(TBool()), 'or', EBinOp(EGetField(EVar('_var112918').with_type(THandle('H', TNative('Value'))), 'val').with_type(TNative('Value')), '==', EGetField(EVar('_var112919').with_type(THandle('H', TNative('Value'))), 'val').with_type(TNative('Value'))).with_type(TBool())).with_type(TBool()))).with_type(TBag(TBool()))).with_type(TBool()))).with_type(TBag(TBool()))).with_type(TBool())).with_type(TBool())).with_type(TBool())
+        e1 = EFilter(EUnaryOp('distinct', EMap(EVar('xs').with_type(TBag(THandle('H', TNative('Value')))), ELambda(EVar('_var124591').with_type(THandle('H', TNative('Value'))), EVar('_var124589').with_type(TNative('Value')))).with_type(TBag(TNative('Value')))).with_type(TBag(TNative('Value'))), ELambda(EVar('_var124588').with_type(TNative('Value')), EBinOp(EVar('_var124588').with_type(TNative('Value')), 'in', EMap(EVar('xs').with_type(TBag(THandle('H', TNative('Value')))), ELambda(EVar('_var124591').with_type(THandle('H', TNative('Value'))), EGetField(EVar('_var124591').with_type(THandle('H', TNative('Value'))), 'val').with_type(TNative('Value')))).with_type(TBag(TNative('Value')))).with_type(TBool()))).with_type(TBag(TNative('Value')))
+        e2 = EFilter(EMap(EVar('xs').with_type(TBag(THandle('H', TNative('Value')))), ELambda(EVar('_var124591').with_type(THandle('H', TNative('Value'))), EVar('_var124589').with_type(TNative('Value')))).with_type(TBag(TNative('Value'))), ELambda(EVar('_var124588').with_type(TNative('Value')), EBinOp(EUnaryOp('len', EVar('xs').with_type(TBag(THandle('H', TNative('Value'))))).with_type(TInt()), '==', ENum(1).with_type(TInt())).with_type(TBool()))).with_type(TBag(TNative('Value')))
+        e3 = EFilter(EMap(EVar('xs').with_type(TBag(THandle('H', TNative('Value')))), ELambda(EVar('_var124591').with_type(THandle('H', TNative('Value'))), EGetField(EVar('_var124591').with_type(THandle('H', TNative('Value'))), 'val').with_type(TNative('Value')))).with_type(TBag(TNative('Value'))), ELambda(EVar('_var124588').with_type(TNative('Value')), EBinOp(EVar('_var124589').with_type(TNative('Value')), '==', EVar('_var124588').with_type(TNative('Value'))).with_type(TBool()))).with_type(TBag(TNative('Value')))
+        self.check_transitive(e1, e2, e3, assumptions)
+
+    def test_filterfilter(self):
+        xs = EVar("xs").with_type(INT_BAG)
+        x = EVar("x").with_type(INT)
+        e1 = EFilter(EStateVar(xs), ELambda(x, EAll([ENot(EEq(x, ZERO)), ENot(EEq(x, ONE))])))
+        e2 = subst(e1, {"xs" : EFilter(xs, ELambda(x, ENot(EEq(x, ZERO))))})
+        assert retypecheck(e1) and retypecheck(e2)
+        assert_cmp(e1, cost_of(e1), e2, cost_of(e2), Cost.WORSE)
+
+    def test_filterfilter_and(self):
+        xs = EVar("xs").with_type(INT_BAG)
+        x = EVar("x").with_type(INT)
+        e1 = EFilter(EStateVar(xs), ELambda(x, EAll([ENot(EEq(x, ZERO)), ENot(EEq(x, ONE))])))
+        e2 = EFilter(EFilter(EStateVar(xs), ELambda(x, ENot(EEq(x, ZERO)))), ELambda(x, ENot(EEq(x, ONE))))
+        assert retypecheck(e1) and retypecheck(e2)
+        assert_cmp(e1, cost_of(e1), e2, cost_of(e2), Cost.WORSE)
+
+    def test_empty_empty(self):
+        v = EVar("xs").with_type(INT_BAG)
+        emp = EEmptyList().with_type(v.type)
+        e1 = EUnaryOp(UOp.Empty, EStateVar(v).with_type(v.type)).with_type(BOOL)
+        e2 = EUnaryOp(UOp.Empty, emp).with_type(BOOL)
+        assert_cmp(e1, cost_of(e1), e2, cost_of(e2), Cost.WORSE)

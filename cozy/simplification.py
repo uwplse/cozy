@@ -1,6 +1,6 @@
 from cozy.target_syntax import *
-from cozy.syntax_tools import BottomUpRewriter, alpha_equivalent, cse
-from cozy.evaluation import construct_value
+from cozy.syntax_tools import BottomUpRewriter, alpha_equivalent, cse, compose, pprint
+from cozy.evaluation import construct_value, eval
 from cozy.solver import valid, satisfy
 
 class _V(BottomUpRewriter):
@@ -70,6 +70,8 @@ class _V(BottomUpRewriter):
                 f.apply_to(ee.e),
                 ee,
                 EEmptyList().with_type(e.type)).with_type(e.type))
+        elif isinstance(ee, EMap):
+            return self.visit(EMap(EFilter(ee.e, compose(f, ee.f)).with_type(ee.e.type), ee.f).with_type(e.type))
         return EFilter(ee, f).with_type(e.type)
     def visit_EMap(self, e):
         ee = self.visit(e.e)
@@ -78,24 +80,38 @@ class _V(BottomUpRewriter):
             return self.visit(EBinOp(EMap(ee.e1, f).with_type(e.type), ee.op, EMap(ee.e2, f).with_type(e.type)).with_type(e.type))
         elif isinstance(ee, ESingleton):
             return self.visit(ESingleton(f.apply_to(ee.e)).with_type(e.type))
+        elif isinstance(ee, EMap):
+            return self.visit(EMap(ee.e, compose(f, ee.f)).with_type(e.type))
         return EMap(ee, f).with_type(e.type)
     def visit_EArgMin(self, e):
         ee = self.visit(e.e)
         f = self.visit(e.f)
         argmin = type(e)
-        if isinstance(ee, EBinOp) and ee.op == "+":
+        if isinstance(ee, ESingleton):
+            return ee.e
+        elif isinstance(ee, EBinOp) and ee.op == "+":
             xs = ee.e1
             ys = ee.e2
+            # A bit of trickery here since `argmin {...} (x+y)` produces an
+            # expression of shape `argmin {...} (a+b)`.  If we aren't careful
+            # we could get into an infinite loop.
+            fallback = argmin(EBinOp(
+                ESingleton(argmin(xs, f).with_type(e.type)).with_type(TBag(e.type)),
+                "+",
+                ESingleton(argmin(ys, f).with_type(e.type)).with_type(TBag(e.type))).with_type(TBag(e.type)), f).with_type(e.type)
+            fallback._nosimpl = True
             res =   ECond(self.visit(EUnaryOp(UOp.Empty, xs).with_type(BOOL)), argmin(ys, f).with_type(e.type),
                     ECond(self.visit(EUnaryOp(UOp.Empty, ys).with_type(BOOL)), argmin(xs, f).with_type(e.type),
-                        argmin(EBinOp(
-                            ESingleton(argmin(xs, f).with_type(e.type)).with_type(TBag(e.type)),
-                            "+",
-                            ESingleton(argmin(ys, f).with_type(e.type)).with_type(TBag(e.type))).with_type(TBag(e.type)), f).with_type(e.type)).with_type(e.type)).with_type(e.type)
+                        fallback).with_type(e.type)).with_type(e.type)
             return res
         return argmin(ee, f).with_type(e.type)
     def visit_EArgMax(self, e):
         return self.visit_EArgMin(e)
+    def visit_EMapKeys(self, e):
+        ee = self.visit(e.e)
+        if isinstance(ee, EMakeMap2):
+            return self.visit(EUnaryOp(UOp.Distinct, ee.e).with_type(e.type))
+        return EMapKeys(ee).with_type(e.type)
     def visit_EUnaryOp(self, e):
         if isinstance(e.e, ECond):
             return self.visit(ECond(
@@ -136,14 +152,13 @@ class _V(BottomUpRewriter):
                 return T if e.op == UOp.Exists else F
         return EUnaryOp(e.op, ee).with_type(e.type)
     def visit(self, e):
+        if hasattr(e, "_nosimpl"): return e
         if isinstance(e, Exp) and not isinstance(e, ELambda): t = e.type
         new = super().visit(e)
         if isinstance(e, Exp) and not isinstance(e, ELambda): assert new.type == e.type, repr(e)
         if self.debug and isinstance(e, Exp) and not isinstance(e, ELambda):
             model = satisfy(ENot(EBinOp(e, "===", new).with_type(BOOL)))
             if model is not None:
-                from cozy.syntax_tools import pprint
-                from cozy.evaluation import eval
                 raise Exception("bad simplification: {} ---> {} (under model {!r}, got {!r} and {!r})".format(pprint(e), pprint(new), model, eval(e, model), eval(new, model)))
         return new
 

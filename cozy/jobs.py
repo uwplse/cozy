@@ -51,6 +51,9 @@ class Job(object):
         self._thread.join(timeout=timeout)
     def kill(self):
         self._thread.terminate()
+    @property
+    def pid(self):
+        return self._thread.pid
 
 def stop_jobs(jobs):
     jobs = list(jobs)
@@ -61,7 +64,7 @@ def stop_jobs(jobs):
             j.join(timeout=30)
             if j.done:
                 break
-            print("job '{}' failed to stop in 30 seconds".format(j), file=sys.stderr)
+            print("job '{}' failed to stop in 30 seconds; pid={}".format(j, j.pid), file=sys.stderr)
 
 class SafeQueue(object):
     """

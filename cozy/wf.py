@@ -3,9 +3,12 @@ import itertools
 from cozy.common import typechecked
 from cozy.typecheck import is_collection, is_scalar, is_numeric
 from cozy.target_syntax import *
-from cozy.syntax_tools import enumerate_fragments_and_pools, pprint
+from cozy.syntax_tools import enumerate_fragments2, pprint, free_vars
 from cozy.solver import valid
 from cozy.pools import RUNTIME_POOL, STATE_POOL
+from cozy.opts import Option
+
+allow_conditional_state = Option("allow-conditional-state", bool, False)
 
 class ExpIsNotWf(Exception):
     def __init__(self, e, offending_subexpression, reason):
@@ -19,6 +22,10 @@ def exp_wf_nonrecursive(e : Exp, state_vars : {EVar}, args : {EVar}, pool = RUNT
     at_runtime = pool == RUNTIME_POOL
     if isinstance(e, EStateVar) and not at_runtime:
         raise ExpIsNotWf(e, e, "EStateVar in state pool position")
+    if isinstance(e, EStateVar):
+        bad = [v for v in free_vars(e.e) if v not in state_vars]
+        if bad:
+            raise ExpIsNotWf(e, e, "free non-statevars in state position: {}".format(", ".join(v.id for v in bad)))
     if isinstance(e, EWithAlteredValue) and not at_runtime:
         raise ExpIsNotWf(e, e, "EWithAlteredValue in state position")
     if (isinstance(e, EDropFront) or isinstance(e, EDropBack)) and not at_runtime:
@@ -52,6 +59,8 @@ def exp_wf_nonrecursive(e : Exp, state_vars : {EVar}, args : {EVar}, pool = RUNT
         raise ExpIsNotWf(e, e, "singleton in state position")
     if not at_runtime and isinstance(e, ENum) and e.val != 0:
         raise ExpIsNotWf(e, e, "nonzero numerical constant in state position")
+    if not allow_conditional_state.value and not at_runtime and isinstance(e, ECond):
+        raise ExpIsNotWf(e, e, "conditional in state position")
     if not at_runtime and isinstance(e, EMakeMap2) and is_collection(e.type.v):
         all_collections = [sv for sv in state_vars if is_collection(sv.type)]
         total_size = ENum(0).with_type(INT)
@@ -74,10 +83,10 @@ def exp_wf(e : Exp, state_vars : {EVar}, args : {EVar}, pool = RUNTIME_POOL, ass
     """
     Returns True or throws exception indicating why `e` is not well-formed.
     """
-    for (a, x, r, bound, p) in enumerate_fragments_and_pools(e):
-        p = p if pool == RUNTIME_POOL else STATE_POOL
+    for ctx in enumerate_fragments2(e):
+        p = ctx.pool if pool == RUNTIME_POOL else STATE_POOL
         try:
-            exp_wf_nonrecursive(x, state_vars, args, p, assumptions=EAll(itertools.chain(a, (assumptions,))))
+            exp_wf_nonrecursive(ctx.e, state_vars, args, p, assumptions=EAll(itertools.chain(ctx.facts, (assumptions,))))
         except ExpIsNotWf as exc:
-            raise ExpIsNotWf(e, x, exc.reason)
+            raise ExpIsNotWf(e, ctx.e, exc.reason)
     return True

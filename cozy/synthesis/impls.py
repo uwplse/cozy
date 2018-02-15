@@ -14,7 +14,7 @@ import igraph
 from cozy.common import fresh_name, find_one, typechecked, OrderedSet
 from cozy.syntax import *
 from cozy.target_syntax import EFilter, EDeepIn, EStateVar
-from cozy.syntax_tools import subst, free_vars, fresh_var, alpha_equivalent, all_exps, BottomUpRewriter, BottomUpExplorer, pprint, replace, shallow_copy, tease_apart
+from cozy.syntax_tools import subst, free_vars, fresh_var, alpha_equivalent, all_exps, BottomUpRewriter, BottomUpExplorer, pprint, replace, shallow_copy, tease_apart, wrap_naked_statevars
 from cozy.handle_tools import reachable_handles_at_method, implicit_handle_assumptions_for_method
 import cozy.incrementalization as inc
 from cozy.opts import Option
@@ -93,7 +93,7 @@ class Implementation(object):
         fvs = free_vars(q)
         # initial rep
         qargs = set(EVar(a).with_type(t) for (a, t) in q.args)
-        rep, ret = tease_apart(q.ret)
+        rep, ret = tease_apart(wrap_naked_statevars(q.ret, self.abstract_state))
         self.set_impl(q, rep, ret)
 
     @property
@@ -156,7 +156,7 @@ class Implementation(object):
                     fresh_name("modified_handles"),
                     Visibility.Internal, [], op.assumptions,
                     EFilter(EUnaryOp(UOp.Distinct, bag).with_type(bag.type), ELambda(h, ENot(EEq(lval, new_val)))).with_type(bag.type),
-                    "")
+                    "[{}] modified handles of type {}".format(op.name, pprint(t)))
                 query_vars = [v for v in free_vars(modified_handles) if v not in self.abstract_state]
                 modified_handles.args = [(arg.id, arg.type) for arg in query_vars]
 
@@ -170,6 +170,7 @@ class Implementation(object):
                 # print("  got {} subqueries".format(len(subqueries)))
                 # print("  to update {} in {}, use\n{}".format(pprint(t), op.name, pprint(state_update_stm)))
                 for sub_q in subqueries:
+                    sub_q.docstring = "[{}] {}".format(op.name, sub_q.docstring)
                     state_update_stm = self._add_subquery(sub_q=sub_q, used_by=state_update_stm)
                 if state_update_stm != SNoOp():
                     state_update_stm = SForEach(h, ECall(modified_handles.name, query_vars).with_type(bag.type), state_update_stm)
@@ -203,6 +204,7 @@ class Implementation(object):
                     self.abstract_state,
                     list(op.assumptions))
                 for sub_q in subqueries:
+                    sub_q.docstring = "[{}] {}".format(op.name, sub_q.docstring)
                     state_update_stm = self._add_subquery(sub_q=sub_q, used_by=state_update_stm)
                 self.updates[(new_member, op.name)] = state_update_stm
 
@@ -277,12 +279,11 @@ class Implementation(object):
                 op.docstring))
 
         # assemble final result
-        new_statevars = [(v.id, e.type) for (v, e) in ordered_concrete_state]
         return Spec(
             self.spec.name,
             self.spec.types,
             self.spec.extern_funcs,
-            new_statevars,
+            [(v.id, e.type) for (v, e) in self.concrete_state],
             [],
             list(self.query_impls.values()) + new_ops,
             self.spec.header,
