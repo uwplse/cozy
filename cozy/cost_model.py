@@ -253,6 +253,16 @@ def maybe_inline(e, f):
     body = f(v)
     return ELet(e, ELambda(v, body)).with_type(body.type)
 
+def _ECond(x, y, z):
+    if isinstance(x, EBool):
+        return y if x.val else z
+    return ECond(x, y, z).with_type(y.type)
+
+def _EGt(x, y):
+    if isinstance(x, ENum) and isinstance(y, ENum):
+        return T if x.val > y.val else F
+    return EGt(x, y)
+
 def EMax(es):
     es = make_random_access(es)
     assert es
@@ -263,7 +273,7 @@ def EMax(es):
     for i in range(1, len(es)):
         res = maybe_inline(res,   lambda v1:
               maybe_inline(es[i], lambda v2:
-                ECond(EGt(v1, v2), v1, v2).with_type(t)))
+                _ECond(_EGt(v1, v2), v1, v2)))
     return res
 
 def asymptotic_runtime(e, lattice):
