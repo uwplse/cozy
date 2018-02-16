@@ -309,11 +309,24 @@ class Learner(object):
             print("minor iteration {}, |cache|={}".format(self.current_size, len(self.cache)))
         self.mstart = now
         self.ecount = 0
+        self._ecount = 0
         self.ccount = 0
         self.fpcount = 0
         self.ncount = 0
 
     def _on_exp(self, e, pool):
+        # print("*** ", end="")
+        # print(pprint(e))
+        now = datetime.datetime.now()
+        if not hasattr(self, "_on_exp_time"):
+            self._on_exp_time = now
+            self._ecount = 0
+        elapsed = now - self._on_exp_time
+        if elapsed > datetime.timedelta(seconds=30):
+            print("... exps/s: {:.1f}".format(self._ecount / elapsed.total_seconds()))
+            self._on_exp_time = now
+            self._ecount = 0
+        self._ecount += 1
         self.ecount += 1
 
     def matches(self, fp, target_fp):
