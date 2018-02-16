@@ -7,6 +7,8 @@ from cozy.syntax_tools import free_vars, break_conj, all_exps, replace, pprint, 
 from cozy.typecheck import is_numeric, is_collection
 from cozy.pools import RUNTIME_POOL, STATE_POOL
 
+accelerate = Option("acceleration-rules", bool, True)
+
 def _as_conjunction_of_equalities(p):
     if isinstance(p, EBinOp) and p.op == "and":
         return _as_conjunction_of_equalities(p.e1) + _as_conjunction_of_equalities(p.e2)
@@ -228,6 +230,9 @@ class AcceleratedBuilder(ExpBuilder):
         return super().check(e, pool)
 
     def build(self, cache, size):
+        if not accelerate.value:
+            yield from self.wrapped.build(cache, size)
+            return
 
         # for e in cache.find(pool=RUNTIME_POOL, size=size-1, type=INT):
         #     if not is_root(e):

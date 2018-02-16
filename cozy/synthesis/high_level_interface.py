@@ -20,10 +20,9 @@ from cozy.pools import STATE_POOL
 from . import core
 from .impls import Implementation
 from .grammar import BinderBuilder
-from .acceleration import AcceleratedBuilder
+from .acceleration import AcceleratedBuilder, accelerate
 from .misc import rewrite_ret, queries_equivalent
 
-accelerate = Option("acceleration-rules", bool, True)
 nice_children = Option("nice-children", bool, False)
 log_dir = Option("log-dir", str, "/tmp")
 SynthCtx = namedtuple("SynthCtx", ["all_types", "basic_types"])
