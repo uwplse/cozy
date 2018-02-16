@@ -134,29 +134,26 @@ class SubstitutingBuilder(SpecDependentBuilder):
             k=lambda ctx: (ctx.pool, ctx.e.type),
             v=lambda ctxs: sorted(ctxs, key=lambda ctx: -ctx.e.size()))
     def build(self, cache, size):
-        for tup in self.wrapped.build(cache, size):
-            yield tup
-            e, pool = tup
-            free_binders = OrderedSet(v for v in free_vars(e) if v in self.binders)
-            for ctx in self._watches.get((pool, e.type), ()):
-                assert e.type == ctx.e.type
-                assert pool == ctx.pool
-                if e == ctx.e:
-                    continue
-                # if e.size() > ctx.e.size():
-                #     _on_exp(e, "skipped bigger replacement", ctx.e)
-                #     continue
-                unbound_binders = [b for b in free_binders if b not in ctx.bound_vars]
-                if unbound_binders:
-                    _on_exp(e, "skipped replacement with free binders", ", ".join(b.id for b in unbound_binders))
-                    continue
-                ee = ctx.replace_e_with(e)
-                # TODO: it might be a good idea to either
-                #  (1) never cache expressions yielded here or
-                #  (2) only cache expressions if they reduce the total size
-                # ee._cache = False
-                ee._fullcheck = True
-                yield self.check(ee, RUNTIME_POOL)
+        for pool in ALL_POOLS:
+            for e in cache.find(pool=pool, size=size-1):
+                free_binders = OrderedSet(v for v in free_vars(e) if v in self.binders)
+                for ctx in self._watches.get((pool, e.type), ()):
+                    assert e.type == ctx.e.type
+                    assert pool == ctx.pool
+                    if e == ctx.e:
+                        continue
+                    unbound_binders = [b for b in free_binders if b not in ctx.bound_vars]
+                    if unbound_binders:
+                        _on_exp(e, "skipped replacement with free binders", ", ".join(b.id for b in unbound_binders))
+                        continue
+                    ee = ctx.replace_e_with(e)
+                    # TODO: it might be a good idea to either
+                    #  (1) never cache expressions yielded here or
+                    #  (2) only cache expressions if they reduce the total size
+                    # ee._cache = False
+                    ee._fullcheck = True
+                    yield self.check(ee, RUNTIME_POOL)
+        yield from self.wrapped.build(cache, size)
 
 class StealingBuilder(SpecDependentBuilder):
     def __init__(self, wrapped, state_vars, args, assumptions, target=None):
