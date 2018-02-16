@@ -41,7 +41,7 @@ class CardinalityLattice(object):
     """
 
     def __init__(self, assumptions : Exp = T):
-        self.solver = IncrementalSolver()
+        self.solver = IncrementalSolver() # for ordering lengths of collections
         self.ind1 = fresh_var(BOOL)
         self.ind2 = fresh_var(BOOL)
         self.solver.add_assumption(assumptions)
@@ -50,6 +50,15 @@ class CardinalityLattice(object):
         self.vars_seen = set()
         self.facts = []
         self.heuristics = []
+        self.card_solver = IncrementalSolver(logic="QF_NIA") # for ordering expressions over cardinalities
+
+    def add_fact(self, f : Exp):
+        self.facts.append(f)
+        self.card_solver.add_assumption(f)
+
+    def add_heuristic(self, f : Exp):
+        self.heuristics.append(f)
+        self.card_solver.add_assumption(f)
 
     def cardinality(self, e : Exp) -> Exp:
         """
@@ -62,14 +71,18 @@ class CardinalityLattice(object):
 
         assert is_collection(e.type)
         old = set(self.cardinalities.values())
-        res = cardinality(e, self.cardinalities, self.heuristics)
+        h = []
+        res = cardinality(e, self.cardinalities, h)
+        for f in h:
+            self.add_heuristic(f)
         fresh = [item for item in self.cardinalities.items() if item[1] not in old]
         rcards = { v.id : exp for (exp, v) in self.cardinalities.items() }
 
         g = self.dag
+        s = self.solver
 
         for (_, v1var) in fresh:
-            self.facts.append(EBinOp(v1var, ">=", ZERO).with_type(BOOL))
+            self.add_fact(EBinOp(v1var, ">=", ZERO).with_type(BOOL))
             v1 = v1var.id
             g.add_vertex(name=v1)
             wq = OrderedSet(g.topological_sorting())
@@ -82,7 +95,6 @@ class CardinalityLattice(object):
                     continue
                 le = False
                 ge = False
-                s = self.solver
                 ind_le = self.ind1
                 ind_ge = self.ind2
                 c1 = rcards[v1]
@@ -99,19 +111,16 @@ class CardinalityLattice(object):
                             wq.remove(vv)
                         except KeyError:
                             pass
-                    self.facts.append(EBinOp(v1var, "<=", v2var).with_type(BOOL))
+                    self.add_fact(EBinOp(v1var, "<=", v2var).with_type(BOOL))
                     le = True
                 if s.valid(ind_ge):
                     g.add_edge(v2, v1)
-                    self.facts.append(EBinOp(v1var, ">=", v2var).with_type(BOOL))
+                    self.add_fact(EBinOp(v1var, ">=", v2var).with_type(BOOL))
                     ge = True
                 s.pop()
                 if le and ge:
                     # union
-                    self.cardinalities[rcards[v2]] = v1var
                     g.delete_vertices([v2])
-                    self.facts = [f for f in self.facts if v2var not in free_vars(f)]
-                    self.heuristics = [f for f in self.heuristics if v2var not in free_vars(f)]
                     break
 
         if assume_large_cardinalities.value > 0:
@@ -119,84 +128,67 @@ class CardinalityLattice(object):
             for v in free_vars(e):
                 if is_collection(v.type) and v not in self.vars_seen:
                     c = self.cardinality(v)
-                    f = EGt(c, min_cardinality)
-                    self.heuristics.append(f)
+                    self.add_heuristic(EGt(c, min_cardinality))
                     self.vars_seen.add(v)
+
+        # if not s.satisfiable(EAll(self.facts + self.heuristics)):
+        #     print("FACTS")
+        #     for f in self.facts:
+        #         print("  {}".format(pprint(f)))
+        #     print("HEURISTICS")
+        #     for f in self.heuristics:
+        #         print("  {}".format(pprint(f)))
+        #     assert False
 
         return res
 
-class SymbolicCost(Cost):
-    @typechecked
-    def __init__(self, formula : Exp, lattice : CardinalityLattice):
-        self.formula = formula
-        self.lattice = lattice
-    def __repr__(self):
-        return "SymbolicCost({!r}, {!r})".format(self.formula, self.lattice)
-    def __str__(self):
-        return pprint(self.formula)
-    def compare_to(self, other, assumptions : Exp = T, solver : IncrementalSolver = None):
-        assert isinstance(other, SymbolicCost)
-        assert other.lattice is self.lattice
-        if False:
-            # TODO: this is much faster, but we need to implement fallback
-            # to real numbers if the solver reports unknown
-            s = IncrementalSolver()
-            v1, v2 = fresh_var(BOOL), fresh_var(BOOL)
-            s.add_assumption(EAll([
-                self.order_cardinalities(other, assumptions, solver),
-                EEq(v1, EBinOp(self.formula, "<=", other.formula).with_type(BOOL)),
-                EEq(v2, EBinOp(other.formula, "<=", self.formula).with_type(BOOL))]))
-            o1 = s.valid(v1)
-            o2 = s.valid(v2)
-        else:
-            cards = self.order_cardinalities(other, assumptions, solver)
-            o1 = self.always("<=", other, cards=cards)
-            o2 = other.always("<=", self, cards=cards)
+    def order_expressions_over_cardinalities(self, f1 : Exp, f2 : Exp):
+        if isinstance(f1, ENum) and isinstance(f2, ENum):
+            if f1.val < f2.val:
+                return Cost.BETTER
+            elif f1.val == f2.val:
+                return Cost.UNORDERED
+            else:
+                return Cost.WORSE
+
+        s = self.card_solver
+        s.push()
+        s.add_assumption(EAll([
+            EEq(self.ind1, EBinOp(f1, "<=", f2).with_type(BOOL)),
+            EEq(self.ind2, EBinOp(f2, "<=", f1).with_type(BOOL))]))
+        try:
+            o1 = s.valid(self.ind1)
+            o2 = s.valid(self.ind2)
+        except SolverReportedUnknown:
+            print("WARNING: gave up on cost comparison")
+            return Cost.UNORDERED
+        finally:
+            s.pop()
         if o1 and not o2:
             return Cost.BETTER
         elif o2 and not o1:
             return Cost.WORSE
         else:
             return Cost.UNORDERED
-    def order_cardinalities(self, other, assumptions : Exp = T, solver : IncrementalSolver = None) -> Exp:
-        return EAll(itertools.chain(
-            self.lattice.facts,
-            self.lattice.heuristics))
+
+class SymbolicCost(Cost):
     @typechecked
-    def always(self, op, other, cards : Exp, **kwargs) -> bool:
-        """
-        Partial order on costs.
-        """
-        if isinstance(self.formula, ENum) and isinstance(other.formula, ENum):
-            return eval(EBinOp(self.formula, op, other.formula).with_type(BOOL), env={})
-        f = EImplies(cards,
-                EBinOp(self.formula, op, other.formula).with_type(BOOL))
-        if integer_cardinalities.value:
-            try:
-                return valid(f, logic="QF_LIA", timeout=1, **kwargs)
-            except SolverReportedUnknown:
-                # If we accidentally made an unsolveable integer arithmetic formula,
-                # then try again with real numbers. This will admit some models that
-                # are not possible (since bags must have integer cardinalities), but
-                # returning false is always a safe move here, so it's fine.
-                print("Warning: not able to solve {}".format(pprint(f)))
-        f = subst(f, { v.id : EVar(v.id).with_type(REAL) for v in free_vars(cards) })
-        # This timeout is dangerous! Sufficiently complex specifications
-        # will cause this to timeout _every_time_, meaning we never make
-        # progress.
-        #   However, this timeout helps ensure liveness: the Python process
-        # never gets deadlocked waiting for Z3. In the Distant Future it
-        # would be nice to move away from Z3Py and invoke Z3 as a subprocess
-        # instead. That would allow the Python process to break out if it is
-        # asked to stop while Z3 is running. It would also give us added
-        # protection against Z3 segfaults, which have been observed in the
-        # wild from time to time.
-        timeout = 60
-        try:
-            return valid(f, logic="QF_NRA", timeout=timeout, **kwargs)
-        except SolverReportedUnknown:
-            print("Giving up!")
-            return False
+    def __init__(self, formula : Exp, lattice : CardinalityLattice):
+        self._formula = formula
+        if isinstance(formula, EVar) or isinstance(formula, ENum):
+            self.formula = formula
+        else:
+            self.formula = fresh_var(INT)
+            lattice.add_fact(EEq(self.formula, formula))
+        self.lattice = lattice
+    def __repr__(self):
+        return "SymbolicCost({!r}, {!r})".format(self._formula, self.lattice)
+    def __str__(self):
+        return pprint(self._formula)
+    def compare_to(self, other, assumptions : Exp = T, solver : IncrementalSolver = None):
+        assert isinstance(other, SymbolicCost)
+        assert other.lattice is self.lattice
+        return self.lattice.order_expressions_over_cardinalities(self.formula, other.formula)
 
 class PlainCost(Cost):
     def __init__(self, n : int):
@@ -242,8 +234,6 @@ class CompositeCostModel(CostModel):
     def is_monotonic(self):
         return False
     def cost(self, e, pool):
-        # cards = OrderedDict()
-        # hint_cache = []
         if pool == STATE_POOL:
             return CompositeCost(
                 sizeof(e, self.lattice),
@@ -514,7 +504,8 @@ def debug_comparison(e1, c1, e2, c2, assumptions : Exp = T):
             continue
         print("-" * 10)
         print("comparing {} and {}".format(c1, c2))
-        print("  c1 compare_to c2 = {}".format(c1.compare_to(c2, assumptions=assumptions)))
+        cmp = c1.compare_to(c2, assumptions=assumptions)
+        print("  c1 compare_to c2 = {}".format(cmp))
         print("  c2 compare_to c1 = {}".format(c2.compare_to(c1, assumptions=assumptions)))
         print("variable meanings...")
         for e, v in c1.lattice.cardinalities.items():
@@ -525,19 +516,8 @@ def debug_comparison(e1, c1, e2, c2, assumptions : Exp = T):
         print("heuristics...")
         for o in c1.lattice.heuristics:
             print("  {}".format(pprint(o)))
-        cards = c1.order_cardinalities(c2, assumptions=assumptions)
-        for op in ("<=", "<", ">", ">="):
-            print("c1 always {} c2?".format(op))
-            x = []
-            res = c1.always(op, c2, cards=cards, model_callback=lambda m: x.append(m))
-            if res:
-                print("  YES")
-            elif not x:
-                print("  NO (no model!?)")
-            else:
-                print("  NO: {}".format(x[0]))
-                print("  c1 = {}".format(eval(c1.formula, env=x[0])))
-                print("  c2 = {}".format(eval(c2.formula, env=x[0])))
+        if cmp != Cost.UNORDERED:
+            break
 
 def break_sum(e):
     if isinstance(e, EBinOp) and e.op == "+":
