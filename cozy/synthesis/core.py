@@ -340,29 +340,45 @@ class Learner(object):
         from cozy.evaluation import eq
         return all(eq(t, fp[i], target_fp[i]) for i in range(2, len(fp)))
 
+    def too_expensive(self, cost, target_cost):
+        return (
+            (self.cost_model.is_monotonic() or hyperaggressive_culling.value) and
+            self.compare_costs(cost, target_cost) == Cost.WORSE)
+
     def next(self):
-        target_cost = self.cost_model.cost(self.target, RUNTIME_POOL)
-        target_fp = self._fingerprint(self.target)
+        compute_cost = self.cost_model.cost
+        compare_costs = self.compare_costs
+        too_expensive = self.too_expensive
+        pre_optimize = self.pre_optimize
+        stop_callback = self.stop_callback
+        compute_fp = self._fingerprint
+        find_seen = self.seen.find_all
+        target = self.target
+        target_cost = compute_cost(target, RUNTIME_POOL)
+        target_fp = compute_fp(target)
+        matches = self.matches
         self.ncount += 1
         while True:
             for (e, pool) in self.builder_iter:
                 self._on_exp(e, pool)
-                if self.stop_callback():
+                if stop_callback():
                     raise StopException()
 
-                new_e = self.pre_optimize(e, pool) if preopt.value else e
+                new_e = pre_optimize(e, pool) if preopt.value else e
+                if alpha_equivalent(new_e, e):
+                    new_e = e # avoid garbage
                 if new_e is not e:
                     _on_exp(e, "preoptimized", new_e)
                     e = new_e
 
-                cost = self.cost_model.cost(e, pool)
+                cost = compute_cost(e, pool)
 
-                if pool == RUNTIME_POOL and (self.cost_model.is_monotonic() or hyperaggressive_culling.value) and self.compare_costs(cost, target_cost) == Cost.WORSE:
+                if pool == RUNTIME_POOL and too_expensive(cost, target_cost):
                     _on_exp(e, "too expensive", cost, target_cost)
                     continue
 
-                fp = self._fingerprint(e)
-                prev = list(self.seen.find_all(pool, fp))
+                fp = compute_fp(e)
+                prev = list(find_seen(pool, fp))
                 should_add = True
                 if not prev:
                     _on_exp(e, "new", pool_name(pool))
@@ -373,7 +389,7 @@ class Learner(object):
                     better_than = None
                     worse_than = None
                     for prev_exp, prev_size, prev_cost in prev:
-                        ordering = self.compare_costs(cost, prev_cost)
+                        ordering = compare_costs(cost, prev_cost)
                         assert ordering in (Cost.WORSE, Cost.BETTER, Cost.UNORDERED)
                         _on_exp(e, ordering, pool_name(pool), prev_exp)
                         if ordering == Cost.UNORDERED:
@@ -393,7 +409,7 @@ class Learner(object):
                         else:
                             should_add = False
                             worse_than = (prev_exp, prev_size, prev_cost)
-                            # break
+                            break
                     if worse_than and better_than:
                         print("Uh-oh! Strange cost relationship between")
                         print("  (1) this exp: {}".format(pprint(e)))
@@ -414,7 +430,7 @@ class Learner(object):
                 else:
                     continue
 
-                if pool == RUNTIME_POOL and self.matches(fp, target_fp) and e != self.target:
+                if pool == RUNTIME_POOL and matches(fp, target_fp) and not alpha_equivalent(e, target):
                     return (self.target, e, (), lambda x: x)
 
             if self.last_progress < (self.current_size+1) // 2:
