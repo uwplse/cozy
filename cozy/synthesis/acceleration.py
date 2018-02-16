@@ -209,6 +209,19 @@ def simplify_sum(e):
 def is_root(e):
     return hasattr(e, "_root")
 
+def is_singleton(e):
+    return (
+        isinstance(e, ESingleton) or
+        isinstance(e, EMap) and is_singleton(e.e))
+
+def optimized_in(x, xs):
+    if isinstance(xs, EStateVar):
+        m = EMakeMap2(xs.e, mk_lambda(x.type, lambda x: T)).with_type(TMap(x.type, BOOL))
+        m = EStateVar(m).with_type(m.type)
+        return EHasKey(m, x).with_type(BOOL)
+    else:
+        return EBinOp(x, BOp.In, xs).with_type(BOOL)
+
 class AcceleratedBuilder(ExpBuilder):
 
     def __init__(self, wrapped : ExpBuilder, binders : [EVar], state_vars : [EVar], args : [EVar]):
@@ -251,11 +264,11 @@ class AcceleratedBuilder(ExpBuilder):
         for e in cache.find_collections(pool=RUNTIME_POOL, size=size-1):
             if not is_root(e):
                 continue
-            if isinstance(e, EBinOp) and e.op == "-" and isinstance(e.e1, ESingleton):
+            if isinstance(e, EBinOp) and e.op == "-" and is_singleton(e.e1):
                 x = e.e1.e
                 y = e.e2
                 x = ECond(
-                    EBinOp(x, BOp.In, y).with_type(BOOL),
+                    optimized_in(x, y),
                     EEmptyList().with_type(e.type),
                     e.e1).with_type(e.type)
                 yield self.check(x, RUNTIME_POOL)
