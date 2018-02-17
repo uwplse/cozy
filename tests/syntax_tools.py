@@ -146,6 +146,61 @@ class TestSyntaxTools(unittest.TestCase):
 
         assert isinstance(s2, SSeq) and isinstance(s2.s1, SDecl)
 
+    def test_cse_2_stm_if(self):
+        """
+        if (foo)
+            x = y + 2
+        else
+            z = y + 2
+        =>
+        tmp = y + 2;
+        if (foo)
+            x = tmp
+        else
+            z = tmp
+        """
+        yp2 = EBinOp(EVar("y").with_type(INT), "+", ENum(2).with_type(INT))
+
+        s = SIf(
+                EVar("foo").with_type(BOOL),
+                SAssign(EVar("x").with_type(INT), yp2),
+                SAssign(EVar("z").with_type(INT), yp2),
+        )
+
+        assert retypecheck(s)
+
+        print(pprint(s))
+        s2 = eliminate_common_subexpressions_stm(s)
+        print(pprint(s2))
+
+        assert isinstance(s2, SSeq) and isinstance(s2.s1, SDecl)
+
+    def test_cse_2_stm_seq_kill(self):
+        """
+        x = y + 2
+        y = x
+        z = y + 2
+
+        The middle statetment should cause a temp to not be created.
+        """
+
+        yp2 = EBinOp(EVar("y").with_type(INT), "+", ENum(2).with_type(INT))
+
+        s = seq((
+            SAssign(EVar("x").with_type(INT), yp2),
+            SAssign(EVar("y").with_type(INT), EVar("x").with_type(INT)),
+            SAssign(EVar("z").with_type(INT), yp2),
+        ))
+
+        assert retypecheck(s)
+
+        print(pprint(s))
+        s2 = eliminate_common_subexpressions_stm(s)
+        print(pprint(s2))
+        print(s2)
+
+        assert not isinstance(s2.s1, SDecl)
+
     def test_cse_2_nolambda(self):
         """
         Bunch of different expressions should not get their ELambdas separated from them.
