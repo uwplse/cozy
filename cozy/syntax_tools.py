@@ -1404,15 +1404,17 @@ def inject_vars(e, avail, statementMode=True):
     return e
 
 def eliminate_common_subexpressions_stm(outer, inner=None):
+    """
+    Eliminate common subexpressions on an AST element (an expression or a
+    statement -- not a full spec).
+    """
     eliminator = ExprEliminator()
     s2 = eliminator.visit(outer)
-    #s2 = outer
 
     if inner is None:
         inner = s2
 
-    s2 = inject_vars(s2, eliminator.available, False)
-    return s2
+    return inject_vars(s2, eliminator.available, isinstance(s2, syntax.Stm))
 
 def eliminate_common_subexpressions(spec):
     """

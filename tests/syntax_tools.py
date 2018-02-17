@@ -104,7 +104,6 @@ class TestSyntaxTools(unittest.TestCase):
 
         assert False
 
-
     def __test_cse_2_stm_expr(self):
         e = ECond(
                 EBinOp(EVar("x").with_type(INT), "<", EVar("y").with_type(INT)),
@@ -123,20 +122,29 @@ class TestSyntaxTools(unittest.TestCase):
 
         assert False
 
-    def __test_cse_2_stm_expr(self):
-        e = ECond(
-                EBinOp(EVar("x").with_type(INT), "<", EVar("y").with_type(INT)),
-                EBinOp(EVar("x").with_type(INT), "+", EVar("y").with_type(INT)),
-                EBinOp(EVar("x").with_type(INT), "+", EVar("y").with_type(INT))
+    def test_cse_2_stm_simple(self):
+        """
+        x = y + 2
+        z = y + 2
+        =>
+            tmp = y + 2
+            x = tmp
+            z = tmp
+        """
+        yp2 = EBinOp(EVar("y").with_type(INT), "+", ENum(2).with_type(INT))
+
+        s = SSeq(
+                SAssign(EVar("x").with_type(INT), yp2),
+                SAssign(EVar("z").with_type(INT), yp2),
         )
 
-        s = ECond(e.cond, e, e)
         assert retypecheck(s)
 
         print(pprint(s))
-        print(pprint(eliminate_common_subexpressions_stm(s)))
+        s2 = eliminate_common_subexpressions_stm(s)
+        print(pprint(s2))
 
-        assert False
+        assert isinstance(s2, SSeq) and isinstance(s2.s1, SDecl)
 
     def test_cse_2_nolambda(self):
         """
@@ -148,17 +156,12 @@ class TestSyntaxTools(unittest.TestCase):
         assert retypecheck(e)
         assert isinstance(e1.p, ELambda)
 
-        e1 = EMap(ESingleton(ONE), ELambda(EVar("x").with_type(INT), EBinOp(EVar("x"), "+", ENum(2).with_type(INT))))
-        e = ECond(EBinOp(EVar("x").with_type(INT), "<", EVar("y").with_type(INT)), e1, e1)
-        assert retypecheck(e)
-        assert isinstance(e1.f, ELambda)
-
         e1 = ELet(EVar("y").with_type(INT), ELambda(EVar("x").with_type(INT), EBinOp(EVar("x"), "+", ENum(2).with_type(INT))))
         e = ECond(EBinOp(EVar("x").with_type(INT), "<", EVar("y").with_type(INT)), e1, e1)
         assert retypecheck(e)
         assert isinstance(e1.f, ELambda)
 
-        for t in (EArgMax, EArgMin):
+        for t in (EMap, EArgMax, EArgMin):
             e1 = t(ESingleton(ONE), ELambda(EVar("x").with_type(INT), EBinOp(EVar("x"), "+", ENum(2).with_type(INT))))
             e = ECond(EBinOp(EVar("x").with_type(INT), "<", EVar("y").with_type(INT)), e1, e1)
             assert retypecheck(e)
