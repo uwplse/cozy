@@ -175,7 +175,7 @@ class TestSyntaxTools(unittest.TestCase):
 
         assert isinstance(s2, SSeq) and isinstance(s2.s1, SDecl)
 
-    def test_cse_2_stm_seq_kill(self):
+    def test_cse_2_stm_seq_assign_kill(self):
         """
         x = y + 2
         y = x
@@ -200,6 +200,40 @@ class TestSyntaxTools(unittest.TestCase):
         print(s2)
 
         assert not isinstance(s2.s1, SDecl)
+
+    def test_cse_2_stm_scoped(self):
+        """
+
+        x = y + 2
+
+        for (y in [1,2]) {
+            z = y + 2
+        }
+
+        q = y + 2
+
+        The for-loop body scope should not get CSE'd.
+        """
+
+        yp2 = EBinOp(EVar("y").with_type(INT), "+", ENum(2).with_type(INT)).with_type(INT)
+
+        s = seq((
+            SAssign(EVar("x").with_type(INT), yp2),
+            SForEach(EVar("y"), ESingleton(ONE),
+                SAssign(EVar("z").with_type(INT), yp2),
+                ),
+            SAssign(EVar("q").with_type(INT), yp2),
+        ))
+
+        assert retypecheck(s)
+
+        print(pprint(s))
+        s2 = eliminate_common_subexpressions_stm(s)
+        print(pprint(s2))
+        print(s2)
+
+        assert False
+        #assert not isinstance(s2.s1, SDecl)
 
     def test_cse_2_nolambda(self):
         """
