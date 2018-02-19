@@ -1326,7 +1326,6 @@ class ExprEliminator(BottomUpRewriter):
     def visit_ENull(self, e):
         return e
     def visit_Exp(self, e):
-        print("visiting {}".format(e))
         ee = type(e)(*[self.visit(c) for c in e.children()]).with_type(e.type)
 
         res = self.available.get(ee)
