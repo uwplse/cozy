@@ -177,7 +177,7 @@ class TestSyntaxTools(unittest.TestCase):
 
         assert isinstance(s2, SSeq) and isinstance(s2.s1, SDecl)
 
-    def _test_cse_2_stm_seq_assign_kill(self):
+    def test_cse_2_stm_seq_assign_kill(self):
         """
         x = y + 2
         y = x

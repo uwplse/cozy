@@ -1342,21 +1342,20 @@ class ExprEliminator(BottomUpRewriter):
             e._fvs = free_vars(e)
         return e._fvs
 
-    def inject_scoped(self, ):
-        pass
-
-    def visit_ELambda(self, e):
+    def scoped_eliminate(self, var, body):
+        # import pdb; pdb.set_trace()
         old_avail = self.available
 
         # self.available = mapping from exprs -> temp vars representing them
         # Filter self.available down to expressions NOT dealing with the lambda argument.
-        self.available = ExpMap([(k, v) for (k, v) in self.available.items() if e.arg not in self._fvs(k)])
+        self.available = ExpMap([(k, v) for (k, v) in self.available.items()
+            if var not in self._fvs(k)])
 
         # process body of lambda, further populating self.available
-        body = self.visit(e.body)
+        body = self.visit(body)
         # Now anything in self.available dealing with the lambda argument is from the lambda body.
 
-        precious = set((e.arg,))
+        precious = set((var,))
         # map tempvar -> (ordered set of free vars in expr labeled by tempvar)
         fvs = { v : self._fvs(k) for (k, v) in self.available.items() }
         dirty = True
@@ -1382,7 +1381,22 @@ class ExprEliminator(BottomUpRewriter):
         # now self.available is stuff that DOES deal with the lambda argument.
         body = inject_vars(body, self.available)
         self.available = old_avail
-        return target_syntax.ELambda(e.arg, body)
+        return body
+
+    def __visit_SSeq(self, e):
+        if not isinstance(e.s1, syntax.SAssign):
+            e.s1 = self.visit(e.s1)
+            e.s2 = self.visit(e.s2)
+            return e
+
+        # (It's an SAssign in an SSeq.)
+
+        e.s2 = self.scoped_eliminate(e.s1.lhs, e.s2)
+        return e
+
+    def visit_ELambda(self, e):
+        e.body = self.scoped_eliminate(e.arg, e.body)
+        return e
 
 def inject_vars(e, avail):
     statementMode = isinstance(e, syntax.Stm)
