@@ -177,7 +177,7 @@ class TestSyntaxTools(unittest.TestCase):
 
         assert isinstance(s2, SSeq) and isinstance(s2.s1, SDecl)
 
-    def test_cse_2_stm_seq_assign_kill(self):
+    def __test_cse_2_stm_seq_assign_kill(self):
         """
         x = y + 2
         y = x
@@ -241,7 +241,7 @@ class TestSyntaxTools(unittest.TestCase):
         assert isinstance(s2, ELet)
         # ...how to test for the lambda func not getting messed with?
 
-    def __test_cse_2_stm_newscope(self):
+    def test_cse_2_stm_newscope(self):
         """
         x = y + 2
 
@@ -271,8 +271,8 @@ class TestSyntaxTools(unittest.TestCase):
         print(pprint(s2))
         print(s2)
 
-        assert False
-        #assert not isinstance(s2.s1, SDecl)
+        assert isinstance(s2.s1, SDecl)
+        assert "z = (y + 2)" in pprint(s2)
 
     def test_cse_2_nolambda(self):
         """

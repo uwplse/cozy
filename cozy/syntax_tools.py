@@ -1373,23 +1373,28 @@ class ExprEliminator(BottomUpRewriter):
 
         for (k, v) in list(self.available.items()):
             if v not in precious:
-                # v doesn't deal w/ lambda arg
+                # v doesn't deal w/ arg
                 # map old_avail expr to possibly updated(?) tempvar
                 old_avail[k] = v
                 del self.available[k]
 
-        # now self.available is stuff that DOES deal with the lambda argument.
+        # now self.available is stuff that DOES deal with the argument.
         body = inject_vars(body, self.available)
         self.available = old_avail
         return body
 
+    def visit_SForEach(self, e):
+        e.body = self.scoped_eliminate(e.id, e.body)
+        return e
+
     def __visit_SSeq(self, e):
+        # Not working quite yet.
         if not isinstance(e.s1, syntax.SAssign):
             e.s1 = self.visit(e.s1)
             e.s2 = self.visit(e.s2)
             return e
 
-        # (It's an SAssign in an SSeq.)
+        # (e is an SSeq(SAssign, something).)
 
         e.s2 = self.scoped_eliminate(e.s1.lhs, e.s2)
         return e
