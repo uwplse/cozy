@@ -70,7 +70,7 @@ class TestSyntaxTools(unittest.TestCase):
         e = EBinOp(e, "+", ELet(ONE, ELambda(x, EBinOp(x, "+", x).with_type(INT))).with_type(INT)).with_type(INT)
         assert self._do_cse_check(e)
 
-    def _test_cse_2(self):
+    def __test_cse_2(self):
         op = Op('addElement', [('x', TInt())], [], SSeq(SSeq(SSeq(SDecl('_name5771', ECond(EBinOp(EBinOp(EBinOp(EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt()), '+', EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()), '<', ENum(5).with_type(TInt())).with_type(TBool()), 'or', EBinOp(EBinOp(EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt()), '+', EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()), '>', ENum(7).with_type(TInt())).with_type(TBool())).with_type(TBool()), EBinOp(EVar('_var2027').with_type(TBag(TInt())), '-', EBinOp(EVar('_var2027').with_type(TBag(TInt())), '+', ESingleton(EVar('x').with_type(TInt())).with_type(TBag(TInt()))).with_type(TBag(TInt()))).with_type(TBag(TInt())), EBinOp(EVar('_var2027').with_type(TBag(TInt())), '-', EVar('_var2027').with_type(TBag(TInt()))).with_type(TBag(TInt()))).with_type(TBag(TInt()))), SDecl('_name5772', ECond(EBinOp(EBinOp(EBinOp(EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt()), '+', EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()),'<', ENum(5).with_type(TInt())).with_type(TBool()), 'or', EBinOp(EBinOp(EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt()), '+', EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()), '>', ENum(7).with_type(TInt())).with_type(TBool())).with_type(TBool()), EBinOp(EBinOp(EVar('_var2027').with_type(TBag(TInt())), '+', ESingleton(EVar('x').with_type(TInt())).with_type(TBag(TInt()))).with_type(TBag(TInt())), '-', EVar('_var2027').with_type(TBag(TInt()))).with_type(TBag(TInt())), EBinOp(EVar('_var2027').with_type(TBag(TInt())), '-', EVar('_var2027').with_type(TBag(TInt()))).with_type(TBag(TInt()))).with_type(TBag(TInt())))), SAssign(EVar('_var507').with_type(TInt()), ECond(EBinOp(EBinOp(EBinOp(EUnaryOp('len', EEmptyList().with_type(TBag(TInt()))).with_type(TInt()), '+', EUnaryOp('len', EEmptyList().with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()), '<', ENum(5).with_type(TInt())).with_type(TBool()), 'or', EBinOp(ENum(5).with_type(TInt()), '>', ENum(7).with_type(TInt())).with_type(TBool())).with_type(TBool()), EBinOp(EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt()), '+', ENum(1).with_type(TInt())).with_type(TInt()), EUnaryOp('len', EEmptyList().with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()))), SSeq(SForEach(EVar('_var2988').with_type(TInt()), EVar('_name5771').with_type(TBag(TInt())), SCall(EVar('_var2027').with_type(TBag(TInt())), 'remove', [EVar('_var2988').with_type(TInt())])), SForEach(EVar('_var2988').with_type(TInt()), EVar('_name5772').with_type(TBag(TInt())), SCall(EVar('_var2027').with_type(TBag(TInt())), 'add', [EVar('_var2988').with_type(TInt())])))), '')
 
 
@@ -80,7 +80,12 @@ class TestSyntaxTools(unittest.TestCase):
         print(pprint(eliminate_common_subexpressions(op)))
         assert False
 
-    def _test_cse_2_expr(self):
+    def test_cse_2_expr(self):
+        """
+        (x < y)
+            ? ((x < y) ? x + y : x + y)
+            : ((x < y) ? x + y : x + y)
+        """
         e = ECond(
                 EBinOp(EVar("x").with_type(INT), "<", EVar("y").with_type(INT)),
                 EBinOp(EVar("x").with_type(INT), "+", EVar("y").with_type(INT)),
@@ -88,8 +93,6 @@ class TestSyntaxTools(unittest.TestCase):
         )
 
         assert retypecheck(e)
-
-        # econd = deep_copy(e)
 
         # Nested ECond:
         e2 = ECond(
@@ -100,9 +103,13 @@ class TestSyntaxTools(unittest.TestCase):
 
         assert retypecheck(e2)
         print(pprint(e2))
-        print(pprint(eliminate_common_subexpressions_stm(e2)))
+        e2 = eliminate_common_subexpressions_stm(e2)
+        print(pprint(e2))
+        print(e2)
 
-        assert False
+        newForm = pprint(e2)
+        assert newForm.count("x < y") == 1
+        assert newForm.count("x + y") == 1
 
     def __test_cse_2_stm_expr(self):
         e = ECond(
@@ -195,10 +202,7 @@ class TestSyntaxTools(unittest.TestCase):
         ))
 
         assert retypecheck(s)
-
         print(pprint(s))
-
-        #import pdb; pdb.set_trace()
 
         s2 = eliminate_common_subexpressions_stm(s)
         print(pprint(s2))
@@ -214,7 +218,7 @@ class TestSyntaxTools(unittest.TestCase):
         +
         (y + 2)
 
-        The expression in the let should not be CSE'd.
+        The expression in the let should not be CSE'd. The outer ones should.
         """
 
         y = EVar("y").with_type(INT)
@@ -232,14 +236,12 @@ class TestSyntaxTools(unittest.TestCase):
         assert retypecheck(s)
         print(pprint(s))
 
-        #import pdb; pdb.set_trace()
-
         s2 = eliminate_common_subexpressions_stm(s)
         print(pprint(s2))
         print(s2)
 
+        assert "let y = 1 in (y + 2)" in pprint(s2)
         assert isinstance(s2, ELet)
-        # ...how to test for the lambda func not getting messed with?
 
     def test_cse_2_stm_newscope(self):
         """
