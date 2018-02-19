@@ -126,10 +126,12 @@ class TestSyntaxTools(unittest.TestCase):
         """
         x = y + 2
         z = y + 2
+
         =>
-            tmp = y + 2
-            x = tmp
-            z = tmp
+
+        tmp = y + 2
+        x = tmp
+        z = tmp
         """
         yp2 = EBinOp(EVar("y").with_type(INT), "+", ENum(2).with_type(INT))
 
@@ -175,7 +177,7 @@ class TestSyntaxTools(unittest.TestCase):
 
         assert isinstance(s2, SSeq) and isinstance(s2.s1, SDecl)
 
-    def test_cse_2_stm_seq_assign_kill(self):
+    def _test_cse_2_stm_seq_assign_kill(self):
         """
         x = y + 2
         y = x
@@ -195,15 +197,52 @@ class TestSyntaxTools(unittest.TestCase):
         assert retypecheck(s)
 
         print(pprint(s))
+
+        #import pdb; pdb.set_trace()
+
         s2 = eliminate_common_subexpressions_stm(s)
         print(pprint(s2))
         print(s2)
 
         assert not isinstance(s2.s1, SDecl)
 
-    def test_cse_2_stm_scoped(self):
+    def test_cse_2_exp_letscope(self):
+        """
+        (y + 2)
+        +
+        (let y = 1 in (y + 2))
+        +
+        (y + 2)
+
+        The expression in the let should not be CSE'd.
         """
 
+        y = EVar("y").with_type(INT)
+        yp2 = EBinOp(y, "+", ENum(2).with_type(INT))
+
+        s = EBinOp(
+                EBinOp(
+                    yp2,
+                    "+",
+                    ELet(ONE, ELambda(y, yp2))),
+                "+",
+                yp2
+            )
+
+        assert retypecheck(s)
+        print(pprint(s))
+
+        #import pdb; pdb.set_trace()
+
+        s2 = eliminate_common_subexpressions_stm(s)
+        print(pprint(s2))
+        print(s2)
+
+        assert isinstance(s2, ELet)
+        # ...how to test for the lambda func not getting messed with?
+
+    def __test_cse_2_stm_newscope(self):
+        """
         x = y + 2
 
         for (y in [1,2]) {
@@ -212,7 +251,7 @@ class TestSyntaxTools(unittest.TestCase):
 
         q = y + 2
 
-        The for-loop body scope should not get CSE'd.
+        The for-loop body scope should not get CSE'd. The outer two *should*.
         """
 
         yp2 = EBinOp(EVar("y").with_type(INT), "+", ENum(2).with_type(INT)).with_type(INT)

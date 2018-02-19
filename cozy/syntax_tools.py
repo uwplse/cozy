@@ -1341,31 +1341,52 @@ class ExprEliminator(BottomUpRewriter):
         if not hasattr(e, "_fvs"):
             e._fvs = free_vars(e)
         return e._fvs
+
+    def inject_scoped(self, ):
+        pass
+
     def visit_ELambda(self, e):
         old_avail = self.available
+
+        # self.available = mapping from exprs -> temp vars representing them
+        # Filter self.available down to expressions NOT dealing with the lambda argument.
         self.available = ExpMap([(k, v) for (k, v) in self.available.items() if e.arg not in self._fvs(k)])
+
+        # process body of lambda, further populating self.available
         body = self.visit(e.body)
+        # Now anything in self.available dealing with the lambda argument is from the lambda body.
 
         precious = set((e.arg,))
+        # map tempvar -> (ordered set of free vars in expr labeled by tempvar)
         fvs = { v : self._fvs(k) for (k, v) in self.available.items() }
         dirty = True
+        # stop when no more items get added to precious
         while dirty:
             dirty = False
             for v in self.available.values():
+                # if ANY of the free vars pointed to by temp vars are precious, add the tempvar to precious.
                 if any(vv in precious for vv in fvs[v]):
                     if v not in precious:
                         precious.add(v)
                         dirty = True
+
+        # now precious contains any var indirectly dealing with the lambda arg
+
         for (k, v) in list(self.available.items()):
             if v not in precious:
+                # v doesn't deal w/ lambda arg
+                # map old_avail expr to possibly updated(?) tempvar
                 old_avail[k] = v
                 del self.available[k]
 
+        # now self.available is stuff that DOES deal with the lambda argument.
         body = inject_vars(body, self.available)
         self.available = old_avail
         return target_syntax.ELambda(e.arg, body)
 
-def inject_vars(e, avail, statementMode=True):
+def inject_vars(e, avail):
+    statementMode = isinstance(e, syntax.Stm)
+
     ravail = collections.OrderedDict([(v, k) for (k, v) in avail.items() if v is not None])
     counts = free_vars(e, counts=True)
     for var, value in reversed(ravail.items()):
@@ -1414,7 +1435,7 @@ def eliminate_common_subexpressions_stm(outer, inner=None):
     if inner is None:
         inner = s2
 
-    return inject_vars(s2, eliminator.available, isinstance(s2, syntax.Stm))
+    return inject_vars(s2, eliminator.available)
 
 def eliminate_common_subexpressions(spec):
     """
