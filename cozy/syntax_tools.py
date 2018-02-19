@@ -1442,17 +1442,13 @@ def inject_vars(e, avail):
         e = ee
     return e
 
-def eliminate_common_subexpressions_stm(outer, inner=None):
+def eliminate_common_subexpressions_stm(elem):
     """
     Eliminate common subexpressions on an AST element (an expression or a
     statement -- not a full spec).
     """
     eliminator = ExprEliminator()
-    s2 = eliminator.visit(outer)
-
-    if inner is None:
-        inner = s2
-
+    s2 = eliminator.visit(elem)
     return inject_vars(s2, eliminator.available)
 
 def eliminate_common_subexpressions(spec):
@@ -1461,7 +1457,7 @@ def eliminate_common_subexpressions(spec):
     """
     class OpVisitor(BottomUpRewriter):
         def visit_Op(self, s):
-            s.body = eliminate_common_subexpressions_stm(s, s.body)
+            s.body = eliminate_common_subexpressions_stm(s.body)
             return s
     vee = OpVisitor()
     spec2 = vee.visit(spec)
