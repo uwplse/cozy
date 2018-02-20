@@ -43,8 +43,10 @@ def exp_wf_nonrecursive(e : Exp, state_vars : {EVar}, args : {EVar}, pool = RUNT
             raise ExpIsNotWf(e, e, "state var at runtime")
         elif not at_runtime and e in args:
             raise ExpIsNotWf(e, e, "arg in state exp")
-    if is_collection(e.type) and is_collection(e.type.t):
-        raise ExpIsNotWf(e, e, "collection of collection")
+    # if is_collection(e.type) and is_collection(e.type.t):
+    #     raise ExpIsNotWf(e, e, "collection of collection")
+    if is_collection(e.type) and not is_scalar(e.type.t):
+        raise ExpIsNotWf(e, e, "collection of nonscalar")
     if isinstance(e.type, TMap) and not is_scalar(e.type.k):
         raise ExpIsNotWf(e, e, "bad key type {}".format(pprint(e.type.k)))
     if isinstance(e.type, TMap) and isinstance(e.type.v, TMap):
