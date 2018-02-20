@@ -221,7 +221,7 @@ class Learner(object):
             return c1.compare_to(c2, assumptions=self.assumptions)
 
     def reset(self, examples):
-        self.cache = Cache(binders=self.binders, args=self.args)
+        self.cache = Cache()
         self.current_size = -1
         self.examples = list(examples)
         self.all_examples = instantiate_examples(self.examples, self.binders)

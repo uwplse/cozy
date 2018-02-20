@@ -38,12 +38,10 @@ class NatDict(object):
         data.extend(factory() for i in range(len(data), n + 1))
 
 class Cache(object):
-    def __init__(self, binders : [EVar], args : [EVar], items : [(Exp, int)]=None):
+    def __init__(self, items : [(Exp, int)] = None):
         # self.data[pool][type_tag][type][size] is list of exprs
         self.data = [nested_dict(2, lambda: NatDict(list)) for i in range(len(ALL_POOLS))]
         self.size = 0
-        self.binders = set(binders)
-        self.args = set(args)
         if items:
             for (e, size) in items:
                 self.add(e, size)
