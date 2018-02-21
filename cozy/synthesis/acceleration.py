@@ -209,10 +209,14 @@ def simplify_sum(e):
 def is_root(e):
     return hasattr(e, "_root")
 
-def is_singleton(e):
-    return (
-        isinstance(e, ESingleton) or
-        isinstance(e, EMap) and is_singleton(e.e))
+def as_singleton(e):
+    if isinstance(e, ESingleton):
+        return e.e
+    if isinstance(e, EMap):
+        ee = as_singleton(e.e)
+        if ee is not None:
+            return e.f.apply_to(ee)
+    return None
 
 def optimized_in(x, xs):
     if isinstance(xs, EStateVar):
@@ -264,8 +268,8 @@ class AcceleratedBuilder(ExpBuilder):
         for e in cache.find_collections(pool=RUNTIME_POOL, size=size-1):
             if not is_root(e):
                 continue
-            if isinstance(e, EBinOp) and e.op == "-" and is_singleton(e.e1):
-                x = e.e1.e
+            if isinstance(e, EBinOp) and e.op == "-" and as_singleton(e.e1) is not None:
+                x = as_singleton(e.e1)
                 y = e.e2
                 x = ECond(
                     optimized_in(x, y),
