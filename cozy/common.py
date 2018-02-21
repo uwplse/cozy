@@ -548,3 +548,42 @@ def integer_log2_round_up(x):
 
 def identity_func(x):
     return x
+
+def compare_with_lt(x, y):
+    """
+    Comparator function that promises only to use the `<` binary operator.
+    See also: `functools.cmp_to_key` if you plan to use this with `sorted`
+    """
+    if x < y:
+        return -1
+    elif y < x:
+        return 1
+    else:
+        return 0
+
+def collapse_runs(it, split_at):
+    """
+    Collapse runs of elements [x_0, x_1, ...] in `it` such that
+    `split_at(x_0, x_i)` returns false for all i > 1.
+
+    This function returns a list containing only the first element of each run
+    and a list containing counts for each run.
+
+    For instance, to remove duplicates from a sorted list:
+        l = [0, 0, 0, 1, 2, 2]
+        l, counts = collapse_runs(l, split_at=lambda x, y: x != y)
+        # l is now [0, 1, 2]
+        # counts is now [3, 1, 2]
+    """
+    l = make_random_access(it)
+    if not l:
+        return l, []
+    res = [l[0]]
+    counts = [1]
+    for i in range(1, len(l)):
+        if split_at(res[-1], l[i]):
+            res.append(l[i])
+            counts.append(1)
+        else:
+            counts[-1] += 1
+    return res, counts

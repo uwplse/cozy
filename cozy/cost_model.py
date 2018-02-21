@@ -4,7 +4,7 @@ import itertools
 
 import igraph
 
-from cozy.common import OrderedSet, typechecked, partition, make_random_access
+from cozy.common import OrderedSet, typechecked, partition, make_random_access, compare_with_lt, collapse_runs
 from cozy.target_syntax import *
 from cozy.syntax_tools import BottomUpExplorer, pprint, equal, fresh_var, mk_lambda, free_vars, subst, alpha_equivalent, all_exps, ExpMap
 from cozy.typecheck import is_collection
@@ -208,30 +208,30 @@ class Factor(object):
     def __str__(self):
         return pprint(self.e)
 
-def compare_with_lt(x, y):
-    if x < y:
-        return -1
-    elif y < x:
-        return 1
-    else:
-        return 0
-
 class Seq(object):
     def __init__(self, things):
-        self.things = sorted(things,
+        things = sorted(things,
             reverse=True,
             key=cmp_to_key(compare_with_lt))
+        things, counts = collapse_runs(things,
+            split_at=lambda prev, current: current < prev)
+        self.things = things
+        self.counts = counts
     def __lt__(self, other):
         assert isinstance(other, Seq)
-        for x, y in zip(self.things, other.things):
+        for i in range(min(len(self.things), len(other.things))):
+            x = self.things[i]
+            y = other.things[i]
             # print("comparing {}, {}".format(x, y))
-            if x < y:
-                # print("{} < {}".format(x, y))
-                return True
+            if x < y: return True
             if y < x: return False
+            cx = self.counts[i]
+            cy = other.counts[i]
+            if cx < cy: return True
+            if cy < cx: return False
         return len(self.things) < len(other.things)
     def __str__(self):
-        return "[" + ", ".join(str(x) for x in self.things) + "]"
+        return "[" + ", ".join("{} x {}".format(x, ct) if ct > 1 else str(x) for x, ct in zip(self.things, self.counts)) + "]"
 
 def nf(f : Exp, lattice : CardinalityLattice):
     from cozy.syntax_tools import BottomUpRewriter
