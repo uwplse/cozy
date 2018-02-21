@@ -330,22 +330,84 @@ class Learner(object):
         self.ecount += 1
 
     def matches(self, fp, target_fp):
-        assert isinstance(fp[0], int)
-        assert isinstance(fp[1], Type)
-        assert len(fp) == len(target_fp)
-        if fp[0] != target_fp[0] or fp[1] != target_fp[1]:
+        # assert isinstance(fp[0], int)
+        # assert isinstance(fp[1], Type)
+        # assert len(fp) == len(target_fp)
+        # if fp[0] != target_fp[0] or fp[1] != target_fp[1]:
+        #     return False
+        # t = fp[1]
+        # assert isinstance(t, Type)
+        assert isinstance(fp[0], Type)
+        assert isinstance(target_fp[0], Type)
+        if fp[0] != target_fp[0]:
             return False
-        t = fp[1]
-        assert isinstance(t, Type)
+        t = fp[0]
         from cozy.evaluation import eq
-        return all(eq(t, fp[i], target_fp[i]) for i in range(2, len(fp)))
+        return all(eq(t, fp[i], target_fp[i]) for i in range(1, len(fp)))
 
     def too_expensive(self, cost, target_cost):
         return (
             (self.cost_model.is_monotonic() or hyperaggressive_culling.value) and
             self.compare_costs(cost, target_cost) == Cost.WORSE)
 
+    def build_candidates(self, cache, size, depth, build_lambdas):
+        if depth == 0:
+            # print("BUILDING [size={}]".format(size))
+            # for e, sz, p in cache:
+            #     print("   ---> cached: {} : {} @ size={} in {}".format(pprint(e), pprint(e.type), sz, pool_name(p)))
+            for ctx in enumerate_fragments2(self.target):
+                # print("... {} in {} --> {}".format(pprint(ctx.e.type), pool_name(ctx.pool), pprint(ctx.replace_e_with(EVar("___")))))
+                for e in cache.find(pool=ctx.pool, type=ctx.e.type, size=size-1):
+                    # print("     {}".format(pprint(e)))
+                    if not alpha_equivalent(e, ctx.e):
+                        ee = ctx.replace_e_with(e)
+                        # if e == ESingleton(EVar("x")):
+                        #     ee._tag = True
+                        yield (ee, RUNTIME_POOL)
+        from cozy.enumeration import build_candidates
+        yield from build_candidates(cache, size, depth, build_lambdas)
+
+    def is_legal_in_pool(self, e, pool):
+        try:
+            return exp_wf(e, state_vars=self.state_vars, args=self.args, pool=pool, assumptions=self.assumptions)
+        except ExpIsNotWf as exc:
+            return False
+
+    def roots(self):
+        for ctx in enumerate_fragments2(self.target):
+            e = ctx.e
+            if any(v in ctx.bound_vars for v in free_vars(e)):
+                continue
+            for pool in ALL_POOLS:
+                x = strip_EStateVar(e) if pool == STATE_POOL else e
+                if self.is_legal_in_pool(x, pool):
+                    yield (x, pool)
+                    if pool == STATE_POOL:
+                        ee = EStateVar(x).with_type(x.type)
+                        if self.is_legal_in_pool(ee, RUNTIME_POOL):
+                            yield (ee, RUNTIME_POOL)
+
     def next(self):
+        from cozy.enumeration import enumerate_exps, fingerprint
+        if self.builder_iter == ():
+            self.builder_iter = enumerate_exps(
+                roots=list(self.roots()), #+ [(ESingleton(EGetField(EVar('x').with_type(THandle('H', TNative('Object'))), 'val').with_type(TNative('Object'))).with_type(TBag(TNative('Object'))), RUNTIME_POOL)],
+                examples=self.examples,
+                cost_model=self.cost_model,
+                cost_ceiling=self.cost_model.cost(self.target, RUNTIME_POOL),
+                build_candidates=self.build_candidates,
+                check_wf=lambda e, pool: exp_is_wf(e, pool, self.state_vars, self.args, self.assumptions))
+        target_fp = fingerprint(self.target, self.examples)
+        prev_size = None
+        for res in self.builder_iter:
+            if prev_size is None or res.size > prev_size:
+                print("minor iteration {}".format(res.size))
+                prev_size = res.size
+            if res.pool == RUNTIME_POOL and not alpha_equivalent(res.e, self.target) and self.matches(res.fingerprint, target_fp):
+                return (self.target, res.e, (), lambda x: x)
+
+        raise NoMoreImprovements("builder is exhausted")
+
         compute_cost = self.cost_model.cost
         compare_costs = self.compare_costs
         too_expensive = self.too_expensive
@@ -467,6 +529,13 @@ def fixup_binders(e : Exp, binders_to_use : [EVar], allow_add=False, throw=False
 
 COMMUTATIVE_OPERATORS = set(("==", "and", "or", "+"))
 ATTRS_TO_PRESERVE = ("_accel", "_tag", "_fullcheck")
+
+def exp_is_wf(e, pool, state_vars, args, assumptions):
+    try:
+        exp_wf(e, state_vars, args, pool, assumptions=assumptions)
+    except ExpIsNotWf as exc:
+        return False
+    return True
 
 class FixedBuilder(ExpBuilder):
     def __init__(self, wrapped_builder, state_vars, args, binders_to_use, assumptions : Exp):
