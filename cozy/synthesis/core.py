@@ -34,7 +34,7 @@ class ExpBuilder(object):
     def check(self, e, pool):
         if enforce_exprs_wf.value:
             from cozy.typecheck import retypecheck
-            assert retypecheck(e)
+            assert retypecheck(deep_copy(e))
         return (e, pool)
     def build(self, cache, size):
         raise NotImplementedError()
