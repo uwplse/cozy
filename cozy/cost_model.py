@@ -114,16 +114,19 @@ class CardinalityLattice(object):
                             wq.remove(vv)
                         except KeyError:
                             pass
-                    self.add_fact(EBinOp(v1var, "<=", v2var).with_type(BOOL))
                     le = True
                 if s.valid(ind_ge):
                     g.add_edge(v2, v1)
-                    self.add_fact(EBinOp(v1var, ">=", v2var).with_type(BOOL))
                     ge = True
                 s.pop()
-                if le and ge:
+                if le and not ge:
+                    self.add_fact(EBinOp(v1var, "<=", v2var).with_type(BOOL))
+                elif ge and not le:
+                    self.add_fact(EBinOp(v1var, ">=", v2var).with_type(BOOL))
+                elif le and ge:
                     # union
                     # print("union {} and {}".format(v1, v2))
+                    self.add_fact(EEq(v1var, v2var))
                     g.delete_vertices([v1])
                     self.cards_to_graph_verts[v1var] = v2
                     break
