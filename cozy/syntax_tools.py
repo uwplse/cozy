@@ -1342,7 +1342,6 @@ class ExprEliminator(BottomUpRewriter):
         return e._fvs
 
     def scoped_eliminate(self, var, body):
-        # import pdb; pdb.set_trace()
         old_avail = self.available
 
         # self.available = mapping from exprs -> temp vars representing them
@@ -1388,21 +1387,24 @@ class ExprEliminator(BottomUpRewriter):
 
     def visit_SSeq(self, e):
         # Catch modifications that should kill later statements.
+        # TODO: handle types.
 
         if isinstance(e.s1, syntax.SAssign):
-            vars = modified_vars(e.s1)
             e.s1 = self.visit(e.s1)
-            e.s2 = self.scoped_eliminate(vars[0], e.s2)
+            var = get_modified_var(e.s1)
+            assert var is not None
+            e.s2 = self.scoped_eliminate(var, e.s2)
         elif isinstance(e.s1, syntax.SSeq) and isinstance(e.s1.s2, syntax.SAssign):
-            vars = modified_vars(e.s1.s2)
             e.s1.s2 = self.visit(e.s1.s2)
-            e.s2 = self.scoped_eliminate(vars[0], e.s2)
+            var = get_modified_var(e.s1.s2)
+            assert var is not None
+            e.s2 = self.scoped_eliminate(var, e.s2)
         else:
+            # don't touch.
             e.s1 = self.visit(e.s1)
             e.s2 = self.visit(e.s2)
 
         return e
-
 
     def visit_ELambda(self, e):
         e.body = self.scoped_eliminate(e.arg, e.body)
@@ -1469,22 +1471,25 @@ def eliminate_common_subexpressions(spec):
     spec2 = vee.visit(spec)
     return spec2
 
-def modified_vars(stm):
-    def free_lvalues(e):
+def get_modified_var(stm):
+    """
+    Given a statement, returns the EVar modified by it, if any.
+    """
+    def find_lvalue_target(e):
         if isinstance(e, syntax.EVar):
-            return [e]
+            return e
         elif isinstance(e, syntax.EMapGet):
-            return free_vars(e.map)
+            return find_lvalue_target(e.map)
         elif isinstance(e, syntax.ETupleGet):
-            return free_vars(e.e)
+            return find_lvalue_target(e.e)
         elif isinstance(e, syntax.EGetField):
-            return free_vars(e.e)
+            return find_lvalue_target(e.e)
+        assert False, "unexpected modification target {}".format(e)
 
     if isinstance(stm, syntax.SAssign):
-        return free_lvalues(stm.lhs)
+        return find_lvalue_target(stm.lhs)
     elif isinstance(stm, syntax.SCall):
-        return free_lvalues(stm.target)
+        return find_lvalue_target(stm.target)
     elif isinstance(stm, (target_syntax.SMapPut, target_syntax.SMapDel, target_syntax.SMapUpdate)):
-        return free_lvalues(stm.map)
-
-    return []
+        return find_lvalue_target(stm.map)
+    return None

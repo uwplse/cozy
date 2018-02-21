@@ -213,11 +213,10 @@ class TestSyntaxTools(unittest.TestCase):
         print(pprint(s))
 
         s2 = eliminate_common_subexpressions_stm(s)
-        print(pprint(s2))
-        print(s2)
+        newForm = pprint(s2)
+        print(newForm)
 
-        assert False
-        assert not isinstance(s2.s1, SDecl)
+        assert newForm.count("y + 2") == 2
 
     def test_cse_2_exp_letscope(self):
         """
