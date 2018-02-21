@@ -89,11 +89,25 @@ def strip_EStateVar(e : syntax.Exp):
             return self.visit(e.e)
     return V().visit(e)
 
+class DeepCopier(BottomUpRewriter):
+    def join(self, x, new_children):
+        if isinstance(x, common.ADT):
+            out = type(x)(*new_children)
+            if isinstance(x, syntax.Exp) and hasattr(x, "type"):
+                out.type = x.type
+            return out
+        elif type(x) in [list, tuple, dict]:
+            return type(x)(new_children)
+        else:
+            return x
+
+_DEEP_COPIER = DeepCopier()
+
 def deep_copy(ast):
-    return BottomUpRewriter().visit(ast)
+    return _DEEP_COPIER.visit(ast)
 
 def shallow_copy(ast):
-    return BottomUpRewriter().join(ast, ast.children())
+    return _DEEP_COPIER.join(ast, ast.children())
 
 def all_types(ast):
     class TypeCollector(BottomUpExplorer):

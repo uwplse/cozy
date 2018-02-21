@@ -134,3 +134,21 @@ class TestSyntaxTools(unittest.TestCase):
         assert list(free_vars(SEscapableBlock("label", SDecl("x", ONE)))) == []
         assert list(free_vars(SWhile(T, SDecl("x", ONE)))) == []
         assert list(free_vars(SMapUpdate(T, T, EVar("x"), SSeq(SDecl("y", ONE), use_x)))) == []
+
+    def test_deep_copy(self):
+        e1 = ETuple((EVar("x"), EBinOp(EVar("x"), "+", EVar("y"))))
+        e2 = deep_copy(e1)
+        assert e1 == e2
+        assert e1 is not e2
+        assert e1.es is not e2.es
+        assert e1.es[0] is not e2.es[0]
+        assert e1.es[1] is not e2.es[1]
+        assert e1.es[1].e1 is not e2.es[1].e1
+        assert e1.es[1].e2 is not e2.es[1].e2
+
+    def test_shallow_copy(self):
+        e1 = ETuple((EVar("x"), EBinOp(EVar("x"), "+", EVar("y"))))
+        e2 = shallow_copy(e1)
+        assert e1 == e2
+        assert e1 is not e2
+        assert e1.es is e2.es
