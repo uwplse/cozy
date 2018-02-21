@@ -189,21 +189,24 @@ class TestSyntaxTools(unittest.TestCase):
 
         assert isinstance(s2, SSeq) and isinstance(s2.s1, SDecl)
 
-    def __test_cse_2_stm_seq_assign_kill(self):
+    def test_cse_2_stm_seq_assign_kill(self):
         """
         x = y + 2
         y = x
         z = y + 2
+        q = z + 4
 
         The middle statetment should cause a temp to not be created.
         """
 
         yp2 = EBinOp(EVar("y").with_type(INT), "+", ENum(2).with_type(INT))
+        zp4 = EBinOp(EVar("z").with_type(INT), "+", ENum(4).with_type(INT))
 
         s = seq((
             SAssign(EVar("x").with_type(INT), yp2),
             SAssign(EVar("y").with_type(INT), EVar("x").with_type(INT)),
             SAssign(EVar("z").with_type(INT), yp2),
+            SAssign(EVar("q").with_type(INT), zp4)
         ))
 
         assert retypecheck(s)
@@ -213,6 +216,7 @@ class TestSyntaxTools(unittest.TestCase):
         print(pprint(s2))
         print(s2)
 
+        assert False
         assert not isinstance(s2.s1, SDecl)
 
     def test_cse_2_exp_letscope(self):

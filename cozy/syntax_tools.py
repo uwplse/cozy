@@ -1386,17 +1386,23 @@ class ExprEliminator(BottomUpRewriter):
         e.body = self.scoped_eliminate(e.id, e.body)
         return e
 
-    def __visit_SSeq(self, e):
-        # Not working quite yet.
-        if not isinstance(e.s1, syntax.SAssign):
+    def visit_SSeq(self, e):
+        # Catch modifications that should kill later statements.
+
+        if isinstance(e.s1, syntax.SAssign):
+            vars = modified_vars(e.s1)
+            e.s1 = self.visit(e.s1)
+            e.s2 = self.scoped_eliminate(vars[0], e.s2)
+        elif isinstance(e.s1, syntax.SSeq) and isinstance(e.s1.s2, syntax.SAssign):
+            vars = modified_vars(e.s1.s2)
+            e.s1.s2 = self.visit(e.s1.s2)
+            e.s2 = self.scoped_eliminate(vars[0], e.s2)
+        else:
             e.s1 = self.visit(e.s1)
             e.s2 = self.visit(e.s2)
-            return e
 
-        # (e is an SSeq(SAssign, something).)
-
-        e.s2 = self.scoped_eliminate(e.s1.lhs, e.s2)
         return e
+
 
     def visit_ELambda(self, e):
         e.body = self.scoped_eliminate(e.arg, e.body)
@@ -1462,3 +1468,23 @@ def eliminate_common_subexpressions(spec):
     vee = OpVisitor()
     spec2 = vee.visit(spec)
     return spec2
+
+def modified_vars(stm):
+    def free_lvalues(e):
+        if isinstance(e, syntax.EVar):
+            return [e]
+        elif isinstance(e, syntax.EMapGet):
+            return free_vars(e.map)
+        elif isinstance(e, syntax.ETupleGet):
+            return free_vars(e.e)
+        elif isinstance(e, syntax.EGetField):
+            return free_vars(e.e)
+
+    if isinstance(stm, syntax.SAssign):
+        return free_lvalues(stm.lhs)
+    elif isinstance(stm, syntax.SCall):
+        return free_lvalues(stm.target)
+    elif isinstance(stm, (target_syntax.SMapPut, target_syntax.SMapDel, target_syntax.SMapUpdate)):
+        return free_lvalues(stm.map)
+
+    return []
