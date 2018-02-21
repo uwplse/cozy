@@ -389,13 +389,16 @@ class Learner(object):
 
     def next(self):
         from cozy.enumeration import enumerate_exps, fingerprint
+        build_candidates = self.build_candidates
+        from cozy.synthesis.acceleration import accelerate_build
+        build_candidates = accelerate_build(build_candidates, args=self.args, state_vars=self.state_vars)
         if self.builder_iter == ():
             self.builder_iter = enumerate_exps(
                 roots=list(self.roots()), #+ [(ESingleton(EGetField(EVar('x').with_type(THandle('H', TNative('Object'))), 'val').with_type(TNative('Object'))).with_type(TBag(TNative('Object'))), RUNTIME_POOL)],
                 examples=self.examples,
                 cost_model=self.cost_model,
                 cost_ceiling=self.cost_model.cost(self.target, RUNTIME_POOL),
-                build_candidates=self.build_candidates,
+                build_candidates=build_candidates,
                 check_wf=lambda e, pool: exp_is_wf(e, pool, self.state_vars, self.args, self.assumptions))
         target_fp = fingerprint(self.target, self.examples)
         prev_size = None
