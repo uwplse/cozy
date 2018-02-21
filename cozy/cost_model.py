@@ -1,5 +1,5 @@
 from collections import OrderedDict
-from functools import total_ordering, lru_cache
+from functools import total_ordering, lru_cache, cmp_to_key
 import itertools
 
 import igraph
@@ -46,6 +46,7 @@ class CardinalityLattice(object):
         self.ind2 = fresh_var(BOOL)
         self.solver.add_assumption(assumptions)
         self.cardinalities = OrderedDict() # Exp (in terms of collections) -> Exp (in terms of cards)
+        self.cards_to_graph_verts = OrderedDict() # Maps cardinality variables to dag vertices
         self.dag = igraph.Graph().as_directed()
         self.vars_seen = set()
         self.facts = []
@@ -73,6 +74,7 @@ class CardinalityLattice(object):
         old = set(self.cardinalities.values())
         h = []
         res = cardinality(e, self.cardinalities, h)
+        # print("|{}| = {}".format(pprint(e), pprint(res)))
         for f in h:
             self.add_heuristic(f)
         fresh = [item for item in self.cardinalities.items() if item[1] not in old]
@@ -85,6 +87,7 @@ class CardinalityLattice(object):
             self.add_fact(EBinOp(v1var, ">=", ZERO).with_type(BOOL))
             v1 = v1var.id
             g.add_vertex(name=v1)
+            self.cards_to_graph_verts[v1var] = v1
             wq = OrderedSet(g.topological_sorting())
             while wq:
                 vid = next(iter(wq))
@@ -120,7 +123,9 @@ class CardinalityLattice(object):
                 s.pop()
                 if le and ge:
                     # union
-                    g.delete_vertices([v2])
+                    # print("union {} and {}".format(v1, v2))
+                    g.delete_vertices([v1])
+                    self.cards_to_graph_verts[v1var] = v2
                     break
 
         if assume_large_cardinalities.value > 0:
@@ -141,6 +146,17 @@ class CardinalityLattice(object):
         #     assert False
 
         return res
+
+    def cardinality_lt(self, v1 : EVar, v2 : EVar):
+        v1 = self.cards_to_graph_verts[v1]
+        v2 = self.cards_to_graph_verts[v2]
+        if v1 == v2:
+            return False
+        # Ugh igraph you're killllllllling meeee... why no convenience methods?
+        # This method returns an array A where A[i][j] gives the shortest path
+        # length from source[i] to target[j], or +infinity if no path exists.
+        path_len = self.dag.shortest_paths(source=[v1], target=[v2])[0][0]
+        return path_len != float("inf")
 
     def order_expressions_over_cardinalities(self, f1 : Exp, f2 : Exp):
         if isinstance(f1, ENum) and isinstance(f2, ENum):
@@ -171,23 +187,109 @@ class CardinalityLattice(object):
         else:
             return Cost.UNORDERED
 
+class Factor(object):
+    def __init__(self, lattice, e):
+        assert isinstance(e, EVar) or isinstance(e, ENum), pprint(e)
+        self.lattice = lattice
+        self.e = e
+    def __lt__(self, other):
+        assert isinstance(other, Factor)
+        if isinstance(self.e, ENum) and isinstance(other.e, EVar):
+            return True
+        elif isinstance(self.e, ENum) and isinstance(other.e, ENum):
+            return self.e.val < other.e.val
+        elif isinstance(self.e, EVar) and isinstance(other.e, EVar):
+            return self.lattice.cardinality_lt(self.e, other.e)
+        assert isinstance(self.e, EVar) and isinstance(other.e, ENum)
+        return False
+    def __str__(self):
+        return pprint(self.e)
+
+def compare_with_lt(x, y):
+    if x < y:
+        return -1
+    elif y < x:
+        return 1
+    else:
+        return 0
+
+class Seq(object):
+    def __init__(self, things):
+        self.things = sorted(things,
+            reverse=True,
+            key=cmp_to_key(compare_with_lt))
+    def __lt__(self, other):
+        assert isinstance(other, Seq)
+        for x, y in zip(self.things, other.things):
+            # print("comparing {}, {}".format(x, y))
+            if x < y:
+                # print("{} < {}".format(x, y))
+                return True
+            if y < x: return False
+        return len(self.things) < len(other.things)
+    def __str__(self):
+        return "[" + ", ".join(str(x) for x in self.things) + "]"
+
+def nf(f : Exp, lattice : CardinalityLattice):
+    from cozy.syntax_tools import BottomUpRewriter
+    def mul(e1, e2):
+        return EBinOp(e1, "*", e2).with_type(e1.type)
+    class V(BottomUpRewriter):
+        def visit_EBinOp(self, e):
+            l = self.visit(e.e1)
+            r = self.visit(e.e2)
+            if e.op == "*":
+                if l == ZERO or r == ZERO:
+                    return ZERO
+                if l == ONE:
+                    return r
+                if r == ONE:
+                    return l
+                if isinstance(l, EBinOp) and l.op == "+":
+                    return self.visit(EBinOp(mul(l.e1, r), "+", mul(l.e2, r)).with_type(e.type))
+                if isinstance(r, EBinOp) and r.op == "+":
+                    return self.visit(EBinOp(mul(l, r.e1), "+", mul(l, r.e2)).with_type(e.type))
+            if e.op == "+":
+                if l == ZERO:
+                    return r
+                if r == ZERO:
+                    return l
+            return EBinOp(l, e.op, r).with_type(e.type)
+
+    f = V().visit(f)
+    return Seq(
+        Seq(Factor(lattice, factor)
+            for factor in break_product(term))
+        for term in break_sum(f))
+
 class SymbolicCost(Cost):
     @typechecked
     def __init__(self, formula : Exp, lattice : CardinalityLattice):
         self._formula = formula
-        if isinstance(formula, EVar) or isinstance(formula, ENum):
+        if True or isinstance(formula, EVar) or isinstance(formula, ENum):
             self.formula = formula
         else:
             self.formula = fresh_var(INT)
             lattice.add_fact(EEq(self.formula, formula))
         self.lattice = lattice
+        self._nf = nf(formula, lattice)
+        # print(formula)
+        # print(self._nf)
     def __repr__(self):
         return "SymbolicCost({!r}, {!r})".format(self._formula, self.lattice)
     def __str__(self):
-        return pprint(self._formula)
+        # return pprint(self._formula)
+        return str(self._nf)
     def compare_to(self, other, assumptions : Exp = T, solver : IncrementalSolver = None):
         assert isinstance(other, SymbolicCost)
         assert other.lattice is self.lattice
+        if self._nf < other._nf:
+            assert not (other._nf < self._nf)
+            return Cost.BETTER
+        elif other._nf < self._nf:
+            return Cost.WORSE
+        else:
+            return Cost.UNORDERED
         return self.lattice.order_expressions_over_cardinalities(self.formula, other.formula)
 
 class PlainCost(Cost):
@@ -264,6 +366,7 @@ def _EGt(x, y):
     return EGt(x, y)
 
 def EMax(es):
+    return ESum(es)
     es = make_random_access(es)
     assert es
     assert all(isinstance(e, Exp) for e in es), es
@@ -277,10 +380,12 @@ def EMax(es):
     return res
 
 def asymptotic_runtime(e, lattice):
+    def _EMax(es):
+        return max(es, key=lambda e: nf(e, lattice))
     class V(BottomUpExplorer):
         def EBinOp(self, e1, op, e2):
-            if isinstance(e1, list): e1 = EMax([ONE] + e1)
-            if isinstance(e2, list): e2 = EMax([ONE] + e2)
+            if isinstance(e1, list): e1 = _EMax([ONE] + e1)
+            if isinstance(e2, list): e2 = _EMax([ONE] + e2)
             if op == "*":
                 if e1 == ENum(1): return e2
                 if e2 == ENum(1): return e1
@@ -303,7 +408,7 @@ def asymptotic_runtime(e, lattice):
                     assert isinstance(c, list) or isinstance(c, tuple), repr(c)
                     q.extend(c)
             return res
-            # return EMax([ONE] + res)
+            # return _EMax([ONE] + res)
         def visit_EStateVar(self, e):
             return self.combine([ONE])
         def visit_EUnaryOp(self, e):
@@ -350,7 +455,7 @@ def asymptotic_runtime(e, lattice):
                 return self.combine([ZERO])
             return self.combine(itertools.chain((ONE,), child_costs))
     vis = V()
-    f = EMax([ONE] + vis.visit(e))
+    f = _EMax([ONE] + vis.visit(e))
     # f = cse(f)
     return SymbolicCost(f, lattice)
 
@@ -533,6 +638,13 @@ def break_sum(e):
     if isinstance(e, EBinOp) and e.op == "+":
         yield from break_sum(e.e1)
         yield from break_sum(e.e2)
+    else:
+        yield e
+
+def break_product(e):
+    if isinstance(e, EBinOp) and e.op == "*":
+        yield from break_product(e.e1)
+        yield from break_product(e.e2)
     else:
         yield e
 
