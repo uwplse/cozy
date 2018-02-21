@@ -335,8 +335,7 @@ class Typechecker(Visitor):
         self.visit(e.e1)
         self.visit(e.e2)
         if e.op in ["==", "===", "!=", "<", "<=", ">", ">="]:
-            if not all(is_numeric(t) for t in [e.e1.type, e.e2.type]):
-                self.ensure_type(e.e2, e.e1.type)
+            self.lub(e, e.e1.type, e.e2.type, "due to comparison")
             e.type = BOOL
         elif e.op in [syntax.BOp.And, syntax.BOp.Or, "=>"]:
             self.ensure_type(e.e1, BOOL)
