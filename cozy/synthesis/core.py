@@ -350,8 +350,8 @@ class Learner(object):
             (self.cost_model.is_monotonic() or hyperaggressive_culling.value) and
             self.compare_costs(cost, target_cost) == Cost.WORSE)
 
-    def build_candidates(self, cache, size, depth, build_lambdas):
-        if depth == 0:
+    def build_candidates(self, cache, size, scopes, build_lambdas):
+        if not scopes:
             # print("BUILDING [size={}]".format(size))
             # for e, sz, p in cache:
             #     print("   ---> cached: {} : {} @ size={} in {}".format(pprint(e), pprint(e.type), sz, pool_name(p)))
@@ -365,7 +365,7 @@ class Learner(object):
                         #     ee._tag = True
                         yield (ee, RUNTIME_POOL)
         from cozy.enumeration import build_candidates
-        yield from build_candidates(cache, size, depth, build_lambdas)
+        yield from build_candidates(cache, size, scopes, build_lambdas)
 
     def is_legal_in_pool(self, e, pool):
         try:
@@ -380,12 +380,13 @@ class Learner(object):
                 continue
             for pool in ALL_POOLS:
                 x = strip_EStateVar(e) if pool == STATE_POOL else e
-                if self.is_legal_in_pool(x, pool):
-                    yield (x, pool)
-                    if pool == STATE_POOL:
-                        ee = EStateVar(x).with_type(x.type)
-                        if self.is_legal_in_pool(ee, RUNTIME_POOL):
-                            yield (ee, RUNTIME_POOL)
+                if not self.is_legal_in_pool(x, pool):
+                    continue
+                yield (x, pool)
+                if pool == STATE_POOL:
+                    ee = EStateVar(x).with_type(x.type)
+                    if self.is_legal_in_pool(ee, RUNTIME_POOL):
+                        yield (ee, RUNTIME_POOL)
 
     def next(self):
         from cozy.enumeration import enumerate_exps, fingerprint

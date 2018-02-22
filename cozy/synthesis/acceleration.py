@@ -454,7 +454,7 @@ def accelerate_build(build_candidates, args, state_vars):
     def check(e, pool):
         return (e, pool)
 
-    def f(cache, size, depth, build_lambdas):
+    def f(cache, size, scopes, build_lambdas):
         if accelerate.value:
 
             # for e in cache.find(pool=RUNTIME_POOL, size=size-1, type=INT):
@@ -637,6 +637,6 @@ def accelerate_build(build_candidates, args, state_vars):
             #                     # e == f(g(e2))
             #                     yield g(f(e2))
 
-        yield from build_candidates(cache, size, depth, build_lambdas)
+        yield from build_candidates(cache, size, scopes, build_lambdas)
 
     return f

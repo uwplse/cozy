@@ -1,4 +1,4 @@
-from collections import namedtuple
+from collections import namedtuple, OrderedDict
 import itertools
 
 from cozy.common import pick_to_sum, OrderedSet, FrozenDict
@@ -62,7 +62,7 @@ def _on_accept(depth : int, e : Exp, pool : Pool):
     if _interesting(depth, e, pool):
         print("   > accepting {} in {} : {}".format(pprint(e), pool_name(pool), pprint(e.type)))
 
-def build_candidates(cache : Cache, size : int, depth : int, build_lambdas):
+def build_candidates(cache : Cache, size : int, scopes : {EVar:Exp}, build_lambdas):
     for pool in ALL_POOLS:
 
         for e in cache.find(pool=pool, size=size-1):
@@ -206,7 +206,7 @@ def enumerate_exps(
         size_ceiling : int = None,
         check_wf = None,
         build_candidates = build_candidates,
-        _depth = 0):
+        scopes : {EVar:Exp} = None):
 
     """
     Enumerate expressions in order of size, starting with the given roots (and
@@ -220,6 +220,9 @@ def enumerate_exps(
     Yields EnumeratedExp objects.
     """
 
+    if scopes is None:
+        scopes = {}
+    depth = len(scopes)
     cache = Cache()
     seen = SeenSet()
     size = 0
@@ -241,7 +244,17 @@ def enumerate_exps(
                     e[v.id] = x
                     new_examples.add(FrozenDict(e))
             new_examples = list(new_examples)
-            builder = MemoizedBuilder(new_roots, new_examples, cost_model, cost_ceiling, size_ceiling=None, check_wf=check_wf, build_candidates=build_candidates, _depth=_depth + 1)
+            new_scopes = OrderedDict(scopes)
+            new_scopes[v] = bag
+            builder = MemoizedBuilder(
+                new_roots,
+                new_examples,
+                cost_model,
+                cost_ceiling,
+                size_ceiling=None,
+                check_wf=check_wf,
+                build_candidates=build_candidates,
+                scopes=new_scopes)
             lbuilders[bag] = (v, builder)
         else:
             v, builder = tup
@@ -250,19 +263,19 @@ def enumerate_exps(
                 yield ELambda(v, res.e)
 
     while size_ceiling is None or size <= size_ceiling:
-        it = build_candidates(cache, size, _depth, build_lambdas)
+        it = build_candidates(cache, size, scopes, build_lambdas)
         if size == 0:
             it = itertools.chain(roots, LITERALS, it)
         for e, pool in it:
-            _on_consider(_depth, e, pool)
+            _on_consider(depth, e, pool)
             if check_wf is not None and not check_wf(e, pool):
-                _on_skip(_depth, e, pool, "not well-formed")
+                _on_skip(depth, e, pool, "not well-formed")
                 continue
 
             cost = cost_model.cost(e, pool)
             if pool == RUNTIME_POOL and use_cost_ceiling.value and cost_ceiling is not None and cost.compare_to(cost_ceiling) == Cost.WORSE:
-                _on_skip(_depth, e, pool, "worse than cost ceiling")
-                # if _interesting(_depth, e, pool):
+                _on_skip(depth, e, pool, "worse than cost ceiling")
+                # if _interesting(depth, e, pool):
                 #     print(cost)
                 #     print(cost_ceiling)
                 #     from cozy.cost_model import debug_comparison
@@ -279,7 +292,7 @@ def enumerate_exps(
             for prev_exp, prev_size, prev_cost in prev:
                 ordering = cost.compare_to(prev_cost)
                 if ordering == Cost.UNORDERED:
-                    _on_skip(_depth, e, pool, "equivalent to", other=prev_exp, other_cost=prev_cost)
+                    _on_skip(depth, e, pool, "equivalent to", other=prev_exp, other_cost=prev_cost)
                     should_add = False
                     break
                 elif ordering == Cost.BETTER:
@@ -294,17 +307,17 @@ def enumerate_exps(
                     else:
                         to_evict.append((prev_exp, prev_size))
                     for evict_e, evict_size in to_evict:
-                        _on_evict(_depth, evict_e, pool, better_alternative=e, better_cost=cost)
+                        _on_evict(depth, evict_e, pool, better_alternative=e, better_cost=cost)
                         cache.evict(evict_e, size=evict_size, pool=pool)
                         seen.remove(evict_e, pool, fp)
                 else:
                     should_add = False
                     worse_than = (prev_exp, prev_size, prev_cost)
-                    _on_skip(_depth, e, pool, "worse than", other=prev_exp, other_cost=prev_cost)
+                    _on_skip(depth, e, pool, "worse than", other=prev_exp, other_cost=prev_cost)
                     break
 
             if should_add:
-                _on_accept(_depth, e, pool)
+                _on_accept(depth, e, pool)
                 cache.add(e, pool=pool, size=size)
                 seen.add(e, pool, fp, size, cost)
                 yield EnumeratedExp(
@@ -317,6 +330,6 @@ def enumerate_exps(
                     replaced_size = better_than[1] if better_than is not None else None,
                     replaced_cost = better_than[2] if better_than is not None else None)
 
-        if not _depth:
+        if not depth:
             print("|cache|={}".format(len(cache)))
         size += 1
