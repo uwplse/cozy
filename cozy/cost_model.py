@@ -213,25 +213,44 @@ class Seq(object):
         things = sorted(things,
             reverse=True,
             key=cmp_to_key(compare_with_lt))
-        things, counts = collapse_runs(things,
+        things = collapse_runs(things,
             split_at=lambda prev, current: current < prev)
         self.things = things
-        self.counts = counts
+        # self.things = list(things)
+    def compare_runs(self, xs, ys):
+        table = [compare_with_lt(x, y) for x in xs for y in ys]
+        if all(t == 0 for t in table): return 0
+        if all(t <= 0 for t in table): return -1
+        if all(t >= 0 for t in table): return 1
+        return 0
     def __lt__(self, other):
         assert isinstance(other, Seq)
-        for i in range(min(len(self.things), len(other.things))):
-            x = self.things[i]
-            y = other.things[i]
-            # print("comparing {}, {}".format(x, y))
-            if x < y: return True
-            if y < x: return False
-            cx = self.counts[i]
-            cy = other.counts[i]
-            if cx < cy: return True
-            if cy < cx: return False
+        for xs, ys in zip(self.things, other.things):
+            diff = self.compare_runs(xs, ys)
+            if diff < 0: return True
+            if diff > 0: return False
+        # for i in range(min(len(self.things), len(other.things))):
+        #     x = self.things[i]
+        #     y = other.things[i]
+        #     # print("comparing {}, {}".format(x, y))
+        #     if x < y: return True
+        #     if y < x: return False
+        #     cx = self.counts[i]
+        #     cy = other.counts[i]
+        #     if cx < cy: return True
+        #     if cy < cx: return False
         return len(self.things) < len(other.things)
+    # def __lt__(self, other):
+    #     found_lt = False
+    #     for x in self.things:
+    #         for y in other.things:
+    #             if x < y:
+    #                 found_lt = True
+    #             elif y < x:
+    #                 return False
+    #     return found_lt
     def __str__(self):
-        return "[" + ", ".join("{} x {}".format(x, ct) if ct > 1 else str(x) for x, ct in zip(self.things, self.counts)) + "]"
+        return "[" + ", ".join(";".join(str(x) for x in run) for run in self.things) + "]"
 
 def nf(f : Exp, lattice : CardinalityLattice):
     from cozy.syntax_tools import BottomUpRewriter
