@@ -1,6 +1,6 @@
 import unittest
 
-from cozy.syntax_tools import mk_lambda, pprint, alpha_equivalent
+from cozy.syntax_tools import mk_lambda, pprint, alpha_equivalent, subst, strip_EStateVar
 from cozy.target_syntax import *
 from cozy.cost_model import CompositeCostModel
 from cozy.typecheck import retypecheck
@@ -27,6 +27,10 @@ def check_discovery(spec, expected, state_vars=[], args=[], examples=[]):
         print("GOT RESULT ==> {}".format(pprint(r)))
         if alpha_equivalent(r, expected):
             return True
+        # else:
+        #     print("Not alpha_equivalent:")
+        #     print("  {}".format(pprint(r)))
+        #     print("  {}".format(pprint(expected)))
     return False
 
 class TestSynthesisCore(unittest.TestCase):
@@ -95,3 +99,12 @@ class TestSynthesisCore(unittest.TestCase):
         ex = satisfy(ENot(EBinOp(spec, "===", expected).with_type(BOOL)))
         assert ex is not None
         assert check_discovery(spec=spec, expected=expected, args=[x, xs], examples=[ex])
+
+    def test_map_discovery(self):
+        xs = EVar("xs").with_type(INT_BAG)
+        y = EVar("y").with_type(INT)
+        spec = EFilter(EStateVar(xs), mk_lambda(INT, lambda x: EEq(x, y)))
+        expected = EMapGet(EStateVar(EMakeMap2(xs, mk_lambda(INT, lambda x: subst(strip_EStateVar(spec), {y.id:x})))), y)
+        assert retypecheck(spec) and retypecheck(expected)
+        assert valid(EEq(spec, expected))
+        assert check_discovery(spec=spec, expected=expected, args=[y], state_vars=[xs])
