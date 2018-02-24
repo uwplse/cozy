@@ -209,11 +209,62 @@ class TestSyntaxTools(unittest.TestCase):
             SAssign(EVar("q").with_type(INT), zp4)
         ))
 
+
         assert retypecheck(s)
         print(pprint(s))
 
         s2 = eliminate_common_subexpressions_stm(s)
         newForm = pprint(s2)
+        print(newForm)
+
+        assert newForm.count("y + 2") == 2
+
+    def test_cse_2_stm_seq_assign_kill_deep(self):
+        """
+        Seq(
+            SAssign(q = y + 2),
+            Seq(
+                Seq(
+                    Seq(
+                        SNoOp,
+                        SAssign(y = 5),
+                        ),
+                    SNoOp,
+                ),
+                Seq(
+                    SAssign(x = y + 2),
+                    SAssign(z = y + 2)
+                    )
+            )
+        )
+        """
+
+        yp2 = EBinOp(EVar("y").with_type(INT), "+", ENum(2).with_type(INT))
+        zp4 = EBinOp(EVar("z").with_type(INT), "+", ENum(4).with_type(INT))
+
+        s = SSeq(
+                SAssign(EVar("q").with_type(INT), yp2),
+                SSeq(
+                    SSeq(
+                        SSeq(
+                            SNoOp(),
+                            SAssign(EVar("y").with_type(INT), ONE)
+                        ),
+                        SNoOp()
+                    ),
+                    SSeq(
+                        SAssign(EVar("x").with_type(INT), yp2),
+                        SAssign(EVar("z").with_type(INT), yp2)
+                    )
+                )
+            )
+
+        assert retypecheck(s)
+        print(pprint(s))
+
+        s2 = eliminate_common_subexpressions_stm(s)
+        newForm = pprint(s2)
+        print("========")
         print(newForm)
 
         assert newForm.count("y + 2") == 2
