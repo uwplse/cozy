@@ -206,7 +206,6 @@ class MemoizedEnumerator(object):
         return self.cache[size]
 
 def enumerate_exps(
-        roots        : [(Exp, Pool)],
         examples     : [{str:object}],
         cost_model   : CostModel,
         cost_ceiling : Cost = None,
@@ -216,9 +215,8 @@ def enumerate_exps(
         scopes : { EVar : (Exp, Pool) } = None):
 
     """
-    Enumerate expressions in order of size, starting with the given roots (and
-    some literals) at size zero.  Expressions are deduplicated; an expression
-    is only yielded if it is
+    Enumerate expressions in order of size.  Expressions are deduplicated; an
+    expression is only yielded if it is
         (1) new (it behaves differently on at least one example from every
             other expression yielded so far) or
         (2) better (it behaves identically to some other expression, but has
@@ -252,7 +250,6 @@ def enumerate_exps(
             new_scopes = OrderedDict(scopes)
             new_scopes[v] = (bag, pool)
             builder = MemoizedEnumerator(
-                roots,
                 new_examples,
                 cost_model,
                 cost_ceiling,
@@ -271,8 +268,6 @@ def enumerate_exps(
         if not depth:
             print("starting minor iteration {} with |cache|={}".format(size, len(cache)))
         it = build_candidates(cache, size, scopes, build_lambdas)
-        if size == 0:
-            it = itertools.chain(roots, it)
         for e, pool in it:
             _on_consider(depth, e, pool)
             if check_wf is not None and not check_wf(e, pool):

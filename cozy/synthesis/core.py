@@ -368,6 +368,8 @@ class Learner(object):
         from cozy.enumeration import build_candidates
         yield from build_candidates(cache, size, scopes, build_lambdas)
         if size == 0:
+            if not scopes:
+                yield from self.roots()
             # Add roots for scopes
             for var, (bag, pool) in scopes.items():
                 # print("introducing {} <- {}".format(var.id, pprint(bag)))
@@ -423,7 +425,6 @@ class Learner(object):
         build_candidates = accelerate_build(build_candidates, args=self.args, state_vars=self.state_vars)
         if self.builder_iter == ():
             self.builder_iter = enumerate_exps(
-                roots=list(self.roots()), #+ [(ESingleton(EGetField(EVar('x').with_type(THandle('H', TNative('Object'))), 'val').with_type(TNative('Object'))).with_type(TBag(TNative('Object'))), RUNTIME_POOL)],
                 examples=self.examples,
                 cost_model=self.cost_model,
                 cost_ceiling=self.cost_model.cost(self.target, RUNTIME_POOL),
