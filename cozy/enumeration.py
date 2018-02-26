@@ -36,11 +36,13 @@ oracle = EBinOp(
     ESingleton(EGetField(EVar('x').with_type(THandle('H', TInt())), 'val')), '-',
     EUnaryOp('distinct', EMap(EBinOp(EStateVar(EVar('xs').with_type(TBag(THandle('H', TInt())))), '-', ESingleton(EVar('x').with_type(THandle('H', TInt())))), ELambda(EVar('_var4').with_type(THandle('H', TInt())), EGetField(EVar('_var4').with_type(THandle('H', TInt())), 'val')))))
 def _interesting(depth : int, e : Exp, pool : Pool):
-    from cozy.syntax_tools import alpha_equivalent
-    if depth > 0:
-        return False
-    return oracle is not None and any(alpha_equivalent(e, x) for x in all_exps(oracle))
-    # return hasattr(e, "_tag")
+    return False
+    # from cozy.syntax_tools import alpha_equivalent
+    # if depth > 0:
+    #     return False
+    # return True
+    # return oracle is not None and any(alpha_equivalent(e, x) for x in all_exps(oracle))
+    return hasattr(e, "_tag")
     # return False
     # return depth == 0 # and (isinstance(e, EMakeMap2) or isinstance(e, EMapGet))
 
@@ -62,7 +64,12 @@ def _on_accept(depth : int, e : Exp, pool : Pool):
     if _interesting(depth, e, pool):
         print("   > accepting {} in {} : {}".format(pprint(e), pool_name(pool), pprint(e.type)))
 
-def build_candidates(cache : Cache, size : int, scopes : {EVar:Exp}, build_lambdas):
+def build_candidates(cache : Cache, size : int, scopes : {EVar:(Exp,Pool)}, build_lambdas):
+    if size == 0:
+        for var, (_, pool) in scopes.items():
+            yield (var, pool)
+        yield from LITERALS
+
     for pool in ALL_POOLS:
 
         for e in cache.find(pool=pool, size=size-1):
@@ -181,7 +188,7 @@ def build_candidates(cache : Cache, size : int, scopes : {EVar:Exp}, build_lambd
                 m = EMakeMap2(bag, lam).with_type(t)
                 yield (m, STATE_POOL)
 
-class MemoizedBuilder(object):
+class MemoizedEnumerator(object):
     __slots__ = ("cache", "iter")
     def __init__(self, *args, **kwargs):
         self.cache = []
@@ -206,7 +213,7 @@ def enumerate_exps(
         size_ceiling : int = None,
         check_wf = None,
         build_candidates = build_candidates,
-        scopes : {EVar:Exp} = None):
+        scopes : { EVar : (Exp, Pool) } = None):
 
     """
     Enumerate expressions in order of size, starting with the given roots (and
@@ -230,24 +237,22 @@ def enumerate_exps(
     lbuilders = { }
 
     def build_lambdas(bag, pool, size):
-        bag = strip_EStateVar(bag)
-        tup = lbuilders.get(bag)
+        key = bag
+        tup = lbuilders.get(key)
         if tup is None:
             v = fresh_var(bag.type.t)
             # TODO: inform the cost model about v's relationship to other
             # variables, i.e. EDeepIn(v, bag)
-            new_roots = roots + [(v, pool)]
-            new_examples = OrderedSet()
-            for (e, b) in zip(examples, eval_bulk(bag, examples)):
-                e = dict(e)
-                for x in b:
-                    e[v.id] = x
-                    new_examples.add(FrozenDict(e))
-            new_examples = list(new_examples)
+            new_examples = []
+            for (ex, b) in zip(examples, eval_bulk(bag, examples)):
+                for x in OrderedSet(b):
+                    ex = dict(ex)
+                    ex[v.id] = x
+                    new_examples.append(ex)
             new_scopes = OrderedDict(scopes)
-            new_scopes[v] = bag
-            builder = MemoizedBuilder(
-                new_roots,
+            new_scopes[v] = (bag, pool)
+            builder = MemoizedEnumerator(
+                roots,
                 new_examples,
                 cost_model,
                 cost_ceiling,
@@ -255,7 +260,7 @@ def enumerate_exps(
                 check_wf=check_wf,
                 build_candidates=build_candidates,
                 scopes=new_scopes)
-            lbuilders[bag] = (v, builder)
+            lbuilders[key] = (v, builder)
         else:
             v, builder = tup
         for res in builder.get(size):
@@ -263,9 +268,11 @@ def enumerate_exps(
                 yield ELambda(v, res.e)
 
     while size_ceiling is None or size <= size_ceiling:
+        if not depth:
+            print("starting minor iteration {} with |cache|={}".format(size, len(cache)))
         it = build_candidates(cache, size, scopes, build_lambdas)
         if size == 0:
-            it = itertools.chain(roots, LITERALS, it)
+            it = itertools.chain(roots, it)
         for e, pool in it:
             _on_consider(depth, e, pool)
             if check_wf is not None and not check_wf(e, pool):
@@ -330,6 +337,4 @@ def enumerate_exps(
                     replaced_size = better_than[1] if better_than is not None else None,
                     replaced_cost = better_than[2] if better_than is not None else None)
 
-        if not depth:
-            print("|cache|={}".format(len(cache)))
         size += 1
