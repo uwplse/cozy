@@ -4,7 +4,7 @@ import itertools
 
 import igraph
 
-from cozy.common import OrderedSet, typechecked, partition, make_random_access, compare_with_lt, collapse_runs
+from cozy.common import OrderedSet, typechecked, partition, make_random_access, compare_with_lt, collapse_runs, product, exists
 from cozy.target_syntax import *
 from cozy.syntax_tools import BottomUpExplorer, pprint, equal, fresh_var, mk_lambda, free_vars, subst, alpha_equivalent, all_exps, ExpMap
 from cozy.typecheck import is_collection
@@ -47,7 +47,7 @@ class CardinalityLattice(object):
         self.solver.add_assumption(assumptions)
         self.cardinalities = OrderedDict() # Exp (in terms of collections) -> Exp (in terms of cards)
         self.cards_to_graph_verts = OrderedDict() # Maps cardinality variables to dag vertices
-        self.dag = igraph.Graph().as_directed()
+        self.dag = igraph.Graph().as_directed() # edges go smaller --> larger
         self.vars_seen = set()
         self.facts = []
         self.heuristics = []
@@ -191,7 +191,7 @@ class CardinalityLattice(object):
             return Cost.UNORDERED
 
 class Factor(object):
-    def __init__(self, lattice, e):
+    def __init__(self, lattice : CardinalityLattice, e : Exp):
         assert isinstance(e, EVar) or isinstance(e, ENum), pprint(e)
         self.lattice = lattice
         self.e = e
@@ -208,51 +208,71 @@ class Factor(object):
     def __str__(self):
         return pprint(self.e)
 
-class Seq(object):
-    def __init__(self, things):
-        things = sorted(things,
+class Term(object):
+    def __init__(self, factors : [Factor]):
+        self.factors = sorted(factors,
             reverse=True,
             key=cmp_to_key(compare_with_lt))
-        things = collapse_runs(things,
-            split_at=lambda prev, current: current < prev)
-        self.things = things
-        # self.things = list(things)
-    def compare_runs(self, xs, ys):
-        table = [compare_with_lt(x, y) for x in xs for y in ys]
-        if all(t == 0 for t in table): return 0
-        if all(t <= 0 for t in table): return -1
-        if all(t >= 0 for t in table): return 1
-        return 0
     def __lt__(self, other):
-        assert isinstance(other, Seq)
-        for xs, ys in zip(self.things, other.things):
-            diff = self.compare_runs(xs, ys)
-            if diff < 0: return True
-            if diff > 0: return False
-        # for i in range(min(len(self.things), len(other.things))):
-        #     x = self.things[i]
-        #     y = other.things[i]
-        #     # print("comparing {}, {}".format(x, y))
-        #     if x < y: return True
-        #     if y < x: return False
-        #     cx = self.counts[i]
-        #     cy = other.counts[i]
-        #     if cx < cy: return True
-        #     if cy < cx: return False
-        return len(self.things) < len(other.things)
-    # def __lt__(self, other):
-    #     found_lt = False
-    #     for x in self.things:
-    #         for y in other.things:
-    #             if x < y:
-    #                 found_lt = True
-    #             elif y < x:
-    #                 return False
-    #     return found_lt
+        """
+        Goals:
+            x < 2*x
+            x < x*y
+            z < x*y
+            a*b < c*d if a<=b, c<=d, and a<=c
+        """
+        assert isinstance(other, Term)
+        c1, v1 = partition(self.factors,  lambda f: isinstance(f.e, ENum))
+        c2, v2 = partition(other.factors, lambda f: isinstance(f.e, ENum))
+        if len(v1) < len(v2): return True
+        if len(v2) < len(v1): return False
+        for x1, x2 in zip(v1, v2):
+            # print("comparing {}, {}".format(x1, x2))
+            if x1 < x2:
+                # print("  <")
+                return True
+            if x2 < x1:
+                # print("  >")
+                return False
+            # print("  ~")
+        p1 = product(c.e.val for c in c1)
+        p2 = product(c.e.val for c in c2)
+        return p1 < p2
     def __str__(self):
-        return "[" + ", ".join(";".join(str(x) for x in run) for run in self.things) + "]"
+        return "*".join(str(f) for f in self.factors)
 
-def nf(f : Exp, lattice : CardinalityLattice):
+def find_match(xs, ys, p):
+    for x in xs:
+        for y in ys:
+            if p(x, y):
+                return (x, y)
+    return None
+
+class Polynomial(object):
+    def __init__(self, terms : [Term]):
+        self.terms = sorted(terms,
+            reverse=True,
+            key=cmp_to_key(compare_with_lt))
+    def __lt__(self, other):
+        """
+        Excluding terms we have in common,
+          does the other have a term such that all my terms are smaller?
+        """
+        assert isinstance(other, Polynomial)
+        p1 = list(self.terms)
+        p2 = list(other.terms)
+        while True:
+            m = find_match(p1, p2, lambda x, y: not (x<y or y<x))
+            if m is None:
+                break
+            p1.remove(m[0])
+            p2.remove(m[1])
+        return exists(p2,
+            lambda a: all(b < a for b in p1))
+    def __str__(self):
+        return " + ".join(str(f) for f in self.terms)
+
+def nf(f : Exp, lattice : CardinalityLattice) -> Polynomial:
     from cozy.syntax_tools import BottomUpRewriter
     def mul(e1, e2):
         return EBinOp(e1, "*", e2).with_type(e1.type)
@@ -279,8 +299,8 @@ def nf(f : Exp, lattice : CardinalityLattice):
             return EBinOp(l, e.op, r).with_type(e.type)
 
     f = V().visit(f)
-    return Seq(
-        Seq(Factor(lattice, factor)
+    return Polynomial(
+        Term(Factor(lattice, factor)
             for factor in break_product(term))
         for term in break_sum(f))
 
@@ -306,7 +326,7 @@ class SymbolicCost(Cost):
         assert isinstance(other, SymbolicCost)
         assert other.lattice is self.lattice
         if self._nf < other._nf:
-            assert not (other._nf < self._nf)
+            assert not (other._nf < self._nf), "{} vs {}".format(self, other)
             return Cost.BETTER
         elif other._nf < self._nf:
             return Cost.WORSE

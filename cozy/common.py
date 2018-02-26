@@ -529,6 +529,12 @@ def find_one(iter, p=lambda x: True):
             return x
     return None
 
+def exists(iter, p=lambda x: True):
+    for x in iter:
+        if p(x):
+            return True
+    return False
+
 def divide_integers_and_round_up(x, y):
     assert x > 0
     assert y > 0
