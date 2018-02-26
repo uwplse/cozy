@@ -292,6 +292,7 @@ class Learner(object):
             return e
 
     def _start_minor_it(self):
+        return
         now = datetime.datetime.now()
         if _fates:
             for f, ct in sorted(_fates.items(), key=lambda x: x[1], reverse=True):
@@ -366,6 +367,31 @@ class Learner(object):
                         yield (ee, RUNTIME_POOL)
         from cozy.enumeration import build_candidates
         yield from build_candidates(cache, size, scopes, build_lambdas)
+        if size == 0:
+            # Add roots for scopes
+            for var, (bag, pool) in scopes.items():
+                # print("introducing {} <- {}".format(var.id, pprint(bag)))
+                for e in list(cache.find(pool=pool, size=0)):
+                    lam = None
+                    fro = None
+                    if isinstance(e, EMap):
+                        lam = e.f
+                        fro = e.e
+                    elif isinstance(e, EFilter):
+                        lam = e.p
+                        fro = e.e
+                    elif isinstance(e, EMakeMap2):
+                        lam = e.value
+                        fro = e.e
+                    elif any(isinstance(ee, ELambda) for ee in e.children()):
+                        print("WARNING: implement lambda-extraction for {}".format(type(e)))
+                    if lam is not None:
+                        # print("stealing from {}?".format(pprint(lam)))
+                        if lam.arg.type == var.type and alpha_equivalent(fro, bag):
+                            # print("  -> yep! stealing from {}".format(pprint(lam)))
+                            for (x, pool) in self.roots(lam.apply_to(var)):
+                                # print("  -----> {}".format(pprint(x)))
+                                yield (x, pool)
 
     def is_legal_in_pool(self, e, pool):
         try:
@@ -373,8 +399,10 @@ class Learner(object):
         except ExpIsNotWf as exc:
             return False
 
-    def roots(self):
-        for ctx in enumerate_fragments2(self.target):
+    def roots(self, target=None):
+        if target is None:
+            target = self.target
+        for ctx in enumerate_fragments2(target):
             e = ctx.e
             if any(v in ctx.bound_vars for v in free_vars(e)):
                 continue
@@ -405,7 +433,7 @@ class Learner(object):
         prev_size = None
         for res in self.builder_iter:
             if prev_size is None or res.size > prev_size:
-                print("minor iteration {}".format(res.size))
+                # print("minor iteration {}".format(res.size))
                 prev_size = res.size
             if res.pool == RUNTIME_POOL and not alpha_equivalent(res.e, self.target) and self.matches(res.fingerprint, target_fp):
                 return (self.target, res.e, (), lambda x: x)
