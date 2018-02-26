@@ -25,12 +25,11 @@ def check_discovery(spec, expected, state_vars=[], args=[], examples=[]):
             builder=BinderBuilder(args=args, state_vars=state_vars, binders=[]),
             examples=examples):
         print("GOT RESULT ==> {}".format(pprint(r)))
-        if alpha_equivalent(r, expected):
+        if isinstance(expected, Exp):
+            if alpha_equivalent(r, expected):
+                return True
+        elif expected(r):
             return True
-        # else:
-        #     print("Not alpha_equivalent:")
-        #     print("  {}".format(pprint(r)))
-        #     print("  {}".format(pprint(expected)))
     return False
 
 class TestSynthesisCore(unittest.TestCase):
@@ -104,7 +103,5 @@ class TestSynthesisCore(unittest.TestCase):
         xs = EVar("xs").with_type(INT_BAG)
         y = EVar("y").with_type(INT)
         spec = EFilter(EStateVar(xs), mk_lambda(INT, lambda x: EEq(x, y)))
-        expected = EMapGet(EStateVar(EMakeMap2(xs, mk_lambda(INT, lambda x: subst(strip_EStateVar(spec), {y.id:x})))), y)
-        assert retypecheck(spec) and retypecheck(expected)
-        assert valid(EEq(spec, expected))
-        assert check_discovery(spec=spec, expected=expected, args=[y], state_vars=[xs])
+        assert retypecheck(spec)
+        assert check_discovery(spec=spec, expected=lambda e: isinstance(e, EMapGet) and isinstance(e.map, EStateVar) and valid(EEq(e, spec)), args=[y], state_vars=[xs])
