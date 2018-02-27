@@ -249,7 +249,7 @@ def accelerate_build(build_candidates, args, state_vars):
 
     def f(cache, size, scopes, build_lambdas):
         def check(e, pool):
-            bad = [v for v in free_vars(e) if v.id.startswith("_") and v not in scopes]
+            bad = [v for v in free_vars(e) if v not in args and v not in state_vars and v not in scopes]
             if bad:
                 print("oops! bad free vars: {}".format(bad))
                 raise Exception(pprint(e))
