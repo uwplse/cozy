@@ -105,3 +105,10 @@ class TestSynthesisCore(unittest.TestCase):
         spec = EFilter(EStateVar(xs), mk_lambda(INT, lambda x: EEq(x, y)))
         assert retypecheck(spec)
         assert check_discovery(spec=spec, expected=lambda e: isinstance(e, EMapGet) and isinstance(e.map, EStateVar) and valid(EEq(e, spec)), args=[y], state_vars=[xs])
+
+    def test_map_discovery2(self):
+        xs = EVar("xs").with_type(INT_BAG)
+        y = EVar("y").with_type(INT)
+        spec = EIn(y, EStateVar(xs))
+        assert retypecheck(spec)
+        assert check_discovery(spec=spec, expected=lambda e: isinstance(e, EMapGet) and isinstance(e.map, EStateVar) and valid(EEq(e, spec)), args=[y], state_vars=[xs])
