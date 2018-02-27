@@ -54,3 +54,11 @@ class TestEvaluation(unittest.TestCase):
         b2 = Bag((h3, h2, h3))
         assert b1 != b2
         assert eq(TBag(t), b1, b2)
+
+    def test_set_sub(self):
+        t = TSet(INT)
+        s1 = Bag((0, 1))
+        s2 = Bag((1, 0))
+        e = EEq(EBinOp(EVar("s1").with_type(t), "-", EVar("s2").with_type(t)), EEmptyList().with_type(t))
+        assert retypecheck(e)
+        assert eval(e, {"s1": s1, "s2": s2}) is True

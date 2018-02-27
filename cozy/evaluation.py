@@ -613,7 +613,7 @@ def _compile(e, env : {str:int}, out, bind_callback):
         elif e.op == "*":
             out.append(binaryop_mul)
         elif e.op == "-":
-            if isinstance(e1type, TBag):
+            if isinstance(e1type, TBag) or isinstance(e1type, TSet):
                 out.append(binaryop_sub_bags(e1type.t))
             elif isinstance(e1type, TList):
                 out.append(binaryop_sub_lists(e1type.t))
