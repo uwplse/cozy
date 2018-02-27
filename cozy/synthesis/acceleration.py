@@ -87,7 +87,6 @@ def break_or(e):
     yield e
 
 def map_accelerate(e, state_vars, binders, args, cache, size):
-    fvs = free_vars(e)
     for ctx in enumerate_fragments2(e):
         if ctx.pool != RUNTIME_POOL:
             continue
@@ -97,13 +96,9 @@ def map_accelerate(e, state_vars, binders, args, cache, size):
         binder = fresh_var(arg.type)
         value = ctx.replace_e_with(binder)
         value = strip_EStateVar(value)
-        if any(v not in args for v in free_vars(value)):
-            continue
-        if any(v not in fvs for v in free_vars(value)):
+        if any(v in args for v in free_vars(value)):
             continue
         for bag in cache.find_collections(pool=STATE_POOL, size=size, of=arg.type):
-            if isinstance(bag, EEmptyList):
-                continue
             m = EMakeMap2(bag,
                 ELambda(binder, value)).with_type(TMap(arg.type, e.type))
             assert not any(v in args for v in free_vars(m)), "oops! {}; args={}".format(pprint(m), ", ".join(pprint(a) for a in args))
