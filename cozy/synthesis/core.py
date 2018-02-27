@@ -7,7 +7,7 @@ import traceback
 from cozy.target_syntax import *
 from cozy.syntax_tools import subst, pprint, free_vars, free_funcs, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda, enumerate_fragments2, strip_EStateVar
 from cozy.wf import ExpIsNotWf, exp_wf, exp_wf_nonrecursive
-from cozy.common import OrderedSet, ADT, Visitor, fresh_name, typechecked, unique, pick_to_sum, cross_product, OrderedDefaultDict, OrderedSet, group_by, find_one
+from cozy.common import OrderedSet, ADT, Visitor, fresh_name, typechecked, unique, pick_to_sum, cross_product, OrderedDefaultDict, OrderedSet, group_by, find_one, extend
 from cozy.solver import satisfy, satisfiable, valid, IncrementalSolver
 from cozy.evaluation import eval, eval_bulk, mkval, construct_value, uneval
 from cozy.cost_model import CostModel, Cost
@@ -193,6 +193,20 @@ class StealingBuilder(SpecDependentBuilder):
                                 yield self.check(ee, RUNTIME_POOL)
         yield from self.wrapped.build(cache, size)
 
+def reverse_output(f):
+    from functools import wraps
+    @wraps(f)
+    def g(*args, **kwargs):
+        l = list(f(*args, **kwargs))
+        l.reverse()
+        return l
+    return g
+
+class FoundImprovement(Exception):
+    def __init__(self, e):
+        super().__init__("found improvement: {}".format(pprint(e)))
+        self.e = e
+
 class Learner(object):
     def __init__(self, target, assumptions, binders, state_vars, args, legal_free_vars, examples, cost_model, builder, stop_callback, hints, solver):
         self.binders = OrderedSet(binders)
@@ -351,49 +365,82 @@ class Learner(object):
             (self.cost_model.is_monotonic() or hyperaggressive_culling.value) and
             self.compare_costs(cost, target_cost) == Cost.WORSE)
 
-    def build_candidates(self, cache, size, scopes, build_lambdas):
-        if not scopes:
-            # print("BUILDING [size={}]".format(size))
-            # for e, sz, p in cache:
-            #     print("   ---> cached: {} : {} @ size={} in {}".format(pprint(e), pprint(e.type), sz, pool_name(p)))
-            for ctx in enumerate_fragments2(self.target):
-                # print("... {} in {} --> {}".format(pprint(ctx.e.type), pool_name(ctx.pool), pprint(ctx.replace_e_with(EVar("___")))))
-                for e in cache.find(pool=ctx.pool, type=ctx.e.type, size=size-1):
-                    # print("     {}".format(pprint(e)))
-                    if not alpha_equivalent(e, ctx.e):
-                        ee = ctx.replace_e_with(e)
-                        # if e == ESingleton(EVar("x")):
-                        #     ee._tag = True
-                        yield (ee, RUNTIME_POOL)
-        from cozy.enumeration import build_candidates
-        yield from build_candidates(cache, size, scopes, build_lambdas)
-        if size == 0:
-            if not scopes:
+    def all_possible_mappings(self, xs : {EVar}, ys : {EVar}):
+        if not xs:
+            yield {}
+            return
+        for x in xs:
+            for y in ys:
+                if x.type == y.type:
+                    for m in self.all_possible_mappings(xs - {x}, ys - {y}):
+                        with extend(m, x, y):
+                            yield m
+
+    def subst_builder(self, wrapped_builder):
+        from cozy.enumeration import fingerprint
+        target_fp = fingerprint(self.target, self.examples)
+        target_cost = self.cost_model.cost(self.target, RUNTIME_POOL)
+        def f(cache, size, scopes, build_lambdas):
+            for tup in wrapped_builder(cache, size, scopes, build_lambdas):
+                e, pool = tup
+                was_accepted = yield tup
+                if was_accepted:
+                    # print("CONSIDERING SUBSTITUTIONS OF {} [{}]".format(pprint(e), pool_name(pool)))
+                    for ctx in enumerate_fragments2(self.target):
+                        if pool != ctx.pool:
+                            continue
+                        if e.type != ctx.e.type:
+                            continue
+                        if alpha_equivalent(e, ctx.e):
+                            continue
+                        # print("  ... {} in {} --> {}".format(pprint(ctx.e.type), pool_name(ctx.pool), pprint(ctx.replace_e_with(EVar("___")))))
+                        for mapping in self.all_possible_mappings(OrderedSet(scopes.keys()), OrderedSet(ctx.bound_vars)):
+                            x = subst(e, { a.id : b for (a, b) in mapping.items() })
+                            ee = ctx.replace_e_with(x)
+                            # print("        try {}".format(pprint(ee)))
+                            if alpha_equivalent(ee, self.target):
+                                # print("        > not AA")
+                                continue
+                            if not self.matches(fingerprint(ee, self.examples), target_fp):
+                                # print("        > no match")
+                                continue
+                            if self.cost_model.cost(ee, RUNTIME_POOL).compare_to(target_cost) != Cost.BETTER:
+                                # print("        > not better")
+                                continue
+                            raise FoundImprovement(ee)
+                            # yield (ee, RUNTIME_POOL)
+        return f
+
+    def build_candidates(self, wrapped_builder):
+        def f(cache, size, scopes, build_lambdas):
+            yield from wrapped_builder(cache, size, scopes, build_lambdas)
+            if size == 0:
                 yield from self.roots()
-            # Add roots for scopes
-            for var, (bag, pool) in scopes.items():
-                # print("introducing {} <- {}".format(var.id, pprint(bag)))
-                for e in list(cache.find(pool=pool, size=0)):
-                    lam = None
-                    fro = None
-                    if isinstance(e, EMap):
-                        lam = e.f
-                        fro = e.e
-                    elif isinstance(e, EFilter):
-                        lam = e.p
-                        fro = e.e
-                    elif isinstance(e, EMakeMap2):
-                        lam = e.value
-                        fro = e.e
-                    elif any(isinstance(ee, ELambda) for ee in e.children()):
-                        print("WARNING: implement lambda-extraction for {}".format(type(e)))
-                    if lam is not None:
-                        # print("stealing from {}?".format(pprint(lam)))
-                        if lam.arg.type == var.type and alpha_equivalent(fro, bag):
-                            # print("  -> yep! stealing from {}".format(pprint(lam)))
-                            for (x, pool) in self.roots(lam.apply_to(var)):
-                                # print("  -----> {}".format(pprint(x)))
-                                yield (x, pool)
+                # Add roots for scopes
+                for var, (bag, pool) in scopes.items():
+                    # print("introducing {} <- {} [{}]".format(var.id, pprint(bag), pool_name(pool)))
+                    for e in list(cache.find(pool=pool, size=0)):
+                        lam = None
+                        fro = None
+                        if isinstance(e, EMap) or isinstance(e, EFlatMap):
+                            lam = e.f
+                            fro = e.e
+                        elif isinstance(e, EFilter):
+                            lam = e.p
+                            fro = e.e
+                        elif isinstance(e, EMakeMap2):
+                            lam = e.value
+                            fro = e.e
+                        elif any(isinstance(ee, ELambda) for ee in e.children()):
+                            print("WARNING: implement lambda-extraction for {}".format(type(e)))
+                        if lam is not None:
+                            # print("stealing from {}?".format(pprint(lam)))
+                            if lam.arg.type == var.type and alpha_equivalent(fro, bag):
+                                # print("  -> yep! stealing from {}".format(pprint(lam)))
+                                for (x, pool) in self.roots(lam.apply_to(var), extra_legal_fvs=scopes.keys()):
+                                    # print("  -----> {}".format(pprint(x)))
+                                    yield (x, pool)
+        return f
 
     def is_legal_in_pool(self, e, pool):
         try:
@@ -401,12 +448,13 @@ class Learner(object):
         except ExpIsNotWf as exc:
             return False
 
-    def roots(self, target=None):
+    @reverse_output
+    def roots(self, target=None, extra_legal_fvs=()):
         if target is None:
             target = self.target
         for ctx in enumerate_fragments2(target):
             e = ctx.e
-            if any(v in ctx.bound_vars for v in free_vars(e)):
+            if any(v in ctx.bound_vars and v not in extra_legal_fvs for v in free_vars(e)):
                 continue
             for pool in ALL_POOLS:
                 x = strip_EStateVar(e) if pool == STATE_POOL else e
@@ -420,9 +468,10 @@ class Learner(object):
 
     def next(self):
         from cozy.enumeration import enumerate_exps, StartMinorIteration, build_candidates, fingerprint
-        build_candidates = self.build_candidates
         from cozy.synthesis.acceleration import accelerate_build
         build_candidates = accelerate_build(build_candidates, args=self.args, state_vars=self.state_vars)
+        build_candidates = self.build_candidates(build_candidates)
+        build_candidates = self.subst_builder(build_candidates)
         if self.builder_iter == ():
             self.builder_iter = enumerate_exps(
                 examples=self.examples,
@@ -758,6 +807,11 @@ def improve(
                 old_e, new_e, local_assumptions, repl = learner.next()
             except NoMoreImprovements:
                 break
+            except FoundImprovement as exn:
+                old_e = target
+                new_e = exn.e
+                local_assumptions = ()
+                repl = lambda ee: ee
 
             # 2. substitute-in the improvement
             new_target = repl(new_e)
