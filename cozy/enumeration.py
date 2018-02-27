@@ -68,7 +68,8 @@ def build_candidates(cache : Cache, size : int, scopes : {EVar:(Exp,Pool)}, buil
     if size == 0:
         for var, (_, pool) in scopes.items():
             yield (var, pool)
-        yield from LITERALS
+        for tup in LITERALS:
+            yield tup
 
     for pool in ALL_POOLS:
 
@@ -267,16 +268,25 @@ def enumerate_exps(
     while size_ceiling is None or size <= size_ceiling:
         if not depth:
             print("starting minor iteration {} with |cache|={}".format(size, len(cache)))
+
+        was_accepted = None
         it = build_candidates(cache, size, scopes, build_lambdas)
-        for e, pool in it:
+        while True:
+            try:
+                e, pool = it.send(was_accepted)
+            except StopIteration:
+                break
+
             _on_consider(depth, e, pool)
             if check_wf is not None and not check_wf(e, pool):
                 _on_skip(depth, e, pool, "not well-formed")
+                was_accepted = False
                 continue
 
             cost = cost_model.cost(e, pool)
             if pool == RUNTIME_POOL and use_cost_ceiling.value and cost_ceiling is not None and cost.compare_to(cost_ceiling) == Cost.WORSE:
                 _on_skip(depth, e, pool, "worse than cost ceiling")
+                was_accepted = False
                 # if _interesting(depth, e, pool):
                 #     print(cost)
                 #     print(cost_ceiling)
@@ -331,5 +341,6 @@ def enumerate_exps(
                     replaced      = better_than[0] if better_than is not None else None,
                     replaced_size = better_than[1] if better_than is not None else None,
                     replaced_cost = better_than[2] if better_than is not None else None)
+            was_accepted = should_add
 
         size += 1
