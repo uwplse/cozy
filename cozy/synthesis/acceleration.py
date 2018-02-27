@@ -5,7 +5,7 @@ from .core import ExpBuilder
 from cozy.target_syntax import *
 from cozy.syntax_tools import fresh_var, free_vars, break_conj, all_exps, replace, pprint, enumerate_fragments, enumerate_fragments2, mk_lambda, strip_EStateVar, alpha_equivalent, subst
 from cozy.typecheck import is_numeric, is_collection
-from cozy.pools import RUNTIME_POOL, STATE_POOL
+from cozy.pools import RUNTIME_POOL, STATE_POOL, ALL_POOLS
 
 accelerate = Option("acceleration-rules", bool, True)
 
@@ -248,7 +248,6 @@ def accelerate_build(build_candidates, args, state_vars):
             if bad:
                 print("oops! bad free vars: {}".format(bad))
                 raise Exception(pprint(e))
-            e._tag = True
             return (e, pool)
 
         if accelerate.value:
@@ -355,14 +354,14 @@ def accelerate_build(build_candidates, args, state_vars):
                             yield check(union, RUNTIME_POOL)
 
             # Try instantiating bound expressions
-            for pool in (STATE_POOL, RUNTIME_POOL):
+            for pool in ALL_POOLS:
                 for (sz1, sz2) in pick_to_sum(2, size-1):
                     for e1 in cache.find(pool=pool, size=sz1):
                         if isinstance(e1, EVar):
                             continue
                         for v in free_vars(e1):
-                            if pool == RUNTIME_POOL:
-                                e1 = subst(strip_EStateVar(e1), { sv.id : EStateVar(sv).with_type(sv.type) for sv in state_vars if sv != v })
+                            # if pool == RUNTIME_POOL:
+                            #     e1 = subst(strip_EStateVar(e1), { sv.id : EStateVar(sv).with_type(sv.type) for sv in state_vars if sv != v })
                             for e2 in cache.find(pool=pool, type=v.type, size=sz2):
                                 if v == e2:
                                     continue
@@ -371,7 +370,6 @@ def accelerate_build(build_candidates, args, state_vars):
             for (sz1, sz2) in pick_to_sum(2, size-1):
                 for e in cache.find(pool=RUNTIME_POOL, size=sz1):
                     for x, pool in map_accelerate(e, state_vars, (), args, cache, sz2):
-                        x._tag = True
                         yield check(x, pool)
                     if isinstance(e, EFilter):
                         for x, pool in accelerate_filter(e.e, e.p, state_vars, (), args, cache, sz2):
