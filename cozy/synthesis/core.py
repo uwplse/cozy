@@ -419,7 +419,7 @@ class Learner(object):
                         yield (ee, RUNTIME_POOL)
 
     def next(self):
-        from cozy.enumeration import enumerate_exps, fingerprint
+        from cozy.enumeration import enumerate_exps, StartMinorIteration, build_candidates, fingerprint
         build_candidates = self.build_candidates
         from cozy.synthesis.acceleration import accelerate_build
         build_candidates = accelerate_build(build_candidates, args=self.args, state_vars=self.state_vars)
@@ -431,11 +431,10 @@ class Learner(object):
                 build_candidates=build_candidates,
                 check_wf=lambda e, pool: exp_is_wf(e, pool, self.state_vars, self.args, self.assumptions))
         target_fp = fingerprint(self.target, self.examples)
-        prev_size = None
         for res in self.builder_iter:
-            if prev_size is None or res.size > prev_size:
-                # print("minor iteration {}".format(res.size))
-                prev_size = res.size
+            if isinstance(res, StartMinorIteration):
+                print("starting minor iteration {} with |cache|={}".format(res.size, res.cache_size))
+                continue
             if res.pool == RUNTIME_POOL and not alpha_equivalent(res.e, self.target) and self.matches(res.fingerprint, target_fp):
                 return (self.target, res.e, (), lambda x: x)
 

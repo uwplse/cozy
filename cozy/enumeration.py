@@ -17,6 +17,9 @@ hyperaggressive_eviction = Option("hyperaggressive-eviction", bool, False)
 def fingerprint(e : Exp, examples : [{str:object}]):
     return (e.type,) + tuple(eval_bulk(e, examples))
 
+StartMinorIteration = namedtuple("StartMinorIteration", [
+    "size",
+    "cache_size"])
 EnumeratedExp = namedtuple("EnumeratedExp", [
     "e",                # The expression
     "pool",             # The pool it lives in
@@ -199,9 +202,11 @@ class MemoizedEnumerator(object):
             return ()
         if size >= len(self.cache):
             for res in self.iter:
-                while len(self.cache) <= res.size:
-                    self.cache.append([])
-                self.cache[res.size].append(res)
+                if isinstance(res, StartMinorIteration):
+                    while len(self.cache) <= res.size:
+                        self.cache.append([])
+                else:
+                    self.cache[res.size].append(res)
                 if res.size > size:
                     break
         return self.cache[size]
@@ -223,7 +228,7 @@ def enumerate_exps(
         (2) better (it behaves identically to some other expression, but has
             lower cost)
 
-    Yields EnumeratedExp objects.
+    Yields StartMinorIteration and EnumeratedExp objects.
     """
 
     if scopes is None:
@@ -266,8 +271,7 @@ def enumerate_exps(
                 yield ELambda(v, res.e)
 
     while size_ceiling is None or size <= size_ceiling:
-        if not depth:
-            print("starting minor iteration {} with |cache|={}".format(size, len(cache)))
+        yield StartMinorIteration(size, len(cache))
 
         was_accepted = None
         it = build_candidates(cache, size, scopes, build_lambdas)
