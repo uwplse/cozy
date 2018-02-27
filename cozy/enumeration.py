@@ -55,17 +55,18 @@ def _on_consider(depth : int, e : Exp, pool : Pool):
 
 def _on_skip(depth : int, e : Exp, pool : Pool, reason : str, **data):
     if _interesting(depth, e, pool):
-        print("   > skipping {}; {}; {}".format(pprint(e), reason, data))
-        # if "ceiling" in reason:
-        #     raise Exception()
+        print("   > skipping {}; {}".format(pprint(e), reason))
+        for k, v in data.items():
+            print("         > {} = {}".format(k, pprint(v) if isinstance(v, Exp) else v))
 
 def _on_evict(depth : int, e : Exp, pool : Pool, better_alternative : Exp, better_cost : Cost):
     if _interesting(depth, e, pool):
         print("   > evicting {}; {}".format(pprint(e), pprint(better_alternative)))
 
-def _on_accept(depth : int, e : Exp, pool : Pool):
+def _on_accept(depth : int, e : Exp, pool : Pool, fp):
     if _interesting(depth, e, pool):
         print("   > accepting {} in {} : {}".format(pprint(e), pool_name(pool), pprint(e.type)))
+        # print("     fp = {!r}".format(fp))
 
 def build_candidates(cache : Cache, size : int, scopes : {EVar:(Exp,Pool)}, build_lambdas):
     if size == 0:
@@ -333,7 +334,7 @@ def enumerate_exps(
                     break
 
             if should_add:
-                _on_accept(depth, e, pool)
+                _on_accept(depth, e, pool, fp)
                 cache.add(e, pool=pool, size=size)
                 seen.add(e, pool, fp, size, cost)
                 yield EnumeratedExp(
