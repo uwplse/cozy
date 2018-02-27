@@ -89,6 +89,7 @@ class Implementation(object):
         Given a query in terms of abstract state, add an initial concrete
         implementation.
         """
+        print("Adding query {}...".format(q.name))
         self.query_specs.append(q)
         fvs = free_vars(q)
         # initial rep

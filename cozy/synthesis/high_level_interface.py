@@ -38,13 +38,14 @@ class ImproveQueryJob(jobs.Job):
             k,
             hints : [Exp] = [],
             examples : [dict] = None):
+        assert all(v in state for v in free_vars(q)), "Oops, query looks malformed due to {}:\n{}\nfree_vars({})".format([v for v in free_vars(q) if v not in state], pprint(q), repr(q))
         super().__init__()
         self.ctx = ctx
         self.state = state
         self.assumptions = assumptions
-        self.q = shallow_copy(q)
-        assert all(v in state for v in free_vars(q)), "Oops, query looks malformed due to {}:\n{}\nfree_vars({})".format([v for v in free_vars(q) if v not in state], pprint(q), repr(q))
+        q = shallow_copy(q)
         q.ret = wrap_naked_statevars(q.ret, OrderedSet(state))
+        self.q = q
         self.hints = hints
         self.examples = examples
         self.k = k
