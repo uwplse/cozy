@@ -481,6 +481,8 @@ class Learner(object):
                 check_wf=lambda e, pool: exp_is_wf(e, pool, self.state_vars, self.args, self.assumptions))
         target_fp = fingerprint(self.target, self.examples)
         for res in self.builder_iter:
+            if self.stop_callback():
+                raise StopException()
             if isinstance(res, StartMinorIteration):
                 print("starting minor iteration {} with |cache|={}".format(res.size, res.cache_size))
                 continue
