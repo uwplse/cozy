@@ -219,19 +219,20 @@ class Learner(object):
     def roots(self, target=None, extra_legal_fvs=()):
         if target is None:
             target = self.target
-        for ctx in enumerate_fragments2(target):
-            e = ctx.e
-            if any(v in ctx.bound_vars and v not in extra_legal_fvs for v in free_vars(e)):
-                continue
-            for pool in ALL_POOLS:
-                x = strip_EStateVar(e) if pool == STATE_POOL else e
-                if not self.is_legal_in_pool(x, pool):
+        for x in itertools.chain((target,), self.hints):
+            for ctx in enumerate_fragments2(target):
+                e = ctx.e
+                if any(v in ctx.bound_vars and v not in extra_legal_fvs for v in free_vars(e)):
                     continue
-                yield (x, pool)
-                if pool == STATE_POOL:
-                    ee = EStateVar(x).with_type(x.type)
-                    if self.is_legal_in_pool(ee, RUNTIME_POOL):
-                        yield (ee, RUNTIME_POOL)
+                for pool in ALL_POOLS:
+                    x = strip_EStateVar(e) if pool == STATE_POOL else e
+                    if not self.is_legal_in_pool(x, pool):
+                        continue
+                    yield (x, pool)
+                    if pool == STATE_POOL:
+                        ee = EStateVar(x).with_type(x.type)
+                        if self.is_legal_in_pool(ee, RUNTIME_POOL):
+                            yield (ee, RUNTIME_POOL)
 
     def next(self):
         build = build_candidates
