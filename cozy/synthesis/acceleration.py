@@ -1,9 +1,8 @@
 import itertools
 
 from cozy.common import find_one, partition, pick_to_sum
-from .core import ExpBuilder
 from cozy.target_syntax import *
-from cozy.syntax_tools import fresh_var, free_vars, break_conj, all_exps, replace, pprint, enumerate_fragments, enumerate_fragments2, mk_lambda, strip_EStateVar, alpha_equivalent, subst
+from cozy.syntax_tools import fresh_var, free_vars, break_conj, pprint, enumerate_fragments, enumerate_fragments2, mk_lambda, strip_EStateVar, alpha_equivalent, subst
 from cozy.typecheck import is_numeric, is_collection
 from cozy.pools import RUNTIME_POOL, STATE_POOL, ALL_POOLS
 
@@ -75,14 +74,6 @@ def break_plus_minus(e):
                     ee.op = "+"
                     ee.e2 = EUnaryOp("-", ee.e2).with_type(ee.e2.type)
                 yield ee
-            return
-    yield e
-
-def break_or(e):
-    for (_, x, r, _) in enumerate_fragments(e):
-        if isinstance(x, EBinOp) and x.op == BOp.Or:
-            yield from break_or(r(x.e1))
-            yield from break_or(r(x.e2))
             return
     yield e
 
@@ -204,9 +195,6 @@ def simplify_sum(e):
         res = EBinOp(res, "+", parts[i]).with_type(INT)
     return res
 
-def is_root(e):
-    return hasattr(e, "_root")
-
 def as_singleton(e):
     if isinstance(e, ESingleton):
         return e.e
@@ -223,22 +211,6 @@ def optimized_in(x, xs):
         return EHasKey(m, x).with_type(BOOL)
     else:
         return EBinOp(x, BOp.In, xs).with_type(BOOL)
-
-class AcceleratedBuilder(ExpBuilder):
-
-    def __init__(self, wrapped : ExpBuilder, binders : [EVar], state_vars : [EVar], args : [EVar]):
-        super().__init__()
-        self.wrapped = wrapped
-        self.binders = binders
-        self.state_vars = state_vars
-        self.args = args
-
-    def __repr__(self):
-        return "AcceleratedBuilder(wrapped={!r}, binders={!r}, state_vars={!r}, args={!r})".format(
-            self.wrapped,
-            self.binders,
-            self.state_vars,
-            self.args)
 
 def accelerate_build(build_candidates, args, state_vars):
 
