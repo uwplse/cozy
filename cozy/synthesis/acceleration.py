@@ -378,7 +378,7 @@ def accelerate_build(build_candidates, args, state_vars):
             for bag in cache.find_collections(pool=RUNTIME_POOL, size=size-1):
                 for a in args:
                     for v in state_vars:
-                        if is_collection(v.type) and v.type == a.type:
+                        if is_collection(v.type) and v.type.t == a.type:
                             v = EStateVar(v).with_type(v.type)
                             cond = EBinOp(a, BOp.In, v).with_type(BOOL)
                             yield check(EFilter(bag, mk_lambda(bag.type.t, lambda _:      cond )).with_type(bag.type), RUNTIME_POOL)
