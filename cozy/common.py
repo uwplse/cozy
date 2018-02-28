@@ -475,6 +475,7 @@ def declare_case(supertype, name, attrs=()):
         attrs = tuple(attrs)
     def __init__(self, *args):
         assert len(args) == len(attrs), "{} expects {} args, was given {}".format(name, len(attrs), len(args))
+        supertype.__init__(self)
         for attr, val in zip(attrs, args):
             setattr(self, attr, val)
     def children(self):
