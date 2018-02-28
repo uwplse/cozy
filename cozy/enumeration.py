@@ -195,22 +195,25 @@ def build_candidates(cache : Cache, size : int, scopes : {EVar:(Exp,Pool)}, buil
                 yield (m, STATE_POOL)
 
 class MemoizedEnumerator(object):
-    __slots__ = ("cache", "iter")
+    __slots__ = ("cache", "done", "iter")
     def __init__(self, *args, **kwargs):
         self.cache = []
+        self.done = 0 # sizes [0 .. self.done] (inclusive) are complete
         self.iter = enumerate_exps(*args, **kwargs)
     def get(self, size):
         if size < 0:
             return ()
-        if size >= len(self.cache):
+        if self.done <= size:
             for res in self.iter:
                 if isinstance(res, StartMinorIteration):
                     while len(self.cache) <= res.size:
                         self.cache.append([])
+                    self.done = res.size
+                    if self.done > size:
+                        break
                 else:
+                    assert res.size == self.done, "|res|={}, done={}".format(res.size, self.done)
                     self.cache[res.size].append(res)
-                if res.size > size:
-                    break
         return self.cache[size]
 
 def enumerate_exps(
