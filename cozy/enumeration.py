@@ -220,7 +220,6 @@ def enumerate_exps(
         examples     : [{str:object}],
         cost_model   : CostModel,
         cost_ceiling : Cost = None,
-        size_ceiling : int = None,
         check_wf = None,
         build_candidates = build_candidates,
         scopes : { EVar : (Exp, Pool) } = None):
@@ -264,7 +263,6 @@ def enumerate_exps(
                 new_examples,
                 cost_model,
                 cost_ceiling,
-                size_ceiling=None,
                 check_wf=check_wf,
                 build_candidates=build_candidates,
                 scopes=new_scopes)
@@ -275,7 +273,7 @@ def enumerate_exps(
             if res.pool == pool:
                 yield ELambda(v, res.e)
 
-    while size_ceiling is None or size <= size_ceiling:
+    while True:
         yield StartMinorIteration(size, len(cache))
 
         was_accepted = None
