@@ -103,11 +103,12 @@ def build_candidates(cache : Cache, size : int, scopes : {EVar:(Exp,Pool)}, buil
 
         for (sz1, sz2) in pick_to_sum(2, size - 1):
             for a1 in cache.find(pool=pool, size=sz1):
-                if not is_numeric(a1.type):
+                t = a1.type
+                if not is_numeric(t):
                     continue
-                for a2 in cache.find(pool=pool, type=a1.type, size=sz2):
-                    yield (EBinOp(a1, "+", a2).with_type(INT), pool)
-                    yield (EBinOp(a1, "-", a2).with_type(INT), pool)
+                for a2 in cache.find(pool=pool, type=t, size=sz2):
+                    yield (EBinOp(a1, "+", a2).with_type(t), pool)
+                    yield (EBinOp(a1, "-", a2).with_type(t), pool)
                     yield (EBinOp(a1, ">", a2).with_type(BOOL), pool)
                     yield (EBinOp(a1, "<", a2).with_type(BOOL), pool)
                     yield (EBinOp(a1, ">=", a2).with_type(BOOL), pool)
