@@ -152,3 +152,30 @@ class TestSyntaxTools(unittest.TestCase):
         assert e1 == e2
         assert e1 is not e2
         assert e1.es is e2.es
+
+    def test_double_bound(self):
+        xs = EVar("xs").with_type(INT_BAG)
+        ys = EVar("ys").with_type(INT_BAG)
+        x = EVar("x").with_type(INT)
+        e = EMap(xs, ELambda(x, EMap(ys, ELambda(x, x))))
+        assert retypecheck(e)
+        found = False
+        for ctx in enumerate_fragments2(e):
+            facts = EAll(ctx.facts)
+            print("{} | {}".format(pprint(ctx.e), pprint(facts)))
+            if ctx.e == x:
+                found = True
+                assert valid(EImplies(facts, EIn(x, ys)))
+                assert not valid(EImplies(facts, EIn(x, xs)))
+        assert found
+
+    def test_self_bound(self):
+        xs1 = EVar("xs").with_type(INT_BAG)
+        xs2 = EVar("xs").with_type(INT)
+        e = EMap(xs1, ELambda(xs2, xs2))
+        assert retypecheck(e)
+        found = False
+        for ctx in enumerate_fragments2(e):
+            found = found or ctx.e == xs2
+            assert not ctx.facts
+        assert found
