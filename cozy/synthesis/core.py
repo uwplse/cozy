@@ -6,7 +6,7 @@ import sys
 import traceback
 
 from cozy.target_syntax import *
-from cozy.syntax_tools import subst, pprint, free_vars, free_funcs, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda, enumerate_fragments2, strip_EStateVar
+from cozy.syntax_tools import subst, pprint, free_vars, free_funcs, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda, enumerate_fragments, strip_EStateVar
 from cozy.wf import ExpIsNotWf, exp_wf, exp_wf_nonrecursive
 from cozy.common import OrderedSet, ADT, Visitor, fresh_name, unique, pick_to_sum, cross_product, OrderedDefaultDict, OrderedSet, group_by, find_one, extend
 from cozy.solver import satisfy, satisfiable, valid, IncrementalSolver
@@ -152,7 +152,7 @@ class Learner(object):
                 was_accepted = yield tup
                 if was_accepted:
                     # print("CONSIDERING SUBSTITUTIONS OF {} [{}]".format(pprint(e), pool_name(pool)))
-                    for ctx in enumerate_fragments2(self.target):
+                    for ctx in enumerate_fragments(self.target):
                         if pool != ctx.pool:
                             continue
                         if e.type != ctx.e.type:
@@ -220,7 +220,7 @@ class Learner(object):
         if target is None:
             target = self.target
         for x in itertools.chain((target,), self.hints):
-            for ctx in enumerate_fragments2(target):
+            for ctx in enumerate_fragments(target):
                 e = ctx.e
                 if any(v in ctx.bound_vars and v not in extra_legal_fvs for v in free_vars(e)):
                     continue

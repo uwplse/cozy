@@ -50,8 +50,10 @@ def check_ops_preserve_invariants(spec : Spec):
 
 def check_the_wf(spec : Spec):
     res = []
-    for (a, e, r, bound) in enumerate_fragments(spec):
+    for ctx in enumerate_fragments(spec):
+        e = ctx.e
         if isinstance(e, EUnaryOp) and e.op == UOp.The:
+            a = ctx.facts
             if not valid(cse(EImplies(EAll(a), EAny([EIsSingleton(e.e), EEmpty(e.e)])))):
                 res.append("at {}: `the` is illegal since its argument may not be singleton".format(pprint(e)))
     return res

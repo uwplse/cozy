@@ -2,7 +2,7 @@ import itertools
 
 from cozy.common import find_one, partition, pick_to_sum
 from cozy.target_syntax import *
-from cozy.syntax_tools import fresh_var, free_vars, break_conj, pprint, enumerate_fragments, enumerate_fragments2, mk_lambda, strip_EStateVar, alpha_equivalent, subst
+from cozy.syntax_tools import fresh_var, free_vars, break_conj, pprint, enumerate_fragments, mk_lambda, strip_EStateVar, alpha_equivalent, subst
 from cozy.typecheck import is_numeric, is_collection
 from cozy.pools import RUNTIME_POOL, STATE_POOL, ALL_POOLS
 
@@ -62,7 +62,9 @@ def infer_map_lookup(filter, binder, state : {EVar}):
     assert False
 
 def break_plus_minus(e):
-    for (_, x, r, _) in enumerate_fragments(e):
+    for ctx in enumerate_fragments(e):
+        x = ctx.e
+        r = ctx.replace_e_with
         if isinstance(x, EBinOp) and x.op in ("+", "-"):
             # print("accel --> {}".format(pprint(r(x.e1))))
             yield from break_plus_minus(r(x.e1))
@@ -78,7 +80,7 @@ def break_plus_minus(e):
     yield e
 
 def map_accelerate(e, state_vars, binders, args, cache, size):
-    for ctx in enumerate_fragments2(e):
+    for ctx in enumerate_fragments(e):
         if ctx.pool != RUNTIME_POOL:
             continue
         arg = ctx.e
@@ -314,7 +316,9 @@ def accelerate_build(build_candidates, args, state_vars):
             # Fixup EFilter(\x -> ECond...)
             for e in cache.find_collections(pool=RUNTIME_POOL, size=size-1):
                 if isinstance(e, EFilter):
-                    for (_, x, r, _) in enumerate_fragments(e.p.body):
+                    for ctx in enumerate_fragments(e.p.body):
+                        x = ctx.e
+                        r = ctx.replace_e_with
                         if isinstance(x, ECond):
                             lhs = EFilter(e.e, ELambda(e.p.arg, EAll([     x.cond , r(x.then_branch)]))).with_type(e.type)
                             rhs = EFilter(e.e, ELambda(e.p.arg, EAll([ENot(x.cond), r(x.else_branch)]))).with_type(e.type)

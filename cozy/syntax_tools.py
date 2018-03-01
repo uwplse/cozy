@@ -774,35 +774,22 @@ class FragmentEnumerator(common.Visitor):
 
 def enumerate_fragments(e : syntax.Exp):
     """
-    Yields tuples (a : [Exp], x : Exp, r : Exp->Exp, ctx : {EVar}) such that:
-        x is a non-lambda subexpression of e
-        a are true assumptions whenever x is evaluated on any input to e (NOTE:
-            these assumptions may be conservative, but they are never wrong)
-        r(x) == e (in general, r can be used to replace x with a new subexpr)
-        ctx is the set of bound vars at x (i.e. in any potential replacement y,
-            all free vars in y not in ctx will be free in r(y))
+    Yields Contexts ctx where
+        ctx.e is a non-lambda subexpression of e
+        ctx.facts are true assumptions whenever x is evaluated on any input to
+            e (NOTE: these assumptions may be conservative, but they are never
+            wrong)
+        ctx.replace_e_with(x) == e (in general, r can be used to replace x with
+            a new subexpr)
+        ctx.bound_vars is the set of bound vars at x (i.e. in any potential
+            replacement y, all free vars in y not in ctx will be free in r(y))
 
     Fragments are enumerated top-down (i.e. every expression comes before any
     of its subexpressions).
     """
-    for ctx in enumerate_fragments_core(e):
-        yield (ctx.facts, ctx.e, ctx.replace_e_with, ctx.bound_vars)
-
-def enumerate_fragments_and_pools(e : syntax.Exp):
-    """
-    Like enumerate_fragments, but adds "pool" to the tuple depending on whether
-    we are beneath an EStateVar.
-    """
-    for ctx in enumerate_fragments_core(e):
-        yield (ctx.facts, ctx.e, ctx.replace_e_with, ctx.bound_vars, ctx.pool)
-
-def enumerate_fragments_core(e : syntax.Exp):
     for ctx in FragmentEnumerator(e).visit(e):
         if isinstance(ctx.e, syntax.Exp) and not isinstance(ctx.e, syntax.ELambda):
             yield ctx
-
-def enumerate_fragments2(e : syntax.Exp):
-    return enumerate_fragments_core(e)
 
 def replace(exp, old_exp, new_exp):
     class Replacer(BottomUpRewriter):
@@ -850,7 +837,7 @@ def purify(exp : syntax.Exp) -> syntax.Exp:
     return exp
 
 def find_naked_statevar(e, state_vars):
-    for ctx in enumerate_fragments2(e):
+    for ctx in enumerate_fragments(e):
         if isinstance(ctx.e, syntax.EVar) and ctx.e in state_vars and ctx.pool != pools.STATE_POOL:
             return (ctx.e, ctx.replace_e_with)
     return None
