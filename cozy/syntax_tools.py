@@ -1111,6 +1111,13 @@ def break_conj(e):
     else:
         yield e
 
+def break_seq(s):
+    if isinstance(s, syntax.SSeq):
+        yield from break_seq(s.s1)
+        yield from break_seq(s.s2)
+    else:
+        yield s
+
 class Aeq(object):
     def __init__(self, e : syntax.Exp):
         self.e = e
@@ -1389,6 +1396,29 @@ class ExprEliminator(BottomUpRewriter):
         # Catch modifications that should kill later statements.
         # TODO: handle types.
 
+        def elim_seq(sequence):
+            print("elim_seq ", sequence)
+            d = collections.deque()
+
+            for s in reversed(sequence):
+                kill, mod = get_modified_var(s)
+
+                if kill is None:
+                    d.appendleft(s)
+                else:
+                    right = syntax.seq(d)
+                    subtree = syntax.SSeq(kill, self.scoped_eliminate(mod, right))
+                    d.clear()
+                    d.append(subtree)
+
+            result = syntax.seq(d)
+            return result
+
+        print("visit_SSeq ", e)
+        transformed = [self.visit(atom) for atom in break_seq(e)]
+        return elim_seq(transformed)
+
+        """
         if isinstance(e.s1, syntax.SAssign):
             e.s1 = self.visit(e.s1)
             var = get_modified_var(e.s1)
@@ -1405,6 +1435,7 @@ class ExprEliminator(BottomUpRewriter):
             e.s2 = self.visit(e.s2)
 
         return e
+        """
 
     def visit_ELambda(self, e):
         e.body = self.scoped_eliminate(e.arg, e.body)
@@ -1413,12 +1444,16 @@ class ExprEliminator(BottomUpRewriter):
 def inject_vars(e, avail):
     statementMode = isinstance(e, syntax.Stm)
 
-    ravail = collections.OrderedDict([(v, k) for (k, v) in avail.items() if v is not None])
+    ravail = collections.OrderedDict(
+        [(v, k) for (k, v) in avail.items() if v is not None])
     counts = free_vars(e, counts=True)
+
     for var, value in reversed(ravail.items()):
         for (vv, ct) in free_vars(value, counts=True).items():
             counts[vv] = counts.get(vv, 0) + ct
-    to_inline = common.OrderedSet(v for v in ravail if counts.get(v, 0) <= 1 or ravail[v].size() <= 1)
+
+    to_inline = common.OrderedSet(v for v in ravail
+        if counts.get(v, 0) <= 1 or ravail[v].size() <= 1)
     sub = { v : ravail[v] for v in to_inline }
     skip = { }
 
@@ -1487,9 +1522,11 @@ def get_modified_var(stm):
         assert False, "unexpected modification target {}".format(e)
 
     if isinstance(stm, syntax.SAssign):
-        return find_lvalue_target(stm.lhs)
+        return stm, find_lvalue_target(stm.lhs)
     elif isinstance(stm, syntax.SCall):
-        return find_lvalue_target(stm.target)
-    elif isinstance(stm, (target_syntax.SMapPut, target_syntax.SMapDel, target_syntax.SMapUpdate)):
-        return find_lvalue_target(stm.map)
-    return None
+        return stm, find_lvalue_target(stm.target)
+    elif isinstance(stm, (target_syntax.SMapPut, target_syntax.SMapDel,
+                            target_syntax.SMapUpdate)):
+        return stm, find_lvalue_target(stm.map)
+    else:
+        return None, None
