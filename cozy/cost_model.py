@@ -281,17 +281,19 @@ def nf(f : Exp, lattice : CardinalityLattice) -> Polynomial:
             l = self.visit(e.e1)
             r = self.visit(e.e2)
             if e.op == "*":
-                if l == ZERO or r == ZERO:
-                    return ZERO
-                if l == ONE:
-                    return r
-                if r == ONE:
-                    return l
+                if isinstance(l, ENum) and isinstance(r, ENum):
+                    return ENum(l.val * r.val).with_type(l.type)
+                if isinstance(l, ENum):
+                    return self.visit(ESum([r for i in range(l.val)]))
+                if isinstance(r, ENum):
+                    return self.visit(ESum([l for i in range(r.val)]))
                 if isinstance(l, EBinOp) and l.op == "+":
                     return self.visit(EBinOp(mul(l.e1, r), "+", mul(l.e2, r)).with_type(e.type))
                 if isinstance(r, EBinOp) and r.op == "+":
                     return self.visit(EBinOp(mul(l, r.e1), "+", mul(l, r.e2)).with_type(e.type))
             if e.op == "+":
+                if isinstance(l, ENum) and isinstance(r, ENum):
+                    return ENum(l.val + r.val).with_type(l.type)
                 if l == ZERO:
                     return r
                 if r == ZERO:
