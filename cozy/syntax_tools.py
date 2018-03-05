@@ -806,6 +806,13 @@ def replace(exp, old_exp, new_exp):
             return super().visit(e)
     return Replacer().visit(exp)
 
+def rewrite_ret(q : syntax.Query, repl, keep_assumptions=True) -> syntax.Query:
+    q = shallow_copy(q)
+    q.ret = repl(q.ret)
+    if not keep_assumptions:
+        q.assumptions = ()
+    return q
+
 def subst_lval(lval, replacements):
     # Currently we only allow vars and lval.field as l-values.
     # Neither requires attention during substitution.

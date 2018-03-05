@@ -1,15 +1,6 @@
 from cozy.syntax import Query, EAll, EAny, EImplies, EEq
 from cozy.solver import valid
 
-def rewrite_ret(q : Query, repl, keep_assumptions=True) -> Query:
-    return Query(
-        q.name,
-        q.visibility,
-        q.args,
-        q.assumptions if keep_assumptions else (),
-        repl(q.ret),
-        q.docstring)
-
 def queries_equivalent(q1 : Query, q2 : Query):
     if q1.ret.type != q2.ret.type:
         return False
