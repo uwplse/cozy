@@ -1,5 +1,5 @@
 from cozy.target_syntax import *
-from cozy.syntax_tools import BottomUpRewriter, alpha_equivalent, cse, compose, pprint
+from cozy.syntax_tools import BottomUpRewriter, alpha_equivalent, cse, compose, pprint, mk_lambda
 from cozy.evaluation import construct_value, eval
 from cozy.solver import valid, satisfy
 
@@ -112,6 +112,16 @@ class _V(BottomUpRewriter):
         if isinstance(ee, EMakeMap2):
             return self.visit(EUnaryOp(UOp.Distinct, ee.e).with_type(e.type))
         return EMapKeys(ee).with_type(e.type)
+    def visit_EMapGet(self, e):
+        m = self.visit(e.map)
+        k = self.visit(e.key)
+        if isinstance(m, EMakeMap2):
+            return self.visit(EUnaryOp(UOp.The,
+                    EMap(
+                        EFilter(m.e,
+                            mk_lambda(m.type.k, lambda kk: EEq(kk, k))).with_type(TBag(m.type.k)),
+                        m.value).with_type(TBag(m.type.v))).with_type(m.type.v))
+        return EMapGet(m, k).with_type(e.type)
     def visit_EUnaryOp(self, e):
         if isinstance(e.e, ECond):
             return self.visit(ECond(
