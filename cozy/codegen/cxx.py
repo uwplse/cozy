@@ -6,7 +6,7 @@ from io import StringIO
 from cozy import common, library, evaluation
 from cozy.common import fresh_name, declare_case
 from cozy.target_syntax import *
-from cozy.syntax_tools import all_types, fresh_var, subst, free_vars, is_scalar, mk_lambda, alpha_equivalent, all_exps
+from cozy.syntax_tools import all_types, fresh_var, subst, free_vars, is_scalar, mk_lambda, alpha_equivalent, all_exps, break_seq
 from cozy.typecheck import is_collection, is_numeric
 
 from .misc import *
@@ -779,7 +779,10 @@ class CxxPrinter(common.Visitor):
             SAssign(EVar(s.id).with_type(t), s.val)]), indent)
 
     def visit_SSeq(self, s, indent=""):
-        return self.visit(s.s1, indent) + self.visit(s.s2, indent)
+        with StringIO() as f:
+            for ss in break_seq(s):
+                f.write(self.visit(ss, indent))
+            return f.getvalue()
 
     def visit_SIf(self, s, indent=""):
         compute_cond, cond = self.visit(s.cond, indent)
