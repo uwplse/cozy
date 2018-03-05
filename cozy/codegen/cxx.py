@@ -358,7 +358,7 @@ class CxxPrinter(common.Visitor):
             raise NotImplementedError()
 
     def visit_SMapDel(self, update, indent=""):
-        if isinstance(update.map.type, library.TNativeMap):
+        if isinstance(update.map.type, library.TNativeMap) or type(update.map.type) is TMap:
             msetup, map = self.visit(update.map, indent)
             ksetup, key = self.visit(update.key, indent)
             s = "{indent}{map}.erase({key});\n".format(
