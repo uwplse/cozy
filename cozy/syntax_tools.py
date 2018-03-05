@@ -114,6 +114,11 @@ def all_types(ast):
         def visit_Type(self, t):
             yield from super().visit_ADT(t)
             yield t
+        def visit_Exp(self, e):
+            yield from super().visit_ADT(e)
+            t = getattr(e, "type", None)
+            if t is not None:
+                yield from self.visit(t)
         def visit_object(self, o):
             return ()
         def join(self, t, children):
