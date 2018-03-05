@@ -539,7 +539,6 @@ class CxxPrinter(common.Visitor):
             setup, e = self.visit(EBinOp(iterable.e1, "-", iterable.e2).with_type(t), indent)
             return setup + self.for_each(EEscape(e, (), ()).with_type(t), body, indent)
         elif isinstance(iterable, EFlatMap):
-            from cozy.syntax_tools import shallow_copy
             v = self.fv(iterable.type.t)
             new_body = body(v)
             assert isinstance(new_body, Stm)
