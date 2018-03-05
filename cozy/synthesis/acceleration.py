@@ -237,6 +237,13 @@ def accelerate_build(build_candidates, args, state_vars):
             #         x._tag = True
             #         yield self.check(x, RUNTIME_POOL)
 
+            # xs - EStateVar(ys)
+            for e in cache.find_collections(pool=RUNTIME_POOL, size=size-1):
+                if isinstance(e, EBinOp) and e.op == "-" and isinstance(e.e2, EStateVar):
+                    x = EFilter(e.e1, mk_lambda(e.e1.type.t, lambda x: optimized_in(x, e.e2))).with_type(e.type)
+                    x._tag = True
+                    yield check(x, RUNTIME_POOL)
+
             # [x] - ys
             for e in cache.find_collections(pool=RUNTIME_POOL, size=size-1):
                 if isinstance(e, EBinOp) and e.op == "-" and as_singleton(e.e1) is not None:
