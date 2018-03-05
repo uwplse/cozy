@@ -6,10 +6,10 @@ handling handles.
 
 from collections import OrderedDict
 
-from cozy.common import typechecked
+from cozy.common import typechecked, extend
 from cozy.target_syntax import *
-from cozy.syntax_tools import fresh_var, mk_lambda
-from cozy.typecheck import is_collection
+from cozy.syntax_tools import fresh_var, mk_lambda, all_exps, BottomUpRewriter, deep_copy, free_vars
+from cozy.typecheck import is_collection, is_scalar, retypecheck
 
 @typechecked
 def _merge(a : {THandle:Exp}, b : {THandle:Exp}) -> {THandle:Exp}:
@@ -79,3 +79,71 @@ def implicit_handle_assumptions_for_method(handles : {THandle:Exp}, m : Method) 
                     EEq(EGetField(h1, "val").with_type(h1.type.value_type),
                         EGetField(h2, "val").with_type(h2.type.value_type))))))
     return new_assumptions
+
+def fix_ewithalteredvalue(e : Exp):
+    """
+    EWithAlteredValue gives us real trouble.
+    This rewrites `e` to avoid them, but may result in a much slower
+    implementation.
+    """
+    # TODO: should we do this earlier? Maybe at incrementalization time?
+
+    if not any(isinstance(x, EWithAlteredValue) for x in all_exps(e)):
+        # Good! This is the dream.
+        return e
+
+    def do(e, t):
+        """
+        Rewrite handles into (h, val) tuples.
+        """
+        if is_collection(t):
+            return EMap(e, mk_lambda(t.t, lambda x: do(x, t.t)))
+        elif isinstance(t, THandle):
+            return ETuple((e, EGetField(e, "val")))
+        elif is_scalar(t):
+            return e
+        else:
+            raise NotImplementedError(t)
+
+    def undo(e, t):
+        """
+        Rewrite (h, val) tuples into handles.
+        """
+        if is_collection(t):
+            return EMap(e, mk_lambda(t.t, lambda x: undo(x, t.t)))
+        elif isinstance(t, THandle):
+            return ETupleGet(e, 0)
+        elif is_scalar(t):
+            return e
+        else:
+            raise NotImplementedError(t)
+
+    class V(BottomUpRewriter):
+        def __init__(self, fvs):
+            self.should_rewrite = { v : True for v in fvs }
+        def visit_ELambda(self, f):
+            with extend(self.should_rewrite, f.arg, False):
+                return self.join(f, (f.arg, self.visit(f.body)))
+        def visit_EVar(self, v):
+            return do(v, v.type) if self.should_rewrite[v] else v
+        def visit_EWithAlteredValue(self, e):
+            return ETuple((
+                ETupleGet(self.visit(e.handle), 0),
+                self.visit(e.new_value)))
+        def visit_EGetField(self, e):
+            # print("rewriting {}... ".format(pprint(e)), end="")
+            if isinstance(e.e.type, THandle):
+                assert e.f == "val"
+                # print("ELIM")
+                return ETupleGet(self.visit(e.e), 1).with_type(e.type)
+            else:
+                # print("NOOP; t={}".format(pprint(e.e.type)))
+                return EGetField(self.visit(e.e), e.f).with_type(e.type)
+
+    # print("FIXING {}".format(pprint(e)))
+    e = deep_copy(e)
+    e = undo(V(free_vars(e)).visit(e), e.type)
+    # print("-----> {}".format(pprint(e)))
+    res = retypecheck(e)
+    assert res
+    return e

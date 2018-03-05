@@ -10,12 +10,14 @@ import argparse
 import datetime
 import pickle
 
+from cozy import syntax
 from cozy import parse
 from cozy import codegen
 from cozy import common
 from cozy import typecheck
 from cozy import desugar
 from cozy import syntax_tools
+from cozy import handle_tools
 from cozy import invariant_preservation
 from cozy import synthesis
 from cozy import library
@@ -161,6 +163,13 @@ def run():
     else:
         impl = code
         share_info = defaultdict(list)
+
+    print("Fixing EWithAlteredValue...")
+    impl = syntax_tools.shallow_copy(impl)
+    impl.methods = tuple(
+        syntax_tools.rewrite_ret(m, handle_tools.fix_ewithalteredvalue) if isinstance(m, syntax.Query) else m
+        for m in impl.methods)
+    print("Done!")
 
     try:
         java = args.java
