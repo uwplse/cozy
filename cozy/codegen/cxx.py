@@ -1,6 +1,7 @@
 from collections import OrderedDict
 import json
 import itertools
+from io import StringIO
 
 from cozy import common, library, evaluation
 from cozy.common import fresh_name, declare_case

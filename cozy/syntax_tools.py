@@ -1138,12 +1138,21 @@ def dnf(e : syntax.Exp) -> [[syntax.Exp]]:
         return [c1 + c2 for c1 in cases1 for c2 in cases2]
     return [[e]]
 
-def break_conj(e):
-    if isinstance(e, syntax.EBinOp) and e.op == "and":
-        yield from break_conj(e.e1)
-        yield from break_conj(e.e2)
-    else:
-        yield e
+def break_binary(x, binary_children):
+    stk = [x]
+    while stk:
+        x = stk.pop()
+        children = binary_children(x)
+        if children is None:
+            yield x
+        else:
+            stk.extend(reversed(common.make_random_access(children)))
+
+def break_conj(e : syntax.Exp):
+    return break_binary(e, lambda e: (e.e1, e.e2) if isinstance(e, syntax.EBinOp) and e.op == syntax.BOp.And else None)
+
+def break_seq(s : syntax.Stm):
+    return break_binary(s, lambda s: (s.s1, s.s2) if isinstance(s, syntax.SSeq) else None)
 
 class Aeq(object):
     def __init__(self, e : syntax.Exp):

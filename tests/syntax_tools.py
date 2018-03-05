@@ -184,3 +184,20 @@ class TestSyntaxTools(unittest.TestCase):
             found = found or ctx.e == xs2
             assert not ctx.facts
         assert found
+
+    def test_break_conj(self):
+        x, y, z = [fresh_var(BOOL) for i in range(3)]
+        e = EBinOp(
+            EBinOp(EBinOp(EBinOp(x, BOp.And, y), BOp.Or, z), BOp.And, x), BOp.And,
+            EBinOp(x, BOp.And, y))
+        assert list(break_conj(e)) == [EBinOp(EBinOp(x, BOp.And, y), BOp.Or, z), x, x, y]
+
+    def test_break_seq(self):
+        x, y, z = [SNoOp() for i in range(3)]
+        e = SSeq(SSeq(x, y), SSeq(y, z))
+        l = list(break_seq(e))
+        assert len(l) == 4
+        assert l[0] is x
+        assert l[1] is y
+        assert l[2] is y
+        assert l[3] is z
