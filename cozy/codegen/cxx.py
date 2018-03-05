@@ -142,7 +142,8 @@ class CxxPrinter(common.Visitor):
     def visit_Query(self, q, indent=""):
         if q.visibility != Visibility.Public:
             return ""
-        ret_type = q.ret.type
+        ret_exp = q.ret
+        ret_type = ret_exp.type
         if is_collection(ret_type):
             x = EVar(self.fn("x")).with_type(ret_type.t)
             s  = "{docstring}{indent}template <class F>\n".format(
@@ -152,10 +153,10 @@ class CxxPrinter(common.Visitor):
                 indent=indent,
                 name=q.name,
                 args="".join("{}, ".format(self.visit(t, name)) for name, t in q.args),
-                body=self.visit(SForEach(x, q.ret, SEscape("{indent}_callback({x});\n", ["x"], [x])), indent=indent+INDENT))
+                body=self.visit(SForEach(x, ret_exp, SEscape("{indent}_callback({x});\n", ["x"], [x])), indent=indent+INDENT))
             return s
         else:
-            body, out = self.visit(q.ret, indent+INDENT)
+            body, out = self.visit(ret_exp, indent+INDENT)
             return "{docstring}{indent}inline {type} {name} ({args}) const {{\n{body}    return {out};\n  }}\n\n".format(
                 docstring=indent_lines(q.docstring, indent) + "\n" if q.docstring else "",
                 indent=indent,
