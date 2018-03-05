@@ -210,6 +210,10 @@ class Typechecker(Visitor):
             return syntax.TList(t1.t)
         if is_collection(t1) and is_collection(t2):
             return syntax.TBag(t1.t)
+        if t1 is DEFAULT_TYPE:
+            return t2
+        if t2 is DEFAULT_TYPE:
+            return t1
         self.report_err(src, "cannot unify types {} and {} ({})".format(pprint(t1), pprint(t2), explanation))
         return DEFAULT_TYPE
 
