@@ -449,6 +449,9 @@ class CxxPrinter(common.Visitor):
             raise NotImplementedError("adding collections: {}".format(e))
         elif op == "==":
             return self._eq(e.e1, e.e2, indent)
+        elif op == "!=":
+            s, e = self.visit(EEq(e.e1, e.e2))
+            return (s, "(!{})".format(e))
         elif op == BOp.In:
             if isinstance(e.e2.type, TSet):
                 if type(e.e2.type) in (TSet, library.TNativeSet):
