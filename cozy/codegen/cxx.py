@@ -244,7 +244,7 @@ class CxxPrinter(common.Visitor):
                 self.initialize_native_map(out),
                 self.construct_map(t, e, out))
         elif isinstance(t, THandle):
-            return SEscape("{indent}{lhs} = {rhs};\n", ["lhs", "rhs"], [out, self.addr_of(e)])
+            return SEscape("{indent}{lhs} = {rhs};\n", ["lhs", "rhs"], [out, e])
         elif is_numeric(t) or type(t) in [TBool, TNative, TString, TEnum, TTuple, TRecord]:
             return SEscape("{indent}{lhs} = {rhs};\n", ["lhs", "rhs"], [out, e])
         raise NotImplementedError(t, e, out)
@@ -423,38 +423,9 @@ class CxxPrinter(common.Visitor):
                 SAssign(val, EBinOp(val, "+", ONE).with_type(INT)))), indent)
         return ("{}{};\n".format(indent, decl) + self.visit(self.initialize_native_map(hist), indent) + s, hist)
 
-    def distribute_over_handles(self, e, f):
-        assert isinstance(e.type, THandle), repr(e.type)
-        if isinstance(e, EVar):
-            return f(e)
-        if isinstance(e, EWithAlteredValue):
-            return f(e)
-        if isinstance(e, EHandle) and e.addr == ENum(0):
-            return f(ENull().with_type(e.type))
-        if isinstance(e, ENull):
-            return f(e)
-        if isinstance(e, EEscape):
-            return f(e)
-        if isinstance(e, ECond):
-            lhs = self.distribute_over_handles(e.then_branch, f)
-            rhs = self.distribute_over_handles(e.else_branch, f)
-            return ECond(e.cond, lhs, rhs).with_type(lhs.type)
-        if isinstance(e, EGetField):
-            if e.f == "val":
-                return distribute_over_handles(self.val_of(e.e), f)
-            else:
-                return f(EGetField(self.addr_of(e.e), e.f).with_type(e.type))
-        raise NotImplementedError(repr(e))
-
-    def addr_of(self, e):
-        return self.distribute_over_handles(e, lambda h: self.addr_of(h.handle) if isinstance(h, EWithAlteredValue) else EEscape("{h}", ["h"], [h]).with_type(h.type))
-
-    def val_of(self, e):
-        return self.distribute_over_handles(e, lambda h: h.new_value if isinstance(h, EWithAlteredValue) else EEscape("{h}->val", ["h"], [h]).with_type(h.type.value_type))
-
     def _eq(self, e1, e2, indent):
         if isinstance(e1.type, THandle):
-            return self.visit(EEscape("({e1} == {e2})", ["e1", "e2"], [self.addr_of(e1), self.addr_of(e2)]).with_type(BOOL), indent)
+            return self.visit(EEscape("({e1} == {e2})", ["e1", "e2"], [e1, e2]).with_type(BOOL), indent)
         if (is_scalar(e1.type) or
                 (isinstance(e1.type, library.TNativeMap) and isinstance(e2.type, library.TNativeMap)) or
                 (isinstance(e1.type, library.TNativeSet) and isinstance(e2.type, library.TNativeSet)) or
@@ -687,11 +658,6 @@ class CxxPrinter(common.Visitor):
             raise NotImplementedError(op)
 
     def visit_EGetField(self, e, indent=""):
-        if isinstance(e.e.type, THandle):
-            if e.f == "val":
-                return self.visit(self.val_of(e.e), indent=indent)
-            else:
-                e = EGetField(self.addr_of(e.e), e.f).with_type(e.type)
         ce, ee = self.visit(e.e, indent)
         op = "."
         if isinstance(e.e.type, THandle) or isinstance(e.e.type, library.TIntrusiveLinkedList):
