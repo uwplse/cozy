@@ -1,4 +1,5 @@
 from collections import namedtuple, OrderedDict
+from enum import Enum
 import itertools
 
 from cozy.common import pick_to_sum, OrderedSet, FrozenDict
@@ -35,10 +36,16 @@ LITERALS = [(e, pool)
     for e in (T, F, ZERO, ONE)
     for pool in ALL_POOLS]
 
+class ExpEvent(Enum):
+    CONSIDER = 0
+    SKIP     = 1
+    ACCEPT   = 2
+    EVICT    = 3
+
 oracle = EBinOp(
     ESingleton(EGetField(EVar('x').with_type(THandle('H', TInt())), 'val')), '-',
     EUnaryOp('distinct', EMap(EBinOp(EStateVar(EVar('xs').with_type(TBag(THandle('H', TInt())))), '-', ESingleton(EVar('x').with_type(THandle('H', TInt())))), ELambda(EVar('_var4').with_type(THandle('H', TInt())), EGetField(EVar('_var4').with_type(THandle('H', TInt())), 'val')))))
-def _interesting(depth : int, e : Exp, pool : Pool):
+def _interesting(depth : int, e : Exp, pool : Pool, event : ExpEvent):
     return False
     # from cozy.syntax_tools import alpha_equivalent
     # if depth > 0:
@@ -50,21 +57,21 @@ def _interesting(depth : int, e : Exp, pool : Pool):
     # return depth == 0 # and (isinstance(e, EMakeMap2) or isinstance(e, EMapGet))
 
 def _on_consider(depth : int, e : Exp, pool : Pool):
-    if _interesting(depth, e, pool):
+    if _interesting(depth, e, pool, ExpEvent.CONSIDER):
         print(" > considering {} in {}".format(pprint(e), pool_name(pool)))
 
 def _on_skip(depth : int, e : Exp, pool : Pool, reason : str, **data):
-    if _interesting(depth, e, pool):
+    if _interesting(depth, e, pool, ExpEvent.SKIP):
         print("   > skipping {}; {}".format(pprint(e), reason))
         for k, v in data.items():
             print("         > {} = {}".format(k, pprint(v) if isinstance(v, Exp) else v))
 
 def _on_evict(depth : int, e : Exp, pool : Pool, better_alternative : Exp, better_cost : Cost):
-    if _interesting(depth, e, pool):
+    if _interesting(depth, e, pool, ExpEvent.EVICT):
         print("   > evicting {}; {}".format(pprint(e), pprint(better_alternative)))
 
 def _on_accept(depth : int, e : Exp, pool : Pool, fp):
-    if _interesting(depth, e, pool):
+    if _interesting(depth, e, pool, ExpEvent.ACCEPT):
         print("   > accepting {} in {} : {}".format(pprint(e), pool_name(pool), pprint(e.type)))
         # print("     fp = {!r}".format(fp))
 
