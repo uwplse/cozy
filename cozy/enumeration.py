@@ -252,7 +252,7 @@ def enumerate_exps(
     lbuilders = { }
 
     def build_lambdas(bag, pool, size):
-        key = bag
+        key = fingerprint(bag, examples)
         tup = lbuilders.get(key)
         if tup is None:
             v = fresh_var(bag.type.t)
