@@ -379,6 +379,9 @@ class CompositeCostModel(CostModel):
         return "CompositeCostModel()"
     def is_monotonic(self):
         return False
+    def cardinality(self, e : Exp) -> Polynomial:
+        assert is_collection(e.type)
+        return nf(self.lattice.cardinality(e), self.lattice)
     def cost(self, e, pool):
         if pool == STATE_POOL:
             return CompositeCost(

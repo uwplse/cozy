@@ -6,6 +6,7 @@ import sys
 import traceback
 
 from cozy.target_syntax import *
+from cozy.typecheck import is_collection
 from cozy.syntax_tools import subst, pprint, free_vars, free_funcs, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda, enumerate_fragments, strip_EStateVar
 from cozy.wf import ExpIsNotWf, exp_wf, exp_wf_nonrecursive
 from cozy.common import OrderedSet, ADT, Visitor, fresh_name, unique, pick_to_sum, cross_product, OrderedDefaultDict, OrderedSet, group_by, find_one, extend
@@ -239,13 +240,23 @@ class Learner(object):
         build = accelerate_build(build, args=self.args, state_vars=self.state_vars)
         build = self.build_candidates(build)
         build = self.subst_builder(build)
+        cards = [self.cost_model.cardinality(ctx.e) for ctx in enumerate_fragments(self.target) if is_collection(ctx.e.type)]
+        def check_wf(e, pool):
+            if not exp_is_wf(e, pool, self.state_vars, self.args, self.assumptions):
+                return False
+            if isinstance(e.type, TBag):
+                c = self.cost_model.cardinality(e)
+                if all(cc < c for cc in cards):
+                    # print("too big: {}".format(pprint(e)))
+                    return False
+            return True
         if self.builder_iter == ():
             self.builder_iter = enumerate_exps(
                 examples=self.examples,
                 cost_model=self.cost_model,
                 cost_ceiling=self.cost_model.cost(self.target, RUNTIME_POOL),
                 build_candidates=build,
-                check_wf=lambda e, pool: exp_is_wf(e, pool, self.state_vars, self.args, self.assumptions))
+                check_wf=check_wf)
         target_fp = fingerprint(self.target, self.examples)
         for res in self.builder_iter:
             if self.stop_callback():
