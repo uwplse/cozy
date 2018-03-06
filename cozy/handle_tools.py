@@ -101,6 +101,12 @@ def fix_ewithalteredvalue(e : Exp):
             return m.with_type(TBag(m.f.body.type))
         elif isinstance(t, THandle):
             return ETuple((e, EGetField(e, "val"))).with_type(TTuple((e.type, e.type.value_type)))
+        elif isinstance(t, TMap):
+            v = fresh_var(t.k)
+            vf = ELambda(v, do(EMapGet(e, v).with_type(t.v), t.v))
+            return EMakeMap2(
+                EMapKeys(e),
+                vf).with_type(TMap(t.k, vf.body.type))
         elif is_scalar(t):
             return e
         else:
@@ -138,6 +144,12 @@ def fix_ewithalteredvalue(e : Exp):
             if isinstance(ee.type.t, THandle):
                 ee = EMap(ee, fst())
             return EMakeMap2(ee, v)
+        def visit_EMapGet(self, e):
+            m = self.visit(e.map)
+            k = self.visit(e.key)
+            if isinstance(m.type.k, THandle):
+                k = fst().apply_to(k)
+            return EMapGet(m, k).with_type(m.type.v)
         def visit_EBinOp(self, e):
             e1 = self.visit(e.e1)
             e2 = self.visit(e.e2)
@@ -161,10 +173,12 @@ def fix_ewithalteredvalue(e : Exp):
 
     orig = e
     e = deep_copy(e)
-    e = undo(V(free_vars(e)).visit(e), e.type)
+    e = undo(V(free_vars(e)).visit(e), orig.type)
     res = retypecheck(e)
     if not res:
         from cozy.syntax_tools import pprint
+        for v in free_vars(orig):
+            print(" > {} : {}".format(pprint(v), pprint(v.type)))
         print("FIXING {}".format(pprint(orig)))
         print("-----> {}".format(pprint(e)))
         assert res
