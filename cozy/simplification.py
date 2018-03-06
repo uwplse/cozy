@@ -1,5 +1,5 @@
 from cozy.target_syntax import *
-from cozy.syntax_tools import BottomUpRewriter, alpha_equivalent, cse, compose, pprint, mk_lambda
+from cozy.syntax_tools import BottomUpRewriter, alpha_equivalent, cse, compose, pprint, mk_lambda, replace
 from cozy.evaluation import construct_value, eval
 from cozy.solver import valid, satisfy
 
@@ -38,7 +38,9 @@ class _V(BottomUpRewriter):
             return self.visit(e.else_branch)
         elif alpha_equivalent(self.visit(e.then_branch), self.visit(e.else_branch)):
             return self.visit(e.then_branch)
-        return ECond(cond, self.visit(e.then_branch), self.visit(e.else_branch)).with_type(e.type)
+        tb = replace(e.then_branch, cond, T)
+        eb = replace(e.else_branch, cond, F)
+        return ECond(cond, self.visit(tb), self.visit(eb)).with_type(e.type)
     def visit_EWithAlteredValue(self, e):
         t = e.type
         addr = self.visit(e.handle)
