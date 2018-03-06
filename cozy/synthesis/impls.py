@@ -143,6 +143,7 @@ class Implementation(object):
         Must be called once after all user-specified queries have been added.
         """
         for op in self.op_specs:
+            print("Setting up handle updates for {}...".format(op.name))
             handles = reachable_handles_at_method(self.spec, op)
             # print("-"*60)
             for t, bag in handles.items():
