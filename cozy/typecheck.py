@@ -206,9 +206,9 @@ class Typechecker(Visitor):
             return t1
         if is_numeric(t1) and is_numeric(t2):
             return self.numeric_lub(src, t1, t2)
-        if isinstance(t1, syntax.TList) and isinstance(t2, syntax.TList):
+        if isinstance(t1, syntax.TList) and isinstance(t2, syntax.TList) and t1.t == t2.t:
             return syntax.TList(t1.t)
-        if is_collection(t1) and is_collection(t2):
+        if is_collection(t1) and is_collection(t2) and t1.t == t2.t:
             return syntax.TBag(t1.t)
         if t1 is DEFAULT_TYPE:
             return t2
@@ -513,8 +513,10 @@ class Typechecker(Visitor):
             else:
                 self.report_err(e, "cannot get element {} from tuple of size {}".format(e.n, len(t.ts)))
                 e.type = DEFAULT_TYPE
+        elif t is DEFAULT_TYPE:
+            e.type = DEFAULT_TYPE
         else:
-            self.report_err(e, "cannot get element from non-tuple")
+            self.report_err(e, "cannot get element from non-tuple {}".format(pprint(t)))
             e.type = DEFAULT_TYPE
 
     def visit_EMap(self, e):
@@ -528,6 +530,8 @@ class Typechecker(Visitor):
             e.type = syntax.TBag(e.f.body.type)
         elif is_collection(e.e.type):
             e.type = type(to_abstract(e.e.type))(e.f.body.type)
+        elif e.e.type is DEFAULT_TYPE:
+            e.type = DEFAULT_TYPE
         else:
             self.report_err(e, "cannot map over non-collection {}".format(pprint(e.e.type)))
             e.type = DEFAULT_TYPE
