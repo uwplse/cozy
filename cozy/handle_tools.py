@@ -97,9 +97,10 @@ def fix_ewithalteredvalue(e : Exp):
         Rewrite handles into (h, val) tuples.
         """
         if is_collection(t):
-            return EMap(e, mk_lambda(t.t, lambda x: do(x, t.t)))
+            m = EMap(e, mk_lambda(t.t, lambda x: do(x, t.t)))
+            return m.with_type(TBag(m.f.body.type))
         elif isinstance(t, THandle):
-            return ETuple((e, EGetField(e, "val")))
+            return ETuple((e, EGetField(e, "val"))).with_type(TTuple((e.type, e.type.value_type)))
         elif is_scalar(t):
             return e
         else:
@@ -118,6 +119,9 @@ def fix_ewithalteredvalue(e : Exp):
         else:
             raise NotImplementedError(t)
 
+    def fst():
+        return ELambda(EVar("x"), ETupleGet(EVar("x"), 0))
+
     class V(BottomUpRewriter):
         def __init__(self, fvs):
             self.should_rewrite = { v : True for v in fvs }
@@ -126,6 +130,21 @@ def fix_ewithalteredvalue(e : Exp):
                 return self.join(f, (f.arg, self.visit(f.body)))
         def visit_EVar(self, v):
             return do(v, v.type) if self.should_rewrite[v] else v
+        def visit_EEmptyList(self, v):
+            return EEmptyList().with_type(do(v, v.type).type)
+        def visit_EMakeMap2(self, e):
+            ee = self.visit(e.e)
+            v = self.visit(e.value)
+            if isinstance(ee.type.t, THandle):
+                ee = EMap(ee, fst())
+            return EMakeMap2(ee, v)
+        def visit_EBinOp(self, e):
+            e1 = self.visit(e.e1)
+            e2 = self.visit(e.e2)
+            if e.op != "===":
+                if isinstance(e.e1.type, THandle): e1 = fst().apply_to(e1)
+                if isinstance(e.e2.type, THandle): e2 = fst().apply_to(e2)
+            return EBinOp(e1, e.op, e2)
         def visit_EWithAlteredValue(self, e):
             return ETuple((
                 ETupleGet(self.visit(e.handle), 0),
@@ -140,10 +159,13 @@ def fix_ewithalteredvalue(e : Exp):
                 # print("NOOP; t={}".format(pprint(e.e.type)))
                 return EGetField(self.visit(e.e), e.f).with_type(e.type)
 
-    # print("FIXING {}".format(pprint(e)))
+    orig = e
     e = deep_copy(e)
     e = undo(V(free_vars(e)).visit(e), e.type)
-    # print("-----> {}".format(pprint(e)))
     res = retypecheck(e)
-    assert res
+    if not res:
+        from cozy.syntax_tools import pprint
+        print("FIXING {}".format(pprint(orig)))
+        print("-----> {}".format(pprint(e)))
+        assert res
     return e
