@@ -156,9 +156,10 @@ class TestSyntaxTools(unittest.TestCase):
 
         print(pprint(s))
         s2 = eliminate_common_subexpressions_stm(s)
-        print(pprint(s2))
+        new_form = pprint(s2)
+        print(new_form)
 
-        assert isinstance(s2, SSeq) and isinstance(s2.s1, SDecl)
+        assert new_form.count("y + 2") == 1
 
     def test_cse_2_stm_if(self):
         """
@@ -196,7 +197,7 @@ class TestSyntaxTools(unittest.TestCase):
         z = y + 2
         q = z + 4
 
-        The middle statetment should cause a temp to not be created.
+        The y=x statetment should cause a temp to not be created.
         """
 
         yp2 = EBinOp(EVar("y").with_type(INT), "+", ENum(2).with_type(INT))
@@ -208,7 +209,6 @@ class TestSyntaxTools(unittest.TestCase):
             SAssign(EVar("z").with_type(INT), yp2),
             SAssign(EVar("q").with_type(INT), zp4)
         ))
-
 
         assert retypecheck(s)
         print(pprint(s))
@@ -332,8 +332,9 @@ class TestSyntaxTools(unittest.TestCase):
         print(pprint(s2))
         print(s2)
 
-        assert isinstance(s2.s1, SDecl)
-        assert "z = (y + 2)" in pprint(s2)
+        new_form = pprint(s2)
+
+        assert new_form.count("y + 2") == 2
 
     def test_cse_2_nolambda(self):
         """
@@ -420,5 +421,3 @@ class TestSyntaxTools(unittest.TestCase):
         assert list(free_vars(SEscapableBlock("label", SDecl("x", ONE)))) == []
         assert list(free_vars(SWhile(T, SDecl("x", ONE)))) == []
         assert list(free_vars(SMapUpdate(T, T, EVar("x"), SSeq(SDecl("y", ONE), use_x)))) == []
-
-
