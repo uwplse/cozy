@@ -65,7 +65,11 @@ class _V(BottomUpRewriter):
     def visit_EFilter(self, e):
         ee = self.visit(e.e)
         f = self.visit(e.p)
-        if isinstance(ee, EBinOp) and ee.op == "+":
+        if f.body == T:
+            return ee
+        elif f.body == F:
+            return EEmptyList().with_type(e.type)
+        elif isinstance(ee, EBinOp) and ee.op == "+":
             return self.visit(EBinOp(EFilter(ee.e1, f).with_type(ee.e1.type), ee.op, EFilter(ee.e2, f).with_type(ee.e2.type)).with_type(e.type))
         elif isinstance(ee, ESingleton):
             return self.visit(ECond(
@@ -78,7 +82,9 @@ class _V(BottomUpRewriter):
     def visit_EMap(self, e):
         ee = self.visit(e.e)
         f = self.visit(e.f)
-        if isinstance(ee, EBinOp) and ee.op == "+":
+        if f.body == f.arg:
+            return ee
+        elif isinstance(ee, EBinOp) and ee.op == "+":
             return self.visit(EBinOp(EMap(ee.e1, f).with_type(e.type), ee.op, EMap(ee.e2, f).with_type(e.type)).with_type(e.type))
         elif isinstance(ee, ESingleton):
             return self.visit(ESingleton(f.apply_to(ee.e)).with_type(e.type))
