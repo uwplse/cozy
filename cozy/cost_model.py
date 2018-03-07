@@ -4,7 +4,7 @@ import itertools
 
 import igraph
 
-from cozy.common import OrderedSet, typechecked, partition, make_random_access, compare_with_lt, collapse_runs, product, exists
+from cozy.common import OrderedSet, typechecked, partition, make_random_access, compare_with_lt, collapse_runs, product, exists, fresh_name
 from cozy.target_syntax import *
 from cozy.syntax_tools import BottomUpExplorer, pprint, equal, fresh_var, mk_lambda, free_vars, subst, alpha_equivalent, all_exps, ExpMap
 from cozy.typecheck import is_collection
@@ -46,7 +46,8 @@ class CardinalityLattice(object):
         self.ind2 = fresh_var(BOOL)
         self.solver.add_assumption(assumptions)
         self.cardinalities = OrderedDict() # Exp (in terms of collections) -> Exp (in terms of cards)
-        self.cards_to_graph_verts = OrderedDict() # Maps cardinality variables to dag vertices
+        self.cards_to_graph_verts = OrderedDict() # Maps cardinality exps to dag vertices
+        self.graph_verts_to_cards = OrderedDict()
         self.dag = igraph.Graph().as_directed() # edges go smaller --> larger
         self.vars_seen = set()
         self.facts = []
@@ -70,29 +71,37 @@ class CardinalityLattice(object):
         if res is not None:
             return res
 
+        # print("{}.cardinality({})".format(id(self), pprint(e)))
+        # if isinstance(e, EFilter):
+        #     raise Exception()
+        # for k in self.cardinalities:
+        #     print(" --> " + pprint(k))
+
         assert is_collection(e.type)
         old = set(self.cardinalities.values())
         h = []
         res = cardinality(e, self.cardinalities, h)
+        self.cardinalities[e] = res
         # print("|{}| = {}".format(pprint(e), pprint(res)))
         for f in h:
             self.add_heuristic(f)
-        fresh = [item for item in self.cardinalities.items() if item[1] not in old]
-        rcards = { v.id : exp for (exp, v) in self.cardinalities.items() }
+        fresh = [item for item in self.cardinalities.values() if item not in old]
+        rcards = { v : exp for (exp, v) in self.cardinalities.items() }
 
         g = self.dag
         s = self.solver
 
-        for (_, v1var) in fresh:
+        for v1var in fresh:
             self.add_fact(EBinOp(v1var, ">=", ZERO).with_type(BOOL))
-            v1 = v1var.id
+            v1 = fresh_name()
             g.add_vertex(name=v1)
             self.cards_to_graph_verts[v1var] = v1
+            self.graph_verts_to_cards[v1] = v1var
             wq = OrderedSet(g.topological_sorting())
             while wq:
                 vid = next(iter(wq))
                 v2 = g.vs[vid]["name"]
-                v2var = EVar(v2).with_type(INT)
+                v2var = self.graph_verts_to_cards[v2]
                 wq.remove(vid)
                 if v1 == v2:
                     continue
@@ -100,8 +109,8 @@ class CardinalityLattice(object):
                 ge = False
                 ind_le = self.ind1
                 ind_ge = self.ind2
-                c1 = rcards[v1]
-                c2 = rcards[v2]
+                c1 = rcards[v1var]
+                c2 = rcards[v2var]
                 s.push()
                 s.add_assumption(EAll([
                     EEq(ind_le, EBinOp(ELen(c1), "<=", ELen(c2)).with_type(BOOL)),
@@ -129,6 +138,7 @@ class CardinalityLattice(object):
                     self.add_fact(EEq(v1var, v2var))
                     g.delete_vertices([v1])
                     self.cards_to_graph_verts[v1var] = v2
+                    self.graph_verts_to_cards[v1] = v2var
                     break
 
         if assume_large_cardinalities.value > 0:
@@ -478,7 +488,8 @@ def asymptotic_runtime(e, lattice):
             return self.combine(costs)
         def visit_ELambda(self, e):
             # avoid name collisions with fresh_var
-            return self.visit(e.apply_to(fresh_var(e.arg.type)))
+            # return self.visit(e.apply_to(fresh_var(e.arg.type))) # NO NO: breaks caching!
+            return self.visit(e.body)
         def visit_EMakeMap2(self, e):
             return self.combine([self.EBinOp(self.cardinality(e.e, plus_one=True), "*", self.visit(e.value)).with_type(INT)])
         def visit_EFilter(self, e):
@@ -563,7 +574,8 @@ def precise_runtime(e, lattice):
             return ESum(costs)
         def visit_ELambda(self, e):
             # avoid name collisions with fresh_var
-            return self.visit(e.apply_to(fresh_var(e.arg.type)))
+            # return self.visit(e.apply_to(fresh_var(e.arg.type)))
+            return self.visit(e.body)
         def visit_EMapGet(self, e):
             # mild penalty here because we want "x.f" < "map.get(x)"
             return ESum((MILD_PENALTY, self.visit(e.map), self.visit(e.key)))
