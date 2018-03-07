@@ -219,10 +219,13 @@ class Factor(object):
         return pprint(self.e)
 
 class Term(object):
-    def __init__(self, factors : [Factor]):
-        self.factors = sorted(factors,
+    def __init__(self, factors : [Factor], constant : int = 1):
+        factors = sorted(factors,
             reverse=True,
             key=cmp_to_key(compare_with_lt))
+        constants, factors = partition(factors, lambda f: isinstance(f.e, ENum))
+        self.constant = constant * product(c.e.val for c in constants)
+        self.factors = factors
     def __lt__(self, other):
         """
         Goals:
@@ -232,8 +235,8 @@ class Term(object):
             a*b < c*d if a<=b, c<=d, and a<=c
         """
         assert isinstance(other, Term)
-        c1, v1 = partition(self.factors,  lambda f: isinstance(f.e, ENum))
-        c2, v2 = partition(other.factors, lambda f: isinstance(f.e, ENum))
+        v1 = self.factors
+        v2 = other.factors
         if len(v1) < len(v2): return True
         if len(v2) < len(v1): return False
         for x1, x2 in zip(v1, v2):
@@ -245,9 +248,7 @@ class Term(object):
                 # print("  >")
                 return False
             # print("  ~")
-        p1 = product(c.e.val for c in c1)
-        p2 = product(c.e.val for c in c2)
-        return p1 < p2
+        return self.constant < other.constant
     def __str__(self):
         return "*".join(str(f) for f in self.factors)
 
@@ -293,10 +294,6 @@ def nf(f : Exp, lattice : CardinalityLattice) -> Polynomial:
             if e.op == "*":
                 if isinstance(l, ENum) and isinstance(r, ENum):
                     return ENum(l.val * r.val).with_type(l.type)
-                if isinstance(l, ENum):
-                    return self.visit(ESum([r for i in range(l.val)]))
-                if isinstance(r, ENum):
-                    return self.visit(ESum([l for i in range(r.val)]))
                 if isinstance(l, EBinOp) and l.op == "+":
                     return self.visit(EBinOp(mul(l.e1, r), "+", mul(l.e2, r)).with_type(e.type))
                 if isinstance(r, EBinOp) and r.op == "+":
