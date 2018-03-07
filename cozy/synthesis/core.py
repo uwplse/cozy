@@ -147,17 +147,18 @@ class Learner(object):
     def subst_builder(self, wrapped_builder):
         target_fp = fingerprint(self.target, self.examples)
         target_cost = self.cost_model.cost(self.target, RUNTIME_POOL)
+        contexts = group_by(enumerate_fragments(self.target),
+            k=lambda ctx: (ctx.pool, ctx.e.type))
         def f(cache, size, scopes, build_lambdas):
             for tup in wrapped_builder(cache, size, scopes, build_lambdas):
                 e, pool = tup
                 was_accepted = yield tup
                 if was_accepted:
-                    # print("CONSIDERING SUBSTITUTIONS OF {} [{}]".format(pprint(e), pool_name(pool)))
-                    for ctx in enumerate_fragments(self.target):
-                        if pool != ctx.pool:
-                            continue
-                        if e.type != ctx.e.type:
-                            continue
+                    ctxs = contexts.get((pool, e.type), ())
+                    # print("CONSIDERING SUBSTITUTIONS OF {} [{}, {} options]".format(pprint(e), pool_name(pool), len(ctxs)))
+                    for ctx in ctxs:
+                        assert pool == ctx.pool
+                        assert e.type == ctx.e.type
                         if alpha_equivalent(e, ctx.e):
                             continue
                         # print("  ... {} in {} --> {}".format(pprint(ctx.e.type), pool_name(ctx.pool), pprint(ctx.replace_e_with(EVar("___")))))
