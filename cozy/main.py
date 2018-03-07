@@ -134,7 +134,9 @@ def run():
         if server is not None:
             server.join()
 
+    print("Generating IR...")
     code = ast.code
+    print("Loading concretization functions...")
     state_map = ast.concretization_functions
     print()
     for v, e in state_map.items():
