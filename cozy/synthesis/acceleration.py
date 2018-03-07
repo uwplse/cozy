@@ -313,9 +313,14 @@ def accelerate_build(build_candidates, args, state_vars):
                         # x = EEq(
                         #     EUnaryOp(UOp.Length, filt).with_type(INT),
                         #     ONE)
-                        x = EGt(EMapGet(EStateVar(m).with_type(m.type), e1).with_type(INT), ONE)
-                        # x._tag = True
-                        yield check(x, RUNTIME_POOL)
+                        for i in (ZERO, ONE):
+                            x = EGt(EMapGet(EStateVar(m).with_type(m.type), e1).with_type(INT), i)
+                            # x._tag = True
+                            yield check(x, RUNTIME_POOL)
+                            x = ECond(x, EEmptyList().with_type(e2.type), ESingleton(e1).with_type(e2.type)).with_type(e2.type)
+                            yield check(x, RUNTIME_POOL)
+                            x = ECond(x.cond, x.else_branch, x.then_branch).with_type(e2.type)
+                            yield check(x, RUNTIME_POOL)
 
             # histogram
             # for e in cache.find_collections(pool=STATE_POOL, size=size-1):
