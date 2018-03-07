@@ -6,7 +6,7 @@ handling handles.
 
 from collections import OrderedDict
 
-from cozy.common import typechecked, extend
+from cozy.common import typechecked, extend, fresh_name
 from cozy.target_syntax import *
 from cozy.syntax_tools import fresh_var, mk_lambda, all_exps, BottomUpRewriter, deep_copy, free_vars
 from cozy.typecheck import is_collection, is_scalar, retypecheck
@@ -79,6 +79,15 @@ def implicit_handle_assumptions_for_method(handles : {THandle:Exp}, m : Method) 
                     EEq(EGetField(h1, "val").with_type(h1.type.value_type),
                         EGetField(h2, "val").with_type(h2.type.value_type))))))
     return new_assumptions
+
+def EArgDistinct(bag, key):
+    b = EVar(fresh_name())
+    distinct_keys = EUnaryOp(UOp.Distinct, EMap(b, key))
+    res = EMap(distinct_keys,
+        mk_lambda(None, lambda x:
+            EUnaryOp(UOp.The, EFilter(b, mk_lambda(None, lambda y:
+                EEq(x, key.apply_to(y)))))))
+    return ELet(bag, ELambda(b, res))
 
 def fix_ewithalteredvalue(e : Exp):
     """
@@ -156,7 +165,14 @@ def fix_ewithalteredvalue(e : Exp):
             if e.op != "===":
                 if isinstance(e.e1.type, THandle): e1 = fst().apply_to(e1)
                 if isinstance(e.e2.type, THandle): e2 = fst().apply_to(e2)
+            if e.op == BOp.In and isinstance(e.e1.type, THandle):
+                e2 = EMap(e2, fst())
             return EBinOp(e1, e.op, e2)
+        def visit_EUnaryOp(self, e):
+            ee = self.visit(e.e)
+            if e.op == UOp.Distinct and isinstance(e.e.type.t, THandle):
+                return EArgDistinct(ee, fst())
+            return EUnaryOp(e.op, ee)
         def visit_EWithAlteredValue(self, e):
             return ETuple((
                 ETupleGet(self.visit(e.handle), 0),
