@@ -145,11 +145,11 @@ class _V(BottomUpRewriter):
                 return self.visit(EBinOp(EUnaryOp(e.op, ee.e1).with_type(e.type), "+", EUnaryOp(e.op, ee.e2).with_type(e.type)).with_type(e.type))
             elif isinstance(ee, ESingleton):
                 if e.op == UOp.Length:
-                    return ONE
+                    return ENum(1).with_type(e.type)
                 elif e.op == UOp.Sum:
                     return ee.e
             elif isinstance(ee, EEmptyList):
-                return ZERO
+                return ENum(0).with_type(e.type)
             elif isinstance(ee, EMap) and e.op == UOp.Length:
                 return self.visit(EUnaryOp(e.op, ee.e).with_type(e.type))
         elif e.op in (UOp.Exists, UOp.Empty):

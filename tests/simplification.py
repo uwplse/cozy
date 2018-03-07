@@ -45,3 +45,6 @@ class SimplificationTests(unittest.TestCase):
                 )).with_type(TMap(t, mt)),
             y).with_type(mt)
         assert simplify(e, validate=True, debug=True) is not e
+
+    def test_regression08(self):
+        simplify(EUnaryOp('sum', EEmptyList().with_type(TBag(TFloat()))).with_type(TFloat()), validate=True, debug=True)
