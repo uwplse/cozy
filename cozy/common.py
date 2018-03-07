@@ -536,10 +536,17 @@ def exists(iter, p=lambda x: True):
             return True
     return False
 
+def assert_eq(x, y):
+    assert x == y, "{!r} == {!r}".format(x, y)
+
 def divide_integers_and_round_up(x, y):
     assert x > 0
     assert y > 0
     return (x - 1) // y + 1
+
+assert_eq(divide_integers_and_round_up(1, 2), 1)
+assert_eq(divide_integers_and_round_up(2, 2), 1)
+assert_eq(divide_integers_and_round_up(3, 2), 2)
 
 def integer_log2_round_up(x):
     """
@@ -547,11 +554,18 @@ def integer_log2_round_up(x):
     log2(x) rounded up.
     """
     assert x > 0
-    res = 0
-    while x:
-        res += 1
-        x = divide_integers_and_round_up(x, 2)
-    return res
+    i = 1
+    p = 2 ** i
+    while p < x:
+        i += 1
+        p *= 2
+    return i
+
+assert_eq(integer_log2_round_up(1), 1)
+assert_eq(integer_log2_round_up(2), 1)
+assert_eq(integer_log2_round_up(3), 2)
+assert_eq(integer_log2_round_up(4), 2)
+assert_eq(integer_log2_round_up(5), 3)
 
 def identity_func(x):
     return x
