@@ -369,12 +369,19 @@ def accelerate_build(build_candidates, args, state_vars):
                         for x, pool in accelerate_filter(e.e, e.p, state_vars, (), args, cache, sz2):
                             yield check(x, pool)
 
+            if size == 0:
+                for a in args:
+                    for v in state_vars:
+                        if is_collection(v.type) and v.type.t == a.type:
+                            cond = optimized_in(a, EStateVar(v).with_type(v.type))
+                            yield check(cond, RUNTIME_POOL)
+
             for bag in cache.find_collections(pool=RUNTIME_POOL, size=size-1):
                 for a in args:
                     for v in state_vars:
                         if is_collection(v.type) and v.type.t == a.type:
                             v = EStateVar(v).with_type(v.type)
-                            cond = EBinOp(a, BOp.In, v).with_type(BOOL)
+                            cond = optimized_in(a, v)
                             yield check(EFilter(bag, mk_lambda(bag.type.t, lambda _:      cond )).with_type(bag.type), RUNTIME_POOL)
                             yield check(EFilter(bag, mk_lambda(bag.type.t, lambda _: ENot(cond))).with_type(bag.type), RUNTIME_POOL)
 
