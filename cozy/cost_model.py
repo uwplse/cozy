@@ -480,8 +480,9 @@ def asymptotic_runtime(e, lattice):
                 costs.append(self.cardinality(e.e1))
                 costs.append(self.cardinality(e.e2))
             elif e.op == "-" and is_collection(e.type):
-                costs.append(self.cardinality(e.e1))
-                costs.append(self.cardinality(e.e2))
+                costs.append(EBinOp(
+                    self.cardinality(e.e1), "*",
+                    self.cardinality(e.e2)).with_type(INT))
             return self.combine(costs)
         def visit_ELambda(self, e):
             # avoid name collisions with fresh_var
