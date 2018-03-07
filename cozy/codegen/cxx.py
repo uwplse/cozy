@@ -704,7 +704,7 @@ class CxxPrinter(common.Visitor):
     def visit_ETuple(self, e, indent=""):
         name = self.typename(e.type)
         setups, args = zip(*[self.visit(arg, indent) for arg in e.es])
-        return ("".join(setups), "{}({})".format(name, ", ".join(args)))
+        return ("".join(setups), "{} {{ {} }}".format(name, ", ".join(args)))
 
     def visit_ETupleGet(self, e, indent=""):
         return self.visit_EGetField(EGetField(e.e, "_{}".format(e.n)), indent)
