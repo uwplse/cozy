@@ -14,9 +14,9 @@ handle2 = (2, mkval(INT))
 handle3 = (3, mkval(INT))
 zero = ENum(0).with_type(INT)
 
-def check_discovery(spec, expected, state_vars=[], args=[], examples=[]):
+def check_discovery(spec, expected, state_vars=[], args=[], examples=[], assumptions=T):
     for r in improve(spec,
-            assumptions=T,
+            assumptions=assumptions,
             state_vars=state_vars,
             args=args,
             examples=examples):
@@ -38,7 +38,7 @@ class TestSynthesisCore(unittest.TestCase):
         assumptions = EUnaryOp(UOp.All, xs)
         assert retypecheck(target)
         assert retypecheck(assumptions)
-        assert check_discovery(target, EStateVar(EVar("xs")), args=[x], state_vars=[xs])
+        assert check_discovery(target, EStateVar(EVar("xs")), args=[x], state_vars=[xs], assumptions=assumptions)
 
     def test_bag_plus_minus(self):
         t = THandle("H", INT)
