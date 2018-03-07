@@ -370,7 +370,7 @@ def improve(
         print("This job does not depend on state_vars.")
         # TODO: what can we do about it?
 
-    vars = list(free_vars(target) | free_vars(assumptions))
+    vars = list(free_vars(target) | free_vars(assumptions) | set(args) | set(state_vars))
     funcs = free_funcs(EAll([target, assumptions]))
 
     solver = None
