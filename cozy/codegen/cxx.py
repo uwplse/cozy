@@ -274,7 +274,7 @@ class CxxPrinter(common.Visitor):
 
     def visit_EListGet(self, e, indent):
         assert type(e.e.type) is TList
-        return self.visit(EEscape("{l}[{i}]", ["l", "i"], [e.e, e.index]))
+        return self.visit(EEscape("{l}[{i}]", ["l", "i"], [e.e, e.index]).with_type(e.e.type.t))
 
     def visit_ENative(self, e, indent):
         assert e.e == ENum(0)
@@ -300,6 +300,18 @@ class CxxPrinter(common.Visitor):
             return dict(self.state_exp(lval.e).fields)[lval.f]
         else:
             raise NotImplementedError(repr(lval))
+
+    def visit_EMakeMap2(self, e, indent=""):
+        m = self.fv(e.type)
+        s = indent + self.visit(e.type, name=m.id) + ";\n"
+        x = fresh_var(e.type.k)
+        s += self.visit(SForEach(x, e.e, SMapPut(m, x, e.value.apply_to(x))), indent=indent)
+        return (s, m.id)
+
+    def visit_EHasKey(self, e, indent=""):
+        msetup, map = self.visit(e.map, indent)
+        ksetup, key = self.visit(e.key, indent)
+        return (msetup + ksetup, "{map}.find({key}) != {map}.end()".format(map=map, key=key))
 
     def visit_EMapGet(self, e, indent=""):
         if isinstance(e.map, EStateVar):
@@ -558,7 +570,17 @@ class CxxPrinter(common.Visitor):
                 return self.for_each_native(x, iterable, body(x), indent)
             return self.visit(iterable.type.for_each(x, iterable, body(x)), indent=indent)
 
-    def for_each_native(self, x, iterable, body, indent):
+    def for_each_native(self, x : EVar, iterable, body, indent):
+        if isinstance(iterable, EMapKeys):
+            msetup, map = self.visit(iterable.e, indent)
+            pair = self.fv(TNative("const auto &"))
+            return msetup + "{setup}{indent}for ({loop_decl} : {iterable}) {{\n{body}{indent}}}\n".format(
+                indent=indent,
+                INDENT=INDENT,
+                setup=msetup,
+                loop_decl=self.visit(pair.type, pair.id),
+                iterable=map,
+                body=self.visit(seq([SDecl(x.id, EEscape("{p}.first", ("p",), (pair,)).with_type(x.type)), body]), indent+INDENT))
         setup, iterable = self.visit(iterable, indent)
         return "{setup}{indent}for ({decl} : {iterable}) {{\n{body}{indent}}}\n".format(
             indent=indent,
@@ -651,6 +673,19 @@ class CxxPrinter(common.Visitor):
             v = self.fv(e.type, "v")
             stm = self.construct_concrete(e.type, e, v)
             return ("{}{};\n".format(indent, self.visit(e.type, v.id)) + self.visit(stm, indent), v.id)
+        elif op == UOp.AreUnique:
+            s = self.fv(library.TNativeSet(e.e.type.t), "unique_elems")
+            u = self.fv(BOOL, "is_unique")
+            x = self.fv(e.e.type.t)
+            label = fresh_name("label")
+            return (self.visit(seq([
+                SDecl(s.id, EEmptyList().with_type(s.type)),
+                SDecl(u.id, T),
+                SEscapableBlock(label,
+                    SForEach(x, e.e,
+                        SIf(EEscape("{s}.find({x}) != {s}.end()", ("s", "x"), (s, x)).with_type(BOOL),
+                            seq([SAssign(u, F), SEscapeBlock(label)]),
+                            SEscape("{indent}{s}.insert({x})", ("s", "x"), (s, x)))))]), indent=indent), u.id)
         elif op == UOp.Reversed:
             v = self.fv(e.type, "v")
             stm = self.construct_concrete(e.type, e.e, v)
@@ -740,6 +775,7 @@ class CxxPrinter(common.Visitor):
         return self.visit(stm, indent)
 
     def visit_SDecl(self, s, indent=""):
+        assert isinstance(s.id, str)
         t = s.val.type
         decl = self.visit(t, s.id)
         return self.visit(seq([
