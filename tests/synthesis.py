@@ -38,7 +38,7 @@ class TestSynthesisCore(unittest.TestCase):
         assumptions = EUnaryOp(UOp.All, xs)
         assert retypecheck(target)
         assert retypecheck(assumptions)
-        check_discovery(target, EStateVar(EVar("xs")), args=[x], state_vars=[xs])
+        assert check_discovery(target, EStateVar(EVar("xs")), args=[x], state_vars=[xs])
 
     def test_bag_plus_minus(self):
         t = THandle("H", INT)
@@ -64,4 +64,4 @@ class TestSynthesisCore(unittest.TestCase):
         y = EVar("y").with_type(INT)
         spec = EIn(y, EStateVar(xs))
         assert retypecheck(spec)
-        assert check_discovery(spec=spec, expected=lambda e: isinstance(e, EMapGet) and isinstance(e.map, EStateVar) and valid(EEq(e, spec)), args=[y], state_vars=[xs])
+        assert check_discovery(spec=spec, expected=lambda e: (isinstance(e, EMapGet) or isinstance(e, EHasKey)) and isinstance(e.map, EStateVar) and valid(EEq(e, spec)), args=[y], state_vars=[xs])
