@@ -5,6 +5,7 @@ from cozy.target_syntax import *
 from cozy.syntax_tools import fresh_var, free_vars, break_conj, pprint, enumerate_fragments, mk_lambda, strip_EStateVar, alpha_equivalent, subst
 from cozy.typecheck import is_numeric, is_collection
 from cozy.pools import RUNTIME_POOL, STATE_POOL, ALL_POOLS
+from cozy.simplification import simplify
 
 accelerate = Option("acceleration-rules", bool, True)
 
@@ -225,6 +226,11 @@ def accelerate_build(build_candidates, args, state_vars):
             return (e, pool)
 
         if accelerate.value:
+
+            for e in cache.find(pool=RUNTIME_POOL, size=size-1):
+                x = simplify(e)
+                if not alpha_equivalent(x, e):
+                    yield check(x, RUNTIME_POOL)
 
             # for e in cache.find(pool=RUNTIME_POOL, size=size-1, type=INT):
             #     e2 = simplify_sum(e)
