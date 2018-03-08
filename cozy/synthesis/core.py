@@ -352,11 +352,17 @@ def improve(
     print("subject to: {}".format(pprint(assumptions)))
     print()
 
-    assert exp_wf(
-        target,
-        state_vars=set(state_vars),
-        args=set(args),
-        assumptions=assumptions)
+    try:
+        assert exp_wf(
+            target,
+            state_vars=set(state_vars),
+            args=set(args),
+            assumptions=assumptions)
+    except ExpIsNotWf as ex:
+        print("WARNING: initial target is not well-formed [{}]; this might go poorly...".format(str(ex)))
+        print(pprint(ex.offending_subexpression))
+        print(pprint(ex.offending_subexpression.type))
+        # raise
 
     # Bit of a hack, but... a CompositeCostModel needs to be initialized with
     # the proper assumptions.  It also needs to be local to the synthesis task,
