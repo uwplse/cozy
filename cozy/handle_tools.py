@@ -150,15 +150,21 @@ def fix_ewithalteredvalue(e : Exp):
         def visit_EMakeMap2(self, e):
             ee = self.visit(e.e)
             v = self.visit(e.value)
-            if isinstance(ee.type.t, THandle):
-                ee = EMap(ee, fst())
-            return EMakeMap2(ee, v)
+            if isinstance(e.type.k, THandle):
+                ee = EMap(ee, fst()).with_type(ee.type.t.ts[0])
+            return EMakeMap2(ee, v).with_type(TMap(ee.type.t, v.body.type))
         def visit_EMapGet(self, e):
             m = self.visit(e.map)
             k = self.visit(e.key)
             if isinstance(m.type.k, THandle):
                 k = fst().apply_to(k)
             return EMapGet(m, k).with_type(m.type.v)
+        def visit_EHasKey(self, e):
+            m = self.visit(e.map)
+            k = self.visit(e.key)
+            if isinstance(m.type.k, THandle):
+                k = fst().apply_to(k)
+            return EHasKey(m, k).with_type(m.type.v)
         def visit_EBinOp(self, e):
             e1 = self.visit(e.e1)
             e2 = self.visit(e.e2)
