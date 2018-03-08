@@ -222,7 +222,12 @@ def accelerate_build(build_candidates, args, state_vars):
             bad = [v for v in free_vars(e) if v not in args and v not in state_vars and v not in scopes]
             if bad:
                 print("oops! bad free vars: {}".format(bad))
-                raise Exception(pprint(e))
+                from cozy.common import my_caller
+                print(pprint(e))
+                print(repr(e))
+                print(my_caller())
+                return (T, pool)
+                # raise Exception(pprint(e))
             return (e, pool)
 
         if accelerate.value:
