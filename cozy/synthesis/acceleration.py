@@ -332,20 +332,20 @@ def accelerate_build(build_candidates, args, state_vars):
             #     yield check(m, STATE_POOL)
 
             # Fixup EFilter(\x -> ECond...)
-            for e in cache.find_collections(pool=RUNTIME_POOL, size=size-1):
-                if isinstance(e, EFilter):
-                    for ctx in enumerate_fragments(e.p.body):
-                        x = ctx.e
-                        r = ctx.replace_e_with
-                        if isinstance(x, ECond):
-                            lhs = EFilter(e.e, ELambda(e.p.arg, EAll([     x.cond , r(x.then_branch)]))).with_type(e.type)
-                            rhs = EFilter(e.e, ELambda(e.p.arg, EAll([ENot(x.cond), r(x.else_branch)]))).with_type(e.type)
-                            union = EBinOp(lhs, "+", rhs).with_type(e.type)
-                            # yield check(lhs.p.body, RUNTIME_POOL)
-                            # yield check(rhs.p.body, RUNTIME_POOL)
-                            yield check(lhs, RUNTIME_POOL)
-                            yield check(rhs, RUNTIME_POOL)
-                            yield check(union, RUNTIME_POOL)
+            # for e in cache.find_collections(pool=RUNTIME_POOL, size=size-1):
+            #     if isinstance(e, EFilter):
+            #         for ctx in enumerate_fragments(e.p.body):
+            #             x = ctx.e
+            #             r = ctx.replace_e_with
+            #             if isinstance(x, ECond):
+            #                 lhs = EFilter(e.e, ELambda(e.p.arg, EAll([     x.cond , r(x.then_branch)]))).with_type(e.type)
+            #                 rhs = EFilter(e.e, ELambda(e.p.arg, EAll([ENot(x.cond), r(x.else_branch)]))).with_type(e.type)
+            #                 union = EBinOp(lhs, "+", rhs).with_type(e.type)
+            #                 # yield check(lhs.p.body, RUNTIME_POOL)
+            #                 # yield check(rhs.p.body, RUNTIME_POOL)
+            #                 yield check(lhs, RUNTIME_POOL)
+            #                 yield check(rhs, RUNTIME_POOL)
+            #                 yield check(union, RUNTIME_POOL)
 
             # Try instantiating bound expressions
             for pool in ALL_POOLS:
