@@ -1153,8 +1153,17 @@ def break_binary(x, binary_children):
         else:
             stk.extend(reversed(common.make_random_access(children)))
 
+def break_ebinop(e : syntax.Exp, op : syntax.BOp):
+    return break_binary(e, lambda e: (e.e1, e.e2) if isinstance(e, syntax.EBinOp) and e.op == op else None)
+
 def break_conj(e : syntax.Exp):
-    return break_binary(e, lambda e: (e.e1, e.e2) if isinstance(e, syntax.EBinOp) and e.op == syntax.BOp.And else None)
+    return break_ebinop(e, syntax.BOp.And)
+
+def break_sum(e : syntax.Exp):
+    return break_ebinop(e, "+")
+
+def break_product(e : syntax.Exp):
+    return break_ebinop(e, "*")
 
 def break_seq(s : syntax.Stm):
     return break_binary(s, lambda s: (s.s1, s.s2) if isinstance(s, syntax.SSeq) else None)

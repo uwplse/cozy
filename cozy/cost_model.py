@@ -6,7 +6,7 @@ import igraph
 
 from cozy.common import OrderedSet, typechecked, partition, make_random_access, compare_with_lt, collapse_runs, product, exists, fresh_name
 from cozy.target_syntax import *
-from cozy.syntax_tools import BottomUpExplorer, pprint, equal, fresh_var, mk_lambda, free_vars, subst, alpha_equivalent, all_exps, ExpMap
+from cozy.syntax_tools import BottomUpExplorer, pprint, equal, fresh_var, mk_lambda, free_vars, subst, alpha_equivalent, all_exps, ExpMap, break_sum, break_product, break_conj
 from cozy.typecheck import is_collection
 from cozy.pools import RUNTIME_POOL, STATE_POOL
 from cozy.solver import valid, satisfiable, REAL, SolverReportedUnknown, IncrementalSolver
@@ -662,7 +662,6 @@ def cardinality(e : Exp, cache : { Exp : EVar }, heuristics : [Exp], plus_one=Fa
         return v
 
 def debug_comparison(e1, c1, e2, c2, assumptions : Exp = T):
-    from cozy.syntax_tools import break_conj
     print("-" * 20)
     print("comparing costs...")
     print("  e1 = {}".format(pprint(e1)))
@@ -690,20 +689,6 @@ def debug_comparison(e1, c1, e2, c2, assumptions : Exp = T):
             print("  {}".format(pprint(o)))
         if cmp != Cost.UNORDERED:
             break
-
-def break_sum(e):
-    if isinstance(e, EBinOp) and e.op == "+":
-        yield from break_sum(e.e1)
-        yield from break_sum(e.e2)
-    else:
-        yield e
-
-def break_product(e):
-    if isinstance(e, EBinOp) and e.op == "*":
-        yield from break_product(e.e1)
-        yield from break_product(e.e2)
-    else:
-        yield e
 
 def ESum(es):
     es = [e for x in es for e in break_sum(x) if e != ZERO]
