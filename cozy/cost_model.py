@@ -217,6 +217,8 @@ class Factor(object):
         return False
     def __str__(self):
         return pprint(self.e)
+    def to_exp(self):
+        return self.e
 
 class Term(object):
     def __init__(self, factors : [Factor], constant : int = 1):
@@ -251,6 +253,12 @@ class Term(object):
         return self.constant < other.constant
     def __str__(self):
         return "*".join(str(f) for f in self.factors)
+    def strip_constants(self):
+        return Term(self.factors)
+    def to_exp(self):
+        return EProduct(itertools.chain(
+            (f.to_exp() for f in self.factors),
+            (ENum(self.constant).with_type(INT),) if self.constant != 1 else ()))
 
 def find_match(xs, ys, p):
     for x in xs:
@@ -282,6 +290,10 @@ class Polynomial(object):
             lambda a: all(b < a for b in p1))
     def __str__(self):
         return " + ".join(str(f) for f in self.terms)
+    def strip_constants(self):
+        return Polynomial(t.strip_constants() for t in self.terms)
+    def to_exp(self):
+        return ESum(t.to_exp() for t in self.terms)
 
 def nf(f : Exp, lattice : CardinalityLattice) -> Polynomial:
     from cozy.syntax_tools import BottomUpRewriter
@@ -419,100 +431,9 @@ def _EGt(x, y):
         return T if x.val > y.val else F
     return EGt(x, y)
 
-def EMax(es):
-    return ESum(es)
-    es = make_random_access(es)
-    assert es
-    assert all(isinstance(e, Exp) for e in es), es
-    res = es[0]
-    t = res.type
-    fvs = set(v.id for v in free_vars(res))
-    for i in range(1, len(es)):
-        res = maybe_inline(res,   lambda v1:
-              maybe_inline(es[i], lambda v2:
-                _ECond(_EGt(v1, v2), v1, v2)))
-    return res
-
 def asymptotic_runtime(e, lattice):
-    def _EMax(es):
-        return max(es, key=lambda e: nf(e, lattice))
-    class V(BottomUpExplorer):
-        def EBinOp(self, e1, op, e2):
-            if isinstance(e1, list): e1 = _EMax([ONE] + e1)
-            if isinstance(e2, list): e2 = _EMax([ONE] + e2)
-            if op == "*":
-                if e1 == ENum(1): return e2
-                if e2 == ENum(1): return e1
-            e = EBinOp(e1, op, e2).with_type(e1.type)
-            if isinstance(e1, ENum) and isinstance(e2, ENum):
-                return ENum(eval(e, {})).with_type(e1.type)
-            return e
-        def cardinality(self, e : Exp, **kwargs) -> Exp:
-            return lattice.cardinality(e)
-        def combine(self, costs):
-            res = []
-            q = list(costs)
-            while q:
-                c = q.pop()
-                if isinstance(c, ENum):
-                    continue
-                elif isinstance(c, Exp):
-                    res.append(c)
-                else:
-                    assert isinstance(c, list) or isinstance(c, tuple), repr(c)
-                    q.extend(c)
-            return res
-            # return _EMax([ONE] + res)
-        def visit_EStateVar(self, e):
-            return self.combine([ONE])
-        def visit_EUnaryOp(self, e):
-            costs = [ONE, self.visit(e.e)]
-            if e.op in (UOp.Sum, UOp.Distinct, UOp.AreUnique, UOp.All, UOp.Any, UOp.Length):
-                costs.append(self.cardinality(e.e))
-            return self.combine(costs)
-        def visit_EBinOp(self, e):
-            c1 = self.visit(e.e1)
-            c2 = self.visit(e.e2)
-            costs = [ONE, c1, c2]
-            if e.op == BOp.In:
-                costs.append(self.cardinality(e.e2))
-            elif e.op == "==" and is_collection(e.e1.type):
-                costs.append(self.cardinality(e.e1))
-                costs.append(self.cardinality(e.e2))
-            elif e.op == "-" and is_collection(e.type):
-                costs.append(EBinOp(
-                    self.cardinality(e.e1), "*",
-                    self.cardinality(e.e2)).with_type(INT))
-            return self.combine(costs)
-        def visit_ELambda(self, e):
-            # avoid name collisions with fresh_var
-            # return self.visit(e.apply_to(fresh_var(e.arg.type))) # NO NO: breaks caching!
-            return self.visit(e.body)
-        def visit_EMakeMap2(self, e):
-            return self.combine([self.EBinOp(self.cardinality(e.e, plus_one=True), "*", self.visit(e.value)).with_type(INT)])
-        def visit_EFilter(self, e):
-            return self.combine((ONE, self.visit(e.e), self.EBinOp(self.cardinality(e.e, plus_one=True), "*", self.visit(e.p)).with_type(INT)))
-        def visit_EFlatMap(self, e):
-            return self.visit(EMap(e.e, e.f))
-        def visit_EMap(self, e):
-            return self.combine((ONE, self.visit(e.e), self.EBinOp(self.cardinality(e.e, plus_one=True), "*", self.visit(e.f)).with_type(INT)))
-        def visit_EArgMin(self, e):
-            return self.combine((ONE, self.visit(e.e), self.EBinOp(self.cardinality(e.e, plus_one=True), "*", self.visit(e.f)).with_type(INT)))
-        def visit_EArgMax(self, e):
-            return self.combine((ONE, self.visit(e.e), self.EBinOp(self.cardinality(e.e, plus_one=True), "*", self.visit(e.f)).with_type(INT)))
-        def visit_EDropFront(self, e):
-            return self.combine((ONE, self.visit(e.e), self.cardinality(e.e, plus_one=True).with_type(INT)))
-        def visit_EDropBack(self, e):
-            return self.combine((ONE, self.visit(e.e), self.cardinality(e.e, plus_one=True).with_type(INT)))
-        def join(self, x, child_costs):
-            if isinstance(x, list) or isinstance(x, tuple):
-                return self.combine(child_costs)
-            if not isinstance(x, Exp):
-                return self.combine([ZERO])
-            return self.combine(itertools.chain((ONE,), child_costs))
-    vis = V()
-    f = _EMax([ONE] + vis.visit(e))
-    # f = cse(f)
+    f = precise_runtime(e, lattice, as_formula=True)
+    f = nf(f, lattice).strip_constants().to_exp() # a bit wasteful, but w/e
     return SymbolicCost(f, lattice)
 
 def sizeof(e, lattice):
@@ -541,7 +462,7 @@ EXTREME_COST    = ENum(1000).with_type(INT)
 MILD_PENALTY    = ENum(  10).with_type(INT)
 TWO             = ENum(   2).with_type(INT)
 
-def precise_runtime(e, lattice):
+def precise_runtime(e, lattice, as_formula=False):
     class V(BottomUpExplorer):
         def __init__(self):
             super().__init__()
@@ -601,7 +522,7 @@ def precise_runtime(e, lattice):
             return ESum(itertools.chain((ONE,), child_costs))
     vis = V()
     f = vis.visit(e)
-    return SymbolicCost(f, lattice)
+    return f if as_formula else SymbolicCost(f, lattice)
 
 def ast_size(e):
     return PlainCost(e.size())
@@ -699,3 +620,13 @@ def ESum(es):
     if nums:
         es.append(ENum(sum(n.val for n in nums)).with_type(INT))
     return build_balanced_tree(INT, "+", es)
+
+def EProduct(es):
+    es = [e for x in es for e in break_product(x) if e != ONE]
+    if not es:
+        return ONE
+    nums, nonnums = partition(es, lambda e: isinstance(e, ENum))
+    es = nonnums
+    if nums:
+        es.append(ENum(product(n.val for n in nums)).with_type(INT))
+    return build_balanced_tree(INT, "*", es)
