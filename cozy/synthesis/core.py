@@ -181,8 +181,26 @@ class Learner(object):
         return f
 
     def build_candidates(self, wrapped_builder):
+        def find_multi(cache, pool, types, sizes, i=0):
+            if i >= len(types):
+                yield ()
+                return
+            for e in cache.find(pool=pool, type=types[i], size=sizes[i]):
+                for rest in find_multi(cache, pool, types, sizes, i+1):
+                    yield (e,) + rest
+
         def f(cache, size, scopes, build_lambdas):
             yield from wrapped_builder(cache, size, scopes, build_lambdas)
+
+            # TODO: we need some better way to pass down extern functions
+            for f, t in free_funcs(self.target).items():
+                for partition in pick_to_sum(len(t.arg_types), size-1):
+                    for pool in ALL_POOLS:
+                        for args in find_multi(cache, pool=pool, types=t.arg_types, sizes=partition):
+                            e = ECall(f, args).with_type(t.ret_type)
+                            e._tag = True
+                            yield (e, pool)
+
             if size == 0:
                 yield from self.roots()
                 # Add roots for scopes
