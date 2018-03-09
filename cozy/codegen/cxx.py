@@ -917,64 +917,71 @@ class CxxPrinter(common.Visitor):
         self.funcs = { f.name: f for f in spec.extern_funcs }
         self.queries = { q.name: q for q in spec.methods if isinstance(q, Query) }
         self.vars = set(e.id for e in all_exps(spec) if isinstance(e, EVar))
+        with StringIO() as f:
 
-        s = "#pragma once\n"
-        s += "#include <algorithm>\n"
-        s += "#include <vector>\n"
-        s += "#include <unordered_set>\n"
-        s += "#include <string>\n"
-        if self.use_qhash:
-            s += "#include <QHash>\n"
-        else:
-            s += "#include <unordered_map>\n"
+            f.write("#pragma once\n")
+            f.write("#include <algorithm>\n")
+            f.write("#include <vector>\n")
+            f.write("#include <unordered_set>\n")
+            f.write("#include <string>\n")
+            if self.use_qhash:
+                f.write("#include <QHash>\n")
+            else:
+                f.write("#include <unordered_map>\n")
 
-        if spec.header:
-            s += "\n" + spec.header.strip() + "\n"
+            if spec.header:
+                f.write("\n" + spec.header.strip() + "\n")
 
-        s += "{}\nclass {} {{\n".format(
-            ("\n" + spec.docstring) if spec.docstring else "",
-            spec.name)
+            f.write("{}\nclass {} {{\n".format(
+                ("\n" + spec.docstring) if spec.docstring else "",
+                spec.name))
 
-        s += "public:\n"
+            f.write("public:\n")
 
-        self.setup_types(spec, state_exps, sharing)
-        for t, name in self.types.items():
-            s += self.define_type(spec.name, t, name, INDENT, sharing)
-        s += "protected:\n"
-        for name, t in spec.statevars:
-            self.statevar_name = name
-            s += self.declare_field(name, t, indent=INDENT)
-        s += "public:\n"
+            print("Setting up auxiliary types...")
+            self.setup_types(spec, state_exps, sharing)
+            for t, name in self.types.items():
+                f.write(self.define_type(spec.name, t, name, INDENT, sharing))
+            f.write("protected:\n")
+            for name, t in spec.statevars:
+                self.statevar_name = name
+                f.write(self.declare_field(name, t, indent=INDENT))
+            f.write("public:\n")
 
-        # default constructor
-        s += INDENT + "inline {name}() {{\n".format(name=spec.name)
-        for name, t in spec.statevars:
-            initial_value = state_exps[name]
-            fvs = free_vars(initial_value)
-            initial_value = subst(initial_value, {v.id : evaluation.construct_value(v.type) for v in fvs})
-            setup = self.construct_concrete(t, initial_value, EVar(name).with_type(t))
-            s += self.visit(setup, INDENT + INDENT)
-        s += INDENT + "}\n"
+            print("Generating constructors...")
 
-        # explicit constructor
-        if abstract_state:
-            s += INDENT + "inline {name}({args}) {{\n".format(
-                name=spec.name,
-                args=", ".join(self.visit(t, v) for (v, t) in abstract_state))
+            # default constructor
+            f.write(INDENT + "inline {name}() {{\n".format(name=spec.name))
             for name, t in spec.statevars:
                 initial_value = state_exps[name]
+                fvs = free_vars(initial_value)
+                initial_value = subst(initial_value, {v.id : evaluation.construct_value(v.type) for v in fvs})
                 setup = self.construct_concrete(t, initial_value, EVar(name).with_type(t))
-                s += self.visit(setup, INDENT + INDENT)
-            s += INDENT + "}\n"
+                f.write(self.visit(setup, INDENT + INDENT))
+            f.write(INDENT + "}\n")
 
-        # disable copy constructor (TODO: support this in the future?)
-        s += INDENT + "{name}(const {name}& other) = delete;\n".format(name=spec.name)
+            # explicit constructor
+            if abstract_state:
+                f.write(INDENT + "inline {name}({args}) {{\n".format(
+                    name=spec.name,
+                    args=", ".join(self.visit(t, v) for (v, t) in abstract_state)))
+                for name, t in spec.statevars:
+                    initial_value = state_exps[name]
+                    setup = self.construct_concrete(t, initial_value, EVar(name).with_type(t))
+                    f.write(self.visit(setup, INDENT + INDENT))
+                f.write(INDENT + "}\n")
 
-        # generate methods
-        for op in spec.methods:
-            s += self.visit(op, INDENT)
-        s += "};\n\n"
-        s += spec.footer
-        if not s.endswith("\n"):
-            s += "\n"
-        return s
+            # disable copy constructor (TODO: support this in the future?)
+            f.write(INDENT + "{name}(const {name}& other) = delete;\n".format(name=spec.name))
+
+            # generate methods
+            for op in spec.methods:
+                print("Generating method {}...".format(op.name))
+                f.write(self.visit(op, INDENT))
+            f.write("};\n")
+            if spec.footer:
+                f.write("\n")
+                f.write(spec.footer)
+                if not spec.footer.endswith("\n"):
+                    f.write("\n")
+            return f.getvalue()
