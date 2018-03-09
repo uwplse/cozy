@@ -824,6 +824,8 @@ class ToZ3(Visitor):
     def visit(self, e, *args):
         try:
             return super().visit(e, *args)
+        except KeyboardInterrupt:
+            raise
         except:
             print("failed to convert {}".format(pprint(e)))
             print("  ---> {!r}".format(e))
