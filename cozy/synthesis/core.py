@@ -164,6 +164,8 @@ class Learner(object):
                         # print("  ... {} in {} --> {}".format(pprint(ctx.e.type), pool_name(ctx.pool), pprint(ctx.replace_e_with(EVar("___")))))
                         # TODO: if enumerate_frags told us what bags the scope vars came from, we could do better...
                         for mapping in self.all_possible_mappings(OrderedSet(scopes.keys()), OrderedSet(ctx.bound_vars)):
+                            if self.stop_callback():
+                                raise StopException()
                             x = subst(e, { a.id : b for (a, b) in mapping.items() })
                             ee = ctx.replace_e_with(x)
                             # print("        try {}".format(pprint(ee)))
