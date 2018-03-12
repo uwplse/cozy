@@ -126,9 +126,10 @@ def sketch_update(
         return (syntax.SNoOp(), [])
 
     subgoals = []
+    new_value = strip_EStateVar(new_value)
 
     def make_subgoal(e, a=[], docstring=None):
-        e = strip_EStateVar(e)
+        # e = strip_EStateVar(e)
         if skip_stateless_synthesis.value and not any(v in ctx for v in free_vars(e)):
             return e
         query_name = fresh_name("query")
