@@ -2,7 +2,6 @@ import unittest
 
 from cozy.syntax_tools import mk_lambda, pprint, alpha_equivalent, subst, strip_EStateVar
 from cozy.target_syntax import *
-from cozy.cost_model import CompositeCostModel
 from cozy.typecheck import retypecheck
 from cozy.evaluation import Bag, mkval
 from cozy.synthesis.core import improve
