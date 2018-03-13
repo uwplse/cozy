@@ -177,12 +177,12 @@ def run():
         java = args.java
         if java is not None:
             with common.open_maybe_stdout(java) as out:
-                out.write(codegen.JavaPrinter(boxed=(not args.unboxed)).visit(impl, state_map, share_info, abstract_state=ast.spec.statevars))
+                codegen.JavaPrinter(out=out, boxed=(not args.unboxed)).visit(impl, state_map, share_info, abstract_state=ast.spec.statevars)
 
         cxx = getattr(args, "c++")
         if cxx is not None:
             with common.open_maybe_stdout(cxx) as out:
-                out.write(codegen.CxxPrinter(use_qhash=args.use_qhash).visit(impl, state_map, share_info, abstract_state=ast.spec.statevars))
+                codegen.CxxPrinter(out=out, use_qhash=args.use_qhash).visit(impl, state_map, share_info, abstract_state=ast.spec.statevars)
     except:
         print("Code generation failed!")
         if save_failed_codegen_inputs.value:

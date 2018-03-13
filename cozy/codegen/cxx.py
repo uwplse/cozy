@@ -14,9 +14,10 @@ from .misc import *
 EMove = declare_case(Exp, "EMove", ["e"])
 SScoped = declare_case(Stm, "SScoped", ["s"])
 
-class CxxPrinter(common.Visitor):
+class CxxPrinter(CodeGenerator):
 
-    def __init__(self, use_qhash : bool = False):
+    def __init__(self, out, use_qhash : bool = False):
+        super().__init__(out=out)
         self.types = OrderedDict()
         self.funcs = {}
         self.queries = {}
@@ -110,120 +111,101 @@ class CxxPrinter(common.Visitor):
     def visit_TVector(self, t, name):
         return "{}[{}]".format(self.visit(t.t, name), t.n)
 
-    def visit_EVectorGet(self, e, indent=""):
-        vsetup, v = self.visit(e.e, indent)
-        isetup, i = self.visit(e.i, indent)
-        return (vsetup + isetup, "{}[{}]".format(v, i))
+    def visit_EVectorGet(self, e):
+        v = self.visit(e.e)
+        i = self.visit(e.i)
+        return "{}[{}]".format(v, i)
 
-    def visit_SWhile(self, w, indent):
-        cond_setup, cond = self.visit(ENot(w.e), indent+INDENT)
-        body = self.visit(w.body, indent=indent+INDENT)
-        if cond_setup:
-            return "{indent0}for (;;) {{\n{cond_setup}{indent}if ({cond}) break;\n{body}{indent0}}}\n".format(
-                indent0=indent,
-                indent=indent+INDENT,
-                cond_setup=cond_setup,
-                cond=cond,
-                body=body)
-        else:
-            return "{indent0}while (!{cond}) {{\n{body}{indent0}}}\n".format(
-                indent0=indent,
-                cond=cond,
-                body=body)
+    def visit_SWhile(self, w):
+        self.begin_statement()
+        self.write("for (;;) ")
+        with self.block():
+            self.visit(SIf(ENot(w.e), SEscape("{indent}break;", (), ()), SNoOp()))
+            self.visit(w.body)
+        self.end_statement()
 
-    def visit_SEscapableBlock(self, s, indent):
-        return "{body}{label}:\n".format(body=self.visit(s.body, indent), label=s.label)
+    def visit_SEscapableBlock(self, s):
+        self.visit(s.body)
+        self.write(s.label, ":\n")
 
-    def visit_SEscapeBlock(self, s, indent):
-        return "{indent}goto {label};\n".format(indent=indent, label=s.label)
+    def visit_SEscapeBlock(self, s):
+        self.begin_statement()
+        self.write("goto ", s.label, ";")
+        self.end_statement()
 
-    def visit_str(self, s, indent=""):
-        return indent + s + "\n"
-
-    def visit_Query(self, q, indent=""):
+    def visit_Query(self, q):
         if q.visibility != Visibility.Public:
             return ""
         ret_exp = q.ret
         ret_type = ret_exp.type
         if is_collection(ret_type):
-            x = EVar(self.fn("x")).with_type(ret_type.t)
-            s  = "{docstring}{indent}template <class F>\n".format(
-                    docstring=indent_lines(q.docstring, indent) + "\n" if q.docstring else "",
-                    indent=indent)
-            s += "{indent}inline void {name} ({args}const F& _callback) const {{\n{body}  }}\n\n".format(
-                indent=indent,
-                name=q.name,
-                args="".join("{}, ".format(self.visit(t, name)) for name, t in q.args),
-                body=self.visit(SForEach(x, ret_exp, SEscape("{indent}_callback({x});\n", ["x"], [x])), indent=indent+INDENT))
-            return s
+            x = self.fv(ret_type.t, "x")
+            if q.docstring:
+                self.write(indent_lines(q.docstring, self.get_indent()), "\n")
+            self.begin_statement()
+            self.write("template <class F>")
+            self.end_statement()
+            self.begin_statement()
+            self.write("inline void ", q.name, "(")
+            self.visit_args(itertools.chain(q.args, [("_callback", TNative("const F&"))]))
+            self.write(") ")
+            with self.block():
+                self.visit(SForEach(x, ret_exp, SEscape("{indent}_callback({x});\n", ["x"], [x])))
+            self.end_statement()
         else:
-            body, out = self.visit(ret_exp, indent+INDENT)
-            return "{docstring}{indent}inline {type} {name} ({args}) const {{\n{body}    return {out};\n  }}\n\n".format(
-                docstring=indent_lines(q.docstring, indent) + "\n" if q.docstring else "",
-                indent=indent,
-                type=self.visit(ret_type, ""),
-                name=q.name,
-                args=", ".join(self.visit(t, name) for name, t in q.args),
-                out=out,
-                body=body)
+            if q.docstring:
+                self.write(indent_lines(q.docstring, self.get_indent()), "\n")
+            self.begin_statement()
+            self.write("inline ", self.visit(ret_type, ""), " ", q.name, "(")
+            self.visit_args(q.args)
+            self.write(") ")
+            with self.block():
+                ret = self.visit(ret_exp)
+                self.begin_statement()
+                self.write("return ", ret, ";")
+                self.end_statement()
+            self.end_statement()
 
-    def visit_Op(self, q, indent=""):
-        s = "{}{}inline void {} ({}) {{\n{}  }}\n\n".format(
-            indent_lines(q.docstring, indent) + "\n" if q.docstring else "",
-            indent,
-            q.name,
-            ", ".join(self.visit(t, name) for name, t in q.args),
-            self.visit(q.body, indent+INDENT))
-        return s
+    def visit_Op(self, q):
+        if q.docstring:
+            self.write(indent_lines(q.docstring, self.get_indent()), "\n")
+        self.begin_statement()
+        self.write("inline void ", q.name, " (")
+        self.visit_args(q.args)
+        self.write(") ")
+        with self.block():
+            self.visit(q.body)
+        self.end_statement()
 
-    def visit_ENull(self, e, indent=""):
-        return ("", "nullptr")
+    def visit_ENull(self, e):
+        return "nullptr"
 
-    def visit_EBool(self, e, indent=""):
-        return ("", "true" if e.val else "false")
+    def visit_EBool(self, e):
+        return "true" if e.val else "false"
 
-    def visit_EEmptyList(self, e, indent=""):
-        if isinstance(e.type, library.TNativeList):
-            v = fresh_name("empty")
-            decl = "{indent}{decl};\n".format(indent=indent, decl=self.visit(e.type, name=v))
-            return (decl + self.visit(self.initialize_native_list(EVar(v).with_type(e.type)), indent), v)
-        elif isinstance(e.type, library.TNativeSet):
-            v = fresh_name("empty")
-            decl = "{indent}{decl};\n".format(indent=indent, decl=self.visit(e.type, name=v))
-            return (decl + self.visit(self.initialize_native_set(EVar(v).with_type(e.type)), indent), v)
-        return self.visit(e.type.make_empty(), indent)
+    def visit_EEmptyList(self, e):
+        v = self.fv(e.type)
+        self.declare(v)
+        self.visit(self.construct_concrete(e.type, e, v))
+        return v.id
 
-    def native_map_get(self, e, default_value, indent=""):
-        (smap, emap) = self.visit(e.map, indent)
-        (skey, ekey) = self.visit(e.key, indent)
+    def native_map_get(self, e, default_value):
+        emap = self.visit(e.map)
         if self.use_qhash:
-            return (smap + skey, "{}.value({})".format(emap, ekey))
-        iterator = self.fv(TNative("auto"), "map_iterator")
-        res = self.fv(e.type, "lookup_result")
-        setup_default = self.visit(default_value(res), indent+INDENT)
-        s  = "{indent}{declare_res};\n".format(indent=indent, declare_res=self.visit(res.type, res.id))
-        s += smap + skey
-        s += "{indent}{declare_iterator}({map}.find({key}));\n".format(
-            indent=indent,
-            declare_iterator=self.visit(iterator.type, iterator.id),
-            map=emap,
-            key=ekey)
-        s += "{indent0}if ({iterator} == {map}.end()) {{\n{setup_default}{indent0}}} else {{\n{indent}{res} = {iterator}->second;\n{indent0}}}\n".format(
-            indent0=indent,
-            indent=indent+INDENT,
-            iterator=iterator.id,
-            res=res.id,
-            map=emap,
-            setup_default=setup_default)
-        return (s, res.id)
+            return "{}.value({})".format(emap, ekey)
+        t = self.visit(e.map.type, "").strip() + "::const_iterator"
+        iterator = self.fv(TNative(t), "map_iterator")
+        self.declare(iterator, EEscape(emap + ".find({key})", ("key",), (e.key,)))
+        return self.visit(ECond(
+            EEscape("{it} == " + emap + ".end()", ("it",), (iterator,)).with_type(BOOL),
+            evaluation.construct_value(e.type),
+            EEscape("{it}->second", ("it",), (iterator,)).with_type(e.type)).with_type(e.type))
 
     def construct_concrete(self, t : Type, e : Exp, out : Exp):
         """
         Construct a value of type `t` from the expression `e` and store it in
         lvalue `out`.
         """
-        # from cozy.syntax_tools import pprint
-        # print("construct_concrete | {} <- {}".format(pprint(out), pprint(e)))
         if hasattr(t, "construct_concrete"):
             return t.construct_concrete(e, out)
         elif isinstance(t, library.TNativeList) or type(t) is TBag or type(t) is TList:
@@ -245,7 +227,7 @@ class CxxPrinter(common.Visitor):
                 self.construct_map(t, e, out))
         elif isinstance(t, THandle):
             return SEscape("{indent}{lhs} = {rhs};\n", ["lhs", "rhs"], [out, e])
-        elif is_numeric(t) or type(t) in [TBool, TNative, TString, TEnum, TTuple, TRecord]:
+        elif is_scalar(t):
             return SEscape("{indent}{lhs} = {rhs};\n", ["lhs", "rhs"], [out, e])
         raise NotImplementedError(t, e, out)
 
@@ -272,330 +254,269 @@ class CxxPrinter(common.Visitor):
     def initialize_native_map(self, e) -> Stm:
         return SNoOp() # C++ does default-initialization
 
-    def visit_EListGet(self, e, indent):
-        assert type(e.e.type) is TList
-        return self.visit(EEscape("{l}[{i}]", ["l", "i"], [e.e, e.index]).with_type(e.e.type.t))
+    # def visit_EListGet(self, e, indent):
+    #     assert type(e.e.type) is TList
+    #     return self.visit(EEscape("{l}[{i}]", ["l", "i"], [e.e, e.index]).with_type(e.e.type.t))
 
-    def visit_ENative(self, e, indent):
+    def visit_ENative(self, e):
         assert e.e == ENum(0)
-        v = fresh_name("tmp")
-        decl = self.visit(e.type, v)
-        return ("{}{};\n".format(indent, decl), v)
+        v = self.fv(e.type, "tmp")
+        self.declare(v)
+        return v.id
 
-    def visit_EMakeRecord(self, e, indent):
+    def visit_EMakeRecord(self, e):
         t = self.visit(e.type, "")
-        setups, exps = zip(*[self.visit(ee, indent) for (f, ee) in e.fields])
-        return ("".join(setups), "{}{{ {} }}".format(t, ", ".join(exps)))
+        exps = [self.visit(ee) for (f, ee) in e.fields]
+        return "{}{{ {} }}".format(t, ", ".join(exps))
 
-    def visit_EHandle(self, e, indent):
+    def visit_EHandle(self, e):
         assert e.addr == ENum(0), repr(e)
-        return self.visit(ENull().with_type(e.type), indent)
+        return self.visit(ENull().with_type(e.type))
 
-    def state_exp(self, lval):
-        if isinstance(lval, EVar):
-            return self.state_exps[lval.id]
-        elif isinstance(lval, ETupleGet):
-            return self.state_exp(lval.e).es[lval.n]
-        elif isinstance(lval, EGetField):
-            return dict(self.state_exp(lval.e).fields)[lval.f]
-        else:
-            raise NotImplementedError(repr(lval))
-
-    def visit_EMakeMap2(self, e, indent=""):
+    def visit_EMakeMap2(self, e):
         m = self.fv(e.type)
-        s = indent + self.visit(e.type, name=m.id) + ";\n"
-        x = fresh_var(e.type.k)
-        s += self.visit(SForEach(x, e.e, SMapPut(m, x, e.value.apply_to(x))), indent=indent)
-        return (s, m.id)
+        self.declare(m)
+        x = self.fv(e.type.k)
+        self.visit(SForEach(x, e.e, SMapPut(m, x, e.value.apply_to(x))))
+        return m.id
 
-    def visit_EHasKey(self, e, indent=""):
-        msetup, map = self.visit(e.map, indent)
-        ksetup, key = self.visit(e.key, indent)
-        return (msetup + ksetup, "{map}.find({key}) != {map}.end()".format(map=map, key=key))
+    def visit_EHasKey(self, e):
+        map = self.visit(e.map)
+        key = self.visit(e.key)
+        return "{map}.find({key}) != {map}.end()".format(map=map, key=key)
 
-    def visit_EMapGet(self, e, indent=""):
-        if isinstance(e.map, EStateVar):
-            return self.visit(EMapGet(e.map.e, e.key).with_type(e.type), indent=indent)
-        elif isinstance(e.map, EMakeMap2):
-            return self.visit(ELet(e.key, mk_lambda(e.key.type, lambda k:
-                ECond(EBinOp(k, BOp.In, e.map.e).with_type(BOOL),
-                    e.map.value.apply_to(k),
-                    evaluation.construct_value(e.map.type.v)).with_type(e.type))).with_type(e.type), indent=indent)
-        elif isinstance(e.map, ECond):
-            return self.visit(ELet(e.key, mk_lambda(e.key.type, lambda k:
-                ECond(e.map.cond,
-                    EMapGet(e.map.then_branch, k).with_type(e.type),
-                    EMapGet(e.map.else_branch, k).with_type(e.type)).with_type(e.type))).with_type(e.type), indent=indent)
-        elif isinstance(e.map, EVar):
-            if isinstance(e.map.type, library.TNativeMap) or type(e.map.type) is TMap:
-                return self.native_map_get(
-                    e,
-                    lambda out: self.construct_concrete(
-                        e.map.type.v,
-                        evaluation.construct_value(e.map.type.v),
-                        out),
-                    indent)
-            else:
-                return self.visit(e.map.type.get_key(e.map, e.key), indent)
+    def visit_EMapGet(self, e):
+        if isinstance(e.map.type, library.TNativeMap) or type(e.map.type) is TMap:
+            return self.native_map_get(
+                e,
+                lambda out: self.construct_concrete(
+                    e.map.type.v,
+                    evaluation.construct_value(e.map.type.v),
+                    out))
         else:
-            raise NotImplementedError(type(e.map))
+            return self.visit(e.map.type.get_key(e.map, e.key))
 
-    def visit_SMapUpdate(self, update, indent=""):
+    def visit_SMapUpdate(self, update):
         if isinstance(update.change, SNoOp):
-            return ""
+            return
         if isinstance(update.map.type, library.TNativeMap) or type(update.map.type) is TMap:
-            msetup, map = self.visit(update.map, indent)
-            ksetup, key = self.visit(update.key, indent)
-            s = "{indent}{decl} = {map}[{key}];\n".format(
-                indent=indent,
+            map = self.visit(update.map)
+            key = self.visit(update.key)
+            self.begin_statement()
+            self.write("{decl} = {map}[{key}];\n".format(
                 decl=self.visit(TRef(update.val_var.type), update.val_var.id),
                 map=map,
-                key=key)
-            return msetup + ksetup + s + self.visit(update.change, indent)
+                key=key))
+            self.end_statement()
+            self.visit(update.change)
         else:
-            return self.visit(update.map.type.update_key(update.map, update.key, update.val_var, update.change), indent)
+            return self.visit(update.map.type.update_key(update.map, update.key, update.val_var, update.change))
 
-    def visit_SMapPut(self, update, indent=""):
+    def visit_SMapPut(self, update):
         if isinstance(update.map.type, library.TNativeMap) or type(update.map.type) is TMap:
-            msetup, map = self.visit(update.map, indent)
-            ksetup, key = self.visit(update.key, indent)
-            ref = self.fv(update.map.type.v, "ref")
-            s = "{indent}{decl} = {map}[{key}];\n".format(
-                indent=indent,
-                map=map,
-                key=key,
-                decl=self.visit(TRef(ref.type), ref.id))
-            return msetup + ksetup + s + self.copy_to(ref, update.value, indent)
+            map = self.visit(update.map)
+            key = self.visit(update.key)
+            val = self.fv(update.value.type)
+            self.construct_concrete(val.type, update.value, val)
+            val = self.visit(EMove(val))
+            self.begin_statement()
+            self.write(map, ".emplace(", key, ", ", val, ");")
+            self.end_statement()
         else:
             raise NotImplementedError()
 
-    def visit_SMapDel(self, update, indent=""):
+    def visit_SMapDel(self, update):
         if isinstance(update.map.type, library.TNativeMap) or type(update.map.type) is TMap:
-            msetup, map = self.visit(update.map, indent)
-            ksetup, key = self.visit(update.key, indent)
-            s = "{indent}{map}.erase({key});\n".format(
-                indent=indent,
-                map=map,
-                key=key)
-            return msetup + ksetup + s
+            map = self.visit(update.map)
+            key = self.visit(update.key)
+            self.begin_statement()
+            self.write(map, ".erase(", key, ");")
+            self.end_statement()
         else:
             raise NotImplementedError()
 
-    def visit_EVar(self, e, indent=""):
-        return ("", e.id)
+    def visit_EVar(self, e):
+        return e.id
 
-    def visit_EEnumEntry(self, e, indent=""):
-        return ("", e.name)
+    def visit_EEnumEntry(self, e):
+        return e.name
 
-    def visit_ENum(self, e, indent=""):
+    def visit_ENum(self, e):
         val = float(e.val) if isinstance(e.type, TFloat) else e.val
-        return ("", repr(e.val))
+        return repr(e.val)
 
-    def visit_EStr(self, e, indent=""):
-        return ("", json.dumps(e.val))
+    def visit_EStr(self, e):
+        return json.dumps(e.val)
 
-    def visit_EEnumToInt(self, e, indent=""):
-        setup, e = self.visit(e.e, indent)
-        return (setup, "static_cast<int>(" + e + ")")
+    def visit_EEnumToInt(self, e):
+        return "static_cast<int>(" + self.visit(e.e) + ")"
 
-    def visit_EBoolToInt(self, e, indent=""):
-        setup, e = self.visit(e.e, indent)
-        return (setup, "static_cast<int>(" + e + ")")
+    def visit_EBoolToInt(self, e):
+        return "static_cast<int>(" + self.visit(e.e) + ")"
 
-    def visit_EWithAlteredValue(self, e, indent=""):
+    def visit_EWithAlteredValue(self, e):
         raise NotImplementedError()
-        # TODO: This isn't quite right.
-        # EWithAlteredValue produces a "magic" handle value with the same
-        # address as `e.handle`, but a different value at the other side. A
-        # correct implementation would be much more complex:
-        #  - allocate a new handle A with the appropriate value
-        #  - add a note in an auxiliary structure stating that A aliases with
-        #    e.handle
-        #  - when you check equality of handles, also consult the auxiliary
-        #    structure for hidden aliases
-        #  - on return from method, free all magic handles mentioned in the
-        #    auxiliary structure
-        return self.visit(e.handle, indent)
 
-    def _is_concrete(self, e):
-        if is_scalar(e.type):
-            return True
-        elif type(e.type) in [TMap, TSet, TBag]:
-            return False
-        return True
+    # def _is_concrete(self, e):
+    #     if is_scalar(e.type):
+    #         return True
+    #     elif type(e.type) in [TMap, TSet, TBag]:
+    #         return False
+    #     return True
 
-    def histogram(self, e, indent) -> (str, EVar):
+    def histogram(self, e) -> EVar:
         t = library.TNativeMap(e.type.t, INT)
         hist = self.fv(t, "hist")
         x = self.fv(e.type.t)
         val = self.fv(INT, "val")
-        decl = self.visit(t, hist.id)
-        s = self.visit(SForEach(x, e,
+        self.declare(hist)
+        self.visit(self.initialize_native_map(hist))
+        self.visit(SForEach(x, e,
             SMapUpdate(hist, x, val,
-                SAssign(val, EBinOp(val, "+", ONE).with_type(INT)))), indent)
-        return ("{}{};\n".format(indent, decl) + self.visit(self.initialize_native_map(hist), indent) + s, hist)
+                SAssign(val, EBinOp(val, "+", ONE).with_type(INT)))))
+        return hist
 
-    def _eq(self, e1, e2, indent):
+    def _eq(self, e1, e2):
         if isinstance(e1.type, THandle):
-            return self.visit(EEscape("({e1} == {e2})", ["e1", "e2"], [e1, e2]).with_type(BOOL), indent)
+            return self.visit(EEscape("({e1} == {e2})", ["e1", "e2"], [e1, e2]).with_type(BOOL))
         if (is_scalar(e1.type) or
                 (isinstance(e1.type, library.TNativeMap) and isinstance(e2.type, library.TNativeMap)) or
                 (isinstance(e1.type, library.TNativeSet) and isinstance(e2.type, library.TNativeSet)) or
                 (isinstance(e1.type, library.TNativeList) and isinstance(e2.type, library.TNativeList))):
-            return self.visit(EEscape("({e1} == {e2})", ["e1", "e2"], [e1, e2]).with_type(BOOL), indent)
+            return self.visit(EEscape("({e1} == {e2})", ["e1", "e2"], [e1, e2]).with_type(BOOL))
         elif isinstance(e1.type, TSet) and isinstance(e2.type, TSet):
             raise NotImplementedError("set equality")
         elif isinstance(e1.type, TBag) or isinstance(e2.type, TBag):
-            setup1, v1 = self.histogram(e1, indent)
-            setup2, v2 = self.histogram(e2, indent)
-            setup3, res = self._eq(v1, v2, indent)
-            return (setup1 + setup2 + setup3, res)
+            v1 = self.histogram(e1)
+            v2 = self.histogram(e2)
+            return self._eq(v1, v2)
         elif isinstance(e1.type, TMap) or isinstance(e2.type, TMap):
             raise NotImplementedError("map equality")
         else:
             raise NotImplementedError((e1.type, e2.type))
 
-    def visit_EBinOp(self, e, indent=""):
+    def visit_EBinOp(self, e):
         op = e.op
         if op == "+" and (isinstance(e.e1.type, TBag) or isinstance(e.e1.type, TSet)):
             raise NotImplementedError("adding collections: {}".format(e))
         elif op == "==":
-            return self._eq(e.e1, e.e2, indent)
+            return self._eq(e.e1, e.e2)
         elif op == "!=":
-            s, e = self.visit(EEq(e.e1, e.e2))
-            return (s, "(!{})".format(e))
+            return self.visit(ENot(EEq(e.e1, e.e2)))
+        elif op == BOp.Or:
+            return self.visit(ECond(e.e1, T, e.e2).with_type(BOOL))
+        elif op == BOp.And:
+            return self.visit(ECond(e.e1, e.e2, F).with_type(BOOL))
+        elif op == "-" and is_collection(e.type):
+            t = e.type
+            v = self.fv(t, "v")
+            x = self.fv(t.t, "x")
+            self.declare(v, e.e1)
+            self.visit(SForEach(x, e.e2, SCall(v, "remove", [x])))
+            return v.id
         elif op == BOp.In:
             if isinstance(e.e2.type, TSet):
-                if type(e.e2.type) in (TSet, library.TNativeSet):
-                    return self.test_set_containment_native(e.e2, e.e1, indent)
-                else:
-                    return self.visit(e.e2.type.contains(e.e1), indent)
+                return self.test_set_containment_native(e.e2, e.e1)
             else:
-                t = TBool()
+                t = BOOL
                 res = self.fv(t, "found")
                 x = self.fv(e.e1.type, "x")
                 label = fresh_name("label")
-                setup = self.visit(seq([
-                    SDecl(res.id, EBool(False).with_type(t)),
+                self.visit(seq([
+                    SDecl(res.id, F),
                     SEscapableBlock(label,
                         SForEach(x, e.e2, SIf(
                             EBinOp(x, "==", e.e1).with_type(BOOL),
-                            seq([SAssign(res, EBool(True).with_type(t)), SEscapeBlock(label)]),
-                            SNoOp())))]), indent)
-                return (setup, res.id)
-        elif op == "-" and (isinstance(e.type, TBag) or isinstance(e.type, TList) or isinstance(e.type, TSet)):
-            t = e.type
-            if type(t) is TBag:
-                t = library.TNativeList(t.t)
-            v = self.fv(t, "v")
-            x = self.fv(t.t, "x")
-            stm = self.visit(SForEach(x, e.e2, SCall(v, "remove", [x])), indent)
-            return ("{}{};\n".format(indent, self.visit(v.type, v.id)) + self.visit(self.construct_concrete(v.type, e.e1, v), indent) + stm, v.id)
-        elif op == BOp.Or:
-            (s1, r1) = self.visit(e.e1, indent)
-            (s2, r2) = self.visit(e.e2, indent)
-            if s2:
-                return self.visit(ECond(e.e1, EBool(True), e.e2).with_type(TBool()), indent)
-            else:
-                return (s1, "({} || {})".format(r1, r2))
-        elif op == BOp.And:
-            (s1, r1) = self.visit(e.e1, indent)
-            (s2, r2) = self.visit(e.e2, indent)
-            if s2:
-                return self.visit(ECond(e.e1, e.e2, EBool(False)).with_type(TBool()), indent)
-            else:
-                return (s1, "({} && {})".format(r1, r2))
-        ce1, e1 = self.visit(e.e1, indent)
-        ce2, e2 = self.visit(e.e2, indent)
-        return (ce1 + ce2, "({e1} {op} {e2})".format(e1=e1, op=op, e2=e2))
+                            seq([SAssign(res, T), SEscapeBlock(label)]),
+                            SNoOp())))]))
+                return res.id
+        return "({e1} {op} {e2})".format(e1=self.visit(e.e1), op=op, e2=self.visit(e.e2))
 
-    def test_set_containment_native(self, set : Exp, elem : Exp, indent) -> (str, str):
-        return self.visit(EEscape("{set}.find({elem}) != {set}.end()", ["set", "elem"], [set, elem]).with_type(BOOL), indent)
+    def test_set_containment_native(self, set : Exp, elem : Exp) -> str:
+        return self.visit(EEscape("{set}.find({elem}) != {set}.end()", ["set", "elem"], [set, elem]).with_type(BOOL))
 
-    def visit_SScoped(self, s, indent):
-        return "{indent}{{\n{s}{indent}}}\n".format(indent=indent, s=self.visit(s.s, indent=indent+INDENT))
+    def visit_SScoped(self, s):
+        self.begin_statement()
+        with self.block():
+            self.visit(s.s)
+        self.end_statement()
 
-    def for_each(self, iterable : Exp, body, indent="") -> str:
+    def for_each(self, iterable : Exp, body) -> str:
         """Body is function: exp -> stm"""
-        while isinstance(iterable, EDropFront) or isinstance(iterable, EDropBack):
-            iterable = iterable.e
         if isinstance(iterable, EEmptyList):
             return ""
         elif isinstance(iterable, ESingleton):
-            return self.visit(SScoped(body(iterable.e)), indent=indent)
+            return self.visit(SScoped(body(iterable.e)))
         elif isinstance(iterable, ECond):
             v = self.fv(iterable.type.t, "v")
             new_body = body(v)
             assert isinstance(new_body, Stm)
             return self.visit(SIf(iterable.cond,
                 SForEach(v, iterable.then_branch, new_body),
-                SForEach(v, iterable.else_branch, new_body)), indent=indent)
+                SForEach(v, iterable.else_branch, new_body)))
         elif isinstance(iterable, EMap):
             return self.for_each(
                 iterable.e,
-                lambda v: body(iterable.f.apply_to(v)),
-                indent=indent)
+                lambda v: body(iterable.f.apply_to(v)))
         elif isinstance(iterable, EUnaryOp) and iterable.op == UOp.Distinct:
             tmp = self.fv(library.TNativeSet(iterable.type.t), "tmp")
-            return "".join((
-                "{indent}{decl};\n".format(indent=indent, decl=self.visit(tmp.type, tmp.id)),
-                self.visit(self.initialize_native_set(tmp), indent),
-                # TODO: could get better performance out of single "find or insert" primitive
-                self.for_each(iterable.e, lambda x: SIf(
-                    ENot(EBinOp(x, BOp.In, tmp).with_type(BOOL)),
-                    seq([body(x), SCall(tmp, "add", [x])]),
-                    SNoOp()), indent)))
+            self.declare(tmp)
+            self.visit(self.initialize_native_set(tmp))
+            self.for_each(iterable.e, lambda x: SIf(
+                ENot(EBinOp(x, BOp.In, tmp).with_type(BOOL)),
+                seq([body(x), SCall(tmp, "add", [x])]),
+                SNoOp()))
         elif isinstance(iterable, EFilter):
-            return self.for_each(iterable.e, lambda x: SIf(iterable.p.apply_to(x), body(x), SNoOp()), indent=indent)
+            return self.for_each(iterable.e, lambda x: SIf(iterable.p.apply_to(x), body(x), SNoOp()))
         elif isinstance(iterable, EBinOp) and iterable.op == "+":
-            return self.for_each(iterable.e1, body, indent=indent) + self.for_each(iterable.e2, body, indent=indent)
+            self.for_each(iterable.e1, body)
+            self.for_each(iterable.e2, body)
         elif isinstance(iterable, EBinOp) and iterable.op == "-":
             t = library.TNativeList(iterable.type.t)
-            setup, e = self.visit(EBinOp(iterable.e1, "-", iterable.e2).with_type(t), indent)
-            return setup + self.for_each(EEscape(e, (), ()).with_type(t), body, indent)
+            e = self.visit(EBinOp(iterable.e1, "-", iterable.e2).with_type(t))
+            return self.for_each(EEscape(e, (), ()).with_type(t), body)
         elif isinstance(iterable, EFlatMap):
             v = self.fv(iterable.type.t)
             new_body = body(v)
             assert isinstance(new_body, Stm)
-            return self.for_each(iterable.e, indent=indent,
+            return self.for_each(iterable.e,
                 body=lambda bag: SForEach(v, iterable.f.apply_to(bag), new_body))
         elif isinstance(iterable, ECall) and iterable.func in self.queries:
             q = self.queries[iterable.func]
-            return self.for_each(subst(q.ret, { a : v for ((a, t), v) in zip(q.args, iterable.args) }), body, indent=indent)
+            return self.for_each(subst(q.ret, { a : v for ((a, t), v) in zip(q.args, iterable.args) }), body)
         elif isinstance(iterable, ELet):
-            return self.for_each(iterable.f.apply_to(iterable.e), body, indent=indent)
+            return self.for_each(iterable.f.apply_to(iterable.e), body)
         else:
             x = self.fv(iterable.type.t, "x")
             if type(iterable.type) in (TBag, library.TNativeList, TSet, library.TNativeSet, TList):
-                return self.for_each_native(x, iterable, body(x), indent)
-            return self.visit(iterable.type.for_each(x, iterable, body(x)), indent=indent)
+                return self.for_each_native(x, iterable, body(x))
+            return self.visit(iterable.type.for_each(x, iterable, body(x)))
 
-    def for_each_native(self, x : EVar, iterable, body, indent):
+    def for_each_native(self, x : EVar, iterable, body):
         if isinstance(iterable, EMapKeys):
+            raise NotImplementedError()
             msetup, map = self.visit(iterable.e, indent)
             pair = self.fv(TNative("const auto &"))
             return msetup + "{setup}{indent}for ({loop_decl} : {iterable}) {{\n{body}{indent}}}\n".format(
                 indent=indent,
-                INDENT=INDENT,
                 setup=msetup,
                 loop_decl=self.visit(pair.type, pair.id),
                 iterable=map,
                 body=self.visit(seq([SDecl(x.id, EEscape("{p}.first", ("p",), (pair,)).with_type(x.type)), body]), indent+INDENT))
-        setup, iterable = self.visit(iterable, indent)
-        return "{setup}{indent}for ({decl} : {iterable}) {{\n{body}{indent}}}\n".format(
-            indent=indent,
-            setup=setup,
-            decl=self.visit(x.type, x.id),
-            iterable=iterable,
-            body=self.visit(body, indent+INDENT))
+        iterable = self.visit(iterable)
+        self.begin_statement()
+        self.write("for (", self.visit(x.type, x.id), " : ", iterable, ") ")
+        with self.block():
+            self.visit(body)
+        self.end_statement()
 
-    def visit_SForEach(self, for_each, indent):
+    def visit_SForEach(self, for_each):
         id = for_each.id
         iter = for_each.iter
         body = for_each.body
-        return self.for_each(iter, lambda x: SSeq(SDecl(id.id, x), body), indent)
+        self.for_each(iter, lambda x: SSeq(SDecl(id.id, x), body))
 
-    def find_one(self, iterable, indent=""):
+    def find_one(self, iterable):
         v = self.fv(iterable.type.t, "v")
         label = fresh_name("label")
         x = self.fv(iterable.type.t, "x")
@@ -604,9 +525,10 @@ class CxxPrinter(common.Visitor):
             SForEach(x, iterable, seq([
                 SAssign(v, x),
                 SEscapeBlock(label)])))
-        return (self.visit(seq([decl, find]), indent), v.id)
+        self.visit(seq([decl, find]))
+        return v.id
 
-    def min_or_max(self, op, e, f, indent=""):
+    def min_or_max(self, op, e, f):
         out = self.fv(e.type.t, "min" if op == "<" else "max")
         first = self.fv(BOOL, "first")
         x = self.fv(e.type.t, "x")
@@ -619,39 +541,40 @@ class CxxPrinter(common.Visitor):
                     EBinOp(f.apply_to(x), op, f.apply_to(out)).with_type(BOOL)).with_type(BOOL),
                 seq([SAssign(first, F), SAssign(out, x)]),
                 SNoOp()))
-        return (self.visit(seq([decl1, decl2, find]), indent), out.id)
+        self.visit(seq([decl1, decl2, find]))
+        return out.id
 
-    def visit_EArgMin(self, e, indent=""):
-        return self.min_or_max("<", e.e, e.f, indent)
+    def visit_EArgMin(self, e):
+        return self.min_or_max("<", e.e, e.f)
 
-    def visit_EArgMax(self, e, indent=""):
-        return self.min_or_max(">", e.e, e.f, indent)
+    def visit_EArgMax(self, e):
+        return self.min_or_max(">", e.e, e.f)
 
     def reverse_inplace(self, e : EVar) -> Stm:
         assert type(e.type) in (TList, library.TNativeList)
         return SEscape("{indent}std::reverse({e}.begin(), {e}.end());\n", ("e",), (e,))
 
-    def visit_EUnaryOp(self, e, indent=""):
+    def visit_EUnaryOp(self, e):
         op = e.op
         if op == UOp.The:
-            return self.find_one(e.e, indent=indent)
+            return self.find_one(e.e)
         elif op == UOp.Sum:
             type = e.e.type.t
             res = self.fv(type, "sum")
             x = self.fv(type, "x")
-            setup = self.visit(seq([
+            self.visit(seq([
                 SDecl(res.id, ENum(0).with_type(type)),
-                SForEach(x, e.e, SAssign(res, EBinOp(res, "+", x).with_type(type)))]), indent)
-            return (setup, res.id)
+                SForEach(x, e.e, SAssign(res, EBinOp(res, "+", x).with_type(type)))]))
+            return res.id
         elif op == UOp.Length:
             arg = EVar("x").with_type(e.e.type.t)
-            return self.visit(EUnaryOp(UOp.Sum, EMap(e.e, ELambda(arg, ONE)).with_type(INT_BAG)).with_type(INT), indent)
+            return self.visit(EUnaryOp(UOp.Sum, EMap(e.e, ELambda(arg, ONE)).with_type(INT_BAG)).with_type(INT))
         elif op == UOp.All:
             arg = EVar("x").with_type(e.e.type.t)
-            return self.visit(EUnaryOp(UOp.Empty, EFilter(e.e, ELambda(arg, ENot(arg))).with_type(INT_BAG)).with_type(INT), indent)
+            return self.visit(EUnaryOp(UOp.Empty, EFilter(e.e, ELambda(arg, ENot(arg))).with_type(INT_BAG)).with_type(INT))
         elif op == UOp.Any:
             arg = EVar("x").with_type(e.e.type.t)
-            return self.visit(EUnaryOp(UOp.Exists, EFilter(e.e, ELambda(arg, arg)).with_type(INT_BAG)).with_type(INT), indent)
+            return self.visit(EUnaryOp(UOp.Exists, EFilter(e.e, ELambda(arg, arg)).with_type(INT_BAG)).with_type(INT))
         elif op == UOp.Empty:
             iterable = e.e
             v = self.fv(BOOL, "v")
@@ -662,187 +585,185 @@ class CxxPrinter(common.Visitor):
                 SForEach(x, iterable, seq([
                     SAssign(v, F),
                     SEscapeBlock(label)])))
-            return (self.visit(seq([decl, find]), indent), v.id)
+            self.visit(seq([decl, find]))
+            return v.id
         elif op == UOp.Exists:
-            return self.visit(ENot(EUnaryOp(UOp.Empty, e.e).with_type(BOOL)), indent)
+            return self.visit(ENot(EUnaryOp(UOp.Empty, e.e).with_type(BOOL)))
         elif op in ("-", UOp.Not):
-            ce, ee = self.visit(e.e, indent)
-            op_str = "!" if op == UOp.Not else str(op)
-            return (ce, "({op}{ee})".format(op=op_str, ee=ee))
+            ee = self.visit(e.e)
+            op_str = "!" if op == UOp.Not else op
+            return "({op}{ee})".format(op=op_str, ee=ee)
         elif op == UOp.Distinct:
             v = self.fv(e.type, "v")
-            stm = self.construct_concrete(e.type, e, v)
-            return ("{}{};\n".format(indent, self.visit(e.type, v.id)) + self.visit(stm, indent), v.id)
+            self.declare(v, e)
+            return v.id
         elif op == UOp.AreUnique:
             s = self.fv(library.TNativeSet(e.e.type.t), "unique_elems")
             u = self.fv(BOOL, "is_unique")
             x = self.fv(e.e.type.t)
             label = fresh_name("label")
-            return (self.visit(seq([
+            self.visit(seq([
                 SDecl(s.id, EEmptyList().with_type(s.type)),
                 SDecl(u.id, T),
                 SEscapableBlock(label,
                     SForEach(x, e.e,
                         SIf(EEscape("{s}.find({x}) != {s}.end()", ("s", "x"), (s, x)).with_type(BOOL),
                             seq([SAssign(u, F), SEscapeBlock(label)]),
-                            SEscape("{indent}{s}.insert({x})", ("s", "x"), (s, x)))))]), indent=indent), u.id)
+                            SEscape("{indent}{s}.insert({x})", ("s", "x"), (s, x)))))]))
+            return u.id
         elif op == UOp.Reversed:
             v = self.fv(e.type, "v")
-            stm = self.construct_concrete(e.type, e.e, v)
-            stm = seq([stm, self.reverse_inplace(v)])
-            return ("{}{};\n".format(indent, self.visit(e.type, v.id)) + self.visit(stm, indent), v.id)
+            self.declare(v, e.e)
+            self.visit(self.reverse_inplace(v))
+            return v.id
         else:
             raise NotImplementedError(op)
 
-    def visit_EGetField(self, e, indent=""):
-        ce, ee = self.visit(e.e, indent)
+    def visit_EGetField(self, e):
+        ee = self.visit(e.e)
         op = "."
-        if isinstance(e.e.type, THandle) or isinstance(e.e.type, library.TIntrusiveLinkedList):
+        if isinstance(e.e.type, THandle):
             op = "->"
-        return (ce, "({ee}{op}{f})".format(ee=ee, op=op, f=e.f))
+        return "({ee}{op}{f})".format(ee=ee, op=op, f=e.f)
 
-    def visit_ETuple(self, e, indent=""):
+    def visit_ETuple(self, e):
         name = self.typename(e.type)
-        setups, args = zip(*[self.visit(arg, indent) for arg in e.es])
-        return ("".join(setups), "{} {{ {} }}".format(name, ", ".join(args)))
+        args = [self.visit(arg) for arg in e.es]
+        return "{} {{ {} }}".format(name, ", ".join(args))
 
-    def visit_ETupleGet(self, e, indent=""):
-        return self.visit_EGetField(EGetField(e.e, "_{}".format(e.n)), indent)
+    def visit_ETupleGet(self, e):
+        return self.visit_EGetField(EGetField(e.e, "_{}".format(e.n)))
 
-    def visit_ECall(self, e, indent=""):
-        if e.args:
-            setups, args = zip(*[self.visit(arg, indent) for arg in e.args])
-        else:
-            setups, args = ([], [])
+    def visit_ECall(self, e):
+        args = [self.visit(a) for a in e.args]
         if e.func in self.funcs:
             f = self.funcs[e.func]
-            return ("".join(setups), "({})".format(f.body_string.format(**{ arg: val for (arg, _), val in zip(f.args, args) })))
+            return "({})".format(f.body_string.format(**{ arg: "({})".format(val) for (arg, _), val in zip(f.args, args) }))
         elif e.func in self.queries:
             q = self.queries[e.func]
             body = subst(q.ret, { q.args[i][0] : EEscape(args[i], (), ()).with_type(q.args[i][1]) for i in range(len(q.args)) })
-            setup, res = self.visit(body, indent=indent)
-            return ("".join(setups) + setup, res)
+            return self.visit(body)
         else:
             raise Exception("unknown function {}".format(repr(e.func)))
 
-    def visit_ELet(self, e, indent=""):
-        v = self.fv(e.e.type, "v")
-        setup1 = self.visit(SDecl(v.id, e.e), indent=indent)
-        setup2, res = self.visit(e.f.apply_to(v), indent=indent)
-        return (setup1 + setup2, res)
+    # def visit_ELet(self, e):
+    #     v = self.fv(e.e.type, "v")
+    #     setup1 = self.visit(SDecl(v.id, e.e), indent=indent)
+    #     setup2, res = self.visit(e.f.apply_to(v), indent=indent)
+    #     return (setup1 + setup2, res)
 
-    def visit_Exp(self, e, indent=""):
+    def visit_object(self, e):
         raise NotImplementedError(e)
 
-    def visit_SEscape(self, s, indent=""):
+    def visit_SEscape(self, s):
+        indent = self.get_indent()
         body = s.body_string
         args = s.args
         if not args:
-            return body.format(indent=indent)
-        setups, args = zip(*[self.visit(arg, indent) for arg in args])
-        return "".join(setups) + body.format(indent=indent, **dict(zip(s.arg_names, args)))
+            self.write(body.format(indent=indent))
+        args = [self.visit(arg) for arg in args]
+        self.write(body.format(indent=indent, **dict(zip(s.arg_names, args))))
 
-    def visit_EEscape(self, e, indent=""):
+    def visit_EEscape(self, e):
         body = e.body_string
         args = e.args
         if not args:
-            return ("", body)
-        setups, args = zip(*[self.visit(arg, indent) for arg in args])
-        return ("".join(setups), "(" + body.format(**dict(zip(e.arg_names, args))) + ")")
+            return body
+        args = [self.visit(arg) for arg in args]
+        return "(" + body.format(**dict(zip(e.arg_names, args))) + ")"
 
-    def visit_SNoOp(self, s, indent=""):
-        return ""
+    def visit_SNoOp(self, s):
+        pass
 
-    def copy_to(self, lhs, rhs, indent=""):
-        if isinstance(lhs.type, TBag):
-            cl, el = self.visit(lhs, indent)
-            x = self.fv(lhs.type.t, "x")
-            # TODO: hacky use of EVar ahead! We need an EEscape, like SEscape
-            return cl + self.visit(SForEach(x, rhs, SCall(EVar(el).with_type(lhs.type), "add", [x])), indent=indent)
+    # def copy_to(self, lhs, rhs):
+    #     if isinstance(lhs.type, TBag):
+    #         cl, el = self.visit(lhs, indent)
+    #         x = self.fv(lhs.type.t, "x")
+    #         # TODO: hacky use of EVar ahead! We need an EEscape, like SEscape
+    #         return cl + self.visit(SForEach(x, rhs, SCall(EVar(el).with_type(lhs.type), "add", [x])), indent=indent)
+    #     else:
+    #         return self.visit(SAssign(lhs, rhs), indent)
+
+    def visit_EMove(self, e):
+        return "std::move(" + self.visit(e.e) + ")"
+
+    def declare(self, v : EVar, initial_value : Exp = None):
+        self.begin_statement()
+        if initial_value is not None and is_scalar(v.type):
+            iv = self.visit(initial_value)
+            self.write(self.visit(v.type, v.id), " = ", iv, ";")
+            self.end_statement()
         else:
-            return self.visit(SAssign(lhs, rhs), indent)
+            self.write(self.visit(v.type, v.id), ";")
+            self.end_statement()
+            if initial_value is not None:
+                self.visit(self.construct_concrete(v.type, initial_value, v))
 
-    def visit_EMove(self, e, indent=""):
-        (s, e) = self.visit(e.e, indent)
-        return (s, "std::move({})".format(e))
-
-    def visit_SAssign(self, s, indent=""):
+    def visit_SAssign(self, s):
         v = self.fv(s.lhs.type)
-        stm = seq([
-            SEscape("{indent}" + self.visit(v.type, v.id) + ";\n", (), ()),
-            self.construct_concrete(s.lhs.type, s.rhs, v),
-            SEscape("{indent}{lhs} = {v};\n", ("lhs", "v",), (s.lhs, EMove(v).with_type(v.type),))])
-        return self.visit(stm, indent)
+        self.declare(v, s.rhs)
+        self.begin_statement()
+        self.write(self.visit(s.lhs), " = ", self.visit(EMove(v).with_type(v.type)), ";")
+        self.end_statement()
 
-    def visit_SDecl(self, s, indent=""):
+    def visit_SDecl(self, s):
         assert isinstance(s.id, str)
         t = s.val.type
-        decl = self.visit(t, s.id)
-        return self.visit(seq([
-            SEscape("{{indent}}{};\n".format(decl), [], []),
-            SAssign(EVar(s.id).with_type(t), s.val)]), indent)
+        return self.declare(EVar(s.id).with_type(t), s.val)
 
-    def visit_SSeq(self, s, indent=""):
-        with StringIO() as f:
-            for ss in break_seq(s):
-                f.write(self.visit(ss, indent))
-            return f.getvalue()
+    def visit_SSeq(self, s):
+        for ss in break_seq(s):
+            self.visit(ss)
 
-    def visit_SIf(self, s, indent=""):
-        compute_cond, cond = self.visit(s.cond, indent)
-        res = """{compute_cond}{indent}if ({cond}) {{\n{then_branch}{indent}}}""".format(
-            indent=indent,
-            cond=cond,
-            compute_cond=compute_cond,
-            then_branch=self.visit(s.then_branch, indent + INDENT))
+    def visit_SIf(self, s):
+        cond = self.visit(s.cond)
+        self.begin_statement()
+        self.write("if (", cond, ") ")
+        with self.block():
+            self.visit(s.then_branch)
         if not isinstance(s.else_branch, SNoOp):
-            res += " else {{\n{else_branch}{indent}}}".format(
-                indent=indent,
-                else_branch=self.visit(s.else_branch, indent + INDENT))
-        return res + "\n"
+            self.write(" else ")
+            with self.block():
+                self.visit(s.else_branch)
+        self.end_statement()
 
-    def visit_ECond(self, e, indent=""):
+    def visit_ECond(self, e):
         if e.cond == T:
-            return self.visit(e.then_branch, indent)
+            return self.visit(e.then_branch)
         elif e.cond == F:
-            return self.visit(e.else_branch, indent)
+            return self.visit(e.else_branch)
         v = self.fv(e.type, "v")
-        return (
-            "{indent}{decl};\n".format(indent=indent, decl=self.visit(v.type, v.id)) +
-            self.visit(SIf(e.cond, SAssign(v, e.then_branch), SAssign(v, e.else_branch)), indent),
-            v.id)
+        self.declare(v)
+        self.visit(SIf(e.cond, SAssign(v, e.then_branch), SAssign(v, e.else_branch)))
+        return v.id
 
-    def visit_SCall(self, call, indent=""):
+    def visit_SCall(self, call):
+        target = self.visit(call.target)
+        args = [self.visit(a) for a in call.args]
+        self.begin_statement()
+
         if type(call.target.type) in (library.TNativeList, TBag, TList):
             if call.func == "add":
-                setup1, target = self.visit(call.target, indent)
-                setup2, arg = self.visit(call.args[0], indent)
-                return setup1 + setup2 + "{}{}.push_back({});\n".format(indent, target, arg)
+                self.write(target, ".push_back(", args[0], ");")
             elif call.func == "remove":
-                setup1, target = self.visit(call.target, indent)
-                setup2, arg = self.visit(call.args[0], indent)
-                it = fresh_name("it")
-                return setup1 + setup2 + "{indent}auto {it}(::std::find({target}.begin(), {target}.end(), {arg}));\n{indent}if ({it} != {target}.end()) {target}.erase({it});\n".format(
-                    indent=indent,
-                    arg=arg,
-                    target=target,
-                    it=it)
+                v = self.fv(TNative("auto"), "it")
+                self.write("auto ", v.id, "(::std::find(", target, ".begin(), ", target, ".end(), ", args[0], "));")
+                self.end_statement()
+                self.begin_statement()
+                self.write("if (", v.id, " != ", target, ".end()) { ", target, ".erase(", v.id, "); }")
             else:
                 raise NotImplementedError(call.func)
         elif type(call.target.type) in (library.TNativeSet, TSet):
             if call.func == "add":
-                setup1, target = self.visit(call.target, indent)
-                setup2, arg = self.visit(call.args[0], indent)
-                return setup1 + setup2 + "{}{}.insert({});\n".format(indent, target, arg)
+                self.write(target, ".insert(", args[0], ");")
             elif call.func == "remove":
-                setup1, target = self.visit(call.target, indent)
-                setup2, arg = self.visit(call.args[0], indent)
-                return setup1 + setup2 + "{}{target}.erase({target}.find({}));\n".format(indent, arg, target=target)
+                self.write(target, ".erase(", target, ".find(", args[0], "));")
             else:
                 raise NotImplementedError(call.func)
-        f = getattr(call.target.type, "implement_{}".format(call.func))
-        stm = f(call.target, call.args)
-        return self.visit(stm, indent)
+        else:
+            raise NotImplementedError()
+
+        self.end_statement()
 
     def nbits(self, t):
         if t == BOOL:
@@ -852,54 +773,77 @@ class CxxPrinter(common.Visitor):
         else:
             return None
 
-    def declare_field(self, name, type, indent):
+    def declare_field(self, name, type):
+        self.begin_statement()
         nbits = self.nbits(type)
-        bitspec = " : {}".format(nbits) if nbits else ""
-        return "{indent}{field_decl}{bitspec};\n".format(
-            indent=indent,
-            field_decl=self.visit(type, name),
-            bitspec=bitspec)
+        self.write(
+            self.visit(type, name),
+            " : {}".format(nbits) if nbits else "",
+            ";")
+        self.end_statement()
 
-    def define_type(self, toplevel_name, t, name, indent, sharing):
+    def define_type(self, toplevel_name, t, name, sharing):
         if isinstance(t, TEnum):
-            return "{indent}enum {name} {{\n{cases}{indent}}};\n".format(
-                indent=indent,
-                name=name,
-                cases="".join("{indent}{case},\n".format(indent=indent+INDENT, case=case) for case in t.cases))
+            self.begin_statement()
+            self.write("enum ", name, " ")
+            with self.block():
+                for case in t.cases:
+                    self.begin_statement()
+                    self.write(case, ",")
+                    self.end_statement()
+            self.write(";")
+            self.end_statement()
         elif isinstance(t, THandle):
             fields = [("val", t.value_type)]
-            s = "{indent}struct {name} {{\n".format(indent=indent, name=name)
-            s += "{indent}public:\n".format(indent=indent)
-            for (f, ft) in fields:
-                s += self.declare_field(f, ft, indent=indent+INDENT)
-            s += "{indent}private:\n".format(indent=indent)
-            s += "{indent}friend class {toplevel_name};\n".format(indent=indent+INDENT, toplevel_name=toplevel_name)
-            for group in sharing.get(t, []):
-                s += "{indent}union {{\n".format(indent=indent+INDENT)
-                for gt in group:
-                    intrusive_data = gt.intrusive_data(t)
-                    s += "{indent}struct {{\n".format(indent=indent+INDENT*2)
-                    for (f, ft) in intrusive_data:
-                        s += "{indent}{field_decl};\n".format(indent=indent+INDENT*3, field_decl=self.visit(ft, f))
-                    s += "{indent}}};\n".format(indent=indent+INDENT*2)
-                s += "{indent}}};\n".format(indent=indent+INDENT)
-            s += "{indent}}};\n".format(indent=indent)
-            return s
+            self.begin_statement()
+            self.write("struct ", name, " ")
+            with self.block():
+                with self.deindented(): self.write_stmt("public:")
+                for (f, ft) in fields:
+                    self.declare_field(f, ft)
+                with self.deindented(): self.write_stmt("private:")
+            self.write(";")
+            self.end_statement()
+
+            # s = "struct {name} {{\n".format(indent=indent, name=name)
+            # s += "public:\n".format(indent=indent)
+            # for (f, ft) in fields:
+            #     s += self.declare_field(f, ft)
+            # s += "private:\n".format(indent=indent)
+            # s += "friend class {toplevel_name};\n".format(indent=indent+INDENT, toplevel_name=toplevel_name)
+            # for group in sharing.get(t, []):
+            #     s += "union {{\n".format(indent=indent+INDENT)
+            #     for gt in group:
+            #         intrusive_data = gt.intrusive_data(t)
+            #         s += "struct {{\n".format(indent=indent+INDENT*2)
+            #         for (f, ft) in intrusive_data:
+            #             s += "{field_decl};\n".format(indent=indent+INDENT*3, field_decl=self.visit(ft, f))
+            #         s += "}};\n".format(indent=indent+INDENT*2)
+            #     s += "}};\n".format(indent=indent+INDENT)
+            # s += "}};\n".format(indent=indent)
+            # return s
         elif isinstance(t, TRecord):
-            s = "{indent}struct {name} {{\n{fields}".format(
-                indent=indent,
-                name=name,
-                fields="".join("{indent}{field_decl};\n".format(indent=indent+INDENT, field_decl=self.visit(t, f)) for (f, t) in t.fields))
-            s += indent + INDENT + "inline bool operator==(const {name}& other) {{\n".format(name=name)
-            s += indent + INDENT*2 + "return {};\n".format(
-                "true" if not t.fields else
-                " && ".join("({f} == other.{f})".format(f=f) for (f, t) in t.fields))
-            s += indent + INDENT + "}\n"
-            s += indent + INDENT + "inline bool operator!=(const {name}& other) {{ return !(*this == other); }}\n".format(name=name)
-            s += indent + "};\n"
-            return s
+            self.begin_statement()
+            self.write("struct ", name, " ")
+            with self.block():
+                for f, ft in t.fields:
+                    self.declare_field(f, ft)
+                self.begin_statement()
+                self.write("inline bool operator==(const ", name, "& other) ")
+                with self.block():
+                    this = EEscape("(*this)", (), ()).with_type(t)
+                    other = EVar("other").with_type(t)
+                    r = self.visit(EAll([
+                        EEq(EGetField(this, f).with_type(ft), EGetField(other, f).with_type(ft))
+                        for f, ft in t.fields]))
+                    self.begin_statement()
+                    self.write("return ", r, ";")
+                    self.end_statement()
+                self.end_statement()
+            self.write(";")
+            self.end_statement()
         elif isinstance(t, TTuple):
-            return self.define_type(toplevel_name, TRecord(tuple(("_{}".format(i), t.ts[i]) for i in range(len(t.ts)))), name, indent, sharing);
+            return self.define_type(toplevel_name, TRecord(tuple(("_{}".format(i), t.ts[i]) for i in range(len(t.ts)))), name, sharing);
         else:
             return ""
 
@@ -911,77 +855,89 @@ class CxxPrinter(common.Visitor):
                 name = names.get(t, self.fn("Type"))
                 self.types[t] = name
 
+    def visit_args(self, args):
+        for (i, (v, t)) in enumerate(args):
+            assert isinstance(v, str)
+            assert isinstance(t, Type)
+            if i > 0:
+                self.write(", ")
+            self.write(self.visit(t, v))
+
     @typechecked
     def visit_Spec(self, spec : Spec, state_exps : { str : Exp }, sharing, abstract_state=()):
         self.state_exps = state_exps
         self.funcs = { f.name: f for f in spec.extern_funcs }
         self.queries = { q.name: q for q in spec.methods if isinstance(q, Query) }
         self.vars = set(e.id for e in all_exps(spec) if isinstance(e, EVar))
-        with StringIO() as f:
 
-            f.write("#pragma once\n")
-            f.write("#include <algorithm>\n")
-            f.write("#include <vector>\n")
-            f.write("#include <unordered_set>\n")
-            f.write("#include <string>\n")
-            if self.use_qhash:
-                f.write("#include <QHash>\n")
-            else:
-                f.write("#include <unordered_map>\n")
+        self.write("#pragma once\n")
+        self.write("#include <algorithm>\n")
+        self.write("#include <vector>\n")
+        self.write("#include <unordered_set>\n")
+        self.write("#include <string>\n")
+        if self.use_qhash:
+            self.write("#include <QHash>\n")
+        else:
+            self.write("#include <unordered_map>\n")
 
-            if spec.header:
-                f.write("\n" + spec.header.strip() + "\n")
+        if spec.header:
+            self.write("\n" + spec.header.strip() + "\n")
 
-            f.write("{}\nclass {} {{\n".format(
-                ("\n" + spec.docstring) if spec.docstring else "",
-                spec.name))
+        self.write("{}\nclass {} {{\n".format(
+            ("\n" + spec.docstring) if spec.docstring else "",
+            spec.name))
 
-            f.write("public:\n")
+        self.write("public:\n")
 
-            print("Setting up auxiliary types...")
-            self.setup_types(spec, state_exps, sharing)
+        print("Setting up auxiliary types...")
+        self.setup_types(spec, state_exps, sharing)
+        with self.indented():
             for t, name in self.types.items():
-                f.write(self.define_type(spec.name, t, name, INDENT, sharing))
-            f.write("protected:\n")
+                self.define_type(spec.name, t, name, sharing)
+        self.write("protected:\n")
+        with self.indented():
             for name, t in spec.statevars:
                 self.statevar_name = name
-                f.write(self.declare_field(name, t, indent=INDENT))
-            f.write("public:\n")
+                self.declare_field(name, t)
+        self.write("public:\n")
 
+        with self.indented():
             print("Generating constructors...")
 
             # default constructor
-            f.write(INDENT + "inline {name}() {{\n".format(name=spec.name))
-            for name, t in spec.statevars:
-                initial_value = state_exps[name]
-                fvs = free_vars(initial_value)
-                initial_value = subst(initial_value, {v.id : evaluation.construct_value(v.type) for v in fvs})
-                setup = self.construct_concrete(t, initial_value, EVar(name).with_type(t))
-                f.write(self.visit(setup, INDENT + INDENT))
-            f.write(INDENT + "}\n")
+            self.begin_statement()
+            self.write("inline ", spec.name, "() ")
+            with self.block():
+                for name, t in spec.statevars:
+                    initial_value = state_exps[name]
+                    fvs = free_vars(initial_value)
+                    initial_value = subst(initial_value, {v.id : evaluation.construct_value(v.type) for v in fvs})
+                    self.visit(self.construct_concrete(t, initial_value, EVar(name).with_type(t)))
+            self.end_statement()
 
             # explicit constructor
             if abstract_state:
-                f.write(INDENT + "inline {name}({args}) {{\n".format(
-                    name=spec.name,
-                    args=", ".join(self.visit(t, v) for (v, t) in abstract_state)))
-                for name, t in spec.statevars:
-                    initial_value = state_exps[name]
-                    setup = self.construct_concrete(t, initial_value, EVar(name).with_type(t))
-                    f.write(self.visit(setup, INDENT + INDENT))
-                f.write(INDENT + "}\n")
+                self.begin_statement()
+                self.write("explicit inline ", spec.name, "(")
+                self.visit_args(abstract_state)
+                self.write(") ")
+                with self.block():
+                    for name, t in spec.statevars:
+                        initial_value = state_exps[name]
+                        self.visit(self.construct_concrete(t, initial_value, EVar(name).with_type(t)))
+                self.end_statement()
 
             # disable copy constructor (TODO: support this in the future?)
-            f.write(INDENT + "{name}(const {name}& other) = delete;\n".format(name=spec.name))
+            self.begin_statement()
+            self.write(spec.name, "(const ", spec.name, "& other) = delete;")
+            self.end_statement()
 
             # generate methods
             for op in spec.methods:
                 print("Generating method {}...".format(op.name))
-                f.write(self.visit(op, INDENT))
-            f.write("};\n")
+                self.visit(op)
+            self.write("};\n")
             if spec.footer:
-                f.write("\n")
-                f.write(spec.footer)
+                self.write("\n", spec.footer)
                 if not spec.footer.endswith("\n"):
-                    f.write("\n")
-            return f.getvalue()
+                    self.write("\n")
