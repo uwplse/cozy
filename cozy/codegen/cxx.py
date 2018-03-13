@@ -23,6 +23,7 @@ class CxxPrinter(CodeGenerator):
         self.queries = {}
         self.use_qhash = use_qhash
         self.vars = set() # set of strings
+        self.type_prefix = ""
 
     def fn(self, hint="var"):
         n = common.fresh_name(hint, omit=self.vars)
@@ -35,7 +36,7 @@ class CxxPrinter(CodeGenerator):
         return n
 
     def typename(self, t):
-        return self.types[t]
+        return self.type_prefix + self.types[t]
 
     def is_ptr_type(self, t):
         return isinstance(t, THandle)
@@ -871,6 +872,19 @@ class CxxPrinter(CodeGenerator):
                 self.write(", ")
             self.write(self.visit(t, v))
 
+    def compute_hash_1(self, e : str, t : Type, out : EVar) -> Stm:
+        hc = EEscape("std::hash<{t}>()({e})".format(t=self.visit(t, ""), e=e), (), ()).with_type(TNative("std::size_t"))
+        return SAssign(out, EEscape("({out} * 31) ^ ({hc})", ("out", "hc"), (out, hc)).with_type(TNative("std::size_t")))
+
+    def compute_hash(self, fields : [(str, Type)]) -> Stm:
+        indent = self.get_indent()
+        hc = self.fv(TNative("std::size_t"), "hash_code")
+        s = SDecl(hc.id, ZERO)
+        for f, ft in fields:
+            s = SSeq(s, self.compute_hash_1(f, ft, hc))
+        s = SSeq(s, SEscape("{indent}return {e};\n", ("e",), (hc,)))
+        return s
+
     @typechecked
     def visit_Spec(self, spec : Spec, state_exps : { str : Exp }, sharing, abstract_state=()):
         self.state_exps = state_exps
@@ -880,6 +894,7 @@ class CxxPrinter(CodeGenerator):
 
         self.write("#pragma once\n")
         self.write("#include <algorithm>\n")
+        self.write("#include <functional>\n")
         self.write("#include <vector>\n")
         self.write("#include <unordered_set>\n")
         self.write("#include <string>\n")
@@ -944,8 +959,42 @@ class CxxPrinter(CodeGenerator):
             for op in spec.methods:
                 print("Generating method {}...".format(op.name))
                 self.visit(op)
-            self.write("};\n")
-            if spec.footer:
-                self.write("\n", spec.footer)
-                if not spec.footer.endswith("\n"):
-                    self.write("\n")
+        self.write("};\n")
+
+        if spec.footer:
+            self.write("\n", spec.footer)
+            if not spec.footer.endswith("\n"):
+                self.write("\n")
+
+        self.type_prefix = "typename " + spec.name + "::"
+
+        print("Defining hash codes...")
+        for t, name in self.types.items():
+            if type(t) not in (TEnum, TRecord, TTuple):
+                continue
+            self.begin_statement()
+            self.write("namespace std ")
+            with self.block():
+                self.begin_statement()
+                self.write("template <> struct hash<", spec.name, "::", name, "> ")
+                with self.block():
+                    self.begin_statement()
+                    self.write("typedef ", spec.name, "::", name, " argument_type;")
+                    self.end_statement()
+                    self.begin_statement()
+                    self.write("typedef std::size_t result_type;")
+                    self.end_statement()
+                    self.begin_statement()
+                    self.write("result_type operator()(argument_type const& x) const noexcept ")
+                    if isinstance(t, TEnum):
+                        fields = [("static_cast<int>(x)", INT)]
+                    elif isinstance(t, TRecord):
+                        fields = [("x." + f, ft) for (f, ft) in t.fields]
+                    elif isinstance(t, TTuple):
+                        fields = [("x._{}".format(n), tt) for (n, tt) in enumerate(t.ts)]
+                    with self.block():
+                        self.visit(self.compute_hash(fields))
+                    self.end_statement()
+                self.write(";")
+                self.end_statement()
+            self.end_statement()
