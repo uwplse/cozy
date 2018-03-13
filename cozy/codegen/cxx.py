@@ -267,7 +267,7 @@ class CxxPrinter(CodeGenerator):
     def visit_EMakeRecord(self, e):
         t = self.visit(e.type, "")
         exps = [self.visit(ee) for (f, ee) in e.fields]
-        return "{}{{ {} }}".format(t, ", ".join(exps))
+        return "({}{{ {} }})".format(t, ", ".join(exps))
 
     def visit_EHandle(self, e):
         assert e.addr == ENum(0), repr(e)
@@ -317,6 +317,7 @@ class CxxPrinter(CodeGenerator):
             map = self.visit(update.map)
             key = self.visit(update.key)
             val = self.fv(update.value.type)
+            self.declare(val)
             self.construct_concrete(val.type, update.value, val)
             val = self.visit(EMove(val))
             self.begin_statement()
@@ -609,7 +610,7 @@ class CxxPrinter(CodeGenerator):
                     SForEach(x, e.e,
                         SIf(EEscape("{s}.find({x}) != {s}.end()", ("s", "x"), (s, x)).with_type(BOOL),
                             seq([SAssign(u, F), SEscapeBlock(label)]),
-                            SEscape("{indent}{s}.insert({x})", ("s", "x"), (s, x)))))]))
+                            SEscape("{indent}{s}.insert({x});\n", ("s", "x"), (s, x)))))]))
             return u.id
         elif op == UOp.Reversed:
             v = self.fv(e.type, "v")
@@ -629,9 +630,11 @@ class CxxPrinter(CodeGenerator):
     def visit_ETuple(self, e):
         name = self.typename(e.type)
         args = [self.visit(arg) for arg in e.es]
-        return "{} {{ {} }}".format(name, ", ".join(args))
+        return "({} {{ {} }})".format(name, ", ".join(args))
 
     def visit_ETupleGet(self, e):
+        if isinstance(e.e, ETuple):
+            return self.visit(e.e.es[e.n])
         return self.visit_EGetField(EGetField(e.e, "_{}".format(e.n)))
 
     def visit_ECall(self, e):
@@ -700,11 +703,16 @@ class CxxPrinter(CodeGenerator):
                 self.visit(self.construct_concrete(v.type, initial_value, v))
 
     def visit_SAssign(self, s):
-        v = self.fv(s.lhs.type)
-        self.declare(v, s.rhs)
-        self.begin_statement()
-        self.write(self.visit(s.lhs), " = ", self.visit(EMove(v).with_type(v.type)), ";")
-        self.end_statement()
+        if is_scalar(s.rhs.type):
+            self.begin_statement()
+            self.write(self.visit(s.lhs), " = ", self.visit(s.rhs), ";")
+            self.end_statement()
+        else:
+            v = self.fv(s.lhs.type)
+            self.declare(v, s.rhs)
+            self.begin_statement()
+            self.write(self.visit(s.lhs), " = ", self.visit(EMove(v).with_type(v.type)), ";")
+            self.end_statement()
 
     def visit_SDecl(self, s):
         assert isinstance(s.id, str)
