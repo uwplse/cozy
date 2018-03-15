@@ -1414,20 +1414,22 @@ class ExprEliminator(BottomUpRewriter):
                     d.appendleft(s)
                 else:
                     right = syntax.seq(d)
-                    if right:
-                        subtree = syntax.SSeq(kill, self.scoped_eliminate(mod, right))
-                        d.clear()
-                        d.append(subtree)
+                    subtree = syntax.SSeq(kill, self.scoped_eliminate(mod, right))
+                    d.clear()
+                    d.append(subtree)
 
             result = syntax.seq(d)
             print("$$ after elim_seq:", result)
             return result
 
-        # print("$$ visit_SSeq\n    {}".format(e))
-        e.s1 = self.visit(e.s1)
-        e.s2 = self.visit(e.s2)
-
         original = list(break_seq(e))
+
+        if any(o for o in original if get_modified_var(o) is not (None, None)):
+            e = elim_seq(original)
+        else:
+            e.s1 = self.visit(e.s1)
+            e.s2 = self.visit(e.s2)
+
         print("$$ ORIGINAL:\n    {}".format(pformat(original)))
 
         """
@@ -1436,7 +1438,7 @@ class ExprEliminator(BottomUpRewriter):
         for t in transformed:
             print("   ", t)
         """
-        return elim_seq(original)
+        return e
 
         """
         if isinstance(e.s1, syntax.SAssign):
