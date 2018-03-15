@@ -267,7 +267,7 @@ class CxxPrinter(CodeGenerator):
     def visit_EMakeRecord(self, e):
         t = self.visit(e.type, "")
         exps = [self.visit(ee) for (f, ee) in e.fields]
-        return "({}{{ {} }})".format(t, ", ".join(exps))
+        return "({}({}))".format(t, ", ".join(exps))
 
     def visit_EHandle(self, e):
         assert e.addr == ENum(0), repr(e)
@@ -630,7 +630,7 @@ class CxxPrinter(CodeGenerator):
     def visit_ETuple(self, e):
         name = self.typename(e.type)
         args = [self.visit(arg) for arg in e.es]
-        return "({} {{ {} }})".format(name, ", ".join(args))
+        return "({}({}))".format(name, ", ".join(args))
 
     def visit_ETupleGet(self, e):
         if isinstance(e.e, ETuple):
@@ -836,8 +836,21 @@ class CxxPrinter(CodeGenerator):
             with self.block():
                 for f, ft in t.fields:
                     self.declare_field(f, ft)
+
+                self.write_stmt("inline ", name, "() { }")
                 self.begin_statement()
-                self.write("inline bool operator==(const ", name, "& other) ")
+                self.write("inline ", name, "(")
+                self.visit_args([("_" + f, t) for (f, t) in t.fields])
+                self.write(") : ")
+                for i, (f, ft) in enumerate(t.fields):
+                    if i > 0:
+                        self.write(", ")
+                    self.write(f, "(::std::move(_", f, "))")
+                self.write(" { }")
+                self.end_statement()
+
+                self.begin_statement()
+                self.write("inline bool operator==(const ", name, "& other) const ")
                 with self.block():
                     this = EEscape("(*this)", (), ()).with_type(t)
                     other = EVar("other").with_type(t)
