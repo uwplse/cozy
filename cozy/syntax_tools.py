@@ -90,17 +90,36 @@ def strip_EStateVar(e : syntax.Exp):
             return self.visit(e.e)
     return V().visit(e)
 
+class DeepCopier(BottomUpRewriter):
+    def join(self, x, new_children):
+        if isinstance(x, common.ADT):
+            out = type(x)(*new_children)
+            if isinstance(x, syntax.Exp) and hasattr(x, "type"):
+                out.type = x.type
+            return out
+        elif type(x) in [list, tuple, dict]:
+            return type(x)(new_children)
+        else:
+            return x
+
+_DEEP_COPIER = DeepCopier()
+
 def deep_copy(ast):
-    return BottomUpRewriter().visit(ast)
+    return _DEEP_COPIER.visit(ast)
 
 def shallow_copy(ast):
-    return BottomUpRewriter().join(ast, ast.children())
+    return _DEEP_COPIER.join(ast, ast.children())
 
 def all_types(ast):
     class TypeCollector(BottomUpExplorer):
         def visit_Type(self, t):
             yield from super().visit_ADT(t)
             yield t
+        def visit_Exp(self, e):
+            yield from super().visit_ADT(e)
+            t = getattr(e, "type", None)
+            if t is not None:
+                yield from self.visit(t)
         def visit_object(self, o):
             return ()
         def join(self, t, children):
@@ -267,7 +286,7 @@ class PrettyPrinter(common.Visitor):
         return "{} {{{}}} ({})".format(self.format_builtin("Filter"), self.visit(e.p), self.visit(e.e))
 
     def visit_EFlatMap(self, e):
-        return "{}({}, {})".format(self.format_builtin("FlatMap"), self.visit(e.e), self.visit(e.f))
+        return "{} {{{}}} ({})".format(self.format_builtin("FlatMap"), self.visit(e.f), self.visit(e.e))
 
     def visit_EBinOp(self, e):
         op = e.op.replace("<", self.format_lt()).replace(">", self.format_gt())
@@ -524,6 +543,18 @@ def all_exps(e):
                 yield x
     return V().visit(e)
 
+Unknown = collections.namedtuple("Unknown", [])
+ElemOf = collections.namedtuple("ElemOf", ["bag"])
+Exactly = collections.namedtuple("Exactly", ["e"])
+Context = collections.namedtuple("Context", [
+    "toplevel",
+    "e",
+    "facts",
+    "replace_e_with",
+    "bound_vars",
+    "var_sources",
+    "pool"])
+
 class FragmentEnumerator(common.Visitor):
     # This visitor's methods use a weird pattern:
     #     yield (lambda r: ...)(r)
@@ -531,65 +562,84 @@ class FragmentEnumerator(common.Visitor):
     # overwritten at each loop iteration, that's a problem. Defining a fresh
     # function and immediately calling it is a simple way to force
     # capture-by-value for r instead.
-    def __init__(self, pre_visit=None, post_visit=None):
-        if not pre_visit:
-            pre_visit = lambda obj: True
-        if not post_visit:
-            post_visit = lambda obj: None
-        self.pre_visit = pre_visit
-        self.post_visit = post_visit
-        self.bound = collections.OrderedDict()
+    def __init__(self, toplevel, pool=pools.RUNTIME_POOL):
+        self.toplevel = toplevel
+        self.bound_vars = []
         self.assumptions = []
-        self.a_fvs = []
+        self.pool_stack = [pool]
 
-    def currently_bound(self):
-        return common.OrderedSet(self.bound.keys())
+    def currently_bound(self) -> {syntax.EVar}:
+        return common.OrderedSet(v for v, src in self.bound_vars)
 
-    def current_assumptions(self):
-        return self.assumptions
+    def current_assumptions(self) -> [syntax.Exp]:
+        return list(self.assumptions)
+
+    @contextmanager
+    def intro_vars(self, vs):
+        vs = common.make_random_access(vs)
+        for v, src in vs:
+            assert isinstance(v, syntax.EVar)
+            assert isinstance(src, ElemOf) or isinstance(src, Exactly) or isinstance(src, Unknown)
+        self.bound_vars.extend(vs)
+        with common.save_property(self, "assumptions"):
+            for v, src in vs:
+                self.assumptions = [a for a in self.assumptions if v not in free_vars(a)]
+            for v, src in vs:
+                if isinstance(src, ElemOf):
+                    if v not in free_vars(src.bag):
+                        self.assumptions.append(target_syntax.EDeepIn(v, src.bag))
+                elif isinstance(src, Exactly):
+                    if v not in free_vars(src.e):
+                        self.assumptions.append(syntax.EBinOp(v, "===", src.e).with_type(BOOL))
+            yield
+        for i in range(len(vs)):
+            self.bound_vars.pop()
+
+    @contextmanager
+    def clear_bound(self):
+        old_bound = self.bound_vars
+        self.bound_vars = []
+        yield
+        self.bound_vars = old_bound
 
     @contextmanager
     @common.typechecked
     def push_assumptions(self, new_assumptions : [syntax.Exp] = []):
-        with common.save_property(self, "assumptions"):
-            with common.save_property(self, "a_fvs"):
-                self.assumptions = self.assumptions + new_assumptions
-                self.a_fvs = self.a_fvs + [free_vars(a) for a in new_assumptions]
-                yield
+        self.assumptions.extend(new_assumptions)
+        yield
+        for i in range(len(new_assumptions)):
+            self.assumptions.pop()
 
-    @contextmanager
-    @common.typechecked
-    def intro_vars(self, vars : [syntax.EVar], source):
-        vars = common.OrderedSet(vars)
-        with common.save_property(self, "assumptions"):
-            with common.save_property(self, "a_fvs"):
-                to_keep = [i for i in range(len(self.assumptions)) if not common.intersects(self.a_fvs[i], vars)]
-                self.assumptions = [self.assumptions[i] for i in to_keep]
-                self.a_fvs       = [self.a_fvs[i]       for i in to_keep]
-                with common.extend_multi(self.bound, [(v, source) for v in vars]):
-                    yield
+    def make_ctx(self, e):
+        return Context(
+            toplevel=self.toplevel,
+            e=e,
+            facts=self.current_assumptions(),
+            replace_e_with=common.identity_func,
+            bound_vars=self.currently_bound(),
+            var_sources=common.OrderedDict(self.bound_vars),
+            pool=self.pool_stack[-1])
+
+    def update_repl(self, ctx, new_replace):
+        return ctx._replace(replace_e_with=new_replace(ctx.replace_e_with))
 
     def visit_assumptions_seq(self, assumptions, i=0):
         if i >= len(assumptions):
             return
-        for info in self.visit(assumptions[i]):
-            yield (lambda i, a, x, r, bound: (a, x, lambda x: tuple(assumptions[:i]) + (x,) + tuple(assumptions[i:]), bound))(i, *info)
+        for ctx in self.visit(assumptions[i]):
+            yield self.update_repl(ctx, lambda r: lambda x: tuple(assumptions[:i]) + (x,) + tuple(assumptions[i:]))
         self.assumptions.append(assumptions[i])
-        self.a_fvs.append(free_vars(assumptions[i]))
         yield from self.visit_assumptions_seq(assumptions, i+1)
 
-    def recurse_with_assumptions_about_bound_var(self, e : target_syntax.ELambda, assume : [syntax.Exp]):
-        if self.pre_visit(e):
-            yield (self.current_assumptions(), e, common.identity_func, self.currently_bound())
-            with self.intro_vars([e.arg], e):
-                with self.push_assumptions(assume):
-                    for (a, x, r, bound) in self.visit(e.body):
-                        yield (lambda r, x, a, bound: (a, x, lambda x: target_syntax.ELambda(e.arg, r(x)), bound))(r, x, a, bound)
-            self.post_visit(e)
+    def recurse_with_assumptions_about_bound_var(self, e : target_syntax.ELambda, src):
+        yield self.make_ctx(e)
+        with self.intro_vars([(e.arg, src)]):
+            for ctx in self.visit(e.body):
+                yield self.update_repl(ctx, lambda r: lambda x: target_syntax.ELambda(e.arg, r(x)))
 
     def visit_ELambda(self, obj):
-        # raise NotImplementedError(obj)
-        return self.recurse_with_assumptions_about_bound_var(obj, [])
+        # The parent should tell us something about where the var comes from
+        raise NotImplementedError(pprint(self.toplevel))
 
     def visit_EStateVar(self, e):
         """
@@ -604,56 +654,80 @@ class FragmentEnumerator(common.Visitor):
             state s = v
             Filter {\v -> s} C
         """
-        yield (self.current_assumptions(), e, common.identity_func, self.currently_bound())
-        orig_bound = self.bound
-        self.bound = collections.OrderedDict()
+        yield self.make_ctx(e)
         t = e.type
-        for (a, x, r, bound) in self.visit(e.e):
-            yield (lambda r: (a, x, lambda x: target_syntax.EStateVar(r(x)).with_type(t), bound))(r)
-        self.bound = orig_bound
+        self.pool_stack.append(pools.STATE_POOL)
+        with self.clear_bound():
+            for ctx in self.visit(e.e):
+                yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EStateVar(r(x)).with_type(t))
+        self.pool_stack.pop()
 
     def visit_EFilter(self, e):
-        yield (self.current_assumptions(), e, common.identity_func, self.currently_bound())
+        yield self.make_ctx(e)
         t = e.type
-        for (a, x, r, bound) in self.visit(e.e):
-            yield (lambda r: (a, x, lambda x: target_syntax.EFilter(r(x), e.p).with_type(t), bound))(r)
-        for (a, x, r, bound) in self.recurse_with_assumptions_about_bound_var(e.p, [target_syntax.EDeepIn(e.p.arg, e.e)] if e.p.arg not in free_vars(e.e) else []):
-            yield (lambda r: (a, x, lambda x: target_syntax.EFilter(e.e, r(x)).with_type(t), bound))(r)
+        for ctx in self.visit(e.e):
+            yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EFilter(r(x), e.p).with_type(t))
+        for ctx in self.recurse_with_assumptions_about_bound_var(e.p, ElemOf(e.e)):
+            yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EFilter(e.e, r(x)).with_type(t))
 
     def visit_EMap(self, e):
-        yield (self.current_assumptions(), e, common.identity_func, self.currently_bound())
+        yield self.make_ctx(e)
         t = e.type
-        for (a, x, r, bound) in self.visit(e.e):
-            yield (lambda r: (a, x, lambda x: target_syntax.EMap(r(x), e.f).with_type(t), bound))(r)
-        for (a, x, r, bound) in self.recurse_with_assumptions_about_bound_var(e.f, [target_syntax.EDeepIn(e.f.arg, e.e)] if e.f.arg not in free_vars(e.e) else []):
-            yield (lambda r: (a, x, lambda x: target_syntax.EMap(e.e, r(x)).with_type(t), bound))(r)
+        for ctx in self.visit(e.e):
+            yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EMap(r(x), e.f).with_type(t))
+        for ctx in self.recurse_with_assumptions_about_bound_var(e.f, ElemOf(e.e)):
+            yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EMap(e.e, r(x)).with_type(t))
 
     def visit_EFlatMap(self, e):
-        yield (self.current_assumptions(), e, common.identity_func, self.currently_bound())
+        yield self.make_ctx(e)
         t = e.type
-        for (a, x, r, bound) in self.visit(e.e):
-            yield (lambda r: (a, x, lambda x: target_syntax.EFlatMap(r(x), e.f).with_type(t), bound))(r)
-        for (a, x, r, bound) in self.recurse_with_assumptions_about_bound_var(e.f, [target_syntax.EDeepIn(e.f.arg, e.e)] if e.f.arg not in free_vars(e.e) else []):
-            yield (lambda r: (a, x, lambda x: target_syntax.EFlatMap(e.e, r(x)).with_type(t), bound))(r)
+        for ctx in self.visit(e.e):
+            yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EFlatMap(r(x), e.f).with_type(t))
+        for ctx in self.recurse_with_assumptions_about_bound_var(e.f, ElemOf(e.e)):
+            yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EFlatMap(e.e, r(x)).with_type(t))
 
     def visit_EMakeMap2(self, e):
-        yield (self.current_assumptions(), e, common.identity_func, self.currently_bound())
+        yield self.make_ctx(e)
         t = e.type
-        for (a, x, r, bound) in self.visit(e.e):
-            yield (lambda r: (a, x, lambda x: target_syntax.EMakeMap2(r(x), e.value).with_type(t), bound))(r)
-        for (a, x, r, bound) in self.recurse_with_assumptions_about_bound_var(e.value, [target_syntax.EDeepIn(e.value.arg, e.e)] if e.value.arg not in free_vars(e.e) else []):
-            yield (lambda r: (a, x, lambda x: target_syntax.EMakeMap2(e.e, r(x)).with_type(t), bound))(r)
+        for ctx in self.visit(e.e):
+            yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EMakeMap2(r(x), e.value).with_type(t))
+        for ctx in self.recurse_with_assumptions_about_bound_var(e.value, ElemOf(e.e)):
+            yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EMakeMap2(e.e, r(x)).with_type(t))
+
+    def visit_EArgMin(self, e):
+        yield self.make_ctx(e)
+        t = e.type
+        for ctx in self.visit(e.e):
+            yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EArgMin(r(x), e.f).with_type(t))
+        for ctx in self.recurse_with_assumptions_about_bound_var(e.f, ElemOf(e.e)):
+            yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EArgMin(e.e, r(x)).with_type(t))
+
+    def visit_EArgMax(self, e):
+        yield self.make_ctx(e)
+        t = e.type
+        for ctx in self.visit(e.e):
+            yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EArgMax(r(x), e.f).with_type(t))
+        for ctx in self.recurse_with_assumptions_about_bound_var(e.f, ElemOf(e.e)):
+            yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EArgMax(e.e, r(x)).with_type(t))
+
+    def visit_ELet(self, e):
+        yield self.make_ctx(e)
+        t = e.type
+        for ctx in self.visit(e.e):
+            yield self.update_repl(ctx, lambda r: lambda x: syntax.ELet(r(x), e.f).with_type(t))
+        for ctx in self.recurse_with_assumptions_about_bound_var(e.f, Exactly(e.e)):
+            yield self.update_repl(ctx, lambda r: lambda x: syntax.ELet(e.e, r(x)).with_type(t))
 
     def visit_ECond(self, e):
-        yield (self.current_assumptions(), e, common.identity_func, self.currently_bound())
-        for info in self.visit(e.cond):
-            yield (lambda a, x, r, bound: (a, x, lambda x: syntax.ECond(r(x), e.then_branch, e.else_branch).with_type(e.type), bound))(*info)
+        yield self.make_ctx(e)
+        for ctx in self.visit(e.cond):
+            yield self.update_repl(ctx, lambda r: lambda x: syntax.ECond(r(x), e.then_branch, e.else_branch).with_type(e.type))
         with self.push_assumptions([e.cond]):
-            for info in self.visit(e.then_branch):
-                yield (lambda a, x, r, bound: (a, x, lambda x: syntax.ECond(e.cond, r(x), e.else_branch).with_type(e.type), bound))(*info)
+            for ctx in self.visit(e.then_branch):
+                yield self.update_repl(ctx, lambda r: lambda x: syntax.ECond(e.cond, r(x), e.else_branch).with_type(e.type))
         with self.push_assumptions([syntax.ENot(e.cond)]):
-            for info in self.visit(e.else_branch):
-                yield (lambda a, x, r, bound: (a, x, lambda x: syntax.ECond(e.cond, e.then_branch, r(x)).with_type(e.type), bound))(*info)
+            for ctx in self.visit(e.else_branch):
+                yield self.update_repl(ctx, lambda r: lambda x: syntax.ECond(e.cond, e.then_branch, r(x)).with_type(e.type))
 
     def rebuild(self, obj, new_children):
         res = type(obj)(*new_children)
@@ -662,123 +736,81 @@ class FragmentEnumerator(common.Visitor):
         return res
 
     def visit_Spec(self, s):
-        yield (self.current_assumptions(), s, common.identity_func, self.currently_bound())
-        with self.intro_vars([syntax.EVar(v).with_type(t) for (v, t) in s.statevars], s):
+        yield self.make_ctx(s)
+        with self.intro_vars([(syntax.EVar(v).with_type(t), Unknown()) for (v, t) in s.statevars]):
             with self.push_assumptions():
-                for info in self.visit_assumptions_seq(s.assumptions):
-                    yield (lambda a, x, r, bound: (a, x, lambda x: syntax.Spec(s.name, s.types, s.extern_funcs, s.statevars, r(x), s.methods, s.header, s.footer), bound))(*info)
-                for info in self.visit(s.methods):
-                    yield (lambda a, x, r, bound: (a, x, lambda x: syntax.Spec(s.name, s.types, s.extern_funcs, s.statevars, s.assumptions, ms, s.header, s.footer), bound))(*info)
+                for ctx in self.visit_assumptions_seq(s.assumptions):
+                    yield self.update_repl(ctx, lambda r: lambda x: syntax.Spec(s.name, s.types, s.extern_funcs, s.statevars, r(x), s.methods, s.header, s.footer))
+                for ctx in self.visit(s.methods):
+                    yield self.update_repl(ctx, lambda r: lambda x: syntax.Spec(s.name, s.types, s.extern_funcs, s.statevars, s.assumptions, ms, s.header, s.footer))
 
     def visit_Op(self, m):
-        yield (self.current_assumptions(), m, common.identity_func, self.currently_bound())
-        with self.intro_vars([syntax.EVar(v).with_type(t) for (v, t) in m.args], m):
+        yield self.make_ctx(m)
+        with self.intro_vars([(syntax.EVar(v).with_type(t), Unknown()) for (v, t) in m.args]):
             with self.push_assumptions():
-                for info in self.visit_assumptions_seq(m.assumptions):
-                    yield (lambda a, x, r, bound: (a, x, lambda x: syntax.Op(m.name, m.args, r(x), m.body), bound))(*info)
-                for info in self.visit(m.body):
-                    yield (lambda a, x, r, bound: (a, x, lambda x: syntax.Op(m.name, m.args, m.assumptions, r(x)), bound))(*info)
+                for ctx in self.visit_assumptions_seq(m.assumptions):
+                    yield self.update_repl(ctx, lambda r: lambda x: syntax.Op(m.name, m.args, r(x), m.body))
+                for ctx in self.visit(m.body):
+                    yield self.update_repl(ctx, lambda r: lambda x: syntax.Op(m.name, m.args, m.assumptions, r(x)))
 
     def visit_Query(self, q):
-        yield (self.current_assumptions(), q, common.identity_func, self.currently_bound())
-        with self.intro_vars([syntax.EVar(v).with_type(t) for (v, t) in q.args], q):
+        yield self.make_ctx(q)
+        with self.intro_vars([(syntax.EVar(v).with_type(t), Unknown()) for (v, t) in q.args]):
             with self.push_assumptions():
-                for info in self.visit_assumptions_seq(q.assumptions):
-                    yield (lambda a, x, r, bound: (a, x, lambda x: syntax.Query(q.name, q.args, r(x), q.ret), bound))(*info)
-                for info in self.visit(q.ret):
-                    yield (lambda a, x, r, bound: (a, x, lambda x: syntax.Query(q.name, q.args, q.assumptions, r(x)), bound))(*info)
+                for ctx in self.visit_assumptions_seq(q.assumptions):
+                    yield self.update_repl(ctx, lambda r: lambda x: syntax.Query(q.name, q.args, r(x), q.ret))
+                for ctx in self.visit(q.ret):
+                    yield self.update_repl(ctx, lambda r: lambda x: syntax.Query(q.name, q.args, q.assumptions, r(x)))
 
     def visit_ADT(self, obj):
-        yield (self.current_assumptions(), obj, common.identity_func, self.currently_bound())
+        yield self.make_ctx(obj)
         children = obj.children()
         for i in range(len(children)):
-            for (a, x, r, bound) in self.visit(children[i]):
-                yield (a, x, (lambda r, i: lambda x: self.rebuild(obj, (children[:i] + (r(x),) + children[i+1:])))(r, i), bound)
+            for ctx in self.visit(children[i]):
+                yield self.update_repl(ctx, (lambda i: lambda r: lambda x: self.rebuild(obj, (children[:i] + (r(x),) + children[i+1:])))(i))
 
     def visit_list(self, l):
         return self.visit_tuple(tuple(l))
 
     def visit_tuple(self, t):
-        yield (self.current_assumptions(), t, common.identity_func, self.currently_bound())
+        yield self.make_ctx(t)
         for i in range(len(t)):
-            for (a, x, r, bound) in self.visit(t[i]):
-                yield (a, x, (lambda r, i: lambda x: t[:i] + (r(x),) + t[i+1:])(r, i), bound)
+            for ctx in self.visit(t[i]):
+                yield self.update_repl(ctx, (lambda i: lambda r: lambda x: t[:i] + (r(x),) + t[i+1:])(i))
 
     def visit_object(self, obj):
-        yield (self.current_assumptions(), obj, common.identity_func, self.currently_bound())
+        yield self.make_ctx(obj)
 
     def visit(self, obj):
-        if self.pre_visit(obj):
-            yield from super().visit(obj)
-            self.post_visit(obj)
-        else:
-            return ()
+        yield from super().visit(obj)
 
-def enumerate_fragments(e : syntax.Exp, pre_visit=None, post_visit=None, include_lambdas=False):
+def enumerate_fragments(e : syntax.Exp):
     """
-    Yields tuples (a : [Exp], x : Exp, r : Exp->Exp, ctx : {EVar}) such that:
-        x is a non-lambda subexpression of e
-        a are true assumptions whenever x is evaluated on any input to e (NOTE:
-            these assumptions may be conservative, but they are never wrong)
-        r(x) == e (in general, r can be used to replace x with a new subexpr)
-        ctx is the set of bound vars at x (i.e. in any potential replacement y,
-            all free vars in y not in ctx will be free in r(y))
+    Yields Contexts ctx where
+        ctx.e is a non-lambda subexpression of e
+        ctx.facts are true assumptions whenever x is evaluated on any input to
+            e (NOTE: these assumptions may be conservative, but they are never
+            wrong)
+        ctx.replace_e_with(x) == e (in general, r can be used to replace x with
+            a new subexpr)
+        ctx.bound_vars is the set of bound vars at x (i.e. in any potential
+            replacement y, all free vars in y not in ctx will be free in r(y))
 
     Fragments are enumerated top-down (i.e. every expression comes before any
     of its subexpressions).
     """
-    enumerator = FragmentEnumerator(pre_visit, post_visit)
-    for info in enumerator.visit(e):
-        (a, x, r, bound) = info
-        if isinstance(x, syntax.Exp) and ((not isinstance(x, target_syntax.ELambda)) or include_lambdas):
-            yield info
+    for ctx in FragmentEnumerator(e).visit(e):
+        if isinstance(ctx.e, syntax.Exp) and not isinstance(ctx.e, syntax.ELambda):
+            yield ctx
 
-def enumerate_fragments_and_pools(e : syntax.Exp, pre_visit=None, post_visit=None, include_lambdas=False):
-    """
-    Like enumerate_fragments, but adds "pool" to the tuple depending on whether
-    we are beneath an EStateVar.
-    """
-    sv_depth = 0
-    def new_pre_visit(obj):
-        nonlocal sv_depth
-        if pre_visit is not None and not pre_visit(obj):
-            return False
-        if isinstance(obj, target_syntax.EStateVar):
-            sv_depth += 1
-        return True
-    def new_post_visit(obj):
-        nonlocal sv_depth
-        if post_visit is not None:
-            post_visit(obj)
-        if isinstance(obj, target_syntax.EStateVar):
-            sv_depth -= 1
-    def pool(e):
-        return pools.STATE_POOL if ((sv_depth - 1) if isinstance(e, target_syntax.EStateVar) else sv_depth) else pools.RUNTIME_POOL
-    for (a, x, r, bound) in enumerate_fragments(e, new_pre_visit, new_post_visit, include_lambdas=include_lambdas):
-        yield (a, x, r, bound, pool(x))
-
-
-Context = collections.namedtuple("Context", [
-    "toplevel",
-    "e",
-    "facts",
-    "replace_e_with",
-    "bound_vars",
-    "pool"])
-
-def enumerate_fragments2(e : syntax.Exp):
-    for (a, x, r, bound, pool) in enumerate_fragments_and_pools(e):
-        yield Context(
-            toplevel=e,
-            e=x,
-            facts=a,
-            replace_e_with=r,
-            bound_vars=bound,
-            pool=pool)
-
-def replace(exp, old_exp, new_exp):
+def replace(exp, old_exp, new_exp, safe=True):
+    fvs = free_vars(old_exp) if safe else ()
+    nfvs = free_vars(new_exp)
     class Replacer(BottomUpRewriter):
         def visit_ELambda(self, e):
+            if e.arg in fvs:
+                return e
+            assert e.arg not in nfvs # TODO: alpha-renaming
             return target_syntax.ELambda(e.arg, self.visit(e.body))
         def visit(self, e):
             if e == old_exp:
@@ -786,23 +818,35 @@ def replace(exp, old_exp, new_exp):
             return super().visit(e)
     return Replacer().visit(exp)
 
+def rewrite_ret(q : syntax.Query, repl, keep_assumptions=True) -> syntax.Query:
+    q = shallow_copy(q)
+    q.ret = repl(q.ret)
+    if not keep_assumptions:
+        q.assumptions = ()
+    return q
+
 def subst_lval(lval, replacements):
     # Currently we only allow vars and lval.field as l-values.
     # Neither requires attention during substitution.
     return lval
 
 @common.typechecked
-def tease_apart(exp : syntax.Exp) -> ([(syntax.EVar, syntax.Exp)], syntax.Exp):
+def tease_apart(exp : syntax.Exp, avoid : {syntax.EVar} = set()) -> ([(syntax.EVar, syntax.Exp)], syntax.Exp):
     new_state = []
+    omit = set(free_vars(exp) | avoid)
 
     class V(BottomUpRewriter):
+        def visit_ELambda(self, e):
+            omit.add(e.arg)
+            return target_syntax.ELambda(e.arg, self.visit(e.body))
         def visit_EStateVar(self, e):
             e = e.e
             x = common.find_one(x for x in new_state if alpha_equivalent(x[1], e))
             if x is not None:
                 return x[0]
             else:
-                v = fresh_var(e.type)
+                v = fresh_var(e.type, omit=omit)
+                omit.add(v)
                 new_state.append((v, e))
                 return v
 
@@ -817,7 +861,7 @@ def purify(exp : syntax.Exp) -> syntax.Exp:
     return exp
 
 def find_naked_statevar(e, state_vars):
-    for ctx in enumerate_fragments2(e):
+    for ctx in enumerate_fragments(e):
         if isinstance(ctx.e, syntax.EVar) and ctx.e in state_vars and ctx.pool != pools.STATE_POOL:
             return (ctx.e, ctx.replace_e_with)
     return None
@@ -846,7 +890,8 @@ def subst(exp, replacements, tease=True):
         allfvs |= {fv.id for fv in free_vars(val)}
 
     if tease and any(isinstance(e, target_syntax.EStateVar) for e in all_exps(exp)):
-        st, exp = tease_apart(exp)
+        rvars = common.OrderedSet(syntax.EVar(v).with_type(e.type) for v, e in replacements.items())
+        st, exp = tease_apart(exp, avoid=rvars)
         for i in range(len(st)):
             st[i] = (st[i][0], subst(st[i][1], replacements))
         exp = subst(exp, replacements, tease=False)
@@ -1105,12 +1150,30 @@ def dnf(e : syntax.Exp) -> [[syntax.Exp]]:
         return [c1 + c2 for c1 in cases1 for c2 in cases2]
     return [[e]]
 
-def break_conj(e):
-    if isinstance(e, syntax.EBinOp) and e.op == "and":
-        yield from break_conj(e.e1)
-        yield from break_conj(e.e2)
-    else:
-        yield e
+def break_binary(x, binary_children):
+    stk = [x]
+    while stk:
+        x = stk.pop()
+        children = binary_children(x)
+        if children is None:
+            yield x
+        else:
+            stk.extend(reversed(common.make_random_access(children)))
+
+def break_ebinop(e : syntax.Exp, op : syntax.BOp):
+    return break_binary(e, lambda e: (e.e1, e.e2) if isinstance(e, syntax.EBinOp) and e.op == op else None)
+
+def break_conj(e : syntax.Exp):
+    return break_ebinop(e, syntax.BOp.And)
+
+def break_sum(e : syntax.Exp):
+    return break_ebinop(e, "+")
+
+def break_product(e : syntax.Exp):
+    return break_ebinop(e, "*")
+
+def break_seq(s : syntax.Stm):
+    return break_binary(s, lambda s: (s.s1, s.s2) if isinstance(s, syntax.SSeq) else None)
 
 def break_seq(s):
     if isinstance(s, syntax.SSeq):

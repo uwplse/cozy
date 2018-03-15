@@ -2,7 +2,7 @@ import unittest
 
 from cozy.target_syntax import *
 from cozy.syntax_tools import *
-from cozy.evaluation import eval, Bag, Map, cmp, EQ, LT, GT
+from cozy.evaluation import eval, Bag, Map, Handle, cmp, eq, EQ, LT, GT
 from cozy.typecheck import retypecheck
 
 zero = ENum(0).with_type(INT)
@@ -40,3 +40,25 @@ class TestEvaluation(unittest.TestCase):
         m = Map(TMap(THandle('Entry', TRecord((('key', TNative('uint64_t')), ('pixmap', TNative('QPixmap *')), ('indexData', TNative('QByteArray')), ('memSize', TInt()), ('diskSize', TInt()), ('st', TEnum(('Disk', 'Loading', 'DiskAndMemory', 'MemoryOnly', 'Saving', 'NetworkPending', 'IndexPending', 'Invalid'))), ('inUse', TBool())))), TEnum(('Disk', 'Loading', 'DiskAndMemory', 'MemoryOnly', 'Saving', 'NetworkPending', 'IndexPending', 'Invalid'))), 'Disk', [])
         assert m == m
         assert cmp(m.type, m, m) == EQ
+
+    def test_deep_eq(self):
+        t = THandle("H", INT)
+
+        h1 = Handle(address=0, value=0)
+        h2 = Handle(address=0, value=1)
+        assert h1 != h2
+        assert eq(t, h1, h2)
+
+        h3 = Handle(address=1, value=0)
+        b1 = Bag((h1, h3, h3))
+        b2 = Bag((h3, h2, h3))
+        assert b1 != b2
+        assert eq(TBag(t), b1, b2)
+
+    def test_set_sub(self):
+        t = TSet(INT)
+        s1 = Bag((0, 1))
+        s2 = Bag((1, 0))
+        e = EEq(EBinOp(EVar("s1").with_type(t), "-", EVar("s2").with_type(t)), EEmptyList().with_type(t))
+        assert retypecheck(e)
+        assert eval(e, {"s1": s1, "s2": s2}) is True

@@ -10,12 +10,14 @@ import argparse
 import datetime
 import pickle
 
+from cozy import syntax
 from cozy import parse
 from cozy import codegen
 from cozy import common
 from cozy import typecheck
 from cozy import desugar
 from cozy import syntax_tools
+from cozy import handle_tools
 from cozy import invariant_preservation
 from cozy import synthesis
 from cozy import library
@@ -132,7 +134,9 @@ def run():
         if server is not None:
             server.join()
 
+    print("Generating IR...")
     code = ast.code
+    print("Loading concretization functions...")
     state_map = ast.concretization_functions
     print()
     for v, e in state_map.items():
@@ -171,16 +175,23 @@ def run():
     print()
     print(syntax_tools.pprint(impl))
 
+    print("Fixing EWithAlteredValue...")
+    impl = syntax_tools.shallow_copy(impl)
+    impl.methods = tuple(
+        syntax_tools.rewrite_ret(m, handle_tools.fix_ewithalteredvalue) if isinstance(m, syntax.Query) else m
+        for m in impl.methods)
+    print("Done!")
+
     try:
         java = args.java
         if java is not None:
             with common.open_maybe_stdout(java) as out:
-                out.write(codegen.JavaPrinter(boxed=(not args.unboxed)).visit(impl, state_map, share_info, abstract_state=ast.spec.statevars))
+                codegen.JavaPrinter(out=out, boxed=(not args.unboxed)).visit(impl, state_map, share_info, abstract_state=ast.spec.statevars)
 
         cxx = getattr(args, "c++")
         if cxx is not None:
             with common.open_maybe_stdout(cxx) as out:
-                out.write(codegen.CxxPrinter(use_qhash=args.use_qhash).visit(impl, state_map, share_info, abstract_state=ast.spec.statevars))
+                codegen.CxxPrinter(out=out, use_qhash=args.use_qhash).visit(impl, state_map, share_info, abstract_state=ast.spec.statevars)
     except:
         print("Code generation failed!")
         if save_failed_codegen_inputs.value:

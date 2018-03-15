@@ -1,5 +1,5 @@
 from cozy.target_syntax import *
-from cozy.syntax_tools import BottomUpRewriter, alpha_equivalent, cse, compose, pprint
+from cozy.syntax_tools import BottomUpRewriter, alpha_equivalent, cse, compose, pprint, mk_lambda, replace
 from cozy.evaluation import construct_value, eval
 from cozy.solver import valid, satisfy
 
@@ -38,7 +38,9 @@ class _V(BottomUpRewriter):
             return self.visit(e.else_branch)
         elif alpha_equivalent(self.visit(e.then_branch), self.visit(e.else_branch)):
             return self.visit(e.then_branch)
-        return ECond(cond, self.visit(e.then_branch), self.visit(e.else_branch)).with_type(e.type)
+        tb = replace(e.then_branch, cond, T)
+        eb = replace(e.else_branch, cond, F)
+        return ECond(cond, self.visit(tb), self.visit(eb)).with_type(e.type)
     def visit_EWithAlteredValue(self, e):
         t = e.type
         addr = self.visit(e.handle)
@@ -63,7 +65,11 @@ class _V(BottomUpRewriter):
     def visit_EFilter(self, e):
         ee = self.visit(e.e)
         f = self.visit(e.p)
-        if isinstance(ee, EBinOp) and ee.op == "+":
+        if f.body == T:
+            return ee
+        elif f.body == F:
+            return EEmptyList().with_type(e.type)
+        elif isinstance(ee, EBinOp) and ee.op == "+":
             return self.visit(EBinOp(EFilter(ee.e1, f).with_type(ee.e1.type), ee.op, EFilter(ee.e2, f).with_type(ee.e2.type)).with_type(e.type))
         elif isinstance(ee, ESingleton):
             return self.visit(ECond(
@@ -76,7 +82,9 @@ class _V(BottomUpRewriter):
     def visit_EMap(self, e):
         ee = self.visit(e.e)
         f = self.visit(e.f)
-        if isinstance(ee, EBinOp) and ee.op == "+":
+        if f.body == f.arg:
+            return ee
+        elif isinstance(ee, EBinOp) and ee.op == "+":
             return self.visit(EBinOp(EMap(ee.e1, f).with_type(e.type), ee.op, EMap(ee.e2, f).with_type(e.type)).with_type(e.type))
         elif isinstance(ee, ESingleton):
             return self.visit(ESingleton(f.apply_to(ee.e)).with_type(e.type))
@@ -112,6 +120,16 @@ class _V(BottomUpRewriter):
         if isinstance(ee, EMakeMap2):
             return self.visit(EUnaryOp(UOp.Distinct, ee.e).with_type(e.type))
         return EMapKeys(ee).with_type(e.type)
+    def visit_EMapGet(self, e):
+        m = self.visit(e.map)
+        k = self.visit(e.key)
+        if isinstance(m, EMakeMap2):
+            return self.visit(EUnaryOp(UOp.The,
+                    EMap(
+                        EFilter(m.e,
+                            mk_lambda(m.type.k, lambda kk: EEq(kk, k))).with_type(TBag(m.type.k)),
+                        m.value).with_type(TBag(m.type.v))).with_type(m.type.v))
+        return EMapGet(m, k).with_type(e.type)
     def visit_EUnaryOp(self, e):
         if isinstance(e.e, ECond):
             return self.visit(ECond(
@@ -127,11 +145,11 @@ class _V(BottomUpRewriter):
                 return self.visit(EBinOp(EUnaryOp(e.op, ee.e1).with_type(e.type), "+", EUnaryOp(e.op, ee.e2).with_type(e.type)).with_type(e.type))
             elif isinstance(ee, ESingleton):
                 if e.op == UOp.Length:
-                    return ONE
+                    return ENum(1).with_type(e.type)
                 elif e.op == UOp.Sum:
                     return ee.e
             elif isinstance(ee, EEmptyList):
-                return ZERO
+                return ENum(0).with_type(e.type)
             elif isinstance(ee, EMap) and e.op == UOp.Length:
                 return self.visit(EUnaryOp(e.op, ee.e).with_type(e.type))
         elif e.op in (UOp.Exists, UOp.Empty):

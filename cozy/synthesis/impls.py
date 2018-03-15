@@ -14,13 +14,13 @@ import igraph
 from cozy.common import fresh_name, find_one, typechecked, OrderedSet
 from cozy.syntax import *
 from cozy.target_syntax import EFilter, EDeepIn, EStateVar
-from cozy.syntax_tools import subst, free_vars, fresh_var, alpha_equivalent, all_exps, BottomUpRewriter, BottomUpExplorer, pprint, replace, shallow_copy, tease_apart, wrap_naked_statevars
+from cozy.syntax_tools import subst, free_vars, fresh_var, alpha_equivalent, all_exps, BottomUpRewriter, BottomUpExplorer, pprint, replace, shallow_copy, tease_apart, wrap_naked_statevars, rewrite_ret
 from cozy.handle_tools import reachable_handles_at_method, implicit_handle_assumptions_for_method
 import cozy.incrementalization as inc
 from cozy.opts import Option
 from cozy.simplification import simplify
 
-from .misc import rewrite_ret, queries_equivalent
+from .misc import queries_equivalent
 
 dedup_queries = Option("deduplicate-subqueries", bool, True)
 
@@ -89,6 +89,7 @@ class Implementation(object):
         Given a query in terms of abstract state, add an initial concrete
         implementation.
         """
+        print("Adding query {}...".format(q.name))
         self.query_specs.append(q)
         fvs = free_vars(q)
         # initial rep
@@ -142,6 +143,7 @@ class Implementation(object):
         Must be called once after all user-specified queries have been added.
         """
         for op in self.op_specs:
+            print("Setting up handle updates for {}...".format(op.name))
             handles = reachable_handles_at_method(self.spec, op)
             # print("-"*60)
             for t, bag in handles.items():

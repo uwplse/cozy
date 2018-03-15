@@ -1,10 +1,12 @@
 from collections import OrderedDict
+import random
+import sys
 
 from cozy.common import nested_dict, find_one, typechecked
 from cozy.target_syntax import Type, Exp, EVar
-from cozy.syntax_tools import alpha_equivalent
+from cozy.syntax_tools import alpha_equivalent, pprint
 from cozy.typecheck import COLLECTION_TYPES
-from cozy.pools import ALL_POOLS
+from cozy.pools import ALL_POOLS, pool_name
 from cozy.cost_model import Cost
 
 class NatDict(object):
@@ -38,12 +40,10 @@ class NatDict(object):
         data.extend(factory() for i in range(len(data), n + 1))
 
 class Cache(object):
-    def __init__(self, binders : [EVar], args : [EVar], items : [(Exp, int)]=None):
+    def __init__(self, items : [(Exp, int)] = None):
         # self.data[pool][type_tag][type][size] is list of exprs
         self.data = [nested_dict(2, lambda: NatDict(list)) for i in range(len(ALL_POOLS))]
         self.size = 0
-        self.binders = set(binders)
-        self.args = set(args)
         if items:
             for (e, size) in items:
                 self.add(e, size)
@@ -95,9 +95,22 @@ class Cache(object):
     def __len__(self):
         return self.size
     def random_sample(self, n):
-        import random
         es = [ e for (e, size, pool) in self ]
         return random.sample(es, min(n, len(es)))
+    def dump(self, file=None):
+        if file is None:
+            file = sys.stdout
+        file.write("Cache [")
+        file.write(str(len(self)))
+        file.write(" elements]\n")
+        for (e, size, pool) in self:
+            file.write("  ")
+            file.write("{:4}".format(size))
+            file.write(" ")
+            file.write("{:7}".format(pool_name(pool)))
+            file.write(" ")
+            file.write(pprint(e))
+            file.write("\n")
 
 class SeenSet(object):
     def __init__(self):

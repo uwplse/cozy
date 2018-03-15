@@ -8,22 +8,17 @@ from queue import Empty
 from cozy.common import typechecked, fresh_name, pick_to_sum, nested_dict, find_one, OrderedSet
 from cozy.target_syntax import *
 import cozy.syntax_tools
-from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, BottomUpRewriter, free_vars, pprint, subst, implies, fresh_var, mk_lambda, all_exps, equal, is_scalar, tease_apart, shallow_copy, enumerate_fragments2, wrap_naked_statevars
+from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, BottomUpRewriter, free_vars, pprint, subst, implies, fresh_var, mk_lambda, all_exps, equal, is_scalar, tease_apart, shallow_copy, wrap_naked_statevars
 import cozy.incrementalization as inc
 from cozy.timeouts import Timeout, TimeoutException
-from cozy.cost_model import CompositeCostModel
 from cozy import jobs
 from cozy.solver import valid
 from cozy.opts import Option
-from cozy.pools import STATE_POOL
 
 from . import core
 from .impls import Implementation
-from .grammar import BinderBuilder
-from .acceleration import AcceleratedBuilder
-from .misc import rewrite_ret, queries_equivalent
+from .misc import queries_equivalent
 
-accelerate = Option("acceleration-rules", bool, True)
 nice_children = Option("nice-children", bool, False)
 log_dir = Option("log-dir", str, "/tmp")
 SynthCtx = namedtuple("SynthCtx", ["all_types", "basic_types"])
@@ -37,73 +32,44 @@ class ImproveQueryJob(jobs.Job):
             assumptions : [Exp],
             q : Query,
             k,
-            hints : [Exp] = [],
-            examples : [dict] = None):
+            hints : [Exp] = []):
+        assert all(v in state for v in free_vars(q)), "Oops, query looks malformed due to {}:\n{}\nfree_vars({})".format([v for v in free_vars(q) if v not in state], pprint(q), repr(q))
         super().__init__()
         self.ctx = ctx
         self.state = state
         self.assumptions = assumptions
-        self.q = shallow_copy(q)
-        assert all(v in state for v in free_vars(q)), "Oops, query looks malformed due to {}:\n{}\nfree_vars({})".format([v for v in free_vars(q) if v not in state], pprint(q), repr(q))
+        q = shallow_copy(q)
         q.ret = wrap_naked_statevars(q.ret, OrderedSet(state))
+        self.q = q
         self.hints = hints
-        self.examples = examples
         self.k = k
     def __str__(self):
         return "ImproveQueryJob[{}]".format(self.q.name)
     def run(self):
-        print("STARTING IMPROVEMENT JOB {} (|examples|={})".format(self.q.name, len(self.examples or ())))
+        print("STARTING IMPROVEMENT JOB {}".format(self.q.name))
         os.makedirs(log_dir.value, exist_ok=True)
         with open(os.path.join(log_dir.value, "{}.log".format(self.q.name)), "w", buffering=LINE_BUFFER_MODE) as f:
             sys.stdout = f
-            print("STARTING IMPROVEMENT JOB {} (|examples|={})".format(self.q.name, len(self.examples or ())))
+            print("STARTING IMPROVEMENT JOB {}".format(self.q.name))
             print(pprint(self.q))
 
             if nice_children.value:
                 os.nice(20)
 
-            all_types = self.ctx.all_types
-            n_binders = 1
-            done = False
-            expr = ETuple((EAll(self.assumptions), self.q.ret)).with_type(TTuple((BOOL, self.q.ret.type)))
-            while not done:
-                binders = []
-                for t in all_types:
-                    # if isinstance(t, TBag):
-                    #     binders += [fresh_var(t.t) for i in range(n_binders)]
-                    for i in range(n_binders):
-                        b = fresh_var(t)
-                        binders.append(b)
-                try:
-                    core.fixup_binders(expr, binders, throw=True)
-                    done = True
-                except:
-                    pass
-                n_binders += 1
-
-            binders = [fresh_var(t) for t in all_types if is_scalar(t) for i in range(n_binders)]
-            print("Using {} binders".format(n_binders))
             relevant_state_vars = [v for v in self.state if v in free_vars(EAll(self.assumptions)) | free_vars(self.q.ret)]
             used_vars = free_vars(self.q.ret)
             for a in self.q.assumptions:
                 used_vars |= free_vars(a)
             args = [EVar(v).with_type(t) for (v, t) in self.q.args]
             args = [a for a in args if a in used_vars]
-            b = BinderBuilder(binders, relevant_state_vars, args)
-            if accelerate.value:
-                b = AcceleratedBuilder(b, binders, relevant_state_vars, args)
 
             try:
                 for expr in itertools.chain((self.q.ret,), core.improve(
                         target=self.q.ret,
                         assumptions=EAll(self.assumptions),
                         hints=self.hints,
-                        examples=self.examples,
-                        binders=binders,
                         state_vars=relevant_state_vars,
                         args=args,
-                        cost_model=CompositeCostModel(),
-                        builder=b,
                         stop_callback=lambda: self.stop_requested)):
 
                     new_rep, new_ret = tease_apart(expr)

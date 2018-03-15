@@ -23,7 +23,9 @@ class TestSyntaxTools(unittest.TestCase):
                 EFilter(xs, ELambda(x, T)),
                 EEmptyList().with_type(xs.type))))
         assert retypecheck(e)
-        for (a, e, r, bound) in enumerate_fragments(e):
+        for ctx in enumerate_fragments(e):
+            e = ctx.e
+            a = ctx.facts
             if e == T:
                 assert not valid(implies(EAll(a), equal(x, ZERO)), validate_model=True), "assumptions at {}: {}".format(pprint(e), "; ".join(pprint(aa) for aa in a))
 
@@ -31,7 +33,9 @@ class TestSyntaxTools(unittest.TestCase):
         b = EVar("b").with_type(BOOL)
         e = ELet(ZERO, mk_lambda(INT, lambda x: b))
         assert retypecheck(e)
-        for (a, x, r, bound) in enumerate_fragments(e):
+        for ctx in enumerate_fragments(e):
+            x = ctx.e
+            bound = ctx.bound_vars
             if x == b:
                 assert bound == { e.f.arg }, "got {}".format(bound)
             elif x == ZERO:
@@ -41,8 +45,9 @@ class TestSyntaxTools(unittest.TestCase):
         b = EVar("b").with_type(BOOL)
         e = ELet(ZERO, mk_lambda(INT, lambda x: EStateVar(b)))
         assert retypecheck(e)
-        for (a, e, r, bound) in enumerate_fragments(e):
-            if e == b:
+        for ctx in enumerate_fragments(e):
+            if ctx.e == b:
+                bound = ctx.bound_vars
                 assert not bound, "EStateVar should reset bound variables, but got {}".format(bound)
 
     def test_enumerate_fragments_regression_1(self):
@@ -421,3 +426,65 @@ class TestSyntaxTools(unittest.TestCase):
         assert list(free_vars(SEscapableBlock("label", SDecl("x", ONE)))) == []
         assert list(free_vars(SWhile(T, SDecl("x", ONE)))) == []
         assert list(free_vars(SMapUpdate(T, T, EVar("x"), SSeq(SDecl("y", ONE), use_x)))) == []
+
+    def test_deep_copy(self):
+        e1 = ETuple((EVar("x"), EBinOp(EVar("x"), "+", EVar("y"))))
+        e2 = deep_copy(e1)
+        assert e1 == e2
+        assert e1 is not e2
+        assert e1.es is not e2.es
+        assert e1.es[0] is not e2.es[0]
+        assert e1.es[1] is not e2.es[1]
+        assert e1.es[1].e1 is not e2.es[1].e1
+        assert e1.es[1].e2 is not e2.es[1].e2
+
+    def test_shallow_copy(self):
+        e1 = ETuple((EVar("x"), EBinOp(EVar("x"), "+", EVar("y"))))
+        e2 = shallow_copy(e1)
+        assert e1 == e2
+        assert e1 is not e2
+        assert e1.es is e2.es
+
+    def test_double_bound(self):
+        xs = EVar("xs").with_type(INT_BAG)
+        ys = EVar("ys").with_type(INT_BAG)
+        x = EVar("x").with_type(INT)
+        e = EMap(xs, ELambda(x, EMap(ys, ELambda(x, x))))
+        assert retypecheck(e)
+        found = False
+        for ctx in enumerate_fragments(e):
+            facts = EAll(ctx.facts)
+            print("{} | {}".format(pprint(ctx.e), pprint(facts)))
+            if ctx.e == x:
+                found = True
+                assert valid(EImplies(facts, EIn(x, ys)))
+                assert not valid(EImplies(facts, EIn(x, xs)))
+        assert found
+
+    def test_self_bound(self):
+        xs1 = EVar("xs").with_type(INT_BAG)
+        xs2 = EVar("xs").with_type(INT)
+        e = EMap(xs1, ELambda(xs2, xs2))
+        assert retypecheck(e)
+        found = False
+        for ctx in enumerate_fragments(e):
+            found = found or ctx.e == xs2
+            assert not ctx.facts
+        assert found
+
+    def test_break_conj(self):
+        x, y, z = [fresh_var(BOOL) for i in range(3)]
+        e = EBinOp(
+            EBinOp(EBinOp(EBinOp(x, BOp.And, y), BOp.Or, z), BOp.And, x), BOp.And,
+            EBinOp(x, BOp.And, y))
+        assert list(break_conj(e)) == [EBinOp(EBinOp(x, BOp.And, y), BOp.Or, z), x, x, y]
+
+    def test_break_seq(self):
+        x, y, z = [SNoOp() for i in range(3)]
+        e = SSeq(SSeq(x, y), SSeq(y, z))
+        l = list(break_seq(e))
+        assert len(l) == 4
+        assert l[0] is x
+        assert l[1] is y
+        assert l[2] is y
+        assert l[3] is z

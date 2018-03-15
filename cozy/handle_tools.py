@@ -6,10 +6,10 @@ handling handles.
 
 from collections import OrderedDict
 
-from cozy.common import typechecked
+from cozy.common import typechecked, extend, fresh_name
 from cozy.target_syntax import *
-from cozy.syntax_tools import fresh_var, mk_lambda
-from cozy.typecheck import is_collection
+from cozy.syntax_tools import fresh_var, mk_lambda, all_exps, BottomUpRewriter, deep_copy, free_vars
+from cozy.typecheck import is_collection, is_scalar, retypecheck
 
 @typechecked
 def _merge(a : {THandle:Exp}, b : {THandle:Exp}) -> {THandle:Exp}:
@@ -79,3 +79,129 @@ def implicit_handle_assumptions_for_method(handles : {THandle:Exp}, m : Method) 
                     EEq(EGetField(h1, "val").with_type(h1.type.value_type),
                         EGetField(h2, "val").with_type(h2.type.value_type))))))
     return new_assumptions
+
+def EArgDistinct(bag, key):
+    b = EVar(fresh_name())
+    distinct_keys = EUnaryOp(UOp.Distinct, EMap(b, key))
+    res = EMap(distinct_keys,
+        mk_lambda(None, lambda x:
+            EUnaryOp(UOp.The, EFilter(b, mk_lambda(None, lambda y:
+                EEq(x, key.apply_to(y)))))))
+    return ELet(bag, ELambda(b, res))
+
+def fix_ewithalteredvalue(e : Exp):
+    """
+    EWithAlteredValue gives us real trouble.
+    This rewrites `e` to avoid them, but may result in a much slower
+    implementation.
+    """
+    # TODO: should we do this earlier? Maybe at incrementalization time?
+
+    if not any(isinstance(x, EWithAlteredValue) for x in all_exps(e)):
+        # Good! This is the dream.
+        return e
+
+    def do(e, t):
+        """
+        Rewrite handles into (h, val) tuples.
+        """
+        if is_collection(t):
+            m = EMap(e, mk_lambda(t.t, lambda x: do(x, t.t)))
+            return m.with_type(TBag(m.f.body.type))
+        elif isinstance(t, THandle):
+            return ETuple((e, EGetField(e, "val"))).with_type(TTuple((e.type, e.type.value_type)))
+        elif isinstance(t, TMap):
+            v = fresh_var(t.k)
+            vf = ELambda(v, do(EMapGet(e, v).with_type(t.v), t.v))
+            return EMakeMap2(
+                EMapKeys(e),
+                vf).with_type(TMap(t.k, vf.body.type))
+        elif is_scalar(t):
+            return e
+        else:
+            raise NotImplementedError(t)
+
+    def undo(e, t):
+        """
+        Rewrite (h, val) tuples into handles.
+        """
+        if is_collection(t):
+            return EMap(e, mk_lambda(t.t, lambda x: undo(x, t.t)))
+        elif isinstance(t, THandle):
+            return ETupleGet(e, 0)
+        elif is_scalar(t):
+            return e
+        else:
+            raise NotImplementedError(t)
+
+    def fst():
+        return ELambda(EVar("x"), ETupleGet(EVar("x"), 0))
+
+    class V(BottomUpRewriter):
+        def __init__(self, fvs):
+            self.should_rewrite = { v : True for v in fvs }
+        def visit_ELambda(self, f):
+            with extend(self.should_rewrite, f.arg, False):
+                return self.join(f, (f.arg, self.visit(f.body)))
+        def visit_EVar(self, v):
+            return do(v, v.type) if self.should_rewrite[v] else v
+        def visit_EEmptyList(self, v):
+            return EEmptyList().with_type(do(v, v.type).type)
+        def visit_EMakeMap2(self, e):
+            ee = self.visit(e.e)
+            v = self.visit(e.value)
+            if isinstance(e.type.k, THandle):
+                ee = EMap(ee, fst()).with_type(ee.type.t.ts[0])
+            return EMakeMap2(ee, v).with_type(TMap(ee.type.t, v.body.type))
+        def visit_EMapGet(self, e):
+            m = self.visit(e.map)
+            k = self.visit(e.key)
+            if isinstance(m.type.k, THandle):
+                k = fst().apply_to(k)
+            return EMapGet(m, k).with_type(m.type.v)
+        def visit_EHasKey(self, e):
+            m = self.visit(e.map)
+            k = self.visit(e.key)
+            if isinstance(m.type.k, THandle):
+                k = fst().apply_to(k)
+            return EHasKey(m, k).with_type(m.type.v)
+        def visit_EBinOp(self, e):
+            e1 = self.visit(e.e1)
+            e2 = self.visit(e.e2)
+            if e.op != "===":
+                if isinstance(e.e1.type, THandle): e1 = fst().apply_to(e1)
+                if isinstance(e.e2.type, THandle): e2 = fst().apply_to(e2)
+            if e.op == BOp.In and isinstance(e.e1.type, THandle):
+                e2 = EMap(e2, fst())
+            return EBinOp(e1, e.op, e2)
+        def visit_EUnaryOp(self, e):
+            ee = self.visit(e.e)
+            if e.op == UOp.Distinct and isinstance(e.e.type.t, THandle):
+                return EArgDistinct(ee, fst())
+            return EUnaryOp(e.op, ee)
+        def visit_EWithAlteredValue(self, e):
+            return ETuple((
+                ETupleGet(self.visit(e.handle), 0),
+                self.visit(e.new_value)))
+        def visit_EGetField(self, e):
+            # print("rewriting {}... ".format(pprint(e)), end="")
+            if isinstance(e.e.type, THandle):
+                assert e.f == "val"
+                # print("ELIM")
+                return ETupleGet(self.visit(e.e), 1).with_type(e.type)
+            else:
+                # print("NOOP; t={}".format(pprint(e.e.type)))
+                return EGetField(self.visit(e.e), e.f).with_type(e.type)
+
+    orig = e
+    e = deep_copy(e)
+    e = undo(V(free_vars(e)).visit(e), orig.type)
+    res = retypecheck(e)
+    if not res:
+        from cozy.syntax_tools import pprint
+        for v in free_vars(orig):
+            print(" > {} : {}".format(pprint(v), pprint(v.type)))
+        print("FIXING {}".format(pprint(orig)))
+        print("-----> {}".format(pprint(e)))
+        assert res
+    return e

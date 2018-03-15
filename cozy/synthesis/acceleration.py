@@ -1,11 +1,13 @@
 import itertools
 
 from cozy.common import find_one, partition, pick_to_sum
-from .core import ExpBuilder
 from cozy.target_syntax import *
-from cozy.syntax_tools import free_vars, break_conj, all_exps, replace, pprint, enumerate_fragments, mk_lambda, strip_EStateVar, alpha_equivalent, subst
+from cozy.syntax_tools import fresh_var, free_vars, break_conj, pprint, enumerate_fragments, mk_lambda, strip_EStateVar, alpha_equivalent, subst
 from cozy.typecheck import is_numeric, is_collection
-from cozy.pools import RUNTIME_POOL, STATE_POOL
+from cozy.pools import RUNTIME_POOL, STATE_POOL, ALL_POOLS
+from cozy.simplification import simplify
+
+accelerate = Option("acceleration-rules", bool, True)
 
 def _as_conjunction_of_equalities(p):
     if isinstance(p, EBinOp) and p.op == "and":
@@ -61,7 +63,9 @@ def infer_map_lookup(filter, binder, state : {EVar}):
     assert False
 
 def break_plus_minus(e):
-    for (_, x, r, _) in enumerate_fragments(e):
+    for ctx in enumerate_fragments(e):
+        x = ctx.e
+        r = ctx.replace_e_with
         if isinstance(x, EBinOp) and x.op in ("+", "-"):
             # print("accel --> {}".format(pprint(r(x.e1))))
             yield from break_plus_minus(r(x.e1))
@@ -76,32 +80,24 @@ def break_plus_minus(e):
             return
     yield e
 
-def break_or(e):
-    for (_, x, r, _) in enumerate_fragments(e):
-        if isinstance(x, EBinOp) and x.op == BOp.Or:
-            yield from break_or(r(x.e1))
-            yield from break_or(r(x.e2))
-            return
-    yield e
-
 def map_accelerate(e, state_vars, binders, args, cache, size):
-    for (_, arg, f, bound) in enumerate_fragments(strip_EStateVar(e)):
-        if any(v in state_vars for v in free_vars(arg)):
+    for ctx in enumerate_fragments(e):
+        if ctx.pool != RUNTIME_POOL:
             continue
-        for binder in (b for b in binders if b.type == arg.type and b not in bound):
-            value = f(binder)
-            if any(v not in state_vars and v not in binders for v in free_vars(value)):
-                continue
-            for bag in cache.find_collections(pool=STATE_POOL, size=size, of=arg.type):
-                if isinstance(bag, EEmptyList):
-                    continue
-                m = EMakeMap2(bag,
-                    ELambda(binder, value)).with_type(TMap(arg.type, e.type))
-                assert not any(v in args for v in free_vars(m))
-                if any(v in binders for v in free_vars(m)):
-                    continue
-                yield (m, STATE_POOL)
-                yield (EMapGet(EStateVar(m).with_type(m.type), arg).with_type(e.type), RUNTIME_POOL)
+        arg = ctx.e
+        if any(v in ctx.bound_vars for v in free_vars(arg)):
+            continue
+        binder = fresh_var(arg.type)
+        value = ctx.replace_e_with(binder)
+        value = strip_EStateVar(value)
+        if any(v in args for v in free_vars(value)):
+            continue
+        for bag in cache.find_collections(pool=STATE_POOL, size=size, of=arg.type):
+            m = EMakeMap2(bag,
+                ELambda(binder, value)).with_type(TMap(arg.type, e.type))
+            assert not any(v in args for v in free_vars(m)), "oops! {}; args={}".format(pprint(m), ", ".join(pprint(a) for a in args))
+            yield (m, STATE_POOL)
+            yield (EMapGet(EStateVar(m).with_type(m.type), arg).with_type(e.type), RUNTIME_POOL)
 
 def accelerate_filter(bag, p, state_vars, binders, args, cache, size):
     parts = list(break_conj(p.body))
@@ -202,109 +198,118 @@ def simplify_sum(e):
         res = EBinOp(res, "+", parts[i]).with_type(INT)
     return res
 
-def is_root(e):
-    return hasattr(e, "_root")
+def as_singleton(e):
+    if isinstance(e, ESingleton):
+        return e.e
+    if isinstance(e, EMap):
+        ee = as_singleton(e.e)
+        if ee is not None:
+            return e.f.apply_to(ee)
+    return None
 
-class AcceleratedBuilder(ExpBuilder):
+def optimized_in(x, xs):
+    if isinstance(xs, EStateVar):
+        m = EMakeMap2(xs.e, mk_lambda(x.type, lambda x: T)).with_type(TMap(x.type, BOOL))
+        m = EStateVar(m).with_type(m.type)
+        return EHasKey(m, x).with_type(BOOL)
+    else:
+        return EBinOp(x, BOp.In, xs).with_type(BOOL)
 
-    def __init__(self, wrapped : ExpBuilder, binders : [EVar], state_vars : [EVar], args : [EVar]):
-        super().__init__()
-        self.wrapped = wrapped
-        self.binders = binders
-        self.state_vars = state_vars
-        self.args = args
+def accelerate_build(build_candidates, args, state_vars):
 
-    def __repr__(self):
-        return "AcceleratedBuilder(wrapped={!r}, binders={!r}, state_vars={!r}, args={!r})".format(
-            self.wrapped,
-            self.binders,
-            self.state_vars,
-            self.args)
+    def f(cache, size, scopes, build_lambdas):
+        def check(e, pool):
+            bad = [v for v in free_vars(e) if v not in args and v not in state_vars and v not in scopes]
+            if bad:
+                print("oops! bad free vars: {}".format(bad))
+                from cozy.common import my_caller
+                print(pprint(e))
+                print(repr(e))
+                print(my_caller())
+                return (T, pool)
+                # raise Exception(pprint(e))
+            return (e, pool)
 
-    def check(self, e, pool):
-        e._accel = True
-        return super().check(e, pool)
+        if accelerate.value:
 
-    def build(self, cache, size):
+            for e in cache.find(pool=RUNTIME_POOL, size=size-1):
+                x = simplify(e)
+                if not alpha_equivalent(x, e):
+                    yield check(x, RUNTIME_POOL)
 
-        for e in cache.find(pool=RUNTIME_POOL, size=size-1, type=INT):
-            if not is_root(e):
-                continue
-            e2 = simplify_sum(e)
-            if e != e2:
-                yield self.check(e2, RUNTIME_POOL)
+            # for e in cache.find(pool=RUNTIME_POOL, size=size-1, type=INT):
+            #     e2 = simplify_sum(e)
+            #     if e != e2:
+            #         yield self.check(e2, RUNTIME_POOL)
 
-        # for e in cache.find(pool=RUNTIME_POOL, size=size-1):
-        #     if isinstance(e, EMapGet) and isinstance(e.map, EMakeMap2):
-        #         x = e.map.value.apply_to(e.key)
-        #         x._tag = True
-        #         yield self.check(x, RUNTIME_POOL)
+            # for e in cache.find(pool=RUNTIME_POOL, size=size-1):
+            #     if isinstance(e, EMapGet) and isinstance(e.map, EMakeMap2):
+            #         x = e.map.value.apply_to(e.key)
+            #         x._tag = True
+            #         yield self.check(x, RUNTIME_POOL)
 
-        # [x] - ys
-        for e in cache.find_collections(pool=RUNTIME_POOL, size=size-1):
-            if not is_root(e):
-                continue
-            if isinstance(e, EBinOp) and e.op == "-" and isinstance(e.e1, ESingleton):
-                x = e.e1.e
-                y = e.e2
-                x = ECond(
-                    EBinOp(x, BOp.In, y).with_type(BOOL),
-                    EEmptyList().with_type(e.type),
-                    e.e1).with_type(e.type)
-                yield self.check(x, RUNTIME_POOL)
-            elif isinstance(e, EUnaryOp) and e.op == UOp.Distinct:
-                e = strip_EStateVar(e)
-                m = EMakeMap2(e.e, mk_lambda(e.type.t, lambda x: T)).with_type(TMap(e.type.t, BOOL))
-                yield self.check(m, STATE_POOL)
-                m = EStateVar(m).with_type(m.type)
-                yield self.check(m, RUNTIME_POOL)
-                x = EMapKeys(m).with_type(e.type)
-                # x._tag = True
-                yield self.check(x, RUNTIME_POOL)
+            # xs - EStateVar(ys)
+            for e in cache.find_collections(pool=RUNTIME_POOL, size=size-1):
+                if isinstance(e, EBinOp) and e.op == "-" and isinstance(e.e2, EStateVar):
+                    x = EFilter(e.e1, mk_lambda(e.e1.type.t, lambda x: optimized_in(x, e.e2))).with_type(e.type)
+                    x._tag = True
+                    yield check(x, RUNTIME_POOL)
 
-        # # x in ys ----> (count x in ys) > 0
-        # for e in cache.find(pool=RUNTIME_POOL, type=BOOL, size=size-1):
-        #     if isinstance(e, EBinOp) and e.op == BOp.In:
-        #         for b in self.binders:
-        #             if b.type != e.e1.type:
-        #                 continue
-        #             x = EGt(
-        #                 EUnaryOp(UOp.Length, EFilter(e.e2, ELambda(b, EEq(e.e1, b))).with_type(e.e2.type)).with_type(INT),
-        #                 ZERO)
-        #             x._tag = True
-        #             yield self.check(x, RUNTIME_POOL)
+            # [x] - ys
+            for e in cache.find_collections(pool=RUNTIME_POOL, size=size-1):
+                if isinstance(e, EBinOp) and e.op == "-" and as_singleton(e.e1) is not None:
+                    x = as_singleton(e.e1)
+                    y = e.e2
+                    x = ECond(
+                        optimized_in(x, y),
+                        EEmptyList().with_type(e.type),
+                        e.e1).with_type(e.type)
+                    yield check(x, RUNTIME_POOL)
+                elif isinstance(e, EUnaryOp) and e.op == UOp.Distinct:
+                    e = strip_EStateVar(e)
+                    m = EMakeMap2(e.e, mk_lambda(e.type.t, lambda x: T)).with_type(TMap(e.type.t, BOOL))
+                    yield check(m, STATE_POOL)
+                    m = EStateVar(m).with_type(m.type)
+                    yield check(m, RUNTIME_POOL)
+                    x = EMapKeys(m).with_type(e.type)
+                    # x._tag = True
+                    yield check(x, RUNTIME_POOL)
 
-        for e in cache.find(pool=RUNTIME_POOL, size=size-1):
-            if not is_root(e):
-                continue
-            if (isinstance(e, EArgMin) or isinstance(e, EArgMax)) and isinstance(e.e, EBinOp) and e.e.op == "+":
-                l = e.e.e1
-                r = e.e.e2
-                op = e.e.op
-                f = lambda x: type(e)(x, e.f).with_type(e.type)
-                ll = EStateVar(f(l.e)).with_type(e.type) if isinstance(l, EStateVar) else f(l)
-                rr = EStateVar(f(r.e)).with_type(e.type) if isinstance(r, EStateVar) else f(r)
-                x = ECond(EUnaryOp(UOp.Exists, l).with_type(BOOL),
-                    ECond(EUnaryOp(UOp.Exists, r).with_type(BOOL),
-                        f(EBinOp(ESingleton(ll).with_type(e.e.type), op, ESingleton(rr).with_type(e.e.type)).with_type(e.e.type)),
-                        ll).with_type(e.type),
-                    rr).with_type(e.type)
-                # from cozy.solver import valid
-                # assert valid(EEq(e, x), model_callback=print)
-                x._tag = True
-                yield self.check(x, RUNTIME_POOL)
+            # # x in ys ----> (count x in ys) > 0
+            # for e in cache.find(pool=RUNTIME_POOL, type=BOOL, size=size-1):
+            #     if isinstance(e, EBinOp) and e.op == BOp.In:
+            #         for b in self.binders:
+            #             if b.type != e.e1.type:
+            #                 continue
+            #             x = EGt(
+            #                 EUnaryOp(UOp.Length, EFilter(e.e2, ELambda(b, EEq(e.e1, b))).with_type(e.e2.type)).with_type(INT),
+            #                 ZERO)
+            #             x._tag = True
+            #             yield check(x, RUNTIME_POOL)
 
-        # is-last(x, l)
-        for (sz1, sz2) in pick_to_sum(2, size-1):
-            for e1 in cache.find(pool=RUNTIME_POOL, size=sz1):
-                if not is_root(e1):
-                    continue
-                for e2 in cache.find_collections(pool=STATE_POOL, size=sz2, of=e1.type):
-                    if not is_root(e2):
-                        continue
-                    for b in self.binders:
-                        if b.type != e1.type:
-                            continue
+            for e in cache.find(pool=RUNTIME_POOL, size=size-1):
+                if (isinstance(e, EArgMin) or isinstance(e, EArgMax)) and isinstance(e.e, EBinOp) and e.e.op == "+":
+                    l = e.e.e1
+                    r = e.e.e2
+                    op = e.e.op
+                    f = lambda x: type(e)(x, e.f).with_type(e.type)
+                    ll = EStateVar(f(l.e)).with_type(e.type) if isinstance(l, EStateVar) else f(l)
+                    rr = EStateVar(f(r.e)).with_type(e.type) if isinstance(r, EStateVar) else f(r)
+                    x = ECond(EUnaryOp(UOp.Exists, l).with_type(BOOL),
+                        ECond(EUnaryOp(UOp.Exists, r).with_type(BOOL),
+                            f(EBinOp(ESingleton(ll).with_type(e.e.type), op, ESingleton(rr).with_type(e.e.type)).with_type(e.e.type)),
+                            ll).with_type(e.type),
+                        rr).with_type(e.type)
+                    # from cozy.solver import valid
+                    # assert valid(EEq(e, x), model_callback=print)
+                    # x._tag = True
+                    yield check(x, RUNTIME_POOL)
+
+            # is-last(x, l)
+            for (sz1, sz2) in pick_to_sum(2, size-1):
+                for e1 in cache.find(pool=RUNTIME_POOL, size=sz1):
+                    for e2 in cache.find_collections(pool=STATE_POOL, size=sz2, of=e1.type):
+                        b = fresh_var(e1.type)
                         m = EMakeMap2(e2,
                             mk_lambda(e2.type.t, lambda x:
                                 EUnaryOp(UOp.Length, EFilter(e2,
@@ -313,115 +318,127 @@ class AcceleratedBuilder(ExpBuilder):
                         # x = EEq(
                         #     EUnaryOp(UOp.Length, filt).with_type(INT),
                         #     ONE)
-                        x = EGt(EMapGet(EStateVar(m).with_type(m.type), e1).with_type(INT), ONE)
-                        # x._tag = True
-                        yield self.check(x, RUNTIME_POOL)
+                        for i in (ZERO, ONE):
+                            x = EGt(EMapGet(EStateVar(m).with_type(m.type), e1).with_type(INT), i)
+                            # x._tag = True
+                            yield check(x, RUNTIME_POOL)
+                            x = ECond(x, EEmptyList().with_type(e2.type), ESingleton(e1).with_type(e2.type)).with_type(e2.type)
+                            yield check(x, RUNTIME_POOL)
+                            x = ECond(x.cond, x.else_branch, x.then_branch).with_type(e2.type)
+                            yield check(x, RUNTIME_POOL)
 
-        # histogram
-        # for e in cache.find_collections(pool=STATE_POOL, size=size-1):
-        #     m = EMakeMap2(e,
-        #         mk_lambda(e.type.t, lambda x:
-        #             EUnaryOp(UOp.Length, EFilter(e,
-        #                 mk_lambda(e.type.t, lambda y: EEq(x, y))).with_type(e.type)).with_type(INT))).with_type(TMap(e.type.t, INT))
-        #     m._tag = True
-        #     yield self.check(m, STATE_POOL)
+            # histogram
+            # for e in cache.find_collections(pool=STATE_POOL, size=size-1):
+            #     m = EMakeMap2(e,
+            #         mk_lambda(e.type.t, lambda x:
+            #             EUnaryOp(UOp.Length, EFilter(e,
+            #                 mk_lambda(e.type.t, lambda y: EEq(x, y))).with_type(e.type)).with_type(INT))).with_type(TMap(e.type.t, INT))
+            #     m._tag = True
+            #     yield check(m, STATE_POOL)
 
-        # Fixup EFilter(\x -> ECond...)
-        for e in cache.find_collections(pool=RUNTIME_POOL, size=size-1):
-            if not is_root(e):
-                continue
-            if isinstance(e, EFilter):
-                for (_, x, r, _) in enumerate_fragments(e.p.body):
-                    if isinstance(x, ECond):
-                        lhs = EFilter(e.e, ELambda(e.p.arg, EAll([     x.cond , r(x.then_branch)]))).with_type(e.type)
-                        rhs = EFilter(e.e, ELambda(e.p.arg, EAll([ENot(x.cond), r(x.else_branch)]))).with_type(e.type)
-                        union = EBinOp(lhs, "+", rhs).with_type(e.type)
-                        # yield self.check(lhs.p.body, RUNTIME_POOL)
-                        # yield self.check(rhs.p.body, RUNTIME_POOL)
-                        yield self.check(lhs, RUNTIME_POOL)
-                        yield self.check(rhs, RUNTIME_POOL)
-                        yield self.check(union, RUNTIME_POOL)
+            # Fixup EFilter(\x -> ECond...)
+            # for e in cache.find_collections(pool=RUNTIME_POOL, size=size-1):
+            #     if isinstance(e, EFilter):
+            #         for ctx in enumerate_fragments(e.p.body):
+            #             x = ctx.e
+            #             r = ctx.replace_e_with
+            #             if isinstance(x, ECond):
+            #                 lhs = EFilter(e.e, ELambda(e.p.arg, EAll([     x.cond , r(x.then_branch)]))).with_type(e.type)
+            #                 rhs = EFilter(e.e, ELambda(e.p.arg, EAll([ENot(x.cond), r(x.else_branch)]))).with_type(e.type)
+            #                 union = EBinOp(lhs, "+", rhs).with_type(e.type)
+            #                 # yield check(lhs.p.body, RUNTIME_POOL)
+            #                 # yield check(rhs.p.body, RUNTIME_POOL)
+            #                 yield check(lhs, RUNTIME_POOL)
+            #                 yield check(rhs, RUNTIME_POOL)
+            #                 yield check(union, RUNTIME_POOL)
 
-        # Try instantiating bound expressions
-        for pool in (STATE_POOL, RUNTIME_POOL):
+            # Try instantiating bound expressions
+            for pool in ALL_POOLS:
+                for (sz1, sz2) in pick_to_sum(2, size-1):
+                    for e1 in cache.find(pool=pool, size=sz1):
+                        if isinstance(e1, EVar):
+                            continue
+                        for v in free_vars(e1):
+                            # if pool == RUNTIME_POOL:
+                            #     e1 = subst(strip_EStateVar(e1), { sv.id : EStateVar(sv).with_type(sv.type) for sv in state_vars if sv != v })
+                            for e2 in cache.find(pool=pool, type=v.type, size=sz2):
+                                if v == e2:
+                                    continue
+                                yield check(subst(e1, {v.id:e2}), pool)
+
             for (sz1, sz2) in pick_to_sum(2, size-1):
-                for e1 in cache.find(pool=pool, size=sz1):
-                    if not is_root(e1):
+                for e in cache.find(pool=RUNTIME_POOL, size=sz1):
+                    for x, pool in map_accelerate(e, state_vars, (), args, cache, sz2):
+                        yield check(x, pool)
+                    if isinstance(e, EFilter):
+                        for x, pool in accelerate_filter(e.e, e.p, state_vars, (), args, cache, sz2):
+                            yield check(x, pool)
+
+            if size == 0:
+                for a in args:
+                    for v in state_vars:
+                        if is_collection(v.type) and v.type.t == a.type:
+                            cond = optimized_in(a, EStateVar(v).with_type(v.type))
+                            yield check(cond, RUNTIME_POOL)
+
+            for bag in cache.find_collections(pool=RUNTIME_POOL, size=size-1):
+                for a in args:
+                    for v in state_vars:
+                        if is_collection(v.type) and v.type.t == a.type:
+                            v = EStateVar(v).with_type(v.type)
+                            cond = optimized_in(a, v)
+                            yield check(EFilter(bag, mk_lambda(bag.type.t, lambda _:      cond )).with_type(bag.type), RUNTIME_POOL)
+                            yield check(EFilter(bag, mk_lambda(bag.type.t, lambda _: ENot(cond))).with_type(bag.type), RUNTIME_POOL)
+
+                if isinstance(bag, EFilter):
+                    if any(v not in state_vars for v in free_vars(bag.e)):
                         continue
-                    for v in free_vars(e1):
-                        if pool == RUNTIME_POOL:
-                            e1 = subst(strip_EStateVar(e1), { sv.id : EStateVar(sv).with_type(sv.type) for sv in self.state_vars if sv != v })
-                        for e2 in cache.find(pool=pool, type=v.type, size=sz2):
-                            yield self.check(subst(e1, {v.id:e2}), pool)
 
-        for (sz1, sz2) in pick_to_sum(2, size-1):
-            for e in cache.find(pool=RUNTIME_POOL, size=sz1):
-                if not is_root(e):
-                    continue
-                for x, pool in map_accelerate(e, self.state_vars, self.binders, self.args, cache, sz2):
-                    yield self.check(x, pool)
-                if isinstance(e, EFilter) and not any(v in self.binders for v in free_vars(e)):
-                    for x, pool in accelerate_filter(e.e, e.p, self.state_vars, self.binders, self.args, cache, sz2):
-                        yield self.check(x, pool)
+                    # separate filter conds
+                    if isinstance(bag.p.body, EBinOp) and bag.p.body.op == BOp.And:
+                        p1 = ELambda(bag.p.arg, bag.p.body.e1)
+                        p2 = ELambda(bag.p.arg, bag.p.body.e2)
+                        f1 = EFilter(bag.e, p1).with_type(bag.type)
+                        f2 = EFilter(bag.e, p2).with_type(bag.type)
+                        f3 = EFilter(f1, p2).with_type(bag.type)
+                        f4 = EFilter(f2, p1).with_type(bag.type)
+                        yield check(f1, RUNTIME_POOL)
+                        yield check(f2, RUNTIME_POOL)
+                        yield check(f3, RUNTIME_POOL)
+                        yield check(f4, RUNTIME_POOL)
 
-        for bag in cache.find_collections(pool=RUNTIME_POOL, size=size-1):
-            if not is_root(bag):
-                continue
-            for a in self.args:
-                for v in self.state_vars:
-                    if is_collection(v.type) and v.type == a.type:
-                        v = EStateVar(v).with_type(v.type)
-                        cond = EBinOp(a, BOp.In, v).with_type(BOOL)
-                        yield self.check(EFilter(bag, mk_lambda(bag.type.t, lambda _:      cond )).with_type(bag.type), RUNTIME_POOL)
-                        yield self.check(EFilter(bag, mk_lambda(bag.type.t, lambda _: ENot(cond))).with_type(bag.type), RUNTIME_POOL)
+                    # construct map lookups
+                    binder = bag.p.arg
+                    inf = infer_map_lookup(bag.p.body, binder, set(state_vars))
+                    if inf:
+                        key_proj, key_lookup, remaining_filter = inf
+                        bag_binder = fresh_var(key_proj.type)
+                        if bag_binder:
+                            m = strip_EStateVar(EMakeMap2(
+                                EMap(bag.e, ELambda(binder, key_proj)).with_type(type(bag.type)(key_proj.type)),
+                                ELambda(bag_binder, EFilter(bag.e, ELambda(binder, EEq(key_proj, bag_binder))).with_type(bag.type))).with_type(TMap(key_proj.type, bag.type)))
+                            assert not any(v in args for v in free_vars(m))
+                            yield check(m, STATE_POOL)
+                            m = EStateVar(m).with_type(m.type)
+                            mg = EMapGet(m, key_lookup).with_type(bag.type)
+                            yield check(mg, RUNTIME_POOL)
+                            yield check(EFilter(mg, ELambda(binder, remaining_filter)).with_type(mg.type), RUNTIME_POOL)
 
-            if isinstance(bag, EFilter):
-                if any(v not in self.state_vars for v in free_vars(bag.e)):
-                    continue
+            # for e in cache.find(size=size-1):
+            #     # F(xs +/- ys) ---> F(xs), F(ys)
+            #     for z in break_plus_minus(e):
+            #         if z != e:
+            #             # print("broke {} --> {}".format(pprint(e), pprint(z)))
+            #             yield z
 
-                # separate filter conds
-                if isinstance(bag.p.body, EBinOp) and bag.p.body.op == BOp.And:
-                    p1 = ELambda(bag.p.arg, bag.p.body.e1)
-                    p2 = ELambda(bag.p.arg, bag.p.body.e2)
-                    f1 = EFilter(bag.e, p1).with_type(bag.type)
-                    f2 = EFilter(bag.e, p2).with_type(bag.type)
-                    f3 = EFilter(f1, p2).with_type(bag.type)
-                    f4 = EFilter(f2, p1).with_type(bag.type)
-                    yield self.check(f1, RUNTIME_POOL)
-                    yield self.check(f2, RUNTIME_POOL)
-                    yield self.check(f3, RUNTIME_POOL)
-                    yield self.check(f4, RUNTIME_POOL)
+            #     # try reordering operations
+            #     for (_, e1, f) in enumerate_fragments(e):
+            #         if e1.type == e.type and e1 != e:
+            #             for (_, e2, g) in enumerate_fragments(e1):
+            #                 if e2.type == e.type and e2 != e1:
+            #                     # e == f(g(e2))
+            #                     yield g(f(e2))
 
-                # construct map lookups
-                binder = bag.p.arg
-                inf = infer_map_lookup(bag.p.body, binder, set(self.state_vars))
-                if inf:
-                    key_proj, key_lookup, remaining_filter = inf
-                    bag_binder = find_one(self.binders, lambda b: b.type == key_proj.type and b != binder)
-                    if bag_binder:
-                        m = strip_EStateVar(EMakeMap2(
-                            EMap(bag.e, ELambda(binder, key_proj)).with_type(type(bag.type)(key_proj.type)),
-                            ELambda(bag_binder, EFilter(bag.e, ELambda(binder, EEq(key_proj, bag_binder))).with_type(bag.type))).with_type(TMap(key_proj.type, bag.type)))
-                        assert not any(v in self.args for v in free_vars(m))
-                        yield self.check(m, STATE_POOL)
-                        m = EStateVar(m).with_type(m.type)
-                        mg = EMapGet(m, key_lookup).with_type(bag.type)
-                        yield self.check(mg, RUNTIME_POOL)
-                        yield self.check(EFilter(mg, ELambda(binder, remaining_filter)).with_type(mg.type), RUNTIME_POOL)
+        yield from build_candidates(cache, size, scopes, build_lambdas)
 
-        # for e in cache.find(size=size-1):
-        #     # F(xs +/- ys) ---> F(xs), F(ys)
-        #     for z in break_plus_minus(e):
-        #         if z != e:
-        #             # print("broke {} --> {}".format(pprint(e), pprint(z)))
-        #             yield z
-
-        #     # try reordering operations
-        #     for (_, e1, f) in enumerate_fragments(e):
-        #         if e1.type == e.type and e1 != e:
-        #             for (_, e2, g) in enumerate_fragments(e1):
-        #                 if e2.type == e.type and e2 != e1:
-        #                     # e == f(g(e2))
-        #                     yield g(f(e2))
-
-        yield from self.wrapped.build(cache, size)
+    return f

@@ -1,5 +1,7 @@
+from contextlib import contextmanager
+
 from cozy.syntax import Stm, Exp, Type
-from cozy.common import declare_case
+from cozy.common import declare_case, Visitor
 
 INDENT = "  "
 
@@ -13,3 +15,49 @@ def indent_lines(s, indent):
     given string.
     """
     return '\n'.join(indent + line for line in s.splitlines())
+
+class CodeGenerator(Visitor):
+
+    def __init__(self, out):
+        self.out = out
+        self.indent = 0
+
+    def get_indent(self):
+        return INDENT * self.indent
+
+    def write(self, *parts):
+        for p in parts:
+            self.out.write(p)
+
+    def write_stmt(self, *parts):
+        self.begin_statement()
+        self.write(*parts)
+        self.end_statement()
+
+    def begin_statement(self):
+        for i in range(self.indent):
+            self.write(INDENT)
+
+    def end_statement(self):
+        self.write("\n")
+
+    @contextmanager
+    def indented(self):
+        self.indent += 1
+        yield
+        self.indent -= 1
+
+    @contextmanager
+    def deindented(self):
+        self.indent -= 1
+        yield
+        self.indent += 1
+
+    @contextmanager
+    def block(self):
+        self.write("{")
+        self.end_statement()
+        with self.indented():
+            yield
+        self.begin_statement()
+        self.write("}")

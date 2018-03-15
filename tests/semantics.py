@@ -21,7 +21,7 @@ class SemanticsTests(unittest.TestCase):
             print(" ---> {!r}".format(r1))
             print("e2: {}".format(pprint(e2)))
             print(" ---> {!r}".format(r2))
-        assert valid(EBinOp(e1, "===", e2).with_type(BOOL), model_callback=dbg)
+        assert satisfy(ENot(EBinOp(e1, "===", e2).with_type(BOOL)), model_callback=dbg) is None
 
     def test_distinct_mapkeys(self):
         xs = EVar("xs").with_type(INT_BAG)
@@ -32,7 +32,25 @@ class SemanticsTests(unittest.TestCase):
         assert retypecheck(e2)
         self.assert_same(e1, e2)
 
-    def test_mapget_of_makemap(self):
+    def test_mapget_of_makemap1(self):
+        t = THandle("T", INT)
+        xs = EVar("xs").with_type(TBag(t))
+        x = EVar("x").with_type(t)
+        y = EVar("y").with_type(t)
+        mt = TTuple((INT, INT))
+        e1 = EMapGet(
+            EMakeMap2(xs, ELambda(x,
+                ETuple((EGetField(x, "val").with_type(INT), EGetField(y, "val").with_type(INT))).with_type(mt)
+                )).with_type(TMap(t, mt)),
+            y).with_type(mt)
+        e2 = EUnaryOp(UOp.The,
+            EMap(
+                EFilter(e1.map.e,
+                    mk_lambda(e1.map.value.arg.type, lambda foo: EEq(foo, e1.key))).with_type(e1.map.e.type),
+                e1.map.value).with_type(e1.map.e.type)).with_type(e1.map.e.type.t)
+        self.assert_same(e1, e2)
+
+    def test_mapget_of_makemap2(self):
         t = THandle("T", INT)
         xs = EVar("xs").with_type(TBag(t))
         x = EVar("x").with_type(t)

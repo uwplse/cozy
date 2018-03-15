@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+import itertools
 import json
 
 from cozy import common, library, evaluation
@@ -13,8 +14,8 @@ JAVA_PRIMITIVE_TYPES = {
 
 class JavaPrinter(CxxPrinter):
 
-    def __init__(self, boxed : bool = True):
-        super().__init__()
+    def __init__(self, out, boxed : bool = True):
+        super().__init__(out=out)
         self.boxed = boxed
 
     @contextmanager
@@ -31,75 +32,76 @@ class JavaPrinter(CxxPrinter):
         self.vars = set(e.id for e in all_exps(spec) if isinstance(e, EVar))
         self.setup_types(spec, state_exps, sharing)
 
-        s = ""
-
         if spec.header:
-            s += spec.header.strip() + "\n\n"
+            self.write(spec.header.strip() + "\n\n")
 
         if spec.docstring:
-            s += spec.docstring + "\n"
+            self.write(spec.docstring + "\n")
 
-        s += "public class {} implements java.io.Serializable {{\n".format(spec.name)
+        self.write("public class {} implements java.io.Serializable ".format(spec.name))
+        with self.block():
 
-        for name, t in spec.types:
-            self.types[t] = name
+            for name, t in spec.types:
+                self.types[t] = name
 
-        # member variables
-        for name, t in spec.statevars:
-            s += "{}protected {};\n".format(INDENT, self.visit(t, name))
+            # member variables
+            for name, t in spec.statevars:
+                self.write("{}protected {};\n".format(INDENT, self.visit(t, name)))
 
-        # constructor
-        s += (
-            "{indent}public {name}() {{\n{indent2}clear();\n{indent}}}\n\n"
-            .format(indent=INDENT, indent2=INDENT+INDENT, name=spec.name)
-        )
+            # constructor
+            self.write(
+                "{indent}public {name}() {{\n{indent2}clear();\n{indent}}}\n\n"
+                .format(indent=INDENT, indent2=INDENT+INDENT, name=spec.name))
 
-        # explicit constructor
-        if abstract_state:
-            s += INDENT + "public {name}({args}) {{\n".format(
-                name=spec.name,
-                args=", ".join(self.visit(t, v) for (v, t) in abstract_state))
+            # explicit constructor
+            if abstract_state:
+                self.begin_statement()
+                self.write("public ", spec.name, "(")
+                self.visit_args(abstract_state)
+                self.write(") ")
+                with self.block():
+                    for name, t in spec.statevars:
+                        initial_value = state_exps[name]
+                        setup = self.construct_concrete(t, initial_value, EVar(name).with_type(t))
+                        self.visit(setup)
+                self.end_statement()
+
+            # clear
+            self.write("{}public void clear() {{\n".format(INDENT, spec.name))
             for name, t in spec.statevars:
                 initial_value = state_exps[name]
+                fvs = free_vars(initial_value)
+                initial_value = subst(initial_value,
+                    {v.id : evaluation.construct_value(v.type) for v in fvs})
                 setup = self.construct_concrete(t, initial_value, EVar(name).with_type(t))
-                s += self.visit(setup, INDENT + INDENT)
-            s += INDENT + "}\n"
+                self.visit(setup)
+            self.write("{}}}\n\n".format(INDENT))
 
-        # clear
-        s += "{}public void clear() {{\n".format(INDENT, spec.name)
-        for name, t in spec.statevars:
-            initial_value = state_exps[name]
-            fvs = free_vars(initial_value)
-            initial_value = subst(initial_value,
-                {v.id : evaluation.construct_value(v.type) for v in fvs})
-            setup = self.construct_concrete(t, initial_value, EVar(name).with_type(t))
-            s += self.visit(setup, INDENT + INDENT)
-        s += "{}}}\n\n".format(INDENT)
+            # methods
+            for op in spec.methods:
+                self.visit(op)
 
-        # methods
-        for op in spec.methods:
-            s += str(self.visit(op, INDENT))
+            # generate auxiliary types
+            for t, name in self.types.items():
+                self.define_type(spec.name, t, name, sharing)
 
-        # generate auxiliary types
-        for t, name in self.types.items():
-            s += self.define_type(spec.name, t, name, INDENT, sharing)
+        self.write("\n")
+        self.write(spec.footer)
+        if not spec.footer.endswith("\n"):
+            self.write("\n")
 
-        s += "}\n\n"
-        s += spec.footer
-        if not s.endswith("\n"):
-            s += "\n"
-        return s
+    def visit_Op(self, q):
+        if q.docstring:
+            self.write(indent_lines(q.docstring, self.get_indent()), "\n")
+        self.begin_statement()
+        self.write("public void ", q.name, "(")
+        self.visit_args(q.args)
+        self.write(") ")
+        with self.block():
+            self.visit(q.body)
+        self.end_statement()
 
-    def visit_Op(self, q, indent=""):
-        s = "{}{}public void {} ({}) {{\n{}  }}\n\n".format(
-            indent_lines(q.docstring, indent) + "\n" if q.docstring else "",
-            indent,
-            q.name,
-            ", ".join(self.visit(t, name) for name, t in q.args),
-            self.visit(q.body, indent+INDENT))
-        return s
-
-    def visit_Query(self, q, indent=""):
+    def visit_Query(self, q):
         if q.visibility != Visibility.Public:
             return ""
         ret_type = q.ret.type
@@ -107,24 +109,27 @@ class JavaPrinter(CxxPrinter):
             x = EVar(self.fn("x")).with_type(ret_type.t)
             def body(x):
                 return SEscape("{indent}_callback.accept({x});\n", ["x"], [x])
-            return "{doc}{indent}public void {name} ({args}java.util.function.Consumer<{t}> _callback) {{\n{body}  }}\n\n".format(
-                doc=indent_lines(q.docstring, indent) + "\n" if q.docstring else "",
-                indent=indent,
-                type=self.visit(ret_type, ""),
-                name=q.name,
-                args="".join("{}, ".format(self.visit(t, name)) for name, t in q.args),
-                t=self.visit(ret_type.t, ""),
-                body=self.for_each(q.ret, body, indent=indent+INDENT))
+            if q.docstring:
+                self.write(indent_lines(q.docstring, self.get_indent()), "\n")
+            self.begin_statement()
+            self.write("public ", self.visit(ret_type, q.name), "(")
+            self.visit_args(itertools.chain(q.args, [("_callback", TNative("java.util.function.Consumer<{t}>".format(t=self.visit(ret_type.t, ""))))]))
+            self.write(") ")
+            with self.block():
+                self.visit(SForEach(x, q.ret, SEscape("{indent}_callback({x});\n", ["x"], [x])))
         else:
-            body, out = self.visit(q.ret, indent+INDENT)
-            return "{doc}{indent}public {type} {name} ({args}) {{\n{body}    return {out};\n  }}\n\n".format(
-                doc=indent_lines(q.docstring, indent) + "\n" if q.docstring else "",
-                indent=indent,
-                type=self.visit(ret_type, ""),
-                name=q.name,
-                args=", ".join(self.visit(t, name) for name, t in q.args),
-                out=out,
-                body=body)
+            if q.docstring:
+                self.write(indent_lines(q.docstring, self.get_indent()), "\n")
+            self.begin_statement()
+            self.write("public ", self.visit(ret_type, q.name), "(")
+            self.visit_args(q.args)
+            self.write(") ")
+            with self.block():
+                ret = self.visit(q.ret)
+                self.begin_statement()
+                self.write("return ", ret, ";")
+                self.end_statement()
+        self.end_statement()
 
     def initialize_native_list(self, out):
         init = "new {};\n".format(self.visit(out.type, name="()"))
@@ -165,29 +170,33 @@ class JavaPrinter(CxxPrinter):
             init = "new {};\n".format(self.visit(out.type, name="()"))
             return SEscape("{indent}{e} = " + init, ["e"], [out])
 
-    def visit_SEscapableBlock(self, s, indent):
-        return "{indent}{label}: do {{\n{body}{indent}}} while (false);\n".format(
-            body=self.visit(s.body, indent + INDENT),
-            indent=indent,
-            label=s.label)
+    def visit_SEscapableBlock(self, s):
+        self.begin_statement()
+        self.write(s.label, ": do ")
+        with self.block():
+            self.visit(s.body)
+        self.write(" while (false);")
+        self.end_statement()
 
-    def visit_SEscapeBlock(self, s, indent):
-        return "{indent}break {label};\n".format(indent=indent, label=s.label)
+    def visit_SEscapeBlock(self, s):
+        self.begin_statement()
+        self.write("break ", s.label, ";")
+        self.end_statement()
 
-    def visit_EMakeRecord(self, e, indent=""):
-        setups, args = zip(*[self.visit(v, indent) for (f, v) in e.fields])
+    def visit_EMakeRecord(self, e):
+        args = [self.visit(v) for (f, v) in e.fields]
         tname = self.typename(e.type)
-        return ("".join(setups), "new {}({})".format(tname, ", ".join(args)))
+        return "new {}({})".format(tname, ", ".join(args))
 
-    def visit_ETuple(self, e, indent=""):
+    def visit_ETuple(self, e):
         name = self.typename(e.type)
-        setups, args = zip(*[self.visit(arg, indent) for arg in e.es])
-        return ("".join(setups), "new {}({})".format(name, ", ".join(args)))
+        args = [self.visit(arg) for arg in e.es]
+        return "new {}({})".format(name, ", ".join(args))
 
-    def visit_ENull(self, e, indent=""):
-        return ("", "null")
+    def visit_ENull(self, e):
+        return "null"
 
-    def visit_ENum(self, e, indent=""):
+    def visit_ENum(self, e):
         suffix = ""
         val = e.val
         if e.type == LONG:
@@ -195,14 +204,14 @@ class JavaPrinter(CxxPrinter):
         if e.type == FLOAT:
             val = float(e.val)
             suffix = "f"
-        return ("", repr(e.val) + suffix)
+        return repr(e.val) + suffix
 
-    def visit_EEnumEntry(self, e, indent=""):
-        return ("", "{}.{}".format(self.typename(e.type), e.name))
+    def visit_EEnumEntry(self, e):
+        return "{}.{}".format(self.typename(e.type), e.name)
 
-    def visit_ENative(self, e, indent=""):
+    def visit_ENative(self, e):
         assert e.e == ENum(0), "cannot generate code for non-trivial native value"
-        return ("", {
+        return {
             "boolean": "false",
             "byte":    "(byte)0",
             "char":    "'\\0'",
@@ -211,23 +220,23 @@ class JavaPrinter(CxxPrinter):
             "long":    "0L",
             "float":   "0.0f",
             "double":  "0.0",
-            }.get(e.type.name.strip(), "null"))
+            }.get(e.type.name.strip(), "null")
 
-    def visit_EMove(self, e, indent=""):
-        return self.visit(e.e, indent=indent)
+    def visit_EMove(self, e):
+        return self.visit(e.e)
 
-    def _eq(self, e1, e2, indent):
+    def _eq(self, e1, e2):
         if not self.boxed and self.is_primitive(e1.type):
-            return self.visit(EEscape("({e1} == {e2})", ("e1", "e2"), (e1, e2)).with_type(BOOL), indent)
+            return self.visit(EEscape("({e1} == {e2})", ("e1", "e2"), (e1, e2)).with_type(BOOL))
         if (is_scalar(e1.type) or
                 (isinstance(e1.type, library.TNativeMap) and isinstance(e2.type, library.TNativeMap)) or
                 (isinstance(e1.type, library.TNativeSet) and isinstance(e2.type, library.TNativeSet)) or
                 (isinstance(e1.type, library.TNativeList) and isinstance(e2.type, library.TNativeList))):
-            return self.visit(EEscape("java.util.Objects.equals({e1}, {e2})", ["e1", "e2"], [e1, e2]).with_type(BOOL), indent)
-        return super()._eq(e1, e2, indent)
+            return self.visit(EEscape("java.util.Objects.equals({e1}, {e2})", ["e1", "e2"], [e1, e2]).with_type(BOOL))
+        return super()._eq(e1, e2)
 
-    def test_set_containment_native(self, set : Exp, elem : Exp, indent) -> (str, str):
-        return self.visit(EEscape("{set}.contains({elem})", ["set", "elem"], [set, elem]).with_type(BOOL), indent)
+    def test_set_containment_native(self, set : Exp, elem : Exp) -> (str, str):
+        return self.visit(EEscape("{set}.contains({elem})", ["set", "elem"], [set, elem]).with_type(BOOL))
 
     def compute_hash_1(self, e : str, t : Type, out : EVar, indent : str) -> str:
         if self.is_primitive(t):
@@ -259,19 +268,24 @@ class JavaPrinter(CxxPrinter):
             out=out.id,
             res=res)
 
-    def compute_hash(self, fields : [(str, Type)], indent : str) -> (str, str):
+    def compute_hash(self, fields : [(str, Type)]) -> (str, str):
+        indent = self.get_indent()
         hc = self.fv(INT, "hash_code")
         s = indent + "int " + hc.id + " = 0;\n"
         for f, ft in fields:
             s += self.compute_hash_1(f, ft, hc, indent)
         return (s, hc.id)
 
-    def define_type(self, toplevel_name, t, name, indent, sharing):
+    def define_type(self, toplevel_name, t, name, sharing):
         if isinstance(t, TEnum):
-            return "{indent}public enum {name} {{\n{cases}{indent}}}\n".format(
-                indent=indent,
-                name=name,
-                cases="".join("{indent}{case},\n".format(indent=indent+INDENT, case=case) for case in t.cases))
+            self.begin_statement()
+            self.write("public enum ", name, " ")
+            with self.block():
+                for case in t.cases:
+                    self.begin_statement()
+                    self.write(case)
+                    self.end_statement()
+            self.end_statement()
         elif isinstance(t, THandle) or isinstance(t, TRecord):
             public_fields = []
             private_fields = []
@@ -291,83 +305,99 @@ class JavaPrinter(CxxPrinter):
             else:
                 public_fields = list(t.fields)
             all_fields = public_fields + private_fields
-            s = "{indent}public static class {name}{extends} implements java.io.Serializable {{\n".format(
-                indent=indent,
-                name=name,
-                extends=" extends {}".format(self.visit(t.value_type, "")) if handle_val_is_this else "")
-            for (f, ft) in public_fields + private_fields:
-                s += "{indent}private {field_decl};\n".format(indent=indent+INDENT, field_decl=self.visit(ft, f))
-            for (f, ft) in public_fields:
-                s += "{indent}public {type} get{Field}() {{ return {field}; }}\n".format(
-                    indent=indent+INDENT,
-                    type=self.visit(ft, ""),
-                    Field=common.capitalize(f),
-                    field=f)
+            self.begin_statement()
+            self.write("public static class ", name)
             if handle_val_is_this:
-                s += "{indent}public {type} getVal() {{ return this; }}\n".format(
-                    indent=indent+INDENT,
-                    type=self.visit(t.value_type, ""))
+                self.write(" extends ", self.visit(t.value_type, ""))
+            self.write(" implements java.io.Serializable ")
+            with self.block():
+                for (f, ft) in public_fields + private_fields:
+                    self.begin_statement()
+                    self.write("private {field_decl};".format(field_decl=self.visit(ft, f)))
+                    self.end_statement()
+                for (f, ft) in public_fields:
+                    self.begin_statement()
+                    self.write("public {type} get{Field}() {{ return {field}; }}".format(
+                        type=self.visit(ft, ""),
+                        Field=common.capitalize(f),
+                        field=f))
+                    self.end_statement()
+                if handle_val_is_this:
+                    self.begin_statement()
+                    self.write("public {type} getVal() {{ return this; }}".format(
+                        type=self.visit(t.value_type, "")))
+                    self.end_statement()
 
-            def flatten(field_types):
-                args = []
-                exps = []
-                for ft in field_types:
-                    if isinstance(ft, TRecord):
-                        aa, ee = flatten([t for (f, t) in ft.fields])
-                        args.extend(aa)
-                        exps.append(EMakeRecord(tuple((f, e) for ((f, _), e) in zip(ft.fields, ee))).with_type(ft))
-                    elif isinstance(ft, TTuple):
-                        aa, ee = flatten(ft.ts)
-                        args.extend(aa)
-                        exps.append(ETuple(tuple(ee)).with_type(ft))
-                    else:
-                        v = self.fv(ft, "v")
-                        args.append((v.id, ft))
-                        exps.append(v)
-                return args, exps
+                def flatten(field_types):
+                    args = []
+                    exps = []
+                    for ft in field_types:
+                        if isinstance(ft, TRecord):
+                            aa, ee = flatten([t for (f, t) in ft.fields])
+                            args.extend(aa)
+                            exps.append(EMakeRecord(tuple((f, e) for ((f, _), e) in zip(ft.fields, ee))).with_type(ft))
+                        elif isinstance(ft, TTuple):
+                            aa, ee = flatten(ft.ts)
+                            args.extend(aa)
+                            exps.append(ETuple(tuple(ee)).with_type(ft))
+                        else:
+                            v = self.fv(ft, "v")
+                            args.append((v.id, ft))
+                            exps.append(v)
+                    return args, exps
 
-            if isinstance(t, THandle):
-                args, exps = flatten([ft for (f, ft) in (t.value_type.fields if handle_val_is_this else public_fields)])
-            else:
-                args = public_fields
-                exps = [EVar(f) for (f, ft) in args]
-            s += "{indent}public {ctor}({args}) {{\n".format(indent=indent+INDENT, ctor=name, args=", ".join(self.visit(ft, f) for (f, ft) in args))
-            for ((f, ft), e) in zip(public_fields, exps):
-                setup, e = self.visit(e, indent=indent+INDENT*2)
-                s += setup
-                s += "{indent}this.{f} = {e};\n".format(indent=indent+INDENT*2, f=f, e=e)
-            if handle_val_is_this:
-                setups, es = zip(*[self.visit(e, indent=indent+INDENT*2) for e in exps])
-                s += "".join(setups)
-                s += "{indent}super({args});\n".format(
-                    indent=indent+INDENT*2,
-                    args=", ".join(es))
-            s += "{indent}}}\n".format(indent=indent+INDENT)
+                if isinstance(t, THandle):
+                    args, exps = flatten([ft for (f, ft) in (t.value_type.fields if handle_val_is_this else public_fields)])
+                else:
+                    args = public_fields
+                    exps = [EVar(f) for (f, ft) in args]
+                self.begin_statement()
+                self.write("public {ctor}({args}) ".format(ctor=name, args=", ".join(self.visit(ft, f) for (f, ft) in args)))
+                with self.block():
+                    if handle_val_is_this:
+                        es = [self.visit(e) for e in exps]
+                        self.begin_statement()
+                        self.write("super({args});\n".format(
+                            args=", ".join(es)))
+                    for ((f, ft), e) in zip(public_fields, exps):
+                        e = self.visit(e)
+                        self.begin_statement()
+                        self.write("this.{f} = {e};\n".format(f=f, e=e))
+                self.end_statement()
 
-            if value_equality:
-                s += "{indent}@Override\n{indent}public int hashCode() {{\n".format(indent=indent+INDENT)
-                (compute, hc) = self.compute_hash(public_fields + private_fields, indent=indent+INDENT*2)
-                s += compute
-                s += "{indent}return {hc};\n".format(indent=indent+INDENT*2, hc=hc)
-                s += "{indent}}}\n".format(indent=indent+INDENT)
+                if value_equality:
+                    self.begin_statement()
+                    self.write("@Override")
+                    self.end_statement()
+                    self.begin_statement()
+                    self.write("public int hashCode() ")
+                    with self.block():
+                        (compute, hc) = self.compute_hash(public_fields + private_fields)
+                        self.write(compute)
+                        self.begin_statement()
+                        self.write("return ", hc, ";")
+                        self.end_statement()
+                    self.end_statement()
 
-                s += "{indent}@Override\n{indent}public boolean equals(Object other) {{\n".format(indent=indent+INDENT)
-                s += "{indent}if (other == null) return false;\n".format(indent=indent+INDENT*2)
-                s += "{indent}if (other == this) return true;\n".format(indent=indent+INDENT*2)
-                s += "{indent}if (!(other instanceof {name})) return false;\n".format(indent=indent+INDENT*2, name=name)
-                s += "{indent}{name} o = ({name})other;\n".format(indent=indent+INDENT*2, name=name)
-                setup, eq = self.visit(EAll([EEq(
-                    EEscape("this.{}".format(f), (), ()).with_type(ft),
-                    EEscape("o.{}".format(f),    (), ()).with_type(ft))
-                    for (f, ft) in all_fields]), indent=indent+INDENT*2)
-                s += setup
-                s += "{indent}return {cond};\n".format(indent=indent+INDENT*2, cond=eq)
-                s += "{indent}}}\n".format(indent=indent+INDENT)
-
-            s += "{indent}}}\n".format(indent=indent)
-            return s
+                    self.begin_statement()
+                    self.write("@Override")
+                    self.end_statement()
+                    self.begin_statement()
+                    self.write("public boolean equals(Object other) ")
+                    with self.block():
+                        self.write(self.get_indent(), "if (other == null) return false;\n")
+                        self.write(self.get_indent(), "if (other == this) return true;\n")
+                        self.write(self.get_indent(), "if (!(other instanceof {name})) return false;\n".format(name=name))
+                        self.write(self.get_indent(), "{name} o = ({name})other;\n".format(name=name))
+                        eq = self.visit(EAll([EEq(
+                            EEscape("this.{}".format(f), (), ()).with_type(ft),
+                            EEscape("o.{}".format(f),    (), ()).with_type(ft))
+                            for (f, ft) in all_fields]))
+                        self.write(self.get_indent(), "return ", eq, ";\n")
+                    self.end_statement()
+            self.end_statement()
         elif isinstance(t, TTuple):
-            return self.define_type(toplevel_name, TRecord(tuple(("_{}".format(i), t.ts[i]) for i in range(len(t.ts)))), name, indent, sharing);
+            return self.define_type(toplevel_name, TRecord(tuple(("_{}".format(i), t.ts[i]) for i in range(len(t.ts)))), name, sharing);
         else:
             return ""
 
@@ -434,37 +464,29 @@ class JavaPrinter(CxxPrinter):
             return self.visit(t.rep_type(), name)
         return self.visit_TNativeList(t, name)
 
-    def visit_SAssign(self, s, indent):
-        if self.is_primitive(s.lhs.type):
-            s1, lval = self.visit(s.lhs, indent)
-            s2, rval = self.visit(s.rhs, indent)
-            return s1 + s2 + "{indent}{lval} = {rval};\n".format(indent=indent, lval=lval, rval=rval)
-        else:
-            return super().visit_SAssign(s, indent)
-
-    def visit_SCall(self, call, indent=""):
+    def visit_SCall(self, call):
+        target = self.visit(call.target)
+        args = [self.visit(a) for a in call.args]
         if type(call.target.type) in (library.TNativeList, TBag, library.TNativeSet, TSet):
+            self.begin_statement()
             if call.func == "add":
-                setup1, target = self.visit(call.target, indent)
-                setup2, arg = self.visit(call.args[0], indent)
-                return setup1 + setup2 + "{}{}.add({});\n".format(indent, target, arg)
+                self.write(target, ".add(", args[0], ");")
             elif call.func == "remove":
-                setup1, target = self.visit(call.target, indent)
-                setup2, arg = self.visit(call.args[0], indent)
-                return setup1 + setup2 + "{}{}.remove({});\n".format(indent, target, arg)
+                self.write(target, ".remove(", args[0], ");")
             else:
                 raise NotImplementedError(call.func)
-        return super().visit_SCall(call, indent)
+            self.end_statement()
+        return super().visit_SCall(call)
 
-    def visit_EGetField(self, e, indent):
-        setup, ee = self.visit(e.e, indent)
+    def visit_EGetField(self, e):
+        ee = self.visit(e.e)
         if isinstance(e.e.type, THandle):
-            return (setup, "({}).getVal()".format(ee, e.f))
-        return (setup, "({}).{}".format(ee, e.f))
+            return "({}).getVal()".format(ee, e.f)
+        return "({}).{}".format(ee, e.f)
 
-    def find_one_native(self, iterable, indent):
+    def find_one_native(self, iterable):
         it = fresh_name("iterator")
-        setup, e = self.visit(iterable, indent)
+        setup, e = self.visit(iterable)
         return (
             "{setup}{indent}{decl} = {e}.iterator();\n".format(
                 setup=setup,
@@ -509,9 +531,9 @@ class JavaPrinter(CxxPrinter):
     def visit_TRef(self, t, name):
         return self.visit(t.t, name)
 
-    def for_each_native(self, x, iterable, body, indent):
+    def for_each_native(self, x, iterable, body):
         if not self.boxed and self.troveargs(x.type) is None:
-            setup, iterable_src = self.visit(iterable, indent)
+            setup, iterable_src = self.visit(iterable)
             itname = fresh_name("iterator")
             return "{setup}{indent}gnu.trove.iterator.T{T}Iterator {it} = {iterable}.iterator();\n{indent}while ({it}.hasNext()) {{\n{indent2}{decl} = {it}.next();\n{body}{indent}}}\n".format(
                 setup=setup,
@@ -522,49 +544,46 @@ class JavaPrinter(CxxPrinter):
                 body=self.visit(body, indent+INDENT),
                 indent=indent,
                 indent2=indent+INDENT)
-        return super().for_each_native(x, iterable, body, indent)
+        return super().for_each_native(x, iterable, body)
 
-    def visit_SMapPut(self, update, indent=""):
+    def visit_SMapPut(self, update):
         if isinstance(update.map.type, library.TNativeMap) or type(update.map.type) is TMap:
-            asetup = ""
             if update.map.type.k == INT:
-                asetup = self.array_resize_for_index(update.map.type.v, update.map, update.key, indent)
-            msetup, map = self.visit(update.map, indent)
-            ksetup, key = self.visit(update.key, indent)
-            vsetup = ""
+                self.array_resize_for_index(update.map.type.v, update.map, update.key)
+            map = self.visit(update.map)
+            key = self.visit(update.key)
             if update.map.type.k == INT:
-                do_put = self.visit(self.array_put(update.map.type.v, EEscape(map, [], []).with_type(update.map.type), EEscape(key, [], []).with_type(update.key.type), update.value), indent)
+                self.visit(self.array_put(update.map.type.v, EEscape(map, [], []).with_type(update.map.type), EEscape(key, [], []).with_type(update.key.type), update.value))
             else:
-                vsetup, val = self.visit(update.value, indent)
-                do_put = "{indent}{map}.put({key}, {val});\n".format(indent=indent, map=map, key=key, val=v)
-            return asetup + msetup + ksetup + vsetup + do_put
+                val = self.fv(update.value.type)
+                self.declare(val, update.value)
+                self.begin_statement()
+                self.write(map, ".put(", key, ", ", val.id, ");")
+                self.end_statement()
         else:
-            return super().visit_SMapPut(update, indent)
+            return super().visit_SMapPut(update)
 
-    def visit_SMapUpdate(self, update, indent=""):
+    def visit_SMapUpdate(self, update):
         if isinstance(update.change, SNoOp):
             return ""
         if isinstance(update.map.type, library.TNativeMap) or type(update.map.type) is TMap:
-            asetup = ""
             if update.map.type.k == INT:
-                asetup = self.array_resize_for_index(update.map.type.v, update.map, update.key, indent)
+                self.array_resize_for_index(update.map.type.v, update.map, update.key)
             # TODO: liveness analysis to avoid this map lookup in some cases
-            vsetup, val = self.visit(EMapGet(update.map, update.key).with_type(update.map.type.v), indent)
-            s = "{indent}{decl} = {val};\n".format(
-                indent=indent,
-                decl=self.visit(TRef(update.val_var.type), update.val_var.id),
-                val=val)
-            msetup, map = self.visit(update.map, indent) # TODO: deduplicate
-            ksetup, key = self.visit(update.key, indent) # TODO: deduplicate
+            self.declare(update.val_var, EMapGet(update.map, update.key).with_type(update.map.type.v))
+            map = self.visit(update.map) # TODO: deduplicate
+            key = self.visit(update.key) # TODO: deduplicate
+            self.visit(update.change)
+            self.begin_statement()
             if update.map.type.k == INT:
-                do_put = self.visit(self.array_put(update.map.type.v, EEscape(map, [], []).with_type(update.map.type), EEscape(key, [], []).with_type(update.key.type), update.val_var), indent)
+                do_put = self.visit(self.array_put(update.map.type.v, EEscape(map, [], []).with_type(update.map.type), EEscape(key, [], []).with_type(update.key.type), update.val_var))
             else:
-                do_put = "{indent}{map}.put({key}, {val});\n".format(indent=indent, map=map, key=key, val=update.val_var.id)
-            return asetup + vsetup + s + self.visit(update.change, indent) + msetup + do_put
+                self.write("{map}.put({key}, {val});\n".format(map=map, key=key, val=update.val_var.id))
+            self.end_statement()
         else:
-            return super().visit_SMapUpdate(update, indent)
+            return super().visit_SMapUpdate(update)
 
-    def array_resize_for_index(self, elem_type, a, i, indent):
+    def array_resize_for_index(self, elem_type, a, i):
         new_a = fresh_name(hint="new_array")
         if elem_type == BOOL:
             t = "long"
@@ -574,9 +593,9 @@ class JavaPrinter(CxxPrinter):
         double_size = SEscape(
             "{{indent}}{t}[] {new_a} = new {t}[{{len}} << 1];\n{{indent}}System.arraycopy({{a}}, 0, {new_a}, 0, {{len}});\n{{indent}}{{a}} = {new_a};\n".format(t=t, new_a=new_a),
             ["a", "len"], [a, len])
-        return self.visit(SWhile(
+        self.visit(SWhile(
             ENot(self.array_in_bounds(elem_type, a, i)),
-            double_size), indent)
+            double_size))
 
     def array_put(self, elem_type, a, i, val):
         if elem_type == BOOL:
@@ -599,45 +618,35 @@ class JavaPrinter(CxxPrinter):
             EBinOp(i, ">=", ZERO).with_type(BOOL),
             EBinOp(i, "<", len).with_type(BOOL)])
 
-    def native_map_get(self, e, default_value, indent=""):
+    def native_map_get(self, e, default_value):
         if e.key.type == INT:
             return self.visit(ECond(
                 self.array_in_bounds(e.map.type.v, e.map, e.key),
                 self.array_get(e.map.type.v, e.map, e.key),
-                evaluation.construct_value(e.map.type.v)).with_type(e.map.type.v), indent=indent)
+                evaluation.construct_value(e.map.type.v)).with_type(e.map.type.v))
         if self.use_trove(e.map.type):
             if self.trovename(e.map.type.v) == "Object" and not isinstance(evaluation.construct_value(e.map.type.v), ENull):
                 # Le sigh...
-                (smap, emap) = self.visit(e.map, indent)
-                (skey, ekey) = self.visit(e.key, indent)
+                emap = self.visit(e.map)
+                ekey = self.visit(e.key)
                 v = self.fv(e.map.type.v, hint="v")
                 with self.boxed_mode():
-                    decl = self.visit(SDecl(v.id, EEscape("{emap}.get({ekey})".format(emap=emap, ekey=ekey), [], []).with_type(e.type)), indent=indent)
-                s, e = self.visit(ECond(EEq(v, ENull().with_type(v.type)), evaluation.construct_value(e.map.type.v), v).with_type(e.type), indent=indent)
+                    decl = self.visit(SDecl(v.id, EEscape("{emap}.get({ekey})".format(emap=emap, ekey=ekey), [], []).with_type(e.type)))
+                s, e = self.visit(ECond(EEq(v, ENull().with_type(v.type)), evaluation.construct_value(e.map.type.v), v).with_type(e.type))
                 return (smap + skey + decl + s, e)
             else:
                 # For Trove, defaults are set at construction time
-                (smap, emap) = self.visit(e.map, indent)
-                (skey, ekey) = self.visit(e.key, indent)
-                return (smap + skey, "{emap}.get({ekey})".format(emap=emap, ekey=ekey))
+                emap = self.visit(e.map)
+                ekey = self.visit(e.key)
+                return "{emap}.get({ekey})".format(emap=emap, ekey=ekey)
         else:
-            (smap, emap) = self.visit(e.map, indent)
-            (skey, ekey) = self.visit(e.key, indent)
-            edefault = self.fv(e.type, "lookup_result")
-            sdefault = indent + self.visit(edefault.type, edefault.id) + ";\n"
-            sdefault += self.visit(default_value(edefault), indent)
-            return (smap + skey + sdefault, "{emap}.getOrDefault({ekey}, {edefault})".format(emap=emap, ekey=ekey, edefault=edefault.id))
-            # (smap, emap) = self.visit(e.map, indent)
-            # (skey, ekey) = self.visit(e.key, indent)
-            # edefault = self.fv(e.type, "default_val")
-            # sdefault = indent + self.visit(edefault.type, edefault.id) + ";\n"
-            # sdefault += self.visit(default_value(edefault), indent)
-            # (srest, res) = self.visit(ECond(
-            #     EEscape("{m}.containsKey({k})".format(m=emap, k=ekey), (), ()).with_type(e.type),
-            #     EEscape("{m}.get({k})".format(m=emap, k=ekey), (), ()).with_type(e.type),
-            #     edefault).with_type(e.type), indent=indent)
-            # return (smap + skey + sdefault + srest, res)
-            # # return (smap + skey + sdefault, "{emap}.getOrDefault({ekey}, {edefault})".format(emap=emap, ekey=ekey, edefault=edefault.id))
+            emap = self.visit(e.map)
+            ekey = self.visit(e.key)
+            edefault = self.visit(evaluation.construct_value(e.type))
+            return "{emap}.getOrDefault({ekey}, {edefault})".format(emap=emap, ekey=ekey, edefault=edefault)
 
-    def visit_object(self, o, *args, **kwargs):
-        return "/* implement visit_{} */".format(type(o).__name__)
+    def visit(self, x, *args, **kwargs):
+        res = super().visit(x, *args, **kwargs)
+        if isinstance(res, tuple):
+            raise Exception(type(x))
+        return res

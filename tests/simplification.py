@@ -32,3 +32,19 @@ class SimplificationTests(unittest.TestCase):
         e = EGetField(EGetField(EArgMin(EBinOp(EVar('reqs').with_type(TBag(THandle('Request', TRecord((('rq_expiration', TNative('Date_t')), ('rq_host', TNative('HostAndPort')), ('rq_callback', TNative('std::unique_ptr<ConnectionPool::GetConnectionCallback>'))))))), '+', ESingleton(EVar('r').with_type(THandle('Request', TRecord((('rq_expiration', TNative('Date_t')), ('rq_host', TNative('HostAndPort')), ('rq_callback', TNative('std::unique_ptr<ConnectionPool::GetConnectionCallback>'))))))).with_type(TBag(THandle('Request', TRecord((('rq_expiration', TNative('Date_t')), ('rq_host', TNative('HostAndPort')), ('rq_callback', TNative('std::unique_ptr<ConnectionPool::GetConnectionCallback>')))))))).with_type(TBag(THandle('Request', TRecord((('rq_expiration', TNative('Date_t')), ('rq_host', TNative('HostAndPort')), ('rq_callback', TNative('std::unique_ptr<ConnectionPool::GetConnectionCallback>'))))))), ELambda(EVar('_var19096610').with_type(THandle('Request', TRecord((('rq_expiration', TNative('Date_t')), ('rq_host', TNative('HostAndPort')), ('rq_callback', TNative('std::unique_ptr<ConnectionPool::GetConnectionCallback>')))))), EGetField(EGetField(EVar('_var19096610').with_type(THandle('Request', TRecord((('rq_expiration', TNative('Date_t')), ('rq_host', TNative('HostAndPort')), ('rq_callback', TNative('std::unique_ptr<ConnectionPool::GetConnectionCallback>')))))), 'val').with_type(TRecord((('rq_expiration', TNative('Date_t')), ('rq_host', TNative('HostAndPort')), ('rq_callback', TNative('std::unique_ptr<ConnectionPool::GetConnectionCallback>'))))), 'rq_expiration').with_type(TNative('Date_t')))).with_type(THandle('Request', TRecord((('rq_expiration', TNative('Date_t')), ('rq_host', TNative('HostAndPort')), ('rq_callback', TNative('std::unique_ptr<ConnectionPool::GetConnectionCallback>')))))), 'val').with_type(TRecord((('rq_expiration', TNative('Date_t')), ('rq_host', TNative('HostAndPort')), ('rq_callback', TNative('std::unique_ptr<ConnectionPool::GetConnectionCallback>'))))), 'rq_host').with_type(TNative('HostAndPort'))
         print(pprint(e))
         simplify(e, validate=True)
+
+    def test_mapget(self):
+        t = THandle("T", INT)
+        xs = EVar("xs").with_type(TBag(t))
+        x = EVar("x").with_type(t)
+        y = EVar("y").with_type(t)
+        mt = TTuple((INT, INT))
+        e = EMapGet(
+            EMakeMap2(xs, ELambda(x,
+                ETuple((EGetField(x, "val").with_type(INT), EGetField(y, "val").with_type(INT))).with_type(mt)
+                )).with_type(TMap(t, mt)),
+            y).with_type(mt)
+        assert simplify(e, validate=True, debug=True) is not e
+
+    def test_regression08(self):
+        simplify(EUnaryOp('sum', EEmptyList().with_type(TBag(TFloat()))).with_type(TFloat()), validate=True, debug=True)

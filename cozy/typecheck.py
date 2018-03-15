@@ -5,13 +5,13 @@ from cozy.syntax_tools import pprint, all_exps, is_scalar
 
 from cozy.syntax import BOOL, INT, LONG, FLOAT, STRING
 
-def typecheck(ast, env=None):
+def typecheck(ast, env=None, fenv=None):
     """
     Typecheck the syntax tree.
     This procedure attaches a .type attribute to every expression, and returns
     a list of type errors (or an empty list if everything typechecks properly).
     """
-    typechecker = Typechecker(env or ())
+    typechecker = Typechecker(env or (), fenv or ())
     typechecker.visit(ast)
     return typechecker.errors
 
@@ -19,10 +19,13 @@ def retypecheck(exp, env=None):
     from cozy.syntax_tools import free_vars
     if env is None:
         env = { v.id:v.type for v in free_vars(exp) }
+    fenv = { }
     for e in all_exps(exp):
         if isinstance(e, syntax.EEnumEntry):
             env[e.name] = e.type
-    errs = typecheck(exp, env=env)
+        if isinstance(e, syntax.ECall):
+            fenv[e.func] = (tuple(arg.type for arg in e.args), e.type)
+    errs = typecheck(exp, env=env, fenv=fenv)
     if errs:
         print("errors")
         for e in errs:
@@ -49,7 +52,7 @@ def to_abstract(t):
 
 class Typechecker(Visitor):
 
-    def __init__(self, env):
+    def __init__(self, env, fenv=()):
         self.tenv = {
             "Int":    INT,
             "Bound":  INT, # TODO?
@@ -59,7 +62,7 @@ class Typechecker(Visitor):
             "String": STRING }
 
         self.env = dict(env)
-        self.funcs = dict()
+        self.fenv = dict(fenv)
         self.queries = dict()
         self.oldenv = []
         self.errors = []
@@ -101,7 +104,7 @@ class Typechecker(Visitor):
             [(arg_name, self.visit(arg_type)) for (arg_name, arg_type) in f.args],
             self.visit(f.out_type),
             f.body_string)
-        self.funcs[f.name] = f
+        self.fenv[f.name] = (tuple(t for (a, t) in f.args), f.out_type)
         return f
 
     def report_err(self, source, msg):
@@ -203,10 +206,14 @@ class Typechecker(Visitor):
             return t1
         if is_numeric(t1) and is_numeric(t2):
             return self.numeric_lub(src, t1, t2)
-        if isinstance(t1, syntax.TList) and isinstance(t2, syntax.TList):
+        if isinstance(t1, syntax.TList) and isinstance(t2, syntax.TList) and t1.t == t2.t:
             return syntax.TList(t1.t)
-        if is_collection(t1) and is_collection(t2):
+        if is_collection(t1) and is_collection(t2) and t1.t == t2.t:
             return syntax.TBag(t1.t)
+        if t1 is DEFAULT_TYPE:
+            return t2
+        if t2 is DEFAULT_TYPE:
+            return t1
         self.report_err(src, "cannot unify types {} and {} ({})".format(pprint(t1), pprint(t2), explanation))
         return DEFAULT_TYPE
 
@@ -335,8 +342,7 @@ class Typechecker(Visitor):
         self.visit(e.e1)
         self.visit(e.e2)
         if e.op in ["==", "===", "!=", "<", "<=", ">", ">="]:
-            if not all(is_numeric(t) for t in [e.e1.type, e.e2.type]):
-                self.ensure_type(e.e2, e.e1.type)
+            self.lub(e, e.e1.type, e.e2.type, "due to comparison")
             e.type = BOOL
         elif e.op in [syntax.BOp.And, syntax.BOp.Or, "=>"]:
             self.ensure_type(e.e1, BOOL)
@@ -368,22 +374,25 @@ class Typechecker(Visitor):
         e.type = e.f.body.type
 
     def visit_ECall(self, e):
-        f = self.funcs.get(e.func) or self.queries.get(e.func)
+        fname = e.func
+        f = self.fenv.get(fname) or self.queries.get(fname)
         if f is None:
-            self.report_err(e, "unknown function {}".format(repr(e.func)))
+            self.report_err(e, "unknown function {}".format(repr(fname)))
+        if isinstance(f, syntax.Query):
+            f = (tuple(t for (a, t) in f.args), f.ret.type)
+        arg_types, out_type = f
 
         for a in e.args:
             self.visit(a)
 
         if f is not None:
-            if len(f.args) != len(e.args):
-                self.report_err(e, "wrong number of arguments to {}".format(repr(e.func)))
+            if len(arg_types) != len(e.args):
+                self.report_err(e, "wrong number of arguments to {}".format(repr(fname)))
             i = 1
-            for arg_decl, arg_val in zip(f.args, e.args):
-                arg_name, arg_type = arg_decl
-                self.ensure_type(arg_val, arg_type, "argument {} to {} has type {{}} instead of {{}}".format(i, f.name))
+            for arg_type, arg_val in zip(arg_types, e.args):
+                self.ensure_type(arg_val, arg_type, "argument {} to {} has type {{}} instead of {{}}".format(i, fname))
                 i += 1
-            e.type = f.out_type
+            e.type = out_type
         else:
             e.type = DEFAULT_TYPE
 
@@ -504,8 +513,10 @@ class Typechecker(Visitor):
             else:
                 self.report_err(e, "cannot get element {} from tuple of size {}".format(e.n, len(t.ts)))
                 e.type = DEFAULT_TYPE
+        elif t is DEFAULT_TYPE:
+            e.type = DEFAULT_TYPE
         else:
-            self.report_err(e, "cannot get element from non-tuple")
+            self.report_err(e, "cannot get element from non-tuple {}".format(pprint(t)))
             e.type = DEFAULT_TYPE
 
     def visit_EMap(self, e):
@@ -519,6 +530,8 @@ class Typechecker(Visitor):
             e.type = syntax.TBag(e.f.body.type)
         elif is_collection(e.e.type):
             e.type = type(to_abstract(e.e.type))(e.f.body.type)
+        elif e.e.type is DEFAULT_TYPE:
+            e.type = DEFAULT_TYPE
         else:
             self.report_err(e, "cannot map over non-collection {}".format(pprint(e.e.type)))
             e.type = DEFAULT_TYPE

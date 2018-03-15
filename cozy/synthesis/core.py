@@ -1,58 +1,30 @@
 from collections import defaultdict, OrderedDict
 import datetime
 import itertools
+import functools
 import sys
 import traceback
 
 from cozy.target_syntax import *
-from cozy.syntax_tools import subst, pprint, free_vars, free_funcs, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda, enumerate_fragments2, strip_EStateVar
+from cozy.typecheck import is_collection
+from cozy.syntax_tools import subst, pprint, free_vars, free_funcs, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda, enumerate_fragments, strip_EStateVar
 from cozy.wf import ExpIsNotWf, exp_wf, exp_wf_nonrecursive
-from cozy.common import OrderedSet, ADT, Visitor, fresh_name, typechecked, unique, pick_to_sum, cross_product, OrderedDefaultDict, OrderedSet, group_by, find_one
+from cozy.common import OrderedSet, ADT, Visitor, fresh_name, unique, pick_to_sum, cross_product, OrderedDefaultDict, OrderedSet, group_by, find_one, extend
 from cozy.solver import satisfy, satisfiable, valid, IncrementalSolver
-from cozy.evaluation import eval, eval_bulk, mkval, construct_value, uneval
-from cozy.cost_model import CostModel, Cost
+from cozy.evaluation import eval, eval_bulk, mkval, construct_value, uneval, eq
+from cozy.cost_model import CostModel, Cost, CompositeCostModel
 from cozy.opts import Option
 from cozy.pools import ALL_POOLS, RUNTIME_POOL, STATE_POOL, pool_name
+from cozy.enumeration import enumerate_exps, StartMinorIteration, build_candidates, fingerprint
 
+from .acceleration import accelerate_build
 from .cache import Cache, SeenSet
 
-save_testcases = Option("save-testcases", str, "", metavar="PATH")
-hyperaggressive_culling = Option("hyperaggressive-culling", bool, False)
-hyperaggressive_eviction = Option("hyperaggressive-eviction", bool, True)
-reject_symmetric_binops = Option("reject-symmetric-binops", bool, False)
 eliminate_vars = Option("eliminate-vars", bool, True)
 reset_on_success = Option("reset-on-success", bool, False)
-enforce_seen_wf = Option("enforce-seen-set-well-formed", bool, False)
-enforce_strong_progress = Option("enforce-strong-progress", bool, False)
-enforce_exprs_wf = Option("enforce-expressions-well-formed", bool, False)
-preopt = Option("optimize-accelerated-exps", bool, True)
 check_depth = Option("proof-depth", int, 4)
 incremental = Option("incremental", bool, False, description="Experimental option that can greatly improve performance.")
-
-# When are costs checked?
-CHECK_FINAL_COST = True  # compare overall cost of each candidiate to target
-CHECK_SUBST_COST = False # compare cost of each subexp. to its replacement
-
-class ExpBuilder(object):
-    def check(self, e, pool):
-        if enforce_exprs_wf.value:
-            assert exp_wf(e, state_vars=self.state_vars, args=self.args, pool=pool)
-        return (e, pool)
-    def build(self, cache, size):
-        raise NotImplementedError()
-
-def instantiate_examples(examples, binders : [EVar]):
-    res = []
-    for ex in examples:
-        ex = dict(ex)
-        for b in binders:
-            if b.id not in ex:
-                ex[b.id] = mkval(b.type)
-        res.append(ex)
-    return res
-
-def fingerprint(e, examples):
-    return (e.type,) + tuple(eval_bulk(e, examples))
+check_final_cost = Option("check-final-cost", bool, True)
 
 class StopException(Exception):
     pass
@@ -60,71 +32,26 @@ class StopException(Exception):
 class NoMoreImprovements(Exception):
     pass
 
-oracle = EFilter(EVar("groups"), ELambda(EVar("x"), EEq(EGetField(EGetField(EVar("x"), "val"), "rosterMode"), EEnumEntry("EVERYBODY"))))
-_fates = defaultdict(int)
-def _on_exp(e, fate, *args):
-    _fates[fate] += 1
-    # return
-    outfile = sys.stdout
-    # if (isinstance(e, EMapGet) or
-    #         isinstance(e, EFilter) or
-    #         (isinstance(e, EBinOp) and e.op == "==" and (isinstance(e.e1, EVar) or isinstance(e.e2, EVar))) or
-    #         (isinstance(e, EBinOp) and e.op == ">=" and (isinstance(e.e1, EVar) or isinstance(e.e2, EVar)))):
-    # if isinstance(e, EBinOp) and e.op == "+" and isinstance(e.type, TBag):
-    # if hasattr(e, "_tag") and e._tag:
-    # if isinstance(e, EFilter):
-    # if fate in ("better", "new"):
-    # if isinstance(e, EEmptyList):
-    # if "commutative" in fate:
-    # if any(alpha_equivalent(e, ee) for ee in all_exps(_TARGET)):
-    # if isinstance(e, EBinOp) and e.op == "-" and isinstance(e.e1, EUnaryOp) and e.e1.op == "sum" and isinstance(e.e2, EUnaryOp) and e.e2.op == "sum":
-    # if oracle is not None and any(alpha_equivalent(e, x) for x in all_exps(oracle)):
-    # if oracle is not None and any(e.type == x.type and valid(equal(e, x)) for x in all_exps(oracle) if not isinstance(x, ELambda)):
-    if hasattr(e, "_tag"):
-    # if True:
-    # if "expensive" in fate:
-        print(" ---> [{}, {}] {}; {}".format(fate, pprint(e.type), pprint(e), ", ".join((pprint(e) if isinstance(e, ADT) else str(e)) for e in args)), file=outfile)
+def reverse_output(f):
+    @functools.wraps(f)
+    def g(*args, **kwargs):
+        l = list(f(*args, **kwargs))
+        l.reverse()
+        return l
+    return g
 
-class ContextMap(object):
-    VALUE = "value"
-    def __init__(self):
-        self.m = { }
-    def _lookup(self, ctx, create=False):
-        k = sorted(ctx)
-        m = self.m
-        for v in k:
-            m2 = m.get(v)
-            if m2 is None:
-                if create:
-                    m2 = { }
-                    m[v] = m2
-                else:
-                    raise KeyError(ctx)
-            m = m2
-        return m
-    def __setitem__(self, ctx : {EVar}, value):
-        self._lookup(ctx, create=True)[ContextMap.VALUE] = value
-    def __getitem__(self, ctx : {EVar}):
-        return self._lookup(ctx, create=False)[ContextMap.VALUE]
-    def _print(self, m):
-        for (k, v) in m.items():
-            if k == ContextMap.VALUE:
-                yield "-> {}".format(v)
-            else:
-                for s in self._print(v):
-                    yield "{} {}".format(pprint(k), s)
-    def __str__(self):
-        return "\n".join(self._print(self.m))
+class FoundImprovement(Exception):
+    def __init__(self, e):
+        super().__init__("found improvement: {}".format(pprint(e)))
+        self.e = e
 
 class Learner(object):
-    def __init__(self, target, assumptions, binders, state_vars, args, legal_free_vars, examples, cost_model, builder, stop_callback, hints, solver):
-        self.binders = OrderedSet(binders)
+    def __init__(self, target, assumptions, state_vars, args, legal_free_vars, examples, cost_model, stop_callback, hints, solver):
         self.state_vars = OrderedSet(state_vars)
         self.args = OrderedSet(args)
         self.legal_free_vars = legal_free_vars
         self.stop_callback = stop_callback
         self.cost_model = cost_model
-        self.builder = builder
         self.seen = SeenSet()
         self.assumptions = assumptions
         self.hints = list(hints)
@@ -133,7 +60,7 @@ class Learner(object):
         self.watch(target)
 
     def compare_costs(self, c1, c2):
-        self._on_cost_cmp()
+        self.ccount += 1
         solver = self.solver
         if solver is not None:
             return c1.compare_to(c2, solver=solver)
@@ -141,178 +68,24 @@ class Learner(object):
             return c1.compare_to(c2, assumptions=self.assumptions)
 
     def reset(self, examples):
-        _fates.clear()
-        self.cache = Cache(binders=self.binders, args=self.args)
+        self.cache = Cache()
         self.current_size = -1
         self.examples = list(examples)
-        self.all_examples = instantiate_examples(self.examples, self.binders)
         self.seen.clear()
         self.builder_iter = ()
         self.last_progress = 0
-        self.backlog = None
-        self.backlog_counter = 0
         self._start_minor_it()
 
-    def _check_seen_wf(self):
-        if enforce_seen_wf.value:
-            for (e, pool, fp, size, cost) in self.seen.items():
-                fpnow = self._fingerprint(e)
-                if fp != fpnow:
-                    print("#" * 40)
-                    print(pprint(e))
-                    print(fp)
-                    print(fpnow)
-                    assert False
-
-    def is_legal_in_pool(self, e, pool):
-        try:
-            return exp_wf(e, state_vars=self.state_vars, args=self.args, pool=pool, assumptions=self.assumptions)
-        except ExpIsNotWf as exc:
-            return False
-
     def watch(self, new_target):
-        print("watching new target...")
-        self.backlog_counter = 0
         self.target = new_target
-        self.roots = OrderedSet()
-        types = OrderedSet()
-        for e in itertools.chain(all_exps(new_target), *[all_exps(h) for h in self.hints]):
-            if isinstance(e, ELambda):
-                continue
-            for pool in ALL_POOLS:
-                exp = e
-                if pool == STATE_POOL:
-                    exp = strip_EStateVar(e)
-                fvs = free_vars(exp)
-                if all(v in self.legal_free_vars for v in fvs) and self.is_legal_in_pool(exp, pool):
-                    _on_exp(exp, "new root", pool_name(pool))
-                    exp._root = True
-                    self.roots.add((exp, pool))
-                    if pool == STATE_POOL and all(v in self.state_vars for v in fvs):
-                        self.roots.add((EStateVar(exp).with_type(exp.type), RUNTIME_POOL))
-                    types.add(exp.type)
-                else:
-                    _on_exp(exp, "rejected root", pool_name(pool))
-        for b in self.binders:
-            types.add(b.type)
-        for t in types:
-            self.roots.add((construct_value(t), RUNTIME_POOL))
-        self.roots = list(self.roots)
-        self.roots.sort(key = lambda tup: tup[0].size())
-        self._watches = group_by(
-            enumerate_fragments2(new_target),
-            k=lambda ctx: (ctx.pool, ctx.e.type),
-            v=lambda ctxs: sorted(ctxs, key=lambda ctx: -ctx.e.size()))
-        print("done!")
-
-    def _fingerprint(self, e):
-        self.fpcount += 1
-        # bs = tuple(sorted(free_vars(e) & self.binders))
-        bs = (len(free_vars(e) & self.binders),)
-        return fingerprint(e, self.all_examples) + bs
-
-    def _watched_contexts(self, pool, type):
-        return self._watches.get((pool, type), ())
-        # return sorted(list(enumerate_fragments2(self.target)), key=lambda ctx: -ctx.e.size())
-
-    def _possible_replacements(self, e, pool, cost):
-        """
-        Yields watched expressions that appear as worse versions of the given
-        expression. There may be more than one.
-        """
-        # return
-        free_binders = OrderedSet(v for v in free_vars(e) if v in self.binders)
-        for ctx in self._watched_contexts(pool, e.type):
-            watched_e = ctx.e
-            p = ctx.pool
-            r = ctx.replace_e_with
-
-            assert e.type == watched_e.type
-            assert p == pool
-            _on_exp(e, "considering replacement of", watched_e)
-            # if e.type != watched_e.type:
-            #     # _on_exp(e, "wrong type")
-            #     continue
-            # if p != pool:
-            #     # _on_exp(e, "wrong pool")
-            #     continue
-            if e == watched_e:
-                # _on_exp(e, "no change")
-                continue
-            unbound_binders = [b for b in free_binders if b not in ctx.bound_vars]
-            if unbound_binders:
-                _on_exp(e, "skipped exp with free binders", ", ".join(b.id for b in unbound_binders))
-                continue
-            if CHECK_SUBST_COST:
-                watched_cost = self.cost_model.cost(watched_e, pool=pool)
-                ordering = self.compare_costs(cost, watched_cost)
-                if ordering == Cost.WORSE:
-                    _on_exp(e, "skipped worse replacement", pool_name(pool), watched_e)
-                    continue
-                if ordering == Cost.UNORDERED:
-                    _on_exp(e, "skipped equivalent replacement", pool_name(pool), watched_e)
-                    # print("    e1 = {!r}".format(e))
-                    # print("    e2 = {!r}".format(watched_e))
-                    continue
-            # assert all(eval_bulk(self.assumptions, self.all_examples))
-            if all(eval_bulk(EEq(self.target, r(e)), self.all_examples)):
-                yield (watched_e, e, ctx.facts, r)
-            else:
-                _on_exp(e, "visited pointless replacement", watched_e)
-
-    def pre_optimize(self, e, pool):
-        """
-        Optimize `e` by replacing its subexpressions with the best cached
-        versions available (or leaving them untouched if they are new).
-        """
-        if not hasattr(e, "_accel"):
-            return e
-        top_level = e
-        class V(BottomUpRewriter):
-            def visit_EStateVar(_, e):
-                return EStateVar(self.pre_optimize(e.e, STATE_POOL)).with_type(e.type)
-            def visit_ELambda(_, e):
-                if e.arg not in self.binders and e.arg in free_vars(e.body):
-                    # Derp!  Someone made an expression that uses an illegal
-                    # binder.  There is no way to compute a fingerprint for the
-                    # body, unfortunately, so we just stop here.
-                    return e
-                return ELambda(e.arg, super().visit_ADT(e.body)) # optimize children
-            def visit_Exp(_, e): # do not shadow `self`
-                if e is top_level:
-                    return super().visit_ADT(e) # optimize children
-                fp = self._fingerprint(e)
-                prev = self.seen.find_one(pool, fp)
-                if prev is None:
-                    return super().visit_ADT(e) # optimize children
-                prev_exp, prev_size, prev_cost = prev
-                if prev_exp == e:
-                    return prev_exp
-                cost = self.cost_model.cost(e, pool)
-                ordering = self.compare_costs(cost, prev_cost)
-                if ordering == Cost.BETTER:
-                    return super().visit_ADT(e) # optimize children
-                else:
-                    # NOTE: no need to optimize children; if it is cached, then
-                    # it is presumably already the best possible.
-                    # if not alpha_equivalent(e, prev_exp):
-                    #     print("*** rewriting {} to {}".format(pprint(e), pprint(prev_exp)), file=sys.stderr)
-                    return prev_exp
-        res = None
-        try:
-            res = V().visit(e)
-            assert exp_wf(res, state_vars=self.state_vars, args=self.args, pool=pool, assumptions=self.assumptions)
-            if hasattr(e, "_tag"):
-                res._tag = e._tag
-            return res
-        except:
-            traceback.print_exc(file=sys.stdout)
-            print("FAILED TO PREOPTIMIZE {} ---> {}".format(pprint(e), pprint(res)))
-            print(repr(e))
-            return e
 
     def _start_minor_it(self):
+        return
         now = datetime.datetime.now()
+        if _fates:
+            for f, ct in sorted(_fates.items(), key=lambda x: x[1], reverse=True):
+                print("  {:6} | {}".format(ct, f))
+            _fates.clear()
         if hasattr(self, "mstart"):
             duration = now - self.mstart
             print("> minor duration:   {}".format(duration))
@@ -325,214 +98,203 @@ class Learner(object):
             print("minor iteration {}, |cache|={}".format(self.current_size, len(self.cache)))
         self.mstart = now
         self.ecount = 0
+        self._ecount = 0
         self.ccount = 0
         self.fpcount = 0
         self.ncount = 0
 
     def _on_exp(self, e, pool):
-        # print("next() <<< {p:10} {e}".format(e=pprint(e), p=pool_name(pool)))
+        # print("*** ", end="")
+        # print(pprint(e))
+        now = datetime.datetime.now()
+        if not hasattr(self, "_on_exp_time"):
+            self._on_exp_time = now
+            self._ecount = 0
+        elapsed = now - self._on_exp_time
+        if elapsed > datetime.timedelta(seconds=30):
+            print("... exps/s: {:.1f}".format(self._ecount / elapsed.total_seconds()))
+            self._on_exp_time = now
+            self._ecount = 0
+        self._ecount += 1
         self.ecount += 1
 
-    def _on_cost_cmp(self):
-        self.ccount += 1
+    def matches(self, fp, target_fp):
+        # assert isinstance(fp[0], int)
+        # assert isinstance(fp[1], Type)
+        # assert len(fp) == len(target_fp)
+        # if fp[0] != target_fp[0] or fp[1] != target_fp[1]:
+        #     return False
+        # t = fp[1]
+        # assert isinstance(t, Type)
+        assert isinstance(fp[0], Type)
+        assert isinstance(target_fp[0], Type)
+        if fp[0] != target_fp[0]:
+            return False
+        t = fp[0]
+        return all(eq(t, fp[i], target_fp[i]) for i in range(1, len(fp)))
+
+    def all_possible_mappings(self, xs : {EVar}, ys : {EVar}):
+        if not xs:
+            yield {}
+            return
+        for x in xs:
+            for y in ys:
+                if x.type == y.type:
+                    for m in self.all_possible_mappings(xs - {x}, ys - {y}):
+                        with extend(m, x, y):
+                            yield m
+
+    def subst_builder(self, wrapped_builder):
+        target_fp = fingerprint(self.target, self.examples)
+        target_cost = self.cost_model.cost(self.target, RUNTIME_POOL)
+        contexts = group_by(enumerate_fragments(self.target),
+            k=lambda ctx: (ctx.pool, ctx.e.type))
+        def f(cache, size, scopes, build_lambdas):
+            for tup in wrapped_builder(cache, size, scopes, build_lambdas):
+                e, pool = tup
+                was_accepted = yield tup
+                if was_accepted:
+                    ctxs = contexts.get((pool, e.type), ())
+                    # print("CONSIDERING SUBSTITUTIONS OF {} [{}, {} options]".format(pprint(e), pool_name(pool), len(ctxs)))
+                    for ctx in ctxs:
+                        assert pool == ctx.pool
+                        assert e.type == ctx.e.type
+                        if alpha_equivalent(e, ctx.e):
+                            continue
+                        # print("  ... {} in {} --> {}".format(pprint(ctx.e.type), pool_name(ctx.pool), pprint(ctx.replace_e_with(EVar("___")))))
+                        # TODO: if enumerate_frags told us what bags the scope vars came from, we could do better...
+                        for mapping in self.all_possible_mappings(OrderedSet(scopes.keys()), OrderedSet(ctx.bound_vars)):
+                            if self.stop_callback():
+                                raise StopException()
+                            x = subst(e, { a.id : b for (a, b) in mapping.items() })
+                            ee = ctx.replace_e_with(x)
+                            # print("        try {}".format(pprint(ee)))
+                            if alpha_equivalent(ee, self.target):
+                                # print("        > not AA")
+                                continue
+                            if not self.matches(fingerprint(ee, self.examples), target_fp):
+                                # print("        > no match")
+                                continue
+                            if self.cost_model.cost(ee, RUNTIME_POOL).compare_to(target_cost) != Cost.BETTER:
+                                # print("        > not better")
+                                continue
+                            raise FoundImprovement(ee)
+                            # yield (ee, RUNTIME_POOL)
+        return f
+
+    def build_candidates(self, wrapped_builder):
+        def find_multi(cache, pool, types, sizes, i=0):
+            if i >= len(types):
+                yield ()
+                return
+            for e in cache.find(pool=pool, type=types[i], size=sizes[i]):
+                for rest in find_multi(cache, pool, types, sizes, i+1):
+                    yield (e,) + rest
+
+        def f(cache, size, scopes, build_lambdas):
+            yield from wrapped_builder(cache, size, scopes, build_lambdas)
+
+            # TODO: we need some better way to pass down extern functions
+            for f, t in free_funcs(self.target).items():
+                for partition in pick_to_sum(len(t.arg_types), size-1):
+                    for pool in ALL_POOLS:
+                        for args in find_multi(cache, pool=pool, types=t.arg_types, sizes=partition):
+                            e = ECall(f, args).with_type(t.ret_type)
+                            e._tag = True
+                            yield (e, pool)
+
+            if size == 0:
+                yield from self.roots()
+                # Add roots for scopes
+                for var, (bag, pool) in scopes.items():
+                    # print("introducing {} <- {} [{}]".format(var.id, pprint(bag), pool_name(pool)))
+                    for e in list(cache.find(pool=pool, size=0)):
+                        lam = None
+                        fro = None
+                        if isinstance(e, EMap) or isinstance(e, EFlatMap):
+                            lam = e.f
+                            fro = e.e
+                        elif isinstance(e, EFilter):
+                            lam = e.p
+                            fro = e.e
+                        elif isinstance(e, EMakeMap2):
+                            lam = e.value
+                            fro = e.e
+                        elif any(isinstance(ee, ELambda) for ee in e.children()):
+                            print("WARNING: implement lambda-extraction for {}".format(type(e)))
+                        if lam is not None:
+                            # print("stealing from {}?".format(pprint(lam)))
+                            if lam.arg.type == var.type and alpha_equivalent(fro, bag):
+                                # print("  -> yep! stealing from {}".format(pprint(lam)))
+                                for (x, pool) in self.roots(lam.apply_to(var), extra_legal_fvs=scopes.keys()):
+                                    # print("  -----> {}".format(pprint(x)))
+                                    yield (x, pool)
+        return f
+
+    def is_legal_in_pool(self, e, pool):
+        try:
+            return exp_wf(e, state_vars=self.state_vars, args=self.args, pool=pool, assumptions=self.assumptions)
+        except ExpIsNotWf as exc:
+            return False
+
+    @reverse_output
+    def roots(self, target=None, extra_legal_fvs=()):
+        if target is None:
+            target = self.target
+        for x in itertools.chain((target,), self.hints):
+            for ctx in enumerate_fragments(target):
+                e = ctx.e
+                if any(v in ctx.bound_vars and v not in extra_legal_fvs for v in free_vars(e)):
+                    continue
+                for pool in ALL_POOLS:
+                    x = strip_EStateVar(e) if pool == STATE_POOL else e
+                    if not self.is_legal_in_pool(x, pool):
+                        continue
+                    yield (x, pool)
+                    if pool == STATE_POOL:
+                        ee = EStateVar(x).with_type(x.type)
+                        if self.is_legal_in_pool(ee, RUNTIME_POOL):
+                            yield (ee, RUNTIME_POOL)
 
     def next(self):
-        target_cost = self.cost_model.cost(self.target, RUNTIME_POOL)
-        self.ncount += 1
-        while True:
-            if self.backlog is not None:
-                if self.stop_callback():
-                    raise StopException()
-                (e, pool, cost) = self.backlog
-                improvements = list(self._possible_replacements(e, pool, cost))
-                if self.backlog_counter < len(improvements):
-                    i = improvements[self.backlog_counter]
-                    self.backlog_counter += 1
-                    return i
-                else:
-                    self.backlog = None
-                    self.backlog_counter = 0
-            for (e, pool) in self.builder_iter:
-                self._on_exp(e, pool)
-                if self.stop_callback():
-                    raise StopException()
-
-                # # Stopgap measure... long story --Calvin
-                # bad = False
-                # for x in all_exps(e):
-                #     if isinstance(x, EStateVar):
-                #         if any(v not in self.state_vars for v in free_vars(x.e)):
-                #             bad = True
-                #             _on_exp(e, "skipping due to illegal free vars under EStateVar")
-                # if bad:
-                #     continue
-
-                new_e = self.pre_optimize(e, pool) if preopt.value else e
-                if new_e is not e:
-                    _on_exp(e, "preoptimized", new_e)
-                    e = new_e
-
-                cost = self.cost_model.cost(e, pool)
-
-                if pool == RUNTIME_POOL and (self.cost_model.is_monotonic() or hyperaggressive_culling.value) and self.compare_costs(cost, target_cost) == Cost.WORSE:
-                    _on_exp(e, "too expensive", cost, target_cost)
-                    continue
-
-                fp = self._fingerprint(e)
-                prev = list(self.seen.find_all(pool, fp))
-                should_add = True
-                if not prev:
-                    _on_exp(e, "new", pool_name(pool))
-                elif any(alpha_equivalent(e, ee) for (ee, _, _) in prev):
-                    _on_exp(e, "duplicate")
-                    should_add = False
-                else:
-                    better_than = None
-                    worse_than = None
-                    for prev_exp, prev_size, prev_cost in prev:
-                        self._on_cost_cmp()
-                        ordering = self.compare_costs(cost, prev_cost)
-                        assert ordering in (Cost.WORSE, Cost.BETTER, Cost.UNORDERED)
-                        if enforce_strong_progress.value and ordering != Cost.WORSE:
-                            bad = find_one(all_exps(e), lambda ee: alpha_equivalent(ee, prev_exp))
-                            if bad:
-                                _on_exp(e, "failed strong progress requirement", bad)
-                                should_add = False
-                                break
-                        _on_exp(e, ordering, pool_name(pool), prev_exp)
-                        if ordering == Cost.UNORDERED:
-                            continue
-                        elif ordering == Cost.BETTER:
-                            better_than = (prev_exp, prev_size, prev_cost)
-                            _on_exp(prev_exp, "found better alternative", e)
-                            self.cache.evict(prev_exp, size=prev_size, pool=pool)
-                            self.seen.remove(prev_exp, pool, fp)
-                            if (self.cost_model.is_monotonic() or hyperaggressive_culling.value) and hyperaggressive_eviction.value:
-                                for (cached_e, size, p) in list(self.cache):
-                                    if p != pool:
-                                        continue
-                                    if prev_exp in all_exps(cached_e):
-                                        _on_exp(cached_e, "evicted since it contains", prev_exp)
-                                        self.cache.evict(cached_e, size=size, pool=pool)
-                        else:
-                            should_add = False
-                            worse_than = (prev_exp, prev_size, prev_cost)
-                            # break
-                    if worse_than and better_than:
-                        print("Uh-oh! Strange cost relationship between")
-                        print("  (1) this exp: {}".format(pprint(e)))
-                        print("  (2) prev. A:  {}".format(pprint(worse_than[0])))
-                        print("  (2) prev. B:  {}".format(pprint(better_than[0])))
-                        print("e1 = {}".format(repr(e)))
-                        print("e2 = {}".format(repr(worse_than[0])))
-                        print("e3 = {}".format(repr(better_than[0])))
-                        print("(1) vs (2): {}".format(cost.compare_to(worse_than[2], self.assumptions)))
-                        print("(2) vs (3): {}".format(worse_than[2].compare_to(better_than[2], self.assumptions)))
-                        print("(3) vs (1): {}".format(better_than[2].compare_to(cost, self.assumptions)))
-                        # raise Exception("insane cost model behavior")
-
-                if should_add:
-                    self.cache.add(e, pool=pool, size=self.current_size)
-                    self.seen.add(e, pool, fp, self.current_size, cost)
-                    self.last_progress = self.current_size
-                else:
-                    continue
-
-                for pr in self._possible_replacements(e, pool, cost):
-                    self.backlog = (e, pool, cost)
-                    self.backlog_counter = 1
-                    return pr
-
-            if self.last_progress < (self.current_size+1) // 2:
-                raise NoMoreImprovements("hit termination condition")
-
-            self.current_size += 1
-            self.builder_iter = self.builder.build(self.cache, self.current_size)
-            if self.current_size == 0:
-                self.builder_iter = itertools.chain(self.builder_iter, list(self.roots))
-            for f, ct in sorted(_fates.items(), key=lambda x: x[1], reverse=True):
-                print("  {:6} | {}".format(ct, f))
-            _fates.clear()
-            self._start_minor_it()
-
-@typechecked
-def fixup_binders(e : Exp, binders_to_use : [EVar], allow_add=False, throw=False) -> Exp:
-    binders_by_type = group_by(binders_to_use, lambda b: b.type)
-    class V(BottomUpRewriter):
-        def visit_ELambda(self, e):
-            if e.arg in binders_by_type[e.arg.type]:
-                return super().visit_ADT(e)
-            fvs = free_vars(e.body)
-            legal_repls = [ b for b in binders_by_type[e.arg.type] if b not in fvs ]
-            if not legal_repls:
-                if allow_add:
-                    print("Adding aux binder {} and returning {}".format(e.arg, pprint(ELambda(e.arg, e.body))), file=sys.stderr)
-                    binders_to_use.append(e.arg)
-                    binders_by_type[e.arg.type].append(e.arg)
-                    return ELambda(e.arg, self.visit(e.body))
-                else:
-                    if throw:
-                        print("No legal binder to use for {}".format(pprint(e)))
-                        raise Exception(pprint(e))
-                    else:
-                        return ELambda(e.arg, self.visit(e.body))
-            b = legal_repls[0]
-            return ELambda(b, self.visit(subst(e.body, { e.arg.id : b })))
-    return V().visit(e)
-
-COMMUTATIVE_OPERATORS = set(("==", "and", "or", "+"))
-ATTRS_TO_PRESERVE = ("_accel", "_tag")
-
-class FixedBuilder(ExpBuilder):
-    def __init__(self, wrapped_builder, state_vars, args, binders_to_use, assumptions : Exp):
-        self.wrapped_builder = wrapped_builder
-        self.state_vars = OrderedSet(state_vars)
-        self.args = OrderedSet(args)
-        self.binders_to_use = binders_to_use
-        self.assumptions = assumptions
-    def build(self, cache, size):
-        for (e, pool) in self.wrapped_builder.build(cache, size):
-            try:
-                orig = e
-                # print(hasattr(orig, "_tag"), file=sys.stderr)
-                e = fixup_binders(e, self.binders_to_use)
-                for a in ATTRS_TO_PRESERVE:
-                    if hasattr(orig, a):
-                        setattr(e, a, getattr(orig, a))
-            except Exception:
-                _on_exp(e, "unable to rename binders")
+        build = build_candidates
+        build = accelerate_build(build, args=self.args, state_vars=self.state_vars)
+        build = self.build_candidates(build)
+        build = self.subst_builder(build)
+        cards = [self.cost_model.cardinality(ctx.e) for ctx in enumerate_fragments(self.target) if is_collection(ctx.e.type)]
+        def check_wf(e, pool):
+            if not exp_is_wf(e, pool, self.state_vars, self.args, self.assumptions):
+                return False
+            if isinstance(e.type, TBag):
+                c = self.cost_model.cardinality(e)
+                if all(cc < c for cc in cards):
+                    # print("too big: {}".format(pprint(e)))
+                    return False
+            return True
+        if self.builder_iter == ():
+            self.builder_iter = enumerate_exps(
+                examples=self.examples,
+                cost_model=self.cost_model,
+                cost_ceiling=self.cost_model.cost(self.target, RUNTIME_POOL),
+                build_candidates=build,
+                check_wf=check_wf)
+        target_fp = fingerprint(self.target, self.examples)
+        for res in self.builder_iter:
+            if self.stop_callback():
+                raise StopException()
+            if isinstance(res, StartMinorIteration):
+                print("starting minor iteration {} with |cache|={}".format(res.size, res.cache_size))
                 continue
-                print("WARNING: skipping built expression {}".format(pprint(e)), file=sys.stderr)
+            if res.pool == RUNTIME_POOL and not alpha_equivalent(res.e, self.target) and self.matches(res.fingerprint, target_fp):
+                return (self.target, res.e, (), lambda x: x)
+        raise NoMoreImprovements("builder is exhausted")
 
-            if reject_symmetric_binops.value and size > 1 and isinstance(e, EBinOp) and e.op in COMMUTATIVE_OPERATORS and e.e2 < e.e1:
-                _on_exp(e, "rejecting symmetric use of commutative operator")
-                continue
-
-            try:
-                # Acceleration rules can produce arbitrary expressions, so we
-                # need to recursively check them.  The regular grammar only
-                # produces expressions "one level deep"---all subexpressions
-                # have already been checked.
-                if hasattr(e, "_accel"):
-                    exp_wf(e, self.state_vars, self.args, pool, assumptions=self.assumptions)
-                else:
-                    exp_wf_nonrecursive(e, self.state_vars, self.args, pool, assumptions=self.assumptions)
-            except ExpIsNotWf as exc:
-                _on_exp(e, exc.reason, exc.offending_subexpression)
-                continue
-
-            yield (e, pool)
-
-class StateElimBuilder(ExpBuilder):
-    def __init__(self, wrapped_builder):
-        self.wrapped_builder = wrapped_builder
-    def build(self, cache, size):
-        for tup in self.wrapped_builder.build(cache, size):
-            e, pool = tup
-            if pool != STATE_POOL and not any(isinstance(x, EStateVar) for x in all_exps(e)):
-                yield tup
-            else:
-                _on_exp(e, "culled state expression")
+def exp_is_wf(e, pool, state_vars, args, assumptions):
+    try:
+        exp_wf(e, state_vars, args, pool, assumptions=assumptions)
+    except ExpIsNotWf as exc:
+        return False
+    return True
 
 def truncate(s):
     if len(s) > 60:
@@ -558,18 +320,15 @@ def heuristic_done(e : Exp, args : [EVar] = []):
 def never_stop():
     return False
 
-@typechecked
 def improve(
-        target : Exp,
-        assumptions : Exp,
-        binders : [EVar],
-        state_vars : [EVar],
-        args : [EVar],
-        cost_model : CostModel,
-        builder : ExpBuilder,
-        stop_callback = never_stop,
-        hints : [Exp] = None,
-        examples = None):
+        target        : Exp,
+        state_vars    : [EVar],
+        args          : [EVar],
+        assumptions   : Exp            = T,
+        cost_model    : CostModel      = None,
+        stop_callback                  = never_stop,
+        hints         : [Exp]          = (),
+        examples      : [{str:object}] = ()):
     """
     Improve the target expression using enumerative synthesis.
     This function is a generator that yields increasingly better and better
@@ -578,14 +337,10 @@ def improve(
     Notes on internals of this algorithm follow.
 
     Key differences from "regular" enumerative synthesis:
-        - Expressions may be built using a set of "binders"---extra free
-          variables thrown into the mix at the beginning.
         - Expressions are either "state" expressions or "runtime" expressions,
           allowing this algorithm to choose what things to store on the data
           structure and what things to compute at query execution time. (The
           cost model is ultimately responsible for this choice.)
-
-    Other features of this algorithm:
         - If a better version of *any subexpression* for the target is found,
           it is immediately substituted in and the overall expression is
           returned. This "smooths out" the search space a little, and lets us
@@ -597,21 +352,17 @@ def improve(
     print("""improve(
         target={target!r},
         assumptions={assumptions!r},
-        binders={binders!r},
         state_vars={state_vars!r},
         args={args!r},
         cost_model={cost_model!r},
-        builder={builder!r},
         stop_callback={stop_callback!r},
         hints={hints!r},
         examples={examples!r})""".format(
             target=target,
             assumptions=assumptions,
-            binders=binders,
             state_vars=state_vars,
             args=args,
             cost_model=cost_model,
-            builder=builder,
             stop_callback=stop_callback,
             hints=hints,
             examples=examples))
@@ -621,24 +372,31 @@ def improve(
     print("subject to: {}".format(pprint(assumptions)))
     print()
 
-    assert exp_wf(
-        target,
-        state_vars=set(state_vars),
-        args=set(args),
-        assumptions=assumptions)
+    try:
+        assert exp_wf(
+            target,
+            state_vars=set(state_vars),
+            args=set(args),
+            assumptions=assumptions)
+    except ExpIsNotWf as ex:
+        print("WARNING: initial target is not well-formed [{}]; this might go poorly...".format(str(ex)))
+        print(pprint(ex.offending_subexpression))
+        print(pprint(ex.offending_subexpression.type))
+        # raise
 
-    binders = list(binders)
-    target = fixup_binders(target, binders, allow_add=False)
-    hints = [fixup_binders(h, binders, allow_add=False) for h in (hints or ())]
-    assumptions = fixup_binders(assumptions, binders, allow_add=False)
-    builder = FixedBuilder(builder, state_vars, args, binders, assumptions)
+    # Bit of a hack, but... a CompositeCostModel needs to be initialized with
+    # the proper assumptions.  It also needs to be local to the synthesis task,
+    # since it is stateful.  This safely prevents misuse by clients.
+    if cost_model is None or isinstance(cost_model, CompositeCostModel):
+        cost_model = CompositeCostModel(assumptions=assumptions)
+
     target_cost = cost_model.cost(target, RUNTIME_POOL)
 
     if eliminate_vars.value and can_elim_vars(target, assumptions, state_vars):
         print("This job does not depend on state_vars.")
-        builder = StateElimBuilder(builder)
+        # TODO: what can we do about it?
 
-    vars = list(free_vars(target) | free_vars(assumptions))
+    vars = list(free_vars(target) | free_vars(assumptions) | set(args) | set(state_vars))
     funcs = free_funcs(EAll([target, assumptions]))
 
     solver = None
@@ -654,9 +412,8 @@ def improve(
         yield construct_value(target.type)
         return
 
-    if examples is None:
-        examples = []
-    learner = Learner(target, assumptions, binders, state_vars, args, vars + binders, examples, cost_model, builder, stop_callback, hints, solver=solver)
+    examples = list(examples)
+    learner = Learner(target, assumptions, state_vars, args, vars, examples, cost_model, stop_callback, hints, solver=solver)
     try:
         while True:
             # 1. find any potential improvement to any sub-exp of target
@@ -664,11 +421,15 @@ def improve(
                 old_e, new_e, local_assumptions, repl = learner.next()
             except NoMoreImprovements:
                 break
+            except FoundImprovement as exn:
+                old_e = target
+                new_e = exn.e
+                local_assumptions = ()
+                repl = lambda ee: ee
 
             # 2. substitute-in the improvement
-            print("Found candidate replacement [{}] for [{}] in".format(pprint(new_e), pprint(old_e)))
-            print(pprint(repl(EVar("@___"))))
             new_target = repl(new_e)
+            print("Found candidate improvement: {}".format(pprint(new_target)))
 
             # 3. check
             if incremental.value:
@@ -720,7 +481,7 @@ def improve(
             else:
                 # b. if correct: yield it, watch the new target, goto 1
 
-                if CHECK_FINAL_COST:
+                if check_final_cost.value:
                     new_cost = cost_model.cost(new_target, RUNTIME_POOL)
                     print("cost: {} -----> {}".format(target_cost, new_cost))
                     if incremental.value:
@@ -728,26 +489,10 @@ def improve(
                     else:
                         ordering = new_cost.compare_to(target_cost, assumptions=assumptions)
                     if ordering == Cost.WORSE:
-                        if CHECK_SUBST_COST:
-                            print("WHOOPS! COST GOT WORSE!")
-                            if save_testcases.value:
-                                with open(save_testcases.value, "a") as f:
-                                    f.write("def testcase():\n")
-                                    f.write("    costmodel = {}\n".format(repr(cost_model)))
-                                    f.write("    old_e = {}\n".format(repr(old_e)))
-                                    f.write("    new_e = {}\n".format(repr(new_e)))
-                                    f.write("    target = {}\n".format(repr(target)))
-                                    f.write("    new_target = {}\n".format(repr(new_target)))
-                                    f.write("    if costmodel.cost(new_e, RUNTIME_POOL) <= costmodel.cost(old_e, RUNTIME_POOL) and costmodel.cost(new_target, RUNTIME_POOL) > costmodel.cost(target, RUNTIME_POOL):\n")
-                                    f.write('        for name, x in zip(["old_e", "new_e", "target", "new_target"], [old_e, new_e, target, new_target]):\n')
-                                    f.write('            print("{}: {}".format(name, pprint(x)))\n')
-                                    f.write('            print("    cost = {}".format(costmodel.cost(x, RUNTIME_POOL)))\n')
-                                    f.write("        assert False\n")
-                            # raise Exception("detected nonmonotonicity")
-                        else:
-                            print("*** cost is worse")
-                            # print(repr(target))
-                            # print(repr(new_target))
+                        # This should never happen, but to be safe...
+                        print("*** cost is worse")
+                        # print(repr(target))
+                        # print(repr(new_target))
                         continue
                     elif ordering == Cost.UNORDERED:
                         print("*** cost is unchanged")
@@ -759,14 +504,9 @@ def improve(
                 # print(repr(target))
                 # print(repr(new_target))
 
-                # binders are not allowed to "leak" out
-                to_yield = new_target
-                if any(v in binders for v in free_vars(new_target)):
-                    print("WARNING: stripping binders in {}".format(pprint(new_target)), file=sys.stderr)
-                    to_yield = subst(new_target, { b.id : construct_value(b.type) for b in binders })
-                yield to_yield
+                yield new_target
 
-                if reset_on_success.value and (not CHECK_FINAL_COST or ordering != Cost.UNORDERED):
+                if reset_on_success.value and (not check_final_cost.value or ordering != Cost.UNORDERED):
                     learner.reset(examples)
                 learner.watch(new_target)
                 target = new_target

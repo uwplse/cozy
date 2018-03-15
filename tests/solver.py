@@ -24,7 +24,7 @@ class TestSolver(unittest.TestCase):
         x = EEmptyList().with_type(TBag(TInt()))
         assert satisfy(EBinOp(EUnaryOp("the", x).with_type(INT), "==", one).with_type(TBool())) is None
 
-    def test_the(self):
+    def test_the1(self):
         x = ESingleton(zero).with_type(TBag(TInt()))
         assert satisfy(EBinOp(EUnaryOp("the", x).with_type(INT), "==", zero).with_type(TBool())) is not None
         assert satisfy(EBinOp(EUnaryOp("the", x).with_type(INT), "==", one).with_type(TBool())) is None
@@ -34,7 +34,7 @@ class TestSolver(unittest.TestCase):
         assert satisfy(EBinOp(EUnaryOp("the", x).with_type(INT), "==", zero).with_type(TBool())) is not None
         assert satisfy(EBinOp(EUnaryOp("the", x).with_type(INT), "==", one).with_type(TBool())) is None
 
-    def test_the(self):
+    def test_the2(self):
         tgroup = TRecord((('name', TString()), ('description', TString()), ('rosterMode', TEnum(('NOBODY', 'ONLY_GROUP', 'EVERYBODY'))), ('groupList', TBag(TString())), ('members', TBag(TNative('org.xmpp.packet.JID'))), ('administrators', TBag(TNative('org.xmpp.packet.JID')))))
         groups = EVar('groups').with_type(TBag(THandle('groups', tgroup)))
         e = EUnaryOp('not', EBinOp(EUnaryOp('the', groups).with_type(THandle('groups', tgroup)), '==', EUnaryOp('the', EMap(EFilter(groups, ELambda(EVar('g').with_type(THandle('groups', tgroup)), EBinOp(EGetField(EGetField(EVar('g').with_type(THandle('groups', tgroup)), 'val').with_type(tgroup), 'name').with_type(TString()), '==', EVar('name').with_type(TString())).with_type(TBool()))).with_type(TBag(THandle('groups', tgroup))), ELambda(EVar('g').with_type(THandle('groups', tgroup)), EVar('g').with_type(THandle('groups', tgroup)))).with_type(TBag(THandle('groups', tgroup)))).with_type(THandle('groups', tgroup))).with_type(TBool())).with_type(TBool())

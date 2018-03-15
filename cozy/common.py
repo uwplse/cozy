@@ -177,15 +177,16 @@ class Visitor(object):
         t = type(x)
         first_visit_func = None
         while t is not None:
-            visit_func = "visit_{}".format(t.__name__)
+            visit_func = "visit_" + t.__name__
             first_visit_func = first_visit_func or visit_func
-            if not hasattr(self, visit_func):
+            f = getattr(self, visit_func, None)
+            if f is None:
                 if t is object:
                     break
                 else:
                     t = t.__base__
                     continue
-            return getattr(self, visit_func)(x, *args, **kwargs)
+            return f(x, *args, **kwargs)
         print("Warning: {} does not implement {}".format(self, first_visit_func), file=sys.stderr)
 
 def ast_find(ast, pred):
@@ -270,17 +271,25 @@ def nested_dict(n, t):
     return OrderedDefaultDict(lambda: nested_dict(n-1, t))
 
 _i = Value(ctypes.c_uint64, 0)
+def fresh_names(n : int, hint : str = "name", omit : {str} = None) -> [str]:
+    if omit is None:
+        omit = ()
+
+    res = []
+    with _i.get_lock():
+        i = _i.value
+        for _ in range(n):
+            name = None
+            while name is None or name in omit:
+                name = "_{}{}".format(hint, i)
+                i += 1
+            res.append(name)
+        _i.value = i
+
+    return res
+
 def fresh_name(hint="name", omit=None):
-    if omit is not None:
-        assert all(isinstance(o, str) for o in omit)
-        i = 0
-        while ("_{}{}".format(hint, i)) in omit:
-            i += 1
-        return "_{}{}".format(hint, i)
-    else:
-        with _i.get_lock():
-            _i.value += 1
-            return "_{}{}".format(hint, _i.value)
+    return fresh_names(1, hint=hint, omit=omit)[0]
 
 def capitalize(s):
     return (s[0].upper() + s[1:]) if s else s
@@ -466,6 +475,7 @@ def declare_case(supertype, name, attrs=()):
         attrs = tuple(attrs)
     def __init__(self, *args):
         assert len(args) == len(attrs), "{} expects {} args, was given {}".format(name, len(attrs), len(args))
+        supertype.__init__(self)
         for attr, val in zip(attrs, args):
             setattr(self, attr, val)
     def children(self):
@@ -520,10 +530,23 @@ def find_one(iter, p=lambda x: True):
             return x
     return None
 
+def exists(iter, p=lambda x: True):
+    for x in iter:
+        if p(x):
+            return True
+    return False
+
+def assert_eq(x, y):
+    assert x == y, "{!r} == {!r}".format(x, y)
+
 def divide_integers_and_round_up(x, y):
     assert x > 0
     assert y > 0
     return (x - 1) // y + 1
+
+assert_eq(divide_integers_and_round_up(1, 2), 1)
+assert_eq(divide_integers_and_round_up(2, 2), 1)
+assert_eq(divide_integers_and_round_up(3, 2), 2)
 
 def integer_log2_round_up(x):
     """
@@ -531,11 +554,56 @@ def integer_log2_round_up(x):
     log2(x) rounded up.
     """
     assert x > 0
-    res = 0
-    while x:
-        res += 1
-        x = divide_integers_and_round_up(x, 2)
-    return res
+    i = 1
+    p = 2 ** i
+    while p < x:
+        i += 1
+        p *= 2
+    return i
+
+assert_eq(integer_log2_round_up(1), 1)
+assert_eq(integer_log2_round_up(2), 1)
+assert_eq(integer_log2_round_up(3), 2)
+assert_eq(integer_log2_round_up(4), 2)
+assert_eq(integer_log2_round_up(5), 3)
 
 def identity_func(x):
     return x
+
+def compare_with_lt(x, y):
+    """
+    Comparator function that promises only to use the `<` binary operator.
+    See also: `functools.cmp_to_key` if you plan to use this with `sorted`
+    """
+    if x < y:
+        return -1
+    elif y < x:
+        return 1
+    else:
+        return 0
+
+def collapse_runs(it, split_at):
+    """
+    Collapse runs of elements [x_0, x_1, ...] in `it` such that
+    `split_at(x_0, x_i)` returns false for all i > 1.
+
+    This function returns a list of runs (i.e. a list of lists).
+
+    For instance, to remove duplicates from a sorted list:
+        l = [0, 0, 0, 1, 2, 2]
+        l = collapse_runs(l, split_at=lambda x, y: x != y)
+        # l is now [[0,0,0], [1], [2,2]]
+    """
+    l = make_random_access(it)
+    if not l:
+        return l, []
+    prev = l[0]
+    res = [[prev]]
+    for i in range(1, len(l)):
+        x = l[i]
+        if split_at(prev, x):
+            res.append([x])
+        else:
+            res[-1].append(x)
+        prev = x
+    return res
