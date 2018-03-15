@@ -691,28 +691,21 @@ class CxxPrinter(CodeGenerator):
         return "std::move(" + self.visit(e.e) + ")"
 
     def declare(self, v : EVar, initial_value : Exp = None):
-        self.begin_statement()
         if initial_value is not None and is_scalar(v.type):
             iv = self.visit(initial_value)
-            self.write(self.visit(v.type, v.id), " = ", iv, ";")
-            self.end_statement()
+            self.write_stmt(self.visit(v.type, v.id), " = ", iv, ";")
         else:
-            self.write(self.visit(v.type, v.id), ";")
-            self.end_statement()
+            self.write_stmt(self.visit(v.type, v.id), ";")
             if initial_value is not None:
                 self.visit(self.construct_concrete(v.type, initial_value, v))
 
     def visit_SAssign(self, s):
         if is_scalar(s.rhs.type):
-            self.begin_statement()
-            self.write(self.visit(s.lhs), " = ", self.visit(s.rhs), ";")
-            self.end_statement()
+            self.write_stmt(self.visit(s.lhs), " = ", self.visit(s.rhs), ";")
         else:
             v = self.fv(s.lhs.type)
             self.declare(v, s.rhs)
-            self.begin_statement()
-            self.write(self.visit(s.lhs), " = ", self.visit(EMove(v).with_type(v.type)), ";")
-            self.end_statement()
+            self.write_stmt(self.visit(s.lhs), " = ", self.visit(EMove(v).with_type(v.type)), ";")
 
     def visit_SDecl(self, s):
         assert isinstance(s.id, str)
