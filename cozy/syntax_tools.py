@@ -1617,33 +1617,6 @@ def get_modified_var(stm):
     else:
         return None, None
 
-class __ExpressionMap(object):
-    """
-    Track expressions. For each one, keep a list of dependent variables for
-    easy lookup.
-
-    d[x] = tmp2  (x)
-    d[1] = tmp3
-    d[y] = tmp4
-    d[tmp4 + tmp4] = tmp1  (x, y)
-    """
-
-    def __init__(self):
-        self.expressions = {}
-        self.dependents = collections.defaultdict(list)
-
-    def add(self, key, expr, dependents=[]):
-        self.expressions[expr] = key
-
-        for dep in dependents:
-            self.dependents[dep].append(expr)
-
-    def contains(self, expr):
-        return expr in self.expressions
-
-    def get(self, expr):
-        return self.expressions.get(expr, None)
-
 class ExpressionMap(object):
     """
     Maps expressions to temp vars.
@@ -1669,18 +1642,20 @@ class ExpressionMap(object):
         self.by_hash[self._hash(k)] = v
 
     def set_or_increment(self, k, v, dependents=()):
-        pair = self.get(k)
+        data = self.get(k)
 
-        if pair is not None:
-            v, count = pair
+        if data is not None:
+            v, count, deps = data
             count += 1
+            deps.update(dependents)
         else:
             count = 1
+            deps = set(dependents)
 
-        self[k] = (v, count)
+        self[k] = (v, count, deps)
 
         for dep in dependents:
-            self.dependents[dep] = k
+            self.dependents[dep].append(k)
 
         return v
 
@@ -1692,7 +1667,10 @@ class ExpressionMap(object):
             del self[key]
 
         old = new_map.dependents.get(varname)
-        del new_map.dependents[varname]
+
+        if varname in new_map.dependents:
+            del new_map.dependents[varname]
+
         return new_map, old
 
     def __delitem__(self, k):
@@ -1700,6 +1678,7 @@ class ExpressionMap(object):
         if i in self.by_id:
             del self.by_id[i]
         del self.by_hash[self._hash(k)]
+
     def items(self):
         for (k, v) in self.by_hash.items():
             yield (self._unhash(k), v)
@@ -1707,83 +1686,83 @@ class ExpressionMap(object):
         for k, v in self.items():
             yield v
 
-def process_expr(e, entries=None):
-    """
+    def temps_to_expressions(self):
+        return {t: e for e, (t, count, deps) in self.items() if count > 1}
 
-    """
+def process_expr(e, entries=None):
     if entries is None:
         entries = ExpressionMap()
 
-    """
-    TODO:
-        * submap = unbind original map's entries dependent on the lambda var.
-        * process_expr(e.body, submap)
-        * again remove lambda-var dependent vars from submap.
-        * merge submap entries into original map.
-    """
-    
-    """
-    if isinstance(e, syntax.ELambda):
-        submap = entries.unbind(e.var.id)
-        e.body = process_expr(e.body, submap)
-    """
+    if isinstance(e, syntax.ELet):
+        process_expr(e.e, entries)
+        process_expr(e.f, entries)
 
-    if isinstance(e, syntax.EBinOp):
+    elif isinstance(e, syntax.ELambda):
+        submap, old = entries.unbind(e.arg.id)
+        process_expr(e.body, submap)
+
+        submap2, old2 = submap.unbind(e.arg.id)
+
+        for expr, (temp, count, deps) in submap2.items():
+            entries[expr] = (temp, count, deps)
+
+        e = e.with_type(e.body.type)
+
+    elif isinstance(e, syntax.EBinOp):
         process_expr(e.e1, entries)
         process_expr(e.e2, entries)
 
-    temp = fresh_var(e.type, "cse")
-    temp = entries.set_or_increment(e, temp, ("x",))
-
+    dependents = (e.id,) if isinstance(e, syntax.EVar) else ()
+    e.__cse__ = entries.set_or_increment(e, fresh_var(e.type, "cse"), dependents)
     return e
 
 def cse_replace(e, map):
+    # Flip the mapping to tempvar -> expr, filtered to only counts of >1.
+    import pprint
+    pprint.pprint(map.by_id)
+    tempMap = map.temps_to_expressions()
+    pprint.pprint(tempMap)
+
     class CseTreeEditor(BottomUpRewriter):
         def __init__(self):
             self.encountered = set()
+
         # "literals" below -- no subexpressions.
-        def visit_EVar(self, e):
+
+        def _visit_literal(self, e):
             return e
-        def visit_ENum(self, e):
-            return e
-        def visit_EEnumEntry(self, e):
-            return e
-        def visit_EEmptyList(self, e):
-            return e
-        def visit_EStr(self, e):
-            return e
-        def visit_EBool(self, e):
-            return e
-        def visit_ENative(self, e):
-            return e
-        def visit_ENull(self, e):
-            return e
+
+        visit_EVar = visit_ENum = visit_EEnumEntry = visit_EEmptyList = \
+            visit_EStr = visit_EBool = visit_ENative = visit_ENull = \
+            _visit_literal
+
         def visit_Exp(self, e):
             default = lambda exp: type(exp)(
                     *[self.visit(c) for c in exp.children()]
                 ).with_type(exp.type)
 
-            pair = map.get(e)
+            temp = getattr(e, "__cse__", None)
 
-            if pair is not None:
-                temp, count = pair
-
-                if count < 2:
-                    return default(e)
-
-                ee = e
-
-                if temp not in self.encountered:
-                    # When an expression is first encountered, hoist it into an ELet.
-                    # On the second+ encounter, just embed the EVar temp reference.
-                    self.encountered.add(temp)
-                    ee = syntax.ELet(ee, target_syntax.ELambda(temp, temp))
-                else:
-                    ee = temp
-
-                return ee
-            else:
+            if temp is None:
                 return default(e)
+
+            try:
+                replacementExpr = tempMap[temp]
+            except KeyError:
+                # Nonexistent, or <2 occurrences.
+                return default(e)
+
+            ee = e
+
+            if temp not in self.encountered:
+                # When an expression is first encountered, hoist it into an ELet.
+                self.encountered.add(temp)
+                ee = syntax.ELet(ee, target_syntax.ELambda(temp, temp))
+            else:
+                # On subsequent encounters, just embed the EVar temp reference.
+                ee = temp
+
+            return ee
 
     editor = CseTreeEditor()
     return editor.visit(e)
