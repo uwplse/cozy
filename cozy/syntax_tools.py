@@ -1715,6 +1715,14 @@ def process_expr(e, entries=None):
         entries = ExpressionMap()
 
     """
+    TODO:
+        * submap = unbind original map's entries dependent on the lambda var.
+        * process_expr(e.body, submap)
+        * again remove lambda-var dependent vars from submap.
+        * merge submap entries into original map.
+    """
+    
+    """
     if isinstance(e, syntax.ELambda):
         submap = entries.unbind(e.var.id)
         e.body = process_expr(e.body, submap)
@@ -1728,11 +1736,6 @@ def process_expr(e, entries=None):
     temp = entries.set_or_increment(e, temp, ("x",))
 
     return e
-
-"""
-Map expression -> var
-Map expression -> (var, use count)
-"""
 
 def cse_replace(e, map):
     class CseTreeEditor(BottomUpRewriter):
@@ -1756,17 +1759,23 @@ def cse_replace(e, map):
         def visit_ENull(self, e):
             return e
         def visit_Exp(self, e):
+            default = lambda exp: type(exp)(
+                    *[self.visit(c) for c in exp.children()]
+                ).with_type(exp.type)
+
             pair = map.get(e)
 
             if pair is not None:
                 temp, count = pair
 
                 if count < 2:
-                    return type(e)(*[self.visit(c) for c in e.children()]).with_type(e.type)
+                    return default(e)
 
                 ee = e
 
                 if temp not in self.encountered:
+                    # When an expression is first encountered, hoist it into an ELet.
+                    # On the second+ encounter, just embed the EVar temp reference.
                     self.encountered.add(temp)
                     ee = syntax.ELet(ee, target_syntax.ELambda(temp, temp))
                 else:
@@ -1774,7 +1783,7 @@ def cse_replace(e, map):
 
                 return ee
             else:
-                return type(e)(*[self.visit(c) for c in e.children()]).with_type(e.type)
+                return default(e)
 
     editor = CseTreeEditor()
     return editor.visit(e)
