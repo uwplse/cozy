@@ -1612,3 +1612,134 @@ def get_modified_var(stm):
         return stm, find_lvalue_target(stm.map)
     else:
         return None, None
+
+class __ExpressionMap(object):
+    """
+    Track expressions. For each one, keep a list of dependent variables for
+    easy lookup.
+
+    d[x] = tmp2  (x)
+    d[1] = tmp3
+    d[y] = tmp4
+    d[tmp4 + tmp4] = tmp1  (x, y)
+    """
+
+    def __init__(self):
+        self.expressions = {}
+        self.dependents = collections.defaultdict(list)
+
+    def add(self, key, expr, dependents=[]):
+        self.expressions[expr] = key
+
+        for dep in dependents:
+            self.dependents[dep].append(expr)
+
+    def contains(self, expr):
+        return expr in self.expressions
+
+    def get(self, expr):
+        return self.expressions.get(expr, None)
+
+class ExpressionMap(object):
+    def __init__(self, items=(), ordered=True):
+        self.by_id = collections.OrderedDict()
+        self.by_hash = collections.OrderedDict()
+        for k, v in items:
+            self[k] = v
+        self.dependents = collections.defaultdict(list)
+    def _hash(self, k):
+        return (type(k), k.type, k)
+    def _unhash(self, h):
+        return h[2]
+    def get(self, k):
+        i = id(k)
+        try:
+            return self.by_id[i]
+        except KeyError:
+            return self.by_hash.get(self._hash(k))
+    def __setitem__(self, k, v):
+        self.by_id[id(k)] = v
+        self.by_hash[self._hash(k)] = v
+    def set(self, k, v, dependents=()):
+        self[k] = v
+        for dep in dependents:
+            self.dependents[dep] = k
+
+    def unbind(self, varname):
+        new_map = ExpressionMap(self.items())
+        new_map.dependents = self.dependents.copy()
+
+        for key in self.dependents[varname]:
+            del self[key]
+
+        old = new_map.dependents.get(varname)
+        del new_map.dependents[varname]
+        return new_map, old
+
+    def merge
+
+    def __delitem__(self, k):
+        i = id(k)
+        if i in self.by_id:
+            del self.by_id[i]
+        del self.by_hash[self._hash(k)]
+    def items(self):
+        for (k, v) in self.by_hash.items():
+            yield (self._unhash(k), v)
+    def values(self):
+        for k, v in self.items():
+            yield v
+
+def process_expr(e, entries=None):
+    """
+    p("(x + 1) + (x + 1)"
+        ^ c       ^ already seen
+        = c + c
+    should result in
+    {
+        a = x --> {x}
+        b = 1 --> {}
+        c = x + 1 --> {x}
+        d = c + c --> {x}
+    }
+
+    returning (dict, "d" expr)
+
+    """
+    if entries is None:
+        entries = ExpressionMap()
+
+
+    """
+    if isinstance(e, syntax.ELambda):
+        submap = entries.unbind(e.var.id)
+        e.body = process_expr(e.body, submap)
+    """
+
+    if isinstance(e, syntax.EBinOp):
+        cached = entries.get(e.e1)
+        if cached is not None:
+            e.e1 = cached
+        else:
+            e1 = process_expr(e.e1, entries)
+            entries[e.e1] = e1
+            e.e1 = e1
+
+        cached = entries.get(e.e2)
+
+        if cached is not None:
+            e.e2 = cached
+        else:
+            e2 = process_expr(e.e2, entries)
+            entries[e.e2] = e2
+            e.e2 = e2
+
+    cached = entries.get(e)
+    if cached is not None:
+        e = cached
+    else:
+        e2 = fresh_var(e.type, "cse") #, e, ("x",))
+        entries.set(e, e2, "x")
+        e = e2
+
+    return e
