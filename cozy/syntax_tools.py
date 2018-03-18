@@ -1524,8 +1524,12 @@ class ExprEliminator(BottomUpRewriter):
 
 
 def inject_vars(e, avail):
+    """
+    avail -> { expression: variable }
+    """
     statementMode = isinstance(e, syntax.Stm)
 
+    # ravail = { variable -> expression }
     ravail = collections.OrderedDict(
         [(v, k) for (k, v) in avail.items() if v is not None])
     counts = free_vars(e, counts=True)
@@ -1641,6 +1645,9 @@ class __ExpressionMap(object):
         return self.expressions.get(expr, None)
 
 class ExpressionMap(object):
+    """
+    Maps expressions to temp vars.
+    """
     def __init__(self, items=(), ordered=True):
         self.by_id = collections.OrderedDict()
         self.by_hash = collections.OrderedDict()
@@ -1660,10 +1667,22 @@ class ExpressionMap(object):
     def __setitem__(self, k, v):
         self.by_id[id(k)] = v
         self.by_hash[self._hash(k)] = v
-    def set(self, k, v, dependents=()):
-        self[k] = v
+
+    def set_or_increment(self, k, v, dependents=()):
+        pair = self.get(k)
+
+        if pair is not None:
+            v, count = pair
+            count += 1
+        else:
+            count = 1
+
+        self[k] = (v, count)
+
         for dep in dependents:
             self.dependents[dep] = k
+
+        return v
 
     def unbind(self, varname):
         new_map = ExpressionMap(self.items())
@@ -1675,8 +1694,6 @@ class ExpressionMap(object):
         old = new_map.dependents.get(varname)
         del new_map.dependents[varname]
         return new_map, old
-
-    def merge
 
     def __delitem__(self, k):
         i = id(k)
@@ -1692,23 +1709,10 @@ class ExpressionMap(object):
 
 def process_expr(e, entries=None):
     """
-    p("(x + 1) + (x + 1)"
-        ^ c       ^ already seen
-        = c + c
-    should result in
-    {
-        a = x --> {x}
-        b = 1 --> {}
-        c = x + 1 --> {x}
-        d = c + c --> {x}
-    }
-
-    returning (dict, "d" expr)
 
     """
     if entries is None:
         entries = ExpressionMap()
-
 
     """
     if isinstance(e, syntax.ELambda):
@@ -1717,29 +1721,60 @@ def process_expr(e, entries=None):
     """
 
     if isinstance(e, syntax.EBinOp):
-        cached = entries.get(e.e1)
-        if cached is not None:
-            e.e1 = cached
-        else:
-            e1 = process_expr(e.e1, entries)
-            entries[e.e1] = e1
-            e.e1 = e1
+        process_expr(e.e1, entries)
+        process_expr(e.e2, entries)
 
-        cached = entries.get(e.e2)
-
-        if cached is not None:
-            e.e2 = cached
-        else:
-            e2 = process_expr(e.e2, entries)
-            entries[e.e2] = e2
-            e.e2 = e2
-
-    cached = entries.get(e)
-    if cached is not None:
-        e = cached
-    else:
-        e2 = fresh_var(e.type, "cse") #, e, ("x",))
-        entries.set(e, e2, "x")
-        e = e2
+    temp = fresh_var(e.type, "cse")
+    temp = entries.set_or_increment(e, temp, ("x",))
 
     return e
+
+"""
+Map expression -> var
+Map expression -> (var, use count)
+"""
+
+def cse_replace(e, map):
+    class CseTreeEditor(BottomUpRewriter):
+        def __init__(self):
+            self.encountered = set()
+        # "literals" below -- no subexpressions.
+        def visit_EVar(self, e):
+            return e
+        def visit_ENum(self, e):
+            return e
+        def visit_EEnumEntry(self, e):
+            return e
+        def visit_EEmptyList(self, e):
+            return e
+        def visit_EStr(self, e):
+            return e
+        def visit_EBool(self, e):
+            return e
+        def visit_ENative(self, e):
+            return e
+        def visit_ENull(self, e):
+            return e
+        def visit_Exp(self, e):
+            pair = map.get(e)
+
+            if pair is not None:
+                temp, count = pair
+
+                if count < 2:
+                    return type(e)(*[self.visit(c) for c in e.children()]).with_type(e.type)
+
+                ee = e
+
+                if temp not in self.encountered:
+                    self.encountered.add(temp)
+                    ee = syntax.ELet(ee, target_syntax.ELambda(temp, temp))
+                else:
+                    ee = temp
+
+                return ee
+            else:
+                return type(e)(*[self.visit(c) for c in e.children()]).with_type(e.type)
+
+    editor = CseTreeEditor()
+    return editor.visit(e)

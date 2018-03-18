@@ -25,9 +25,14 @@ class TestElimination(unittest.TestCase):
         exprMap = ExpressionMap()
 
         e2 = process_expr(e, exprMap)
+        # print(e2.__cse__)
         print(pprint(e2))
-        print(exprMap.by_id)
-        print(exprMap.dependents)
+
+        e3 = cse_replace(e2, exprMap)
+        print(e3)
+        print(pprint(e3))
+
+
 
 
         assert False
