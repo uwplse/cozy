@@ -24,7 +24,7 @@ class TestElimination(unittest.TestCase):
         e2 = eliminate_common_subexpressions_stm(e)
         exprMap = ExpressionMap()
 
-        e2 = process_expr(e, exprMap)
+        e2, deps = process_expr(e, exprMap)
         print(pprint(e2))
 
         e3 = cse_replace(e2, exprMap)
@@ -69,15 +69,14 @@ class TestElimination(unittest.TestCase):
         e2 = eliminate_common_subexpressions_stm(e)
         exprMap = ExpressionMap()
 
-        e2 = process_expr(e, exprMap)
+        e2, deps = process_expr(e, exprMap)
         print(pprint(e2))
 
         e3 = cse_replace(e2, exprMap)
         newForm = pprint(e3)
         print(newForm)
 
-        assert newForm.count("y + 1") == 1
-        assert False
+        assert newForm.count("y + 1") == 2
 
     def test_y_plus_1_3x(self):
         """
@@ -110,7 +109,7 @@ class TestElimination(unittest.TestCase):
         e2 = eliminate_common_subexpressions_stm(e)
         exprMap = ExpressionMap()
 
-        e2 = process_expr(e, exprMap)
+        e2, deps = process_expr(e, exprMap)
         print(pprint(e2))
 
         e3 = cse_replace(e2, exprMap)

@@ -1664,14 +1664,12 @@ class ExpressionMap(object):
         new_map.dependents = self.dependents.copy()
 
         for key in self.dependents[varname]:
-            del self[key]
-
-        old = new_map.dependents.get(varname)
+            del new_map[key]
 
         if varname in new_map.dependents:
             del new_map.dependents[varname]
 
-        return new_map, old
+        return new_map
 
     def __delitem__(self, k):
         i = id(k)
@@ -1687,21 +1685,31 @@ class ExpressionMap(object):
             yield v
 
     def temps_to_expressions(self):
+        """
+        Flips the mapping to tempvar -> expr, filtered to only counts of >1.
+        """
         return {t: e for e, (t, count, deps) in self.items() if count > 1}
 
 def process_expr(e, entries=None):
     if entries is None:
         entries = ExpressionMap()
 
+    deps = set()
+
     if isinstance(e, syntax.ELet):
-        process_expr(e.e, entries)
-        process_expr(e.f, entries)
+        _, subdeps = process_expr(e.e, entries)
+        deps.update(subdeps)
+        _, subdeps = process_expr(e.f, entries)
+        deps.update(subdeps)
 
     elif isinstance(e, syntax.ELambda):
-        submap, old = entries.unbind(e.arg.id)
-        process_expr(e.body, submap)
-
-        submap2, old2 = submap.unbind(e.arg.id)
+        submap = entries.unbind(e.arg.id)
+        import pprint
+        pprint.pprint(entries.by_id)
+        pprint.pprint(submap.by_id)
+        _, subdeps = process_expr(e.body, submap)
+        deps.update(subdeps)
+        submap2 = submap.unbind(e.arg.id)
 
         for expr, (temp, count, deps) in submap2.items():
             entries[expr] = (temp, count, deps)
@@ -1709,19 +1717,21 @@ def process_expr(e, entries=None):
         e = e.with_type(e.body.type)
 
     elif isinstance(e, syntax.EBinOp):
-        process_expr(e.e1, entries)
-        process_expr(e.e2, entries)
+        for expr in (e.e1, e.e2):
+            _, subdeps = process_expr(expr, entries)
+            deps.update(subdeps)
 
-    dependents = (e.id,) if isinstance(e, syntax.EVar) else ()
-    e.__cse__ = entries.set_or_increment(e, fresh_var(e.type, "cse"), dependents)
-    return e
+    elif isinstance(e, syntax.EVar):
+        deps.add(e.id)
+
+    e.__cse__ = entries.set_or_increment(e, fresh_var(e.type, "cse"), list(deps))
+    return e, deps
 
 def cse_replace(e, map):
     # Flip the mapping to tempvar -> expr, filtered to only counts of >1.
-    import pprint
-    pprint.pprint(map.by_id)
+    #import pprint
+    #pprint.pprint(map.by_hash)
     tempMap = map.temps_to_expressions()
-    pprint.pprint(tempMap)
 
     class CseTreeEditor(BottomUpRewriter):
         def __init__(self):
@@ -1757,6 +1767,8 @@ def cse_replace(e, map):
             if temp not in self.encountered:
                 # When an expression is first encountered, hoist it into an ELet.
                 self.encountered.add(temp)
+                # FIXME: First-encountered node not always outside later
+                # nodes in the AST.
                 ee = syntax.ELet(ee, target_syntax.ELambda(temp, temp))
             else:
                 # On subsequent encounters, just embed the EVar temp reference.
