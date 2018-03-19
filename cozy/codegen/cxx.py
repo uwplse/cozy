@@ -125,7 +125,7 @@ class CxxPrinter(CodeGenerator):
         self.end_statement()
 
     def visit_SEscapableBlock(self, s):
-        self.visit(s.body)
+        self.visit(SScoped(s.body))
         self.write(s.label, ":\n")
 
     def visit_SEscapeBlock(self, s):
@@ -317,8 +317,7 @@ class CxxPrinter(CodeGenerator):
             map = self.visit(update.map)
             key = self.visit(update.key)
             val = self.fv(update.value.type)
-            self.declare(val)
-            self.construct_concrete(val.type, update.value, val)
+            self.declare(val, update.value)
             val = self.visit(EMove(val))
             self.begin_statement()
             self.write(map, ".emplace(", key, ", ", val, ");")
@@ -941,7 +940,7 @@ class CxxPrinter(CodeGenerator):
                     self.write_stmt("typedef ", spec.name, "::", name, " argument_type;")
                     self.write_stmt("typedef std::size_t result_type;")
                     self.begin_statement()
-                    self.write("result_type operator()(const argument_type const& x) const noexcept ")
+                    self.write("result_type operator()(const argument_type& x) const noexcept ")
                     x = EVar("x").with_type(t)
                     if isinstance(t, TEnum):
                         fields = [EEnumToInt(x).with_type(INT)]
