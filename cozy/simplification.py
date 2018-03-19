@@ -12,6 +12,8 @@ class _V(BottomUpRewriter):
                 return self.visit(EAny([EIn(e.e1, e.e2.e1), EIn(e.e1, e.e2.e2)]))
             elif isinstance(e.e2, EUnaryOp) and e.e2.op == UOp.Distinct:
                 return self.visit(EIn(e.e1, e.e2.e))
+            elif isinstance(e.e2, EMapKeys):
+                return self.visit(EHasKey(e.e2.e, e.e1).with_type(BOOL))
         elif e.op in ("==", "==="):
             e1 = self.visit(e.e1)
             e2 = self.visit(e.e2)
@@ -120,6 +122,11 @@ class _V(BottomUpRewriter):
         if isinstance(ee, EMakeMap2):
             return self.visit(EUnaryOp(UOp.Distinct, ee.e).with_type(e.type))
         return EMapKeys(ee).with_type(e.type)
+    def visit_EHasKey(self, e):
+        ee = self.visit(e.map)
+        if isinstance(ee, EMakeMap2):
+            return self.visit(EIn(e.key, ee.e))
+        return EHasKey(ee, self.visit(e.key)).with_type(BOOL)
     def visit_EMapGet(self, e):
         m = self.visit(e.map)
         k = self.visit(e.key)
