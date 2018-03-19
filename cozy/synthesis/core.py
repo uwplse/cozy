@@ -37,7 +37,8 @@ def reverse_output(f):
     def g(*args, **kwargs):
         l = list(f(*args, **kwargs))
         l.reverse()
-        return l
+        for x in l:
+            yield x
     return g
 
 class FoundImprovement(Exception):
@@ -150,7 +151,10 @@ class Learner(object):
         contexts = group_by(enumerate_fragments(self.target),
             k=lambda ctx: (ctx.pool, ctx.e.type))
         def f(cache, size, scopes, build_lambdas):
-            for tup in wrapped_builder(cache, size, scopes, build_lambdas):
+            was_accepted = None
+            gen = wrapped_builder(cache, size, scopes, build_lambdas)
+            while True:
+                tup = gen.send(was_accepted)
                 e, pool = tup
                 was_accepted = yield tup
                 if was_accepted:
@@ -237,7 +241,7 @@ class Learner(object):
         except ExpIsNotWf as exc:
             return False
 
-    @reverse_output
+    # @reverse_output
     def roots(self, target=None, extra_legal_fvs=()):
         if target is None:
             target = self.target
@@ -258,8 +262,8 @@ class Learner(object):
 
     def next(self):
         build = build_candidates
-        build = accelerate_build(build, args=self.args, state_vars=self.state_vars)
         build = self.build_candidates(build)
+        build = accelerate_build(build, args=self.args, state_vars=self.state_vars)
         build = self.subst_builder(build)
         cards = [self.cost_model.cardinality(ctx.e) for ctx in enumerate_fragments(self.target) if is_collection(ctx.e.type)]
         def check_wf(e, pool):

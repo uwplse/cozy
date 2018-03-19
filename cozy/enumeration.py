@@ -201,6 +201,22 @@ def build_candidates(cache : Cache, size : int, scopes : {EVar:(Exp,Pool)}, buil
                 m = EMakeMap2(bag, lam).with_type(t)
                 yield (m, STATE_POOL)
 
+class AuxBuilder(object):
+    def __init__(self, wrapped):
+        self.wrapped = wrapped
+    def __call__(self, cache : Cache, size : int, scopes : {EVar:(Exp,Pool)}, build_lambdas):
+        res = None
+        gen = self.wrapped(cache, size, scopes, build_lambdas)
+        while True:
+            tup = gen.send(res)
+            res = yield tup
+            # print("$$   res={}".format(res))
+            if res:
+                yield from self.apply(cache, size, scopes, build_lambdas, *tup)
+    def apply(self, cache, size, scopes, build_lambdas, e, pool):
+        return
+        yield
+
 class MemoizedEnumerator(object):
     __slots__ = ("cache", "done", "iter")
     def __init__(self, *args, **kwargs):

@@ -1,10 +1,11 @@
 import unittest
 
 from cozy.target_syntax import *
-from cozy.syntax_tools import mk_lambda, pprint, fresh_var, free_vars
+from cozy.syntax_tools import mk_lambda, pprint, fresh_var, free_vars, alpha_equivalent
 from cozy.typecheck import retypecheck
 from cozy.solver import satisfy, valid
 from cozy.evaluation import eval, construct_value
+from cozy.synthesis.acceleration import optimized_in
 
 class SemanticsTests(unittest.TestCase):
 
@@ -113,3 +114,45 @@ class SemanticsTests(unittest.TestCase):
         f1 = EDeepIn(h, hb)
         f2 = EUnaryOp(UOp.Any, EMap(hb, ELambda(arg, EBinOp(arg, "===", h).with_type(BOOL))).with_type(BOOL_BAG)).with_type(BOOL)
         self.assert_same(f1, f2)
+
+    def test_subsub(self):
+        xs = EVar("xs").with_type(INT_BAG)
+        i = EVar("i").with_type(INT)
+        e1 = EBinOp(
+            EUnaryOp(UOp.Distinct, xs), "-",
+            EBinOp(
+                xs, "-",
+                ESingleton(i)))
+        assert retypecheck(e1)
+        m = EMakeMap2(e1.e1,
+            mk_lambda(INT, lambda x:
+                EUnaryOp(UOp.Length, EFilter(xs,
+                    mk_lambda(INT, lambda y:
+                        EEq(x, y)))).with_type(INT))).with_type(TMap(INT, INT))
+        count = EMapGet(m, i).with_type(INT)
+        e2 = ECond(
+            EEq(count, ONE),
+            ESingleton(i).with_type(INT_BAG),
+            EEmptyList().with_type(INT_BAG)).with_type(INT_BAG)
+        assert retypecheck(e2)
+        self.assert_same(e1, e2)
+
+    def test_optimized_in1(self):
+        xs = EVar("xs").with_type(INT_BAG)
+        i = EVar("i").with_type(INT)
+        j = EVar("j").with_type(INT)
+        e1 = EIn(i, EBinOp(EStateVar(xs), "-", ESingleton(j)))
+        assert retypecheck(e1)
+        e2 = optimized_in(i, e1.e2)
+        assert not alpha_equivalent(e1, e2)
+        self.assert_same(e1, e2)
+
+    def test_optimized_in2(self):
+        xs = EVar("xs").with_type(INT_BAG)
+        ys = EVar("ys").with_type(INT_BAG)
+        i = EVar("i").with_type(INT)
+        e1 = EIn(i, EBinOp(xs, "-", ys))
+        assert retypecheck(e1)
+        e2 = optimized_in(i, e1.e2)
+        assert not alpha_equivalent(e1, e2)
+        self.assert_same(e1, e2)
