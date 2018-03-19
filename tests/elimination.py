@@ -29,6 +29,7 @@ class TestElimination(unittest.TestCase):
 
         e3 = cse_replace(e2, exprMap)
         newForm = pprint(e3)
+        print(newForm)
 
         assert newForm.count("y + 1") == 1
 
@@ -37,7 +38,7 @@ class TestElimination(unittest.TestCase):
         (
             (y + 1) + (z + 1)
             +
-            (let y = 9 in ( (y + 1) + (z + 1) ))
+            (let y = 9 in ( (y + 1) + (z + 1) + (y + 1) ))
         ) +
         (z + 1)
         """
@@ -56,7 +57,11 @@ class TestElimination(unittest.TestCase):
                     ELet(NINE,
                         ELambda(
                             EVar("y").with_type(INT),
-                            EBinOp(yp1, "+", zp1)
+                            EBinOp(
+                                EBinOp(yp1, "+", zp1),
+                                "+",
+                                yp1
+                            )
                         )
                     )
                 ),
@@ -77,6 +82,8 @@ class TestElimination(unittest.TestCase):
         print(newForm)
 
         assert newForm.count("y + 1") == 2
+        assert newForm.count("z + 1") == 1
+        assert False
 
     def test_y_plus_1_3x(self):
         """

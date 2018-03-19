@@ -1617,9 +1617,12 @@ def get_modified_var(stm):
     else:
         return None, None
 
+# ExpressionInfo = collections.namedtuple("ExpressionInfo",
+#    ("temp", "count", "dependents", "capture_point"))
+
 class ExpressionMap(object):
     """
-    Maps expressions to temp vars.
+    Maps expressions to (temp vars, other supporting info).
     """
     def __init__(self, items=(), ordered=True):
         self.by_id = collections.OrderedDict()
@@ -1641,18 +1644,19 @@ class ExpressionMap(object):
         self.by_id[id(k)] = v
         self.by_hash[self._hash(k)] = v
 
-    def set_or_increment(self, k, v, dependents=()):
+    def set_or_increment(self, k, v, dependents, capture_point):
         data = self.get(k)
 
         if data is not None:
-            v, count, deps = data
+            # Expr has been seen before.
+            v, count, deps, capture_point = data
             count += 1
             deps.update(dependents)
         else:
             count = 1
             deps = set(dependents)
 
-        self[k] = (v, count, deps)
+        self[k] = (v, count, deps, capture_point)
 
         for dep in dependents:
             self.dependents[dep].append(k)
@@ -1664,7 +1668,8 @@ class ExpressionMap(object):
         new_map.dependents = self.dependents.copy()
 
         for key in self.dependents[varname]:
-            del new_map[key]
+            if new_map.get(key) is not None:
+                del new_map[key]
 
         if varname in new_map.dependents:
             del new_map.dependents[varname]
@@ -1680,6 +1685,7 @@ class ExpressionMap(object):
     def items(self):
         for (k, v) in self.by_hash.items():
             yield (self._unhash(k), v)
+
     def values(self):
         for k, v in self.items():
             yield v
@@ -1688,55 +1694,101 @@ class ExpressionMap(object):
         """
         Flips the mapping to tempvar -> expr, filtered to only counts of >1.
         """
-        return {t: e for e, (t, count, deps) in self.items() if count > 1}
+        return {t: e
+            for e, (t, count, deps, capture) in self.items() if count > 1}
 
-def process_expr(e, entries=None):
+    def capture_map(self):
+        mapping = collections.defaultdict(list)
+
+        for e, (t, count, deps, capture) in self.items():
+            if count > 1:
+                mapping[capture].append((t, e))
+
+        return mapping
+
+"""
+Every expr that has been processed gets __csevar__ set.
+Every CSE expression has one capture point where it should be
+calculated. This will be the innermost point where a binding happens.
+A capture point is assigned to an expression when it is first encountered.
+Subsequent encounters of the expression will reuse the capture point.
+New scopes that rebind a variable ("x") that then have a redundant "x+1"
+expression will get a capture point in this new scope.
+When this scope exits, the x+1 expression is removed from the ExpressionMap.
+
+A capture point is an expression:
+    The top level of the current expression tree
+    or E here: (let x = 91 in (E))
+
+
+When building the CSE mappings:
+    Track the current capture point C. Any *new* mappings refer to C.
+    When encounter a new binding point, C = that expr.
+
+When performing replacements:
+    -> Need to flush hoists at each capture point, in the order they were encountered.
+        -> Keep an ordered mapping of capture point expr -> {tmp1:expr1,
+             tmp2:expr2, ...} and then when we visit an expr, get the ordered
+             mapping corresponding to that expr, if any.
+
+    -> At expr w/ __csevar__, just swap in the EVar temp reference.
+
+
+"""
+
+def process_expr(e, entries=None, capture_point=None):
     if entries is None:
         entries = ExpressionMap()
+    if capture_point is None:
+        capture_point = e
 
     deps = set()
 
     if isinstance(e, syntax.ELet):
-        _, subdeps = process_expr(e.e, entries)
+        _, subdeps = process_expr(e.e, entries, capture_point)
         deps.update(subdeps)
-        _, subdeps = process_expr(e.f, entries)
+        _, subdeps = process_expr(e.f, entries, capture_point)
         deps.update(subdeps)
 
     elif isinstance(e, syntax.ELambda):
         submap = entries.unbind(e.arg.id)
+
+        """
         import pprint
         pprint.pprint(entries.by_id)
         pprint.pprint(submap.by_id)
-        _, subdeps = process_expr(e.body, submap)
+        """
+
+        # capture point changes here.
+        _, subdeps = process_expr(e.body, submap, e.body)
         deps.update(subdeps)
         submap2 = submap.unbind(e.arg.id)
 
-        for expr, (temp, count, deps) in submap2.items():
-            entries[expr] = (temp, count, deps)
+        # Copy anything new into the existing map.
+        for expr, payload in submap2.items():
+            entries[expr] = payload
 
         e = e.with_type(e.body.type)
 
     elif isinstance(e, syntax.EBinOp):
         for expr in (e.e1, e.e2):
-            _, subdeps = process_expr(expr, entries)
+            _, subdeps = process_expr(expr, entries, capture_point)
             deps.update(subdeps)
 
     elif isinstance(e, syntax.EVar):
         deps.add(e.id)
 
-    e.__cse__ = entries.set_or_increment(e, fresh_var(e.type, "cse"), list(deps))
+    e.__csevar__ = entries.set_or_increment(
+        e, fresh_var(e.type, "cse"), list(deps), capture_point)
+
     return e, deps
 
 def cse_replace(e, map):
     # Flip the mapping to tempvar -> expr, filtered to only counts of >1.
-    #import pprint
-    #pprint.pprint(map.by_hash)
     tempMap = map.temps_to_expressions()
+    capture_map = map.capture_map()
 
     class CseTreeEditor(BottomUpRewriter):
-        def __init__(self):
-            self.encountered = set()
-
         # "literals" below -- no subexpressions.
 
         def _visit_literal(self, e):
@@ -1751,7 +1803,18 @@ def cse_replace(e, map):
                     *[self.visit(c) for c in exp.children()]
                 ).with_type(exp.type)
 
-            temp = getattr(e, "__cse__", None)
+            captured_expressions = capture_map.get(e)
+
+            if captured_expressions is not None:
+                e = default(e)
+
+                for temp, expr in reversed(captured_expressions):
+                    # print("!embed {}={} @ {}".format(temp, expr, e))
+                    e = syntax.ELet(expr, target_syntax.ELambda(temp, e))
+
+                return e
+
+            temp = getattr(e, "__csevar__", None)
 
             if temp is None:
                 return default(e)
@@ -1762,19 +1825,7 @@ def cse_replace(e, map):
                 # Nonexistent, or <2 occurrences.
                 return default(e)
 
-            ee = e
-
-            if temp not in self.encountered:
-                # When an expression is first encountered, hoist it into an ELet.
-                self.encountered.add(temp)
-                # FIXME: First-encountered node not always outside later
-                # nodes in the AST.
-                ee = syntax.ELet(ee, target_syntax.ELambda(temp, temp))
-            else:
-                # On subsequent encounters, just embed the EVar temp reference.
-                ee = temp
-
-            return ee
+            return temp
 
     editor = CseTreeEditor()
     return editor.visit(e)
