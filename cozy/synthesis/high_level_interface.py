@@ -192,6 +192,9 @@ def improve_implementation(
             # update query implementations
             i = 1
             for (q, new_rep, new_ret) in improvements:
+                if timeout.is_timed_out():
+                    break
+
                 print("considering update {}/{}...".format(i, len(improvements)))
                 i += 1
                 # this guard might be false if a better solution was
