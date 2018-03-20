@@ -62,18 +62,19 @@ def map_accelerate(e, state_vars, args, cache, size):
         # print(" ----> {}".format(pprint(value)))
         if any(v in args for v in free_vars(value)):
             continue
-        keys = EUnion([reachable_values_of_type(v, arg.type) for v in state_vars]).with_type(TBag(arg.type))
-        # print("reachable values of type {}: {}".format(pprint(arg.type), pprint(keys)))
-        # for v in state_vars:
-        #     print("  {} : {}".format(pprint(v), pprint(v.type)))
-        m = EMakeMap2(keys,
-            ELambda(binder, value)).with_type(TMap(arg.type, e.type))
-        assert not any(v in args for v in free_vars(m)), "oops! {}; args={}".format(pprint(m), ", ".join(pprint(a) for a in args))
-        yield (m, STATE_POOL)
-        mg = EMapGet(EStateVar(m).with_type(m.type), arg).with_type(e.type)
-        # print(pprint(mg))
-        # mg._tag = True
-        yield (mg, RUNTIME_POOL)
+        for sv in state_vars:
+            keys = reachable_values_of_type(sv, arg.type)
+            # print("reachable values of type {}: {}".format(pprint(arg.type), pprint(keys)))
+            # for v in state_vars:
+            #     print("  {} : {}".format(pprint(v), pprint(v.type)))
+            m = EMakeMap2(keys,
+                ELambda(binder, value)).with_type(TMap(arg.type, e.type))
+            assert not any(v in args for v in free_vars(m)), "oops! {}; args={}".format(pprint(m), ", ".join(pprint(a) for a in args))
+            yield (m, STATE_POOL)
+            mg = EMapGet(EStateVar(m).with_type(m.type), arg).with_type(e.type)
+            # print(pprint(mg))
+            # mg._tag = True
+            yield (mg, RUNTIME_POOL)
 
 def histogram(xs : Exp) -> Exp:
     elem_type = xs.type.t
@@ -147,6 +148,15 @@ class accelerate_build(AuxBuilder):
                 e = ECond(optimized_in(e.e2.e2.e, e.e1),
                     e.e2.e2,
                     EEmptyList().with_type(e.type)).with_type(e.type)
+                yield (e, RUNTIME_POOL)
+                yield (e.cond, RUNTIME_POOL)
+
+            # [x] - xs
+            if is_collection(e.type) and isinstance(e, EBinOp) and e.op == "-" and isinstance(e.e1, ESingleton):
+                e = ECond(
+                    optimized_in(e.e1.e, e.e2),
+                    EEmptyList().with_type(e.type),
+                    e.e1).with_type(e.type)
                 yield (e, RUNTIME_POOL)
                 yield (e.cond, RUNTIME_POOL)
 
