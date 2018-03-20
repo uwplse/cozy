@@ -83,7 +83,6 @@ class TestElimination(unittest.TestCase):
 
         assert newForm.count("y + 1") == 2
         assert newForm.count("z + 1") == 1
-        assert False
 
     def test_y_plus_1_3x(self):
         """

@@ -1671,8 +1671,10 @@ class ExpressionMap(object):
             if new_map.get(key) is not None:
                 del new_map[key]
 
-        if varname in new_map.dependents:
+        try:
             del new_map.dependents[varname]
+        except KeyError:
+            pass
 
         return new_map
 
@@ -1750,14 +1752,11 @@ def process_expr(e, entries=None, capture_point=None):
         _, subdeps = process_expr(e.f, entries, capture_point)
         deps.update(subdeps)
 
+        # !!! This shouldn't be necessary:
+        e = e.with_type(e.f.type)
+
     elif isinstance(e, syntax.ELambda):
         submap = entries.unbind(e.arg.id)
-
-        """
-        import pprint
-        pprint.pprint(entries.by_id)
-        pprint.pprint(submap.by_id)
-        """
 
         # capture point changes here.
         _, subdeps = process_expr(e.body, submap, e.body)
@@ -1768,6 +1767,7 @@ def process_expr(e, entries=None, capture_point=None):
         for expr, payload in submap2.items():
             entries[expr] = payload
 
+        # !!! This also shouldn't be necessary:
         e = e.with_type(e.body.type)
 
     elif isinstance(e, syntax.EBinOp):
@@ -1776,6 +1776,7 @@ def process_expr(e, entries=None, capture_point=None):
             deps.update(subdeps)
 
     elif isinstance(e, syntax.EVar):
+        # The genesis of variable dependence.
         deps.add(e.id)
 
     e.__csevar__ = entries.set_or_increment(
