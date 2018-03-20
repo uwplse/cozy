@@ -165,9 +165,29 @@ class Learner(object):
                         assert e.type == ctx.e.type
                         if alpha_equivalent(e, ctx.e):
                             continue
+                        bound_vars = OrderedSet(ctx.bound_vars)
+                        to_be_free = free_vars(e) - OrderedSet(scopes.keys())
+                        if to_be_free & bound_vars:
+                            print("WARN: unable to perform substitution")
+                            print("fvs(e)")
+                            for vv in free_vars(e):
+                                print("  {} : {}".format(vv.id, pprint(vv.type)))
+                            print("bound vars")
+                            for vv in bound_vars:
+                                print("  {} : {}".format(vv.id, pprint(vv.type)))
+                            print("scopes")
+                            for vv, (bb, pp) in scopes.items():
+                                print("  {} : {} in {} [{}]".format(vv.id, pprint(vv.type), pprint(bb), pool_name(pp)))
+                            print("mapping")
+                            for a, b in mapping.items():
+                                print("  {} : {} ---> {} : {}".format(a.id, pprint(a.type), b.id, pprint(b.type)))
+                            print("replacing {} : {}".format(pprint(ctx.e), pprint(ctx.e.type)))
+                            print("with      {} : {}".format(pprint(e), pprint(e.type)))
+                            print("in        {}".format(pprint(ctx.replace_e_with(EVar("________")))))
+                            continue
                         # print("  ... {} in {} --> {}".format(pprint(ctx.e.type), pool_name(ctx.pool), pprint(ctx.replace_e_with(EVar("___")))))
                         # TODO: if enumerate_frags told us what bags the scope vars came from, we could do better...
-                        for mapping in self.all_possible_mappings(OrderedSet(scopes.keys()), OrderedSet(ctx.bound_vars)):
+                        for mapping in self.all_possible_mappings(OrderedSet(scopes.keys()), bound_vars):
                             if self.stop_callback():
                                 raise StopException()
                             x = subst(e, { a.id : b for (a, b) in mapping.items() })
