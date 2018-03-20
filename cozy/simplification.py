@@ -1,4 +1,5 @@
 from cozy.target_syntax import *
+from cozy.typecheck import is_collection
 from cozy.syntax_tools import BottomUpRewriter, alpha_equivalent, cse, compose, pprint, mk_lambda, replace
 from cozy.evaluation import construct_value, eval
 from cozy.solver import valid, satisfy
@@ -180,7 +181,7 @@ class _V(BottomUpRewriter):
         if hasattr(e, "_nosimpl"): return e
         if isinstance(e, Exp) and not isinstance(e, ELambda): t = e.type
         new = super().visit(e)
-        if isinstance(e, Exp) and not isinstance(e, ELambda): assert new.type == e.type, repr(e)
+        if isinstance(e, Exp) and not isinstance(e, ELambda): assert new.type == e.type or (is_collection(new.type) and is_collection(e.type)), repr(e)
         if self.debug and isinstance(e, Exp) and not isinstance(e, ELambda):
             model = satisfy(ENot(EBinOp(e, "===", new).with_type(BOOL)))
             if model is not None:
