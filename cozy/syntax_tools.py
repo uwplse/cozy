@@ -106,7 +106,7 @@ class PathAwareExplorer(BottomUpExplorer):
              self.visit(v, path + [i * 2 + 1], *args, **kwargs))
             for i, (k, v) in enumerate(d.items())))
     def visit_object(self, o, path, *args, **kwargs):
-        return self.join(o, ())
+        return self.join(o, ()), ()
 
 class PathAwareRewriter(PathAwareExplorer, BottomUpRewriter):
     pass
@@ -1767,20 +1767,55 @@ When performing replacements:
 
 """
 
-class Phase1Explorer(PathAwareExplorer):
+class CSEScanner(PathAwareExplorer):
+    def visit_object(self, o, path, *args, **kwargs):
+        # Include empty dependents tuple in result.
+        return self.join(o, ()), ()
+
+    def default(self, e, path, entries, capture_point):
+        """
+        Returns (expr, dependent_vars) for each child of e by visiting it.
+        """
+        return [self.visit(c, path + [i], entries, capture_point)
+            for i, c in enumerate(e.children())]
+
+    def visit_ELambda(self, e, path, entries, capture_point):
+        print("lambda-expr {} has path {}".format(e, path))
+        deps = set()
+        submap = entries.unbind(e.arg.id)
+        # Capture point changes with ELambda.
+        _, inner_deps = self.visit(e.body, path + [0], submap, e.body)
+        #submap2 = submap.unbind(e.arg.id)
+        deps.update(inner_deps)
+
+        e = e.with_type(e.body.type)
+        entries.set_or_increment(
+            e, fresh_var(e.type, "cse"), list(deps), capture_point)
+
+        # Copy any new info into original map.
+        for expr, payload in submap.items():
+            entries[expr] = payload
+
+        return e, deps
+
     def visit_Exp(self, e, path, entries, capture_point):
-        default = lambda exp: type(exp)(
-                *[self.visit(c, path + [i], entries, capture_point)
-                for i, c in enumerate(exp.children())]
-            ).with_type(exp.type)
-
         print("expr {} has path {}".format(e, path))
-        default(e)
-        return e
+        deps = set()
 
-def __process_expr(e, entries=None, capture_point=None, path=[]):
-    explorer = Phase1Explorer()
-    explorer.visit(e, path, entries, capture_point)
+        for expr, subdeps in self.default(e, path, entries, capture_point):
+            deps.update(subdeps)
+
+        entries.set_or_increment(
+            e, fresh_var(e.type, "cse"), list(deps), capture_point)
+
+        return e, deps
+
+    def visit_EVar(self, e, path, entries, capture_point):
+        print("var-expr {} has path {}".format(e, path))
+        deps = {e.id}
+        entries.set_or_increment(
+            e, fresh_var(e.type, "cse"), list(deps), capture_point)
+        return e, deps
 
 def process_expr(e, entries=None, capture_point=None, path=[]):
     if entries is None:
@@ -1788,51 +1823,11 @@ def process_expr(e, entries=None, capture_point=None, path=[]):
     if capture_point is None:
         capture_point = e
 
-    print("path=", path)
-
-    deps = set()
-
-    if isinstance(e, syntax.ELet):
-        _, subdeps = process_expr(e.e, entries, capture_point, path + [0])
-        deps.update(subdeps)
-        _, subdeps = process_expr(e.f, entries, capture_point, path + [1])
-        deps.update(subdeps)
-
-        # !!! This shouldn't be necessary:
-        e = e.with_type(e.f.type)
-
-    elif isinstance(e, syntax.ELambda):
-        submap = entries.unbind(e.arg.id)
-
-        # capture point changes here.
-        _, subdeps = process_expr(e.body, submap, e.body, path + [0])
-
-        deps.update(subdeps)
-        #submap2 = submap.unbind(e.arg.id)
-
-        # Copy anything new into the existing map.
-        for expr, payload in submap.items():
-            entries[expr] = payload
-
-        # !!! This also shouldn't be necessary:
-        e = e.with_type(e.body.type)
-
-    elif isinstance(e, syntax.EBinOp):
-        for i, expr in enumerate((e.e1, e.e2)):
-            _, subdeps = process_expr(expr, entries, capture_point, path + [i])
-            deps.update(subdeps)
-
-    elif isinstance(e, syntax.EVar):
-        # The genesis of variable dependence.
-        deps.add(e.id)
-
-    e.__csevar__ = entries.set_or_increment(
-        e, fresh_var(e.type, "cse"), list(deps), capture_point)
-
-    return e, deps
+    scanner = CSEScanner()
+    return scanner.visit(e, path, entries, capture_point)
 
 def cse_replace(e, map):
-    class CseRewriter(PathAwareRewriter):
+    class CSERewriter(PathAwareRewriter):
         def visit_Exp(self, e, path):
             default = lambda exp: type(exp)(
                     *[self.visit(c, path + [i]) for i, c in enumerate(exp.children())]
@@ -1840,21 +1835,20 @@ def cse_replace(e, map):
             print("exp PATH =", path)
             return default(e)
 
-    #pather = CseRewriter()
+    #pather = CSERewriter()
     #pather.visit(e, [])
 
     # Flip the mapping to tempvar -> expr, filtered to only counts of >1.
     temp_map = map.temps_to_expressions()
-    import pprint
-    pprint.pprint(temp_map)
+    #import pprint
+    #pprint.pprint(temp_map)
     capture_map = map.capture_map()
 
     class CseTreeEditor(BottomUpRewriter):
-        # "literals" below -- no subexpressions.
-
         def _visit_literal(self, e):
             return e
 
+        # "literals" -- no subexpressions.
         visit_EVar = visit_ENum = visit_EEnumEntry = visit_EEmptyList = \
             visit_EStr = visit_EBool = visit_ENative = visit_ENull = \
             _visit_literal
@@ -1870,7 +1864,7 @@ def cse_replace(e, map):
                 e = default(e)
 
                 for temp, expr in reversed(captured_expressions):
-                    print("!embed {}={} @ {}".format(temp, expr, e))
+                    # print("!embed {}={} @ {}".format(temp, expr, e))
                     e = syntax.ELet(expr, target_syntax.ELambda(temp, e))
 
                 return e
@@ -1880,7 +1874,7 @@ def cse_replace(e, map):
             if temp is None:
                 return default(e)
 
-            print(e, temp)
+            # print(e, temp)
 
             try:
                 replacementExpr = temp_map[temp]
