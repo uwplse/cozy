@@ -84,6 +84,33 @@ class BottomUpRewriter(BottomUpExplorer):
         else:
             return x
 
+class PathAwareExplorer(BottomUpExplorer):
+    """
+    A bottom-up explorer that maintains and presents an integer list path to each
+    visit_Foo invocation.
+    """
+    def visit_ADT(self, x, path, *args, **kwargs):
+        new_children = tuple(
+            self.visit(child, path + [i], *args, **kwargs)
+            for i, child in enumerate(x.children()))
+        return self.join(x, new_children)
+    def visit_list(self, l, path, *args, **kwargs):
+        return self.join(l, tuple(self.visit(x, path + [i], *args, **kwargs)
+            for i, x in enumerate(l)))
+    def visit_tuple(self, l, path, *args, **kwargs):
+        return self.join(l, tuple(self.visit(x, path + [i], *args, **kwargs)
+            for i, x in enumerate(l)))
+    def visit_dict(self, d, path, *args, **kwargs):
+        return self.join(d, tuple(
+            (self.visit(k, path + [i * 2], *args, **kwargs),
+             self.visit(v, path + [i * 2 + 1], *args, **kwargs))
+            for i, (k, v) in enumerate(d.items())))
+    def visit_object(self, o, path, *args, **kwargs):
+        return self.join(o, ())
+
+class PathAwareRewriter(PathAwareExplorer, BottomUpRewriter):
+    pass
+
 def strip_EStateVar(e : syntax.Exp):
     class V(BottomUpRewriter):
         def visit_EStateVar(self, e):
@@ -1697,13 +1724,16 @@ class ExpressionMap(object):
         Flips the mapping to tempvar -> expr, filtered to only counts of >1.
         """
         return {t: e
-            for e, (t, count, deps, capture) in self.items() if count > 1}
+            for e, (t, count, deps, capture) in self.items()
+            if count > 1
+            #and not isinstance(e, (syntax.ENum, syntax.EVar))
+            }
 
     def capture_map(self):
         mapping = collections.defaultdict(list)
 
         for e, (t, count, deps, capture) in self.items():
-            if count > 1:
+            if count > 1 and not isinstance(e, (syntax.ENum, syntax.EVar)):
                 mapping[capture].append((t, e))
 
         return mapping
@@ -1735,21 +1765,37 @@ When performing replacements:
 
     -> At expr w/ __csevar__, just swap in the EVar temp reference.
 
-
 """
 
-def process_expr(e, entries=None, capture_point=None):
+class Phase1Explorer(PathAwareExplorer):
+    def visit_Exp(self, e, path, entries, capture_point):
+        default = lambda exp: type(exp)(
+                *[self.visit(c, path + [i], entries, capture_point)
+                for i, c in enumerate(exp.children())]
+            ).with_type(exp.type)
+
+        print("expr {} has path {}".format(e, path))
+        default(e)
+        return e
+
+def __process_expr(e, entries=None, capture_point=None, path=[]):
+    explorer = Phase1Explorer()
+    explorer.visit(e, path, entries, capture_point)
+
+def process_expr(e, entries=None, capture_point=None, path=[]):
     if entries is None:
         entries = ExpressionMap()
     if capture_point is None:
         capture_point = e
 
+    print("path=", path)
+
     deps = set()
 
     if isinstance(e, syntax.ELet):
-        _, subdeps = process_expr(e.e, entries, capture_point)
+        _, subdeps = process_expr(e.e, entries, capture_point, path + [0])
         deps.update(subdeps)
-        _, subdeps = process_expr(e.f, entries, capture_point)
+        _, subdeps = process_expr(e.f, entries, capture_point, path + [1])
         deps.update(subdeps)
 
         # !!! This shouldn't be necessary:
@@ -1759,20 +1805,21 @@ def process_expr(e, entries=None, capture_point=None):
         submap = entries.unbind(e.arg.id)
 
         # capture point changes here.
-        _, subdeps = process_expr(e.body, submap, e.body)
+        _, subdeps = process_expr(e.body, submap, e.body, path + [0])
+
         deps.update(subdeps)
-        submap2 = submap.unbind(e.arg.id)
+        #submap2 = submap.unbind(e.arg.id)
 
         # Copy anything new into the existing map.
-        for expr, payload in submap2.items():
+        for expr, payload in submap.items():
             entries[expr] = payload
 
         # !!! This also shouldn't be necessary:
         e = e.with_type(e.body.type)
 
     elif isinstance(e, syntax.EBinOp):
-        for expr in (e.e1, e.e2):
-            _, subdeps = process_expr(expr, entries, capture_point)
+        for i, expr in enumerate((e.e1, e.e2)):
+            _, subdeps = process_expr(expr, entries, capture_point, path + [i])
             deps.update(subdeps)
 
     elif isinstance(e, syntax.EVar):
@@ -1785,8 +1832,21 @@ def process_expr(e, entries=None, capture_point=None):
     return e, deps
 
 def cse_replace(e, map):
+    class CseRewriter(PathAwareRewriter):
+        def visit_Exp(self, e, path):
+            default = lambda exp: type(exp)(
+                    *[self.visit(c, path + [i]) for i, c in enumerate(exp.children())]
+                ).with_type(exp.type)
+            print("exp PATH =", path)
+            return default(e)
+
+    #pather = CseRewriter()
+    #pather.visit(e, [])
+
     # Flip the mapping to tempvar -> expr, filtered to only counts of >1.
-    tempMap = map.temps_to_expressions()
+    temp_map = map.temps_to_expressions()
+    import pprint
+    pprint.pprint(temp_map)
     capture_map = map.capture_map()
 
     class CseTreeEditor(BottomUpRewriter):
@@ -1810,7 +1870,7 @@ def cse_replace(e, map):
                 e = default(e)
 
                 for temp, expr in reversed(captured_expressions):
-                    # print("!embed {}={} @ {}".format(temp, expr, e))
+                    print("!embed {}={} @ {}".format(temp, expr, e))
                     e = syntax.ELet(expr, target_syntax.ELambda(temp, e))
 
                 return e
@@ -1820,8 +1880,10 @@ def cse_replace(e, map):
             if temp is None:
                 return default(e)
 
+            print(e, temp)
+
             try:
-                replacementExpr = tempMap[temp]
+                replacementExpr = temp_map[temp]
             except KeyError:
                 # Nonexistent, or <2 occurrences.
                 return default(e)
