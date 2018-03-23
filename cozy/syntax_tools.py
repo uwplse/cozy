@@ -1719,51 +1719,6 @@ class ExpressionMap(object):
         for k, v in self.items():
             yield v
 
-    def temps_to_expressions(self):
-        """
-        Flips the mapping to tempvar -> expr, filtered to only counts of >1.
-        """
-        return {t: e
-            for e, (t, count, deps, capture) in self.items()
-            if count > 1
-            and not isinstance(e, (syntax.ENum, syntax.EVar))
-            }
-
-    def capture_map(self):
-        mapping = collections.defaultdict(list)
-
-        for e, (t, count, deps, capture) in self.items():
-            if count > 1 and not isinstance(e, (syntax.ENum, syntax.EVar)):
-                mapping[capture].append((t, e))
-
-        return mapping
-
-"""
-Every CSE expression has one capture point where it should be
-calculated. This will be the innermost point where a binding happens.
-A capture point is assigned to an expression when it is first encountered.
-Subsequent encounters of the expression will reuse the capture point.
-New scopes that rebind a variable ("x") that then have a redundant "x+1"
-expression will get a capture point in this new scope.
-When this scope exits, the x+1 expression is removed from the ExpressionMap.
-
-A capture point is an expression:
-    The top level of the current expression tree
-    or E here: (let x = 91 in (E))
-
-When building the CSE mappings:
-    Track the current capture point C. Any *new* mappings refer to C.
-    When encounter a new binding point, C = that expr.
-
-When performing replacements:
-    -> Need to flush hoists at each capture point, in the order they were encountered.
-        -> Keep an ordered mapping of capture point expr -> {tmp1:expr1,
-             tmp2:expr2, ...} and then when we visit an expr, get the ordered
-             mapping corresponding to that expr, if any.
-
-    -> At expr w/ __csevar__, just swap in the EVar temp reference.
-"""
-
 class CSEScanner(PathAwareExplorer):
     def __init__(self):
         self.captures = collections.defaultdict(list)
