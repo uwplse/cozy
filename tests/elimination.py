@@ -21,12 +21,11 @@ class TestElimination(unittest.TestCase):
         assert retypecheck(e)
         print(pprint(e))
 
-        exprMap = ExpressionMap()
 
-        e2, deps = process_expr(e, exprMap)
-        print(pprint(e2))
+        captures = process_expr(e)
+        print(pprint(e))
 
-        e3 = cse_replace(e2, exprMap)
+        e3 = cse_replace(e, captures)
         newForm = pprint(e3)
         print(newForm)
 
@@ -70,12 +69,10 @@ class TestElimination(unittest.TestCase):
         assert retypecheck(e)
         print(pprint(e))
 
-        exprMap = ExpressionMap()
+        captures = process_expr(e)
+        print(pprint(e))
 
-        e2, deps = process_expr(e, exprMap)
-        print(pprint(e2))
-
-        e3 = cse_replace(e2, exprMap)
+        e3 = cse_replace(e, captures)
         newForm = pprint(e3)
         print(newForm)
 
@@ -120,12 +117,10 @@ class TestElimination(unittest.TestCase):
         assert retypecheck(e)
         print(pprint(e))
 
-        exprMap = ExpressionMap()
+        captures = process_expr(e)
+        print(pprint(e))
 
-        e2, deps = process_expr(e, exprMap)
-        print(pprint(e2))
-
-        e3 = cse_replace(e2, exprMap)
+        e3 = cse_replace(e, captures)
         newForm = pprint(e3)
         print(newForm)
 
@@ -159,12 +154,10 @@ class TestElimination(unittest.TestCase):
         assert retypecheck(e)
         print(pprint(e))
 
-        exprMap = ExpressionMap()
+        captures = process_expr(e)
+        print(pprint(e))
 
-        e2, deps = process_expr(e, exprMap)
-        print(pprint(e2))
-
-        e3 = cse_replace(e2, exprMap)
+        e3 = cse_replace(e, captures)
         newForm = pprint(e3)
         print(newForm)
 

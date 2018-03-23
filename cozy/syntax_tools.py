@@ -106,7 +106,7 @@ class PathAwareExplorer(BottomUpExplorer):
              self.visit(v, path + [i * 2 + 1], *args, **kwargs))
             for i, (k, v) in enumerate(d.items())))
     def visit_object(self, o, path, *args, **kwargs):
-        return self.join(o, ()), ()
+        return self.join(o, ())
 
 class PathAwareRewriter(PathAwareExplorer, BottomUpRewriter):
     pass
@@ -1651,7 +1651,7 @@ class ExpressionMap(object):
     """
     Maps expressions to (temp vars, other supporting info).
     """
-    def __init__(self, items=(), ordered=True):
+    def __init__(self, items=()):
         self.by_id = collections.OrderedDict()
         self.by_hash = collections.OrderedDict()
         for k, v in items:
@@ -1726,7 +1726,7 @@ class ExpressionMap(object):
         return {t: e
             for e, (t, count, deps, capture) in self.items()
             if count > 1
-            #and not isinstance(e, (syntax.ENum, syntax.EVar))
+            and not isinstance(e, (syntax.ENum, syntax.EVar))
             }
 
     def capture_map(self):
@@ -1739,7 +1739,6 @@ class ExpressionMap(object):
         return mapping
 
 """
-Every expr that has been processed gets __csevar__ set.
 Every CSE expression has one capture point where it should be
 calculated. This will be the innermost point where a binding happens.
 A capture point is assigned to an expression when it is first encountered.
@@ -1752,7 +1751,6 @@ A capture point is an expression:
     The top level of the current expression tree
     or E here: (let x = 91 in (E))
 
-
 When building the CSE mappings:
     Track the current capture point C. Any *new* mappings refer to C.
     When encounter a new binding point, C = that expr.
@@ -1764,10 +1762,12 @@ When performing replacements:
              mapping corresponding to that expr, if any.
 
     -> At expr w/ __csevar__, just swap in the EVar temp reference.
-
 """
 
 class CSEScanner(PathAwareExplorer):
+    def __init__(self):
+        self.captures = collections.defaultdict(list)
+
     def visit_object(self, o, path, *args, **kwargs):
         # Include empty dependents tuple in result.
         return self.join(o, ()), ()
@@ -1780,26 +1780,30 @@ class CSEScanner(PathAwareExplorer):
             for i, c in enumerate(e.children())]
 
     def visit_ELambda(self, e, path, entries, capture_point):
-        print("lambda-expr {} has path {}".format(e, path))
         deps = set()
         submap = entries.unbind(e.arg.id)
+
         # Capture point changes with ELambda.
         _, inner_deps = self.visit(e.body, path + [0], submap, e.body)
-        #submap2 = submap.unbind(e.arg.id)
         deps.update(inner_deps)
-
         e = e.with_type(e.body.type)
+
         entries.set_or_increment(
             e, fresh_var(e.type, "cse"), list(deps), capture_point)
 
         # Copy any new info into original map.
-        for expr, payload in submap.items():
-            entries[expr] = payload
+        for expr, (temp, count, dependents, capture) in submap.items():
+            if e.arg.id in dependents:
+                # Safe to capture.
+                if count > 1:
+                    self.captures[tuple(path + [0])].append((temp, expr))
+            else:
+                # Bubble up to surrounding capture point.
+                entries[expr] = (temp, count, dependents, capture)
 
         return e, deps
 
     def visit_Exp(self, e, path, entries, capture_point):
-        print("expr {} has path {}".format(e, path))
         deps = set()
 
         for expr, subdeps in self.default(e, path, entries, capture_point):
@@ -1811,7 +1815,7 @@ class CSEScanner(PathAwareExplorer):
         return e, deps
 
     def visit_EVar(self, e, path, entries, capture_point):
-        print("var-expr {} has path {}".format(e, path))
+        # The genesis of variable dependence.
         deps = {e.id}
         entries.set_or_increment(
             e, fresh_var(e.type, "cse"), list(deps), capture_point)
@@ -1824,28 +1828,22 @@ def process_expr(e, entries=None, capture_point=None, path=[]):
         capture_point = e
 
     scanner = CSEScanner()
-    return scanner.visit(e, path, entries, capture_point)
+    result = scanner.visit(e, path, entries, capture_point)
 
-def cse_replace(e, map):
+    # Assign remaining exprs to top-level capture point.
+
+    for expr, (temp, count, dependents, capture) in entries.items():
+        if count > 1:
+            scanner.captures[()].append((temp, expr))
+
+    return scanner.captures
+
+def cse_replace(e, capture_map):
     class CSERewriter(PathAwareRewriter):
-        def visit_Exp(self, e, path):
-            default = lambda exp: type(exp)(
-                    *[self.visit(c, path + [i]) for i, c in enumerate(exp.children())]
-                ).with_type(exp.type)
-            print("exp PATH =", path)
-            return default(e)
+        def __init__(self):
+            self.current_rewrites = None
 
-    #pather = CSERewriter()
-    #pather.visit(e, [])
-
-    # Flip the mapping to tempvar -> expr, filtered to only counts of >1.
-    temp_map = map.temps_to_expressions()
-    #import pprint
-    #pprint.pprint(temp_map)
-    capture_map = map.capture_map()
-
-    class CseTreeEditor(BottomUpRewriter):
-        def _visit_literal(self, e):
+        def _visit_literal(self, e, path):
             return e
 
         # "literals" -- no subexpressions.
@@ -1853,36 +1851,26 @@ def cse_replace(e, map):
             visit_EStr = visit_EBool = visit_ENative = visit_ENull = \
             _visit_literal
 
-        def visit_Exp(self, e):
+        def visit_Exp(self, e, path):
             default = lambda exp: type(exp)(
-                    *[self.visit(c) for c in exp.children()]
+                    *[self.visit(c, path + [i]) for i, c in enumerate(exp.children())]
                 ).with_type(exp.type)
 
-            captured_expressions = capture_map.get(e)
+            # TODO: build path as tuple to begin with.
+            rewrites = capture_map.get(tuple(path))
 
-            if captured_expressions is not None:
+            if rewrites is not None:
+                self.current_rewrites = ExpressionMap(
+                    (e, temp) for temp, e in rewrites)
+
                 e = default(e)
 
-                for temp, expr in reversed(captured_expressions):
-                    # print("!embed {}={} @ {}".format(temp, expr, e))
+                for temp, expr in reversed(rewrites):
                     e = syntax.ELet(expr, target_syntax.ELambda(temp, e))
 
                 return e
+            else:
+                return self.current_rewrites.get(e) or default(e)
 
-            temp = getattr(e, "__csevar__", None)
-
-            if temp is None:
-                return default(e)
-
-            # print(e, temp)
-
-            try:
-                replacementExpr = temp_map[temp]
-            except KeyError:
-                # Nonexistent, or <2 occurrences.
-                return default(e)
-
-            return temp
-
-    editor = CseTreeEditor()
-    return editor.visit(e)
+    rewriter = CSERewriter()
+    return rewriter.visit(e, [])
