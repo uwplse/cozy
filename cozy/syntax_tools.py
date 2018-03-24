@@ -86,24 +86,24 @@ class BottomUpRewriter(BottomUpExplorer):
 
 class PathAwareExplorer(BottomUpExplorer):
     """
-    A bottom-up explorer that maintains and presents an integer list path to each
-    visit_Foo invocation.
+    A bottom-up explorer that maintains and presents an integer tuple path to
+    each visit_Foo invocation.
     """
     def visit_ADT(self, x, path, *args, **kwargs):
         new_children = tuple(
-            self.visit(child, path + [i], *args, **kwargs)
+            self.visit(child, path + (i,), *args, **kwargs)
             for i, child in enumerate(x.children()))
         return self.join(x, new_children)
     def visit_list(self, l, path, *args, **kwargs):
-        return self.join(l, tuple(self.visit(x, path + [i], *args, **kwargs)
+        return self.join(l, tuple(self.visit(x, path + (i,), *args, **kwargs)
             for i, x in enumerate(l)))
     def visit_tuple(self, l, path, *args, **kwargs):
-        return self.join(l, tuple(self.visit(x, path + [i], *args, **kwargs)
+        return self.join(l, tuple(self.visit(x, path + (i,), *args, **kwargs)
             for i, x in enumerate(l)))
     def visit_dict(self, d, path, *args, **kwargs):
         return self.join(d, tuple(
-            (self.visit(k, path + [i * 2], *args, **kwargs),
-             self.visit(v, path + [i * 2 + 1], *args, **kwargs))
+            (self.visit(k, path + (i * 2,), *args, **kwargs),
+             self.visit(v, path + (i * 2 + 1,), *args, **kwargs))
             for i, (k, v) in enumerate(d.items())))
     def visit_object(self, o, path, *args, **kwargs):
         return self.join(o, ())
@@ -1731,7 +1731,7 @@ class CSEScanner(PathAwareExplorer):
         """
         Returns (expr, dependent_vars) for each child of e by visiting it.
         """
-        return [self.visit(c, path + [i], entries, capture_point)
+        return [self.visit(c, path + (i,), entries, capture_point)
             for i, c in enumerate(e.children())]
 
     def visit_ELambda(self, e, path, entries, capture_point):
@@ -1740,7 +1740,7 @@ class CSEScanner(PathAwareExplorer):
 
         # Capture point changes with ELambda. (The body is the 1st child,
         # zero-indexed.)
-        _, inner_deps = self.visit(e.body, path + [1], submap, e.body)
+        _, inner_deps = self.visit(e.body, path + (1,), submap, e.body)
         deps.update(inner_deps)
         e = e.with_type(e.body.type)
 
@@ -1751,7 +1751,7 @@ class CSEScanner(PathAwareExplorer):
             if e.arg.id in dependents:
                 # Safe to capture.
                 if count > 1:
-                    self.captures[tuple(path + [1])].append((temp, expr))
+                    self.captures[path + (1,)].append((temp, expr))
             else:
                 # Bubble up to surrounding capture point.
                 entries[expr] = (temp, count, dependents, capture)
@@ -1776,7 +1776,7 @@ class CSEScanner(PathAwareExplorer):
             e, fresh_var(e.type, "cse"), list(deps), capture_point)
         return e, deps
 
-def process_expr(e, entries=None, capture_point=None, path=[]):
+def process_expr(e, entries=None, capture_point=None, path=()):
     if entries is None:
         entries = ExpressionMap()
     if capture_point is None:
@@ -1819,11 +1819,10 @@ def cse_replace(e, capture_map):
 
         def visit_Exp(self, e, path):
             default = lambda exp: type(exp)(
-                    *[self.visit(c, path + [i]) for i, c in enumerate(exp.children())]
+                    *[self.visit(c, path + (i,)) for i, c in enumerate(exp.children())]
                 ).with_type(exp.type)
 
-            # TODO: build path as tuple to begin with.
-            rewrites = capture_map.get(tuple(path))
+            rewrites = capture_map.get(path)
 
             if rewrites is not None:
                 # Overwrite entries in the current rewrite map.
@@ -1842,4 +1841,4 @@ def cse_replace(e, capture_map):
                 return self.lookup_rewrite(e) or default(e)
 
     rewriter = CSERewriter()
-    return rewriter.visit(e, [])
+    return rewriter.visit(e, ())
