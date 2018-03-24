@@ -1720,7 +1720,7 @@ class ExpressionMap(object):
         for k, v in self.items():
             yield v
 
-def process_expr(e, entries=None, capture_point=None, path=()):
+def cse_scan(e, entries=None, capture_point=None, path=()):
     if entries is None:
         entries = ExpressionMap()
     if capture_point is None:
