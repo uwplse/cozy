@@ -189,6 +189,39 @@ class TestElimination(unittest.TestCase):
         assert newForm.count("x < y") == 1
         assert newForm.count("x + y") == 1
 
+    def test_cse_2_exp_letscope(self):
+        """
+        (y + 2)
+        +
+        (let y = 1 in (y + 2))
+        +
+        (y + 2)
+
+        The expression in the let should not be CSE'd. The outer ones should.
+        """
+
+        y = EVar("y").with_type(INT)
+        yp2 = EBinOp(y, "+", ENum(2).with_type(INT))
+
+        s = EBinOp(
+                EBinOp(
+                    yp2,
+                    "+",
+                    ELet(ONE, ELambda(y, yp2))),
+                "+",
+                yp2
+            )
+
+        assert retypecheck(s)
+        print(pprint(s))
+
+        s = _cse(s)
+        print(pprint(s))
+        print(s)
+
+        assert "let y = 1 in (y + 2)" in pprint(s)
+        assert isinstance(s, ELet)
+
     def test_cse_2_nolambda(self):
         """
         Bunch of different expressions should not get their ELambdas separated from them.

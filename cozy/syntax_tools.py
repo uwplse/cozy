@@ -1644,9 +1644,6 @@ def get_modified_var(stm):
     else:
         return None, None
 
-# ExpressionInfo = collections.namedtuple("ExpressionInfo",
-#    ("temp", "count", "dependents", "capture_point"))
-
 class ExpressionMap(object):
     """
     Maps expressions to (temp vars, other supporting info).
@@ -1795,21 +1792,10 @@ def cse_scan(e, entries=None, capture_point=None, path=()):
     return scanner.captures
 
 def cse_replace(e, capture_map):
+
     class CSERewriter(PathAwareRewriter):
         def __init__(self):
-            self.current_rewrites = []
-
-        def lookup_rewrite(self, e):
-            """
-            Look up the rewrite rule in current_rewrites, giving precedence to
-            later mappings.
-            """
-            for d in reversed(self.current_rewrites):
-                temp_var = d.get(e)
-                if temp_var is not None:
-                    return temp_var
-            else:
-                return None
+            self.current_rewrites = ExpressionMap()
 
         def _visit_literal(self, e, path):
             return e
@@ -1827,19 +1813,21 @@ def cse_replace(e, capture_map):
             rewrites = capture_map.get(path)
 
             if rewrites is not None:
-                self.current_rewrites.append(
-                    ExpressionMap((e, temp) for temp, e in rewrites))
+                old_map = ExpressionMap(self.current_rewrites.items())
+
+                for temp, expr in rewrites:
+                    self.current_rewrites[expr] = temp
 
                 e = default(e)
 
-                self.current_rewrites.pop()
+                self.current_rewrites = old_map
 
                 for temp, expr in reversed(rewrites):
                     e = syntax.ELet(expr, target_syntax.ELambda(temp, e))
 
                 return e
             else:
-                return self.lookup_rewrite(e) or default(e)
+                return self.current_rewrites.get(e) or default(e)
 
     rewriter = CSERewriter()
     return rewriter.visit(e, ())
