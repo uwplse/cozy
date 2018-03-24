@@ -1738,20 +1738,20 @@ class CSEScanner(PathAwareExplorer):
         deps = set()
         submap = entries.unbind(e.arg.id)
 
-        # Capture point changes with ELambda.
-        _, inner_deps = self.visit(e.body, path + [0], submap, e.body)
+        # Capture point changes with ELambda. (The body is the 1st child,
+        # zero-indexed.)
+        _, inner_deps = self.visit(e.body, path + [1], submap, e.body)
         deps.update(inner_deps)
         e = e.with_type(e.body.type)
 
         entries.set_or_increment(
             e, fresh_var(e.type, "cse"), list(deps), capture_point)
 
-        # Copy any new info into original map.
         for expr, (temp, count, dependents, capture) in submap.items():
             if e.arg.id in dependents:
                 # Safe to capture.
                 if count > 1:
-                    self.captures[tuple(path + [0])].append((temp, expr))
+                    self.captures[tuple(path + [1])].append((temp, expr))
             else:
                 # Bubble up to surrounding capture point.
                 entries[expr] = (temp, count, dependents, capture)
@@ -1796,7 +1796,18 @@ def process_expr(e, entries=None, capture_point=None, path=[]):
 def cse_replace(e, capture_map):
     class CSERewriter(PathAwareRewriter):
         def __init__(self):
-            self.current_rewrites = None
+            self.current_rewrites = []
+
+        def lookup_rewrite(self, e):
+            """
+            Look up the rewrite rule in current_rewrites, which is a stack.
+            """
+            for d in reversed(self.current_rewrites):
+                temp_var = d.get(e)
+                if temp_var is not None:
+                    return temp_var
+            else:
+                return None
 
         def _visit_literal(self, e, path):
             return e
@@ -1815,17 +1826,20 @@ def cse_replace(e, capture_map):
             rewrites = capture_map.get(tuple(path))
 
             if rewrites is not None:
-                self.current_rewrites = ExpressionMap(
-                    (e, temp) for temp, e in rewrites)
+                # Overwrite entries in the current rewrite map.
+                self.current_rewrites.append(ExpressionMap(
+                    (e, temp) for temp, e in rewrites))
 
                 e = default(e)
+
+                self.current_rewrites.pop()
 
                 for temp, expr in reversed(rewrites):
                     e = syntax.ELet(expr, target_syntax.ELambda(temp, e))
 
                 return e
             else:
-                return self.current_rewrites.get(e) or default(e)
+                return self.lookup_rewrite(e) or default(e)
 
     rewriter = CSERewriter()
     return rewriter.visit(e, [])

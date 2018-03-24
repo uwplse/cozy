@@ -21,9 +21,7 @@ class TestElimination(unittest.TestCase):
         assert retypecheck(e)
         print(pprint(e))
 
-
         captures = process_expr(e)
-        print(pprint(e))
 
         e3 = cse_replace(e, captures)
         newForm = pprint(e3)
@@ -70,7 +68,6 @@ class TestElimination(unittest.TestCase):
         print(pprint(e))
 
         captures = process_expr(e)
-        print(pprint(e))
 
         e3 = cse_replace(e, captures)
         newForm = pprint(e3)
@@ -118,7 +115,6 @@ class TestElimination(unittest.TestCase):
         print(pprint(e))
 
         captures = process_expr(e)
-        print(pprint(e))
 
         e3 = cse_replace(e, captures)
         newForm = pprint(e3)
@@ -155,7 +151,6 @@ class TestElimination(unittest.TestCase):
         print(pprint(e))
 
         captures = process_expr(e)
-        print(pprint(e))
 
         e3 = cse_replace(e, captures)
         newForm = pprint(e3)
