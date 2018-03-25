@@ -1202,13 +1202,6 @@ def break_product(e : syntax.Exp):
 def break_seq(s : syntax.Stm):
     return break_binary(s, lambda s: (s.s1, s.s2) if isinstance(s, syntax.SSeq) else None)
 
-def break_seq(s):
-    if isinstance(s, syntax.SSeq):
-        yield from break_seq(s.s1)
-        yield from break_seq(s.s2)
-    else:
-        yield s
-
 class Aeq(object):
     def __init__(self, e : syntax.Exp):
         self.e = e
@@ -1729,6 +1722,10 @@ def cse_scan(e, entries=None, capture_point=None, path=()):
     SIMPLE_EXPS = (syntax.ENum, syntax.EVar, syntax.EBool, syntax.EStr,
         syntax.ENative, syntax.EEnumEntry, syntax.ENull)
 
+    class SeqBreaker(BottomUpRewriter):
+        def visit_SSeq(self, s):
+            return syntax.seq(break_seq(s))
+
     class CSEScanner(PathAwareExplorer):
         def __init__(self):
             self.captures = collections.defaultdict(list)
@@ -1772,6 +1769,31 @@ def cse_scan(e, entries=None, capture_point=None, path=()):
 
             return e, deps
 
+        def visit_SAssign(self, s, path, entries, capture_point):
+            deps = set()
+            bind_var = s.lhs.id
+            submap = entries.unbind(bind_var)
+
+            # Capture point changes with SAssign. (The rhs is the 1st child,
+            # zero-indexed.)
+
+            _, inner_deps = self.visit(s.rhs, path + (1,), submap, s.rhs)
+            deps.update(inner_deps)
+
+            for expr, (temp, count, dependents, capture, paths) in submap.items():
+                if bind_var in dependents:
+                    # Safe to capture.
+                    if count > 1 and not isinstance(expr, SIMPLE_EXPS):
+                        self.captures[path + (1,)].append((temp, expr))
+
+                        for p in paths:
+                            self.rewrites[p] = temp
+                else:
+                    # Bubble up to surrounding capture point.
+                    entries[expr] = (temp, count, dependents, capture, paths)
+
+            return s, deps
+
         def visit_Exp(self, e, path, entries, capture_point):
             deps = set()
 
@@ -1787,6 +1809,8 @@ def cse_scan(e, entries=None, capture_point=None, path=()):
             entries.set_or_increment(e, list(deps), capture_point, path)
             return e, deps
 
+    seqBreaker = SeqBreaker()
+    e = seqBreaker.visit(e)
     scanner = CSEScanner()
     result = scanner.visit(e, path, entries, capture_point)
 
@@ -1827,6 +1851,20 @@ def cse_replace(e, capture_map, rewrite_map):
                 return e
             else:
                 return rewrite_map.get(path) or default(e)
+
+        def visit_Stm(self, s, path):
+            default = lambda exp: type(exp)(
+                *[self.visit(c, path + (i,)) for i, c in enumerate(exp.children())]
+            )
+
+            s = default(s)
+            rewrites = capture_map.get(path)
+
+            if rewrites is not None:
+                for temp, expr in reversed(rewrites):
+                    s = syntax.SSeq(syntax.SDecl(temp.id, expr), s)
+
+            return s
 
     rewriter = CSERewriter()
     return rewriter.visit(e, ())

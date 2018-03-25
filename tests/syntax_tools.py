@@ -139,32 +139,6 @@ class TestSyntaxTools(unittest.TestCase):
         assert newForm.count("x < y") == 1
         assert newForm.count("x + y") == 1
 
-    def test_cse_2_stm_simple(self):
-        """
-        x = y + 2
-        z = y + 2
-
-        =>
-
-        tmp = y + 2
-        x = tmp
-        z = tmp
-        """
-        yp2 = EBinOp(EVar("y").with_type(INT), "+", ENum(2).with_type(INT))
-
-        s = SSeq(
-                SAssign(EVar("x").with_type(INT), yp2),
-                SAssign(EVar("z").with_type(INT), yp2),
-        )
-
-        assert retypecheck(s)
-
-        print(pprint(s))
-        s2 = eliminate_common_subexpressions_stm(s)
-        new_form = pprint(s2)
-        print(new_form)
-
-        assert new_form.count("y + 2") == 1
 
     def test_cse_2_stm_if(self):
         """
