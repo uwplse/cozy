@@ -260,6 +260,11 @@ class ToZ3(Visitor):
     def eq(self, t, e1, e2, env, deep=False):
         if e1 is e2:
             return self.true
+
+        h = extension_handler(type(t))
+        if h is not None:
+            t = h.encoding_type(t)
+
         if decideable(t):
             assert isinstance(e1, z3.AstRef), "{}".format(repr(e1))
             assert isinstance(e2, z3.AstRef), "{}".format(repr(e2))
@@ -879,8 +884,7 @@ class ToZ3(Visitor):
         else:
             h = extension_handler(type(ty))
             if h is not None:
-                ty = h.encode(h.default_value(ty)).type
-                return self.unreconstruct(value, ty)
+                return self.unreconstruct(value, h.encoding_type(ty))
             raise NotImplementedError(ty)
 
     def mkvar(self, collection_depth, type, on_z3_var=None, on_z3_assertion=None):

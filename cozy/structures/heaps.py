@@ -1,6 +1,5 @@
 from cozy.common import declare_case
 from cozy.syntax import *
-from cozy.syntax_tools import pprint
 
 # Key func is part of heap type
 TMinHeap = declare_case(Type, "TMinHeap", ["t", "f"])
@@ -20,6 +19,9 @@ class Heaps(object):
         f = EMakeMinHeap if isinstance(t, TMinHeap) else EMakeMaxHeap
         x = EVar("x").with_type(t.t)
         return f(EEmptyList().with_type(TBag(t.t)), ELambda(x, x))
+    def encoding_type(self, t : Type) -> Type:
+        assert isinstance(t, TMaxHeap) or isinstance(t, TMinHeap)
+        return TBag(t.t)
     def encode(self, e : Exp) -> Exp:
         if isinstance(e, EMakeMinHeap):
             return e.e

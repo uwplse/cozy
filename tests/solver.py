@@ -4,6 +4,7 @@ from cozy.common import OrderedSet
 from cozy.solver import satisfy, valid, satisfiable, IncrementalSolver
 from cozy.typecheck import typecheck, retypecheck
 from cozy.target_syntax import *
+from cozy.structures.heaps import *
 from cozy.syntax_tools import pprint, equal, implies, mk_lambda
 from cozy.evaluation import eval, Bag, Handle
 
@@ -466,3 +467,7 @@ class TestSolver(unittest.TestCase):
         s.satisfy(e1)
         s.satisfy(e2)
         s.satisfy(e1)
+
+    def test_regression21(self):
+        e = EBinOp(EMakeMinHeap(EVar('xs').with_type(TBag(TNative('T'))), ELambda(EVar('x').with_type(TNative('T')), EVar('x').with_type(TNative('T')))).with_type(TMinHeap(TNative('T'), ELambda(EVar('x').with_type(TNative('T')), EVar('x').with_type(TNative('T'))))), '==', EMakeMinHeap(EBinOp(EVar('xs').with_type(TBag(TNative('T'))), '+', ESingleton(EVar('i').with_type(TNative('T'))).with_type(TBag(TNative('T')))).with_type(TBag(TNative('T'))), ELambda(EVar('x').with_type(TNative('T')), EVar('x').with_type(TNative('T')))).with_type(TMinHeap(TNative('T'), ELambda(EVar('x').with_type(TNative('T')), EVar('x').with_type(TNative('T')))))).with_type(TBool())
+        assert not satisfiable(e, validate_model=True)
