@@ -1803,9 +1803,6 @@ def cse_scan(e, entries=None, capture_point=None, path=()):
 
 def cse_replace(e, capture_map, rewrite_map):
     class CSERewriter(PathAwareRewriter):
-        def __init__(self):
-            self.current_rewrites = ExpressionMap()
-
         def _visit_literal(self, e, path):
             return e
 
