@@ -8,7 +8,7 @@ from cozy.solver import valid
 from cozy.evaluation import eval
 
 def _cse(e):
-    return cse_replace(e, cse_scan(e))
+    return cse_replace(e, *cse_scan(e))
 
 class TestElimination(unittest.TestCase):
     def test_y_plus_1(self):
@@ -24,7 +24,7 @@ class TestElimination(unittest.TestCase):
         assert retypecheck(e)
         print(pprint(e))
 
-        e3 = cse_replace(e, cse_scan(e))
+        e3 = _cse(e)
         newForm = pprint(e3)
         print(newForm)
 
@@ -68,7 +68,7 @@ class TestElimination(unittest.TestCase):
         assert retypecheck(e)
         print(pprint(e))
 
-        e3 = cse_replace(e, cse_scan(e))
+        e3 = _cse(e)
         newForm = pprint(e3)
         print(newForm)
 
@@ -113,7 +113,7 @@ class TestElimination(unittest.TestCase):
         assert retypecheck(e)
         print(pprint(e))
 
-        e3 = cse_replace(e, cse_scan(e))
+        e3 = _cse(e)
         newForm = pprint(e3)
         print(newForm)
 
@@ -147,7 +147,7 @@ class TestElimination(unittest.TestCase):
         assert retypecheck(e)
         print(pprint(e))
 
-        e3 = cse_replace(e, cse_scan(e))
+        e3 = _cse(e)
         newForm = pprint(e3)
         print(newForm)
 

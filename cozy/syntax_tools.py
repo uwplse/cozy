@@ -1668,20 +1668,23 @@ class ExpressionMap(object):
         self.by_id[id(k)] = v
         self.by_hash[self._hash(k)] = v
 
-    def set_or_increment(self, k, dependents, capture_point):
+    def set_or_increment(self, k, dependents, capture_point, path):
         data = self.get(k)
 
         if data is not None:
             # Expr has been seen before.
-            v, count, deps, capture_point = data
+            v, count, deps, capture_point, paths = data
             count += 1
             deps.update(dependents)
+            paths.append(path)
         else:
+            # Never before seen expr.
             v = fresh_var(k.type, "cse")
             count = 1
             deps = set(dependents)
+            paths = [path]
 
-        self[k] = (v, count, deps, capture_point)
+        self[k] = (v, count, deps, capture_point, paths)
 
         for dep in dependents:
             self.dependents[dep].append(k)
@@ -1729,6 +1732,8 @@ def cse_scan(e, entries=None, capture_point=None, path=()):
     class CSEScanner(PathAwareExplorer):
         def __init__(self):
             self.captures = collections.defaultdict(list)
+            # And we want a map of expression path -> CSE temp var.
+            self.rewrites = dict()
 
         def visit_object(self, o, path, *args, **kwargs):
             # Include empty dependents tuple in result.
@@ -1751,16 +1756,19 @@ def cse_scan(e, entries=None, capture_point=None, path=()):
             deps.update(inner_deps)
             e = e.with_type(e.body.type)
 
-            entries.set_or_increment(e, list(deps), capture_point)
+            entries.set_or_increment(e, list(deps), capture_point, path)
 
-            for expr, (temp, count, dependents, capture) in submap.items():
+            for expr, (temp, count, dependents, capture, paths) in submap.items():
                 if e.arg.id in dependents:
                     # Safe to capture.
                     if count > 1 and not isinstance(expr, SIMPLE_EXPS):
                         self.captures[path + (1,)].append((temp, expr))
+
+                        for p in paths:
+                            self.rewrites[p] = temp
                 else:
                     # Bubble up to surrounding capture point.
-                    entries[expr] = (temp, count, dependents, capture)
+                    entries[expr] = (temp, count, dependents, capture, paths)
 
             return e, deps
 
@@ -1770,14 +1778,13 @@ def cse_scan(e, entries=None, capture_point=None, path=()):
             for expr, subdeps in self.default(e, path, entries, capture_point):
                 deps.update(subdeps)
 
-            entries.set_or_increment(e, list(deps), capture_point)
-
+            entries.set_or_increment(e, list(deps), capture_point, path)
             return e, deps
 
         def visit_EVar(self, e, path, entries, capture_point):
             # The genesis of variable dependence.
             deps = {e.id}
-            entries.set_or_increment(e, list(deps), capture_point)
+            entries.set_or_increment(e, list(deps), capture_point, path)
             return e, deps
 
     scanner = CSEScanner()
@@ -1785,14 +1792,16 @@ def cse_scan(e, entries=None, capture_point=None, path=()):
 
     # Assign remaining exprs to top-level capture point.
 
-    for expr, (temp, count, dependents, capture) in entries.items():
+    for expr, (temp, count, dependents, capture, paths) in entries.items():
         if count > 1 and not isinstance(expr, SIMPLE_EXPS):
             scanner.captures[()].append((temp, expr))
 
-    return scanner.captures
+            for p in paths:
+                scanner.rewrites[p] = temp
 
-def cse_replace(e, capture_map):
+    return scanner.captures, scanner.rewrites
 
+def cse_replace(e, capture_map, rewrite_map):
     class CSERewriter(PathAwareRewriter):
         def __init__(self):
             self.current_rewrites = ExpressionMap()
@@ -1807,27 +1816,20 @@ def cse_replace(e, capture_map):
 
         def visit_Exp(self, e, path):
             default = lambda exp: type(exp)(
-                    *[self.visit(c, path + (i,)) for i, c in enumerate(exp.children())]
-                ).with_type(exp.type)
+                *[self.visit(c, path + (i,)) for i, c in enumerate(exp.children())]
+            ).with_type(exp.type)
 
             rewrites = capture_map.get(path)
 
             if rewrites is not None:
-                old_map = ExpressionMap(self.current_rewrites.items())
-
-                for temp, expr in rewrites:
-                    self.current_rewrites[expr] = temp
-
                 e = default(e)
-
-                self.current_rewrites = old_map
 
                 for temp, expr in reversed(rewrites):
                     e = syntax.ELet(expr, target_syntax.ELambda(temp, e))
 
                 return e
             else:
-                return self.current_rewrites.get(e) or default(e)
+                return rewrite_map.get(path) or default(e)
 
     rewriter = CSERewriter()
     return rewriter.visit(e, ())
