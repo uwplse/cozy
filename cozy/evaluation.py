@@ -6,6 +6,7 @@ from cozy.target_syntax import *
 from cozy.syntax_tools import equal, pprint, free_vars, free_funcs, all_exps, purify
 from cozy.common import FrozenDict, OrderedSet, extend
 from cozy.typecheck import is_numeric, is_collection
+from cozy.structures import extension_handler
 
 @total_ordering
 class Map(object):
@@ -186,6 +187,9 @@ def construct_value(t : Type) -> Exp:
             EEmptyList().with_type(TBag(t.k)),
             ELambda(EVar("x").with_type(t.k), construct_value(t.v)))
     else:
+        h = extension_handler(type(t))
+        if h is not None:
+            return h.default_value(t)
         raise NotImplementedError(pprint(t))
     return e.with_type(t)
 
@@ -613,10 +617,10 @@ def _compile(e, env : {str:int}, out, bind_callback):
         elif e.op == "*":
             out.append(binaryop_mul)
         elif e.op == "-":
-            if isinstance(e1type, TBag) or isinstance(e1type, TSet):
-                out.append(binaryop_sub_bags(e1type.t))
-            elif isinstance(e1type, TList):
-                out.append(binaryop_sub_lists(e1type.t))
+            if isinstance(e.type, TBag) or isinstance(e.type, TSet):
+                out.append(binaryop_sub_bags(e.type.t))
+            elif isinstance(e.type, TList):
+                out.append(binaryop_sub_lists(e.type.t))
             else:
                 out.append(binaryop_sub)
         elif e.op == "==":
@@ -779,7 +783,11 @@ def _compile(e, env : {str:int}, out, bind_callback):
         with extend(env, e.f.arg.id, lambda: box[0]):
             _compile(e.f.body, env, out, bind_callback=bind_callback)
     else:
-        raise NotImplementedError(type(e))
+        h = extension_handler(type(e))
+        if h is not None:
+            _compile(h.encode(e), env, out, bind_callback=bind_callback)
+        else:
+            raise NotImplementedError(type(e))
     if hasattr(e, "type") and isinstance(e.type, TList):
         out.append(iterable_to_list)
 

@@ -703,6 +703,24 @@ class FragmentEnumerator(common.Visitor):
         for ctx in self.recurse_with_assumptions_about_bound_var(e.f, ElemOf(e.e)):
             yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EArgMax(e.e, r(x)).with_type(t))
 
+    def visit_EMakeMinHeap(self, e):
+        from cozy.structures.heaps import EMakeMinHeap
+        yield self.make_ctx(e)
+        t = e.type
+        for ctx in self.visit(e.e):
+            yield self.update_repl(ctx, lambda r: lambda x: EMakeMinHeap(r(x), e.f).with_type(t))
+        for ctx in self.recurse_with_assumptions_about_bound_var(e.f, ElemOf(e.e)):
+            yield self.update_repl(ctx, lambda r: lambda x: EMakeMinHeap(e.e, r(x)).with_type(t))
+
+    def visit_EMakeMaxHeap(self, e):
+        from cozy.structures.heaps import EMakeMaxHeap
+        yield self.make_ctx(e)
+        t = e.type
+        for ctx in self.visit(e.e):
+            yield self.update_repl(ctx, lambda r: lambda x: EMakeMaxHeap(r(x), e.f).with_type(t))
+        for ctx in self.recurse_with_assumptions_about_bound_var(e.f, ElemOf(e.e)):
+            yield self.update_repl(ctx, lambda r: lambda x: EMakeMaxHeap(e.e, r(x)).with_type(t))
+
     def visit_ELet(self, e):
         yield self.make_ctx(e)
         t = e.type

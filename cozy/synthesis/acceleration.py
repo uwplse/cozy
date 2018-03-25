@@ -7,6 +7,7 @@ from cozy.typecheck import is_numeric, is_collection
 from cozy.pools import RUNTIME_POOL, STATE_POOL, ALL_POOLS
 from cozy.simplification import simplify
 from cozy.enumeration import AuxBuilder
+from cozy.structures.heaps import TMinHeap, TMaxHeap, EMakeMinHeap, EMakeMaxHeap, EHeapPeek, EHeapPeek2
 
 accelerate = Option("acceleration-rules", bool, True)
 
@@ -179,6 +180,20 @@ class accelerate_build(AuxBuilder):
                 ee = optimized_len(e.e)
                 if not alpha_equivalent(e, ee):
                     yield (ee, RUNTIME_POOL)
+
+            # {min,max} (xs - [i])
+            if (isinstance(e, EArgMin) or isinstance(e, EArgMax)) and isinstance(e.e, EBinOp) and e.e.op == "-" and isinstance(e.e.e1, EStateVar) and isinstance(e.e.e2, ESingleton):
+                heap_type, make_heap = (TMinHeap, EMakeMinHeap) if isinstance(e, EArgMin) else (TMaxHeap, EMakeMaxHeap)
+                bag = e.e.e1
+                x = e.e.e2.e
+                h = make_heap(bag.e, e.f).with_type(heap_type(e.e.type.t, e.f))
+                prev_min = EStateVar(type(e)(bag.e, e.f).with_type(e.type)).with_type(e.type)
+                e = ECond(
+                    EAll([optimized_in(x, bag), EEq(x, prev_min)]),
+                    EHeapPeek2(EStateVar(h).with_type(h.type)).with_type(e.type),
+                    prev_min).with_type(e.type)
+                e._tag = True
+                yield (e, RUNTIME_POOL)
 
             # EStateVar(distinct xs) - (EStateVar(xs) - [i])
             # ===> is-last(i, xs) ? [] : [i]
