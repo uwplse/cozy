@@ -4,7 +4,7 @@ from cozy.common import typechecked
 from cozy.target_syntax import *
 from cozy.typecheck import is_collection
 from cozy.solver import valid
-from cozy.syntax_tools import pprint, subst, enumerate_fragments, cse, shallow_copy, mk_lambda
+from cozy.syntax_tools import pprint, subst, enumerate_fragments, shallow_copy, mk_lambda
 from cozy.handle_tools import reachable_handles_at_method, implicit_handle_assumptions_for_method
 from cozy.incrementalization import delta_form
 from cozy.opts import Option
@@ -42,9 +42,10 @@ def check_ops_preserve_invariants(spec : Spec):
         # for id, e in remap.items():
         #     print("  {id} ---> {e}".format(id=id, e=pprint(e)))
         for a in spec.assumptions:
+            print("Checking that {} preserves {}...".format(m.name, pprint(a)))
             a_post_delta = subst(a, remap)
             assumptions = list(m.assumptions) + list(spec.assumptions)
-            if not valid(cse(EImplies(EAll(assumptions), a_post_delta))):
+            if not valid(EImplies(EAll(assumptions), a_post_delta)):
                 res.append("{.name!r} may not preserve invariant {}".format(m, pprint(a)))
     return res
 
@@ -54,6 +55,6 @@ def check_the_wf(spec : Spec):
         e = ctx.e
         if isinstance(e, EUnaryOp) and e.op == UOp.The:
             a = ctx.facts
-            if not valid(cse(EImplies(EAll(a), EAny([EIsSingleton(e.e), EEmpty(e.e)])))):
+            if not valid(EImplies(EAll(a), EAny([EIsSingleton(e.e), EEmpty(e.e)]))):
                 res.append("at {}: `the` is illegal since its argument may not be singleton".format(pprint(e)))
     return res
