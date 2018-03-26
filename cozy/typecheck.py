@@ -380,12 +380,12 @@ class Typechecker(Visitor):
             self.report_err(e, "unknown function {}".format(repr(fname)))
         if isinstance(f, syntax.Query):
             f = (tuple(t for (a, t) in f.args), f.ret.type)
-        arg_types, out_type = f
 
         for a in e.args:
             self.visit(a)
 
         if f is not None:
+            arg_types, out_type = f
             if len(arg_types) != len(e.args):
                 self.report_err(e, "wrong number of arguments to {}".format(repr(fname)))
             i = 1
