@@ -309,10 +309,12 @@ def enumerate_exps(
                 break
 
             _on_consider(depth, e, pool)
-            if check_wf is not None and not check_wf(e, pool):
-                _on_skip(depth, e, pool, "not well-formed")
-                was_accepted = False
-                continue
+            if check_wf is not None:
+                res = check_wf(e, pool)
+                if not res:
+                    _on_skip(depth, e, pool, "not well-formed [{}]".format(res.msg))
+                    was_accepted = False
+                    continue
 
             cost = cost_model.cost(e, pool)
             if pool == RUNTIME_POOL and use_cost_ceiling.value and cost_ceiling is not None and cost.compare_to(cost_ceiling) == Cost.WORSE:

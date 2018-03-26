@@ -283,19 +283,26 @@ class Learner(object):
                             yield (ee, RUNTIME_POOL)
 
     def next(self):
+        class No(object):
+            def __init__(self, msg):
+                self.msg = msg
+            def __bool__(self):
+                return False
         build = build_candidates
         build = self.build_candidates(build)
         build = accelerate_build(build, args=self.args, state_vars=self.state_vars)
         build = self.subst_builder(build)
         cards = [self.cost_model.cardinality(ctx.e) for ctx in enumerate_fragments(self.target) if is_collection(ctx.e.type)]
         def check_wf(e, pool):
-            if not exp_is_wf(e, pool, self.state_vars, self.args, self.assumptions):
-                return False
+            try:
+                exp_wf(e, pool=pool, state_vars=self.state_vars, args=self.args, assumptions=self.assumptions)
+            except ExpIsNotWf as exc:
+                return No("at {}: {}".format(pprint(exc.offending_subexpression), exc.reason))
             if isinstance(e.type, TBag):
                 c = self.cost_model.cardinality(e)
                 if all(cc < c for cc in cards):
                     # print("too big: {}".format(pprint(e)))
-                    return False
+                    return No("too big")
             return True
         if self.builder_iter == ():
             self.builder_iter = enumerate_exps(
