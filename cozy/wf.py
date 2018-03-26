@@ -9,7 +9,7 @@ from cozy.pools import RUNTIME_POOL, STATE_POOL
 from cozy.opts import Option
 from cozy.structures import extension_handler
 
-allow_conditional_state = Option("allow-conditional-state", bool, False)
+allow_conditional_state = Option("allow-conditional-state", bool, True)
 
 class ExpIsNotWf(Exception):
     def __init__(self, e, offending_subexpression, reason):
