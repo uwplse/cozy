@@ -141,6 +141,12 @@ class accelerate_build(AuxBuilder):
             return
         yield (simplify(e), pool)
         if pool == RUNTIME_POOL:
+            if all(v in self.state_vars for v in free_vars(e)):
+                nsv = strip_EStateVar(e)
+                sv = EStateVar(nsv).with_type(e.type)
+                yield (sv, RUNTIME_POOL)
+                yield (nsv, STATE_POOL)
+
             yield from map_accelerate(e, self.state_vars, self.args, cache, size-1)
 
             # xs - (xs - [i])
