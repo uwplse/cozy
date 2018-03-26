@@ -5,6 +5,7 @@ import json
 from cozy import common, library, evaluation
 from cozy.target_syntax import *
 from cozy.syntax_tools import free_vars, subst, is_scalar, all_exps
+from cozy.structures.arrays import TArray
 
 from .cxx import CxxPrinter
 from .misc import *
@@ -582,6 +583,16 @@ class JavaPrinter(CxxPrinter):
             self.end_statement()
         else:
             return super().visit_SMapUpdate(update)
+
+    def visit_SArrayAlloc(self, s):
+        lval = self.visit(s.a)
+        cap = self.visit(s.capacity)
+        elem_type = s.a.type.t
+        tname = self.strip_generics(self.visit(elem_type, name=""))
+        self.write_stmt(lval, " = new ", tname, "[", cap, "];")
+
+    def visit_SArrayReAlloc(self, s):
+        return self.array_resize_for_index(s.a.type.t, s.a, s.new_capacity)
 
     def array_resize_for_index(self, elem_type, a, i):
         new_a = fresh_name(hint="new_array")

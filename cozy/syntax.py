@@ -147,6 +147,7 @@ T = EBool(True) .with_type(BOOL)
 F = EBool(False).with_type(BOOL)
 ZERO = ENum(0).with_type(INT)
 ONE = ENum(1).with_type(INT)
+TWO = ENum(2).with_type(INT)
 NULL = ENull()
 
 def seq(stms):

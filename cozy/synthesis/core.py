@@ -196,6 +196,8 @@ class Learner(object):
                             if alpha_equivalent(ee, self.target):
                                 # print("        > not AA")
                                 continue
+                            if not exp_is_wf(ee, RUNTIME_POOL, self.state_vars, self.args, self.assumptions):
+                                continue
                             if not self.matches(fingerprint(ee, self.examples), target_fp):
                                 # print("        > no match")
                                 continue

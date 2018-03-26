@@ -8,6 +8,7 @@ from cozy.common import fresh_name, declare_case
 from cozy.target_syntax import *
 from cozy.syntax_tools import all_types, fresh_var, subst, free_vars, is_scalar, mk_lambda, alpha_equivalent, all_exps, break_seq
 from cozy.typecheck import is_collection, is_numeric
+from cozy.structures import extension_handler
 
 from .misc import *
 
@@ -94,9 +95,13 @@ class CxxPrinter(CodeGenerator):
     def visit_TNativeSet(self, t, name):
         return "std::unordered_set< {}, {} > {}".format(self.visit(t.t, ""), self._hasher(t.t), name)
 
+    def visit_TArray(self, t, name):
+        return "std::vector< {} > {}".format(self.visit(t.t, ""), name)
+
     def visit_Type(self, t, name):
-        if hasattr(t, "rep_type"):
-            return self.visit(t.rep_type(), name)
+        h = extension_handler(type(t))
+        if h is not None:
+            return self.visit(h.rep_type(t), name)
         raise NotImplementedError(t)
 
     def visit_TRecord(self, t, name):
@@ -120,8 +125,29 @@ class CxxPrinter(CodeGenerator):
         self.begin_statement()
         self.write("for (;;) ")
         with self.block():
-            self.visit(SIf(ENot(w.e), SEscape("{indent}break;", (), ()), SNoOp()))
+            self.visit(SIf(ENot(w.e), SEscape("{indent}break;\n", (), ()), SNoOp()))
             self.visit(w.body)
+        self.end_statement()
+
+    def visit_SSwap(self, s):
+        l1 = self.visit(s.lval1)
+        l2 = self.visit(s.lval2)
+        self.write_stmt("std::swap(", l1, ", ", l2, ");")
+
+    def visit_SSwitch(self, s):
+        arg = self.visit(s.e)
+        self.begin_statement()
+        self.write("switch (", arg, ") ")
+        with self.block():
+            for val, body in s.cases:
+                assert type(val) in (ENum, EEnumEntry)
+                self.write_stmt("case ", self.visit(val), ":")
+                with self.indented():
+                    self.visit(body)
+                    self.write_stmt("break;")
+            self.write_stmt("default:")
+            with self.indented():
+                self.visit(s.default)
         self.end_statement()
 
     def visit_SEscapableBlock(self, s):
@@ -229,7 +255,11 @@ class CxxPrinter(CodeGenerator):
             return SEscape("{indent}{lhs} = {rhs};\n", ["lhs", "rhs"], [out, e])
         elif is_scalar(t):
             return SEscape("{indent}{lhs} = {rhs};\n", ["lhs", "rhs"], [out, e])
-        raise NotImplementedError(t, e, out)
+        else:
+            h = extension_handler(type(t))
+            if h is not None:
+                return h.codegen(e, out)
+            raise NotImplementedError(t, e, out)
 
     def construct_map(self, t, e, out):
         if isinstance(e, ECond):
@@ -272,6 +302,21 @@ class CxxPrinter(CodeGenerator):
     def visit_EHandle(self, e):
         assert e.addr == ENum(0), repr(e)
         return self.visit(ENull().with_type(e.type))
+
+    def visit_EArrayGet(self, e):
+        a = self.visit(e.a)
+        i = self.visit(e.i)
+        return "{}[{}]".format(a, i)
+
+    def visit_SArrayAlloc(self, s):
+        a = self.visit(s.a)
+        cap = self.visit(s.capacity)
+        self.write_stmt(a, " = std::move(", self.visit(s.a.type, ""), "(", cap, "));")
+
+    def visit_SEnsureCapacity(self, s):
+        a = self.visit(s.a)
+        cap = self.visit(s.capacity)
+        self.write_stmt(a, ".resize(", cap, ");")
 
     def visit_EMakeMap2(self, e):
         m = self.fv(e.type)
@@ -334,6 +379,16 @@ class CxxPrinter(CodeGenerator):
             self.end_statement()
         else:
             raise NotImplementedError()
+
+    def visit_Exp(self, e):
+        h = extension_handler(type(e))
+        if h is not None:
+            v = self.fv(e.type)
+            self.declare(v)
+            self.visit(h.codegen(e, out=v))
+            return v.id
+        else:
+            raise NotImplementedError(e)
 
     def visit_EVar(self, e):
         return e.id
@@ -663,8 +718,9 @@ class CxxPrinter(CodeGenerator):
         args = s.args
         if not args:
             self.write(body.format(indent=indent))
-        args = [self.visit(arg) for arg in args]
-        self.write(body.format(indent=indent, **dict(zip(s.arg_names, args))))
+        else:
+            args = [self.visit(arg) for arg in args]
+            self.write(body.format(indent=indent, **dict(zip(s.arg_names, args))))
 
     def visit_EEscape(self, e):
         body = e.body_string
@@ -738,6 +794,10 @@ class CxxPrinter(CodeGenerator):
         return v.id
 
     def visit_SCall(self, call):
+        h = extension_handler(type(call.target.type))
+        if h is not None:
+            return self.visit(h.implement_stmt(call))
+
         target = self.visit(call.target)
         args = [self.visit(a) for a in call.args]
         self.begin_statement()

@@ -52,8 +52,10 @@ def ECountIn(e, collection):
 TVector    = declare_case(Type, "TVector", ["t", "n"])
 EVectorGet = declare_case(Exp, "EVectorGet", ["e", "i"])
 
-# Iterators
-SWhile   = declare_case(Stm, "SWhile", ["e", "body"])
+# Misc
+SWhile   = declare_case(Stm, "SWhile",  ["e", "body"])
+SSwap    = declare_case(Stm, "SSwap",   ["lval1", "lval2"])
+SSwitch  = declare_case(Stm, "SSwitch", ["e", "cases", "default"])
 
 # Fake go-to
 SEscapableBlock = declare_case(Stm, "SEscapableBlock", ["label", "body"])
