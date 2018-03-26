@@ -198,7 +198,6 @@ class accelerate_build(AuxBuilder):
                     EAll([optimized_in(x, bag), EEq(x, prev_min)]),
                     EHeapPeek2(EStateVar(h).with_type(h.type), EStateVar(ELen(bag.e)).with_type(INT)).with_type(e.type),
                     prev_min).with_type(e.type)
-                e._tag = True
                 yield (e, RUNTIME_POOL)
 
             # EStateVar(distinct xs) - (EStateVar(xs) - [i])
