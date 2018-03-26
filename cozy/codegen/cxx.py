@@ -308,6 +308,18 @@ class CxxPrinter(CodeGenerator):
         i = self.visit(e.i)
         return "{}[{}]".format(a, i)
 
+    def visit_EArrayIndexOf(self, e):
+        assert isinstance(e.a, EVar) # TODO: make this fast when this is false
+        it = self.fv(TNative("{}::const_iterator".format(self.visit(e.a.type, "").strip())), "cursor")
+        res = self.fv(INT, "index")
+        self.visit(seq([
+            SDecl(it.id, EEscape("std::find({a}.begin(), {a}.end(), {x})", ("a", "x"), (e.a, e.x)).with_type(it.type)),
+            SDecl(res.id, ECond(
+                EEq(it, EEscape("{a}.end()", ("a",), (e.a,)).with_type(it.type)),
+                ENum(-1).with_type(INT),
+                EEscape("({it} - {a}.begin())", ("it", "a",), (it, e.a,)).with_type(INT)).with_type(INT))]))
+        return res.id
+
     def visit_SArrayAlloc(self, s):
         a = self.visit(s.a)
         cap = self.visit(s.capacity)
@@ -584,6 +596,12 @@ class CxxPrinter(CodeGenerator):
         return v.id
 
     def min_or_max(self, op, e, f):
+        if isinstance(e, EBinOp) and e.op == "+" and isinstance(e.e1, ESingleton) and isinstance(e.e2, ESingleton):
+            # argmin_f ([a] + [b]) ---> f(a) < f(b) ? a : b
+            return self.visit(ECond(
+                EBinOp(f.apply_to(e.e1.e), op, f.apply_to(e.e2.e)).with_type(BOOL),
+                e.e1.e,
+                e.e2.e).with_type(e.e1.e.type))
         out = self.fv(e.type.t, "min" if op == "<" else "max")
         first = self.fv(BOOL, "first")
         x = self.fv(e.type.t, "x")

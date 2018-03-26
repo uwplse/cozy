@@ -1,10 +1,10 @@
-from cozy.common import declare_case
+from cozy.common import fresh_name, declare_case
 from cozy.syntax import *
-from cozy.target_syntax import SWhile, SSwap, SSwitch
+from cozy.target_syntax import SWhile, SSwap, SSwitch, SEscapableBlock, SEscapeBlock
 from cozy.syntax_tools import fresh_var, pprint, shallow_copy
 from cozy.pools import RUNTIME_POOL
 
-from .arrays import TArray, EArrayCapacity, EArrayGet, SArrayAlloc, SEnsureCapacity
+from .arrays import TArray, EArrayGet, EArrayIndexOf, SArrayAlloc, SEnsureCapacity
 
 # Key func is part of heap type
 TMinHeap = declare_case(Type, "TMinHeap", ["t", "f"])
@@ -21,8 +21,12 @@ EHeapPeek2 = declare_case(Exp, "EHeapPeek2", ["e", "n"]) # look at 2nd min
 # Binary heap utilities
 def _left_child(idx : Exp) -> Exp:
     return EBinOp(EBinOp(idx, "<<", ONE).with_type(INT), "+", ONE).with_type(INT)
+def _has_left_child(idx : Exp, size : Exp) -> Exp:
+    return ELt(_left_child(idx), size)
 def _right_child(idx : Exp) -> Exp:
     return EBinOp(EBinOp(idx, "<<", ONE).with_type(INT), "+", TWO).with_type(INT)
+def _has_right_child(idx : Exp, size : Exp) -> Exp:
+    return ELt(_right_child(idx), size)
 def _parent(idx : Exp) -> Exp:
     return EBinOp(EBinOp(idx, "-", ONE).with_type(INT), ">>", ONE).with_type(INT)
 
@@ -132,7 +136,32 @@ class Heaps(object):
                                 SAssign(i, _parent(i))])),
                         SAssign(size, EBinOp(size, "+", ONE).with_type(INT))]))])
             elif s.func == "remove_all":
-                return SNoOp() # TODO
+                size = fresh_var(INT, "heap_size")
+                size_minus_one = EBinOp(size, "-", ONE).with_type(INT)
+                i = fresh_var(INT, "i")
+                x = fresh_var(elem_type, "x")
+                label = fresh_name("stop_bubble_down")
+                child_index = fresh_var(INT, "child_index")
+                return seq([
+                    SDecl(size.id, s.args[0]),
+                    SForEach(x, s.args[1], seq([
+                        # find the element to remove
+                        SDecl(i.id, EArrayIndexOf(target_raw, x).with_type(INT)),
+                        # swap with last element in heap
+                        SSwap(EArrayGet(target_raw, i), EArrayGet(target_raw, size_minus_one)),
+                        # bubble down
+                        SEscapableBlock(label, SWhile(_has_left_child(i, size_minus_one), seq([
+                            SDecl(child_index.id, _left_child(i)),
+                            SIf(EAll([_has_right_child(i, size_minus_one), ENot(EBinOp(f.apply_to(EArrayGet(target_raw, _left_child(i))), op, f.apply_to(EArrayGet(target_raw, _right_child(i)))))]),
+                                SAssign(child_index, _right_child(i)),
+                                SNoOp()),
+                            SIf(ENot(EBinOp(f.apply_to(EArrayGet(target_raw, i)), op, f.apply_to(EArrayGet(target_raw, child_index)))),
+                                seq([
+                                    SSwap(EArrayGet(target_raw, i), EArrayGet(target_raw, child_index)),
+                                    SAssign(i, child_index)]),
+                                SEscapeBlock(label))]))),
+                        # dec. size
+                        SAssign(size, size_minus_one)]))])
             else:
                 raise NotImplementedError()
         else:
