@@ -84,10 +84,11 @@ def build_candidates(cache : Cache, size : int, scopes : {EVar:(Exp,Pool)}, buil
 
     for pool in ALL_POOLS:
 
+        for e in cache.find_collections(pool=pool, size=size-1):
+            yield (EEmptyList().with_type(e.type), pool)
+
         for e in cache.find(pool=pool, size=size-1):
-            t = TBag(e.type)
-            yield (EEmptyList().with_type(t), pool)
-            yield (ESingleton(e).with_type(t), pool)
+            yield (ESingleton(e).with_type(TBag(e.type)), pool)
 
         for e in cache.find(pool=pool, type=TRecord, size=size-1):
             for (f,t) in e.type.fields:
