@@ -31,6 +31,12 @@ REAL = TReal()
 #   flatten: T -> obj -> [z3exp]
 #   pack:    T -> [z3exp] -> obj
 
+def break_let(e):
+    while isinstance(e, ELet):
+        yield (e.f.arg, e.e)
+        e = e.f.body
+    yield e
+
 class DetFlatVis(BottomUpExplorer):
     def join(self, x, new_children):
         if is_collection(x) or isinstance(x, TMap) or isinstance(x, TFunc):
@@ -753,7 +759,13 @@ class ToZ3(Visitor):
     def visit_EApp(self, e, env):
         return self.apply(e.f, self.visit(e.arg, env), env)
     def visit_ELet(self, e, env):
-        return self.apply(e.f, self.visit(e.e, env), env)
+        env = dict(env)
+        for thing in break_let(e):
+            if isinstance(thing, tuple):
+                v, x = thing
+                env[v.id] = self.visit(x, env)
+            else:
+                return self.visit(thing, env)
     def apply(self, lam : ELambda, arg : object, env):
         with extend(env, lam.arg.id, arg):
             return self.visit(lam.body, env)
