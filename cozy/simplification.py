@@ -23,6 +23,8 @@ class _V(BottomUpRewriter):
             if e.op == "==":
                 while isinstance(e1, EWithAlteredValue): e1 = e1.handle
                 while isinstance(e2, EWithAlteredValue): e2 = e2.handle
+            if isinstance(e2, ECond) and alpha_equivalent(e1, e2.else_branch):
+                return self.visit(EBinOp(ENot(e2.cond), BOp.Or, EBinOp(e1, e.op, e2.then_branch).with_type(BOOL)).with_type(BOOL))
             e = EBinOp(e1, e.op, e2).with_type(e.type)
         if isinstance(e.e1, ECond):
             return self.visit(ECond(e.e1.cond,
@@ -94,30 +96,6 @@ class _V(BottomUpRewriter):
         elif isinstance(ee, EMap):
             return self.visit(EMap(ee.e, compose(f, ee.f)).with_type(e.type))
         return EMap(ee, f).with_type(e.type)
-    def visit_EArgMin(self, e):
-        ee = self.visit(e.e)
-        f = self.visit(e.f)
-        argmin = type(e)
-        if isinstance(ee, ESingleton):
-            return ee.e
-        elif isinstance(ee, EBinOp) and ee.op == "+":
-            xs = ee.e1
-            ys = ee.e2
-            # A bit of trickery here since `argmin {...} (x+y)` produces an
-            # expression of shape `argmin {...} (a+b)`.  If we aren't careful
-            # we could get into an infinite loop.
-            fallback = argmin(EBinOp(
-                ESingleton(argmin(xs, f).with_type(e.type)).with_type(TBag(e.type)),
-                "+",
-                ESingleton(argmin(ys, f).with_type(e.type)).with_type(TBag(e.type))).with_type(TBag(e.type)), f).with_type(e.type)
-            fallback._nosimpl = True
-            res =   ECond(self.visit(EUnaryOp(UOp.Empty, xs).with_type(BOOL)), argmin(ys, f).with_type(e.type),
-                    ECond(self.visit(EUnaryOp(UOp.Empty, ys).with_type(BOOL)), argmin(xs, f).with_type(e.type),
-                        fallback).with_type(e.type)).with_type(e.type)
-            return res
-        return argmin(ee, f).with_type(e.type)
-    def visit_EArgMax(self, e):
-        return self.visit_EArgMin(e)
     def visit_EMapKeys(self, e):
         ee = self.visit(e.e)
         if isinstance(ee, EMakeMap2):

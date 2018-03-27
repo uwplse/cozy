@@ -1159,6 +1159,10 @@ def dnf(e : syntax.Exp) -> [[syntax.Exp]]:
         cases1 = dnf(e.e1)
         cases2 = dnf(e.e2)
         return [c1 + c2 for c1 in cases1 for c2 in cases2]
+    if isinstance(e, syntax.ECond):
+        return dnf(syntax.EAny([
+            syntax.EAll([            e.cond , e.then_branch]),
+            syntax.EAll([syntax.ENot(e.cond), e.else_branch])]))
     return [[e]]
 
 def break_binary(x, binary_children):
