@@ -260,32 +260,31 @@ class Term(object):
             (f.to_exp() for f in self.factors),
             (ENum(self.constant).with_type(INT),) if self.constant != 1 else ()))
 
-def find_match(xs, ys, p):
-    for x in xs:
-        for y in ys:
-            if p(x, y):
-                return (x, y)
-    return None
-
 class Polynomial(object):
     def __init__(self, terms : [Term]):
         self.terms = sorted(terms,
             reverse=True,
             key=cmp_to_key(compare_with_lt))
     def __lt__(self, other):
-        """
-        Excluding terms we have in common,
-          does the other have a term such that all my terms are smaller?
-        """
         assert isinstance(other, Polynomial)
-        p1 = list(self.terms)
-        p2 = list(other.terms)
-        while True:
-            m = find_match(p1, p2, lambda x, y: not (x<y or y<x))
-            if m is None:
-                break
-            p1.remove(m[0])
-            p2.remove(m[1])
+        p1 = []
+        p2 = []
+        i = 0
+        j = 0
+        while i < len(self.terms) and j < len(other.terms):
+            x = self.terms[i]
+            y = other.terms[j]
+            if x < y:
+                p1.append(x)
+                i += 1
+            elif y < x:
+                p2.append(y)
+                j += 1
+            else:
+                i += 1
+                j += 1
+        p1.extend(self.terms[i:])
+        p2.extend(other.terms[j:])
         return exists(p2,
             lambda a: all(b < a for b in p1))
     def __str__(self):
