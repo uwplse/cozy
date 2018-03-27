@@ -1628,14 +1628,14 @@ def get_modified_var(stm):
         assert False, "unexpected modification target {}".format(e)
 
     if isinstance(stm, syntax.SAssign):
-        return stm, find_lvalue_target(stm.lhs)
+        return find_lvalue_target(stm.lhs)
     elif isinstance(stm, syntax.SCall):
-        return stm, find_lvalue_target(stm.target)
+        return find_lvalue_target(stm.target)
     elif isinstance(stm, (target_syntax.SMapPut, target_syntax.SMapDel,
                             target_syntax.SMapUpdate)):
-        return stm, find_lvalue_target(stm.map)
+        return find_lvalue_target(stm.map)
     else:
-        return None, None
+        return None
 
 class ExpressionMap(object):
     """
@@ -1722,9 +1722,25 @@ def cse_scan(e, entries=None, capture_point=None, path=()):
     SIMPLE_EXPS = (syntax.ENum, syntax.EVar, syntax.EBool, syntax.EStr,
         syntax.ENative, syntax.EEnumEntry, syntax.ENull)
 
-    class SeqBreaker(BottomUpRewriter):
+    class SLinearSequence(syntax.Stm):
+        """
+        An intermediate form of SSeq that just holds a list of its ordered
+        constituent statements.
+        """
+        def __init__(self, statements):
+            self.statements = statements
+        @classmethod
+        def from_seq(cls, seq):
+            return cls(list(break_seq(seq)))
+        def children(self):
+            return tuple(self.statements)
+        def __repr__(self):
+            return "OrderedSequence{}".format(repr(self.children()))
+
+    class SeqTransformer(BottomUpRewriter):
+        """Rewrites SSeq -> SLinearSequence for CSE process."""
         def visit_SSeq(self, s):
-            return syntax.seq(break_seq(s))
+            return SLinearSequence.from_seq(s)
 
     class CSEScanner(PathAwareExplorer):
         def __init__(self):
@@ -1745,10 +1761,10 @@ def cse_scan(e, entries=None, capture_point=None, path=()):
 
         def visit_ELambda(self, e, path, entries, capture_point):
             deps = set()
-            submap = entries.unbind(e.arg.id)
 
             # Capture point changes with ELambda. (The body is the 1st child,
             # zero-indexed.)
+            submap = entries.unbind(e.arg.id)
             _, inner_deps = self.visit(e.body, path + (1,), submap, e.body)
             deps.update(inner_deps)
             e = e.with_type(e.body.type)
@@ -1769,19 +1785,49 @@ def cse_scan(e, entries=None, capture_point=None, path=()):
 
             return e, deps
 
-        def visit_SAssign(self, s, path, entries, capture_point):
+        def visit_SLinearSequence(self, s, path, entries, capture_point):
+            for i, child in enumerate(s.statements):
+
+                killed_var = get_modified_var(child)
+
+                if killed_var is None:
+                    # Not a capture point.
+                    self.visit(child, path + (i,), entries, capture_point)
+                else:
+                    # Modifying a var.
+                    submap = entries.unbind(killed_var.id)
+                    self.visit(child, path + (i,), submap, child)
+                    # ???
+                    # entries.set_or_increment(e, list(deps), capture_point, path)
+
+                    for expr, (temp, count, dependents, capture, paths) in submap.items():
+                        if killed_var.id in dependents:
+                            # Safe to capture.
+                            if count > 1 and not isinstance(expr, SIMPLE_EXPS):
+                                print("installing capture {} = {} @ path {}".format(temp, expr, path + (i,)))
+                                self.captures[path + (i,)].append((temp, expr))
+
+                                for p in paths:
+                                    self.rewrites[p] = temp
+                        else:
+                            # Bubble up to surrounding capture point.
+                            entries[expr] = (temp, count, dependents, capture, paths)
+
+            return s, set()
+
+        def __visit_SAssign(self, s, path, entries, capture_point):
             deps = set()
             bind_var = s.lhs.id
             submap = entries.unbind(bind_var)
 
             # Capture point changes with SAssign. (The rhs is the 1st child,
             # zero-indexed.)
-
             _, inner_deps = self.visit(s.rhs, path + (1,), submap, s.rhs)
             deps.update(inner_deps)
 
             for expr, (temp, count, dependents, capture, paths) in submap.items():
                 if bind_var in dependents:
+
                     # Safe to capture.
                     if count > 1 and not isinstance(expr, SIMPLE_EXPS):
                         self.captures[path + (1,)].append((temp, expr))
@@ -1809,8 +1855,8 @@ def cse_scan(e, entries=None, capture_point=None, path=()):
             entries.set_or_increment(e, list(deps), capture_point, path)
             return e, deps
 
-    seqBreaker = SeqBreaker()
-    e = seqBreaker.visit(e)
+    seq_rewriter = SeqTransformer()
+    e = seq_rewriter.visit(e)
     scanner = CSEScanner()
     result = scanner.visit(e, path, entries, capture_point)
 
@@ -1823,7 +1869,7 @@ def cse_scan(e, entries=None, capture_point=None, path=()):
             for p in paths:
                 scanner.rewrites[p] = temp
 
-    return scanner.captures, scanner.rewrites
+    return e, scanner.captures, scanner.rewrites
 
 def cse_replace(e, capture_map, rewrite_map):
     class CSERewriter(PathAwareRewriter):
@@ -1853,18 +1899,36 @@ def cse_replace(e, capture_map, rewrite_map):
                 return rewrite_map.get(path) or default(e)
 
         def visit_Stm(self, s, path):
+            """
+            Depending on capture/rewrite map, this may produce more than one
+            statement. A list is returned.
+            """
+            print("rewriter visiting {} {}".format(path, s))
             default = lambda exp: type(exp)(
                 *[self.visit(c, path + (i,)) for i, c in enumerate(exp.children())]
             )
 
             s = default(s)
             rewrites = capture_map.get(path)
+            print(pformat(capture_map))
+            print(pformat(rewrites))
+            print("1. rewrites for path {} = {}".format(path, rewrites))
 
             if rewrites is not None:
                 for temp, expr in reversed(rewrites):
+                    print("1. rewriting {}={} at path {}".format(temp, expr, path))
                     s = syntax.SSeq(syntax.SDecl(temp.id, expr), s)
 
             return s
+
+        def visit_SLinearSequence(self, s, path):
+            rewritten = syntax.seq(self.visit(child, path + (i,))
+                for i, child in enumerate(s.children()))
+
+            print("2. rewriting seq {} at path {}".format(s, path))
+            print(" >> result = {}".format(rewritten))
+
+            return rewritten
 
     rewriter = CSERewriter()
     return rewriter.visit(e, ())

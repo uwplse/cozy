@@ -8,7 +8,7 @@ from cozy.solver import valid
 from cozy.evaluation import eval
 
 def _cse(e):
-    return cse_replace(e, *cse_scan(e))
+    return cse_replace(*cse_scan(e))
 
 class TestElimination(unittest.TestCase):
     def test_y_plus_1(self):
@@ -272,3 +272,84 @@ class TestElimination(unittest.TestCase):
         print(new_form)
 
         assert new_form.count("y + 2") == 1
+
+    def test_cse_2_stm_expr(self):
+        """
+        if (x < y) {
+            _var507 = (x < y) : (x + y) : (x + y)
+        }
+        """
+        e = ECond(
+                EBinOp(EVar("x").with_type(INT), "<", EVar("y").with_type(INT)),
+                EBinOp(EVar("x").with_type(INT), "+", EVar("y").with_type(INT)),
+                EBinOp(EVar("x").with_type(INT), "+", EVar("y").with_type(INT))
+        )
+
+        s = SIf(e.cond, SAssign(EVar('_var507').with_type(TInt()), e), SNoOp())
+        assert retypecheck(s)
+
+        print(pprint(s))
+        s2 = _cse(s)
+        newForm = pprint(s2)
+        print(newForm)
+
+        assert newForm.count("x < y") == 1
+        assert newForm.count("x + y") == 1
+
+    def test_cse_2_stm_seq_assign_kill_basic(self):
+        """
+        x = y + 2
+        y = 1
+        z = y + 2
+
+        The y=x statetment should cause a temp to not be created.
+        """
+
+        yp2 = EBinOp(EVar("y").with_type(INT), "+", ENum(2).with_type(INT))
+
+        s = seq((
+            SAssign(EVar("x").with_type(INT), yp2),
+            SAssign(EVar("y").with_type(INT), ONE),
+            SAssign(EVar("z").with_type(INT), yp2),
+        ))
+
+        assert retypecheck(s)
+        print(pprint(s))
+
+        s2 = _cse(s)
+        newForm = pprint(s2)
+        print(newForm)
+
+        assert newForm.count("y + 2") == 2
+
+    def __test_cse_2_stm_seq_assign_kill_1(self):
+        """
+        b = z + 4
+        x = y + 2
+        y = x
+        z = y + 2
+        q = z + 4
+
+        The y=x statetment should cause a temp to not be created.
+        """
+
+        yp2 = EBinOp(EVar("y").with_type(INT), "+", ENum(2).with_type(INT))
+        zp4 = EBinOp(EVar("z").with_type(INT), "+", ENum(4).with_type(INT))
+
+        s = seq((
+            SAssign(EVar("b").with_type(INT), zp4),
+            SAssign(EVar("x").with_type(INT), yp2),
+            SAssign(EVar("y").with_type(INT), ONE),
+            SAssign(EVar("z").with_type(INT), yp2),
+            SAssign(EVar("q").with_type(INT), zp4)
+        ))
+
+        assert retypecheck(s)
+        print(pprint(s))
+
+        s2 = _cse(s)
+        newForm = pprint(s2)
+        print(newForm)
+
+        assert newForm.count("y + 2") == 2
+        assert newForm.count("z + 4") == 1

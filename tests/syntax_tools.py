@@ -85,61 +85,6 @@ class TestSyntaxTools(unittest.TestCase):
         print(pprint(eliminate_common_subexpressions(spec)))
         assert False
 
-    def test_cse_2_expr(self):
-        """
-        (x < y)
-            ? ((x < y) ? x + y : x + y)
-            : ((x < y) ? x + y : x + y)
-        """
-        e = ECond(
-                EBinOp(EVar("x").with_type(INT), "<", EVar("y").with_type(INT)),
-                EBinOp(EVar("x").with_type(INT), "+", EVar("y").with_type(INT)),
-                EBinOp(EVar("x").with_type(INT), "+", EVar("y").with_type(INT))
-        )
-
-        assert retypecheck(e)
-
-        # Nested ECond:
-        e2 = ECond(
-                EBinOp(EVar("x").with_type(INT), "<", EVar("y").with_type(INT)),
-                e,
-                e
-        )
-
-        assert retypecheck(e2)
-        print(pprint(e2))
-        e2 = eliminate_common_subexpressions_stm(e2)
-        print(pprint(e2))
-        print(e2)
-
-        newForm = pprint(e2)
-        assert newForm.count("x < y") == 1
-        assert newForm.count("x + y") == 1
-
-    def test_cse_2_stm_expr(self):
-        """
-        if (x < y) {
-            _var507 = (x < y) : (x + y) : (x + y)
-        }
-        """
-        e = ECond(
-                EBinOp(EVar("x").with_type(INT), "<", EVar("y").with_type(INT)),
-                EBinOp(EVar("x").with_type(INT), "+", EVar("y").with_type(INT)),
-                EBinOp(EVar("x").with_type(INT), "+", EVar("y").with_type(INT))
-        )
-
-        s = SIf(e.cond, SAssign(EVar('_var507').with_type(TInt()), e), SNoOp())
-        assert retypecheck(s)
-
-        print(pprint(s))
-        s2 = eliminate_common_subexpressions_stm(s)
-        newForm = pprint(s2)
-        print(newForm)
-
-        assert newForm.count("x < y") == 1
-        assert newForm.count("x + y") == 1
-
-
     def test_cse_2_stm_if(self):
         """
         if (foo)
@@ -169,34 +114,6 @@ class TestSyntaxTools(unittest.TestCase):
 
         assert isinstance(s2, SSeq) and isinstance(s2.s1, SDecl)
 
-    def test_cse_2_stm_seq_assign_kill_1(self):
-        """
-        x = y + 2
-        y = x
-        z = y + 2
-        q = z + 4
-
-        The y=x statetment should cause a temp to not be created.
-        """
-
-        yp2 = EBinOp(EVar("y").with_type(INT), "+", ENum(2).with_type(INT))
-        zp4 = EBinOp(EVar("z").with_type(INT), "+", ENum(4).with_type(INT))
-
-        s = seq((
-            SAssign(EVar("x").with_type(INT), yp2),
-            SAssign(EVar("y").with_type(INT), EVar("x").with_type(INT)),
-            SAssign(EVar("z").with_type(INT), yp2),
-            SAssign(EVar("q").with_type(INT), zp4)
-        ))
-
-        assert retypecheck(s)
-        print(pprint(s))
-
-        s2 = eliminate_common_subexpressions_stm(s)
-        newForm = pprint(s2)
-        print(newForm)
-
-        assert newForm.count("y + 2") == 2
 
     def test_cse_2_stm_seq_assign_kill_deep(self):
         """
