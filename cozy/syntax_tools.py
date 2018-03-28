@@ -9,6 +9,8 @@ import collections
 from contextlib import contextmanager
 import sys
 import itertools
+import functools
+
 from pprint import pformat
 
 from cozy import common
@@ -1786,32 +1788,49 @@ def cse_scan(e, entries=None, capture_point=None, path=()):
             return e, deps
 
         def visit_SLinearSequence(self, s, path, entries, capture_point):
-            for i, child in enumerate(s.statements):
+            def scan_statement_sequence(seq_pair, ordinal, inner_capture):
+                if seq_pair is None:
+                    # End of the fold.
+                    return
 
-                killed_var = get_modified_var(child)
+                stm, rest = seq_pair if isinstance(seq_pair, tuple) else (seq_pair, None)
 
-                if killed_var is None:
-                    # Not a capture point.
-                    self.visit(child, path + (i,), entries, capture_point)
-                else:
-                    # Modifying a var.
-                    submap = entries.unbind(killed_var.id)
-                    self.visit(child, path + (i,), submap, child)
-                    # ???
-                    # entries.set_or_increment(e, list(deps), capture_point, path)
+                """
+                stm is a statement. Either it modifies something or it doesn't.
+                evaluate its child expressions first.
+                If it modifies something, e.g., x = (y+1), we visit the child expressions first,
+                then install a capture point on the statement.
+                We visit the rest and emit captures based on the expressions in `rest`.
 
-                    for expr, (temp, count, dependents, capture, paths) in submap.items():
+                If `first` doesn't modify anything, e.g. native_call(y+1), we visit the child expressions
+                and continue with the rest.
+
+                We compute self.captures & self.rewrites in here with the correct
+                path numbers. We do not transform the tree.
+                """
+                self.visit(stm, path + (ordinal,), entries, inner_capture)
+                killed_var = get_modified_var(stm)
+                new_capture = stm if killed_var is not None else inner_capture
+                scan_statement_sequence(rest, ordinal + 1, new_capture)
+
+                print(" > processing stm {}. kill={}".format(stm, killed_var))
+
+                if killed_var is not None:
+                    for expr, (temp, count, dependents, capture, paths) in list(entries.items()):
                         if killed_var.id in dependents:
                             # Safe to capture.
                             if count > 1 and not isinstance(expr, SIMPLE_EXPS):
-                                print("installing capture {} = {} @ path {}".format(temp, expr, path + (i,)))
-                                self.captures[path + (i,)].append((temp, expr))
+                                self.captures[path + (ordinal,)].append((temp, expr))
 
                                 for p in paths:
                                     self.rewrites[p] = temp
-                        else:
-                            # Bubble up to surrounding capture point.
-                            entries[expr] = (temp, count, dependents, capture, paths)
+
+                            del entries[expr]
+
+            scan_statement_sequence(
+                functools.reduce(lambda a, b: (b, a), reversed(s.statements)),
+                0,
+                capture_point)
 
             return s, set()
 
@@ -1864,7 +1883,9 @@ def cse_scan(e, entries=None, capture_point=None, path=()):
 
     for expr, (temp, count, dependents, capture, paths) in entries.items():
         if count > 1 and not isinstance(expr, SIMPLE_EXPS):
+
             scanner.captures[()].append((temp, expr))
+            print("top-level capture {}={}", temp.id, pprint(expr))
 
             for p in paths:
                 scanner.rewrites[p] = temp
@@ -1898,7 +1919,7 @@ def cse_replace(e, capture_map, rewrite_map):
             else:
                 return rewrite_map.get(path) or default(e)
 
-        def visit_Stm(self, s, path):
+        def __visit_Stm(self, s, path):
             """
             Depending on capture/rewrite map, this may produce more than one
             statement. A list is returned.
@@ -1922,13 +1943,39 @@ def cse_replace(e, capture_map, rewrite_map):
             return s
 
         def visit_SLinearSequence(self, s, path):
-            rewritten = syntax.seq(self.visit(child, path + (i,))
-                for i, child in enumerate(s.children()))
+            """
+            All of s.statments are Stm instances.
+            Some of them have capture_map entries. We may expand this list into a longer
+            one depending on capture_map.
+            e.g.,
+            [s1, s2, s3] -> [tmp1 = x+1, s1, tmp2=y+1, s2, s3]
+            """
+            output = []
 
-            print("2. rewriting seq {} at path {}".format(s, path))
-            print(" >> result = {}".format(rewritten))
+            for temp, expr in reversed(capture_map.get(path) or ()):
+                output.append(syntax.SDecl(temp.id, expr))
 
-            return rewritten
+            # i is the original index of the child at scan time.
+
+            for i, stm in enumerate(s.statements):
+                child_path = path + (i,)
+                child_items = []
+
+                for j, c in enumerate(stm.children()):
+                    child_items.append(self.visit(c, child_path + (j,)))
+
+                stm = type(stm)(*child_items)
+                # Emit the original expression *before* any capture rewrites.
+                output.append(stm)
+
+                rewrites = capture_map.get(child_path)
+                print("1. rewrites for path {} = {}".format(child_path, rewrites))
+
+                for temp, expr in reversed(rewrites or ()):
+                    print("1. rewriting {}={} at path {}".format(temp, expr, child_path))
+                    output.append(syntax.SDecl(temp.id, expr))
+
+            return syntax.seq(output)
 
     rewriter = CSERewriter()
     return rewriter.visit(e, ())

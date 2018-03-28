@@ -273,7 +273,7 @@ class TestElimination(unittest.TestCase):
 
         assert new_form.count("y + 2") == 1
 
-    def test_cse_2_stm_expr(self):
+    def __test_cse_2_stm_expr_if(self):
         """
         if (x < y) {
             _var507 = (x < y) : (x + y) : (x + y)
@@ -322,7 +322,7 @@ class TestElimination(unittest.TestCase):
 
         assert newForm.count("y + 2") == 2
 
-    def __test_cse_2_stm_seq_assign_kill_1(self):
+    def test_cse_2_stm_seq_assign_kill_1(self):
         """
         b = z + 4
         x = y + 2
