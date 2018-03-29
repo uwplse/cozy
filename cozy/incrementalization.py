@@ -194,12 +194,15 @@ def sketch_update(
                 value_at(new_value, k),
                 ctx = ctx,
                 assumptions = assumptions + [syntax.EIn(k, common_keys), syntax.ENot(syntax.EEq(value_at(old_value, k), value_at(new_value, k)))])
-            altered_keys = target_syntax.EFilter(
-                common_keys,
-                target_syntax.ELambda(k,
-                    syntax.ENot(syntax.EEq(value_at(old_value, k), value_at(new_value, k))))).with_type(key_bag)
-            s2 = syntax.SForEach(k, make_subgoal(altered_keys, docstring="altered keys in {}".format(pprint(lval))),
-                target_syntax.SMapUpdate(lval, k, v, update_value))
+            if isinstance(update_value, syntax.SNoOp):
+                s2 = update_value
+            else:
+                altered_keys = target_syntax.EFilter(
+                    common_keys,
+                    target_syntax.ELambda(k,
+                        syntax.ENot(syntax.EEq(value_at(old_value, k), value_at(new_value, k))))).with_type(key_bag)
+                s2 = syntax.SForEach(k, make_subgoal(altered_keys, docstring="altered keys in {}".format(pprint(lval))),
+                    target_syntax.SMapUpdate(lval, k, v, update_value))
 
             # (3) enter set
             fresh_keys = target_syntax.EFilter(new_keys, target_syntax.ELambda(k, syntax.ENot(syntax.EIn(k, old_keys)))).with_type(key_bag)
