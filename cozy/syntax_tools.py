@@ -1729,9 +1729,15 @@ def cse_scan(e):
             return SLinearSequence.from_seq(s)
 
     class PathedTreeDumper(PathAwareExplorer):
+        """
+        Prints an expression tree with the path tuple before each node.
+        """
+        @classmethod
+        def dump(cls, s):
+            return cls().visit(s, ())
+
         def visit_Exp(self, e, path):
             print("{} ===> {}".format(path, pprint(e)))
-
             for i, c in enumerate(e.children()):
                 self.visit(c, path + (i,))
 
@@ -1860,12 +1866,12 @@ def cse_scan(e):
     seq_rewriter = SeqTransformer()
     e = seq_rewriter.visit(e)
 
-    PathedTreeDumper().visit(e, ())
+    PathedTreeDumper.dump(e)
 
     scanner = CSEScanner()
     result = scanner.visit(e, path, entries, capture_point)
 
-    # Assign remaining exprs to top-level capture point.
+    # Anything remaining here gets assigned to the top-level capture point.
 
     for expr, (temp, count, dependents, paths) in entries.items():
         if count > 1 and not isinstance(expr, SIMPLE_EXPS):
