@@ -353,3 +353,113 @@ class TestElimination(unittest.TestCase):
 
         assert newForm.count("y + 2") == 2
         assert newForm.count("z + 4") == 1
+
+    def test_cse_2_stm_seq_assign_kill_deep(self):
+        """
+        q = y + 2
+        y = 5
+        x = y + 2
+        z = y + 2
+        """
+
+        yp2 = EBinOp(EVar("y").with_type(INT), "+", ENum(2).with_type(INT))
+        zp4 = EBinOp(EVar("z").with_type(INT), "+", ENum(4).with_type(INT))
+
+        s = SSeq(
+                SAssign(EVar("q").with_type(INT), yp2),
+                SSeq(
+                    SSeq(
+                        SSeq(
+                            SNoOp(),
+                            SAssign(EVar("y").with_type(INT), ONE)
+                        ),
+                        SNoOp()
+                    ),
+                    SSeq(
+                        SAssign(EVar("x").with_type(INT), yp2),
+                        SAssign(EVar("z").with_type(INT), yp2)
+                    )
+                )
+            )
+
+        assert retypecheck(s)
+        print(pprint(s))
+
+        s2 = _cse(s)
+        newForm = pprint(s2)
+        print("========")
+        print(newForm)
+
+        assert newForm.count("y + 2") == 2
+
+    def test_cse_2_stm_if(self):
+        """
+        if (foo)
+            x = y + 2
+        else
+            z = y + 2
+        =>
+        tmp = y + 2;
+        if (foo)
+            x = tmp
+        else
+            z = tmp
+        """
+        yp2 = EBinOp(EVar("y").with_type(INT), "+", ENum(2).with_type(INT))
+
+        s = SIf(
+                EVar("foo").with_type(BOOL),
+                SAssign(EVar("x").with_type(INT), yp2),
+                SAssign(EVar("z").with_type(INT), yp2),
+        )
+
+        assert retypecheck(s)
+
+        print(pprint(s))
+        s2 = _cse(s)
+        new_form = pprint(s2)
+
+        print(new_form)
+        assert new_form.count("y + 2") == 1
+
+    def __test_cse_2_stm_newscope(self):
+        """
+        x = y + 2
+
+        for (y in [1,2]) {
+            z = y + 2
+        }
+
+        q = y + 2
+
+        The for-loop body scope should not get CSE'd. The outer two *should*.
+        """
+        yp2 = EBinOp(EVar("y").with_type(INT), "+", ENum(2).with_type(INT)).with_type(INT)
+
+        s = seq((
+            SAssign(EVar("x").with_type(INT), yp2),
+            SForEach(EVar("y"), ESingleton(ONE),
+                SAssign(EVar("z").with_type(INT), yp2),
+                ),
+            SAssign(EVar("q").with_type(INT), yp2),
+        ))
+
+        assert retypecheck(s)
+
+        print(pprint(s))
+        s2 = _cse(s)
+        new_form = pprint(s2)
+        print(new_form)
+        print(s2)
+
+        assert new_form.count("y + 2") == 2
+
+    def __test_cse_2(self):
+        op = Op('addElement', [('x', TInt())], [], SSeq(SSeq(SSeq(SDecl('_name5771', ECond(EBinOp(EBinOp(EBinOp(EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt()), '+', EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()), '<', ENum(5).with_type(TInt())).with_type(TBool()), 'or', EBinOp(EBinOp(EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt()), '+', EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()), '>', ENum(7).with_type(TInt())).with_type(TBool())).with_type(TBool()), EBinOp(EVar('_var2027').with_type(TBag(TInt())), '-', EBinOp(EVar('_var2027').with_type(TBag(TInt())), '+', ESingleton(EVar('x').with_type(TInt())).with_type(TBag(TInt()))).with_type(TBag(TInt()))).with_type(TBag(TInt())), EBinOp(EVar('_var2027').with_type(TBag(TInt())), '-', EVar('_var2027').with_type(TBag(TInt()))).with_type(TBag(TInt()))).with_type(TBag(TInt()))), SDecl('_name5772', ECond(EBinOp(EBinOp(EBinOp(EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt()), '+', EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()),'<', ENum(5).with_type(TInt())).with_type(TBool()), 'or', EBinOp(EBinOp(EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt()), '+', EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()), '>', ENum(7).with_type(TInt())).with_type(TBool())).with_type(TBool()), EBinOp(EBinOp(EVar('_var2027').with_type(TBag(TInt())), '+', ESingleton(EVar('x').with_type(TInt())).with_type(TBag(TInt()))).with_type(TBag(TInt())), '-', EVar('_var2027').with_type(TBag(TInt()))).with_type(TBag(TInt())), EBinOp(EVar('_var2027').with_type(TBag(TInt())), '-', EVar('_var2027').with_type(TBag(TInt()))).with_type(TBag(TInt()))).with_type(TBag(TInt())))), SAssign(EVar('_var507').with_type(TInt()), ECond(EBinOp(EBinOp(EBinOp(EUnaryOp('len', EEmptyList().with_type(TBag(TInt()))).with_type(TInt()), '+', EUnaryOp('len', EEmptyList().with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()), '<', ENum(5).with_type(TInt())).with_type(TBool()), 'or', EBinOp(ENum(5).with_type(TInt()), '>', ENum(7).with_type(TInt())).with_type(TBool())).with_type(TBool()), EBinOp(EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt()), '+', ENum(1).with_type(TInt())).with_type(TInt()), EUnaryOp('len', EEmptyList().with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()))), SSeq(SForEach(EVar('_var2988').with_type(TInt()), EVar('_name5771').with_type(TBag(TInt())), SCall(EVar('_var2027').with_type(TBag(TInt())), 'remove', [EVar('_var2988').with_type(TInt())])), SForEach(EVar('_var2988').with_type(TInt()), EVar('_name5772').with_type(TBag(TInt())), SCall(EVar('_var2027').with_type(TBag(TInt())), 'add', [EVar('_var2988').with_type(TInt())])))), '')
+        spec = Spec("foo", (), (), (), (), [op], "", "", "")
+
+        assert retypecheck(op)
+
+        print(pprint(spec))
+        print(pprint(_cse(spec)))
+        assert False
