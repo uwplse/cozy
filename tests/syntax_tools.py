@@ -202,6 +202,11 @@ class TestSyntaxTools(unittest.TestCase):
         assert l[2] is y
         assert l[3] is z
 
+
+"""
+Elimination tests.
+"""
+
 def _cse(e):
     return cse_replace(*cse_scan(e))
 

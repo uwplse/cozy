@@ -110,6 +110,21 @@ class PathAwareExplorer(BottomUpExplorer):
     def visit_object(self, o, path, *args, **kwargs):
         return self.join(o, ())
 
+class PathedTreeDumper(PathAwareExplorer):
+    """
+    Prints an expression tree with the path tuple before each node.
+    """
+    @classmethod
+    def dump(cls, s):
+        return cls().visit(s, ())
+
+    def visit_Exp(self, e, path):
+        print("{} -> {}".format(path, pprint(e)))
+        for i, c in enumerate(e.children()):
+            self.visit(c, path + (i,))
+
+    visit_Stm = visit_Exp
+
 class PathAwareRewriter(PathAwareExplorer, BottomUpRewriter):
     pass
 
@@ -1474,21 +1489,6 @@ def cse_scan(e):
         def visit_SSeq(self, s):
             return SLinearSequence.from_seq(s)
 
-    class PathedTreeDumper(PathAwareExplorer):
-        """
-        Prints an expression tree with the path tuple before each node.
-        """
-        @classmethod
-        def dump(cls, s):
-            return cls().visit(s, ())
-
-        def visit_Exp(self, e, path):
-            print("{} ===> {}".format(path, pprint(e)))
-            for i, c in enumerate(e.children()):
-                self.visit(c, path + (i,))
-
-        visit_Stm = visit_Exp
-
     class CSEScanner(PathAwareExplorer):
         def __init__(self):
             self.captures = collections.defaultdict(list)
@@ -1506,6 +1506,25 @@ def cse_scan(e):
             return [self.visit(c, path + (i,), entries, capture_point)
                 for i, c in enumerate(e.children())]
 
+        def filter_captured_vars(self, outer_entries, inner_entries,
+                capture_path, bound_var_id):
+            """
+            Move things from inner_entries to capture/rewrite structures if
+            they're related to the bound variable. Otherwise, bubble them up
+            to the surrounding scope.
+            """
+            for expr, (temp, count, dependents, paths) in inner_entries.items():
+                if bound_var_id in dependents:
+                    # Safe to capture.
+                    if count > 1 and not isinstance(expr, SIMPLE_EXPS):
+                        self.captures[capture_path].append((temp, expr))
+
+                        for p in paths:
+                            self.rewrites[p] = temp
+                else:
+                    # Bubble up to surrounding capture point.
+                    outer_entries[expr] = (temp, count, dependents, paths)
+
         def visit_ELambda(self, e, path, entries, capture_point):
             deps = set()
 
@@ -1517,19 +1536,7 @@ def cse_scan(e):
             e = e.with_type(e.body.type)
 
             entries.set_or_increment(e, list(deps), path)
-
-            for expr, (temp, count, dependents, paths) in submap.items():
-                if e.arg.id in dependents:
-                    # Safe to capture.
-                    if count > 1 and not isinstance(expr, SIMPLE_EXPS):
-                        self.captures[path + (1,)].append((temp, expr))
-
-                        for p in paths:
-                            self.rewrites[p] = temp
-                else:
-                    # Bubble up to surrounding capture point.
-                    entries[expr] = (temp, count, dependents, paths)
-
+            self.filter_captured_vars(entries, submap, path + (1,), e.arg.id)
             return e, deps
 
         def visit_SLinearSequence(self, s, path, entries, capture_point):
@@ -1547,22 +1554,13 @@ def cse_scan(e):
                 if killed_var is not None:
                     # Unbind stuff related to killed_var
                     submap = inner_entries.unbind(killed_var.id)
-
                     scan_statement_sequence(rest, ordinal + 1, submap, stm)
 
-                    for expr, (temp, count, dependents, paths) in submap.items():
-                        if killed_var.id in dependents:
-                            # Safe to capture.
-                            if count > 1 and not isinstance(expr, SIMPLE_EXPS):
-                                self.captures[stm_path].append((temp, expr))
-
-                                for p in paths:
-                                    self.rewrites[p] = temp
-                        else:
-                            inner_entries[expr] = (temp, count, dependents, paths)
+                    self.filter_captured_vars(inner_entries, submap, stm_path, killed_var.id)
                 else:
                     scan_statement_sequence(rest, ordinal + 1, inner_entries, inner_capture)
 
+            # Do a right-fold over the sequence of statements.
             scan_statement_sequence(
                 functools.reduce(lambda a, b: (b, a), reversed(s.statements)),
                 0, entries, capture_point)
@@ -1578,19 +1576,7 @@ def cse_scan(e):
             # zero-indexed.)
             _, inner_deps = self.visit(s.rhs, path + (1,), submap, s.rhs)
             deps.update(inner_deps)
-
-            for expr, (temp, count, dependents, paths) in submap.items():
-                if bind_var in dependents:
-
-                    # Safe to capture.
-                    if count > 1 and not isinstance(expr, SIMPLE_EXPS):
-                        self.captures[path + (1,)].append((temp, expr))
-
-                        for p in paths:
-                            self.rewrites[p] = temp
-                else:
-                    # Bubble up to surrounding capture point.
-                    entries[expr] = (temp, count, dependents, paths)
+            self.filter_captured_vars(entries, submap, path + (1,), bind_var)
 
             return s, deps
 
@@ -1611,8 +1597,6 @@ def cse_scan(e):
 
     seq_rewriter = SeqTransformer()
     e = seq_rewriter.visit(e)
-
-    PathedTreeDumper.dump(e)
 
     scanner = CSEScanner()
     result = scanner.visit(e, path, entries, capture_point)
@@ -1638,43 +1622,39 @@ def cse_replace(e, capture_map, rewrite_map):
             _visit_atom
 
         def visit_Exp(self, e, path):
-            default = lambda exp: type(exp)(
-                *[self.visit(c, path + (i,)) for i, c in enumerate(exp.children())]
-            ).with_type(exp.type)
+            def visit_default(exp):
+                return type(exp)(
+                    *[self.visit(c, path + (i,)) for i, c in enumerate(exp.children())]
+                ).with_type(exp.type)
 
             rewrites = capture_map.get(path)
 
             if rewrites is not None:
-                e = default(e)
+                e = visit_default(e)
 
                 for temp, expr in reversed(rewrites):
                     e = syntax.ELet(expr, target_syntax.ELambda(temp, e))
 
                 return e
             else:
-                return rewrite_map.get(path) or default(e)
+                return rewrite_map.get(path) or visit_default(e)
 
         def visit_Stm(self, s, path):
-            """
-            Depending on capture/rewrite map, this may produce more than one
-            statement. A list is returned.
-            """
-            default = lambda exp: type(exp)(
-                *[self.visit(c, path + (i,)) for i, c in enumerate(exp.children())]
-            )
+            def visit_default(exp):
+                return type(exp)(
+                    *[self.visit(c, path + (i,)) for i, c in enumerate(exp.children())]
+                )
 
-            s = default(s)
-            rewrites = capture_map.get(path)
+            s = visit_default(s)
 
-            if rewrites is not None:
-                for temp, expr in reversed(rewrites):
-                    s = syntax.SSeq(syntax.SDecl(temp.id, expr), s)
+            for temp, expr in reversed(capture_map.get(path) or ()):
+                s = syntax.SSeq(syntax.SDecl(temp.id, expr), s)
 
             return s
 
         def visit_SLinearSequence(self, s, path):
             """
-            All of s.statments are Stm instances.
+            Each of s.statements are Stm instances.
             Some of them have capture_map entries. We may expand this list into a longer
             one depending on capture_map.
             e.g.,
