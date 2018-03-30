@@ -273,7 +273,7 @@ class TestElimination(unittest.TestCase):
 
         assert new_form.count("y + 2") == 1
 
-    def __test_cse_2_stm_expr_if(self):
+    def test_cse_2_stm_expr_if(self):
         """
         if (x < y) {
             _var507 = (x < y) : (x + y) : (x + y)
@@ -327,7 +327,7 @@ class TestElimination(unittest.TestCase):
         b = z + 4
         x = y + 2
         y = x
-        z = y + 2
+        g = y + 2
         q = z + 4
 
         The y=x statetment should cause a temp to not be created.
@@ -340,7 +340,7 @@ class TestElimination(unittest.TestCase):
             SAssign(EVar("b").with_type(INT), zp4),
             SAssign(EVar("x").with_type(INT), yp2),
             SAssign(EVar("y").with_type(INT), ONE),
-            SAssign(EVar("z").with_type(INT), yp2),
+            SAssign(EVar("g").with_type(INT), yp2),
             SAssign(EVar("q").with_type(INT), zp4)
         ))
 

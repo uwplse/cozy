@@ -114,7 +114,6 @@ class TestSyntaxTools(unittest.TestCase):
 
         assert isinstance(s2, SSeq) and isinstance(s2.s1, SDecl)
 
-
     def test_cse_2_stm_seq_assign_kill_deep(self):
         """
         Seq(

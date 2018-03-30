@@ -1663,12 +1663,12 @@ class ExpressionMap(object):
         self.by_id[id(k)] = v
         self.by_hash[self._hash(k)] = v
 
-    def set_or_increment(self, k, dependents, capture_point, path):
+    def set_or_increment(self, k, dependents, path):
         data = self.get(k)
 
         if data is not None:
             # Expr has been seen before.
-            v, count, deps, capture_point, paths = data
+            v, count, deps, paths = data
             count += 1
             deps.update(dependents)
             paths.append(path)
@@ -1679,7 +1679,7 @@ class ExpressionMap(object):
             deps = set(dependents)
             paths = [path]
 
-        self[k] = (v, count, deps, capture_point, paths)
+        self[k] = (v, count, deps, paths)
 
         for dep in dependents:
             self.dependents[dep].append(k)
@@ -1744,6 +1744,15 @@ def cse_scan(e, entries=None, capture_point=None, path=()):
         def visit_SSeq(self, s):
             return SLinearSequence.from_seq(s)
 
+    class PathedTreeDumper(PathAwareExplorer):
+        def visit_Exp(self, e, path):
+            print("{} ===> {}".format(path, pprint(e)))
+
+            for i, c in enumerate(e.children()):
+                self.visit(c, path + (i,))
+
+        visit_Stm = visit_Exp
+
     class CSEScanner(PathAwareExplorer):
         def __init__(self):
             self.captures = collections.defaultdict(list)
@@ -1771,9 +1780,9 @@ def cse_scan(e, entries=None, capture_point=None, path=()):
             deps.update(inner_deps)
             e = e.with_type(e.body.type)
 
-            entries.set_or_increment(e, list(deps), capture_point, path)
+            entries.set_or_increment(e, list(deps), path)
 
-            for expr, (temp, count, dependents, capture, paths) in submap.items():
+            for expr, (temp, count, dependents, paths) in submap.items():
                 if e.arg.id in dependents:
                     # Safe to capture.
                     if count > 1 and not isinstance(expr, SIMPLE_EXPS):
@@ -1783,58 +1792,56 @@ def cse_scan(e, entries=None, capture_point=None, path=()):
                             self.rewrites[p] = temp
                 else:
                     # Bubble up to surrounding capture point.
-                    entries[expr] = (temp, count, dependents, capture, paths)
+                    entries[expr] = (temp, count, dependents, paths)
 
             return e, deps
 
         def visit_SLinearSequence(self, s, path, entries, capture_point):
-            def scan_statement_sequence(seq_pair, ordinal, inner_capture):
+            def scan_statement_sequence(seq_pair, ordinal, inner_entries, inner_capture):
                 if seq_pair is None:
                     # End of the fold.
                     return
 
                 stm, rest = seq_pair if isinstance(seq_pair, tuple) else (seq_pair, None)
 
-                """
-                stm is a statement. Either it modifies something or it doesn't.
-                evaluate its child expressions first.
-                If it modifies something, e.g., x = (y+1), we visit the child expressions first,
-                then install a capture point on the statement.
-                We visit the rest and emit captures based on the expressions in `rest`.
-
-                If `first` doesn't modify anything, e.g. native_call(y+1), we visit the child expressions
-                and continue with the rest.
-
-                We compute self.captures & self.rewrites in here with the correct
-                path numbers. We do not transform the tree.
-                """
-                self.visit(stm, path + (ordinal,), entries, inner_capture)
+                stm_path = path + (ordinal,)
+                self.visit(stm, stm_path, entries, inner_capture)
                 killed_var = get_modified_var(stm)
-                new_capture = stm if killed_var is not None else inner_capture
-                scan_statement_sequence(rest, ordinal + 1, new_capture)
 
-                print(" > processing stm {}. kill={}".format(stm, killed_var))
+                print(" > processing stm {}. kill={}".format(stm_path, killed_var))
+
+                print("captures:\n   {}".format(pformat(self.captures)))
+                print("rewrites:\n   {}".format(pformat(self.rewrites)))
+                print("entries:\n   {}".format(pformat(list(entries.items()))))
 
                 if killed_var is not None:
-                    for expr, (temp, count, dependents, capture, paths) in list(entries.items()):
+                    # Unbind stuff related to killed_var
+                    submap = entries.unbind(killed_var.id)
+                    scan_statement_sequence(rest, ordinal + 1, submap, stm)
+
+                    for expr, (temp, count, dependents, paths) in submap.items():
+                        print(" $$ {}".format((expr, (temp, count, dependents, paths))))
                         if killed_var.id in dependents:
                             # Safe to capture.
                             if count > 1 and not isinstance(expr, SIMPLE_EXPS):
-                                self.captures[path + (ordinal,)].append((temp, expr))
+                                print("capturing {} beneath {}".format(expr, stm))
+                                self.captures[stm_path].append((temp, expr))
 
                                 for p in paths:
+                                    print(" ... {} is a target".format(p))
                                     self.rewrites[p] = temp
-
-                            del entries[expr]
+                        else:
+                            entries[expr] = (temp, count, dependents, paths)
+                else:
+                    scan_statement_sequence(rest, ordinal + 1, entries, inner_capture)
 
             scan_statement_sequence(
                 functools.reduce(lambda a, b: (b, a), reversed(s.statements)),
-                0,
-                capture_point)
+                0, entries, capture_point)
 
             return s, set()
 
-        def __visit_SAssign(self, s, path, entries, capture_point):
+        def visit_SAssign(self, s, path, entries, capture_point):
             deps = set()
             bind_var = s.lhs.id
             submap = entries.unbind(bind_var)
@@ -1844,7 +1851,7 @@ def cse_scan(e, entries=None, capture_point=None, path=()):
             _, inner_deps = self.visit(s.rhs, path + (1,), submap, s.rhs)
             deps.update(inner_deps)
 
-            for expr, (temp, count, dependents, capture, paths) in submap.items():
+            for expr, (temp, count, dependents, paths) in submap.items():
                 if bind_var in dependents:
 
                     # Safe to capture.
@@ -1855,7 +1862,7 @@ def cse_scan(e, entries=None, capture_point=None, path=()):
                             self.rewrites[p] = temp
                 else:
                     # Bubble up to surrounding capture point.
-                    entries[expr] = (temp, count, dependents, capture, paths)
+                    entries[expr] = (temp, count, dependents, paths)
 
             return s, deps
 
@@ -1865,23 +1872,27 @@ def cse_scan(e, entries=None, capture_point=None, path=()):
             for expr, subdeps in self.default(e, path, entries, capture_point):
                 deps.update(subdeps)
 
-            entries.set_or_increment(e, list(deps), capture_point, path)
+            print("  >> store {}".format(e))
+            entries.set_or_increment(e, list(deps), path)
             return e, deps
 
         def visit_EVar(self, e, path, entries, capture_point):
             # The genesis of variable dependence.
             deps = {e.id}
-            entries.set_or_increment(e, list(deps), capture_point, path)
+            entries.set_or_increment(e, list(deps), path)
             return e, deps
 
     seq_rewriter = SeqTransformer()
     e = seq_rewriter.visit(e)
+
+    PathedTreeDumper().visit(e, ())
+
     scanner = CSEScanner()
     result = scanner.visit(e, path, entries, capture_point)
 
     # Assign remaining exprs to top-level capture point.
 
-    for expr, (temp, count, dependents, capture, paths) in entries.items():
+    for expr, (temp, count, dependents, paths) in entries.items():
         if count > 1 and not isinstance(expr, SIMPLE_EXPS):
 
             scanner.captures[()].append((temp, expr))
@@ -1890,17 +1901,20 @@ def cse_scan(e, entries=None, capture_point=None, path=()):
             for p in paths:
                 scanner.rewrites[p] = temp
 
+    print("Done scanning.")
+    print("captures:\n   {}".format(pformat(scanner.captures)))
+    print("rewrites:\n   {}".format(pformat(scanner.rewrites)))
+
     return e, scanner.captures, scanner.rewrites
 
 def cse_replace(e, capture_map, rewrite_map):
     class CSERewriter(PathAwareRewriter):
-        def _visit_literal(self, e, path):
+        def _visit_atom(self, e, path):
             return e
-
-        # "literals" -- no subexpressions.
+        # atoms -- no subexpressions.
         visit_EVar = visit_ENum = visit_EEnumEntry = visit_EEmptyList = \
             visit_EStr = visit_EBool = visit_ENative = visit_ENull = \
-            _visit_literal
+            _visit_atom
 
         def visit_Exp(self, e, path):
             default = lambda exp: type(exp)(
@@ -1919,7 +1933,7 @@ def cse_replace(e, capture_map, rewrite_map):
             else:
                 return rewrite_map.get(path) or default(e)
 
-        def __visit_Stm(self, s, path):
+        def visit_Stm(self, s, path):
             """
             Depending on capture/rewrite map, this may produce more than one
             statement. A list is returned.
@@ -1931,9 +1945,6 @@ def cse_replace(e, capture_map, rewrite_map):
 
             s = default(s)
             rewrites = capture_map.get(path)
-            print(pformat(capture_map))
-            print(pformat(rewrites))
-            print("1. rewrites for path {} = {}".format(path, rewrites))
 
             if rewrites is not None:
                 for temp, expr in reversed(rewrites):
@@ -1969,10 +1980,10 @@ def cse_replace(e, capture_map, rewrite_map):
                 output.append(stm)
 
                 rewrites = capture_map.get(child_path)
-                print("1. rewrites for path {} = {}".format(child_path, rewrites))
+                print("1a. rewrites for path {} = {}".format(child_path, rewrites))
 
                 for temp, expr in reversed(rewrites or ()):
-                    print("1. rewriting {}={} at path {}".format(temp, expr, child_path))
+                    print("   1b. rewriting {}={} at path {}".format(temp, expr, child_path))
                     output.append(syntax.SDecl(temp.id, expr))
 
             return syntax.seq(output)
