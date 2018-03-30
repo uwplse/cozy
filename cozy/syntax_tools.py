@@ -1393,227 +1393,6 @@ def inline_calls(spec):
     rewriter = CallInliner()
     return rewriter.visit(spec)
 
-class ExprEliminator(BottomUpRewriter):
-    """
-    Visits nodes in the current subtree, collecting self.available {{ expression : temp var }}
-    """
-    def __init__(self):
-        super().__init__()
-        self.available = ExpMap()
-
-    # "literals" below -- no subexpressions.
-    def visit_EVar(self, e):
-        return e
-    def visit_ENum(self, e):
-        return e
-    def visit_EEnumEntry(self, e):
-        return e
-    def visit_EEmptyList(self, e):
-        return e
-    def visit_EStr(self, e):
-        return e
-    def visit_EBool(self, e):
-        return e
-    def visit_ENative(self, e):
-        return e
-    def visit_ENull(self, e):
-        return e
-    def visit_Exp(self, e):
-        ee = type(e)(*[self.visit(c) for c in e.children()]).with_type(e.type)
-
-        res = self.available.get(ee)
-        if res is not None:
-            return res
-        v = fresh_var(e.type, hint="tmp")
-        self.available[ee] = v
-        return v
-    def visit_EListComprehension(self, e):
-        raise NotImplementedError()
-    def _fvs(self, e):
-        if not hasattr(e, "_fvs"):
-            e._fvs = free_vars(e)
-        return e._fvs
-
-    def scoped_eliminate(self, var, body):
-        old_avail = self.available
-
-        # self.available = mapping from exprs -> temp vars representing them
-        # Filter self.available down to expressions NOT dealing with the lambda argument.
-        self.available = ExpMap([(k, v) for (k, v) in self.available.items()
-            if var not in self._fvs(k)])
-
-        # process body of lambda, further populating self.available
-        body = self.visit(body)
-        # Now anything in self.available dealing with the lambda argument is from the lambda body.
-
-        precious = set((var,))
-        # map tempvar -> (ordered set of free vars in expr labeled by tempvar)
-        fvs = { v : self._fvs(k) for (k, v) in self.available.items() }
-        dirty = True
-        # stop when no more items get added to precious
-        while dirty:
-            dirty = False
-            for v in self.available.values():
-                # if ANY of the free vars pointed to by temp vars are precious, add the tempvar to precious.
-                if any(vv in precious for vv in fvs[v]):
-                    if v not in precious:
-                        precious.add(v)
-                        dirty = True
-
-        # now precious contains any var indirectly dealing with the lambda arg
-
-        for (k, v) in list(self.available.items()):
-            if v not in precious:
-                # v doesn't deal w/ arg
-                # map old_avail expr to possibly updated(?) tempvar
-                old_avail[k] = v
-                del self.available[k]
-
-        # now self.available is stuff that DOES deal with the argument.
-        body = inject_vars(body, self.available)
-        self.available = old_avail
-        return body
-
-    def visit_SForEach(self, e):
-        e.body = self.scoped_eliminate(e.id, e.body)
-        return e
-
-    def visit_ELambda(self, e):
-        e.body = self.scoped_eliminate(e.arg, e.body)
-        return e
-
-    def visit_SSeq(self, e):
-        # Catch modifications that should kill later statements.
-        # TODO: handle types.
-
-        def elim_seq(sequence):
-            print("$$ elim_seq:\n    {}\n     avail={}".format(
-                                    pformat(sequence),
-                                    pformat(list(self.available.items()))))
-            d = collections.deque()
-
-            for s in reversed(sequence):
-                kill, mod = get_modified_var(s)
-
-                if kill is None:
-                    d.appendleft(s)
-                else:
-                    right = syntax.seq(d)
-                    subtree = syntax.SSeq(kill, self.scoped_eliminate(mod, right))
-                    d.clear()
-                    d.append(subtree)
-
-            result = syntax.seq(d)
-            print("$$ after elim_seq:", result)
-            return result
-
-        original = list(break_seq(e))
-
-        if any(o for o in original if get_modified_var(o) is not (None, None)):
-            e = elim_seq(original)
-        else:
-            e.s1 = self.visit(e.s1)
-            e.s2 = self.visit(e.s2)
-
-        print("$$ ORIGINAL:\n    {}".format(pformat(original)))
-
-        """
-        transformed = [self.visit(atom) for atom in original]
-        print("TRANSFORMED")
-        for t in transformed:
-            print("   ", t)
-        """
-        return e
-
-        """
-        if isinstance(e.s1, syntax.SAssign):
-            e.s1 = self.visit(e.s1)
-            var = get_modified_var(e.s1)
-            assert var is not None
-            e.s2 = self.scoped_eliminate(var, e.s2)
-        elif isinstance(e.s1, syntax.SSeq) and isinstance(e.s1.s2, syntax.SAssign):
-            e.s1.s2 = self.visit(e.s1.s2)
-            var = get_modified_var(e.s1.s2)
-            assert var is not None
-            e.s2 = self.scoped_eliminate(var, e.s2)
-        else:
-            # don't touch.
-            e.s1 = self.visit(e.s1)
-            e.s2 = self.visit(e.s2)
-
-        return e
-        """
-
-
-def inject_vars(e, avail):
-    """
-    avail -> { expression: variable }
-    """
-    statementMode = isinstance(e, syntax.Stm)
-
-    # ravail = { variable -> expression }
-    ravail = collections.OrderedDict(
-        [(v, k) for (k, v) in avail.items() if v is not None])
-    counts = free_vars(e, counts=True)
-
-    for var, value in reversed(ravail.items()):
-        for (vv, ct) in free_vars(value, counts=True).items():
-            counts[vv] = counts.get(vv, 0) + ct
-
-    to_inline = common.OrderedSet(v for v in ravail
-        if counts.get(v, 0) <= 1 or ravail[v].size() <= 1)
-    sub = { v : ravail[v] for v in to_inline }
-    skip = { }
-
-    class V(BottomUpRewriter):
-        def visit_EVar(self, var):
-            if var in sub and var not in skip:
-                return self.visit(sub[var])
-            return var
-        def visit_ELambda(self, lam):
-            with common.extend(skip, lam.arg, True):
-                return target_syntax.ELambda(lam.arg, self.visit(lam.body))
-
-    inliner = V()
-    e = inliner.visit(e)
-
-    for var, value in reversed(ravail.items()):
-        if var in to_inline:
-            continue
-        value = inliner.visit(value)
-
-        if statementMode:
-            ee = syntax.SSeq(syntax.SDecl(var.id, value), e)
-
-            if hasattr(e, "type"):
-                ee = ee.with_type(e.type)
-        else:
-            ee = syntax.ELet(value, target_syntax.ELambda(var, e))
-
-        e = ee
-    return e
-
-def eliminate_common_subexpressions_stm(elem):
-    """
-    Eliminate common subexpressions on an AST element (an expression or a
-    statement -- not a full spec).
-    """
-    eliminator = ExprEliminator()
-    s2 = eliminator.visit(elem)
-    return inject_vars(s2, eliminator.available)
-
-def eliminate_common_subexpressions(spec):
-    """
-    Eliminate common subexprs on a spec. Internally, this applies to Ops.
-    """
-    class OpVisitor(BottomUpRewriter):
-        def visit_Op(self, s):
-            s.body = eliminate_common_subexpressions_stm(s.body)
-            return s
-    vee = OpVisitor()
-    spec2 = vee.visit(spec)
-    return spec2
-
 def get_modified_var(stm):
     """
     Given a statement, returns the EVar modified by it, if any.
@@ -1639,29 +1418,10 @@ def get_modified_var(stm):
     else:
         return None
 
-class ExpressionMap(object):
+class ExpressionMap(ExpMap):
     """
     Maps expressions to (temp vars, other supporting info).
     """
-    def __init__(self, items=()):
-        self.by_id = collections.OrderedDict()
-        self.by_hash = collections.OrderedDict()
-        for k, v in items:
-            self[k] = v
-    def _hash(self, k):
-        return (type(k), k.type, k)
-    def _unhash(self, h):
-        return h[2]
-    def get(self, k):
-        i = id(k)
-        try:
-            return self.by_id[i]
-        except KeyError:
-            return self.by_hash.get(self._hash(k))
-    def __setitem__(self, k, v):
-        self.by_id[id(k)] = v
-        self.by_hash[self._hash(k)] = v
-
     def set_or_increment(self, k, dependents, path):
         data = self.get(k)
 
@@ -1685,20 +1445,6 @@ class ExpressionMap(object):
         return ExpressionMap((k, (var, count, deps, paths))
             for k, (var, count, deps, paths) in self.items()
             if varname not in deps)
-
-    def __delitem__(self, k):
-        i = id(k)
-        if i in self.by_id:
-            del self.by_id[i]
-        del self.by_hash[self._hash(k)]
-
-    def items(self):
-        for (k, v) in self.by_hash.items():
-            yield (self._unhash(k), v)
-
-    def values(self):
-        for k, v in self.items():
-            yield v
 
 def cse_scan(e):
     entries = ExpressionMap()
@@ -1961,3 +1707,22 @@ def cse_replace(e, capture_map, rewrite_map):
 
     rewriter = CSERewriter()
     return rewriter.visit(e, ())
+
+def eliminate_common_subexpressions_stm(elem):
+    """
+    Eliminate common subexpressions on an AST element (an expression or a
+    statement -- not a full spec).
+    """
+    return cse_replace(*cse_scan(e))
+
+def eliminate_common_subexpressions(spec):
+    """
+    Eliminate common subexprs on a spec. Internally, this applies to Ops.
+    """
+    class OpVisitor(BottomUpRewriter):
+        def visit_Op(self, s):
+            s.body = cse_replace(*cse_scan(s.body))
+            return s
+    op_visitor = OpVisitor()
+    spec2 = op_visitor.visit(spec)
+    return spec2

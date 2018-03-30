@@ -461,5 +461,5 @@ class TestElimination(unittest.TestCase):
         assert retypecheck(op)
 
         print(pprint(spec))
-        print(pprint(_cse(spec)))
+        print(pprint(eliminate_common_subexpressions(spec)))
         assert False
