@@ -6,6 +6,7 @@ from cozy.syntax_tools import *
 from cozy.typecheck import retypecheck
 from cozy.solver import valid
 from cozy.evaluation import eval
+from cozy.parse import parse
 
 class TestSyntaxTools(unittest.TestCase):
 
@@ -473,6 +474,36 @@ class TestElimination(unittest.TestCase):
 
         assert new_form.count("y + 2") == 1
 
+    def __test_cse_2_stm_long_exp(self):
+        """
+        x = a+1 + b+2 + c+3
+        z = a+1 + b+2 + c+3 + d+4
+        =>
+        ??
+        This needs some work -- currently a+1 gets generated multiple times.
+        """
+        a1 = EBinOp(EVar("a").with_type(INT), "+", ENum(1).with_type(INT))
+        b2 = EBinOp(EVar("b").with_type(INT), "+", ENum(2).with_type(INT))
+        c3 = EBinOp(EVar("c").with_type(INT), "+", ENum(3).with_type(INT))
+        d4 = EBinOp(EVar("d").with_type(INT), "+", ENum(4).with_type(INT))
+
+        s = seq((
+            SAssign(EVar("x").with_type(INT),
+                EBinOp(EBinOp(a1, "+", b2), "+", c3)),
+            SAssign(EVar("z").with_type(INT),
+                EBinOp(EBinOp(a1, "+", b2), "+", EBinOp(c3, "+", d4)))
+        ))
+
+        assert retypecheck(s)
+
+        print(pprint(s))
+        s2 = _cse(s)
+        new_form = pprint(s2)
+        print(new_form)
+
+        assert new_form.count("y + 2") == 1
+        assert False
+
     def test_cse_2_stm_expr_if(self):
         """
         if (x < y) {
@@ -556,31 +587,24 @@ class TestElimination(unittest.TestCase):
 
     def test_cse_2_stm_seq_assign_kill_deep(self):
         """
+        n = h + 5
         q = y + 2
-        y = 5
+        y = h + 5
         x = y + 2
         z = y + 2
         """
 
         yp2 = EBinOp(EVar("y").with_type(INT), "+", ENum(2).with_type(INT))
         zp4 = EBinOp(EVar("z").with_type(INT), "+", ENum(4).with_type(INT))
+        hp5 = EBinOp(EVar("h").with_type(INT), "+", ENum(5).with_type(INT))
 
-        s = SSeq(
-                SAssign(EVar("q").with_type(INT), yp2),
-                SSeq(
-                    SSeq(
-                        SSeq(
-                            SNoOp(),
-                            SAssign(EVar("y").with_type(INT), ONE)
-                        ),
-                        SNoOp()
-                    ),
-                    SSeq(
-                        SAssign(EVar("x").with_type(INT), yp2),
-                        SAssign(EVar("z").with_type(INT), yp2)
-                    )
-                )
-            )
+        s = seq((
+            SAssign(EVar("n").with_type(INT), hp5),
+            SAssign(EVar("q").with_type(INT), yp2),
+            SAssign(EVar("y").with_type(INT), hp5),
+            SAssign(EVar("x").with_type(INT), yp2),
+            SAssign(EVar("z").with_type(INT), yp2)
+        ))
 
         assert retypecheck(s)
         print(pprint(s))
@@ -591,6 +615,7 @@ class TestElimination(unittest.TestCase):
         print(newForm)
 
         assert newForm.count("y + 2") == 2
+        assert newForm.count("h + 5") == 1
 
     def test_cse_2_stm_if(self):
         """

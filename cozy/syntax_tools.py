@@ -1535,9 +1535,7 @@ def cse_scan(e):
                     # Safe to capture.
                     if count > 1 and not isinstance(expr, SIMPLE_EXPS):
                         self.captures[capture_path].append((temp, expr))
-
-                        for p in paths:
-                            self.rewrites[p] = temp
+                        self.rewrites.update({p: temp for p in paths})
                 else:
                     # Bubble up to surrounding capture point.
                     outer_entries[expr] = (temp, count, dependents, paths)
@@ -1608,7 +1606,6 @@ def cse_scan(e):
     e = seq_rewriter.visit(e)
 
     entries = ExpressionMap()
-
     scanner = CSEScanner()
     result = scanner.visit(e, (), entries, e)
 
@@ -1617,8 +1614,7 @@ def cse_scan(e):
     for expr, (temp, count, dependents, paths) in entries.items():
         if count > 1 and not isinstance(expr, SIMPLE_EXPS):
             scanner.captures[()].append((temp, expr))
-            for p in paths:
-                scanner.rewrites[p] = temp
+            scanner.rewrites.update({p: temp for p in paths})
 
     return e, scanner.captures, scanner.rewrites
 
@@ -1658,41 +1654,35 @@ def cse_replace(e, capture_map, rewrite_map):
 
             s = visit_default(s)
 
-            for temp, expr in reversed(capture_map.get(path) or ()):
+            for temp, expr in reversed(capture_map.get(path, ())):
                 s = syntax.SSeq(syntax.SDecl(temp.id, expr), s)
 
             return s
 
         def visit_SLinearSequence(self, s, path):
             """
-            Each of s.statements are Stm instances.
-            Some of them have capture_map entries. We may expand this list into a longer
-            one depending on capture_map.
+            Each of s.statements are Stm instances. Some of them have
+            capture_map entries. We may expand this list into a longer one
+            depending on capture_map.
             e.g.,
             [s1, s2, s3] -> [tmp1 = x+1, s1, tmp2=y+1, s2, s3]
             """
-            output = []
-
-            for temp, expr in reversed(capture_map.get(path) or ()):
-                output.append(syntax.SDecl(temp.id, expr))
+            output = [syntax.SDecl(temp.id, expr)
+                for temp, expr in reversed(capture_map.get(path, ()))]
 
             # i is the original index of the child at scan time.
 
             for i, stm in enumerate(s.statements):
                 child_path = path + (i,)
-                child_items = []
 
-                for j, c in enumerate(stm.children()):
-                    child_items.append(self.visit(c, child_path + (j,)))
+                stm = type(stm)(*[self.visit(c, child_path + (j,))
+                    for j, c in enumerate(stm.children())])
 
-                stm = type(stm)(*child_items)
                 # Emit the original expression *before* any capture rewrites.
                 output.append(stm)
 
-                rewrites = capture_map.get(child_path)
-
-                for temp, expr in reversed(rewrites or ()):
-                    output.append(syntax.SDecl(temp.id, expr))
+                output.extend(syntax.SDecl(temp.id, expr)
+                    for temp, expr in reversed(capture_map.get(child_path, ())))
 
             return syntax.seq(output)
 
