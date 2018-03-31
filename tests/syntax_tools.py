@@ -211,6 +211,20 @@ Elimination tests.
 def _cse(e):
     return cse_replace(*cse_scan(e))
 
+def parse_fragment(fragment, types={}):
+    """
+    Can be used to obtain a parse tree for an arbitrary syntax fragment.
+    Include a dictionary of var_name -> type object. By default, they're INTs.
+    """
+    class TypeInstaller(BottomUpRewriter):
+        def visit_EVar(self, e):
+            return e.with_type(types.get(e.id, INT))
+
+    spec = "Test: op foo() " + fragment
+    ast = parse(spec)
+    ast = TypeInstaller().visit(ast)
+    return ast.methods[0].body
+
 class TestElimination(unittest.TestCase):
     def test_y_plus_1(self):
         y = EVar("y").with_type(INT)
@@ -448,21 +462,11 @@ class TestElimination(unittest.TestCase):
             assert isinstance(e1.f, ELambda)
 
     def test_cse_2_stm_simple(self):
-        """
-        x = y + 2
-        z = y + 2
-
-        =>
-
-        tmp = y + 2
-        x = tmp
-        z = tmp
-        """
-        yp2 = EBinOp(EVar("y").with_type(INT), "+", ENum(2).with_type(INT))
-
-        s = SSeq(
-                SAssign(EVar("x").with_type(INT), yp2),
-                SAssign(EVar("z").with_type(INT), yp2),
+        s = parse_fragment(
+            """
+            x = y + 2;
+            z = y + 2;
+            """
         )
 
         assert retypecheck(s)
@@ -482,17 +486,13 @@ class TestElimination(unittest.TestCase):
         ??
         This needs some work -- currently a+1 gets generated multiple times.
         """
-        a1 = EBinOp(EVar("a").with_type(INT), "+", ENum(1).with_type(INT))
-        b2 = EBinOp(EVar("b").with_type(INT), "+", ENum(2).with_type(INT))
-        c3 = EBinOp(EVar("c").with_type(INT), "+", ENum(3).with_type(INT))
-        d4 = EBinOp(EVar("d").with_type(INT), "+", ENum(4).with_type(INT))
-
-        s = seq((
-            SAssign(EVar("x").with_type(INT),
-                EBinOp(EBinOp(a1, "+", b2), "+", c3)),
-            SAssign(EVar("z").with_type(INT),
-                EBinOp(EBinOp(a1, "+", b2), "+", EBinOp(c3, "+", d4)))
-        ))
+        s = parse_fragment(
+            """
+            x = a+1 + b+2 + c+3;
+            z = a+1 + b+2 + c+3 + d+4;
+            """,
+            dict(a=INT, b=INT, c=INT, d=INT, x=INT, z=INT)
+        )
 
         assert retypecheck(s)
 
@@ -528,21 +528,15 @@ class TestElimination(unittest.TestCase):
         assert newForm.count("x + y") == 1
 
     def test_cse_2_stm_seq_assign_kill_basic(self):
-        """
-        x = y + 2
-        y = 1
-        z = y + 2
+        s = parse_fragment(
+            """
+            x = y + 2;
+            y = 1;
+            z = y + 2;
+            """
+        )
 
-        The y=x statetment should cause a temp to not be created.
-        """
-
-        yp2 = EBinOp(EVar("y").with_type(INT), "+", ENum(2).with_type(INT))
-
-        s = seq((
-            SAssign(EVar("x").with_type(INT), yp2),
-            SAssign(EVar("y").with_type(INT), ONE),
-            SAssign(EVar("z").with_type(INT), yp2),
-        ))
+        # The y=1 statement should cause a temp to not be created.
 
         assert retypecheck(s)
         print(pprint(s))
@@ -554,26 +548,17 @@ class TestElimination(unittest.TestCase):
         assert newForm.count("y + 2") == 2
 
     def test_cse_2_stm_seq_assign_kill_1(self):
-        """
-        b = z + 4
-        x = y + 2
-        y = x
-        g = y + 2
-        q = z + 4
+        s = parse_fragment(
+            """
+            b = z + 4;
+            x = y + 2;
+            y = x;
+            g = y + 2;
+            q = z + 4;
+            """
+        )
 
-        The y=x statetment should cause a temp to not be created.
-        """
-
-        yp2 = EBinOp(EVar("y").with_type(INT), "+", ENum(2).with_type(INT))
-        zp4 = EBinOp(EVar("z").with_type(INT), "+", ENum(4).with_type(INT))
-
-        s = seq((
-            SAssign(EVar("b").with_type(INT), zp4),
-            SAssign(EVar("x").with_type(INT), yp2),
-            SAssign(EVar("y").with_type(INT), ONE),
-            SAssign(EVar("g").with_type(INT), yp2),
-            SAssign(EVar("q").with_type(INT), zp4)
-        ))
+        # The y=x statement should cause a temp to not be created.
 
         assert retypecheck(s)
         print(pprint(s))
@@ -586,25 +571,15 @@ class TestElimination(unittest.TestCase):
         assert newForm.count("z + 4") == 1
 
     def test_cse_2_stm_seq_assign_kill_deep(self):
-        """
-        n = h + 5
-        q = y + 2
-        y = h + 5
-        x = y + 2
-        z = y + 2
-        """
-
-        yp2 = EBinOp(EVar("y").with_type(INT), "+", ENum(2).with_type(INT))
-        zp4 = EBinOp(EVar("z").with_type(INT), "+", ENum(4).with_type(INT))
-        hp5 = EBinOp(EVar("h").with_type(INT), "+", ENum(5).with_type(INT))
-
-        s = seq((
-            SAssign(EVar("n").with_type(INT), hp5),
-            SAssign(EVar("q").with_type(INT), yp2),
-            SAssign(EVar("y").with_type(INT), hp5),
-            SAssign(EVar("x").with_type(INT), yp2),
-            SAssign(EVar("z").with_type(INT), yp2)
-        ))
+        s = parse_fragment(
+            """
+            n = h + 5;
+            q = y + 2;
+            y = h + 5;
+            x = y + 2;
+            z = y + 2;
+            """
+        )
 
         assert retypecheck(s)
         print(pprint(s))
@@ -619,23 +594,27 @@ class TestElimination(unittest.TestCase):
 
     def test_cse_2_stm_if(self):
         """
-        if (foo)
-            x = y + 2
-        else
-            z = y + 2
+            if (foo)
+                x = y + 2
+            else
+                z = y + 2
         =>
-        tmp = y + 2;
-        if (foo)
-            x = tmp
-        else
-            z = tmp
+            tmp = y + 2;
+            if (foo)
+                x = tmp
+            else
+                z = tmp
         """
-        yp2 = EBinOp(EVar("y").with_type(INT), "+", ENum(2).with_type(INT))
 
-        s = SIf(
-                EVar("foo").with_type(BOOL),
-                SAssign(EVar("x").with_type(INT), yp2),
-                SAssign(EVar("z").with_type(INT), yp2),
+        s = parse_fragment(
+            """
+            if (foo) {
+                x = y + 2;
+            } else {
+                z = y + 2;
+            }
+            """,
+            dict(foo=BOOL)
         )
 
         assert retypecheck(s)
