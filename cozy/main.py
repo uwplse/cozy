@@ -166,6 +166,7 @@ def run():
         impl = code
         share_info = defaultdict(list)
 
+    """
     impl = syntax_tools.inline_calls(impl)
     print()
     print(syntax_tools.pprint(impl))
@@ -174,6 +175,7 @@ def run():
     print(impl)
     print()
     print(syntax_tools.pprint(impl))
+    """
 
     print("Fixing EWithAlteredValue...")
     impl = syntax_tools.shallow_copy(impl)
