@@ -622,7 +622,7 @@ class TestElimination(unittest.TestCase):
         print(new_form)
         assert new_form.count("y + 2") == 1
 
-    def __test_cse_2_stm_newscope(self):
+    def test_cse_2_stm_foreach_scope(self):
         """
         x = y + 2
 

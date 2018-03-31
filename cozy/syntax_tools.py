@@ -1584,17 +1584,14 @@ def cse_scan(e):
 
             return s, set()
 
-        def __visit_SAssign(self, s, path, entries, capture_point):
-            deps = set()
-            bind_var = s.lhs.id
-            submap = entries.unbind(bind_var)
-
-            # Capture point changes with SAssign. (The rhs is the 1st child,
+        def visit_SForEach(self, s, path, entries, capture_point):
+            self.visit(s.iter, path + (1,), entries, capture_point)
+            # Capture point changes with SForEach. (The body is the child 2,
             # zero-indexed.)
-            _, inner_deps = self.visit(s.rhs, path + (1,), submap, s.rhs)
-            deps |= inner_deps
-            self.filter_captured_vars(entries, submap, path + (1,), bind_var)
-            return s, deps
+            submap = entries.unbind(s.id.id)
+            self.visit(s.body, path + (2,), submap, s.body)
+            self.filter_captured_vars(entries, submap, path + (2,), s.id.id)
+            return s, set()
 
         def visit_Exp(self, e, path, entries, capture_point):
             deps = set()
