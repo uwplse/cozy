@@ -5,6 +5,7 @@ from cozy.syntax_tools import free_vars, pprint, fresh_var, mk_lambda, alpha_equ
 from cozy.typecheck import is_numeric
 from cozy.solver import valid
 from cozy.opts import Option
+from cozy.structures import extension_handler
 
 skip_stateless_synthesis = Option("skip-stateless-synthesis", bool, False,
     description="Do not waste time optimizing expressions that do not depend on the data structure state")
@@ -193,12 +194,15 @@ def sketch_update(
                 value_at(new_value, k),
                 ctx = ctx,
                 assumptions = assumptions + [syntax.EIn(k, common_keys), syntax.ENot(syntax.EEq(value_at(old_value, k), value_at(new_value, k)))])
-            altered_keys = target_syntax.EFilter(
-                common_keys,
-                target_syntax.ELambda(k,
-                    syntax.ENot(syntax.EEq(value_at(old_value, k), value_at(new_value, k))))).with_type(key_bag)
-            s2 = syntax.SForEach(k, make_subgoal(altered_keys, docstring="altered keys in {}".format(pprint(lval))),
-                target_syntax.SMapUpdate(lval, k, v, update_value))
+            if isinstance(update_value, syntax.SNoOp):
+                s2 = update_value
+            else:
+                altered_keys = target_syntax.EFilter(
+                    common_keys,
+                    target_syntax.ELambda(k,
+                        syntax.ENot(syntax.EEq(value_at(old_value, k), value_at(new_value, k))))).with_type(key_bag)
+                s2 = syntax.SForEach(k, make_subgoal(altered_keys, docstring="altered keys in {}".format(pprint(lval))),
+                    target_syntax.SMapUpdate(lval, k, v, update_value))
 
             # (3) enter set
             fresh_keys = target_syntax.EFilter(new_keys, target_syntax.ELambda(k, syntax.ENot(syntax.EIn(k, old_keys)))).with_type(key_bag)
@@ -228,7 +232,11 @@ def sketch_update(
             stm = syntax.SForEach(k, altered_keys,
                 target_syntax.SMapUpdate(lval, k, v, update_value))
     else:
-        # Fallback rule: just compute a new value from scratch
-        stm = syntax.SAssign(lval, make_subgoal(new_value, docstring="new value for {}".format(pprint(lval))))
+        h = extension_handler(type(lval.type))
+        if h is not None:
+            stm = h.incrementalize(lval=lval, old_value=old_value, new_value=new_value, state_vars=ctx, make_subgoal=make_subgoal)
+        else:
+            # Fallback rule: just compute a new value from scratch
+            stm = syntax.SAssign(lval, make_subgoal(new_value, docstring="new value for {}".format(pprint(lval))))
 
     return (stm, subgoals)

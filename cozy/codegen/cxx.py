@@ -8,6 +8,7 @@ from cozy.common import fresh_name, declare_case
 from cozy.target_syntax import *
 from cozy.syntax_tools import all_types, fresh_var, subst, free_vars, is_scalar, mk_lambda, alpha_equivalent, all_exps, break_seq
 from cozy.typecheck import is_collection, is_numeric
+from cozy.structures import extension_handler
 
 from .misc import *
 
@@ -23,7 +24,6 @@ class CxxPrinter(CodeGenerator):
         self.queries = {}
         self.use_qhash = use_qhash
         self.vars = set() # set of strings
-        self.type_prefix = ""
 
     def fn(self, hint="var"):
         n = common.fresh_name(hint, omit=self.vars)
@@ -36,7 +36,7 @@ class CxxPrinter(CodeGenerator):
         return n
 
     def typename(self, t):
-        return self.type_prefix + self.types[t]
+        return self.types[t]
 
     def is_ptr_type(self, t):
         return isinstance(t, THandle)
@@ -72,7 +72,7 @@ class CxxPrinter(CodeGenerator):
         if self.use_qhash:
             return "QHash< {}, {} > {}".format(self.visit(t.k, ""), self.visit(t.v, ""), name)
         else:
-            return "std::unordered_map< {}, {} > {}".format(self.visit(t.k, ""), self.visit(t.v, ""), name)
+            return "std::unordered_map< {}, {}, {} > {}".format(self.visit(t.k, ""), self.visit(t.v, ""), self._hasher(t.k), name)
 
     def visit_TMap(self, t, name):
         if type(t) is TMap:
@@ -93,11 +93,15 @@ class CxxPrinter(CodeGenerator):
         return "std::vector< {} > {}".format(self.visit(t.t, ""), name)
 
     def visit_TNativeSet(self, t, name):
-        return "std::unordered_set< {} > {}".format(self.visit(t.t, ""), name)
+        return "std::unordered_set< {}, {} > {}".format(self.visit(t.t, ""), self._hasher(t.t), name)
+
+    def visit_TArray(self, t, name):
+        return "std::vector< {} > {}".format(self.visit(t.t, ""), name)
 
     def visit_Type(self, t, name):
-        if hasattr(t, "rep_type"):
-            return self.visit(t.rep_type(), name)
+        h = extension_handler(type(t))
+        if h is not None:
+            return self.visit(h.rep_type(t), name)
         raise NotImplementedError(t)
 
     def visit_TRecord(self, t, name):
@@ -121,12 +125,33 @@ class CxxPrinter(CodeGenerator):
         self.begin_statement()
         self.write("for (;;) ")
         with self.block():
-            self.visit(SIf(ENot(w.e), SEscape("{indent}break;", (), ()), SNoOp()))
+            self.visit(SIf(ENot(w.e), SEscape("{indent}break;\n", (), ()), SNoOp()))
             self.visit(w.body)
         self.end_statement()
 
+    def visit_SSwap(self, s):
+        l1 = self.visit(s.lval1)
+        l2 = self.visit(s.lval2)
+        self.write_stmt("std::swap(", l1, ", ", l2, ");")
+
+    def visit_SSwitch(self, s):
+        arg = self.visit(s.e)
+        self.begin_statement()
+        self.write("switch (", arg, ") ")
+        with self.block():
+            for val, body in s.cases:
+                assert type(val) in (ENum, EEnumEntry)
+                self.write_stmt("case ", self.visit(val), ":")
+                with self.indented():
+                    self.visit(body)
+                    self.write_stmt("break;")
+            self.write_stmt("default:")
+            with self.indented():
+                self.visit(s.default)
+        self.end_statement()
+
     def visit_SEscapableBlock(self, s):
-        self.visit(s.body)
+        self.visit(SScoped(s.body))
         self.write(s.label, ":\n")
 
     def visit_SEscapeBlock(self, s):
@@ -230,7 +255,11 @@ class CxxPrinter(CodeGenerator):
             return SEscape("{indent}{lhs} = {rhs};\n", ["lhs", "rhs"], [out, e])
         elif is_scalar(t):
             return SEscape("{indent}{lhs} = {rhs};\n", ["lhs", "rhs"], [out, e])
-        raise NotImplementedError(t, e, out)
+        else:
+            h = extension_handler(type(t))
+            if h is not None:
+                return h.codegen(e, out)
+            raise NotImplementedError(t, e, out)
 
     def construct_map(self, t, e, out):
         if isinstance(e, ECond):
@@ -268,11 +297,38 @@ class CxxPrinter(CodeGenerator):
     def visit_EMakeRecord(self, e):
         t = self.visit(e.type, "")
         exps = [self.visit(ee) for (f, ee) in e.fields]
-        return "({}{{ {} }})".format(t, ", ".join(exps))
+        return "({}({}))".format(t, ", ".join(exps))
 
     def visit_EHandle(self, e):
         assert e.addr == ENum(0), repr(e)
         return self.visit(ENull().with_type(e.type))
+
+    def visit_EArrayGet(self, e):
+        a = self.visit(e.a)
+        i = self.visit(e.i)
+        return "{}[{}]".format(a, i)
+
+    def visit_EArrayIndexOf(self, e):
+        assert isinstance(e.a, EVar) # TODO: make this fast when this is false
+        it = self.fv(TNative("{}::const_iterator".format(self.visit(e.a.type, "").strip())), "cursor")
+        res = self.fv(INT, "index")
+        self.visit(seq([
+            SDecl(it.id, EEscape("std::find({a}.begin(), {a}.end(), {x})", ("a", "x"), (e.a, e.x)).with_type(it.type)),
+            SDecl(res.id, ECond(
+                EEq(it, EEscape("{a}.end()", ("a",), (e.a,)).with_type(it.type)),
+                ENum(-1).with_type(INT),
+                EEscape("({it} - {a}.begin())", ("it", "a",), (it, e.a,)).with_type(INT)).with_type(INT))]))
+        return res.id
+
+    def visit_SArrayAlloc(self, s):
+        a = self.visit(s.a)
+        cap = self.visit(s.capacity)
+        self.write_stmt(a, " = std::move(", self.visit(s.a.type, ""), "(", cap, "));")
+
+    def visit_SEnsureCapacity(self, s):
+        a = self.visit(s.a)
+        cap = self.visit(s.capacity)
+        self.write_stmt(a, ".resize(", cap, ");")
 
     def visit_EMakeMap2(self, e):
         m = self.fv(e.type)
@@ -318,8 +374,7 @@ class CxxPrinter(CodeGenerator):
             map = self.visit(update.map)
             key = self.visit(update.key)
             val = self.fv(update.value.type)
-            self.declare(val)
-            self.construct_concrete(val.type, update.value, val)
+            self.declare(val, update.value)
             val = self.visit(EMove(val))
             self.begin_statement()
             self.write(map, ".emplace(", key, ", ", val, ");")
@@ -336,6 +391,16 @@ class CxxPrinter(CodeGenerator):
             self.end_statement()
         else:
             raise NotImplementedError()
+
+    def visit_Exp(self, e):
+        h = extension_handler(type(e))
+        if h is not None:
+            v = self.fv(e.type)
+            self.declare(v)
+            self.visit(h.codegen(e, out=v))
+            return v.id
+        else:
+            raise NotImplementedError(e)
 
     def visit_EVar(self, e):
         return e.id
@@ -531,6 +596,12 @@ class CxxPrinter(CodeGenerator):
         return v.id
 
     def min_or_max(self, op, e, f):
+        if isinstance(e, EBinOp) and e.op == "+" and isinstance(e.e1, ESingleton) and isinstance(e.e2, ESingleton):
+            # argmin_f ([a] + [b]) ---> f(a) < f(b) ? a : b
+            return self.visit(ECond(
+                EBinOp(f.apply_to(e.e1.e), op, f.apply_to(e.e2.e)).with_type(BOOL),
+                e.e1.e,
+                e.e2.e).with_type(e.e1.e.type))
         out = self.fv(e.type.t, "min" if op == "<" else "max")
         first = self.fv(BOOL, "first")
         x = self.fv(e.type.t, "x")
@@ -631,7 +702,7 @@ class CxxPrinter(CodeGenerator):
     def visit_ETuple(self, e):
         name = self.typename(e.type)
         args = [self.visit(arg) for arg in e.es]
-        return "({} {{ {} }})".format(name, ", ".join(args))
+        return "({}({}))".format(name, ", ".join(args))
 
     def visit_ETupleGet(self, e):
         if isinstance(e.e, ETuple):
@@ -665,8 +736,9 @@ class CxxPrinter(CodeGenerator):
         args = s.args
         if not args:
             self.write(body.format(indent=indent))
-        args = [self.visit(arg) for arg in args]
-        self.write(body.format(indent=indent, **dict(zip(s.arg_names, args))))
+        else:
+            args = [self.visit(arg) for arg in args]
+            self.write(body.format(indent=indent, **dict(zip(s.arg_names, args))))
 
     def visit_EEscape(self, e):
         body = e.body_string
@@ -692,28 +764,21 @@ class CxxPrinter(CodeGenerator):
         return "std::move(" + self.visit(e.e) + ")"
 
     def declare(self, v : EVar, initial_value : Exp = None):
-        self.begin_statement()
         if initial_value is not None and is_scalar(v.type):
             iv = self.visit(initial_value)
-            self.write(self.visit(v.type, v.id), " = ", iv, ";")
-            self.end_statement()
+            self.write_stmt(self.visit(v.type, v.id), " = ", iv, ";")
         else:
-            self.write(self.visit(v.type, v.id), ";")
-            self.end_statement()
+            self.write_stmt(self.visit(v.type, v.id), ";")
             if initial_value is not None:
                 self.visit(self.construct_concrete(v.type, initial_value, v))
 
     def visit_SAssign(self, s):
         if is_scalar(s.rhs.type):
-            self.begin_statement()
-            self.write(self.visit(s.lhs), " = ", self.visit(s.rhs), ";")
-            self.end_statement()
+            self.write_stmt(self.visit(s.lhs), " = ", self.visit(s.rhs), ";")
         else:
             v = self.fv(s.lhs.type)
             self.declare(v, s.rhs)
-            self.begin_statement()
-            self.write(self.visit(s.lhs), " = ", self.visit(EMove(v).with_type(v.type)), ";")
-            self.end_statement()
+            self.write_stmt(self.visit(s.lhs), " = ", self.visit(EMove(v).with_type(v.type)), ";")
 
     def visit_SDecl(self, s):
         assert isinstance(s.id, str)
@@ -747,6 +812,10 @@ class CxxPrinter(CodeGenerator):
         return v.id
 
     def visit_SCall(self, call):
+        h = extension_handler(type(call.target.type))
+        if h is not None:
+            return self.visit(h.implement_stmt(call))
+
         target = self.visit(call.target)
         args = [self.visit(a) for a in call.args]
         self.begin_statement()
@@ -837,8 +906,21 @@ class CxxPrinter(CodeGenerator):
             with self.block():
                 for f, ft in t.fields:
                     self.declare_field(f, ft)
+
+                self.write_stmt("inline ", name, "() { }")
                 self.begin_statement()
-                self.write("inline bool operator==(const ", name, "& other) ")
+                self.write("inline ", name, "(")
+                self.visit_args([("_" + f, t) for (f, t) in t.fields])
+                self.write(") : ")
+                for i, (f, ft) in enumerate(t.fields):
+                    if i > 0:
+                        self.write(", ")
+                    self.write(f, "(::std::move(_", f, "))")
+                self.write(" { }")
+                self.end_statement()
+
+                self.begin_statement()
+                self.write("inline bool operator==(const ", name, "& other) const ")
                 with self.block():
                     this = EEscape("(*this)", (), ()).with_type(t)
                     other = EVar("other").with_type(t)
@@ -872,16 +954,26 @@ class CxxPrinter(CodeGenerator):
                 self.write(", ")
             self.write(self.visit(t, v))
 
-    def compute_hash_1(self, e : str, t : Type, out : EVar) -> Stm:
-        hc = EEscape("std::hash<{t}>()({e})".format(t=self.visit(t, ""), e=e), (), ()).with_type(TNative("std::size_t"))
-        return SAssign(out, EEscape("({out} * 31) ^ ({hc})", ("out", "hc"), (out, hc)).with_type(TNative("std::size_t")))
+    def _hasher(self, t : Type) -> str:
+        if isinstance(t, THandle):
+            return "std::hash<{}>".format(self.visit(t, ""))
+        try:
+            n = self.typename(t)
+            return "_Hash{}".format(n)
+        except KeyError:
+            return "std::hash<{}>".format(self.visit(t, ""))
 
-    def compute_hash(self, fields : [(str, Type)]) -> Stm:
-        indent = self.get_indent()
+    def compute_hash_1(self, e : Exp) -> Exp:
+        return EEscape("{hasher}()({{e}})".format(hasher=self._hasher(e.type)), ("e",), (e,)).with_type(TNative("std::size_t"))
+
+    def compute_hash(self, fields : [Exp]) -> Stm:
         hc = self.fv(TNative("std::size_t"), "hash_code")
-        s = SDecl(hc.id, ZERO)
-        for f, ft in fields:
-            s = SSeq(s, self.compute_hash_1(f, ft, hc))
+        s = SDecl(hc.id, ENum(0).with_type(hc.type))
+        for f in fields:
+                    # return SAssign(out, )
+            s = SSeq(s, SAssign(hc,
+                EEscape("({hc} * 31) ^ ({h})", ("hc", "h"),
+                    (hc, self.compute_hash_1(f))).with_type(TNative("std::size_t"))))
         s = SSeq(s, SEscape("{indent}return {e};\n", ("e",), (hc,)))
         return s
 
@@ -917,13 +1009,39 @@ class CxxPrinter(CodeGenerator):
         with self.indented():
             for t, name in self.types.items():
                 self.define_type(spec.name, t, name, sharing)
+                self.begin_statement()
+                if isinstance(t, THandle):
+                    # No overridden hash code! We use pointers instead.
+                    continue
+                self.write("struct _Hash", name, " ")
+                with self.block():
+                    self.write_stmt("typedef ", spec.name, "::", name, " argument_type;")
+                    self.write_stmt("typedef std::size_t result_type;")
+                    self.begin_statement()
+                    self.write("result_type operator()(const argument_type& x) const noexcept ")
+                    x = EVar("x").with_type(t)
+                    if isinstance(t, TEnum):
+                        fields = [EEnumToInt(x).with_type(INT)]
+                    elif isinstance(t, TRecord):
+                        fields = [EGetField(x, f).with_type(ft) for (f, ft) in t.fields]
+                    elif isinstance(t, TTuple):
+                        fields = [ETupleGet(x, n).with_type(tt) for (n, tt) in enumerate(t.ts)]
+                    else:
+                        raise NotImplementedError(t)
+                    with self.block():
+                        self.visit(self.compute_hash(fields))
+                    self.end_statement()
+                self.write(";")
+                self.end_statement()
+
+        print("Setting up member variables...")
         self.write("protected:\n")
         with self.indented():
             for name, t in spec.statevars:
                 self.statevar_name = name
                 self.declare_field(name, t)
-        self.write("public:\n")
 
+        self.write("public:\n")
         with self.indented():
             print("Generating constructors...")
 
@@ -965,36 +1083,3 @@ class CxxPrinter(CodeGenerator):
             self.write("\n", spec.footer)
             if not spec.footer.endswith("\n"):
                 self.write("\n")
-
-        self.type_prefix = "typename " + spec.name + "::"
-
-        print("Defining hash codes...")
-        for t, name in self.types.items():
-            if type(t) not in (TEnum, TRecord, TTuple):
-                continue
-            self.begin_statement()
-            self.write("namespace std ")
-            with self.block():
-                self.begin_statement()
-                self.write("template <> struct hash<", spec.name, "::", name, "> ")
-                with self.block():
-                    self.begin_statement()
-                    self.write("typedef ", spec.name, "::", name, " argument_type;")
-                    self.end_statement()
-                    self.begin_statement()
-                    self.write("typedef std::size_t result_type;")
-                    self.end_statement()
-                    self.begin_statement()
-                    self.write("result_type operator()(argument_type const& x) const noexcept ")
-                    if isinstance(t, TEnum):
-                        fields = [("static_cast<int>(x)", INT)]
-                    elif isinstance(t, TRecord):
-                        fields = [("x." + f, ft) for (f, ft) in t.fields]
-                    elif isinstance(t, TTuple):
-                        fields = [("x._{}".format(n), tt) for (n, tt) in enumerate(t.ts)]
-                    with self.block():
-                        self.visit(self.compute_hash(fields))
-                    self.end_statement()
-                self.write(";")
-                self.end_statement()
-            self.end_statement()

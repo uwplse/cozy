@@ -84,10 +84,11 @@ def build_candidates(cache : Cache, size : int, scopes : {EVar:(Exp,Pool)}, buil
 
     for pool in ALL_POOLS:
 
+        for e in cache.find_collections(pool=pool, size=size-1):
+            yield (EEmptyList().with_type(e.type), pool)
+
         for e in cache.find(pool=pool, size=size-1):
-            t = TBag(e.type)
-            yield (EEmptyList().with_type(t), pool)
-            yield (ESingleton(e).with_type(t), pool)
+            yield (ESingleton(e).with_type(TBag(e.type)), pool)
 
         for e in cache.find(pool=pool, type=TRecord, size=size-1):
             for (f,t) in e.type.fields:
@@ -201,6 +202,22 @@ def build_candidates(cache : Cache, size : int, scopes : {EVar:(Exp,Pool)}, buil
                 m = EMakeMap2(bag, lam).with_type(t)
                 yield (m, STATE_POOL)
 
+class AuxBuilder(object):
+    def __init__(self, wrapped):
+        self.wrapped = wrapped
+    def __call__(self, cache : Cache, size : int, scopes : {EVar:(Exp,Pool)}, build_lambdas):
+        res = None
+        gen = self.wrapped(cache, size, scopes, build_lambdas)
+        while True:
+            tup = gen.send(res)
+            res = yield tup
+            # print("$$   res={}".format(res))
+            if res:
+                yield from self.apply(cache, size, scopes, build_lambdas, *tup)
+    def apply(self, cache, size, scopes, build_lambdas, e, pool):
+        return
+        yield
+
 class MemoizedEnumerator(object):
     __slots__ = ("cache", "done", "iter")
     def __init__(self, *args, **kwargs):
@@ -292,10 +309,12 @@ def enumerate_exps(
                 break
 
             _on_consider(depth, e, pool)
-            if check_wf is not None and not check_wf(e, pool):
-                _on_skip(depth, e, pool, "not well-formed")
-                was_accepted = False
-                continue
+            if check_wf is not None:
+                res = check_wf(e, pool)
+                if not res:
+                    _on_skip(depth, e, pool, "not well-formed [{}]".format(res.msg))
+                    was_accepted = False
+                    continue
 
             cost = cost_model.cost(e, pool)
             if pool == RUNTIME_POOL and use_cost_ceiling.value and cost_ceiling is not None and cost.compare_to(cost_ceiling) == Cost.WORSE:

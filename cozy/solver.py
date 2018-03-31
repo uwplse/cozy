@@ -12,6 +12,7 @@ from cozy.typecheck import is_collection, is_numeric
 from cozy.common import declare_case, fresh_name, Visitor, FrozenDict, typechecked, extend, OrderedSet, make_random_access
 from cozy import evaluation
 from cozy.opts import Option
+from cozy.structures import extension_handler
 
 save_solver_testcases = Option("save-solver-testcases", str, "", metavar="PATH")
 collection_depth_opt = Option("collection-depth", int, 2, metavar="N", description="Bound for bounded verification")
@@ -29,6 +30,12 @@ REAL = TReal()
 #   mkvar:   T -> [z3var]
 #   flatten: T -> obj -> [z3exp]
 #   pack:    T -> [z3exp] -> obj
+
+def break_let(e):
+    while isinstance(e, ELet):
+        yield (e.f.arg, e.e)
+        e = e.f.body
+    yield e
 
 class DetFlatVis(BottomUpExplorer):
     def join(self, x, new_children):
@@ -259,6 +266,11 @@ class ToZ3(Visitor):
     def eq(self, t, e1, e2, env, deep=False):
         if e1 is e2:
             return self.true
+
+        h = extension_handler(type(t))
+        if h is not None:
+            t = h.encoding_type(t)
+
         if decideable(t):
             assert isinstance(e1, z3.AstRef), "{}".format(repr(e1))
             assert isinstance(e2, z3.AstRef), "{}".format(repr(e2))
@@ -747,7 +759,13 @@ class ToZ3(Visitor):
     def visit_EApp(self, e, env):
         return self.apply(e.f, self.visit(e.arg, env), env)
     def visit_ELet(self, e, env):
-        return self.apply(e.f, self.visit(e.e, env), env)
+        env = dict(env)
+        for thing in break_let(e):
+            if isinstance(thing, tuple):
+                v, x = thing
+                env[v.id] = self.visit(x, env)
+            else:
+                return self.visit(thing, env)
     def apply(self, lam : ELambda, arg : object, env):
         with extend(env, lam.arg.id, arg):
             return self.visit(lam.body, env)
@@ -815,6 +833,10 @@ class ToZ3(Visitor):
     def visit_EStateVar(self, e, env):
         return self.visit(e.e, env)
     def visit_Exp(self, e, *args):
+        if isinstance(e, Exp):
+            h = extension_handler(type(e))
+            if h is not None:
+                return self.visit(h.encode(e), *args)
         raise NotImplementedError("toZ3({})".format(e))
     def visit_AstRef(self, e, env):
         """AstRef is the Z3 AST node type"""
@@ -840,39 +862,42 @@ class ToZ3(Visitor):
         """
         return self.unreconstruct(evaluation.mkval(type), type)
 
-    def unreconstruct(self, value, type):
+    def unreconstruct(self, value, ty):
         """Converts reconstructed value back to a Z3 value"""
         ctx = self.ctx
-        if type == INT or type == LONG:
+        if ty == INT or ty == LONG:
             return z3.IntVal(value, ctx)
-        elif type == REAL or type == FLOAT:
+        elif ty == REAL or ty == FLOAT:
             return z3.RealVal(value, ctx)
-        elif isinstance(type, TBool):
+        elif isinstance(ty, TBool):
             return self.true if value else self.false
-        elif is_collection(type):
+        elif is_collection(ty):
             masks = [self.true for v in value]
-            values = [self.unreconstruct(v, type.t) for v in value]
+            values = [self.unreconstruct(v, ty.t) for v in value]
             return (masks, values)
-        elif isinstance(type, TMap):
+        elif isinstance(ty, TMap):
             return {
-                "mapping": [(self.true, self.unreconstruct(k, type.k), self.unreconstruct(v, type.v)) for (k, v) in value.items()],
-                "default": self.unreconstruct(value.default, type.v) }
-        elif isinstance(type, TEnum):
-            return z3.IntVal(type.cases.index(value), ctx)
-        elif isinstance(type, TNative):
+                "mapping": [(self.true, self.unreconstruct(k, ty.k), self.unreconstruct(v, ty.v)) for (k, v) in value.items()],
+                "default": self.unreconstruct(value.default, ty.v) }
+        elif isinstance(ty, TEnum):
+            return z3.IntVal(ty.cases.index(value), ctx)
+        elif isinstance(ty, TNative):
             return z3.IntVal(value[1], ctx)
-        elif isinstance(type, THandle):
-            return (z3.IntVal(value[0], ctx), self.unreconstruct(value[1], type.value_type))
-        elif isinstance(type, TTuple):
-            return tuple(self.unreconstruct(v, t) for (v, t) in zip(value, type.ts))
-        elif isinstance(type, TRecord):
-            return { f:self.unreconstruct(value[f], t) for (f, t) in type.fields }
-        elif isinstance(type, TString):
+        elif isinstance(ty, THandle):
+            return (z3.IntVal(value[0], ctx), self.unreconstruct(value[1], ty.value_type))
+        elif isinstance(ty, TTuple):
+            return tuple(self.unreconstruct(v, t) for (v, t) in zip(value, ty.ts))
+        elif isinstance(ty, TRecord):
+            return { f:self.unreconstruct(value[f], t) for (f, t) in ty.fields }
+        elif isinstance(ty, TString):
             if all(c == "a" for c in value):
                 return z3.IntVal(len(value), ctx)
-            raise NotImplementedError((type, value))
+            raise NotImplementedError((ty, value))
         else:
-            raise NotImplementedError(type)
+            h = extension_handler(type(ty))
+            if h is not None:
+                return self.unreconstruct(value, h.encoding_type(ty))
+            raise NotImplementedError(ty)
 
     def mkvar(self, collection_depth, type, on_z3_var=None, on_z3_assertion=None):
         ctx = self.ctx

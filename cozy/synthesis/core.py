@@ -37,7 +37,8 @@ def reverse_output(f):
     def g(*args, **kwargs):
         l = list(f(*args, **kwargs))
         l.reverse()
-        return l
+        for x in l:
+            yield x
     return g
 
 class FoundImprovement(Exception):
@@ -150,7 +151,10 @@ class Learner(object):
         contexts = group_by(enumerate_fragments(self.target),
             k=lambda ctx: (ctx.pool, ctx.e.type))
         def f(cache, size, scopes, build_lambdas):
-            for tup in wrapped_builder(cache, size, scopes, build_lambdas):
+            was_accepted = None
+            gen = wrapped_builder(cache, size, scopes, build_lambdas)
+            while True:
+                tup = gen.send(was_accepted)
                 e, pool = tup
                 was_accepted = yield tup
                 if was_accepted:
@@ -161,9 +165,29 @@ class Learner(object):
                         assert e.type == ctx.e.type
                         if alpha_equivalent(e, ctx.e):
                             continue
+                        bound_vars = OrderedSet(ctx.bound_vars)
+                        to_be_free = free_vars(e) - OrderedSet(scopes.keys())
+                        if to_be_free & bound_vars:
+                            print("WARN: unable to perform substitution")
+                            print("fvs(e)")
+                            for vv in free_vars(e):
+                                print("  {} : {}".format(vv.id, pprint(vv.type)))
+                            print("bound vars")
+                            for vv in bound_vars:
+                                print("  {} : {}".format(vv.id, pprint(vv.type)))
+                            print("scopes")
+                            for vv, (bb, pp) in scopes.items():
+                                print("  {} : {} in {} [{}]".format(vv.id, pprint(vv.type), pprint(bb), pool_name(pp)))
+                            print("mapping")
+                            for a, b in mapping.items():
+                                print("  {} : {} ---> {} : {}".format(a.id, pprint(a.type), b.id, pprint(b.type)))
+                            print("replacing {} : {}".format(pprint(ctx.e), pprint(ctx.e.type)))
+                            print("with      {} : {}".format(pprint(e), pprint(e.type)))
+                            print("in        {}".format(pprint(ctx.replace_e_with(EVar("________")))))
+                            continue
                         # print("  ... {} in {} --> {}".format(pprint(ctx.e.type), pool_name(ctx.pool), pprint(ctx.replace_e_with(EVar("___")))))
                         # TODO: if enumerate_frags told us what bags the scope vars came from, we could do better...
-                        for mapping in self.all_possible_mappings(OrderedSet(scopes.keys()), OrderedSet(ctx.bound_vars)):
+                        for mapping in self.all_possible_mappings(OrderedSet(scopes.keys()), bound_vars):
                             if self.stop_callback():
                                 raise StopException()
                             x = subst(e, { a.id : b for (a, b) in mapping.items() })
@@ -171,6 +195,8 @@ class Learner(object):
                             # print("        try {}".format(pprint(ee)))
                             if alpha_equivalent(ee, self.target):
                                 # print("        > not AA")
+                                continue
+                            if not exp_is_wf(ee, RUNTIME_POOL, self.state_vars, self.args, self.assumptions):
                                 continue
                             if not self.matches(fingerprint(ee, self.examples), target_fp):
                                 # print("        > no match")
@@ -237,7 +263,7 @@ class Learner(object):
         except ExpIsNotWf as exc:
             return False
 
-    @reverse_output
+    # @reverse_output
     def roots(self, target=None, extra_legal_fvs=()):
         if target is None:
             target = self.target
@@ -257,19 +283,26 @@ class Learner(object):
                             yield (ee, RUNTIME_POOL)
 
     def next(self):
+        class No(object):
+            def __init__(self, msg):
+                self.msg = msg
+            def __bool__(self):
+                return False
         build = build_candidates
-        build = accelerate_build(build, args=self.args, state_vars=self.state_vars)
         build = self.build_candidates(build)
+        build = accelerate_build(build, args=self.args, state_vars=self.state_vars)
         build = self.subst_builder(build)
         cards = [self.cost_model.cardinality(ctx.e) for ctx in enumerate_fragments(self.target) if is_collection(ctx.e.type)]
         def check_wf(e, pool):
-            if not exp_is_wf(e, pool, self.state_vars, self.args, self.assumptions):
-                return False
+            try:
+                exp_wf(e, pool=pool, state_vars=self.state_vars, args=self.args, assumptions=self.assumptions)
+            except ExpIsNotWf as exc:
+                return No("at {}: {}".format(pprint(exc.offending_subexpression), exc.reason))
             if isinstance(e.type, TBag):
                 c = self.cost_model.cardinality(e)
                 if all(cc < c for cc in cards):
                     # print("too big: {}".format(pprint(e)))
-                    return False
+                    return No("too big")
             return True
         if self.builder_iter == ():
             self.builder_iter = enumerate_exps(
@@ -315,6 +348,7 @@ def heuristic_done(e : Exp, args : [EVar] = []):
         (isinstance(e, ESingleton) and heuristic_done(e.e)) or
         (isinstance(e, EStateVar) and heuristic_done(e.e)) or
         (isinstance(e, EGetField) and heuristic_done(e.e)) or
+        (isinstance(e, EUnaryOp) and e.op == "-" and heuristic_done(e.e)) or
         (isinstance(e, ENull)))
 
 def never_stop():

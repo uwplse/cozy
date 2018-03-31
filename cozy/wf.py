@@ -7,8 +7,9 @@ from cozy.syntax_tools import enumerate_fragments, pprint, free_vars
 from cozy.solver import valid
 from cozy.pools import RUNTIME_POOL, STATE_POOL
 from cozy.opts import Option
+from cozy.structures import extension_handler
 
-allow_conditional_state = Option("allow-conditional-state", bool, False)
+allow_conditional_state = Option("allow-conditional-state", bool, True)
 
 class ExpIsNotWf(Exception):
     def __init__(self, e, offending_subexpression, reason):
@@ -19,6 +20,12 @@ class ExpIsNotWf(Exception):
 
 @typechecked
 def exp_wf_nonrecursive(e : Exp, state_vars : {EVar}, args : {EVar}, pool = RUNTIME_POOL, assumptions : Exp = T):
+    h = extension_handler(type(e))
+    if h is not None:
+        msg = h.check_wf(e, state_vars=state_vars, args=args, pool=pool, assumptions=assumptions)
+        if msg is not None:
+            raise ExpIsNotWf(e, e, msg)
+        return
     at_runtime = pool == RUNTIME_POOL
     if isinstance(e, EStateVar) and not at_runtime:
         raise ExpIsNotWf(e, e, "EStateVar in state pool position")

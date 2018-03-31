@@ -754,6 +754,24 @@ class FragmentEnumerator(common.Visitor):
         for ctx in self.recurse_with_assumptions_about_bound_var(e.f, ElemOf(e.e)):
             yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EArgMax(e.e, r(x)).with_type(t))
 
+    def visit_EMakeMinHeap(self, e):
+        from cozy.structures.heaps import EMakeMinHeap
+        yield self.make_ctx(e)
+        t = e.type
+        for ctx in self.visit(e.e):
+            yield self.update_repl(ctx, lambda r: lambda x: EMakeMinHeap(r(x), e.f).with_type(t))
+        for ctx in self.recurse_with_assumptions_about_bound_var(e.f, ElemOf(e.e)):
+            yield self.update_repl(ctx, lambda r: lambda x: EMakeMinHeap(e.e, r(x)).with_type(t))
+
+    def visit_EMakeMaxHeap(self, e):
+        from cozy.structures.heaps import EMakeMaxHeap
+        yield self.make_ctx(e)
+        t = e.type
+        for ctx in self.visit(e.e):
+            yield self.update_repl(ctx, lambda r: lambda x: EMakeMaxHeap(r(x), e.f).with_type(t))
+        for ctx in self.recurse_with_assumptions_about_bound_var(e.f, ElemOf(e.e)):
+            yield self.update_repl(ctx, lambda r: lambda x: EMakeMaxHeap(e.e, r(x)).with_type(t))
+
     def visit_ELet(self, e):
         yield self.make_ctx(e)
         t = e.type
@@ -847,7 +865,7 @@ def enumerate_fragments(e : syntax.Exp):
         if isinstance(ctx.e, syntax.Exp) and not isinstance(ctx.e, syntax.ELambda):
             yield ctx
 
-def replace(exp, old_exp, new_exp, safe=True):
+def replace(exp, old_exp, new_exp, safe=True, match=lambda e1, e2: e1 == e2):
     fvs = free_vars(old_exp) if safe else ()
     nfvs = free_vars(new_exp)
     class Replacer(BottomUpRewriter):
@@ -857,7 +875,7 @@ def replace(exp, old_exp, new_exp, safe=True):
             assert e.arg not in nfvs # TODO: alpha-renaming
             return target_syntax.ELambda(e.arg, self.visit(e.body))
         def visit(self, e):
-            if e == old_exp:
+            if isinstance(e, syntax.Exp) and match(e, old_exp):
                 return new_exp
             return super().visit(e)
     return Replacer().visit(exp)
@@ -1192,6 +1210,10 @@ def dnf(e : syntax.Exp) -> [[syntax.Exp]]:
         cases1 = dnf(e.e1)
         cases2 = dnf(e.e2)
         return [c1 + c2 for c1 in cases1 for c2 in cases2]
+    if isinstance(e, syntax.ECond):
+        return dnf(syntax.EAny([
+            syntax.EAll([            e.cond , e.then_branch]),
+            syntax.EAll([syntax.ENot(e.cond), e.else_branch])]))
     return [[e]]
 
 def break_binary(x, binary_children):

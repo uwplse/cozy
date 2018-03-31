@@ -48,3 +48,6 @@ class SimplificationTests(unittest.TestCase):
 
     def test_regression08(self):
         simplify(EUnaryOp('sum', EEmptyList().with_type(TBag(TFloat()))).with_type(TFloat()), validate=True, debug=True)
+
+    def test_regression09(self):
+        simplify(EMap(EVar('exclude').with_type(TSet(TNative('String'))), ELambda(EVar('_var132121').with_type(TNative('String')), EVar('_var132121').with_type(TNative('String')))).with_type(TBag(TNative('String'))), validate=True)
