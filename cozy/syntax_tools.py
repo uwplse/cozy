@@ -1543,15 +1543,11 @@ def cse_scan(e):
                     outer_entries[expr] = (temp, count, dependents, paths)
 
         def visit_ELambda(self, e, path, entries, capture_point):
-            deps = set()
-
             # Capture point changes with ELambda. (The body is the 1st child,
             # zero-indexed.)
             submap = entries.unbind(e.arg.id)
-            _, inner_deps = self.visit(e.body, path + (1,), submap, e.body)
-            deps |= inner_deps
+            _, deps = self.visit(e.body, path + (1,), submap, e.body)
             e = e.with_type(e.body.type)
-
             entries.set_or_increment(e, deps, path)
             self.filter_captured_vars(entries, submap, path + (1,), e.arg.id)
             return e, deps
@@ -1716,7 +1712,7 @@ def eliminate_common_subexpressions(spec):
     """
     class OpVisitor(BottomUpRewriter):
         def visit_Op(self, s):
-            s.body = cse_replace(*cse_scan(s.body))
+            s.body = eliminate_common_subexpressions_stm(s.body)
             return s
     op_visitor = OpVisitor()
     spec2 = op_visitor.visit(spec)
