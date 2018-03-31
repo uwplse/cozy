@@ -1476,7 +1476,6 @@ class ExpressionMap(ExpMap):
             paths = [path]
 
         self[k] = (v, count, deps, paths)
-        return v
 
     def unbind(self, varname):
         return ExpressionMap((k, (var, count, deps, paths))
@@ -1484,10 +1483,6 @@ class ExpressionMap(ExpMap):
             if varname not in deps)
 
 def cse_scan(e):
-    entries = ExpressionMap()
-    capture_point = e
-    path = ()
-
     SIMPLE_EXPS = (syntax.ENum, syntax.EVar, syntax.EBool, syntax.EStr,
         syntax.ENative, syntax.EEnumEntry, syntax.ENull)
 
@@ -1518,8 +1513,8 @@ def cse_scan(e):
             self.rewrites = dict()
 
         def visit_object(self, o, path, *args, **kwargs):
-            # Include empty dependents tuple in result.
-            return self.join(o, ()), ()
+            # Include empty dependents in result.
+            return self.join(o, ()), set()
 
         def default(self, e, path, entries, capture_point):
             """
@@ -1554,10 +1549,10 @@ def cse_scan(e):
             # zero-indexed.)
             submap = entries.unbind(e.arg.id)
             _, inner_deps = self.visit(e.body, path + (1,), submap, e.body)
-            deps.update(inner_deps)
+            deps |= inner_deps
             e = e.with_type(e.body.type)
 
-            entries.set_or_increment(e, list(deps), path)
+            entries.set_or_increment(e, deps, path)
             self.filter_captured_vars(entries, submap, path + (1,), e.arg.id)
             return e, deps
 
@@ -1589,7 +1584,7 @@ def cse_scan(e):
 
             return s, set()
 
-        def visit_SAssign(self, s, path, entries, capture_point):
+        def __visit_SAssign(self, s, path, entries, capture_point):
             deps = set()
             bind_var = s.lhs.id
             submap = entries.unbind(bind_var)
@@ -1597,31 +1592,32 @@ def cse_scan(e):
             # Capture point changes with SAssign. (The rhs is the 1st child,
             # zero-indexed.)
             _, inner_deps = self.visit(s.rhs, path + (1,), submap, s.rhs)
-            deps.update(inner_deps)
+            deps |= inner_deps
             self.filter_captured_vars(entries, submap, path + (1,), bind_var)
-
             return s, deps
 
         def visit_Exp(self, e, path, entries, capture_point):
             deps = set()
 
             for expr, subdeps in self.default(e, path, entries, capture_point):
-                deps.update(subdeps)
+                deps |= subdeps
 
-            entries.set_or_increment(e, list(deps), path)
+            entries.set_or_increment(e, deps, path)
             return e, deps
 
         def visit_EVar(self, e, path, entries, capture_point):
             # The genesis of variable dependence.
             deps = {e.id}
-            entries.set_or_increment(e, list(deps), path)
+            entries.set_or_increment(e, deps, path)
             return e, deps
 
     seq_rewriter = SeqTransformer()
     e = seq_rewriter.visit(e)
 
+    entries = ExpressionMap()
+
     scanner = CSEScanner()
-    result = scanner.visit(e, path, entries, capture_point)
+    result = scanner.visit(e, (), entries, e)
 
     # Anything remaining here gets assigned to the top-level capture point.
 
