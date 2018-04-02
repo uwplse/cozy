@@ -114,7 +114,7 @@ def optimized_in(x, xs):
             optimized_in(x, xs.then_branch),
             optimized_in(x, xs.else_branch)).with_type(BOOL)
     elif isinstance(xs, EFilter):
-        return EAll(xs.p.apply_to(x), optimized_in(x, xs.e))
+        return EAll([xs.p.apply_to(x), optimized_in(x, xs.e)])
     else:
         return EBinOp(x, BOp.In, xs).with_type(BOOL)
 
