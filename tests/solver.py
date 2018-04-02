@@ -5,7 +5,7 @@ from cozy.solver import satisfy, valid, satisfiable, IncrementalSolver
 from cozy.typecheck import typecheck, retypecheck
 from cozy.target_syntax import *
 from cozy.structures.heaps import *
-from cozy.syntax_tools import pprint, equal, implies, mk_lambda
+from cozy.syntax_tools import pprint, equal, implies, mk_lambda, subst
 from cozy.evaluation import eval, Bag, Handle
 
 zero = ENum(0).with_type(TInt())
@@ -401,6 +401,20 @@ class TestSolver(unittest.TestCase):
 
     def test_argmin7(self):
         satisfy(EUnaryOp('not', EBinOp(EUnaryOp('not', EBinOp(EUnaryOp('sum', EMap(EVar('xs').with_type(TBag(TInt())), ELambda(EVar('_var35').with_type(TInt()), ENum(1).with_type(TInt()))).with_type(TBag(TInt()))).with_type(TInt()), '>=', ENum(2).with_type(TInt())).with_type(TBool())).with_type(TBool()), 'or', EBinOp(EUnaryOp('not', EBinOp(EVar('_var616').with_type(TInt()), 'in', EBinOp(EBinOp(EVar('xs').with_type(TBag(TInt())), '-', ESingleton(EArgMin(EVar('xs').with_type(TBag(TInt())), ELambda(EVar('_var35').with_type(TInt()), EVar('_var35').with_type(TInt()))).with_type(TInt())).with_type(TBag(TInt()))).with_type(TBag(TInt())), '-', ESingleton(EArgMin(EBinOp(EVar('xs').with_type(TBag(TInt())), '-', ESingleton(EArgMin(EVar('xs').with_type(TBag(TInt())), ELambda(EVar('_var35').with_type(TInt()), EVar('_var35').with_type(TInt()))).with_type(TInt())).with_type(TBag(TInt()))).with_type(TBag(TInt())), ELambda(EVar('_var35').with_type(TInt()), EVar('_var35').with_type(TInt()))).with_type(TInt())).with_type(TBag(TInt()))).with_type(TBag(TInt()))).with_type(TBool())).with_type(TBool()), 'or', EBinOp(EVar('_var616').with_type(TInt()), 'in', EBinOp(ESingleton(EArgMin(EVar('xs').with_type(TBag(TInt())), ELambda(EVar('_var35').with_type(TInt()), EVar('_var35').with_type(TInt()))).with_type(TInt())).with_type(TBag(TInt())), '-', ESingleton(EArgMin(ESingleton(EArgMin(EVar('xs').with_type(TBag(TInt())), ELambda(EVar('_var35').with_type(TInt()), EVar('_var35').with_type(TInt()))).with_type(TInt())).with_type(TBag(TInt())), ELambda(EVar('_var35').with_type(TInt()), EVar('_var35').with_type(TInt()))).with_type(TInt())).with_type(TBag(TInt()))).with_type(TBag(TInt()))).with_type(TBool())).with_type(TBool())).with_type(TBool())).with_type(TBool()), vars=OrderedSet([EVar('xs').with_type(TBag(TInt())), EVar('_var616').with_type(TInt())]), collection_depth=2, validate_model=True)
+
+    def test_argmin8(self):
+        t = THandle("Foo", TRecord((('a', INT), ('b', INT))))
+        xs = EVar("xs").with_type(TBag(t))
+        x = EVar("x").with_type(t)
+        e1 = EArgMin(
+            EFilter(xs, ELambda(x, EEq(EGetField(EGetField(x, "val"), "a"), ONE))),
+            ELambda(x, EGetField(EGetField(x, "val"), "b")))
+        assert retypecheck(e1)
+        e2 = subst(e1, {"xs":EMap(xs, ELambda(x, EWithAlteredValue(x, EMakeRecord((('a', ONE), ('b', EGetField(EGetField(x, "val"), "b")))))))})
+        assert retypecheck(e2)
+        for cdepth in (0, 1, 2, 4):
+            print("cdepth = {}".format(cdepth))
+            assert bool(cdepth) == satisfiable(ENot(EEq(e1, e2)), collection_depth=cdepth, validate_model=True)
 
     def test_lists1(self):
         satisfy(EUnaryOp('not', EBinOp(EUnaryOp('not', EBool(True).with_type(TBool())).with_type(TBool()), 'or', EBinOp(EVar('l').with_type(TList(TNative('Object'))), '==', EDropFront(EBinOp(EVar('l').with_type(TList(TNative('Object'))), '+', ESingleton(EListGet(EVar('l').with_type(TList(TNative('Object'))), ENum(0).with_type(TInt())).with_type(TNative('Object'))).with_type(TList(TNative('Object')))).with_type(TList(TNative('Object')))).with_type(TList(TNative('Object')))).with_type(TBool())).with_type(TBool())).with_type(TBool()), vars=OrderedSet([EVar('l').with_type(TList(TNative('Object')))]), collection_depth=2, validate_model=True)
