@@ -197,7 +197,7 @@ def sketch_update(
             new_keys = target_syntax.EMapKeys(new_value).with_type(key_bag)
 
             # (1) exit set
-            deleted_keys = target_syntax.EFilter(old_keys, target_syntax.ELambda(k, syntax.ENot(syntax.EIn(k, new_keys)))).with_type(key_bag)
+            deleted_keys = syntax.EBinOp(old_keys, "-", new_keys).with_type(key_bag)
             s1 = syntax.SForEach(k, make_subgoal(deleted_keys, docstring="keys removed from {}".format(pprint(lval))),
                 target_syntax.SMapDel(lval, k))
 
@@ -220,7 +220,7 @@ def sketch_update(
                     target_syntax.SMapUpdate(lval, k, v, update_value))
 
             # (3) enter set
-            fresh_keys = target_syntax.EFilter(new_keys, target_syntax.ELambda(k, syntax.ENot(syntax.EIn(k, old_keys)))).with_type(key_bag)
+            fresh_keys = syntax.EBinOp(new_keys, "-", old_keys).with_type(key_bag)
             s3 = syntax.SForEach(k, make_subgoal(fresh_keys, docstring="new keys in {}".format(pprint(lval))),
                 target_syntax.SMapPut(lval, k, make_subgoal(value_at(new_value, k), a=[syntax.EIn(k, fresh_keys)], docstring="new value inserted at {}".format(pprint(target_syntax.EMapGet(lval, k))))))
 
