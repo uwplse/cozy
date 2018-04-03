@@ -73,9 +73,27 @@ def _delta_form(res : { str : syntax.Exp }, op : syntax.Stm) -> { str : syntax.E
 
     return res
 
+def _fix_map(m : target_syntax.EMap) -> syntax.Exp:
+    # return m
+    from cozy.simplification import simplify
+    m = simplify(m)
+    if not isinstance(m, target_syntax.EMap):
+        return m
+    # print("fixing {}...".format(pprint(m)))
+    elem_type = m.e.type.t
+    assert m.f.body.type == elem_type
+    changed = target_syntax.EFilter(m.e, mk_lambda(elem_type, lambda x: syntax.ENot(syntax.EBinOp(x, "===", m.f.apply_to(x)).with_type(syntax.BOOL)))).with_type(m.e.type)
+    e = syntax.EBinOp(syntax.EBinOp(m.e, "-", changed).with_type(m.e.type), "+", target_syntax.EMap(changed, m.f).with_type(m.e.type)).with_type(m.e.type)
+    if not valid(syntax.EEq(m, e)):
+        print("WARNING: rewrite failed")
+        print("_fix_map({!r})".format(m))
+        return m
+    # print("Fix: {} ----> {}".format(pprint(m), pprint(e)))
+    return e
+
 def _update_handle(e : syntax.Exp, handle : syntax.EVar, change):
     if isinstance(e.type, syntax.TBag) or isinstance(e.type, syntax.TList):
-        return target_syntax.EMap(e, mk_lambda(e.type.t, lambda x: _update_handle(x, handle, change))).with_type(e.type)
+        return _fix_map(target_syntax.EMap(e, mk_lambda(e.type.t, lambda x: _update_handle(x, handle, change))).with_type(e.type))
     elif isinstance(e.type, syntax.THandle):
         if e.type == handle.type:
             return syntax.ECond(syntax.EEq(e, handle), change(e), e).with_type(e.type)
