@@ -94,9 +94,27 @@ def optimized_count(x, xs):
     elif isinstance(xs, EBinOp) and xs.op == "-" and isinstance(xs.e2, ESingleton):
         return EBinOp(
             optimized_count(x, xs.e1), "-",
-            ECond(optimized_in(xs.e2.e, xs.e1), ONE, ZERO).with_type(INT)).with_type(INT)
+            optimized_cond(optimized_in(xs.e2.e, xs.e1), ONE, ZERO).with_type(INT)).with_type(INT)
     else:
         return ELen(EFilter(xs, mk_lambda(x.type, lambda y: EEq(x, y))).with_type(xs.type)).with_type(INT)
+
+def optimized_any_matches(xs, p):
+    if isinstance(xs, EEmptyList):
+        return F
+    elif isinstance(xs, ESingleton):
+        return p.apply_to(xs.e)
+    elif isinstance(xs, EMap):
+        return optimized_any_matches(xs.e, compose(p, xs.f))
+    elif isinstance(xs, EFilter):
+        return optimized_any_matches(xs.e, ELambda(p.arg, EAll([p.body, xs.p.apply_to(p.arg)])))
+    elif isinstance(xs, EBinOp) and xs.op == "+":
+        return EAny([optimized_any_matches(xs.e1, p), optimized_any_matches(xs.e2, p)])
+    elif isinstance(xs, ECond):
+        return optimized_cond(xs.cond,
+            optimized_any_matches(xs.then_branch, p),
+            optimized_any_matches(xs.else_branch, p)).with_type(BOOL)
+    else:
+        return EUnaryOp(UOp.Exists, EFilter(xs, p).with_type(xs.type)).with_type(BOOL)
 
 def optimized_in(x, xs):
     if isinstance(xs, EStateVar):
@@ -104,17 +122,23 @@ def optimized_in(x, xs):
         m = EStateVar(m).with_type(m.type)
         return EHasKey(m, x).with_type(BOOL)
     elif isinstance(xs, EBinOp) and xs.op == "-" and isinstance(xs.e1, EStateVar) and isinstance(xs.e2, ESingleton):
-        return ECond(EEq(x, xs.e2.e),
+        return optimized_cond(optimized_eq(x, xs.e2.e),
             EGt(optimized_count(x, xs.e1), ONE),
             optimized_in(x, xs.e1)).with_type(BOOL)
     elif isinstance(xs, EBinOp) and xs.op == "-":
         return EGt(optimized_count(x, xs.e1), optimized_count(x, xs.e2))
     elif isinstance(xs, ECond):
-        return ECond(xs.cond,
+        return optimized_cond(xs.cond,
             optimized_in(x, xs.then_branch),
             optimized_in(x, xs.else_branch)).with_type(BOOL)
     elif isinstance(xs, EFilter):
         return EAll([xs.p.apply_to(x), optimized_in(x, xs.e)])
+    elif isinstance(xs, EMap) and xs.f.arg not in free_vars(x):
+        return optimized_any_matches(xs.e, ELambda(xs.f.arg, optimized_eq(xs.f.body, x)))
+    elif isinstance(xs, ESingleton):
+        return optimized_eq(x, xs.e)
+    elif isinstance(xs, EEmptyList):
+        return F
     else:
         return EBinOp(x, BOp.In, xs).with_type(BOOL)
 
@@ -124,7 +148,7 @@ def optimized_len(xs):
     elif isinstance(xs, EBinOp) and xs.op == "-" and isinstance(xs.e2, ESingleton):
         return EBinOp(
             optimized_len(xs.e1), "-",
-            ECond(optimized_in(xs.e2.e, xs.e1), ONE, ZERO).with_type(INT)).with_type(INT)
+            optimized_cond(optimized_in(xs.e2.e, xs.e1), ONE, ZERO).with_type(INT)).with_type(INT)
     elif isinstance(xs, ESingleton):
         return ONE
     elif isinstance(xs, EEmptyList):
@@ -138,7 +162,7 @@ def optimized_empty(xs):
     l = optimized_len(xs)
     if isinstance(l, ENum):
         return T if l.val == 0 else F
-    return EEq(l, ZERO)
+    return optimized_eq(l, ZERO)
 
 def optimized_exists(xs):
     l = optimized_len(xs)
@@ -149,7 +173,17 @@ def optimized_exists(xs):
 def optimized_best(xs, keyfunc, op, args):
     argbest = EArgMin if op == "<" else EArgMax
     elem_type = xs.type.t
-    if isinstance(xs, EEmptyList):
+    if isinstance(xs, EBinOp) and xs.op == "-" and isinstance(xs.e1, EStateVar) and isinstance(xs.e2, ESingleton):
+        heap_type, make_heap = (TMinHeap, EMakeMinHeap) if op == "<" else (TMaxHeap, EMakeMaxHeap)
+        bag = xs.e1
+        x = xs.e2.e
+        h = make_heap(bag.e, keyfunc).with_type(heap_type(elem_type, keyfunc))
+        prev_min = EStateVar(optimized_best(bag.e, keyfunc, op, args=args).with_type(elem_type)).with_type(elem_type)
+        return optimized_cond(
+            EAll([optimized_in(x, bag), optimized_eq(x, prev_min)]),
+            EHeapPeek2(EStateVar(h).with_type(h.type), EStateVar(ELen(bag.e)).with_type(INT)).with_type(elem_type),
+            prev_min)
+    elif isinstance(xs, EEmptyList):
         return construct_value(elem_type)
     elif isinstance(xs, ESingleton):
         return xs.e
@@ -176,6 +210,11 @@ def optimized_best(xs, keyfunc, op, args):
             construct_value(elem_type))
     elif isinstance(xs, EStateVar) and not any(v in args for v in free_vars(keyfunc)):
         return EStateVar(argbest(xs.e, keyfunc).with_type(elem_type)).with_type(elem_type)
+    elif isinstance(xs, ECond):
+        return optimized_cond(
+            xs.cond,
+            optimized_best(xs.then_branch, keyfunc, op, args=args),
+            optimized_best(xs.else_branch, keyfunc, op, args=args))
     else:
         return argbest(xs, keyfunc).with_type(elem_type)
 
@@ -187,8 +226,30 @@ def optimized_cond(c, a, b):
     else:
         return ECond(c, a, b).with_type(a.type)
 
+def optimized_eq(a, b):
+    if alpha_equivalent(a, b):
+        return T
+    else:
+        return EEq(a, b)
+
+def optimized_addr(e):
+    while isinstance(e, EWithAlteredValue):
+        e = e.handle
+    return e
+
+def optimized_val(e):
+    if isinstance(e, EWithAlteredValue):
+        return e.new_value
+    return EGetField(e, "val").with_type(e.type.value_type)
+
 def _simple_filter(xs, p, args):
-    if isinstance(xs, EStateVar) and not any(v in args for v in free_vars(p)):
+    if p.body == T:
+        return xs
+    elif p.body == F:
+        return EEmptyList().with_type(xs.type)
+    elif isinstance(xs, EEmptyList):
+        return xs
+    elif isinstance(xs, EStateVar) and not any(v in args for v in free_vars(p)):
         return EStateVar(_simple_filter(xs.e, p, args)).with_type(xs.type)
     elif isinstance(p.body, EBinOp) and p.body.op == "==" and p.body.e1 == p.arg and p.arg not in free_vars(p.body.e2):
         return optimized_cond(
@@ -198,11 +259,50 @@ def _simple_filter(xs, p, args):
     else:
         return EFilter(xs, p).with_type(xs.type)
 
+def optimized_bag_difference(xs, ys):
+    # EStateVar(distinct xs) - (EStateVar(xs) - [i])
+    # ===> is-last(i, xs) ? [] : [i]
+    if (isinstance(ys, EBinOp) and ys.op == "-" and
+            isinstance(ys.e1, EStateVar) and
+            isinstance(ys.e2, ESingleton) and
+            isinstance(xs, EStateVar) and isinstance(xs.e, EUnaryOp) and xs.e.op == UOp.Distinct and
+            alpha_equivalent(xs.e.e, ys.e1.e)):
+        distinct_elems = xs.e
+        elems = distinct_elems.e
+        elem_type = elems.type.t
+        m = histogram(elems)
+        m_rt = EStateVar(m).with_type(m.type)
+        count = EMapGet(m_rt, ys.e2.e).with_type(INT)
+        return optimized_cond(
+            optimized_eq(count, ONE),
+            ys.e2,
+            EEmptyList().with_type(xs.type))
+
+    # xs - (xs - [i])
+    # ===> (i in xs) ? [i] : []
+    if isinstance(ys, EBinOp) and ys.op == "-" and isinstance(ys.e2, ESingleton) and alpha_equivalent(xs, ys.e1):
+        return optimized_cond(optimized_in(ys.e2.e, xs),
+            ys.e2,
+            EEmptyList().with_type(xs.type))
+
+    # [x] - xs
+    if isinstance(xs, ESingleton):
+        return optimized_cond(
+            optimized_in(xs.e, ys),
+            EEmptyList().with_type(xs.type),
+            xs)
+
+    # only legal if xs are distinct, but we'll give it a go...
+    return EFilter(xs, mk_lambda(xs.type.t, lambda x: ENot(optimized_in(x, ys)))).with_type(xs.type)
+
 def optimize_filter_as_if_distinct(xs, p, args):
-    from cozy.syntax_tools import dnf
-    cases = dnf(p.body)
-    for c in cases:
-        print("; ".join(pprint(x) for x in c))
+    if isinstance(xs, EBinOp) and xs.op == "-":
+        return optimize_filter_as_if_distinct(xs.e1, ELambda(p.arg, EAll([ENot(optimized_in(p.arg, xs.e2)), p.body])), args)
+    from cozy.syntax_tools import dnf, nnf
+    cases = dnf(nnf(p.body))
+    cases = [unique(c) for c in cases]
+    # for c in cases:
+    #     print("; ".join(pprint(x) for x in c))
     if len(cases) == 0:
         return EFilter(xs, p).with_type(xs.type)
     else:
@@ -216,7 +316,11 @@ def optimize_filter_as_if_distinct(xs, p, args):
 
 def optimize_map(xs, f, args):
     res_type = TBag(f.body.type)
-    if isinstance(f.body, ECond):
+    if isinstance(xs, ESingleton):
+        return ESingleton(f.apply_to(xs.e)).with_type(res_type)
+    elif isinstance(xs, EEmptyList):
+        return EEmptyList().with_type(res_type)
+    elif isinstance(f.body, ECond):
         return EBinOp(
             optimize_map(optimize_filter_as_if_distinct(xs, ELambda(f.arg,      f.body.cond) , args=args), ELambda(f.arg, f.body.then_branch), args), "+",
             optimize_map(optimize_filter_as_if_distinct(xs, ELambda(f.arg, ENot(f.body.cond)), args=args), ELambda(f.arg, f.body.else_branch), args)).with_type(res_type)
@@ -230,6 +334,10 @@ class accelerate_build(AuxBuilder):
         self.state_vars = state_vars
     def check(self, e, pool):
         # print("  --> trying {}".format(pprint(e)))
+        # from cozy.typecheck import retypecheck
+        # from cozy.syntax_tools import deep_copy
+        # x = deep_copy(e)
+        # assert retypecheck(x)
         return (e, pool)
     def apply(self, cache, size, scopes, build_lambdas, e, pool):
         if not accelerate.value:
@@ -247,23 +355,20 @@ class accelerate_build(AuxBuilder):
 
             yield from map_accelerate(e, self.state_vars, self.args, cache, size-1)
 
-            # xs - (xs - [i])
-            # ===> (i in xs) ? [i] : []
-            if is_collection(e.type) and isinstance(e, EBinOp) and e.op == "-" and isinstance(e.e2, EBinOp) and e.e2.op == "-" and isinstance(e.e2.e2, ESingleton) and alpha_equivalent(e.e1, e.e2.e1):
-                e = ECond(optimized_in(e.e2.e2.e, e.e1),
-                    e.e2.e2,
-                    EEmptyList().with_type(e.type)).with_type(e.type)
-                yield self.check(e, RUNTIME_POOL)
-                yield self.check(e.cond, RUNTIME_POOL)
+            if isinstance(e, EArgMin) or isinstance(e, EArgMax):
+                ee = optimized_best(e.e, e.f, "<" if isinstance(e, EArgMin) else ">", args=self.args)
+                if not alpha_equivalent(e, ee):
+                    yield self.check(ee, RUNTIME_POOL)
 
-            # [x] - xs
-            if is_collection(e.type) and isinstance(e, EBinOp) and e.op == "-" and isinstance(e.e1, ESingleton):
-                e = ECond(
-                    optimized_in(e.e1.e, e.e2),
-                    EEmptyList().with_type(e.type),
-                    e.e1).with_type(e.type)
-                yield self.check(e, RUNTIME_POOL)
-                yield self.check(e.cond, RUNTIME_POOL)
+            if is_collection(e.type) and isinstance(e, EBinOp) and e.op == "-":
+                ee = optimized_bag_difference(e.e1, e.e2)
+                if not alpha_equivalent(e, ee):
+                    yield self.check(ee, RUNTIME_POOL)
+
+            if isinstance(e, EBinOp) and e.op == "===" and isinstance(e.e1.type, THandle):
+                yield self.check(EAll([
+                    optimized_eq(optimized_addr(e.e1), optimized_addr(e.e2)),
+                    optimized_eq(optimized_val(e.e1),  optimized_val(e.e2)).with_type(BOOL)]), RUNTIME_POOL)
 
             if isinstance(e, EBinOp) and e.op == BOp.In:
                 ee = optimized_in(e.e1, e.e2)
@@ -285,11 +390,6 @@ class accelerate_build(AuxBuilder):
                 if not alpha_equivalent(e, ee):
                     yield self.check(ee, RUNTIME_POOL)
 
-            if isinstance(e, EArgMin) or isinstance(e, EArgMax):
-                ee = optimized_best(e.e, e.f, "<" if isinstance(e, EArgMin) else ">", args=self.args)
-                if not alpha_equivalent(e, ee):
-                    yield self.check(ee, RUNTIME_POOL)
-
             if isinstance(e, EFilter):
                 ee = optimize_filter_as_if_distinct(e.e, e.p, args=self.args)
                 if not alpha_equivalent(e, ee):
@@ -299,40 +399,3 @@ class accelerate_build(AuxBuilder):
                 ee = optimize_map(e.e, e.f, args=self.args)
                 if not alpha_equivalent(e, ee):
                     yield self.check(ee, RUNTIME_POOL)
-
-            # {min,max} (xs - [i])
-            if (isinstance(e, EArgMin) or isinstance(e, EArgMax)) and isinstance(e.e, EBinOp) and e.e.op == "-" and isinstance(e.e.e1, EStateVar) and isinstance(e.e.e2, ESingleton):
-                heap_type, make_heap = (TMinHeap, EMakeMinHeap) if isinstance(e, EArgMin) else (TMaxHeap, EMakeMaxHeap)
-                bag = e.e.e1
-                x = e.e.e2.e
-                h = make_heap(bag.e, e.f).with_type(heap_type(e.e.type.t, e.f))
-                prev_min = EStateVar(type(e)(bag.e, e.f).with_type(e.type)).with_type(e.type)
-                e = ECond(
-                    EAll([optimized_in(x, bag), EEq(x, prev_min)]),
-                    EHeapPeek2(EStateVar(h).with_type(h.type), EStateVar(ELen(bag.e)).with_type(INT)).with_type(e.type),
-                    prev_min).with_type(e.type)
-                yield self.check(e, RUNTIME_POOL)
-
-            # EStateVar(distinct xs) - (EStateVar(xs) - [i])
-            # ===> is-last(i, xs) ? [] : [i]
-            if (is_collection(e.type) and
-                    isinstance(e, EBinOp) and e.op == "-" and
-                    isinstance(e.e2, EBinOp) and e.e2.op == "-" and
-                    isinstance(e.e2.e1, EStateVar) and
-                    isinstance(e.e2.e2, ESingleton) and
-                    isinstance(e.e1, EStateVar) and isinstance(e.e1.e, EUnaryOp) and e.e1.e.op == UOp.Distinct and
-                    alpha_equivalent(e.e1.e.e, e.e2.e1.e)):
-                distinct_elems = e.e1.e
-                elems = distinct_elems.e
-                elem_type = elems.type.t
-                m = histogram(elems)
-                m_rt = EStateVar(m).with_type(m.type)
-                count = EMapGet(m_rt, e.e2.e2.e).with_type(INT)
-                e = ECond(
-                    EEq(count, ONE),
-                    e.e2.e2,
-                    EEmptyList().with_type(e.type)).with_type(e.type)
-                yield self.check(e, RUNTIME_POOL)
-                yield self.check(e.cond, RUNTIME_POOL)
-                yield self.check(m, STATE_POOL)
-                yield self.check(m_rt, RUNTIME_POOL)
