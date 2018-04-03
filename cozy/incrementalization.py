@@ -186,9 +186,6 @@ def sketch_update(
         stm = syntax.seq([
             recurse(get(lval, i), get(old_value, i), get(new_value, i), ctx, assumptions)
             for i in range(len(t.fields))])
-    elif isinstance(t, syntax.THandle):
-        # handles are tricky, and are dealt with at a higher level
-        stm = syntax.SNoOp()
     elif isinstance(t, syntax.TMap):
         value_at = lambda m, k: target_syntax.EMapGet(m, k).with_type(lval.type.v)
         k = fresh_var(lval.type.k)
