@@ -203,7 +203,6 @@ class TestSyntaxTools(unittest.TestCase):
         assert l[2] is y
         assert l[3] is z
 
-
 """
 Elimination tests.
 """
@@ -211,30 +210,37 @@ Elimination tests.
 def _cse(e):
     return cse_replace(*cse_scan(e))
 
-def parse_fragment(fragment, types={}):
+def _parse_fragment(fragment, types={}, expr=False):
     """
     Can be used to obtain a parse tree for an arbitrary syntax fragment.
     Include a dictionary of var_name -> type object. By default, they're INTs.
+
+    Doesn't work for things only in target_syntax, like (let x=3 in...).
     """
     class TypeInstaller(BottomUpRewriter):
         def visit_EVar(self, e):
             return e.with_type(types.get(e.id, INT))
 
-    spec = "Test: op foo() " + fragment
+    spec = "Test: {} foo() {}".format("query" if expr else "op", fragment)
     ast = parse(spec)
     ast = TypeInstaller().visit(ast)
-    return ast.methods[0].body
+    return ast.methods[0].ret if expr else ast.methods[0].body
+
+def parse_stm(frag, types={}):
+    return _parse_fragment(frag, types, expr=False)
+
+def parse_expr(frag, types={}):
+    return _parse_fragment(frag, types, expr=True)
 
 class TestElimination(unittest.TestCase):
     def test_y_plus_1(self):
-        y = EVar("y").with_type(INT)
-        yp1 = EBinOp(y, "+", ENum(1).with_type(INT))
-
-        e = EBinOp(
-                yp1,
-                "+",
-                yp1
-            )
+        e = parse_expr(
+            """
+            (y + 1)
+            +
+            (y + 1)
+            """
+        )
 
         assert retypecheck(e)
         print(pprint(e))
@@ -254,6 +260,7 @@ class TestElimination(unittest.TestCase):
         ) +
         (z + 1)
         """
+
         y = EVar("y").with_type(INT)
         yp1 = EBinOp(y, "+", ENum(1).with_type(INT))
 
@@ -335,29 +342,17 @@ class TestElimination(unittest.TestCase):
         assert newForm.count("z + 1") == 1
 
     def test_y_plus_1_3x(self):
-        """
-            (y + 1)
+        e = parse_expr(
+            """
+            (
+                (y + 1)
+                +
+                (z + 1)
+            )
             +
-            (z + 1)
-        +
-            (y + 1)
-        """
-        y = EVar("y").with_type(INT)
-        yp1 = EBinOp(y, "+", ENum(1).with_type(INT))
-
-        z = EVar("z").with_type(INT)
-        zp1 = EBinOp(z, "+", ENum(1).with_type(INT))
-
-        NINE = ENum(9).with_type(INT)
-
-        e = EBinOp(
-                EBinOp(
-                    yp1,
-                    "+",
-                    zp1
-                ),
-                "+",
-                yp1)
+                (y + 1)
+            """
+        )
 
         assert retypecheck(e)
         print(pprint(e))
@@ -370,24 +365,12 @@ class TestElimination(unittest.TestCase):
         assert newForm.count("z + 1") == 1
 
     def test_cse_2_expr(self):
-        """
-        (x < y)
-            ? ((x < y) ? x + y : x + y)
-            : ((x < y) ? x + y : x + y)
-        """
-        e = ECond(
-                EBinOp(EVar("x").with_type(INT), "<", EVar("y").with_type(INT)),
-                EBinOp(EVar("x").with_type(INT), "+", EVar("y").with_type(INT)),
-                EBinOp(EVar("x").with_type(INT), "+", EVar("y").with_type(INT))
-        )
-
-        assert retypecheck(e)
-
-        # Nested ECond:
-        e2 = ECond(
-                EBinOp(EVar("x").with_type(INT), "<", EVar("y").with_type(INT)),
-                e,
-                e
+        e2 = parse_expr(
+            """
+            (x < y)
+                ? ((x < y) ? x + y : x + y)
+                : ((x < y) ? x + y : x + y)
+            """
         )
 
         assert retypecheck(e2)
@@ -437,15 +420,28 @@ class TestElimination(unittest.TestCase):
         assert "let y = 1 in (y + 2)" in pprint(s)
         assert isinstance(s, ELet)
 
-    def test_cse_2_nolambda(self):
+    def test_cse_2_no_elim_lambda(self):
         """
         Bunch of different expressions should not get their ELambdas separated from them.
         """
+        INTLIST = TList(INT)
 
         e1 = EFilter(ESingleton(ONE), ELambda(EVar("x").with_type(INT), EBinOp(EVar("x"), ">", ENum(2).with_type(INT))))
         e = ECond(EBinOp(EVar("x").with_type(INT), "<", EVar("y").with_type(INT)), e1, e1)
-        assert retypecheck(e)
-        e = _cse(e)
+
+        # TODO: get refreshed on the ELambda restrictions.
+        """
+        s = seq((
+            SAssign(EVar("a").with_type(INTLIST), e),
+        ))
+
+        assert retypecheck(s)
+        print(pprint(s))
+        print("###")
+        s = _cse(s)
+        print(pprint(s))
+        assert False
+        """
         assert isinstance(e1.p, ELambda)
 
         e1 = ELet(EVar("y").with_type(INT), ELambda(EVar("x").with_type(INT), EBinOp(EVar("x"), "+", ENum(2).with_type(INT))))
@@ -462,7 +458,7 @@ class TestElimination(unittest.TestCase):
             assert isinstance(e1.f, ELambda)
 
     def test_cse_2_stm_simple(self):
-        s = parse_fragment(
+        s = parse_stm(
             """
             x = y + 2;
             z = y + 2;
@@ -486,7 +482,7 @@ class TestElimination(unittest.TestCase):
         ??
         This needs some work -- currently a+1 gets generated multiple times.
         """
-        s = parse_fragment(
+        s = parse_stm(
             """
             x = a+1 + b+2 + c+3;
             z = a+1 + b+2 + c+3 + d+4;
@@ -505,18 +501,14 @@ class TestElimination(unittest.TestCase):
         assert False
 
     def test_cse_2_stm_expr_if(self):
-        """
-        if (x < y) {
-            _var507 = (x < y) : (x + y) : (x + y)
-        }
-        """
-        e = ECond(
-                EBinOp(EVar("x").with_type(INT), "<", EVar("y").with_type(INT)),
-                EBinOp(EVar("x").with_type(INT), "+", EVar("y").with_type(INT)),
-                EBinOp(EVar("x").with_type(INT), "+", EVar("y").with_type(INT))
+        s = parse_stm(
+            """
+            if (x < y) {
+                _var507 = (x < y) ? (x + y) : (x + y);
+            }
+            """
         )
 
-        s = SIf(e.cond, SAssign(EVar('_var507').with_type(TInt()), e), SNoOp())
         assert retypecheck(s)
 
         print(pprint(s))
@@ -528,7 +520,7 @@ class TestElimination(unittest.TestCase):
         assert newForm.count("x + y") == 1
 
     def test_cse_2_stm_seq_assign_kill_basic(self):
-        s = parse_fragment(
+        s = parse_stm(
             """
             x = y + 2;
             y = 1;
@@ -548,7 +540,7 @@ class TestElimination(unittest.TestCase):
         assert newForm.count("y + 2") == 2
 
     def test_cse_2_stm_seq_assign_kill_1(self):
-        s = parse_fragment(
+        s = parse_stm(
             """
             b = z + 4;
             x = y + 2;
@@ -571,7 +563,7 @@ class TestElimination(unittest.TestCase):
         assert newForm.count("z + 4") == 1
 
     def test_cse_2_stm_seq_assign_kill_deep(self):
-        s = parse_fragment(
+        s = parse_stm(
             """
             n = h + 5;
             q = y + 2;
@@ -606,7 +598,7 @@ class TestElimination(unittest.TestCase):
                 z = tmp
         """
 
-        s = parse_fragment(
+        s = parse_stm(
             """
             if (foo) {
                 x = y + 2;
