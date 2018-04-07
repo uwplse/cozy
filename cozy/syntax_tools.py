@@ -1459,28 +1459,41 @@ class ExpressionMap(ExpMap):
     """
     Maps expressions to (temp vars, other supporting info).
     """
-    def set_or_increment(self, k, dependents, path):
-        data = self.get(k)
+    def set_or_increment(self, exp, dependents, handle_types, path):
+        data = self.get(exp)
 
         if data is not None:
             # Expr has been seen before.
-            v, count, deps, paths = data
+            tempvar, count, deps, handles, paths = data
             count += 1
-            deps.update(dependents)
+            # Same expr -- dependents/types won't change.
+            assert deps == dependents
+            assert handles == handle_types
             paths.append(path)
         else:
             # Never before seen expr.
-            v = fresh_var(k.type, "tmp")
+            tempvar = fresh_var(exp.type, "tmp")
             count = 1
             deps = set(dependents)
+            handles = set(handle_types)
             paths = [path]
 
-        self[k] = (v, count, deps, paths)
+        self[exp] = (tempvar, count, deps, handles, paths)
 
-    def unbind(self, varname):
-        return ExpressionMap((k, (var, count, deps, paths))
-            for k, (var, count, deps, paths) in self.items()
-            if varname not in deps)
+    def unbind(self, var):
+        """
+        Returns a new ExpressionMap without expressions related to the given var.
+        """
+        if isinstance(var.type, syntax.THandle):
+            # "related" for handle-vars means the handle types are the same.
+            return ExpressionMap((exp, (temp, count, deps, handle_types, paths))
+                for exp, (temp, count, deps, handle_types, paths) in self.items()
+                if var.type.statevar not in handle_types)
+        else:
+            # Otherwise it's the variable name.
+            return ExpressionMap((exp, (temp, count, deps, handle_types, paths))
+                for exp, (temp, count, deps, handle_types, paths) in self.items()
+                if var.id not in deps)
 
 def cse_scan(e):
     SIMPLE_EXPS = (syntax.ENum, syntax.EVar, syntax.EBool, syntax.EStr,
@@ -1513,42 +1526,47 @@ def cse_scan(e):
             self.rewrites = dict()
 
         def visit_object(self, o, path, *args, **kwargs):
-            # Include empty dependents in result.
-            return self.join(o, ()), set()
+            # Include empty dependents/handle types in result.
+            return self.join(o, ()), set(), set()
 
         def default(self, e, path, entries, capture_point):
             """
-            Returns (expr, dependent_vars) for each child of e by visiting it.
+            Returns (expr, dependent_vars, types) for each child of e by
+            visiting it.
             """
             return [self.visit(c, path + (i,), entries, capture_point)
                 for i, c in enumerate(e.children())]
 
         def filter_captured_vars(self, outer_entries, inner_entries,
-                capture_path, bound_var_id):
+                capture_path, bound_var):
             """
             Move things from inner_entries to capture/rewrite structures if
-            they're related to the bound variable. Otherwise, bubble them up
+            they're related to the binding variable. Otherwise, bubble them up
             to the surrounding scope.
             """
-            for expr, (temp, count, dependents, paths) in inner_entries.items():
-                if bound_var_id in dependents:
-                    # Safe to capture.
+            for expr, (temp, count, dependents, handle_types, paths) in inner_entries.items():
+                if isinstance(bound_var.type, syntax.THandle):
+                    should_capture = bound_var.type.statevar in handle_types
+                else:
+                    should_capture = bound_var.id in dependents
+
+                if should_capture:
                     if count > 1 and not isinstance(expr, SIMPLE_EXPS):
                         self.captures[capture_path].append((temp, expr))
                         self.rewrites.update({p: temp for p in paths})
                 else:
                     # Bubble up to surrounding capture point.
-                    outer_entries[expr] = (temp, count, dependents, paths)
+                    outer_entries[expr] = (temp, count, dependents, handle_types, paths)
 
         def visit_ELambda(self, e, path, entries, capture_point):
             # Capture point changes with ELambda. (The body is the 1st child,
             # zero-indexed.)
-            submap = entries.unbind(e.arg.id)
-            _, deps = self.visit(e.body, path + (1,), submap, e.body)
+            submap = entries.unbind(e.arg)
+            _, deps, handle_types = self.visit(e.body, path + (1,), submap, e.body)
             e = e.with_type(e.body.type)
-            entries.set_or_increment(e, deps, path)
-            self.filter_captured_vars(entries, submap, path + (1,), e.arg.id)
-            return e, deps
+            entries.set_or_increment(e, deps, handle_types, path)
+            self.filter_captured_vars(entries, submap, path + (1,), e.arg)
+            return e, deps, handle_types
 
         def visit_SLinearSequence(self, s, path, entries, capture_point):
             def scan_statement_sequence(seq_pair, ordinal, inner_entries, inner_capture):
@@ -1563,11 +1581,10 @@ def cse_scan(e):
                 self.visit(stm, stm_path, inner_entries, inner_capture)
 
                 if killed_var is not None:
-                    # Unbind stuff related to killed_var
-                    submap = inner_entries.unbind(killed_var.id)
+                    # Unbind expressions related to killed_var
+                    submap = inner_entries.unbind(killed_var)
                     scan_statement_sequence(rest, ordinal + 1, submap, stm)
-
-                    self.filter_captured_vars(inner_entries, submap, stm_path, killed_var.id)
+                    self.filter_captured_vars(inner_entries, submap, stm_path, killed_var)
                 else:
                     scan_statement_sequence(rest, ordinal + 1, inner_entries, inner_capture)
 
@@ -1576,31 +1593,39 @@ def cse_scan(e):
                 functools.reduce(lambda a, b: (b, a), reversed(s.statements)),
                 0, entries, capture_point)
 
-            return s, set()
+            return s, set(), set()
 
         def visit_SForEach(self, s, path, entries, capture_point):
             self.visit(s.iter, path + (1,), entries, capture_point)
             # Capture point changes with SForEach. (The body is the child 2,
             # zero-indexed.)
-            submap = entries.unbind(s.id.id)
+            submap = entries.unbind(s.id)
             self.visit(s.body, path + (2,), submap, s.body)
-            self.filter_captured_vars(entries, submap, path + (2,), s.id.id)
-            return s, set()
+            self.filter_captured_vars(entries, submap, path + (2,), s.id)
+            return s, set(), set()
 
         def visit_Exp(self, e, path, entries, capture_point):
             deps = set()
+            handle_types = set()
 
-            for _, subdeps in self.default(e, path, entries, capture_point):
+            for _, subdeps, subhandles in self.default(e, path, entries, capture_point):
                 deps |= subdeps
+                handle_types |= subhandles
 
-            entries.set_or_increment(e, deps, path)
-            return e, deps
+            entries.set_or_increment(e, deps, handle_types, path)
+            return e, deps, handle_types
 
         def visit_EVar(self, e, path, entries, capture_point):
-            # The genesis of variable dependence.
+            # The genesis of variable dependence & type tracking.
             deps = {e.id}
-            entries.set_or_increment(e, deps, path)
-            return e, deps
+
+            if isinstance(e.type, syntax.THandle):
+                handle_types = {e.type.statevar}
+            else:
+                handle_types = set()
+
+            entries.set_or_increment(e, deps, handle_types, path)
+            return e, deps, handle_types
 
     seq_rewriter = SeqTransformer()
     e = seq_rewriter.visit(e)
@@ -1611,7 +1636,7 @@ def cse_scan(e):
 
     # Anything remaining here gets assigned to the top-level capture point.
 
-    for expr, (temp, count, dependents, paths) in entries.items():
+    for expr, (temp, count, dependents, types, paths) in entries.items():
         if count > 1 and not isinstance(expr, SIMPLE_EXPS):
             scanner.captures[()].append((temp, expr))
             scanner.rewrites.update({p: temp for p in paths})

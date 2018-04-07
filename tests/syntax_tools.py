@@ -662,7 +662,7 @@ class TestElimination(unittest.TestCase):
 
         s = seq((
             SAssign(EVar("x").with_type(INT), yp2),
-            SForEach(EVar("y"), ESingleton(ONE),
+            SForEach(EVar("y").with_type(INT), ESingleton(ONE),
                 SAssign(EVar("z").with_type(INT), yp2),
                 ),
             SAssign(EVar("q").with_type(INT), yp2),
@@ -678,7 +678,7 @@ class TestElimination(unittest.TestCase):
 
         assert new_form.count("y + 2") == 2
 
-    def _test_cse_handle_sametype_changeval(self):
+    def test_cse_handle_sametype_changeval(self):
         spec = parse_spec(
             """
             Spec:
@@ -690,15 +690,15 @@ class TestElimination(unittest.TestCase):
                     */
                     h.val = 0;
 
-                    a = h.val;
-                    b = h.val;
+                    a = h.val + 7;
+                    b = h.val + 7;
 
                     // Changing g should invalidate h since they have the same handle type.
 
                     g.val = 1;
 
-                    c = h.val;
-                    d = h.val;
+                    c = h.val + 7;
+                    d = h.val + 7;
             """,
             dict(a=INT, b=INT, c=INT, d=INT,
                 h=THandle("IntPtr", INT), g=THandle("IntPtr", INT))
@@ -706,12 +706,13 @@ class TestElimination(unittest.TestCase):
 
         assert retypecheck(spec)
 
+        print(pprint(spec))
         spec2 = eliminate_common_subexpressions(spec)
         new_form = pprint(spec2)
         print(new_form)
-        assert new_form.count("var _tmp") == 2
+        assert new_form.count("+ 7") == 2
 
-    def _test_cse_handle_sametype_changeident(self):
+    def test_cse_handle_sametype_changeident(self):
         spec = parse_spec(
             """
             Spec:
@@ -724,13 +725,13 @@ class TestElimination(unittest.TestCase):
 
                     h.val = 0;
 
-                    a = h.val;
-                    b = h.val;
+                    a = h.val + 7;
+                    b = h.val + 7;
 
                     g = i;
 
-                    c = h.val;
-                    d = h.val;
+                    c = h.val + 7;
+                    d = h.val + 7;
             """,
             dict(a=INT, b=INT, c=INT, d=INT,
                 h=THandle("IntPtr", INT), g=THandle("IntPtr", INT),
@@ -738,11 +739,12 @@ class TestElimination(unittest.TestCase):
         )
 
         assert retypecheck(spec)
+        print(pprint(spec))
 
         spec2 = eliminate_common_subexpressions(spec)
         new_form = pprint(spec2)
         print(new_form)
-        assert new_form.count("var _tmp") == 2
+        assert new_form.count("+ 7") == 2
 
     def test_cse_handle_difftype(self):
         spec = parse_spec(
@@ -754,16 +756,16 @@ class TestElimination(unittest.TestCase):
                 op foo()
                     h.val = 0;
 
-                    a = h.val;
-                    b = h.val;
-                    c = h.val;
-                    d = h.val;
+                    a = h.val + 7;
+                    b = h.val + 7;
+                    c = h.val + 7;
+                    d = h.val + 7;
 
                     // j is of a diff't handle type. Shouldn't bother h's eliminations.
                     j.val = 2;
 
-                    e = h.val;
-                    f = h.val;
+                    e = h.val + 7;
+                    f = h.val + 7;
             """,
             dict(a=INT, b=INT, c=INT, d=INT, e=INT, f=INT,
                 h=THandle("IntPtr", INT),
@@ -775,7 +777,7 @@ class TestElimination(unittest.TestCase):
         spec2 = eliminate_common_subexpressions(spec)
         new_form = pprint(spec2)
         print(new_form)
-        assert new_form.count("var _tmp") == 1
+        assert new_form.count("+ 7") == 1
 
     def __test_cse_2(self):
         op = Op('addElement', [('x', TInt())], [], SSeq(SSeq(SSeq(SDecl('_name5771', ECond(EBinOp(EBinOp(EBinOp(EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt()), '+', EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()), '<', ENum(5).with_type(TInt())).with_type(TBool()), 'or', EBinOp(EBinOp(EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt()), '+', EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()), '>', ENum(7).with_type(TInt())).with_type(TBool())).with_type(TBool()), EBinOp(EVar('_var2027').with_type(TBag(TInt())), '-', EBinOp(EVar('_var2027').with_type(TBag(TInt())), '+', ESingleton(EVar('x').with_type(TInt())).with_type(TBag(TInt()))).with_type(TBag(TInt()))).with_type(TBag(TInt())), EBinOp(EVar('_var2027').with_type(TBag(TInt())), '-', EVar('_var2027').with_type(TBag(TInt()))).with_type(TBag(TInt()))).with_type(TBag(TInt()))), SDecl('_name5772', ECond(EBinOp(EBinOp(EBinOp(EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt()), '+', EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()),'<', ENum(5).with_type(TInt())).with_type(TBool()), 'or', EBinOp(EBinOp(EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt()), '+', EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()), '>', ENum(7).with_type(TInt())).with_type(TBool())).with_type(TBool()), EBinOp(EBinOp(EVar('_var2027').with_type(TBag(TInt())), '+', ESingleton(EVar('x').with_type(TInt())).with_type(TBag(TInt()))).with_type(TBag(TInt())), '-', EVar('_var2027').with_type(TBag(TInt()))).with_type(TBag(TInt())), EBinOp(EVar('_var2027').with_type(TBag(TInt())), '-', EVar('_var2027').with_type(TBag(TInt()))).with_type(TBag(TInt()))).with_type(TBag(TInt())))), SAssign(EVar('_var507').with_type(TInt()), ECond(EBinOp(EBinOp(EBinOp(EUnaryOp('len', EEmptyList().with_type(TBag(TInt()))).with_type(TInt()), '+', EUnaryOp('len', EEmptyList().with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()), '<', ENum(5).with_type(TInt())).with_type(TBool()), 'or', EBinOp(ENum(5).with_type(TInt()), '>', ENum(7).with_type(TInt())).with_type(TBool())).with_type(TBool()), EBinOp(EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt()), '+', ENum(1).with_type(TInt())).with_type(TInt()), EUnaryOp('len', EEmptyList().with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()))), SSeq(SForEach(EVar('_var2988').with_type(TInt()), EVar('_name5771').with_type(TBag(TInt())), SCall(EVar('_var2027').with_type(TBag(TInt())), 'remove', [EVar('_var2988').with_type(TInt())])), SForEach(EVar('_var2988').with_type(TInt()), EVar('_name5772').with_type(TBag(TInt())), SCall(EVar('_var2027').with_type(TBag(TInt())), 'add', [EVar('_var2988').with_type(TInt())])))), '')
