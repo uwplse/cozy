@@ -210,6 +210,14 @@ Elimination tests.
 def _cse(e):
     return cse_replace(*cse_scan(e))
 
+def parse_spec(spec, types={}):
+    class TypeInstaller(BottomUpRewriter):
+        def visit_EVar(self, e):
+            return e.with_type(types.get(e.id, INT))
+
+    ast = parse(spec)
+    return TypeInstaller().visit(ast)
+
 def _parse_fragment(fragment, types={}, expr=False):
     """
     Can be used to obtain a parse tree for an arbitrary syntax fragment.
@@ -217,13 +225,8 @@ def _parse_fragment(fragment, types={}, expr=False):
 
     Doesn't work for things only in target_syntax, like (let x=3 in...).
     """
-    class TypeInstaller(BottomUpRewriter):
-        def visit_EVar(self, e):
-            return e.with_type(types.get(e.id, INT))
-
     spec = "Test: {} foo() {}".format("query" if expr else "op", fragment)
-    ast = parse(spec)
-    ast = TypeInstaller().visit(ast)
+    ast = parse_spec(spec, types)
     return ast.methods[0].ret if expr else ast.methods[0].body
 
 def parse_stm(frag, types={}):
@@ -674,6 +677,105 @@ class TestElimination(unittest.TestCase):
         print(s2)
 
         assert new_form.count("y + 2") == 2
+
+    def _test_cse_handle_sametype_changeval(self):
+        spec = parse_spec(
+            """
+            Spec:
+                handletype IntPtr = Int
+
+                op foo()
+                    /*
+                    Assigning to a handle type should invalidate ALL other vars of the same handle type.
+                    */
+                    h.val = 0;
+
+                    a = h.val;
+                    b = h.val;
+
+                    // Changing g should invalidate h since they have the same handle type.
+
+                    g.val = 1;
+
+                    c = h.val;
+                    d = h.val;
+            """,
+            dict(a=INT, b=INT, c=INT, d=INT,
+                h=THandle("IntPtr", INT), g=THandle("IntPtr", INT))
+        )
+
+        assert retypecheck(spec)
+
+        spec2 = eliminate_common_subexpressions(spec)
+        new_form = pprint(spec2)
+        print(new_form)
+        assert new_form.count("var _tmp") == 2
+
+    def _test_cse_handle_sametype_changeident(self):
+        spec = parse_spec(
+            """
+            Spec:
+                handletype IntPtr = Int
+
+                op foo2()
+                    /*
+                    Also reassigning the handle itself, not its val.
+                    */
+
+                    h.val = 0;
+
+                    a = h.val;
+                    b = h.val;
+
+                    g = i;
+
+                    c = h.val;
+                    d = h.val;
+            """,
+            dict(a=INT, b=INT, c=INT, d=INT,
+                h=THandle("IntPtr", INT), g=THandle("IntPtr", INT),
+                i=THandle("IntPtr", INT))
+        )
+
+        assert retypecheck(spec)
+
+        spec2 = eliminate_common_subexpressions(spec)
+        new_form = pprint(spec2)
+        print(new_form)
+        assert new_form.count("var _tmp") == 2
+
+    def test_cse_handle_difftype(self):
+        spec = parse_spec(
+            """
+            Spec:
+                handletype IntPtr = Int
+                handletype IntPtr2 = Int // a diff't type.
+
+                op foo()
+                    h.val = 0;
+
+                    a = h.val;
+                    b = h.val;
+                    c = h.val;
+                    d = h.val;
+
+                    // j is of a diff't handle type. Shouldn't bother h's eliminations.
+                    j.val = 2;
+
+                    e = h.val;
+                    f = h.val;
+            """,
+            dict(a=INT, b=INT, c=INT, d=INT, e=INT, f=INT,
+                h=THandle("IntPtr", INT),
+                j=THandle("IntPtr2", INT))
+        )
+
+        assert retypecheck(spec)
+
+        spec2 = eliminate_common_subexpressions(spec)
+        new_form = pprint(spec2)
+        print(new_form)
+        assert new_form.count("var _tmp") == 1
 
     def __test_cse_2(self):
         op = Op('addElement', [('x', TInt())], [], SSeq(SSeq(SSeq(SDecl('_name5771', ECond(EBinOp(EBinOp(EBinOp(EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt()), '+', EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()), '<', ENum(5).with_type(TInt())).with_type(TBool()), 'or', EBinOp(EBinOp(EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt()), '+', EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()), '>', ENum(7).with_type(TInt())).with_type(TBool())).with_type(TBool()), EBinOp(EVar('_var2027').with_type(TBag(TInt())), '-', EBinOp(EVar('_var2027').with_type(TBag(TInt())), '+', ESingleton(EVar('x').with_type(TInt())).with_type(TBag(TInt()))).with_type(TBag(TInt()))).with_type(TBag(TInt())), EBinOp(EVar('_var2027').with_type(TBag(TInt())), '-', EVar('_var2027').with_type(TBag(TInt()))).with_type(TBag(TInt()))).with_type(TBag(TInt()))), SDecl('_name5772', ECond(EBinOp(EBinOp(EBinOp(EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt()), '+', EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()),'<', ENum(5).with_type(TInt())).with_type(TBool()), 'or', EBinOp(EBinOp(EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt()), '+', EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()), '>', ENum(7).with_type(TInt())).with_type(TBool())).with_type(TBool()), EBinOp(EBinOp(EVar('_var2027').with_type(TBag(TInt())), '+', ESingleton(EVar('x').with_type(TInt())).with_type(TBag(TInt()))).with_type(TBag(TInt())), '-', EVar('_var2027').with_type(TBag(TInt()))).with_type(TBag(TInt())), EBinOp(EVar('_var2027').with_type(TBag(TInt())), '-', EVar('_var2027').with_type(TBag(TInt()))).with_type(TBag(TInt()))).with_type(TBag(TInt())))), SAssign(EVar('_var507').with_type(TInt()), ECond(EBinOp(EBinOp(EBinOp(EUnaryOp('len', EEmptyList().with_type(TBag(TInt()))).with_type(TInt()), '+', EUnaryOp('len', EEmptyList().with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()), '<', ENum(5).with_type(TInt())).with_type(TBool()), 'or', EBinOp(ENum(5).with_type(TInt()), '>', ENum(7).with_type(TInt())).with_type(TBool())).with_type(TBool()), EBinOp(EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt()), '+', ENum(1).with_type(TInt())).with_type(TInt()), EUnaryOp('len', EEmptyList().with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()))), SSeq(SForEach(EVar('_var2988').with_type(TInt()), EVar('_name5771').with_type(TBag(TInt())), SCall(EVar('_var2027').with_type(TBag(TInt())), 'remove', [EVar('_var2988').with_type(TInt())])), SForEach(EVar('_var2988').with_type(TInt()), EVar('_name5772').with_type(TBag(TInt())), SCall(EVar('_var2027').with_type(TBag(TInt())), 'add', [EVar('_var2988').with_type(TInt())])))), '')
