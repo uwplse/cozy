@@ -1437,7 +1437,7 @@ def get_modified_var(stm):
     def find_lvalue_target(e):
         if isinstance(e, syntax.EVar):
             return e
-        elif isinstance(e, syntax.EMapGet):
+        elif isinstance(e, target_syntax.EMapGet):
             return find_lvalue_target(e.map)
         elif isinstance(e, syntax.ETupleGet):
             return find_lvalue_target(e.e)
@@ -1470,7 +1470,7 @@ class ExpressionMap(ExpMap):
             paths.append(path)
         else:
             # Never before seen expr.
-            v = fresh_var(k.type, "cse")
+            v = fresh_var(k.type, "tmp")
             count = 1
             deps = set(dependents)
             paths = [path]
@@ -1590,7 +1590,7 @@ def cse_scan(e):
         def visit_Exp(self, e, path, entries, capture_point):
             deps = set()
 
-            for expr, subdeps in self.default(e, path, entries, capture_point):
+            for _, subdeps in self.default(e, path, entries, capture_point):
                 deps |= subdeps
 
             entries.set_or_increment(e, deps, path)
@@ -1694,7 +1694,7 @@ def eliminate_common_subexpressions_stm(elem):
     Eliminate common subexpressions on an AST element (an expression or a
     statement -- not a full spec).
     """
-    return cse_replace(*cse_scan(e))
+    return cse_replace(*cse_scan(elem))
 
 def eliminate_common_subexpressions(spec):
     """
