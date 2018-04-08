@@ -2,9 +2,9 @@ from collections import namedtuple, OrderedDict
 from enum import Enum
 import itertools
 
-from cozy.common import pick_to_sum, OrderedSet, FrozenDict
+from cozy.common import pick_to_sum, OrderedSet, FrozenDict, unique
 from cozy.target_syntax import *
-from cozy.syntax_tools import pprint, fresh_var, all_exps, strip_EStateVar
+from cozy.syntax_tools import pprint, fresh_var, all_exps, strip_EStateVar, free_vars, alpha_equivalent, subst
 from cozy.evaluation import eval_bulk
 from cozy.synthesis.cache import Cache, SeenSet
 from cozy.typecheck import is_numeric, is_scalar
@@ -74,6 +74,253 @@ def _on_accept(depth : int, e : Exp, pool : Pool, fp):
     if _interesting(depth, e, pool, ExpEvent.ACCEPT):
         print("   > accepting {} in {} : {}".format(pprint(e), pool_name(pool), pprint(e.type)))
         # print("     fp = {!r}".format(fp))
+
+def of_type(exps, t):
+    for e in exps:
+        if e.type == t:
+            yield e
+
+class Context(object):
+    def vars(self) -> {(EVar, Pool)}:
+        raise NotImplementedError()
+    def parent(self):
+        raise NotImplementedError()
+    def legal_for(self, fvs : {EVar}) -> bool:
+        vs = {v for (v, pool) in self.vars()}
+        return all(v in vs for v in fvs)
+    def instantiate_examples(self, examples : [dict]) -> [dict]:
+        raise NotImplementedError()
+    def alpha_equivalent(self, other) -> bool:
+        raise NotImplementedError()
+    def adapt(self, e : Exp, ctx) -> Exp:
+        raise NotImplementedError()
+
+class RootCtx(Context):
+    def __init__(self, state_vars : [Exp], args : [Exp]):
+        self.state_vars = OrderedSet(state_vars)
+        self.args = OrderedSet(args)
+        assert not (self.state_vars & self.args)
+    def vars(self):
+        return OrderedSet(itertools.chain(
+            [(v, STATE_POOL)   for v in self.state_vars],
+            [(v, RUNTIME_POOL) for v in self.args]))
+    def parent(self):
+        return None
+    def instantiate_examples(self, examples : [dict]) -> [dict]:
+        return examples
+    def alpha_equivalent(self, other):
+        return self == other
+    def adapt(self, e : Exp, ctx) -> Exp:
+        return e
+    def __hash__(self):
+        return hash((tuple(self.state_vars), tuple(self.args)))
+    def __eq__(self, other):
+        return isinstance(other, RootCtx) and (self.state_vars, self.args) == (other.state_vars, other.args)
+    def __repr__(self):
+        return "RootCtx(state_vars={!r}, args={!r})".format(self.state_vars, self.args)
+    def __str__(self):
+        return repr(self)
+
+class UnderBinder(Context):
+    def __init__(self, parent : Context, v : EVar, bag : Exp, bag_pool : Pool):
+        assert v.type == bag.type.t
+        assert parent.legal_for(free_vars(bag))
+        self._parent = parent
+        self.var = v
+        self.bag = bag
+        self.pool = bag_pool
+    def vars(self):
+        return self._parent.vars() | {(self.var, self.pool)}
+    def parent(self):
+        return self._parent
+    def instantiate_examples(self, examples : [dict]) -> [dict]:
+        inst = self._parent.instantiate_examples(examples)
+        res = []
+        for ex in inst:
+            vals, = eval_bulk(self.bag, [ex])
+            for v in unique(vals):
+                ex = dict(ex)
+                ex[self.var.id] = v
+                res.append(ex)
+        return res
+    def alpha_equivalent(self, other):
+        if not isinstance(other, UnderBinder):
+            return False
+        if not self.var.type == other.var.type:
+            return False
+        if not self._parent.alpha_equivalent(other._parent):
+            return False
+        return alpha_equivalent(self.bag, self._parent.adapt(other.bag, other._parent))
+    def adapt(self, e : Exp, ctx) -> Exp:
+        # assert self.alpha_equivalent(ctx) # slow!
+        assert isinstance(ctx, UnderBinder)
+        e = self._parent.adapt(e, ctx._parent)
+        return subst(e, { ctx.var.id : self.var })
+    def __hash__(self):
+        return hash((self._parent, self.var, self.bag, self.pool))
+    def __eq__(self, other):
+        return isinstance(other, UnderBinder) and (self._parent, self.var, self.bag, self.pool) == (other._parent, other.var, other.bag, other.pool)
+    def __repr__(self):
+        return "UnderBinder(parent={}, v={}, bag={}, bag_pool={})".format(self._parent, self.var, self.bag, self.pool)
+    def __str__(self):
+        return repr(self)
+
+def most_general_context_for(context, fvs):
+    assert context.legal_for(fvs), "{} does not belong in {}".format(fvs, context)
+    parent = context.parent()
+    while (parent is not None) and (parent.legal_for(fvs)):
+        context = parent
+        parent = context.parent()
+    return context
+
+def belongs_in_context(fvs, context):
+    return context is most_general_context_for(context, fvs)
+
+def parent_contexts(context):
+    while context:
+        parent = context.parent()
+        yield parent
+        context = parent
+
+class Enumerator(object):
+    def __init__(self, examples, cost_model):
+        self.examples = examples
+        self.cost_model = cost_model
+        self.cache = { } # keys -> [exp]
+        self.seen = { }  # (ctx, pool, fp) -> frontier, i.e. [exp]
+        self.in_progress = set()
+
+    def enumerate_core(self, context : Context, size : int, pool : Pool) -> [Exp]:
+        """
+        Arguments:
+            conext : a Context object describing the vars in scope
+            size   : size to enumerate
+            pool   : pool to enumerate
+
+        Yields all expressions of the given size legal in the given context and
+        pool.
+        """
+
+        if size < 0:
+            return
+
+        if size == 0:
+            for (e, p) in LITERALS:
+                if p == pool:
+                    yield e
+            for (v, p) in context.vars():
+                if p == pool:
+                    yield v
+            return
+
+        for sz1, sz2, sz3 in pick_to_sum(3, size-1):
+            for cond in of_type(self.enumerate(context, sz1, pool), BOOL):
+                for then_branch in self.enumerate(context, sz2, pool):
+                    for else_branch in of_type(self.enumerate(context, sz3, pool), then_branch.type):
+                        yield ECond(cond, then_branch, else_branch).with_type(then_branch.type)
+
+        for sz1, sz2 in pick_to_sum(2, size-1):
+            for x in of_type(self.enumerate(context, sz1, pool), INT):
+                for y in of_type(self.enumerate(context, sz2, pool), INT):
+                    yield EBinOp(x, "+", y).with_type(INT)
+
+    def enumerate(self, context : Context, size : int, pool : Pool) -> [Exp]:
+        for info in self.enumerate_with_info(context, size, pool):
+            yield info.e
+
+    def key(self, examples, size, pool):
+        return (pool, size, tuple(FrozenDict(ex) for ex in examples))
+
+    def known_contexts(self):
+        return unique(ctx for (ctx, pool, fp) in self.seen.keys())
+
+    def enumerate_with_info(self, context : Context, size : int, pool : Pool) -> [EnumeratedExp]:
+        for ctx in self.known_contexts():
+            if ctx != context and ctx.alpha_equivalent(context):
+                print("adapting request: {} ---> {}".format(context, ctx))
+                for info in self.enumerate_with_info(ctx, size, pool):
+                    yield info._replace(e=context.adapt(info.e, ctx))
+                return
+            # else:
+            #     print("NOT adapting request: {} ---> {}".format(context, ctx))
+
+        if context.parent() is not None:
+            yield from self.enumerate_with_info(context.parent(), size, pool)
+
+        examples = context.instantiate_examples(self.examples)
+        # print(examples)
+        k = self.key(examples, size, pool)
+        res = self.cache.get(k)
+        if res is not None:
+            # print("[[{} cached @ size={}]]".format(len(res), size))
+            for e in res:
+                yield e
+        else:
+            # print("ENTER {}".format(k))
+            assert k not in self.in_progress, "recursive enumeration?? {}".format(k)
+            self.in_progress.add(k)
+            res = []
+            for e in self.enumerate_core(context, size, pool):
+                # print("considering {}".format(pprint(e)))
+
+                fvs = free_vars(e)
+                if not belongs_in_context(fvs, context):
+                    continue
+
+                fp = fingerprint(e, examples)
+
+                # collect all expressions from parent contexts
+                prev = []
+                for ctx in itertools.chain([context], parent_contexts(context)):
+                    for prev_exp in self.seen.get((ctx, pool, fp), ()):
+                        prev.append((ctx, prev_exp))
+
+                # decide whether to keep this expression,
+                # decide which can be evicted
+                should_keep = True
+                to_evict = []
+                cost = self.cost_model.cost(e, pool)
+                # print("prev={}".format(prev))
+                # print("seen={}".format(self.seen))
+                for ctx, prev_exp in prev:
+                    prev_cost = self.cost_model.cost(prev_exp, pool)
+                    ordering = cost.compare_to(prev_cost)
+                    if ordering == Cost.BETTER:
+                        # print("should evict {}".format(pprint(prev_exp)))
+                        to_evict.append((ctx, prev_exp))
+                    elif ordering == Cost.WORSE:
+                        # print("should skip worse {}".format(pprint(e)))
+                        assert not to_evict
+                        should_keep = False
+                        break
+                    else:
+                        # print("should skip equiv {}".format(pprint(e)))
+                        assert ordering == Cost.UNORDERED
+                        should_keep = False
+                        break
+
+                if to_evict:
+                    raise NotImplementedError()
+
+                if should_keep:
+                    seen_key = (context, pool, fp)
+                    if seen_key not in self.seen:
+                        self.seen[seen_key] = []
+                    self.seen[seen_key].append(e)
+                    info = EnumeratedExp(
+                        e=e,
+                        pool=pool,
+                        size=size,
+                        fingerprint=fp,
+                        cost=None,
+                        replaced=None,
+                        replaced_size=None,
+                        replaced_cost=None)
+                    res.append(info)
+                    yield info
+            self.cache[k] = res
+            # print("EXIT {}".format(k))
+            self.in_progress.remove(k)
 
 def build_candidates(cache : Cache, size : int, scopes : {EVar:(Exp,Pool)}, build_lambdas):
     if size == 0:
