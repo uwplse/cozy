@@ -1455,30 +1455,31 @@ def get_modified_var(stm):
     else:
         return None
 
+class ExpInfo:
+    def __init__(self, tempvar, count, dependents, handle_types, paths):
+        self.tempvar = tempvar
+        self.count = count
+        self.dependents = dependents
+        self.handle_types = handle_types
+        self.paths = paths
+
 class ExpressionMap(ExpMap):
     """
     Maps expressions to (temp vars, other supporting info).
     """
     def set_or_increment(self, exp, dependents, handle_types, path):
-        data = self.get(exp)
+        info = self.get(exp)
 
-        if data is not None:
-            # Expr has been seen before.
-            tempvar, count, deps, handles, paths = data
-            count += 1
-            # Same expr -- dependents/types won't change.
-            assert deps == dependents
-            assert handles == handle_types
-            paths.append(path)
+        if info is not None:
+            # Expr has been seen before. (Dependents/types shouldn't change.)
+            assert info.dependents == dependents
+            assert info.handle_types == handle_types
+            info.count += 1
+            info.paths.append(path)
         else:
             # Never before seen expr.
-            tempvar = fresh_var(exp.type, "tmp")
-            count = 1
-            deps = set(dependents)
-            handles = set(handle_types)
-            paths = [path]
-
-        self[exp] = (tempvar, count, deps, handles, paths)
+            self[exp] = ExpInfo(fresh_var(exp.type, "tmp"), 1, set(dependents),
+                set(handle_types), [path])
 
     def unbind(self, var):
         """
@@ -1486,14 +1487,12 @@ class ExpressionMap(ExpMap):
         """
         if isinstance(var.type, syntax.THandle):
             # "related" for handle-vars means the handle types are the same.
-            return ExpressionMap((exp, (temp, count, deps, handle_types, paths))
-                for exp, (temp, count, deps, handle_types, paths) in self.items()
-                if var.type.statevar not in handle_types)
+            return ExpressionMap((exp, expinfo) for exp, expinfo in self.items()
+                if var.type.statevar not in expinfo.handle_types)
         else:
             # Otherwise it's the variable name.
-            return ExpressionMap((exp, (temp, count, deps, handle_types, paths))
-                for exp, (temp, count, deps, handle_types, paths) in self.items()
-                if var.id not in deps)
+            return ExpressionMap((exp, expinfo) for exp, expinfo in self.items()
+                if var.id not in expinfo.dependents)
 
 def cse_scan(e):
     SIMPLE_EXPS = (syntax.ENum, syntax.EVar, syntax.EBool, syntax.EStr,
@@ -1544,19 +1543,20 @@ def cse_scan(e):
             they're related to the binding variable. Otherwise, bubble them up
             to the surrounding scope.
             """
-            for expr, (temp, count, dependents, handle_types, paths) in inner_entries.items():
+            # (temp, count, dependents, handle_types, paths)
+            for expr, expinfo in inner_entries.items():
                 if isinstance(bound_var.type, syntax.THandle):
-                    should_capture = bound_var.type.statevar in handle_types
+                    should_capture = bound_var.type.statevar in expinfo.handle_types
                 else:
-                    should_capture = bound_var.id in dependents
+                    should_capture = bound_var.id in expinfo.dependents
 
                 if should_capture:
-                    if count > 1 and not isinstance(expr, SIMPLE_EXPS):
-                        self.captures[capture_path].append((temp, expr))
-                        self.rewrites.update({p: temp for p in paths})
+                    if expinfo.count > 1 and not isinstance(expr, SIMPLE_EXPS):
+                        self.captures[capture_path].append((expinfo.tempvar, expr))
+                        self.rewrites.update({p: expinfo.tempvar for p in expinfo.paths})
                 else:
                     # Bubble up to surrounding capture point.
-                    outer_entries[expr] = (temp, count, dependents, handle_types, paths)
+                    outer_entries[expr] = expinfo
 
         def visit_ELambda(self, e, path, entries, capture_point):
             # Capture point changes with ELambda. (The body is the 1st child,
@@ -1635,11 +1635,10 @@ def cse_scan(e):
     result = scanner.visit(e, (), entries, e)
 
     # Anything remaining here gets assigned to the top-level capture point.
-
-    for expr, (temp, count, dependents, types, paths) in entries.items():
-        if count > 1 and not isinstance(expr, SIMPLE_EXPS):
-            scanner.captures[()].append((temp, expr))
-            scanner.rewrites.update({p: temp for p in paths})
+    for expr, expr_info in entries.items():
+        if expr_info.count > 1 and not isinstance(expr, SIMPLE_EXPS):
+            scanner.captures[()].append((expr_info.tempvar, expr))
+            scanner.rewrites.update({p: expr_info.tempvar for p in expr_info.paths})
 
     return e, scanner.captures, scanner.rewrites
 
