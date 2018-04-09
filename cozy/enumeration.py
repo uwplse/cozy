@@ -7,7 +7,7 @@ from cozy.target_syntax import *
 from cozy.syntax_tools import pprint, fresh_var, all_exps, strip_EStateVar, free_vars, alpha_equivalent, subst
 from cozy.evaluation import eval_bulk
 from cozy.synthesis.cache import Cache, SeenSet
-from cozy.typecheck import is_numeric, is_scalar
+from cozy.typecheck import is_numeric, is_scalar, is_collection
 from cozy.cost_model import CostModel, Cost
 from cozy.pools import Pool, ALL_POOLS, RUNTIME_POOL, STATE_POOL, pool_name
 from cozy.opts import Option
@@ -80,6 +80,11 @@ def of_type(exps, t):
         if e.type == t:
             yield e
 
+def collections(exps):
+    for e in exps:
+        if is_collection(e.type):
+            yield e
+
 class Context(object):
     def vars(self) -> {(EVar, Pool)}:
         raise NotImplementedError()
@@ -119,7 +124,7 @@ class RootCtx(Context):
     def __repr__(self):
         return "RootCtx(state_vars={!r}, args={!r})".format(self.state_vars, self.args)
     def __str__(self):
-        return repr(self)
+        return "(root)"
 
 class UnderBinder(Context):
     def __init__(self, parent : Context, v : EVar, bag : Exp, bag_pool : Pool):
@@ -163,7 +168,7 @@ class UnderBinder(Context):
     def __repr__(self):
         return "UnderBinder(parent={}, v={}, bag={}, bag_pool={})".format(self._parent, self.var, self.bag, self.pool)
     def __str__(self):
-        return repr(self)
+        return "{} in {}, {}".format(self.var.id, pprint(self.bag), self._parent)
 
 def most_general_context_for(context, fvs):
     assert context.legal_for(fvs), "{} does not belong in {}".format(fvs, context)
@@ -213,16 +218,132 @@ class Enumerator(object):
                     yield v
             return
 
-        for sz1, sz2, sz3 in pick_to_sum(3, size-1):
+        for e in collections(self.enumerate(context, size-1, pool)):
+            yield EEmptyList().with_type(e.type)
+            if is_numeric(e.type.t):
+                yield EUnaryOp(UOp.Sum, e).with_type(e.type.t)
+
+        for e in self.enumerate(context, size-1, pool):
+            yield ESingleton(e).with_type(TBag(e.type))
+
+        for e in self.enumerate(context, size-1, pool):
+            if isinstance(e.type, TRecord):
+                for (f,t) in e.type.fields:
+                    yield EGetField(e, f).with_type(t)
+
+        for e in self.enumerate(context, size-1, pool):
+            if isinstance(e.type, THandle):
+                yield EGetField(e, "val").with_type(e.type.value_type)
+
+        for e in self.enumerate(context, size-1, pool):
+            if isinstance(e.type, TTuple):
+                for n in range(len(e.type.ts)):
+                    yield ETupleGet(e, n).with_type(e.type.ts[n])
+
+        for e in of_type(self.enumerate(context, size-1, pool), BOOL):
+            yield EUnaryOp(UOp.Not, e).with_type(BOOL)
+
+        for e in self.enumerate(context, size-1, pool):
+            if is_numeric(e.type):
+                yield EUnaryOp("-", e).with_type(INT)
+
+        for m in self.enumerate(context, size-1, pool):
+            if isinstance(m.type, TMap):
+                yield EMapKeys(m).with_type(TBag(m.type.k))
+
+        for (sz1, sz2) in pick_to_sum(2, size - 1):
+            for a1 in self.enumerate(context, sz1, pool):
+                t = a1.type
+                if not is_numeric(t):
+                    continue
+                for a2 in of_type(self.enumerate(context, sz2, pool), t):
+                    yield EBinOp(a1, "+", a2).with_type(t)
+                    yield EBinOp(a1, "-", a2).with_type(t)
+                    yield EBinOp(a1, ">", a2).with_type(BOOL)
+                    yield EBinOp(a1, "<", a2).with_type(BOOL)
+                    yield EBinOp(a1, ">=", a2).with_type(BOOL)
+                    yield EBinOp(a1, "<=", a2).with_type(BOOL)
+            for a1 in collections(self.enumerate(context, sz1, pool)):
+                for a2 in of_type(self.enumerate(context, sz2, pool), a1.type):
+                    yield EBinOp(a1, "+", a2).with_type(a1.type)
+                    yield EBinOp(a1, "-", a2).with_type(a1.type)
+                for a2 in of_type(self.enumerate(context, sz2, pool), a1.type.t):
+                    yield EBinOp(a2, BOp.In, a1).with_type(BOOL)
+            for a1 in of_type(self.enumerate(context, sz1, pool), BOOL):
+                for a2 in of_type(self.enumerate(context, sz2, pool), BOOL):
+                    yield EBinOp(a1, BOp.And, a2).with_type(BOOL)
+                    yield EBinOp(a1, BOp.Or, a2).with_type(BOOL)
+            for a1 in self.enumerate(context, sz1, pool):
+                if not isinstance(a1.type, TMap):
+                    for a2 in of_type(self.enumerate(context, sz2, pool), a1.type):
+                        yield EEq(a1, a2)
+                        yield EBinOp(a1, "!=", a2).with_type(BOOL)
+            for m in self.enumerate(context, sz1, pool):
+                if isinstance(m.type, TMap):
+                    for k in of_type(self.enumerate(context, sz2, pool), m.type.k):
+                        yield EMapGet(m, k).with_type(m.type.v)
+                        yield EHasKey(m, k).with_type(BOOL)
+
+        for (sz1, sz2, sz3) in pick_to_sum(3, size-1):
             for cond in of_type(self.enumerate(context, sz1, pool), BOOL):
                 for then_branch in self.enumerate(context, sz2, pool):
-                    for else_branch in of_type(self.enumerate(context, sz3, pool), then_branch.type):
+                    for else_branch in of_type(self.enumerate(context, sz2, pool), then_branch.type):
                         yield ECond(cond, then_branch, else_branch).with_type(then_branch.type)
 
-        for sz1, sz2 in pick_to_sum(2, size-1):
-            for x in of_type(self.enumerate(context, sz1, pool), INT):
-                for y in of_type(self.enumerate(context, sz2, pool), INT):
-                    yield EBinOp(x, "+", y).with_type(INT)
+        for bag in collections(self.enumerate(context, size-1, pool)):
+            # len of bag
+            count = EUnaryOp(UOp.Length, bag).with_type(INT)
+            yield count
+            # empty?
+            yield EUnaryOp(UOp.Empty, bag).with_type(BOOL)
+            # exists?
+            yield EUnaryOp(UOp.Exists, bag).with_type(BOOL)
+            # singleton?
+            yield EEq(count, ONE)
+
+            yield EUnaryOp(UOp.The, bag).with_type(bag.type.t)
+            yield EUnaryOp(UOp.Distinct, bag).with_type(bag.type)
+            yield EUnaryOp(UOp.AreUnique, bag).with_type(BOOL)
+
+            if bag.type.t == BOOL:
+                yield EUnaryOp(UOp.Any, bag).with_type(BOOL)
+                yield EUnaryOp(UOp.All, bag).with_type(BOOL)
+
+        def build_lambdas(bag, pool, body_size):
+            v = fresh_var(bag.type.t)
+            inner_context = UnderBinder(context, v=v, bag=bag, bag_pool=pool)
+            for lam_body in self.enumerate(inner_context, body_size, pool):
+                yield ELambda(v, lam_body)
+
+        # Iteration
+        for (sz1, sz2) in pick_to_sum(2, size - 1):
+            for bag in collections(self.enumerate(context, sz1, STATE_POOL)):
+                for lam in build_lambdas(bag, pool, sz2):
+                    body_type = lam.body.type
+                    yield EMap(bag, lam).with_type(TBag(body_type))
+                    if body_type == BOOL:
+                        yield EFilter(bag, lam).with_type(bag.type)
+                    if is_numeric(body_type):
+                        yield EArgMin(bag, lam).with_type(bag.type.t)
+                        yield EArgMax(bag, lam).with_type(bag.type.t)
+                    if is_collection(body_type):
+                        yield EFlatMap(bag, lam).with_type(TBag(body_type.t))
+
+        # Enable use of a state-pool expression at runtime
+        if pool == RUNTIME_POOL:
+            for e in self.enumerate(context, size-1, STATE_POOL):
+                yield EStateVar(e).with_type(e.type)
+
+        # Create maps
+        if pool == STATE_POOL:
+            for (sz1, sz2) in pick_to_sum(2, size - 1):
+                for bag in collections(self.enumerate(context, sz1, STATE_POOL)):
+                    if not is_scalar(bag.type.t):
+                        continue
+                    for lam in build_lambdas(bag, STATE_POOL, sz2):
+                        t = TMap(bag.type.t, lam.body.type)
+                        m = EMakeMap2(bag, lam).with_type(t)
+                        yield m
 
     def enumerate(self, context : Context, size : int, pool : Pool) -> [Exp]:
         for info in self.enumerate_with_info(context, size, pool):
@@ -247,9 +368,10 @@ class Enumerator(object):
         if context.parent() is not None:
             yield from self.enumerate_with_info(context.parent(), size, pool)
 
-        examples = context.instantiate_examples(self.examples)
+        # examples = context.instantiate_examples(self.examples)
         # print(examples)
-        k = self.key(examples, size, pool)
+        # k = self.key(examples, size, pool)
+        k = (pool, size, context)
         res = self.cache.get(k)
         if res is not None:
             # print("[[{} cached @ size={}]]".format(len(res), size))
@@ -257,6 +379,7 @@ class Enumerator(object):
                 yield e
         else:
             # print("ENTER {}".format(k))
+            examples = context.instantiate_examples(self.examples)
             assert k not in self.in_progress, "recursive enumeration?? {}".format(k)
             self.in_progress.add(k)
             res = []
@@ -286,8 +409,9 @@ class Enumerator(object):
                     prev_cost = self.cost_model.cost(prev_exp, pool)
                     ordering = cost.compare_to(prev_cost)
                     if ordering == Cost.BETTER:
-                        # print("should evict {}".format(pprint(prev_exp)))
-                        to_evict.append((ctx, prev_exp))
+                        if ctx == context:
+                            # print("should evict {}".format(pprint(prev_exp)))
+                            to_evict.append((ctx, prev_exp))
                     elif ordering == Cost.WORSE:
                         # print("should skip worse {}".format(pprint(e)))
                         assert not to_evict
@@ -295,11 +419,14 @@ class Enumerator(object):
                         break
                     else:
                         # print("should skip equiv {}".format(pprint(e)))
+                        assert not to_evict
                         assert ordering == Cost.UNORDERED
                         should_keep = False
                         break
 
                 if to_evict:
+                    for ctx, evicted_exp in to_evict:
+                        print("EVICT {} FOR {}".format(pprint(evicted_exp, e)))
                     raise NotImplementedError()
 
                 if should_keep:
