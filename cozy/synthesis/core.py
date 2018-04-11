@@ -15,9 +15,8 @@ from cozy.evaluation import eval, eval_bulk, mkval, construct_value, uneval, eq
 from cozy.cost_model import CostModel, Cost, CompositeCostModel
 from cozy.opts import Option
 from cozy.pools import ALL_POOLS, RUNTIME_POOL, STATE_POOL, pool_name
-from cozy.enumeration import enumerate_exps, StartMinorIteration, build_candidates, fingerprint
 
-from .acceleration import accelerate_build
+from .acceleration import try_optimize
 from .cache import Cache, SeenSet
 
 eliminate_vars = Option("eliminate-vars", bool, True)
@@ -31,20 +30,6 @@ class StopException(Exception):
 
 class NoMoreImprovements(Exception):
     pass
-
-def reverse_output(f):
-    @functools.wraps(f)
-    def g(*args, **kwargs):
-        l = list(f(*args, **kwargs))
-        l.reverse()
-        for x in l:
-            yield x
-    return g
-
-class FoundImprovement(Exception):
-    def __init__(self, e):
-        super().__init__("found improvement: {}".format(pprint(e)))
-        self.e = e
 
 class Learner(object):
     def __init__(self, target, assumptions, state_vars, args, legal_free_vars, examples, cost_model, stop_callback, hints, solver):
@@ -134,166 +119,16 @@ class Learner(object):
         t = fp[0]
         return all(eq(t, fp[i], target_fp[i]) for i in range(1, len(fp)))
 
-    def all_possible_mappings(self, xs : {EVar}, ys : {EVar}):
-        if not xs:
-            yield {}
-            return
-        for x in xs:
-            for y in ys:
-                if x.type == y.type:
-                    for m in self.all_possible_mappings(xs - {x}, ys - {y}):
-                        with extend(m, x, y):
-                            yield m
-
-    def subst_builder(self, wrapped_builder):
-        target_fp = fingerprint(self.target, self.examples)
-        target_cost = self.cost_model.cost(self.target, RUNTIME_POOL)
-        contexts = group_by(enumerate_fragments(self.target),
-            k=lambda ctx: (ctx.pool, ctx.e.type))
-        def f(cache, size, scopes, build_lambdas):
-            was_accepted = None
-            gen = wrapped_builder(cache, size, scopes, build_lambdas)
-            while True:
-                tup = gen.send(was_accepted)
-                e, pool = tup
-                was_accepted = yield tup
-                if was_accepted:
-                    ctxs = contexts.get((pool, e.type), ())
-                    # print("CONSIDERING SUBSTITUTIONS OF {} [{}, {} options]".format(pprint(e), pool_name(pool), len(ctxs)))
-                    for ctx in ctxs:
-                        assert pool == ctx.pool
-                        assert e.type == ctx.e.type
-                        if alpha_equivalent(e, ctx.e):
-                            continue
-                        bound_vars = OrderedSet(ctx.bound_vars)
-                        to_be_free = free_vars(e) - OrderedSet(scopes.keys())
-                        if to_be_free & bound_vars:
-                            print("WARN: unable to perform substitution")
-                            print("fvs(e)")
-                            for vv in free_vars(e):
-                                print("  {} : {}".format(vv.id, pprint(vv.type)))
-                            print("bound vars")
-                            for vv in bound_vars:
-                                print("  {} : {}".format(vv.id, pprint(vv.type)))
-                            print("scopes")
-                            for vv, (bb, pp) in scopes.items():
-                                print("  {} : {} in {} [{}]".format(vv.id, pprint(vv.type), pprint(bb), pool_name(pp)))
-                            print("mapping")
-                            for a, b in mapping.items():
-                                print("  {} : {} ---> {} : {}".format(a.id, pprint(a.type), b.id, pprint(b.type)))
-                            print("replacing {} : {}".format(pprint(ctx.e), pprint(ctx.e.type)))
-                            print("with      {} : {}".format(pprint(e), pprint(e.type)))
-                            print("in        {}".format(pprint(ctx.replace_e_with(EVar("________")))))
-                            continue
-                        # print("  ... {} in {} --> {}".format(pprint(ctx.e.type), pool_name(ctx.pool), pprint(ctx.replace_e_with(EVar("___")))))
-                        # TODO: if enumerate_frags told us what bags the scope vars came from, we could do better...
-                        for mapping in self.all_possible_mappings(OrderedSet(scopes.keys()), bound_vars):
-                            if self.stop_callback():
-                                raise StopException()
-                            x = subst(e, { a.id : b for (a, b) in mapping.items() })
-                            ee = ctx.replace_e_with(x)
-                            # print("        try {}".format(pprint(ee)))
-                            if alpha_equivalent(ee, self.target):
-                                # print("        > not AA")
-                                continue
-                            if not exp_is_wf(ee, RUNTIME_POOL, self.state_vars, self.args, self.assumptions):
-                                continue
-                            if not self.matches(fingerprint(ee, self.examples), target_fp):
-                                # print("        > no match")
-                                continue
-                            if self.cost_model.cost(ee, RUNTIME_POOL).compare_to(target_cost) != Cost.BETTER:
-                                # print("        > not better")
-                                continue
-                            raise FoundImprovement(ee)
-                            # yield (ee, RUNTIME_POOL)
-        return f
-
-    def build_candidates(self, wrapped_builder):
-        def find_multi(cache, pool, types, sizes, i=0):
-            if i >= len(types):
-                yield ()
-                return
-            for e in cache.find(pool=pool, type=types[i], size=sizes[i]):
-                for rest in find_multi(cache, pool, types, sizes, i+1):
-                    yield (e,) + rest
-
-        def f(cache, size, scopes, build_lambdas):
-            yield from wrapped_builder(cache, size, scopes, build_lambdas)
-
-            # TODO: we need some better way to pass down extern functions
-            for f, t in free_funcs(self.target).items():
-                for partition in pick_to_sum(len(t.arg_types), size-1):
-                    for pool in ALL_POOLS:
-                        for args in find_multi(cache, pool=pool, types=t.arg_types, sizes=partition):
-                            e = ECall(f, args).with_type(t.ret_type)
-                            e._tag = True
-                            yield (e, pool)
-
-            if size == 0:
-                yield from self.roots()
-                # Add roots for scopes
-                for var, (bag, pool) in scopes.items():
-                    # print("introducing {} <- {} [{}]".format(var.id, pprint(bag), pool_name(pool)))
-                    for e in list(cache.find(pool=pool, size=0)):
-                        lam = None
-                        fro = None
-                        if isinstance(e, EMap) or isinstance(e, EFlatMap):
-                            lam = e.f
-                            fro = e.e
-                        elif isinstance(e, EFilter):
-                            lam = e.p
-                            fro = e.e
-                        elif isinstance(e, EMakeMap2):
-                            lam = e.value
-                            fro = e.e
-                        elif any(isinstance(ee, ELambda) for ee in e.children()):
-                            print("WARNING: implement lambda-extraction for {}".format(type(e)))
-                        if lam is not None:
-                            # print("stealing from {}?".format(pprint(lam)))
-                            if lam.arg.type == var.type and alpha_equivalent(fro, bag):
-                                # print("  -> yep! stealing from {}".format(pprint(lam)))
-                                for (x, pool) in self.roots(lam.apply_to(var), extra_legal_fvs=scopes.keys()):
-                                    # print("  -----> {}".format(pprint(x)))
-                                    yield (x, pool)
-        return f
-
-    def is_legal_in_pool(self, e, pool):
-        try:
-            return exp_wf(e, state_vars=self.state_vars, args=self.args, pool=pool, assumptions=self.assumptions)
-        except ExpIsNotWf as exc:
-            return False
-
-    # @reverse_output
-    def roots(self, target=None, extra_legal_fvs=()):
-        if target is None:
-            target = self.target
-        for x in itertools.chain((target,), self.hints):
-            for ctx in enumerate_fragments(target):
-                e = ctx.e
-                if any(v in ctx.bound_vars and v not in extra_legal_fvs for v in free_vars(e)):
-                    continue
-                for pool in ALL_POOLS:
-                    x = strip_EStateVar(e) if pool == STATE_POOL else e
-                    if not self.is_legal_in_pool(x, pool):
-                        continue
-                    yield (x, pool)
-                    if pool == STATE_POOL:
-                        ee = EStateVar(x).with_type(x.type)
-                        if self.is_legal_in_pool(ee, RUNTIME_POOL):
-                            yield (ee, RUNTIME_POOL)
-
     def next(self):
         class No(object):
             def __init__(self, msg):
                 self.msg = msg
             def __bool__(self):
                 return False
-        build = build_candidates
-        build = self.build_candidates(build)
-        build = accelerate_build(build, args=self.args, state_vars=self.state_vars)
-        build = self.subst_builder(build)
+            def __str__(self):
+                return "no: {}".format(self.msg)
         cards = [self.cost_model.cardinality(ctx.e) for ctx in enumerate_fragments(self.target) if is_collection(ctx.e.type)]
-        def check_wf(e, pool):
+        def check_wf(e, ctx, pool):
             try:
                 exp_wf(e, pool=pool, state_vars=self.state_vars, args=self.args, assumptions=self.assumptions)
             except ExpIsNotWf as exc:
@@ -304,23 +139,63 @@ class Learner(object):
                     # print("too big: {}".format(pprint(e)))
                     return No("too big")
             return True
-        if self.builder_iter == ():
-            self.builder_iter = enumerate_exps(
-                examples=self.examples,
-                cost_model=self.cost_model,
-                cost_ceiling=self.cost_model.cost(self.target, RUNTIME_POOL),
-                build_candidates=build,
-                check_wf=check_wf)
+
+        from cozy.enumeration import Enumerator, fingerprint
+        from cozy.contexts import RootCtx, shred, replace
+
+        root_ctx = RootCtx(state_vars=self.state_vars, args=self.args)
+        frags = list(unique(shred(self.target, root_ctx)))
+        enum = Enumerator(
+            examples=self.examples,
+            cost_model=self.cost_model,
+            check_wf=check_wf,
+            hints=frags,
+            heuristics=try_optimize)
+
+        size = 0
+        target_cost = self.cost_model.cost(self.target, RUNTIME_POOL)
         target_fp = fingerprint(self.target, self.examples)
-        for res in self.builder_iter:
-            if self.stop_callback():
-                raise StopException()
-            if isinstance(res, StartMinorIteration):
-                print("starting minor iteration {} with |cache|={}".format(res.size, res.cache_size))
-                continue
-            if res.pool == RUNTIME_POOL and not alpha_equivalent(res.e, self.target) and self.matches(res.fingerprint, target_fp):
-                return (self.target, res.e, (), lambda x: x)
-        raise NoMoreImprovements("builder is exhausted")
+
+        if not hasattr(self, "blacklist"):
+            self.blacklist = set()
+
+        while True:
+
+            print("starting minor iteration {} with |cache|={}".format(size, enum.cache_size()))
+
+            n = 0
+            for (e, ctx, pool) in frags:
+                for info in enum.enumerate_with_info(size=size, context=ctx, pool=pool):
+                    if self.stop_callback():
+                        raise StopException()
+                    if info.e.type != e.type:
+                        continue
+                    if alpha_equivalent(info.e, e):
+                        continue
+
+                    k = (e, ctx, pool, info.e)
+                    if k in self.blacklist:
+                        continue
+                    self.blacklist.add(k)
+
+                    n += 1
+                    ee = replace(
+                        self.target, root_ctx, RUNTIME_POOL,
+                        e, ctx, pool,
+                        info.e)
+                    if not check_wf(ee, root_ctx, RUNTIME_POOL):
+                        continue
+                    if not self.matches(fingerprint(ee, self.examples), target_fp):
+                        continue
+                    if self.cost_model.cost(ee, RUNTIME_POOL).compare_to(target_cost) != Cost.BETTER:
+                        continue
+                    print("FOUND A GUESS AFTER {} CONSIDERED".format(n))
+                    return ee
+
+            print("CONSIDERED {}".format(n))
+            size += 1
+
+        raise NoMoreImprovements()
 
 def exp_is_wf(e, pool, state_vars, args, assumptions):
     try:
@@ -452,20 +327,12 @@ def improve(
         while True:
             # 1. find any potential improvement to any sub-exp of target
             try:
-                old_e, new_e, local_assumptions, repl = learner.next()
+                new_target = learner.next()
             except NoMoreImprovements:
                 break
-            except FoundImprovement as exn:
-                old_e = target
-                new_e = exn.e
-                local_assumptions = ()
-                repl = lambda ee: ee
-
-            # 2. substitute-in the improvement
-            new_target = repl(new_e)
             print("Found candidate improvement: {}".format(pprint(new_target)))
 
-            # 3. check
+            # 2. check
             if incremental.value:
                 solver.push()
                 solver.add_assumption(ENot(EBinOp(target, "==", new_target).with_type(BOOL)))
@@ -474,29 +341,6 @@ def improve(
                 formula = EAll([assumptions, ENot(EBinOp(target, "==", new_target).with_type(BOOL))])
                 counterexample = _sat(formula)
             if counterexample is not None:
-
-                # Ok they aren't equal.  Now we need an example that
-                # differentiates BOTH target/new_target AND old_e/new_e.
-                if incremental.value:
-                    counterexample = _sat(EAll([
-                            EAll(local_assumptions),
-                            ENot(EBinOp(old_e,  "===", new_e).with_type(BOOL))]))
-                else:
-                    counterexample = _sat(EAll([
-                            assumptions,
-                            EAll(local_assumptions),
-                            ENot(EBinOp(target, "==", new_target).with_type(BOOL)),
-                            ENot(EBinOp(old_e,  "===", new_e).with_type(BOOL))]))
-                if counterexample is None:
-                    print("!!! unable to satisfy top- and sub-expressions")
-                    print("assumptions = {!r}".format(assumptions))
-                    print("local_assumptions = {!r}".format(EAll(local_assumptions)))
-                    print("old_e = {!r}".format(old_e))
-                    print("target = {!r}".format(target))
-                    print("new_e = {!r}".format(new_e))
-                    print("new_target = {!r}".format(new_target))
-                    raise Exception("unable to find an example that differentiates both the toplevel- and sub-expressions")
-
                 if counterexample in examples:
                     print("assumptions = {!r}".format(assumptions))
                     print("duplicate example: {!r}".format(counterexample))
@@ -534,7 +378,7 @@ def improve(
                         # print(repr(new_target))
                         continue
                     target_cost = new_cost
-                print("found improvement: {} -----> {}".format(pprint(old_e), pprint(new_e)))
+                print("The improvement is valid!")
                 # print(repr(target))
                 # print(repr(new_target))
 

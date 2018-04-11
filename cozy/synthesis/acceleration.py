@@ -6,7 +6,6 @@ from cozy.syntax_tools import fresh_var, free_vars, break_conj, pprint, enumerat
 from cozy.typecheck import is_numeric, is_collection
 from cozy.pools import RUNTIME_POOL, STATE_POOL, ALL_POOLS, pool_name
 from cozy.simplification import simplify
-from cozy.enumeration import AuxBuilder
 from cozy.structures.heaps import TMinHeap, TMaxHeap, EMakeMinHeap, EMakeMaxHeap, EHeapPeek, EHeapPeek2
 from cozy.evaluation import construct_value
 
@@ -327,75 +326,71 @@ def optimize_map(xs, f, args):
     else:
         return EMap(xs, f).with_type(res_type)
 
-class accelerate_build(AuxBuilder):
-    def __init__(self, build_candidates, args, state_vars):
-        super().__init__(build_candidates)
-        self.args = args
-        self.state_vars = state_vars
-    def check(self, e, pool):
-        # print("  --> trying {}".format(pprint(e)))
-        # from cozy.typecheck import retypecheck
-        # from cozy.syntax_tools import deep_copy
-        # x = deep_copy(e)
-        # assert retypecheck(x)
-        return (e, pool)
-    def apply(self, cache, size, scopes, build_lambdas, e, pool):
-        if not accelerate.value:
-            return
-        # print("accelerating {} [in {}]".format(pprint(e), pool_name(pool)))
-        ee = simplify(e)
-        if not alpha_equivalent(ee, e):
-            yield self.check(simplify(e), pool)
-        if pool == RUNTIME_POOL:
-            if all(v in self.state_vars for v in free_vars(e)):
-                nsv = strip_EStateVar(e)
-                sv = EStateVar(nsv).with_type(e.type)
-                yield self.check(sv, RUNTIME_POOL)
-                yield self.check(nsv, STATE_POOL)
+def _check(e, pool):
+    return e
 
-            yield from map_accelerate(e, self.state_vars, self.args, cache, size-1)
+def try_optimize(e, context, pool):
+    if not accelerate.value:
+        return
+    # print("accelerating {} [in {}]".format(pprint(e), pool_name(pool)))
 
-            if isinstance(e, EArgMin) or isinstance(e, EArgMax):
-                ee = optimized_best(e.e, e.f, "<" if isinstance(e, EArgMin) else ">", args=self.args)
-                if not alpha_equivalent(e, ee):
-                    yield self.check(ee, RUNTIME_POOL)
+    state_vars = [v for v, p in context.vars() if p == STATE_POOL]
+    args = [v for v, p in context.vars() if p == RUNTIME_POOL]
 
-            if is_collection(e.type) and isinstance(e, EBinOp) and e.op == "-":
-                ee = optimized_bag_difference(e.e1, e.e2)
-                if not alpha_equivalent(e, ee):
-                    yield self.check(ee, RUNTIME_POOL)
+    ee = simplify(e)
+    if not alpha_equivalent(ee, e):
+        yield _check(simplify(e), pool)
+    if pool == RUNTIME_POOL:
+        if all(v in state_vars for v in free_vars(e)):
+            nsv = strip_EStateVar(e)
+            sv = EStateVar(nsv).with_type(e.type)
+            yield _check(sv, RUNTIME_POOL)
 
-            if isinstance(e, EBinOp) and e.op == "===" and isinstance(e.e1.type, THandle):
-                yield self.check(EAll([
-                    optimized_eq(optimized_addr(e.e1), optimized_addr(e.e2)),
-                    optimized_eq(optimized_val(e.e1),  optimized_val(e.e2)).with_type(BOOL)]), RUNTIME_POOL)
+        for e, p in map_accelerate(e, state_vars, args, None, 0):
+            if p == RUNTIME_POOL:
+                yield _check(e, p)
 
-            if isinstance(e, EBinOp) and e.op == BOp.In:
-                ee = optimized_in(e.e1, e.e2)
-                if not alpha_equivalent(e, ee):
-                    yield self.check(ee, RUNTIME_POOL)
+        if isinstance(e, EArgMin) or isinstance(e, EArgMax):
+            ee = optimized_best(e.e, e.f, "<" if isinstance(e, EArgMin) else ">", args=args)
+            if not alpha_equivalent(e, ee):
+                yield _check(ee, RUNTIME_POOL)
 
-            if isinstance(e, EUnaryOp) and e.op == UOp.Empty:
-                ee = optimized_empty(e.e)
-                if not alpha_equivalent(e, ee):
-                    yield self.check(ee, RUNTIME_POOL)
+        if is_collection(e.type) and isinstance(e, EBinOp) and e.op == "-":
+            ee = optimized_bag_difference(e.e1, e.e2)
+            if not alpha_equivalent(e, ee):
+                yield _check(ee, RUNTIME_POOL)
 
-            if isinstance(e, EUnaryOp) and e.op == UOp.Exists:
-                ee = optimized_exists(e.e)
-                if not alpha_equivalent(e, ee):
-                    yield self.check(ee, RUNTIME_POOL)
+        if isinstance(e, EBinOp) and e.op == "===" and isinstance(e.e1.type, THandle):
+            yield _check(EAll([
+                optimized_eq(optimized_addr(e.e1), optimized_addr(e.e2)),
+                optimized_eq(optimized_val(e.e1),  optimized_val(e.e2)).with_type(BOOL)]), RUNTIME_POOL)
 
-            if isinstance(e, EUnaryOp) and e.op == UOp.Length:
-                ee = optimized_len(e.e)
-                if not alpha_equivalent(e, ee):
-                    yield self.check(ee, RUNTIME_POOL)
+        if isinstance(e, EBinOp) and e.op == BOp.In:
+            ee = optimized_in(e.e1, e.e2)
+            if not alpha_equivalent(e, ee):
+                yield _check(ee, RUNTIME_POOL)
 
-            if isinstance(e, EFilter):
-                ee = optimize_filter_as_if_distinct(e.e, e.p, args=self.args)
-                if not alpha_equivalent(e, ee):
-                    yield self.check(ee, RUNTIME_POOL)
+        if isinstance(e, EUnaryOp) and e.op == UOp.Empty:
+            ee = optimized_empty(e.e)
+            if not alpha_equivalent(e, ee):
+                yield _check(ee, RUNTIME_POOL)
 
-            if isinstance(e, EMap):
-                ee = optimize_map(e.e, e.f, args=self.args)
-                if not alpha_equivalent(e, ee):
-                    yield self.check(ee, RUNTIME_POOL)
+        if isinstance(e, EUnaryOp) and e.op == UOp.Exists:
+            ee = optimized_exists(e.e)
+            if not alpha_equivalent(e, ee):
+                yield _check(ee, RUNTIME_POOL)
+
+        if isinstance(e, EUnaryOp) and e.op == UOp.Length:
+            ee = optimized_len(e.e)
+            if not alpha_equivalent(e, ee):
+                yield _check(ee, RUNTIME_POOL)
+
+        if isinstance(e, EFilter):
+            ee = optimize_filter_as_if_distinct(e.e, e.p, args=args)
+            if not alpha_equivalent(e, ee):
+                yield _check(ee, RUNTIME_POOL)
+
+        if isinstance(e, EMap):
+            ee = optimize_map(e.e, e.f, args=args)
+            if not alpha_equivalent(e, ee):
+                yield _check(ee, RUNTIME_POOL)
