@@ -487,8 +487,7 @@ def precise_runtime(e, lattice, as_formula=False):
                 costs.append(self.cardinality(e.e2))
             elif e.op == "-" and is_collection(e.type):
                 costs.append(EXTREME_COST)
-                costs.append(self.cardinality(e.e1))
-                costs.append(self.cardinality(e.e2))
+                costs.append(EBinOp(self.cardinality(e.e1, plus_one=True), "*", self.cardinality(e.e2, plus_one=True)).with_type(INT))
             return ESum(costs)
         def visit_ELambda(self, e):
             # avoid name collisions with fresh_var
