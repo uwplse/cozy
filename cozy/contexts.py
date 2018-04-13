@@ -146,8 +146,8 @@ class _Shredder(Visitor):
     def visit_int(self, i):
         return ()
 
-def shred(e : Exp, ctx : Context) -> [(Exp, Context)]:
-    return _Shredder(ctx).visit(e)
+def shred(e : Exp, ctx : Context, pool : Pool = RUNTIME_POOL) -> [(Exp, Context, Pool)]:
+    return _Shredder(ctx, pool).visit(e)
 
 class _Replacer(BottomUpRewriter):
     def __init__(self,
