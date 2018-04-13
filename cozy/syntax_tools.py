@@ -1437,6 +1437,7 @@ def get_modified_var(stm):
         the EVar modified by the statement (if any),
         the handle type modified by the statement (if any)
     )
+    Returns (None, None) if there is no modification.
     """
     def find_lvalue_target(e):
         if isinstance(e, syntax.EVar):
@@ -1657,7 +1658,29 @@ def cse_scan(e):
             scanner.captures[()].append((expr_info.tempvar, expr))
             scanner.rewrites.update({p: expr_info.tempvar for p in expr_info.paths})
 
-    return e, scanner.captures, scanner.rewrites
+    # Remove captures that aren't actually present in the rewrites.
+
+    def tuple_prefixes(t):
+        "Generates all prefixes in ascending order of size of the given tuple."
+        return (t[0:i] for i in range(len(t)))
+
+    final_rewrites = dict()
+    used_temp_names = set()
+
+    # rewrites contains paths that WILL get rewritten. Some are wholly contained
+    # within others, so we only need to worry about the outer paths. Sort by
+    # length of path so that outer paths are considered before the inner ones.
+    for path, tempvar in sorted(scanner.rewrites.items(), key=lambda x: len(x[0])):
+        if not any(prefix in final_rewrites for prefix in tuple_prefixes(path)):
+            final_rewrites[path] = tempvar
+            used_temp_names.add(tempvar.id)
+
+    final_captures = {
+        path: list(filter(lambda d: (d[0].id in used_temp_names), captures))
+        for path, captures in scanner.captures.items()
+    }
+
+    return e, final_captures, final_rewrites
 
 def cse_replace(e, capture_map, rewrite_map):
     class CSERewriter(PathAwareRewriter):
@@ -1747,4 +1770,5 @@ def eliminate_common_subexpressions(spec):
             return s
 
     op_visitor = OpVisitor()
-    return op_visitor.visit(spec)
+    spec2 = op_visitor.visit(spec)
+    return spec2

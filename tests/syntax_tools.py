@@ -510,7 +510,7 @@ class TestElimination(unittest.TestCase):
 
         assert new_form.count("y + 2") == 1
 
-    def __test_cse_2_stm_long_exp(self):
+    def test_cse_2_stm_long_exp(self):
         """
         x = a+1 + b+2 + c+3
         z = a+1 + b+2 + c+3 + d+4
@@ -533,8 +533,7 @@ class TestElimination(unittest.TestCase):
         new_form = pprint(s2)
         print(new_form)
 
-        assert new_form.count("y + 2") == 1
-        assert False
+        assert new_form.count("var _tmp") == 1
 
     def test_cse_2_stm_expr_if(self):
         s = parse_stm(
@@ -827,5 +826,5 @@ class TestElimination(unittest.TestCase):
         assert retypecheck(op)
 
         print(pprint(spec))
-        print(pprint(eliminate_common_subexpressions(spec)))
+        print(pprint(_cse(spec)))
         assert False
