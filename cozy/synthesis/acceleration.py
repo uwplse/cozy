@@ -48,7 +48,7 @@ def reachable_values_of_type(root : Exp, t : Type) -> Exp:
     else:
         return EEmptyList().with_type(TBag(t))
 
-def map_accelerate(e, state_vars, args, cache, size):
+def map_accelerate(e, state_vars, args):
     for ctx in enumerate_fragments(e):
         if ctx.pool != RUNTIME_POOL:
             continue
@@ -346,7 +346,7 @@ def try_optimize(e, context, pool):
             sv = EStateVar(nsv).with_type(e.type)
             yield _check(sv, RUNTIME_POOL)
 
-        for e, p in map_accelerate(e, state_vars, args, None, 0):
+        for e, p in map_accelerate(e, state_vars, args):
             if p == RUNTIME_POOL:
                 yield _check(e, p)
 
