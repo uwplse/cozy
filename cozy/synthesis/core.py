@@ -98,6 +98,8 @@ class Learner(object):
         while True:
 
             print("starting minor iteration {} with |cache|={}".format(size, enum.cache_size()))
+            if self.stop_callback():
+                raise StopException()
 
             n = 0
             for (e, ctx, pool) in frags:
