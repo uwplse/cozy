@@ -1432,17 +1432,25 @@ def inline_calls(spec):
 
 def get_modified_var(stm):
     """
-    Given a statement, returns the EVar modified by it, if any.
+    Given a statement, returns a tuple:
+    (
+        the EVar modified by the statement (if any),
+        the handle type modified by the statement (if any)
+    )
     """
     def find_lvalue_target(e):
         if isinstance(e, syntax.EVar):
-            return e
+            return e, None
         elif isinstance(e, target_syntax.EMapGet):
-            return find_lvalue_target(e.map)
+            return find_lvalue_target(e.map)[0], None
         elif isinstance(e, syntax.ETupleGet):
-            return find_lvalue_target(e.e)
+            return find_lvalue_target(e.e)[0], None
         elif isinstance(e, syntax.EGetField):
-            return find_lvalue_target(e.e)
+            if isinstance(e.e.type, syntax.THandle) and e.f == "val":
+                handle_type = e.e.type
+            else:
+                handle_type = None
+            return find_lvalue_target(e.e)[0], handle_type
         assert False, "unexpected modification target {}".format(e)
 
     if isinstance(stm, syntax.SAssign):
@@ -1453,9 +1461,9 @@ def get_modified_var(stm):
                             target_syntax.SMapUpdate)):
         return find_lvalue_target(stm.map)
     else:
-        return None
+        return None, None
 
-class ExpInfo:
+class ExpInfo(object):
     def __init__(self, tempvar, count, dependents, handle_types, paths):
         self.tempvar = tempvar
         self.count = count
@@ -1481,18 +1489,20 @@ class ExpressionMap(ExpMap):
             self[exp] = ExpInfo(fresh_var(exp.type, "tmp"), 1, set(dependents),
                 set(handle_types), [path])
 
+    def unbind_handle_type(self, handle_type):
+        """
+        Returns a new ExpressionMap without expressions related to the given
+        handle type.
+        """
+        return ExpressionMap((exp, expinfo) for exp, expinfo in self.items()
+            if handle_type.statevar not in expinfo.handle_types)
+
     def unbind(self, var):
         """
         Returns a new ExpressionMap without expressions related to the given var.
         """
-        if isinstance(var.type, syntax.THandle):
-            # "related" for handle-vars means the handle types are the same.
-            return ExpressionMap((exp, expinfo) for exp, expinfo in self.items()
-                if var.type.statevar not in expinfo.handle_types)
-        else:
-            # Otherwise it's the variable name.
-            return ExpressionMap((exp, expinfo) for exp, expinfo in self.items()
-                if var.id not in expinfo.dependents)
+        return ExpressionMap((exp, expinfo) for exp, expinfo in self.items()
+            if var.id not in expinfo.dependents)
 
 def cse_scan(e):
     SIMPLE_EXPS = (syntax.ENum, syntax.EVar, syntax.EBool, syntax.EStr,
@@ -1537,17 +1547,18 @@ def cse_scan(e):
                 for i, c in enumerate(e.children())]
 
         def filter_captured_vars(self, outer_entries, inner_entries,
-                capture_path, bound_var):
+                capture_path, bound_var, handle_capture=False):
             """
             Move things from inner_entries to capture/rewrite structures if
             they're related to the binding variable. Otherwise, bubble them up
             to the surrounding scope.
             """
-            # (temp, count, dependents, handle_types, paths)
             for expr, expinfo in inner_entries.items():
-                if isinstance(bound_var.type, syntax.THandle):
+                if handle_capture:
+                    # Capture based on handle type.
                     should_capture = bound_var.type.statevar in expinfo.handle_types
                 else:
+                    # Capture based on var name.
                     should_capture = bound_var.id in expinfo.dependents
 
                 if should_capture:
@@ -1577,14 +1588,20 @@ def cse_scan(e):
                 stm_path = path + (ordinal,)
                 stm, rest = seq_pair if isinstance(seq_pair, tuple) else (seq_pair, None)
 
-                killed_var = get_modified_var(stm)
+                killed_var, handle_type = get_modified_var(stm)
+                is_handle_mod = handle_type is not None
                 self.visit(stm, stm_path, inner_entries, inner_capture)
 
                 if killed_var is not None:
                     # Unbind expressions related to killed_var
-                    submap = inner_entries.unbind(killed_var)
+                    if is_handle_mod:
+                        submap = inner_entries.unbind_handle_type(handle_type)
+                    else:
+                        submap = inner_entries.unbind(killed_var)
+
                     scan_statement_sequence(rest, ordinal + 1, submap, stm)
-                    self.filter_captured_vars(inner_entries, submap, stm_path, killed_var)
+                    self.filter_captured_vars(inner_entries, submap, stm_path,
+                        killed_var, is_handle_mod)
                 else:
                     scan_statement_sequence(rest, ordinal + 1, inner_entries, inner_capture)
 
@@ -1728,6 +1745,6 @@ def eliminate_common_subexpressions(spec):
         def visit_Op(self, s):
             s.body = eliminate_common_subexpressions_stm(s.body)
             return s
+
     op_visitor = OpVisitor()
-    spec2 = op_visitor.visit(spec)
-    return spec2
+    return op_visitor.visit(spec)

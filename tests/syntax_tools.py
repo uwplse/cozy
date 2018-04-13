@@ -8,8 +8,32 @@ from cozy.solver import valid
 from cozy.evaluation import eval
 from cozy.parse import parse
 
-class TestSyntaxTools(unittest.TestCase):
+def parse_spec(spec, types={}):
+    class TypeInstaller(BottomUpRewriter):
+        def visit_EVar(self, e):
+            return e.with_type(types.get(e.id, INT))
 
+    ast = parse(spec)
+    return TypeInstaller().visit(ast)
+
+def _parse_fragment(fragment, types={}, expr=False):
+    """
+    Can be used to obtain a parse tree for an arbitrary syntax fragment.
+    Include a dictionary of var_name -> type object. By default, they're INTs.
+
+    Doesn't work for things only in target_syntax, like (let x=3 in...).
+    """
+    spec = "Test: {} foo() {}".format("query" if expr else "op", fragment)
+    ast = parse_spec(spec, types)
+    return ast.methods[0].ret if expr else ast.methods[0].body
+
+def parse_stm(frag, types={}):
+    return _parse_fragment(frag, types, expr=False)
+
+def parse_expr(frag, types={}):
+    return _parse_fragment(frag, types, expr=True)
+
+class TestSyntaxTools(unittest.TestCase):
     def test_eall(self):
         assert eval(EAll(()), {})
         for l in range(5):
@@ -203,37 +227,46 @@ class TestSyntaxTools(unittest.TestCase):
         assert l[2] is y
         assert l[3] is z
 
+    def test_get_modified_var(self):
+        htype = THandle("IntPtr", INT)
+
+        stm = parse_stm("h.val = 2;", dict(h=htype))
+        assert retypecheck(stm)
+        mod, handle_type = get_modified_var(stm)
+        assert handle_type is not None
+        assert isinstance(handle_type, THandle)
+
+        # Reassigning a handle should not get a handle type back.
+
+        stm = parse_stm("h = g;", dict(h=htype, g=htype))
+        assert retypecheck(stm)
+        mod, handle_type = get_modified_var(stm)
+        assert handle_type is None
+
+        stm = parse_stm("foo.bar.val = 2;",
+            dict(
+                foo=TRecord([("bar", THandle("IntPtr", INT))]),
+                bar=htype))
+
+        assert retypecheck(stm)
+        mod, handle_type = get_modified_var(stm)
+        print(mod)
+        assert handle_type is not None
+        assert isinstance(handle_type, THandle)
+
+        stm = parse_stm("foo.bar = 2;",
+            dict(foo=TRecord([("bar", INT)]), bar=INT))
+        assert retypecheck(stm)
+        mod, handle_type = get_modified_var(stm)
+        print(mod)
+        assert handle_type is None
+
 """
 Elimination tests.
 """
 
 def _cse(e):
     return cse_replace(*cse_scan(e))
-
-def parse_spec(spec, types={}):
-    class TypeInstaller(BottomUpRewriter):
-        def visit_EVar(self, e):
-            return e.with_type(types.get(e.id, INT))
-
-    ast = parse(spec)
-    return TypeInstaller().visit(ast)
-
-def _parse_fragment(fragment, types={}, expr=False):
-    """
-    Can be used to obtain a parse tree for an arbitrary syntax fragment.
-    Include a dictionary of var_name -> type object. By default, they're INTs.
-
-    Doesn't work for things only in target_syntax, like (let x=3 in...).
-    """
-    spec = "Test: {} foo() {}".format("query" if expr else "op", fragment)
-    ast = parse_spec(spec, types)
-    return ast.methods[0].ret if expr else ast.methods[0].body
-
-def parse_stm(frag, types={}):
-    return _parse_fragment(frag, types, expr=False)
-
-def parse_expr(frag, types={}):
-    return _parse_fragment(frag, types, expr=True)
 
 class TestElimination(unittest.TestCase):
     def test_y_plus_1(self):
@@ -693,7 +726,7 @@ class TestElimination(unittest.TestCase):
                     a = h.val + 7;
                     b = h.val + 7;
 
-                    // Changing g should invalidate h since they have the same handle type.
+                    // Changing g.val should invalidate h since they have the same handle type.
 
                     g.val = 1;
 
@@ -720,21 +753,28 @@ class TestElimination(unittest.TestCase):
 
                 op foo2()
                     /*
-                    Also reassigning the handle itself, not its val.
+                    ...but reassigning the handle itself (not its val) should act
+                    as just reassigning a non-handle var.
                     */
 
                     h.val = 0;
 
                     a = h.val + 7;
                     b = h.val + 7;
+                    q = g.val + 6;
+                    r = g.val + 6;
 
                     g = i;
 
                     c = h.val + 7;
                     d = h.val + 7;
+                    s = g.val + 6;
+                    t = g.val + 6;
             """,
             dict(a=INT, b=INT, c=INT, d=INT,
-                h=THandle("IntPtr", INT), g=THandle("IntPtr", INT),
+                q=INT, r=INT, s=INT, t=INT,
+                h=THandle("IntPtr", INT),
+                g=THandle("IntPtr", INT),
                 i=THandle("IntPtr", INT))
         )
 
@@ -744,7 +784,8 @@ class TestElimination(unittest.TestCase):
         spec2 = eliminate_common_subexpressions(spec)
         new_form = pprint(spec2)
         print(new_form)
-        assert new_form.count("+ 7") == 2
+        assert new_form.count("+ 7") == 1
+        assert new_form.count("+ 6") == 2
 
     def test_cse_handle_difftype(self):
         spec = parse_spec(
