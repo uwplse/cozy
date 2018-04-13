@@ -51,6 +51,21 @@ def parent_contexts(context):
         yield parent
         context = parent
 
+def _interesting(e, context):
+    return isinstance(context, RootCtx) and hasattr(e, "_tag")
+def _consider(e, context):
+    if not _interesting(e, context): return
+    print(" > considering {}".format(pprint(e)))
+def _accept(e, context):
+    if not _interesting(e, context): return
+    print("   accepting {}".format(pprint(e)))
+def _skip(e, context, reason):
+    if not _interesting(e, context): return
+    print("   skipping {} [{}]".format(pprint(e), reason))
+def _evict(e, context, better_exp):
+    if not _interesting(e, context): return
+    print("   evicting {}".format(pprint(e)))
+
 class Enumerator(object):
     def __init__(self, examples, cost_model : CostModel, check_wf=None, hints=None, heuristics=None):
         self.examples = list(examples)
@@ -279,9 +294,11 @@ class Enumerator(object):
                 if not belongs_in_context(fvs, context):
                     continue
 
+                _consider(e, context)
+
                 wf = self.check_wf(e, context, pool)
                 if not wf:
-                    # print("rejecting {}: wf={}".format(pprint(e), wf))
+                    _skip(e, context, "wf={}".format(wf))
                     continue
 
                 fp = fingerprint(e, examples)
@@ -304,11 +321,11 @@ class Enumerator(object):
                     if ordering == Cost.BETTER:
                         pass
                     elif ordering == Cost.WORSE:
-                        # print("should skip worse {}".format(pprint(e)))
+                        _skip(e, context, "worse than {}".format(pprint(prev_exp)))
                         should_keep = False
                         break
                     else:
-                        # print("should skip equiv {}".format(pprint(e)))
+                        _skip(e, context, "equivalent to cached {}".format(pprint(prev_exp)))
                         assert ordering == Cost.UNORDERED
                         should_keep = False
                         break
@@ -323,11 +340,12 @@ class Enumerator(object):
                                 if ee.fingerprint == fp and ee.cost.compare_to(cost, pool) == Cost.WORSE:
                                     to_evict.append((key, ee))
                     for key, ee in to_evict:
-                        # print("EVICTING {} FOR {}".format(pprint(ee.e), pprint(e)))
                         (p, s, c) = key
+                        _evict(ee, c, e)
                         self.cache[key].remove(ee)
                         self.seen[(c, p, fp)].remove(ee.e)
 
+                    _accept(e, context)
                     seen_key = (context, pool, fp)
                     if seen_key not in self.seen:
                         self.seen[seen_key] = []
