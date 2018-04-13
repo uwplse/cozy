@@ -335,7 +335,6 @@ def _check(e, pool):
 def try_optimize(e, context, pool):
     if not accelerate.value:
         return
-    # print("accelerating {} [in {}]".format(pprint(e), pool_name(pool)))
 
     state_vars = [v for v, p in context.vars() if p == STATE_POOL]
     args = [v for v, p in context.vars() if p == RUNTIME_POOL]
