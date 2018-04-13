@@ -348,9 +348,9 @@ def try_optimize(e, context, pool):
             sv = EStateVar(nsv).with_type(e.type)
             yield _check(sv, RUNTIME_POOL)
 
-        for e, p in map_accelerate(e, state_vars, args):
+        for ee, p in map_accelerate(e, state_vars, args):
             if p == RUNTIME_POOL:
-                yield _check(e, p)
+                yield _check(ee, p)
 
         if isinstance(e, EArgMin) or isinstance(e, EArgMax):
             ee = optimized_best(e.e, e.f, "<" if isinstance(e, EArgMin) else ">", args=args)
