@@ -296,7 +296,10 @@ def optimized_bag_difference(xs, ys):
 
 def optimize_filter_as_if_distinct(xs, p, args):
     if isinstance(xs, EBinOp) and xs.op == "-":
-        return optimize_filter_as_if_distinct(xs.e1, ELambda(p.arg, EAll([ENot(optimized_in(p.arg, xs.e2)), p.body])), args)
+        return EBinOp(
+            optimize_filter_as_if_distinct(xs.e1, p, args), "-",
+            optimize_filter_as_if_distinct(xs.e2, p, args)).with_type(xs.type)
+        # return optimize_filter_as_if_distinct(xs.e1, ELambda(p.arg, EAll([ENot(optimized_in(p.arg, xs.e2)), p.body])), args)
     from cozy.syntax_tools import dnf, nnf
     cases = dnf(nnf(p.body))
     cases = [unique(c) for c in cases]
