@@ -214,6 +214,8 @@ def improve(
             hints=hints,
             examples=examples))
 
+    target = freshen_binders(target)
+
     print()
     print("improving: {}".format(pprint(target)))
     print("subject to: {}".format(pprint(assumptions)))

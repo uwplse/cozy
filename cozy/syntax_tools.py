@@ -1158,6 +1158,21 @@ def alpha_equivalent(e1 : syntax.Exp, e2 : syntax.Exp) -> bool:
 
     return V().visit(e1, e2)
 
+def freshen_binders(e : syntax.Exp):
+    class V(BottomUpRewriter):
+        def __init__(self):
+            self.rewrite = { }
+        def visit_EVar(self, v):
+            return self.rewrite.get(v, v)
+        def visit_ELambda(self, l):
+            new_arg = fresh_var(l.arg.type)
+            with common.extend(self.rewrite, l.arg, new_arg):
+                new_body = self.visit(l.body)
+            return self.join(l, (new_arg, new_body))
+    ee = V().visit(e)
+    assert alpha_equivalent(e, ee)
+    return ee
+
 BOOL = syntax.TBool()
 
 def implies(e1, e2):
