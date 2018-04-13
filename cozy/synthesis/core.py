@@ -17,7 +17,6 @@ from cozy.opts import Option
 from cozy.pools import ALL_POOLS, RUNTIME_POOL, STATE_POOL, pool_name
 
 from .acceleration import try_optimize
-from .cache import Cache, SeenSet
 
 eliminate_vars = Option("eliminate-vars", bool, True)
 reset_on_success = Option("reset-on-success", bool, False)
@@ -35,83 +34,20 @@ class Learner(object):
     def __init__(self, target, assumptions, state_vars, args, legal_free_vars, examples, cost_model, stop_callback, hints, solver):
         self.state_vars = OrderedSet(state_vars)
         self.args = OrderedSet(args)
-        self.legal_free_vars = legal_free_vars
         self.stop_callback = stop_callback
         self.cost_model = cost_model
-        self.seen = SeenSet()
         self.assumptions = assumptions
         self.hints = list(hints)
-        self.solver = solver
         self.reset(examples)
         self.watch(target)
 
-    def compare_costs(self, c1, c2):
-        self.ccount += 1
-        solver = self.solver
-        if solver is not None:
-            return c1.compare_to(c2, solver=solver)
-        else:
-            return c1.compare_to(c2, assumptions=self.assumptions)
-
     def reset(self, examples):
-        self.cache = Cache()
-        self.current_size = -1
         self.examples = list(examples)
-        self.seen.clear()
-        self.builder_iter = ()
-        self.last_progress = 0
-        self._start_minor_it()
 
     def watch(self, new_target):
         self.target = new_target
 
-    def _start_minor_it(self):
-        return
-        now = datetime.datetime.now()
-        if _fates:
-            for f, ct in sorted(_fates.items(), key=lambda x: x[1], reverse=True):
-                print("  {:6} | {}".format(ct, f))
-            _fates.clear()
-        if hasattr(self, "mstart"):
-            duration = now - self.mstart
-            print("> minor duration:   {}".format(duration))
-            print("> next() calls:     {}".format(self.ncount))
-            print("> total exps:       {}".format(self.ecount))
-            print("> exps/s:           {}".format(self.ecount / duration.total_seconds()))
-            print("> cost comparisons: {}".format(self.ccount))
-            print("> fingerprints:     {}".format(self.fpcount))
-        if self.current_size >= 0:
-            print("minor iteration {}, |cache|={}".format(self.current_size, len(self.cache)))
-        self.mstart = now
-        self.ecount = 0
-        self._ecount = 0
-        self.ccount = 0
-        self.fpcount = 0
-        self.ncount = 0
-
-    def _on_exp(self, e, pool):
-        # print("*** ", end="")
-        # print(pprint(e))
-        now = datetime.datetime.now()
-        if not hasattr(self, "_on_exp_time"):
-            self._on_exp_time = now
-            self._ecount = 0
-        elapsed = now - self._on_exp_time
-        if elapsed > datetime.timedelta(seconds=30):
-            print("... exps/s: {:.1f}".format(self._ecount / elapsed.total_seconds()))
-            self._on_exp_time = now
-            self._ecount = 0
-        self._ecount += 1
-        self.ecount += 1
-
     def matches(self, fp, target_fp):
-        # assert isinstance(fp[0], int)
-        # assert isinstance(fp[1], Type)
-        # assert len(fp) == len(target_fp)
-        # if fp[0] != target_fp[0] or fp[1] != target_fp[1]:
-        #     return False
-        # t = fp[1]
-        # assert isinstance(t, Type)
         assert isinstance(fp[0], Type)
         assert isinstance(target_fp[0], Type)
         if fp[0] != target_fp[0]:
@@ -162,6 +98,8 @@ class Learner(object):
         while True:
 
             print("starting minor iteration {} with |cache|={}".format(size, enum.cache_size()))
+            if self.stop_callback():
+                raise StopException()
 
             n = 0
             for (e, ctx, pool) in frags:
@@ -396,6 +334,4 @@ def improve(
                 solver.pop()
 
     except KeyboardInterrupt:
-        for e in learner.cache.random_sample(50):
-            print(pprint(e))
         raise

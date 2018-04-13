@@ -156,3 +156,13 @@ class SemanticsTests(unittest.TestCase):
         e2 = optimized_in(i, e1.e2)
         assert not alpha_equivalent(e1, e2)
         self.assert_same(e1, e2)
+
+    def test_distribute_filter_over_subtract(self):
+        xs = EVar("xs").with_type(INT_BAG)
+        ys = EVar("ys").with_type(INT_BAG)
+        x = EVar("x").with_type(INT)
+        e1 = EFilter(EBinOp(xs, "-", ys), ELambda(x, ECall("f", (x,)).with_type(BOOL)))
+        assert retypecheck(e1)
+        e2 = EBinOp(EFilter(xs, e1.p), "-", EFilter(ys, e1.p))
+        assert retypecheck(e2)
+        self.assert_same(e1, e2)

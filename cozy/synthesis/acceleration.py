@@ -48,7 +48,7 @@ def reachable_values_of_type(root : Exp, t : Type) -> Exp:
     else:
         return EEmptyList().with_type(TBag(t))
 
-def map_accelerate(e, state_vars, args, cache, size):
+def map_accelerate(e, state_vars, args):
     for ctx in enumerate_fragments(e):
         if ctx.pool != RUNTIME_POOL:
             continue
@@ -296,7 +296,10 @@ def optimized_bag_difference(xs, ys):
 
 def optimize_filter_as_if_distinct(xs, p, args):
     if isinstance(xs, EBinOp) and xs.op == "-":
-        return optimize_filter_as_if_distinct(xs.e1, ELambda(p.arg, EAll([ENot(optimized_in(p.arg, xs.e2)), p.body])), args)
+        return EBinOp(
+            optimize_filter_as_if_distinct(xs.e1, p, args), "-",
+            optimize_filter_as_if_distinct(xs.e2, p, args)).with_type(xs.type)
+        # return optimize_filter_as_if_distinct(xs.e1, ELambda(p.arg, EAll([ENot(optimized_in(p.arg, xs.e2)), p.body])), args)
     from cozy.syntax_tools import dnf, nnf
     cases = dnf(nnf(p.body))
     cases = [unique(c) for c in cases]
@@ -346,7 +349,7 @@ def try_optimize(e, context, pool):
             sv = EStateVar(nsv).with_type(e.type)
             yield _check(sv, RUNTIME_POOL)
 
-        for e, p in map_accelerate(e, state_vars, args, None, 0):
+        for e, p in map_accelerate(e, state_vars, args):
             if p == RUNTIME_POOL:
                 yield _check(e, p)
 
