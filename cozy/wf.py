@@ -1,13 +1,14 @@
 import itertools
 
-from cozy.common import typechecked
+from cozy.common import typechecked, OrderedSet
 from cozy.typecheck import is_collection, is_scalar, is_numeric
 from cozy.target_syntax import *
-from cozy.syntax_tools import enumerate_fragments, pprint, free_vars
+from cozy.syntax_tools import pprint, free_vars
 from cozy.solver import valid
 from cozy.pools import RUNTIME_POOL, STATE_POOL
 from cozy.opts import Option
 from cozy.structures import extension_handler
+from cozy.contexts import Context, RootCtx, shred
 
 allow_conditional_state = Option("allow-conditional-state", bool, True)
 
@@ -19,7 +20,10 @@ class ExpIsNotWf(Exception):
         self.reason = reason
 
 @typechecked
-def exp_wf_nonrecursive(e : Exp, state_vars : {EVar}, args : {EVar}, pool = RUNTIME_POOL, assumptions : Exp = T):
+def exp_wf_nonrecursive(e : Exp, context : Context, pool = RUNTIME_POOL, assumptions : Exp = T):
+    state_vars = OrderedSet(v for v, p in context.vars() if p == STATE_POOL)
+    args       = OrderedSet(v for v, p in context.vars() if p == RUNTIME_POOL)
+
     h = extension_handler(type(e))
     if h is not None:
         msg = h.check_wf(e, state_vars=state_vars, args=args, pool=pool, assumptions=assumptions)
@@ -76,6 +80,8 @@ def exp_wf_nonrecursive(e : Exp, state_vars : {EVar}, args : {EVar}, pool = RUNT
         raise ExpIsNotWf(e, e, "nonzero numerical constant in state position")
     if not allow_conditional_state.value and not at_runtime and isinstance(e, ECond):
         raise ExpIsNotWf(e, e, "conditional in state position")
+    if isinstance(e, EMakeMap2) and isinstance(e.e, EEmptyList):
+        raise ExpIsNotWf(e, e, "trivially empty map")
     if not at_runtime and isinstance(e, EMakeMap2) and is_collection(e.type.v):
         all_collections = [sv for sv in state_vars if is_collection(sv.type)]
         total_size = ENum(0).with_type(INT)
@@ -94,14 +100,13 @@ def exp_wf_nonrecursive(e : Exp, state_vars : {EVar}, args : {EVar}, pool = RUNT
             raise ExpIsNotWf(e, e, "non-polynomial-sized map")
 
 @typechecked
-def exp_wf(e : Exp, state_vars : {EVar}, args : {EVar}, pool = RUNTIME_POOL, assumptions : Exp = T):
+def exp_wf(e : Exp, context : Context, pool = RUNTIME_POOL, assumptions : Exp = T):
     """
     Returns True or throws exception indicating why `e` is not well-formed.
     """
-    for ctx in enumerate_fragments(e):
-        p = ctx.pool if pool == RUNTIME_POOL else STATE_POOL
+    for x, ctx, p in shred(e, context, pool):
         try:
-            exp_wf_nonrecursive(ctx.e, state_vars, args, p, assumptions=EAll(itertools.chain(ctx.facts, (assumptions,))))
+            exp_wf_nonrecursive(x, ctx, p, assumptions=ctx.adapt(assumptions, context)) # TODO: context-specific assumptions
         except ExpIsNotWf as exc:
-            raise ExpIsNotWf(e, ctx.e, exc.reason)
+            raise ExpIsNotWf(e, x, exc.reason)
     return True
