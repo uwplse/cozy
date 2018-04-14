@@ -209,7 +209,7 @@ class Enumerator(object):
 
         # Iteration
         for (sz1, sz2) in pick_to_sum(2, size - 1):
-            for bag in collections(self.enumerate(context, sz1, STATE_POOL)):
+            for bag in collections(self.enumerate(context, sz1, pool)):
                 for lam in build_lambdas(bag, pool, sz2):
                     body_type = lam.body.type
                     yield EMap(bag, lam).with_type(TBag(body_type))
