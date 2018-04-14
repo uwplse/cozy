@@ -341,7 +341,7 @@ class Enumerator(object):
                                     to_evict.append((key, ee))
                     for key, ee in to_evict:
                         (p, s, c) = key
-                        _evict(ee, c, e)
+                        _evict(ee.e, c, e)
                         self.cache[key].remove(ee)
                         self.seen[(c, p, fp)].remove(ee.e)
 
