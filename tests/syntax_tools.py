@@ -511,13 +511,6 @@ class TestElimination(unittest.TestCase):
         assert new_form.count("y + 2") == 1
 
     def test_cse_2_stm_long_exp(self):
-        """
-        x = a+1 + b+2 + c+3
-        z = a+1 + b+2 + c+3 + d+4
-        =>
-        ??
-        This needs some work -- currently a+1 gets generated multiple times.
-        """
         s = parse_stm(
             """
             x = a+1 + b+2 + c+3;

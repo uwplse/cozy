@@ -1661,8 +1661,11 @@ def cse_scan(e):
     # Remove captures that aren't actually present in the rewrites.
 
     def tuple_prefixes(t):
-        "Generates all prefixes in ascending order of size of the given tuple."
-        return (t[0:i] for i in range(len(t)))
+        """
+        Generates all prefixes of the given tuple in ascending order of length,
+        not including t itself.
+        """
+        return (t[:i] for i in range(len(t)))
 
     final_rewrites = dict()
     used_temp_names = set()
