@@ -1159,15 +1159,22 @@ def alpha_equivalent(e1 : syntax.Exp, e2 : syntax.Exp) -> bool:
     return V().visit(e1, e2)
 
 def freshen_binders(e : syntax.Exp):
+    fvs = { v : True for v in free_vars(e) }
     class V(BottomUpRewriter):
         def __init__(self):
             self.rewrite = { }
         def visit_EVar(self, v):
             return self.rewrite.get(v, v)
         def visit_ELambda(self, l):
-            new_arg = fresh_var(l.arg.type)
-            with common.extend(self.rewrite, l.arg, new_arg):
-                new_body = self.visit(l.body)
+            if l.arg in fvs:
+                new_arg = fresh_var(l.arg.type)
+                # print("Rewriting: {} ----> {}".format(l.arg.id, new_arg.id))
+                with common.extend(self.rewrite, l.arg, new_arg):
+                    new_body = self.visit(l.body)
+            else:
+                new_arg = l.arg
+                with common.extend(fvs, l.arg, True):
+                    new_body = self.visit(l.body)
             return self.join(l, (new_arg, new_body))
     ee = V().visit(e)
     assert alpha_equivalent(e, ee)
