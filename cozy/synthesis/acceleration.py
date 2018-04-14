@@ -329,7 +329,14 @@ def optimize_map(xs, f, args):
     else:
         return EMap(xs, f).with_type(res_type)
 
-def _check(e, pool):
+def _check(e, context, pool):
+    """
+    When Cozy chokes on malformed expressions, bad acceleration rules are often
+    the culprit.  To help debug these kinds of problems, this function exists
+    as a "hook" where you can insert code to try and catch the issue before it
+    leaks out.  Exceptions thrown here will reveal what acceleration rule is
+    responsible for the problem.
+    """
     return e
 
 def try_optimize(e, context, pool):
@@ -341,58 +348,58 @@ def try_optimize(e, context, pool):
 
     ee = simplify(e)
     if not alpha_equivalent(ee, e):
-        yield _check(simplify(e), pool)
+        yield _check(simplify(e), context, pool)
     if pool == RUNTIME_POOL:
         if all(v in state_vars for v in free_vars(e)):
             nsv = strip_EStateVar(e)
             sv = EStateVar(nsv).with_type(e.type)
-            yield _check(sv, RUNTIME_POOL)
+            yield _check(sv, context, RUNTIME_POOL)
 
         for ee, p in map_accelerate(e, state_vars, args):
             if p == RUNTIME_POOL:
-                yield _check(ee, p)
+                yield _check(ee, context, p)
 
         if isinstance(e, EArgMin) or isinstance(e, EArgMax):
             ee = optimized_best(e.e, e.f, "<" if isinstance(e, EArgMin) else ">", args=args)
             if not alpha_equivalent(e, ee):
-                yield _check(ee, RUNTIME_POOL)
+                yield _check(ee, context, RUNTIME_POOL)
 
         if is_collection(e.type) and isinstance(e, EBinOp) and e.op == "-":
             ee = optimized_bag_difference(e.e1, e.e2)
             if not alpha_equivalent(e, ee):
-                yield _check(ee, RUNTIME_POOL)
+                yield _check(ee, context, RUNTIME_POOL)
 
         if isinstance(e, EBinOp) and e.op == "===" and isinstance(e.e1.type, THandle):
             yield _check(EAll([
                 optimized_eq(optimized_addr(e.e1), optimized_addr(e.e2)),
-                optimized_eq(optimized_val(e.e1),  optimized_val(e.e2)).with_type(BOOL)]), RUNTIME_POOL)
+                optimized_eq(optimized_val(e.e1),  optimized_val(e.e2)).with_type(BOOL)]), context, RUNTIME_POOL)
 
         if isinstance(e, EBinOp) and e.op == BOp.In:
             ee = optimized_in(e.e1, e.e2)
             if not alpha_equivalent(e, ee):
-                yield _check(ee, RUNTIME_POOL)
+                yield _check(ee, context, RUNTIME_POOL)
 
         if isinstance(e, EUnaryOp) and e.op == UOp.Empty:
             ee = optimized_empty(e.e)
             if not alpha_equivalent(e, ee):
-                yield _check(ee, RUNTIME_POOL)
+                yield _check(ee, context, RUNTIME_POOL)
 
         if isinstance(e, EUnaryOp) and e.op == UOp.Exists:
             ee = optimized_exists(e.e)
             if not alpha_equivalent(e, ee):
-                yield _check(ee, RUNTIME_POOL)
+                yield _check(ee, context, RUNTIME_POOL)
 
         if isinstance(e, EUnaryOp) and e.op == UOp.Length:
             ee = optimized_len(e.e)
             if not alpha_equivalent(e, ee):
-                yield _check(ee, RUNTIME_POOL)
+                yield _check(ee, context, RUNTIME_POOL)
 
         if isinstance(e, EFilter):
             ee = optimize_filter_as_if_distinct(e.e, e.p, args=args)
             if not alpha_equivalent(e, ee):
-                yield _check(ee, RUNTIME_POOL)
+                yield _check(ee, context, RUNTIME_POOL)
 
         if isinstance(e, EMap):
             ee = optimize_map(e.e, e.f, args=args)
             if not alpha_equivalent(e, ee):
-                yield _check(ee, RUNTIME_POOL)
+                yield _check(ee, context, RUNTIME_POOL)
