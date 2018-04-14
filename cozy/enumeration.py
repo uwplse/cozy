@@ -2,7 +2,7 @@ from collections import namedtuple, OrderedDict
 from enum import Enum
 import itertools
 
-from cozy.common import pick_to_sum, OrderedSet, FrozenDict, unique, make_random_access
+from cozy.common import pick_to_sum, OrderedSet, unique, make_random_access
 from cozy.target_syntax import *
 from cozy.syntax_tools import pprint, fresh_var, free_vars, freshen_binders
 from cozy.evaluation import eval_bulk
@@ -241,9 +241,6 @@ class Enumerator(object):
         for info in self.enumerate_with_info(context, size, pool):
             yield info.e
 
-    def key(self, examples, size, pool):
-        return (pool, size, tuple(FrozenDict(ex) for ex in examples))
-
     def known_contexts(self):
         return unique(ctx for (ctx, pool, fp) in self.seen.keys())
 
@@ -265,9 +262,6 @@ class Enumerator(object):
         if context.parent() is not None:
             yield from self.enumerate_with_info(context.parent(), size, pool)
 
-        # examples = context.instantiate_examples(self.examples)
-        # print(examples)
-        # k = self.key(examples, size, pool)
         k = (pool, size, context)
         res = self.cache.get(k)
         if res is not None:
@@ -287,8 +281,6 @@ class Enumerator(object):
                     e = next(queue)
                 except StopIteration:
                     break
-
-                # print("considering {}".format(pprint(e)))
 
                 fvs = free_vars(e)
                 if not belongs_in_context(fvs, context):
