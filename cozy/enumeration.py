@@ -4,7 +4,7 @@ import itertools
 
 from cozy.common import pick_to_sum, OrderedSet, FrozenDict, unique, make_random_access
 from cozy.target_syntax import *
-from cozy.syntax_tools import pprint, fresh_var, free_vars
+from cozy.syntax_tools import pprint, fresh_var, free_vars, freshen_binders
 from cozy.evaluation import eval_bulk
 from cozy.typecheck import is_numeric, is_scalar, is_collection
 from cozy.cost_model import CostModel, Cost
@@ -202,7 +202,7 @@ class Enumerator(object):
                 yield EUnaryOp(UOp.All, bag).with_type(BOOL)
 
         def build_lambdas(bag, pool, body_size):
-            v = fresh_var(bag.type.t)
+            v = fresh_var(bag.type.t, omit=set(v for v, p in context.vars()))
             inner_context = UnderBinder(context, v=v, bag=bag, bag_pool=pool)
             for lam_body in self.enumerate(inner_context, body_size, pool):
                 yield ELambda(v, lam_body)
@@ -294,6 +294,7 @@ class Enumerator(object):
                 if not belongs_in_context(fvs, context):
                     continue
 
+                e = freshen_binders(e, context)
                 _consider(e, context)
 
                 wf = self.check_wf(e, context, pool)

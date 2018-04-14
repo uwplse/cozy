@@ -1158,8 +1158,8 @@ def alpha_equivalent(e1 : syntax.Exp, e2 : syntax.Exp) -> bool:
 
     return V().visit(e1, e2)
 
-def freshen_binders(e : syntax.Exp):
-    fvs = { v : True for v in free_vars(e) }
+def freshen_binders(e : syntax.Exp, context):
+    fvs = { v : True for v, p in context.vars() }
     class V(BottomUpRewriter):
         def __init__(self):
             self.rewrite = { }

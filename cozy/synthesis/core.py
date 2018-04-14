@@ -206,14 +206,14 @@ def improve(
             hints=hints,
             examples=examples))
 
-    target = freshen_binders(target)
+    root_ctx = RootCtx(state_vars=state_vars, args=args)
+    target = freshen_binders(target, root_ctx)
 
     print()
     print("improving: {}".format(pprint(target)))
     print("subject to: {}".format(pprint(assumptions)))
     print()
 
-    root_ctx = RootCtx(state_vars=state_vars, args=args)
     try:
         assert exp_wf(target, context=root_ctx, assumptions=assumptions)
     except ExpIsNotWf as ex:
