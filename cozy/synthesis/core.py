@@ -116,10 +116,10 @@ class Learner(object):
                     self.blacklist.add(k)
 
                     n += 1
-                    ee = replace(
+                    ee = freshen_binders(replace(
                         self.target, root_ctx, RUNTIME_POOL,
                         e, ctx, pool,
-                        info.e)
+                        info.e), root_ctx)
                     if not check_wf(ee, root_ctx, RUNTIME_POOL):
                         continue
                     if not self.matches(fingerprint(ee, self.examples), target_fp):
