@@ -9,7 +9,7 @@ from cozy.target_syntax import *
 from cozy.typecheck import is_collection
 from cozy.syntax_tools import subst, pprint, free_vars, free_funcs, fresh_var, alpha_equivalent, enumerate_fragments, strip_EStateVar, freshen_binders
 from cozy.wf import ExpIsNotWf, exp_wf
-from cozy.common import OrderedSet, ADT, Visitor, fresh_name, unique, pick_to_sum, cross_product, OrderedDefaultDict, OrderedSet, group_by, find_one, extend
+from cozy.common import OrderedSet, ADT, Visitor, fresh_name, unique, pick_to_sum, cross_product, OrderedDefaultDict, OrderedSet, group_by, find_one, extend, StopException
 from cozy.solver import satisfy, satisfiable, valid, IncrementalSolver
 from cozy.evaluation import eval, eval_bulk, mkval, construct_value, uneval, eq
 from cozy.cost_model import CostModel, Cost, CompositeCostModel
@@ -25,9 +25,6 @@ reset_on_success = Option("reset-on-success", bool, False)
 check_depth = Option("proof-depth", int, 4)
 incremental = Option("incremental", bool, False, description="Experimental option that can greatly improve performance.")
 check_final_cost = Option("check-final-cost", bool, True)
-
-class StopException(Exception):
-    pass
 
 class NoMoreImprovements(Exception):
     pass
@@ -85,7 +82,8 @@ class Learner(object):
             cost_model=self.cost_model,
             check_wf=check_wf,
             hints=frags,
-            heuristics=try_optimize)
+            heuristics=try_optimize,
+            stop_callback=self.stop_callback)
 
         size = 0
         target_cost = self.cost_model.cost(self.target, RUNTIME_POOL)

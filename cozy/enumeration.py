@@ -2,7 +2,7 @@ from collections import namedtuple, OrderedDict
 from enum import Enum
 import itertools
 
-from cozy.common import pick_to_sum, OrderedSet, unique, make_random_access
+from cozy.common import pick_to_sum, OrderedSet, unique, make_random_access, StopException
 from cozy.target_syntax import *
 from cozy.syntax_tools import pprint, fresh_var, free_vars, freshen_binders
 from cozy.evaluation import eval_bulk
@@ -67,7 +67,7 @@ def _evict(e, context, better_exp):
     print("   evicting {}".format(pprint(e)))
 
 class Enumerator(object):
-    def __init__(self, examples, cost_model : CostModel, check_wf=None, hints=None, heuristics=None):
+    def __init__(self, examples, cost_model : CostModel, check_wf=None, hints=None, heuristics=None, stop_callback=None):
         self.examples = list(examples)
         self.cost_model = cost_model
         self.cache = { } # keys -> [exp]
@@ -80,6 +80,9 @@ class Enumerator(object):
         if heuristics is None:
             heuristics = lambda e, ctx, pool: ()
         self.heuristics = heuristics
+        if stop_callback is None:
+            stop_callback = lambda: False
+        self.stop_callback = stop_callback
 
     def cache_size(self):
         return sum(len(v) for v in self.cache.values())
@@ -277,6 +280,9 @@ class Enumerator(object):
             self.cache[k] = res
             queue = self.enumerate_core(context, size, pool)
             while True:
+                if self.stop_callback():
+                    raise StopException()
+
                 try:
                     e = next(queue)
                 except StopIteration:
