@@ -994,7 +994,7 @@ def _tock(e, event):
     _start = now
     if elapsed > _debug_duration:
         import sys
-        print("took {elapsed}s to {event}".format(event=event, elapsed=elapsed.total_seconds()), file=sys.stderr)
+        print("WARNING: took {elapsed}s to {event}".format(event=event, elapsed=elapsed.total_seconds()))
         # print("e = {}".format(pprint(e)), file=sys.stderr)
         # print(repr(e), file=sys.stderr)
         # raise NotImplementedError()
