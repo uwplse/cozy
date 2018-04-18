@@ -1,7 +1,8 @@
 import itertools
 
 from cozy.common import OrderedSet, unique, Visitor
-from cozy.syntax import Exp, EVar
+from cozy.syntax import Exp, EVar, EAll
+from cozy.target_syntax import EDeepIn
 from cozy.evaluation import eval
 from cozy.syntax_tools import pprint, alpha_equivalent, free_vars, subst, BottomUpRewriter
 from cozy.pools import Pool, RUNTIME_POOL, STATE_POOL
@@ -20,6 +21,10 @@ class Context(object):
         raise NotImplementedError()
     def adapt(self, e : Exp, ctx) -> Exp:
         raise NotImplementedError()
+    def path_conditions(self) -> [Exp]:
+        raise NotImplementedError()
+    def path_condition(self):
+        return EAll(self.path_conditions())
 
 class RootCtx(Context):
     def __init__(self, state_vars : [Exp], args : [Exp]):
@@ -40,6 +45,8 @@ class RootCtx(Context):
         if self == ctx:
             return e
         raise Exception("cannot adapt from {} to {}".format(ctx, self))
+    def path_conditions(self):
+        return []
     def __hash__(self):
         return hash((tuple(self.state_vars), tuple(self.args)))
     def __eq__(self, other):
@@ -87,6 +94,10 @@ class UnderBinder(Context):
             e = self._parent.adapt(e, ctx._parent)
             return subst(e, { ctx.var.id : self.var })
         return self._parent.adapt(e, ctx)
+    def path_conditions(self):
+        pcs = [pc for pc in self._parent.path_conditions() if self.var not in free_vars(pc)]
+        pcs.append(EDeepIn(self.var, self.bag))
+        return pcs
     def __hash__(self):
         return hash((self._parent, self.var, self.bag, self.pool))
     def __eq__(self, other):
