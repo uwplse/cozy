@@ -1291,7 +1291,7 @@ class Aeq(object):
         return not (self == other)
 
 class ExpMap(object):
-    def __init__(self, items=(), ordered=True):
+    def __init__(self, items=()):
         self.by_id = collections.OrderedDict()
         self.by_hash = collections.OrderedDict()
         for k, v in items:
