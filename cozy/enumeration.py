@@ -2,9 +2,9 @@ from collections import namedtuple, OrderedDict
 from enum import Enum
 import itertools
 
-from cozy.common import pick_to_sum, OrderedSet, FrozenDict, unique, make_random_access
+from cozy.common import pick_to_sum, OrderedSet, unique, make_random_access, StopException
 from cozy.target_syntax import *
-from cozy.syntax_tools import pprint, fresh_var, free_vars
+from cozy.syntax_tools import pprint, fresh_var, free_vars, freshen_binders
 from cozy.evaluation import eval_bulk
 from cozy.typecheck import is_numeric, is_scalar, is_collection
 from cozy.cost_model import CostModel, Cost
@@ -51,8 +51,23 @@ def parent_contexts(context):
         yield parent
         context = parent
 
+def _interesting(e, context):
+    return isinstance(context, RootCtx) and hasattr(e, "_tag")
+def _consider(e, context):
+    if not _interesting(e, context): return
+    print(" > considering {}".format(pprint(e)))
+def _accept(e, context):
+    if not _interesting(e, context): return
+    print("   accepting {}".format(pprint(e)))
+def _skip(e, context, reason):
+    if not _interesting(e, context): return
+    print("   skipping {} [{}]".format(pprint(e), reason))
+def _evict(e, context, better_exp):
+    if not _interesting(e, context): return
+    print("   evicting {}".format(pprint(e)))
+
 class Enumerator(object):
-    def __init__(self, examples, cost_model : CostModel, check_wf=None, hints=None, heuristics=None):
+    def __init__(self, examples, cost_model : CostModel, check_wf=None, hints=None, heuristics=None, stop_callback=None):
         self.examples = list(examples)
         self.cost_model = cost_model
         self.cache = { } # keys -> [exp]
@@ -65,6 +80,9 @@ class Enumerator(object):
         if heuristics is None:
             heuristics = lambda e, ctx, pool: ()
         self.heuristics = heuristics
+        if stop_callback is None:
+            stop_callback = lambda: False
+        self.stop_callback = stop_callback
 
     def cache_size(self):
         return sum(len(v) for v in self.cache.values())
@@ -187,14 +205,14 @@ class Enumerator(object):
                 yield EUnaryOp(UOp.All, bag).with_type(BOOL)
 
         def build_lambdas(bag, pool, body_size):
-            v = fresh_var(bag.type.t)
+            v = fresh_var(bag.type.t, omit=set(v for v, p in context.vars()))
             inner_context = UnderBinder(context, v=v, bag=bag, bag_pool=pool)
             for lam_body in self.enumerate(inner_context, body_size, pool):
                 yield ELambda(v, lam_body)
 
         # Iteration
         for (sz1, sz2) in pick_to_sum(2, size - 1):
-            for bag in collections(self.enumerate(context, sz1, STATE_POOL)):
+            for bag in collections(self.enumerate(context, sz1, pool)):
                 for lam in build_lambdas(bag, pool, sz2):
                     body_type = lam.body.type
                     yield EMap(bag, lam).with_type(TBag(body_type))
@@ -226,9 +244,6 @@ class Enumerator(object):
         for info in self.enumerate_with_info(context, size, pool):
             yield info.e
 
-    def key(self, examples, size, pool):
-        return (pool, size, tuple(FrozenDict(ex) for ex in examples))
-
     def known_contexts(self):
         return unique(ctx for (ctx, pool, fp) in self.seen.keys())
 
@@ -250,9 +265,6 @@ class Enumerator(object):
         if context.parent() is not None:
             yield from self.enumerate_with_info(context.parent(), size, pool)
 
-        # examples = context.instantiate_examples(self.examples)
-        # print(examples)
-        # k = self.key(examples, size, pool)
         k = (pool, size, context)
         res = self.cache.get(k)
         if res is not None:
@@ -268,20 +280,24 @@ class Enumerator(object):
             self.cache[k] = res
             queue = self.enumerate_core(context, size, pool)
             while True:
+                if self.stop_callback():
+                    raise StopException()
+
                 try:
                     e = next(queue)
                 except StopIteration:
                     break
 
-                # print("considering {}".format(pprint(e)))
-
                 fvs = free_vars(e)
                 if not belongs_in_context(fvs, context):
                     continue
 
+                e = freshen_binders(e, context)
+                _consider(e, context)
+
                 wf = self.check_wf(e, context, pool)
                 if not wf:
-                    # print("rejecting {}: wf={}".format(pprint(e), wf))
+                    _skip(e, context, "wf={}".format(wf))
                     continue
 
                 fp = fingerprint(e, examples)
@@ -304,11 +320,11 @@ class Enumerator(object):
                     if ordering == Cost.BETTER:
                         pass
                     elif ordering == Cost.WORSE:
-                        # print("should skip worse {}".format(pprint(e)))
+                        _skip(e, context, "worse than {}".format(pprint(prev_exp)))
                         should_keep = False
                         break
                     else:
-                        # print("should skip equiv {}".format(pprint(e)))
+                        _skip(e, context, "equivalent to cached {}".format(pprint(prev_exp)))
                         assert ordering == Cost.UNORDERED
                         should_keep = False
                         break
@@ -323,11 +339,12 @@ class Enumerator(object):
                                 if ee.fingerprint == fp and ee.cost.compare_to(cost, pool) == Cost.WORSE:
                                     to_evict.append((key, ee))
                     for key, ee in to_evict:
-                        # print("EVICTING {} FOR {}".format(pprint(ee.e), pprint(e)))
                         (p, s, c) = key
+                        _evict(ee.e, c, e)
                         self.cache[key].remove(ee)
                         self.seen[(c, p, fp)].remove(ee.e)
 
+                    _accept(e, context)
                     seen_key = (context, pool, fp)
                     if seen_key not in self.seen:
                         self.seen[seen_key] = []

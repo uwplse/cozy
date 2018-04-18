@@ -37,7 +37,9 @@ class RootCtx(Context):
     def alpha_equivalent(self, other):
         return self == other
     def adapt(self, e : Exp, ctx) -> Exp:
-        return e
+        if self == ctx:
+            return e
+        raise Exception("cannot adapt from {} to {}".format(ctx, self))
     def __hash__(self):
         return hash((tuple(self.state_vars), tuple(self.args)))
     def __eq__(self, other):
@@ -51,6 +53,7 @@ class UnderBinder(Context):
     def __init__(self, parent : Context, v : EVar, bag : Exp, bag_pool : Pool):
         assert v.type == bag.type.t
         assert parent.legal_for(free_vars(bag))
+        assert not any(v == vv for vv, p in parent.vars()), "binder {} already free in {}".format(v.id, parent)
         self._parent = parent
         self.var = v
         self.bag = bag
@@ -78,10 +81,12 @@ class UnderBinder(Context):
             return False
         return alpha_equivalent(self.bag, self._parent.adapt(other.bag, other._parent))
     def adapt(self, e : Exp, ctx) -> Exp:
-        # assert self.alpha_equivalent(ctx) # slow!
-        assert isinstance(ctx, UnderBinder)
-        e = self._parent.adapt(e, ctx._parent)
-        return subst(e, { ctx.var.id : self.var })
+        if self == ctx:
+            return e
+        if self.alpha_equivalent(ctx):
+            e = self._parent.adapt(e, ctx._parent)
+            return subst(e, { ctx.var.id : self.var })
+        return self._parent.adapt(e, ctx)
     def __hash__(self):
         return hash((self._parent, self.var, self.bag, self.pool))
     def __eq__(self, other):
@@ -141,8 +146,8 @@ class _Shredder(Visitor):
     def visit_int(self, i):
         return ()
 
-def shred(e : Exp, ctx : Context) -> [(Exp, Context)]:
-    return _Shredder(ctx).visit(e)
+def shred(e : Exp, ctx : Context, pool : Pool = RUNTIME_POOL) -> [(Exp, Context, Pool)]:
+    return _Shredder(ctx, pool).visit(e)
 
 class _Replacer(BottomUpRewriter):
     def __init__(self,

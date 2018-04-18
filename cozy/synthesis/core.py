@@ -7,14 +7,16 @@ import traceback
 
 from cozy.target_syntax import *
 from cozy.typecheck import is_collection
-from cozy.syntax_tools import subst, pprint, free_vars, free_funcs, BottomUpExplorer, BottomUpRewriter, equal, fresh_var, alpha_equivalent, all_exps, implies, mk_lambda, enumerate_fragments, strip_EStateVar
-from cozy.wf import ExpIsNotWf, exp_wf, exp_wf_nonrecursive
-from cozy.common import OrderedSet, ADT, Visitor, fresh_name, unique, pick_to_sum, cross_product, OrderedDefaultDict, OrderedSet, group_by, find_one, extend
+from cozy.syntax_tools import subst, pprint, free_vars, free_funcs, fresh_var, alpha_equivalent, enumerate_fragments, strip_EStateVar, freshen_binders
+from cozy.wf import ExpIsNotWf, exp_wf
+from cozy.common import OrderedSet, ADT, Visitor, fresh_name, unique, pick_to_sum, cross_product, OrderedDefaultDict, OrderedSet, group_by, find_one, extend, StopException
 from cozy.solver import satisfy, satisfiable, valid, IncrementalSolver
 from cozy.evaluation import eval, eval_bulk, mkval, construct_value, uneval, eq
 from cozy.cost_model import CostModel, Cost, CompositeCostModel
 from cozy.opts import Option
 from cozy.pools import ALL_POOLS, RUNTIME_POOL, STATE_POOL, pool_name
+from cozy.enumeration import Enumerator, fingerprint
+from cozy.contexts import RootCtx, shred, replace
 
 from .acceleration import try_optimize
 
@@ -23,9 +25,6 @@ reset_on_success = Option("reset-on-success", bool, False)
 check_depth = Option("proof-depth", int, 4)
 incremental = Option("incremental", bool, False, description="Experimental option that can greatly improve performance.")
 check_final_cost = Option("check-final-cost", bool, True)
-
-class StopException(Exception):
-    pass
 
 class NoMoreImprovements(Exception):
     pass
@@ -66,7 +65,7 @@ class Learner(object):
         cards = [self.cost_model.cardinality(ctx.e) for ctx in enumerate_fragments(self.target) if is_collection(ctx.e.type)]
         def check_wf(e, ctx, pool):
             try:
-                exp_wf(e, pool=pool, state_vars=self.state_vars, args=self.args, assumptions=self.assumptions)
+                exp_wf(e, pool=pool, context=ctx, assumptions=self.assumptions)
             except ExpIsNotWf as exc:
                 return No("at {}: {}".format(pprint(exc.offending_subexpression), exc.reason))
             if isinstance(e.type, TBag):
@@ -76,9 +75,6 @@ class Learner(object):
                     return No("too big")
             return True
 
-        from cozy.enumeration import Enumerator, fingerprint
-        from cozy.contexts import RootCtx, shred, replace
-
         root_ctx = RootCtx(state_vars=self.state_vars, args=self.args)
         frags = list(unique(shred(self.target, root_ctx)))
         enum = Enumerator(
@@ -86,7 +82,8 @@ class Learner(object):
             cost_model=self.cost_model,
             check_wf=check_wf,
             hints=frags,
-            heuristics=try_optimize)
+            heuristics=try_optimize,
+            stop_callback=self.stop_callback)
 
         size = 0
         target_cost = self.cost_model.cost(self.target, RUNTIME_POOL)
@@ -117,10 +114,10 @@ class Learner(object):
                     self.blacklist.add(k)
 
                     n += 1
-                    ee = replace(
+                    ee = freshen_binders(replace(
                         self.target, root_ctx, RUNTIME_POOL,
                         e, ctx, pool,
-                        info.e)
+                        info.e), root_ctx)
                     if not check_wf(ee, root_ctx, RUNTIME_POOL):
                         continue
                     if not self.matches(fingerprint(ee, self.examples), target_fp):
@@ -134,13 +131,6 @@ class Learner(object):
             size += 1
 
         raise NoMoreImprovements()
-
-def exp_is_wf(e, pool, state_vars, args, assumptions):
-    try:
-        exp_wf(e, state_vars, args, pool, assumptions=assumptions)
-    except ExpIsNotWf as exc:
-        return False
-    return True
 
 def truncate(s):
     if len(s) > 60:
@@ -214,17 +204,16 @@ def improve(
             hints=hints,
             examples=examples))
 
+    root_ctx = RootCtx(state_vars=state_vars, args=args)
+    target = freshen_binders(target, root_ctx)
+
     print()
     print("improving: {}".format(pprint(target)))
     print("subject to: {}".format(pprint(assumptions)))
     print()
 
     try:
-        assert exp_wf(
-            target,
-            state_vars=set(state_vars),
-            args=set(args),
-            assumptions=assumptions)
+        assert exp_wf(target, context=root_ctx, assumptions=assumptions)
     except ExpIsNotWf as ex:
         print("WARNING: initial target is not well-formed [{}]; this might go poorly...".format(str(ex)))
         print(pprint(ex.offending_subexpression))

@@ -607,3 +607,9 @@ def collapse_runs(it, split_at):
             res[-1].append(x)
         prev = x
     return res
+
+class StopException(Exception):
+    """
+    Used to indicate that a process should stop operation.
+    """
+    pass

@@ -59,12 +59,15 @@ def stop_jobs(jobs):
     jobs = list(jobs)
     for j in jobs:
         j.request_stop()
-    for j in jobs:
-        while True:
-            j.join(timeout=30)
-            if j.done:
-                break
-            print("job '{}' failed to stop in 30 seconds; pid={}".format(j, j.pid), file=sys.stderr)
+
+    while jobs:
+        for j in jobs:
+            j.join(timeout=1)
+        jobs = [j for j in jobs if not j.done]
+        if jobs:
+            print("Waiting on {} jobs...".format(len(jobs)))
+            for j in jobs:
+                print("  --> {} [pid={}]".format(j, j.pid))
 
 class SafeQueue(object):
     """
