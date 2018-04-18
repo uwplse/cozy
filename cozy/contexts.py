@@ -145,6 +145,14 @@ class _Shredder(Visitor):
         yield (e, self.ctx, self.pool)
         yield from self.visit(e.e)
         yield from self.visit(e.value, e.e)
+    def visit_EMakeMinHeap(self, e):
+        yield (e, self.ctx, self.pool)
+        yield from self.visit(e.e)
+        yield from self.visit(e.value, e.e)
+    def visit_EMakeMaxHeap(self, e):
+        yield (e, self.ctx, self.pool)
+        yield from self.visit(e.e)
+        yield from self.visit(e.f, e.e)
     def visit_Exp(self, e):
         yield (e, self.ctx, self.pool)
         for child in e.children():
@@ -197,6 +205,10 @@ class _Replacer(BottomUpRewriter):
         return self.join(e, (self.visit(e.e), self.visit(e.f, e.e)))
     def visit_EMakeMap2(self, e):
         return self.join(e, (self.visit(e.e), self.visit(e.value, e.e)))
+    def visit_EMakeMinHeap(self, e):
+        return self.join(e, (self.visit(e.e), self.visit(e.f, e.e)))
+    def visit_EMakeMaxHeap(self, e):
+        return self.join(e, (self.visit(e.e), self.visit(e.f, e.e)))
     def visit(self, e, *args):
         if isinstance(e, Exp) and self.pool == self.needle_pool and alpha_equivalent(self.needle, e) and self.needle_context.alpha_equivalent(self.ctx):
             return self.ctx.adapt(self.replacement, self.needle_context)
