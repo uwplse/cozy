@@ -169,24 +169,44 @@ def optimized_exists(xs):
         return F if l.val == 0 else T
     return EGt(l, ZERO)
 
+def excluded_element(xs):
+    if isinstance(xs, EFilter):
+        arg = xs.p.arg
+        e = xs.p.body
+        if isinstance(e, EBinOp) and e.op == "!=":
+            if e.e1 == arg:
+                return (xs.e, e.e2)
+            if e.e2 == arg:
+                return (xs.e, e.e1)
+        if isinstance(e, EUnaryOp) and e.op == UOp.Not and isinstance(e.e, EBinOp) and e.e.op == "==":
+            if e.e.e1 == arg:
+                return (xs.e, e.e.e2)
+            if e.e.e2 == arg:
+                return (xs.e, e.e.e1)
+    if isinstance(xs, EBinOp) and xs.op == "-" and isinstance(xs.e2, ESingleton):
+        return (xs.e1, xs.e2.e)
+    return None
+
 def optimized_best(xs, keyfunc, op, args):
     argbest = EArgMin if op == "<" else EArgMax
     elem_type = xs.type.t
-    if isinstance(xs, EBinOp) and xs.op == "-" and isinstance(xs.e1, EStateVar) and isinstance(xs.e2, ESingleton):
-        heap_type, make_heap = (TMinHeap, EMakeMinHeap) if op == "<" else (TMaxHeap, EMakeMaxHeap)
-        bag = xs.e1
-        x = xs.e2.e
-        h = make_heap(bag.e, keyfunc).with_type(heap_type(elem_type, keyfunc))
-        prev_min = EStateVar(optimized_best(bag.e, keyfunc, op, args=args).with_type(elem_type)).with_type(elem_type)
-        return optimized_cond(
-            EAll([optimized_in(x, bag), optimized_eq(x, prev_min)]),
-            EHeapPeek2(EStateVar(h).with_type(h.type), EStateVar(ELen(bag.e)).with_type(INT)).with_type(elem_type),
-            prev_min)
-    elif isinstance(xs, EEmptyList):
+    if excluded_element(xs) is not None:
+        bag, x = excluded_element(xs)
+        if all(v not in args for v in free_vars(bag)):
+            heap_type, make_heap = (TMinHeap, EMakeMinHeap) if op == "<" else (TMaxHeap, EMakeMaxHeap)
+            bag = EStateVar(strip_EStateVar(bag)).with_type(bag.type)
+            h = make_heap(bag.e, keyfunc).with_type(heap_type(elem_type, keyfunc))
+            prev_min = EStateVar(optimized_best(bag.e, keyfunc, op, args=args).with_type(elem_type)).with_type(elem_type)
+            heap_peek = EHeapPeek2(EStateVar(h).with_type(h.type), EStateVar(ELen(bag.e)).with_type(INT)).with_type(elem_type)
+            return optimized_cond(
+                EAll([optimized_in(x, bag), optimized_eq(x, prev_min)]),
+                heap_peek,
+                prev_min)
+    if isinstance(xs, EEmptyList):
         return construct_value(elem_type)
-    elif isinstance(xs, ESingleton):
+    if isinstance(xs, ESingleton):
         return xs.e
-    elif isinstance(xs, EBinOp) and xs.op == "+":
+    if isinstance(xs, EBinOp) and xs.op == "+":
         a_ex = optimized_exists(xs.e1)
         b_ex = optimized_exists(xs.e2)
         a_best = optimized_best(xs.e1, keyfunc, op, args=args)
@@ -202,20 +222,24 @@ def optimized_best(xs, keyfunc, op, args):
         # return argbest(EBinOp(
         #     ESingleton(optimized_best(xs.e1, keyfunc, op, args=args)).with_type(xs.type), "+",
         #     ESingleton(optimized_best(xs.e2, keyfunc, op, args=args)).with_type(xs.type)).with_type(xs.type), keyfunc).with_type(elem_type)
-    elif isinstance(xs, EMap):
+    if isinstance(xs, EMap):
         return optimized_cond(
             optimized_exists(xs),
             xs.f.apply_to(optimized_best(xs.e, compose(keyfunc, xs.f), op, args)),
             construct_value(elem_type))
-    elif isinstance(xs, EStateVar) and not any(v in args for v in free_vars(keyfunc)):
+    if isinstance(xs, EStateVar) and not any(v in args for v in free_vars(keyfunc)):
         return EStateVar(argbest(xs.e, keyfunc).with_type(elem_type)).with_type(elem_type)
-    elif isinstance(xs, ECond):
+    if isinstance(xs, ECond):
         return optimized_cond(
             xs.cond,
             optimized_best(xs.then_branch, keyfunc, op, args=args),
             optimized_best(xs.else_branch, keyfunc, op, args=args))
-    else:
-        return argbest(xs, keyfunc).with_type(elem_type)
+    # if isinstance(xs, EFilter):
+    #     return optimized_cond(
+    #         xs.p.apply_to(optimized_best(xs.e, keyfunc, op, args=args)),
+    #         optimized_best(xs.e, keyfunc, op, args=args),
+    #         argbest(xs, keyfunc).with_type(elem_type))
+    return argbest(xs, keyfunc).with_type(elem_type)
 
 def optimized_cond(c, a, b):
     if c == T:
@@ -249,7 +273,7 @@ def _simple_filter(xs, p, args):
     elif isinstance(xs, EEmptyList):
         return xs
     elif isinstance(xs, EStateVar) and not any(v in args for v in free_vars(p)):
-        return EStateVar(_simple_filter(xs.e, p, args)).with_type(xs.type)
+        return EStateVar(EFilter(xs.e, strip_EStateVar(p)).with_type(xs.type)).with_type(xs.type)
     elif isinstance(p.body, EBinOp) and p.body.op == "==" and p.body.e1 == p.arg and p.arg not in free_vars(p.body.e2):
         return optimized_cond(
             optimized_in(p.body.e2, xs),
@@ -301,7 +325,16 @@ def optimize_filter_as_if_distinct(xs, p, args):
             optimize_filter_as_if_distinct(xs.e2, p, args)).with_type(xs.type)
         # return optimize_filter_as_if_distinct(xs.e1, ELambda(p.arg, EAll([ENot(optimized_in(p.arg, xs.e2)), p.body])), args)
     from cozy.syntax_tools import dnf, nnf
-    cases = dnf(nnf(p.body))
+
+    # conds = []
+    # e = xs
+    # while isinstance(e, EFilter):
+    #     conds.append(subst(e.p.body, {e.p.arg.id:p.arg}))
+    #     e = e.e
+    # p_body = EAll(conds)
+    p_body = p.body
+
+    cases = dnf(nnf(p_body))
     cases = [unique(c) for c in cases]
     # for c in cases:
     #     print("; ".join(pprint(x) for x in c))
@@ -339,16 +372,14 @@ def _check(e, context, pool):
     """
     return e
 
-def try_optimize(e, context, pool):
+def _try_optimize(e, context, pool):
     if not accelerate.value:
         return
 
     state_vars = [v for v, p in context.vars() if p == STATE_POOL]
     args = [v for v, p in context.vars() if p == RUNTIME_POOL]
 
-    ee = simplify(e)
-    if not alpha_equivalent(ee, e):
-        yield _check(simplify(e), context, pool)
+    yield _check(simplify(e), context, pool)
     if pool == RUNTIME_POOL:
         if all(v in state_vars for v in free_vars(e)):
             nsv = strip_EStateVar(e)
@@ -361,13 +392,11 @@ def try_optimize(e, context, pool):
 
         if isinstance(e, EArgMin) or isinstance(e, EArgMax):
             ee = optimized_best(e.e, e.f, "<" if isinstance(e, EArgMin) else ">", args=args)
-            if not alpha_equivalent(e, ee):
-                yield _check(ee, context, RUNTIME_POOL)
+            yield _check(ee, context, RUNTIME_POOL)
 
         if is_collection(e.type) and isinstance(e, EBinOp) and e.op == "-":
             ee = optimized_bag_difference(e.e1, e.e2)
-            if not alpha_equivalent(e, ee):
-                yield _check(ee, context, RUNTIME_POOL)
+            yield _check(ee, context, RUNTIME_POOL)
 
         if isinstance(e, EBinOp) and e.op == "===" and isinstance(e.e1.type, THandle):
             yield _check(EAll([
@@ -376,30 +405,33 @@ def try_optimize(e, context, pool):
 
         if isinstance(e, EBinOp) and e.op == BOp.In:
             ee = optimized_in(e.e1, e.e2)
-            if not alpha_equivalent(e, ee):
-                yield _check(ee, context, RUNTIME_POOL)
+            yield _check(ee, context, RUNTIME_POOL)
 
         if isinstance(e, EUnaryOp) and e.op == UOp.Empty:
             ee = optimized_empty(e.e)
-            if not alpha_equivalent(e, ee):
-                yield _check(ee, context, RUNTIME_POOL)
+            yield _check(ee, context, RUNTIME_POOL)
 
         if isinstance(e, EUnaryOp) and e.op == UOp.Exists:
             ee = optimized_exists(e.e)
-            if not alpha_equivalent(e, ee):
-                yield _check(ee, context, RUNTIME_POOL)
+            yield _check(ee, context, RUNTIME_POOL)
 
         if isinstance(e, EUnaryOp) and e.op == UOp.Length:
             ee = optimized_len(e.e)
-            if not alpha_equivalent(e, ee):
-                yield _check(ee, context, RUNTIME_POOL)
+            yield _check(ee, context, RUNTIME_POOL)
 
         if isinstance(e, EFilter):
             ee = optimize_filter_as_if_distinct(e.e, e.p, args=args)
-            if not alpha_equivalent(e, ee):
+            yield _check(ee, context, RUNTIME_POOL)
+            if isinstance(e.e, EFilter):
+                # try swizzle
+                ee = EFilter(_simple_filter(e.e.e, e.p, args=args), e.e.p).with_type(e.type)
                 yield _check(ee, context, RUNTIME_POOL)
 
         if isinstance(e, EMap):
             ee = optimize_map(e.e, e.f, args=args)
-            if not alpha_equivalent(e, ee):
-                yield _check(ee, context, RUNTIME_POOL)
+            yield _check(ee, context, RUNTIME_POOL)
+
+def try_optimize(e, context, pool):
+    for ee in _try_optimize(e, context, pool):
+        if not alpha_equivalent(e, ee):
+            yield ee
