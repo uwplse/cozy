@@ -1561,9 +1561,9 @@ def cse_scan(e):
             # Include empty dependents/handle types in result.
             return self.join(o, ()), set(), set()
 
-        def default(self, e, path, entries, capture_point):
+        def visit_children(self, e, path, entries, capture_point):
             """
-            Returns (expr, dependent_vars, types) for each child of e by
+            Returns (expr, dependent_vars, handle types) for each child of e by
             visiting it.
             """
             return [self.visit(c, path + (i,), entries, capture_point)
@@ -1648,7 +1648,7 @@ def cse_scan(e):
             deps = set()
             handle_types = set()
 
-            for _, subdeps, subhandles in self.default(e, path, entries, capture_point):
+            for _, subdeps, subhandles in self.visit_children(e, path, entries, capture_point):
                 deps |= subdeps
                 handle_types |= subhandles
 
@@ -1696,7 +1696,7 @@ def cse_scan(e):
     # within others, so we only need to worry about the outer paths. Sort by
     # length of path so that outer paths are considered before the inner ones.
     for path, tempvar in sorted(scanner.rewrites.items(), key=lambda x: len(x[0])):
-        if not any(prefix in final_rewrites for prefix in tuple_prefixes(path)):
+        if all(prefix not in final_rewrites for prefix in tuple_prefixes(path)):
             final_rewrites[path] = tempvar
             used_temp_names.add(tempvar.id)
 
