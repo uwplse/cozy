@@ -1494,6 +1494,11 @@ class ExpInfo(object):
         self.handle_types = handle_types
         self.paths = paths
 
+    def __repr__(self):
+        return "<ExpInfo(tempvar={}, count={}, deps={}, handle_types={}, paths={})>".format(
+            self.tempvar, self.count, self.dependents, self.handle_types, self.paths
+        )
+
 class ExpressionMap(ExpMap):
     """
     Maps expressions to (temp vars, other supporting info).

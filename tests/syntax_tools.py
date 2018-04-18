@@ -613,19 +613,6 @@ class TestElimination(unittest.TestCase):
         assert newForm.count("h + 5") == 1
 
     def test_cse_2_stm_if(self):
-        """
-            if (foo)
-                x = y + 2
-            else
-                z = y + 2
-        =>
-            tmp = y + 2;
-            if (foo)
-                x = tmp
-            else
-                z = tmp
-        """
-
         s = parse_stm(
             """
             if (foo) {
@@ -646,20 +633,17 @@ class TestElimination(unittest.TestCase):
         print(new_form)
         assert new_form.count("y + 2") == 1
 
-    def ___test_cse_2_stm_if_both_branches(self):
+    def test_cse_2_stm_if_kill(self):
         s = parse_stm(
             """
             if (foo) {
                 x = y + 2;
-                g = y + 2;
-            } else {
-                z = n + 2;
+                y = 9;
+                z = y + 2;
             }
             """,
             dict(foo=BOOL)
         )
-
-        # The elimination should take place inside the "then" block.
 
         assert retypecheck(s)
 
@@ -668,7 +652,28 @@ class TestElimination(unittest.TestCase):
         new_form = pprint(s2)
 
         print(new_form)
-        assert isinstance(s2, SIf)
+        assert new_form.count("y + 2") == 2
+
+    def test_cse_2_stm_if_both_branches(self):
+        s = parse_stm(
+            """
+            if (foo) {
+                x = y + 2;
+                g = y + 2;
+            } else {
+                z = y + 2;
+            }
+            """,
+            dict(foo=BOOL)
+        )
+
+        assert retypecheck(s)
+
+        print(pprint(s))
+        s2 = _cse(s)
+        new_form = pprint(s2)
+
+        print(new_form)
         assert new_form.count("y + 2") == 1
 
     def test_cse_2_stm_foreach_scope(self):
