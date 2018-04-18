@@ -1712,91 +1712,120 @@ def cse_scan(e):
 
     return e, final_captures, final_rewrites
 
-def cse_replace(e, capture_map, rewrite_map):
-    class CSERewriter(PathAwareRewriter):
-        def _visit_atom(self, e, path):
+class CSERewriter(PathAwareRewriter):
+    def __init__(self, capture_map, rewrite_map):
+        self.capture_map = capture_map
+        self.rewrite_map = rewrite_map
+        self.did_alter_tree = False
+
+    def _visit_atom(self, e, path):
+        return e
+
+    # atoms -- no subexpressions.
+    visit_EVar = visit_ENum = visit_EEnumEntry = visit_EEmptyList = \
+        visit_EStr = visit_EBool = visit_ENative = visit_ENull = \
+        _visit_atom
+
+    def visit_Exp(self, e, path):
+        def visit_default(exp):
+            return type(exp)(
+                *[self.visit(c, path + (i,)) for i, c in enumerate(exp.children())]
+            ).with_type(exp.type)
+
+        rewrites = self.capture_map.get(path)
+
+        if rewrites is not None:
+            e = visit_default(e)
+
+            for temp, expr in reversed(rewrites):
+                e = syntax.ELet(expr, target_syntax.ELambda(temp, e)).with_type(e.type)
+                self.did_alter_tree = True
             return e
-
-        # atoms -- no subexpressions.
-        visit_EVar = visit_ENum = visit_EEnumEntry = visit_EEmptyList = \
-            visit_EStr = visit_EBool = visit_ENative = visit_ENull = \
-            _visit_atom
-
-        def visit_Exp(self, e, path):
-            def visit_default(exp):
-                return type(exp)(
-                    *[self.visit(c, path + (i,)) for i, c in enumerate(exp.children())]
-                ).with_type(exp.type)
-
-            rewrites = capture_map.get(path)
-
-            if rewrites is not None:
-                e = visit_default(e)
-
-                for temp, expr in reversed(rewrites):
-                    e = syntax.ELet(expr, target_syntax.ELambda(temp, e))
-
-                return e
+        else:
+            rewrite = self.rewrite_map.get(path)
+            if rewrite is not None:
+                self.did_alter_tree = True
+                return rewrite
             else:
-                return rewrite_map.get(path) or visit_default(e)
+                return visit_default(e)
 
-        def visit_Stm(self, s, path):
-            def visit_default(exp):
-                return type(exp)(
-                    *[self.visit(c, path + (i,)) for i, c in enumerate(exp.children())]
-                )
+    def visit_Stm(self, s, path):
+        def visit_default(exp):
+            return type(exp)(
+                *[self.visit(c, path + (i,)) for i, c in enumerate(exp.children())]
+            )
 
-            s = visit_default(s)
+        s = visit_default(s)
 
-            for temp, expr in reversed(capture_map.get(path, ())):
-                s = syntax.SSeq(syntax.SDecl(temp.id, expr), s)
+        for temp, expr in reversed(self.capture_map.get(path, ())):
+            s = syntax.SSeq(syntax.SDecl(temp.id, expr), s)
+            self.did_alter_tree = True
 
-            return s
+        return s
 
-        def visit_SLinearSequence(self, s, path):
-            """
-            Each of s.statements are Stm instances. Some of them have
-            capture_map entries. We may expand this list into a longer one
-            depending on capture_map.
-            e.g.,
-            [s1, s2, s3] -> [tmp1 = x+1, s1, tmp2=y+1, s2, s3]
-            """
-            output = [syntax.SDecl(temp.id, expr)
-                for temp, expr in reversed(capture_map.get(path, ()))]
+    def visit_SLinearSequence(self, s, path):
+        """
+        Each of s.statements are Stm instances. Some of them have
+        capture_map entries. We may expand this list into a longer one
+        depending on capture_map.
+        e.g.,
+        [s1, s2, s3] -> [tmp1 = x+1, s1, tmp2=y+1, s2, s3]
+        """
 
-            # i is the original index of the child at scan time.
+        output = [syntax.SDecl(temp.id, expr)
+            for temp, expr in reversed(self.capture_map.get(path, ()))]
 
-            for i, stm in enumerate(s.statements):
-                child_path = path + (i,)
+        # i is the original index of the child at scan time.
 
-                stm = type(stm)(*[self.visit(c, child_path + (j,))
-                    for j, c in enumerate(stm.children())])
+        for i, stm in enumerate(s.statements):
+            child_path = path + (i,)
 
-                # Emit the original expression *before* any capture rewrites.
-                output.append(stm)
+            stm = type(stm)(*[self.visit(c, child_path + (j,))
+                for j, c in enumerate(stm.children())])
 
-                output.extend(syntax.SDecl(temp.id, expr)
-                    for temp, expr in reversed(capture_map.get(child_path, ())))
+            # Emit the original expression *before* any capture rewrites.
+            output.append(stm)
 
-            return syntax.seq(output)
+            output.extend(syntax.SDecl(temp.id, expr)
+                for temp, expr in reversed(self.capture_map.get(child_path, ())))
 
-    rewriter = CSERewriter()
-    return rewriter.visit(e, ())
+        if len(s.statements) < len(output):
+            self.did_alter_tree = True
 
-def eliminate_common_subexpressions_stm(elem):
+        return syntax.seq(output)
+
+def cse_replace(elem):
     """
     Eliminate common subexpressions on an AST element (an expression or a
     statement -- not a full spec).
     """
-    return cse_replace(*cse_scan(elem))
+    # Fixed point routine that stops when eliminations stop occurring.
+    while True:
+        print("replace")
+        e_scan, capture_map, rewrite_map = cse_scan(elem)
 
-def eliminate_common_subexpressions(spec):
+        if not capture_map:
+            # Nothing to replace.
+            break
+
+        rewriter = CSERewriter(capture_map, rewrite_map)
+        elem_prime = rewriter.visit(e_scan, ())
+        elem = elem_prime
+
+        print(pprint(elem))
+
+        if not rewriter.did_alter_tree:
+            break
+
+    return elem
+
+def cse_replace_spec(spec):
     """
     Eliminate common subexprs on a spec. Internally, this applies to Ops.
     """
     class OpVisitor(BottomUpRewriter):
         def visit_Op(self, s):
-            s.body = eliminate_common_subexpressions_stm(s.body)
+            s.body = cse_replace(s.body)
             return s
 
     op_visitor = OpVisitor()

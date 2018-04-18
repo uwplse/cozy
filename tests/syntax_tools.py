@@ -265,8 +265,6 @@ class TestSyntaxTools(unittest.TestCase):
 Elimination tests.
 """
 
-def _cse(e):
-    return cse_replace(*cse_scan(e))
 
 class TestElimination(unittest.TestCase):
     def test_y_plus_1(self):
@@ -281,7 +279,7 @@ class TestElimination(unittest.TestCase):
         assert retypecheck(e)
         print(pprint(e))
 
-        e3 = _cse(e)
+        e3 = cse_replace(e)
         newForm = pprint(e3)
         print(newForm)
 
@@ -326,7 +324,7 @@ class TestElimination(unittest.TestCase):
         assert retypecheck(e)
         print(pprint(e))
 
-        e3 = _cse(e)
+        e3 = cse_replace(e)
         newForm = pprint(e3)
         print(newForm)
 
@@ -371,7 +369,7 @@ class TestElimination(unittest.TestCase):
         assert retypecheck(e)
         print(pprint(e))
 
-        e3 = _cse(e)
+        e3 = cse_replace(e)
         newForm = pprint(e3)
         print(newForm)
 
@@ -393,7 +391,7 @@ class TestElimination(unittest.TestCase):
         assert retypecheck(e)
         print(pprint(e))
 
-        e3 = _cse(e)
+        e3 = cse_replace(e)
         newForm = pprint(e3)
         print(newForm)
 
@@ -412,10 +410,8 @@ class TestElimination(unittest.TestCase):
         assert retypecheck(e2)
         print(pprint(e2))
 
-        # Well, we have to do this 2x to achieve this one.
-        e2 = _cse(e2)
+        e2 = cse_replace(e2)
         assert retypecheck(e2)
-        e2 = _cse(e2)
         print(pprint(e2))
         print(e2)
 
@@ -449,7 +445,7 @@ class TestElimination(unittest.TestCase):
         assert retypecheck(s)
         print(pprint(s))
 
-        s = _cse(s)
+        s = cse_replace(s)
         print(pprint(s))
         print(s)
 
@@ -483,14 +479,15 @@ class TestElimination(unittest.TestCase):
         e1 = ELet(EVar("y").with_type(INT), ELambda(EVar("x").with_type(INT), EBinOp(EVar("x"), "+", ENum(2).with_type(INT))))
         e = ECond(EBinOp(EVar("x").with_type(INT), "<", EVar("y").with_type(INT)), e1, e1)
         assert retypecheck(e)
-        e = _cse(e)
+        e = cse_replace(e)
+
         assert isinstance(e1.f, ELambda)
 
         for t in (EMap, EArgMax, EArgMin):
             e1 = t(ESingleton(ONE), ELambda(EVar("x").with_type(INT), EBinOp(EVar("x"), "+", ENum(2).with_type(INT))))
             e = ECond(EBinOp(EVar("x").with_type(INT), "<", EVar("y").with_type(INT)), e1, e1)
             assert retypecheck(e)
-            e = _cse(e)
+            e = cse_replace(e)
             assert isinstance(e1.f, ELambda)
 
     def test_cse_2_stm_simple(self):
@@ -504,7 +501,7 @@ class TestElimination(unittest.TestCase):
         assert retypecheck(s)
 
         print(pprint(s))
-        s2 = _cse(s)
+        s2 = cse_replace(s)
         new_form = pprint(s2)
         print(new_form)
 
@@ -522,7 +519,7 @@ class TestElimination(unittest.TestCase):
         assert retypecheck(s)
 
         print(pprint(s))
-        s2 = _cse(s)
+        s2 = cse_replace(s)
         new_form = pprint(s2)
         print(new_form)
 
@@ -540,7 +537,7 @@ class TestElimination(unittest.TestCase):
         assert retypecheck(s)
 
         print(pprint(s))
-        s2 = _cse(s)
+        s2 = cse_replace(s)
         newForm = pprint(s2)
         print(newForm)
 
@@ -561,7 +558,7 @@ class TestElimination(unittest.TestCase):
         assert retypecheck(s)
         print(pprint(s))
 
-        s2 = _cse(s)
+        s2 = cse_replace(s)
         newForm = pprint(s2)
         print(newForm)
 
@@ -583,7 +580,7 @@ class TestElimination(unittest.TestCase):
         assert retypecheck(s)
         print(pprint(s))
 
-        s2 = _cse(s)
+        s2 = cse_replace(s)
         newForm = pprint(s2)
         print(newForm)
 
@@ -604,7 +601,7 @@ class TestElimination(unittest.TestCase):
         assert retypecheck(s)
         print(pprint(s))
 
-        s2 = _cse(s)
+        s2 = cse_replace(s)
         newForm = pprint(s2)
         print("========")
         print(newForm)
@@ -627,7 +624,7 @@ class TestElimination(unittest.TestCase):
         assert retypecheck(s)
 
         print(pprint(s))
-        s2 = _cse(s)
+        s2 = cse_replace(s)
         new_form = pprint(s2)
 
         print(new_form)
@@ -648,7 +645,7 @@ class TestElimination(unittest.TestCase):
         assert retypecheck(s)
 
         print(pprint(s))
-        s2 = _cse(s)
+        s2 = cse_replace(s)
         new_form = pprint(s2)
 
         print(new_form)
@@ -670,7 +667,7 @@ class TestElimination(unittest.TestCase):
         assert retypecheck(s)
 
         print(pprint(s))
-        s2 = _cse(s)
+        s2 = cse_replace(s)
         new_form = pprint(s2)
 
         print(new_form)
@@ -701,7 +698,7 @@ class TestElimination(unittest.TestCase):
         assert retypecheck(s)
 
         print(pprint(s))
-        s2 = _cse(s)
+        s2 = cse_replace(s)
         new_form = pprint(s2)
         print(new_form)
         print(s2)
@@ -737,7 +734,7 @@ class TestElimination(unittest.TestCase):
         assert retypecheck(spec)
 
         print(pprint(spec))
-        spec2 = eliminate_common_subexpressions(spec)
+        spec2 = cse_replace_spec(spec)
         new_form = pprint(spec2)
         print(new_form)
         assert new_form.count("+ 7") == 2
@@ -778,7 +775,7 @@ class TestElimination(unittest.TestCase):
         assert retypecheck(spec)
         print(pprint(spec))
 
-        spec2 = eliminate_common_subexpressions(spec)
+        spec2 = cse_replace_spec(spec)
         new_form = pprint(spec2)
         print(new_form)
         assert new_form.count("+ 7") == 1
@@ -812,7 +809,7 @@ class TestElimination(unittest.TestCase):
 
         assert retypecheck(spec)
 
-        spec2 = eliminate_common_subexpressions(spec)
+        spec2 = cse_replace_spec(spec)
         new_form = pprint(spec2)
         print(new_form)
         assert new_form.count("+ 7") == 1
