@@ -15,7 +15,7 @@ from cozy.opts import Option
 from cozy.structures import extension_handler
 
 save_solver_testcases = Option("save-solver-testcases", str, "", metavar="PATH")
-collection_depth_opt = Option("collection-depth", int, 2, metavar="N", description="Bound for bounded verification")
+collection_depth_opt = Option("collection-depth", int, 4, metavar="N", description="Bound for bounded verification")
 
 class SolverReportedUnknown(Exception):
     pass

@@ -237,11 +237,11 @@ def improve(
 
     solver = None
     if incremental.value:
-        solver = IncrementalSolver(vars=vars, funcs=funcs, collection_depth=check_depth.value)
+        solver = IncrementalSolver(vars=vars, funcs=funcs)
         solver.add_assumption(assumptions)
         _sat = solver.satisfy
     else:
-        _sat = lambda e: satisfy(e, vars=vars, funcs=funcs, collection_depth=check_depth.value)
+        _sat = lambda e: satisfy(e, vars=vars, funcs=funcs)
 
     if _sat(T) is None:
         print("assumptions are unsat; this query will never be called")
