@@ -1,57 +1,50 @@
 import unittest
 import itertools
 
-from cozy.cost_model import Cost, CompositeCostModel, debug_comparison
+from cozy.common import OrderedSet
+from cozy.cost_model import CostModel2 as CostModel, Order, debug_comparison
 from cozy.typecheck import INT, retypecheck
 from cozy.target_syntax import *
-from cozy.syntax_tools import equal, implies, pprint, fresh_var, mk_lambda, replace, subst
+from cozy.syntax_tools import equal, implies, pprint, fresh_var, mk_lambda, replace, subst, free_vars, all_exps
 from cozy.solver import valid
 from cozy.pools import RUNTIME_POOL, STATE_POOL
+from cozy.contexts import RootCtx
 
-cm = CompositeCostModel()
 def cost_of(e, pool=RUNTIME_POOL):
-    return cm.cost(e, pool)
+    return None
+
+class Cost(object):
+    BETTER = Order.LT
+    WORSE  = Order.GT
 
 INVERT = {
     Cost.BETTER: Cost.WORSE,
-    Cost.WORSE: Cost.BETTER,
-    Cost.UNORDERED: Cost.UNORDERED }
+    Cost.WORSE: Cost.BETTER }
+
+def create_context(*exps):
+    fvs = OrderedSet()
+    for e in exps:
+        fvs |= free_vars(e)
+    svs = OrderedSet()
+    for x in itertools.chain(*[all_exps(e) for e in exps]):
+        if isinstance(x, EStateVar):
+            for v in free_vars(x.e):
+                svs.add(v)
+    args = fvs - svs
+    return RootCtx(state_vars=svs, args=args)
 
 def _assert_cmp(e1, c1, e2, c2, cmp, assumptions):
-    c = c1.compare_to(c2, assumptions=assumptions)
+    ctx = create_context(e1, e2)
+    cm = CostModel(assumptions=assumptions)
+    c = cm.compare(e1, e2, context=ctx, pool=RUNTIME_POOL)
     if c != cmp:
-        debug_comparison(e1, c1, e2, c2, assumptions=assumptions)
+        debug_comparison(cm, e1, e2, ctx)
         assert c == cmp, "expected {}, but was {}".format(cmp, c)
 
 def assert_cmp(e1, c1, e2, c2, cmp, assumptions : Exp = T):
-    if assumptions != T:
-        cm = CompositeCostModel(assumptions=assumptions)
-        c1 = cm.cost(e1, RUNTIME_POOL)
-        c2 = cm.cost(e2, RUNTIME_POOL)
     _assert_cmp(e1, c1, e2, c2, cmp, assumptions)
     _assert_cmp(e2, c2, e1, c1, INVERT[cmp], assumptions)
 
-def setup_cost_test():
-    global cm
-    cm = CompositeCostModel()
-
-def run_before(f, before):
-    from functools import wraps
-    @wraps(f)
-    def run_before(*args, **kwargs):
-        before()
-        return f(*args, **kwargs)
-    return run_before
-
-def per_test_setup(f):
-    def per_test_setup(cls):
-        for m in dir(cls):
-            if m.startswith("test"):
-                setattr(cls, m, run_before(getattr(cls, m), setup_cost_test))
-        return cls
-    return per_test_setup
-
-@per_test_setup(setup_cost_test)
 class TestCostModel(unittest.TestCase):
 
     def test_map_vs_filter(self):
@@ -233,16 +226,14 @@ class TestCostModel(unittest.TestCase):
         assert_cmp(e1, c1, e2, c2, Cost.BETTER)
 
     def check_transitive(self, e1, e2, e3, assumptions=T):
+        ctx = create_context(e1, e2, e3)
+        cm = CostModel(assumptions=assumptions)
         for (e1, e2, e3) in itertools.permutations([e1, e2, e3]):
-            c1 = cost_of(e1)
-            c2 = cost_of(e2)
-            c3 = cost_of(e3)
-            if c1.compare_to(c2, assumptions) == Cost.WORSE and c2.compare_to(c3, assumptions) == Cost.WORSE:
-                debug_comparison(e1, c1, e2, c2, assumptions)
-                debug_comparison(e2, c2, e3, c3, assumptions)
-                debug_comparison(e1, c1, e3, c3, assumptions)
-                cmp = c1.compare_to(c3, assumptions)
-                assert cmp == Cost.WORSE, cmp
+            if cm.compare(e1, e2, ctx, RUNTIME_POOL) == Cost.WORSE and cm.compare(e2, e3, ctx, RUNTIME_POOL) == Cost.WORSE:
+                debug_comparison(cm, e1, e2, ctx)
+                debug_comparison(cm, e2, e3, ctx)
+                debug_comparison(cm, e1, e3, ctx)
+                assert cm.compare(e1, e3, ctx, RUNTIME_POOL) == Cost.WORSE
 
     def test_regression2(self):
         e1 = EBinOp(EMap(EFlatMap(EStateVar(EUnaryOp('distinct', EMap(EVar('conns').with_type(TBag(THandle('Connection', TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('HostAndPort')), ('conn_iface', TNative('ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('Date_t')), ('conn_returned', TNative('Date_t')), ('conn_dropped', TBool())))))), ELambda(EVar('_var111681').with_type(THandle('Connection', TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('HostAndPort')), ('conn_iface', TNative('ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('Date_t')), ('conn_returned', TNative('Date_t')), ('conn_dropped', TBool()))))), EGetField(EGetField(EVar('_var111681').with_type(THandle('Connection', TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('HostAndPort')), ('conn_iface', TNative('ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('Date_t')), ('conn_returned', TNative('Date_t')), ('conn_dropped', TBool()))))), 'val').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('HostAndPort')), ('conn_iface', TNative('ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('Date_t')), ('conn_returned', TNative('Date_t')), ('conn_dropped', TBool())))), 'conn_host').with_type(TNative('HostAndPort')))).with_type(TBag(TNative('HostAndPort')))).with_type(TBag(TNative('HostAndPort')))).with_type(TBag(TNative('HostAndPort'))), ELambda(EVar('_var111656').with_type(TNative('HostAndPort')), EStateVar(EVar('conns').with_type(TBag(THandle('Connection', TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('HostAndPort')), ('conn_iface', TNative('ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('Date_t')), ('conn_returned', TNative('Date_t')), ('conn_dropped', TBool()))))))).with_type(TBag(THandle('Connection', TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('HostAndPort')), ('conn_iface', TNative('ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('Date_t')), ('conn_returned', TNative('Date_t')), ('conn_dropped', TBool())))))))).with_type(TBag(THandle('Connection', TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('HostAndPort')), ('conn_iface', TNative('ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('Date_t')), ('conn_returned', TNative('Date_t')), ('conn_dropped', TBool())))))), ELambda(EVar('_var111681').with_type(THandle('Connection', TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('HostAndPort')), ('conn_iface', TNative('ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('Date_t')), ('conn_returned', TNative('Date_t')), ('conn_dropped', TBool()))))), EVar('c').with_type(THandle('Connection', TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('HostAndPort')), ('conn_iface', TNative('ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('Date_t')), ('conn_returned', TNative('Date_t')), ('conn_dropped', TBool()))))))).with_type(TBag(THandle('Connection', TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('HostAndPort')), ('conn_iface', TNative('ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('Date_t')), ('conn_returned', TNative('Date_t')), ('conn_dropped', TBool())))))), '-', ESingleton(EVar('c').with_type(THandle('Connection', TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('HostAndPort')), ('conn_iface', TNative('ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('Date_t')), ('conn_returned', TNative('Date_t')), ('conn_dropped', TBool())))))).with_type(TBag(THandle('Connection', TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('HostAndPort')), ('conn_iface', TNative('ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('Date_t')), ('conn_returned', TNative('Date_t')), ('conn_dropped', TBool()))))))).with_type(TBag(THandle('Connection', TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('HostAndPort')), ('conn_iface', TNative('ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('Date_t')), ('conn_returned', TNative('Date_t')), ('conn_dropped', TBool()))))))
