@@ -9,6 +9,7 @@ from cozy.typecheck import is_collection, is_numeric
 from cozy.pools import Pool, RUNTIME_POOL, STATE_POOL
 from cozy.solver import satisfy
 from cozy.evaluation import eval_bulk
+from cozy.structures import extension_handler
 from cozy.logging import task, event
 
 class Order(Enum):
@@ -107,6 +108,10 @@ TWO   = ENum(2).with_type(INT)
 FOUR  = ENum(4).with_type(INT)
 EIGHT = ENum(8).with_type(INT)
 def storage_size(e):
+    h = extension_handler(type(e.type))
+    if h is not None:
+        return h.storage_size(e, k=storage_size)
+
     if e.type == BOOL:
         return ONE
     elif is_numeric(e.type) or isinstance(e.type, THandle):
