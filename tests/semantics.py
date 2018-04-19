@@ -14,6 +14,7 @@ class SemanticsTests(unittest.TestCase):
     """
 
     def assert_same(self, e1, e2):
+        assert e1.type == e2.type, "{} | {}".format(pprint(e1.type), pprint(e2.type))
         def dbg(model):
             print("model: {!r}".format(model))
             r1 = eval(e1, model)
@@ -49,6 +50,8 @@ class SemanticsTests(unittest.TestCase):
                 EFilter(e1.map.e,
                     mk_lambda(e1.map.value.arg.type, lambda foo: EEq(foo, e1.key))).with_type(e1.map.e.type),
                 e1.map.value).with_type(e1.map.e.type)).with_type(e1.map.e.type.t)
+        assert retypecheck(e1)
+        assert retypecheck(e2)
         self.assert_same(e1, e2)
 
     def test_mapget_of_makemap2(self):
@@ -164,5 +167,17 @@ class SemanticsTests(unittest.TestCase):
         e1 = EFilter(EBinOp(xs, "-", ys), ELambda(x, ECall("f", (x,)).with_type(BOOL)))
         assert retypecheck(e1)
         e2 = EBinOp(EFilter(xs, e1.p), "-", EFilter(ys, e1.p))
+        assert retypecheck(e2)
+        self.assert_same(e1, e2)
+
+    def test_distribute_the_over_map(self):
+        xs = EVar("xs").with_type(INT_BAG)
+        x = EVar("x").with_type(INT)
+        e1 = EUnaryOp(UOp.The, EMap(xs, ELambda(x, ECall("f", (x,)).with_type(INT))))
+        assert retypecheck(e1)
+        e2 = ECond(
+            EUnaryOp(UOp.Exists, xs),
+            e1.e.f.apply_to(EUnaryOp(UOp.The, xs)),
+            EUnaryOp(UOp.The, EEmptyList().with_type(xs.type)))
         assert retypecheck(e2)
         self.assert_same(e1, e2)
