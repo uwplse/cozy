@@ -21,10 +21,8 @@ from cozy.logging import task
 
 from .acceleration import try_optimize
 
-eliminate_vars = Option("eliminate-vars", bool, True)
-# reset_on_success = Option("reset-on-success", bool, False)
+eliminate_vars = Option("eliminate-vars", bool, False)
 incremental = Option("incremental", bool, False, description="Experimental option that can greatly improve performance.")
-check_final_cost = Option("check-final-cost", bool, True)
 
 class NoMoreImprovements(Exception):
     pass
@@ -282,30 +280,7 @@ def improve(
                 learner.reset(examples)
             else:
                 # b. if correct: yield it, watch the new target, goto 1
-
-                # if check_final_cost.value:
-                #     new_cost = cost_model.cost(new_target, RUNTIME_POOL)
-                #     print("cost: {} -----> {}".format(target_cost, new_cost))
-                #     if incremental.value:
-                #         ordering = new_cost.compare_to(target_cost, solver=solver)
-                #     else:
-                #         ordering = new_cost.compare_to(target_cost, assumptions=assumptions)
-                #     if ordering == Cost.WORSE:
-                #         # This should never happen, but to be safe...
-                #         print("*** cost is worse")
-                #         # print(repr(target))
-                #         # print(repr(new_target))
-                #         continue
-                #     elif ordering == Cost.UNORDERED:
-                #         print("*** cost is unchanged")
-                #         # print(repr(target))
-                #         # print(repr(new_target))
-                #         continue
-                #     target_cost = new_cost
                 print("The replacement is valid!")
-                # print(repr(target))
-                # print(repr(new_target))
-
                 print("Confirming cost...")
                 with task("verifying cost"):
                     for f in (asymptotic_runtime, max_storage_size, runtime):
