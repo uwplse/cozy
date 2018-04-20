@@ -1,4 +1,4 @@
-from cozy.syntax import Query, EAll, EAny, EImplies, EEq
+from cozy.syntax import Query, EAll, EImplies, EEq
 from cozy.solver import valid
 
 def queries_equivalent(q1 : Query, q2 : Query):
@@ -10,6 +10,4 @@ def queries_equivalent(q1 : Query, q2 : Query):
         return False
     q1a = EAll(q1.assumptions)
     q2a = EAll(q2.assumptions)
-    return valid(EImplies(
-        EAny([q1a, q2a]),
-        EEq(q1.ret, q2.ret)))
+    return valid(EEq(q1a, q2a)) and valid(EImplies(q1a, EEq(q1.ret, q2.ret)))
