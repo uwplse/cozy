@@ -872,7 +872,9 @@ def replace(exp, old_exp, new_exp, safe=True, match=lambda e1, e2: e1 == e2):
         def visit_ELambda(self, e):
             if e.arg in fvs:
                 return e
-            assert e.arg not in nfvs # TODO: alpha-renaming
+            if e.arg in nfvs:
+                new_arg = fresh_var(e.arg.type, omit=fvs|nfvs)
+                e = target_syntax.ELambda(new_arg, subst(e.body, {e.arg.id:new_arg}))
             return target_syntax.ELambda(e.arg, self.visit(e.body))
         def visit(self, e):
             if isinstance(e, syntax.Exp) and match(e, old_exp):
