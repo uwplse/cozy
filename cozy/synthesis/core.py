@@ -12,7 +12,7 @@ from cozy.wf import ExpIsNotWf, exp_wf
 from cozy.common import OrderedSet, ADT, Visitor, fresh_name, unique, pick_to_sum, cross_product, OrderedDefaultDict, OrderedSet, group_by, find_one, extend, StopException
 from cozy.solver import satisfy, satisfiable, valid, IncrementalSolver
 from cozy.evaluation import eval, eval_bulk, mkval, construct_value, uneval, eq
-from cozy.cost_model import CostModel2, Order, rt as runtime, find_cost_cex
+from cozy.cost_model import CostModel2, Order, rt as runtime, asymptotic_runtime, max_storage_size, find_cost_cex
 from cozy.opts import Option
 from cozy.pools import ALL_POOLS, RUNTIME_POOL, STATE_POOL, pool_name
 from cozy.enumeration import Enumerator, fingerprint
@@ -308,16 +308,19 @@ def improve(
 
                 print("Confirming cost...")
                 with task("verifying cost"):
-                    r1 = runtime(target)
-                    r2 = runtime(new_target)
-                    m = find_cost_cex(EAll([EGt(r2, r1), assumptions]), vars=vars, funcs=funcs)
-                    if m is None:
-                        print("Yep, it's an improvement!")
-                        yield new_target
-                    else:
-                        print("Nope, it isn't better!")
-                        cost_model.add_example(m)
-                        new_target = target
+                    for f in (asymptotic_runtime, max_storage_size, runtime):
+                        r1 = f(target)
+                        r2 = f(new_target)
+                        m = find_cost_cex(EAll([EGt(r2, r1), assumptions]), vars=vars, funcs=funcs)
+                        if m is None:
+                            print("Yep, it's an improvement!")
+                            yield new_target
+                            break
+                        else:
+                            print("Nope, it isn't better!")
+                            cost_model.add_example(m)
+                            new_target = target
+                            break
 
                 # if reset_on_success.value and (not check_final_cost.value or ordering != Cost.UNORDERED):
                 learner.reset(examples)
