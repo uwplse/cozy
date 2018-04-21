@@ -768,46 +768,62 @@ class ToZ3(Visitor):
                 return self.visit(thing, env)
     def apply(self, lam : ELambda, arg : object, env):
         with extend(env, lam.arg.id, arg):
-            return self.visit(lam.body, env)
-        if not hasattr(self, "_lambdacache"):
-            self._lambdacache = {}
+            # return self.visit(lam.body, env)
+            if not hasattr(self, "_lambdacache"):
+                self._lambdacache = {}
 
-        use_forall = False
+            use_forall = False
+            fvs = sorted(free_vars(lam.body))
+            f_funcs = free_funcs(lam.body)
 
-        arg_type = lam.arg.type
-        body_type = lam.body.type
-        argv = list(flatten(arg_type, arg))
-        key = (len(argv), lam)
-        funcs = self._lambdacache.get(key)
+            in_type = TTuple(tuple(v.type for v in fvs))
+            body_type = lam.body.type
+            argv = list(flatten(in_type, tuple(env[v.id] for v in fvs)))
+            key = (len(argv), lam)
+            funcs = self._lambdacache.get(key)
 
-        if funcs is None:
-            # print("creating lambda: {}@{} -> {}".format(pprint(arg_type), len(argv), pprint(body_type)))
-            symb_argv = [v if isinstance(v, int) else z3.Const(fresh_name(), v.sort()) for v in argv]
-            z3_vars = [v for v in symb_argv if not isinstance(v, int)]
-            symb_arg = pack(arg_type, iter(symb_argv))
-            with extend(env, lam.arg.id, symb_arg):
-                res = self.visit(lam.body, env)
-            funcs = []
-            for z3_body in flatten(body_type, res):
-                if isinstance(z3_body, int):
-                    funcs.append(z3_body)
+            if funcs is None:
+                # print("encoding func: {} -> {}".format(pprint(lam.arg.type), pprint(lam.body.type)))
+                # print("  lam = {}".format(pprint(lam)))
+                # print("  args: {}".format(", ".join("{} : {}".format(v.id, pprint(v.type)) for v in fvs)))
+                # print("  env = {}".format(env))
+                symb_argv = [v if isinstance(v, int) else z3.Const(fresh_name(), v.sort()) for v in argv]
+                assert len(symb_argv) == len(argv)
+                z3_vars = [v for v in symb_argv if not isinstance(v, int)]
+                if use_forall:
+                    indicator = z3.Bool(fresh_name(hint="indicator"), ctx=self.ctx)
+                    z3_vars.append(indicator)
+                symb_arg = pack(in_type, iter(symb_argv))
+                assert isinstance(symb_arg, tuple) and len(symb_arg) == len(fvs)
+                new_env = { v.id : a for (v, a) in zip(fvs, symb_arg) }
+                for f in f_funcs:
+                    new_env[f] = env[f]
+                res = self.visit(lam.body, new_env)
+                # print("  f({}) = {}".format(", ".join(map(str, z3_vars)), res))
+                funcs = []
+                for z3_body in flatten(body_type, res):
+                    if isinstance(z3_body, int):
+                        funcs.append(z3_body)
+                    else:
+                        fname = fresh_name("f")
+                        f = z3.Function(fname, *[v.sort() for v in z3_vars], z3_body.sort())
+                        if use_forall:
+                            if z3_vars:
+                                self.solver.add(z3.ForAll(z3_vars, self.implies(indicator, f(*z3_vars) == z3_body)))
+                            else:
+                                self.solver.add(f() == z3_body)
+                        funcs.append((f, z3_vars, z3_body))
+                self._lambdacache[key] = funcs
+
+            if funcs is not None:
+                # print("calling {} with {}".format(funcs, argv))
+                if use_forall:
+                    return pack(body_type, (f if isinstance(f, int) else f[0](*([v for v in argv if not isinstance(v, int)] + [self.true])) for f in funcs))
                 else:
-                    fname = fresh_name("f")
-                    f = z3.Function(fname, *[v.sort() for v in z3_vars], z3_body.sort())
-                    if use_forall:
-                        self.solver.add(z3.ForAll(z3_vars, f(*z3_vars) == z3_body))
-                    funcs.append((f, z3_vars, z3_body))
-            self._lambdacache[key] = funcs
-
-        if funcs is not None:
-            # print("calling {} with {}".format(funcs, argv))
-            if use_forall:
-                return pack(body_type, (f if isinstance(f, int) else f[0](*[v for v in argv if not isinstance(v, int)]) for f in funcs))
+                    return pack(body_type, (f if isinstance(f, int) else z3.substitute(f[2], *zip(f[1], [x for x in argv if not isinstance(x, int)])) for f in funcs))
             else:
-                return pack(body_type, (f if isinstance(f, int) else z3.substitute(f[2], *zip(f[1], [x for x in argv if not isinstance(x, int)])) for f in funcs))
-        else:
-            with extend(env, lam.arg.id, arg):
-                return self.visit(lam.body, env)
+                with extend(env, lam.arg.id, arg):
+                    return self.visit(lam.body, env)
     def visit_clauses(self, clauses, e, env):
         if not clauses:
             return [True], [self.visit(e, env)]
@@ -1073,7 +1089,8 @@ class IncrementalSolver(object):
         _tock(e, "cse (size: {} --> {})".format(orig_size, len(list(all_exps(e)))))
         with _LOCK:
             self._create_vars(vars=free_vars(e), funcs=free_funcs(e))
-            return self.visitor.visit(e, self._env)
+            with task("encode formula", size=e.size()):
+                return self.visitor.visit(e, self._env)
 
     def add_assumption(self, e):
         # print("Pushing assumption [size={}]...".format(e.size()))
@@ -1159,7 +1176,10 @@ class IncrementalSolver(object):
             solver.push()
             solver.add(a)
 
-            # print(solver.assertions())
+            # print("Assertions")
+            # for a in solver.assertions():
+            #     print(" - {}".format(a))
+
             _tock(e, "encode")
             with task("invoke Z3"):
                 res = solver.check()
