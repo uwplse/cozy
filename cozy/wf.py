@@ -85,9 +85,7 @@ def exp_wf_nonrecursive(e : Exp, context : Context, pool = RUNTIME_POOL, assumpt
         raise ExpIsNotWf(e, e, "trivially empty map")
     if not at_runtime and isinstance(e, EFilter):
         # catch "peels": removal of zero or one elements
-        outer_size = ELen(e)
-        inner_size = ELen(e.e)
-        if valid(EImplies(assumptions, ELe(EBinOp(inner_size, "-", outer_size).with_type(INT), ONE))):
+        if valid(EImplies(assumptions, ELe(ELen(EFilter(e.e, ELambda(e.p.arg, ENot(e.p.body))).with_type(e.type)), ONE))):
             raise ExpIsNotWf(e, e, "filter is a peel")
     if not at_runtime and isinstance(e, EMakeMap2) and is_collection(e.type.v):
         all_collections = [sv for sv in state_vars if is_collection(sv.type)]
