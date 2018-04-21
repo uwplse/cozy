@@ -68,6 +68,10 @@ class Learner(object):
                     exp_wf(e, pool=pool, context=ctx, assumptions=self.assumptions)
                 except ExpIsNotWf as exc:
                     return No("at {}: {}".format(pprint(exc.offending_subexpression), exc.reason))
+                if pool == RUNTIME_POOL and self.cost_model.compare(e, self.target, ctx, pool) not in (Order.LT, Order.EQUAL):
+                    # from cozy.cost_model import debug_comparison
+                    # debug_comparison(self.cost_model, e, self.target, ctx)
+                    return No("too expensive")
                 # if isinstance(e.type, TBag):
                 #     c = self.cost_model.cardinality(e)
                 #     if all(cc < c for cc in cards):
@@ -122,8 +126,6 @@ class Learner(object):
                         if not check_wf(ee, root_ctx, RUNTIME_POOL):
                             continue
                         if not self.matches(fingerprint(ee, self.examples), target_fp):
-                            continue
-                        if self.cost_model.compare(ee, self.target, root_ctx, RUNTIME_POOL) != Order.LT:
                             continue
                         print("FOUND A GUESS AFTER {} CONSIDERED".format(n))
                         return ee
