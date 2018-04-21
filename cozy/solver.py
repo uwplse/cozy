@@ -114,14 +114,10 @@ def to_bool(e : z3.AstRef):
     If `e` is a boolean literal, return its value (True or False).
     Otherwise, return None.
     """
-    # I'm not sure what is the "right" way to check whether `cond` is
-    # exactly Z3 true or Z3 false.  This seems to work on v4.5.0.
-    if isinstance(e, z3.BoolRef):
-        decl = str(e.decl())
-        if decl == "True":
-            return True
-        if decl == "False":
-            return False
+    if z3.is_true(e):
+        return True
+    if z3.is_false(e):
+        return False
     return None
 
 @typechecked
@@ -214,6 +210,9 @@ class ToZ3(Visitor):
         self.int_one  = z3.IntVal(1, self.ctx)
         self.true = z3.BoolVal(True, self.ctx)
         self.false = z3.BoolVal(False, self.ctx)
+        assert to_bool(self.true) is True
+        assert to_bool(self.false) is False
+        assert to_bool(self.int_zero) is None
 
     def bool_to_z3(self, b):
         return self.true if b else self.false
