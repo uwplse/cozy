@@ -13,9 +13,10 @@ from cozy.common import declare_case, fresh_name, Visitor, FrozenDict, typecheck
 from cozy import evaluation
 from cozy.opts import Option
 from cozy.structures import extension_handler
+from cozy.logging import task
 
 save_solver_testcases = Option("save-solver-testcases", str, "", metavar="PATH")
-collection_depth_opt = Option("collection-depth", int, 2, metavar="N", description="Bound for bounded verification")
+collection_depth_opt = Option("collection-depth", int, 4, metavar="N", description="Bound for bounded verification")
 
 class SolverReportedUnknown(Exception):
     pass
@@ -899,7 +900,7 @@ class ToZ3(Visitor):
                 return self.unreconstruct(value, h.encoding_type(ty))
             raise NotImplementedError(ty)
 
-    def mkvar(self, collection_depth, type, on_z3_var=None, on_z3_assertion=None):
+    def mkvar(self, collection_depth, type, min_collection_depth=0, on_z3_var=None, on_z3_assertion=None):
         ctx = self.ctx
         solver = self.solver
         if on_z3_var is None:
@@ -923,41 +924,44 @@ class ToZ3(Visitor):
             on_z3_assertion(n < ncases)
             return n
         elif isinstance(type, TSet):
-            res = self.mkvar(collection_depth, TBag(type.t), on_z3_var, on_z3_assertion)
+            res = self.mkvar(collection_depth, TBag(type.t), min_collection_depth, on_z3_var, on_z3_assertion)
             mask, elems = res
             for i in range(1, len(mask)):
                 on_z3_assertion(self.implies(mask[i], self.distinct(type.t, *(elems[:(i+1)]))))
             return res
         elif isinstance(type, TBag) or isinstance(type, TList):
-            mask = [self.mkvar(collection_depth, BOOL, on_z3_var, on_z3_assertion) for i in range(collection_depth)]
-            elems = [self.mkvar(collection_depth, type.t, on_z3_var, on_z3_assertion) for i in range(collection_depth)]
+            size = max(collection_depth, min_collection_depth)
+            true_masks = [self.true for i in range(min_collection_depth)]
+            symb_masks = [self.mkvar(collection_depth, BOOL, min_collection_depth, on_z3_var, on_z3_assertion) for i in range(size - min_collection_depth)]
+            mask  = symb_masks + true_masks
+            elems = [self.mkvar(collection_depth, type.t, min_collection_depth, on_z3_var, on_z3_assertion) for i in range(collection_depth)]
             # symmetry breaking
             for i in range(len(mask) - 1):
                 on_z3_assertion(self.implies(mask[i], mask[i+1]))
             return (mask, elems)
         elif isinstance(type, TMap):
             default = self.mkval(type.v)
-            mask = [self.mkvar(collection_depth, BOOL, on_z3_var, on_z3_assertion) for i in range(collection_depth)]
+            mask = [self.mkvar(collection_depth, BOOL, min_collection_depth, on_z3_var, on_z3_assertion) for i in range(collection_depth)]
             # symmetry breaking
             for i in range(len(mask) - 1):
                 on_z3_assertion(self.implies(mask[i], mask[i+1]))
             return {
                 "mapping": [(
                     mask[i],
-                    self.mkvar(collection_depth, type.k, on_z3_var, on_z3_assertion),
-                    self.mkvar(collection_depth, type.v, on_z3_var, on_z3_assertion))
+                    self.mkvar(collection_depth, type.k, min_collection_depth, on_z3_var, on_z3_assertion),
+                    self.mkvar(collection_depth, type.v, min_collection_depth, on_z3_var, on_z3_assertion))
                     for i in range(collection_depth)],
                 "default":
                     default }
         elif isinstance(type, TRecord):
             # TODO: use Z3 ADTs
-            return { field : self.mkvar(collection_depth, t, on_z3_var, on_z3_assertion) for (field, t) in type.fields }
+            return { field : self.mkvar(collection_depth, t, min_collection_depth, on_z3_var, on_z3_assertion) for (field, t) in type.fields }
         elif isinstance(type, TTuple):
             # TODO: use Z3 ADTs
-            return tuple(self.mkvar(collection_depth, t, on_z3_var, on_z3_assertion) for t in type.ts)
+            return tuple(self.mkvar(collection_depth, t, min_collection_depth, on_z3_var, on_z3_assertion) for t in type.ts)
         elif isinstance(type, THandle):
             h = on_z3_var(z3.Int(fresh_name(), ctx=ctx))
-            v = (h, self.mkvar(collection_depth, type.value_type, on_z3_var, on_z3_assertion))
+            v = (h, self.mkvar(collection_depth, type.value_type, min_collection_depth, on_z3_var, on_z3_assertion))
             return v
         elif isinstance(type, TFunc):
             return z3.Function(fresh_name(),
@@ -1011,6 +1015,7 @@ class IncrementalSolver(object):
             vars = None,
             funcs = None,
             collection_depth : int = None,
+            min_collection_depth : int = 0,
             validate_model : bool = True,
             model_callback = None,
             logic : str = None,
@@ -1021,6 +1026,7 @@ class IncrementalSolver(object):
 
         self.vars = OrderedSet()
         self.funcs = OrderedDict()
+        self.min_collection_depth = min_collection_depth
         self.collection_depth = collection_depth
         self.validate_model = validate_model
         self.model_callback = model_callback
@@ -1052,11 +1058,11 @@ class IncrementalSolver(object):
     def _create_vars(self, vars, funcs):
         for f, t in funcs.items():
             if f not in self._env:
-                self._env[f] = self.visitor.mkvar(self.collection_depth, t)
+                self._env[f] = self.visitor.mkvar(self.collection_depth, t, min_collection_depth=self.min_collection_depth)
                 self.funcs[f] = t
         for v in vars:
             if v.id not in self._env:
-                self._env[v.id] = self.visitor.mkvar(self.collection_depth, v.type)
+                self._env[v.id] = self.visitor.mkvar(self.collection_depth, v.type, min_collection_depth=self.min_collection_depth)
                 self.vars.add(v)
 
     def _convert(self, e):
@@ -1071,6 +1077,7 @@ class IncrementalSolver(object):
             return self.visitor.visit(e, self._env)
 
     def add_assumption(self, e):
+        # print("Pushing assumption [size={}]...".format(e.size()))
         # print("adding assumption {} to {}".format(pprint(e), id(self)))
         try:
             with _LOCK:
@@ -1084,6 +1091,9 @@ class IncrementalSolver(object):
             raise
 
     def satisfy(self, e, model_extraction=True):
+        # print("Solving formula [size={}]...".format(e.size()))
+        # if e.size() < 100:
+        #     print(pprint(e))
         # print(pprint(e))
         # print("sat? {}".format(pprint(e)))
         # assert e.type == BOOL
@@ -1152,13 +1162,16 @@ class IncrementalSolver(object):
 
             # print(solver.assertions())
             _tock(e, "encode")
-            res = solver.check()
+            with task("invoke Z3"):
+                res = solver.check()
             _tock(e, "solve")
             if res == z3.unsat:
                 solver.pop()
+                # print("Finished solving formula [UNSAT]")
                 return None
             elif res == z3.unknown:
                 solver.pop()
+                # print("Finished solving formula [UNKNOWN]")
                 raise SolverReportedUnknown("z3 reported unknown")
             else:
                 res = { }
@@ -1242,6 +1255,7 @@ class IncrementalSolver(object):
                             raise ModelValidationError("model validation failed")
                     _tock(e, "extract model")
                 solver.pop()
+                # print("Finished solving formula [SAT]")
                 return res
 
     def satisfiable(self, e):

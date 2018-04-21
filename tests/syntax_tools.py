@@ -135,6 +135,32 @@ class TestSyntaxTools(unittest.TestCase):
         sub = subst(e, {"x":ZERO})
         assert sub == EUnaryOp(UOp.Exists, EFilter(ESingleton(ONE), ELambda(x, EStateVar(EEq(ZERO, ZERO))))), pprint(sub)
 
+    def test_replace_works(self):
+        x = EVar("x").with_type(INT)
+        y = EVar("y").with_type(INT)
+        z = EVar("z").with_type(INT)
+        e1 = ELambda(y, x)
+        e2 = replace(e1, x, z)
+        assert e2 == ELambda(y, z), pprint(e2)
+
+    def test_replace_safety(self):
+        x = EVar("x").with_type(INT)
+        y = EVar("y").with_type(INT)
+        z = EVar("z").with_type(INT)
+        e1 = ELambda(y, y)
+        e2 = replace(e1, y, x)
+        assert e1 == e2, pprint(e2)
+
+    def test_replace_alpha_renaming(self):
+        x = EVar("x").with_type(INT)
+        y = EVar("y").with_type(INT)
+        z = EVar("z").with_type(INT)
+        e1 = ELambda(y, x)
+        e2 = replace(e1, x, y)
+        assert alpha_equivalent(
+            e2,
+            ELambda(z, y)), pprint(e2)
+
     def test_query_fvs(self):
         fvs = free_vars(Query('__isDistinct', 'public', [('startOffset', TInt())], [], EBinOp(EVar('startOffset').with_type(TInt()), '>=', EArgMax(EMap(EMap(EFilter(EVar('tokens').with_type(TBag(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool()))))))), ELambda(EVar('t').with_type(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))))), EGetField(ETupleGet(EVar('t').with_type(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))))), 1).with_type(TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))), 'important').with_type(TBool()))).with_type(TBag(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool()))))))), ELambda(EVar('t').with_type(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))))), EVar('t').with_type(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))))))).with_type(TBag(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool()))))))), ELambda(EVar('tok').with_type(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))))), EGetField(ETupleGet(EVar('tok').with_type(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))))), 1).with_type(TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))), 'endOffset').with_type(TInt()))).with_type(TBag(TInt())), ELambda(EVar('x').with_type(TInt()), EVar('x').with_type(TInt()))).with_type(TInt())).with_type(TBool()), ""))
         assert EVar("startOffset") not in fvs

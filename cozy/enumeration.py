@@ -7,9 +7,10 @@ from cozy.target_syntax import *
 from cozy.syntax_tools import pprint, fresh_var, free_vars, freshen_binders
 from cozy.evaluation import eval_bulk
 from cozy.typecheck import is_numeric, is_scalar, is_collection
-from cozy.cost_model import CostModel, Cost
+from cozy.cost_model import CostModel2, Order
 from cozy.pools import Pool, ALL_POOLS, RUNTIME_POOL, STATE_POOL, pool_name
 from cozy.contexts import Context, RootCtx, UnderBinder
+from cozy.logging import task, task_begin, task_end, event, verbose
 
 def fingerprint(e : Exp, examples : [{str:object}]):
     return (e.type,) + tuple(eval_bulk(e, examples))
@@ -53,21 +54,28 @@ def parent_contexts(context):
 
 def _interesting(e, context):
     return isinstance(context, RootCtx) and hasattr(e, "_tag")
+    # return True
 def _consider(e, context):
-    if not _interesting(e, context): return
-    print(" > considering {}".format(pprint(e)))
+    if _interesting(e, context) and not verbose.value:
+        print("considering {} in {}".format(pprint(e), context))
+    task_begin("considering {} in {}".format(pprint(e), context))
 def _accept(e, context):
-    if not _interesting(e, context): return
-    print("   accepting {}".format(pprint(e)))
+    if _interesting(e, context) and not verbose.value:
+        print("accepting")
+    event("accepting")
+    task_end()
 def _skip(e, context, reason):
-    if not _interesting(e, context): return
-    print("   skipping {} [{}]".format(pprint(e), reason))
+    if _interesting(e, context) and not verbose.value:
+        print("skipping [{}]".format(reason))
+    event("skipping [{}]".format(reason))
+    task_end()
 def _evict(e, context, better_exp):
-    if not _interesting(e, context): return
-    print("   evicting {}".format(pprint(e)))
+    if _interesting(e, context) and not verbose.value:
+        print("evicting {}".format(pprint(e)))
+    event("evicting {}".format(pprint(e)))
 
 class Enumerator(object):
-    def __init__(self, examples, cost_model : CostModel, check_wf=None, hints=None, heuristics=None, stop_callback=None):
+    def __init__(self, examples, cost_model : CostModel2, check_wf=None, hints=None, heuristics=None, stop_callback=None):
         self.examples = list(examples)
         self.cost_model = cost_model
         self.cache = { } # keys -> [exp]
@@ -279,6 +287,7 @@ class Enumerator(object):
             res = []
             self.cache[k] = res
             queue = self.enumerate_core(context, size, pool)
+            cost_model = self.cost_model
             while True:
                 if self.stop_callback():
                     raise StopException()
@@ -311,21 +320,24 @@ class Enumerator(object):
                 # decide whether to keep this expression,
                 # decide which can be evicted
                 should_keep = True
-                cost = self.cost_model.cost(e, pool)
+                # cost = self.cost_model.cost(e, pool)
                 # print("prev={}".format(prev))
                 # print("seen={}".format(self.seen))
                 for ctx, prev_exp in prev:
-                    prev_cost = self.cost_model.cost(prev_exp, pool)
-                    ordering = cost.compare_to(prev_cost)
-                    if ordering == Cost.BETTER:
+                    # prev_cost = self.cost_model.cost(prev_exp, pool)
+                    # ordering = cost.compare_to(prev_cost)
+                    ordering = cost_model.compare(e, prev_exp, context, pool)
+                    if ordering == Order.LT:
                         pass
-                    elif ordering == Cost.WORSE:
+                    elif ordering == Order.GT:
                         _skip(e, context, "worse than {}".format(pprint(prev_exp)))
                         should_keep = False
                         break
                     else:
-                        _skip(e, context, "equivalent to cached {}".format(pprint(prev_exp)))
-                        assert ordering == Cost.UNORDERED
+                        _skip(e, context, "{} to cached {}".format(
+                            "equal" if ordering == Order.EQUAL else "similar",
+                            pprint(prev_exp)))
+                        assert ordering in (Order.EQUAL, Order.AMBIGUOUS)
                         should_keep = False
                         break
 
@@ -336,7 +348,7 @@ class Enumerator(object):
                         (p, s, c) = key
                         if p == pool and c in itertools.chain([context], parent_contexts(context)):
                             for ee in exps:
-                                if ee.fingerprint == fp and ee.cost.compare_to(cost, pool) == Cost.WORSE:
+                                if ee.fingerprint == fp and cost_model.compare(e, ee.e, context, pool) == Order.LT:
                                     to_evict.append((key, ee))
                     for key, ee in to_evict:
                         (p, s, c) = key
@@ -352,14 +364,15 @@ class Enumerator(object):
                     info = EnumeratedExp(
                         e=e,
                         fingerprint=fp,
-                        cost=cost)
+                        cost=None)
                     res.append(info)
                     yield info
 
-                    to_try = make_random_access(self.heuristics(e, context, pool))
-                    if to_try:
-                        # print("trying {} accelerations".format(len(to_try)))
-                        queue = itertools.chain(to_try, queue)
+                    with task("accelerating"):
+                        to_try = make_random_access(self.heuristics(e, context, pool))
+                        if to_try:
+                            # print("trying {} accelerations".format(len(to_try)))
+                            queue = itertools.chain(to_try, queue)
 
             # print("EXIT {}".format(k))
             self.in_progress.remove(k)

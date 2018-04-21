@@ -49,6 +49,10 @@ class Heaps(object):
                 return "invalid `n` parameter"
         return None
 
+    def storage_size(self, e : Exp, k):
+        assert type(e.type) in (TMinHeap, TMaxHeap)
+        return k(EHeapElems(e).with_type(TBag(e.type.t)))
+
     def encoding_type(self, t : Type) -> Type:
         assert isinstance(t, TMaxHeap) or isinstance(t, TMinHeap)
         return TBag(t.t)

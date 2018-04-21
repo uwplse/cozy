@@ -1,7 +1,8 @@
 import itertools
 
 from cozy.common import OrderedSet, unique, Visitor
-from cozy.syntax import Exp, EVar
+from cozy.syntax import Exp, EVar, EAll
+from cozy.target_syntax import EDeepIn
 from cozy.evaluation import eval
 from cozy.syntax_tools import pprint, alpha_equivalent, free_vars, subst, BottomUpRewriter
 from cozy.pools import Pool, RUNTIME_POOL, STATE_POOL
@@ -20,6 +21,10 @@ class Context(object):
         raise NotImplementedError()
     def adapt(self, e : Exp, ctx) -> Exp:
         raise NotImplementedError()
+    def path_conditions(self) -> [Exp]:
+        raise NotImplementedError()
+    def path_condition(self):
+        return EAll(self.path_conditions())
 
 class RootCtx(Context):
     def __init__(self, state_vars : [Exp], args : [Exp]):
@@ -40,6 +45,8 @@ class RootCtx(Context):
         if self == ctx:
             return e
         raise Exception("cannot adapt from {} to {}".format(ctx, self))
+    def path_conditions(self):
+        return []
     def __hash__(self):
         return hash((tuple(self.state_vars), tuple(self.args)))
     def __eq__(self, other):
@@ -87,6 +94,10 @@ class UnderBinder(Context):
             e = self._parent.adapt(e, ctx._parent)
             return subst(e, { ctx.var.id : self.var })
         return self._parent.adapt(e, ctx)
+    def path_conditions(self):
+        pcs = [pc for pc in self._parent.path_conditions() if self.var not in free_vars(pc)]
+        pcs.append(EDeepIn(self.var, self.bag))
+        return pcs
     def __hash__(self):
         return hash((self._parent, self.var, self.bag, self.pool))
     def __eq__(self, other):
@@ -134,6 +145,14 @@ class _Shredder(Visitor):
         yield (e, self.ctx, self.pool)
         yield from self.visit(e.e)
         yield from self.visit(e.value, e.e)
+    def visit_EMakeMinHeap(self, e):
+        yield (e, self.ctx, self.pool)
+        yield from self.visit(e.e)
+        yield from self.visit(e.value, e.e)
+    def visit_EMakeMaxHeap(self, e):
+        yield (e, self.ctx, self.pool)
+        yield from self.visit(e.e)
+        yield from self.visit(e.f, e.e)
     def visit_Exp(self, e):
         yield (e, self.ctx, self.pool)
         for child in e.children():
@@ -146,8 +165,8 @@ class _Shredder(Visitor):
     def visit_int(self, i):
         return ()
 
-def shred(e : Exp, ctx : Context, pool : Pool = RUNTIME_POOL) -> [(Exp, Context, Pool)]:
-    return _Shredder(ctx, pool).visit(e)
+def shred(e : Exp, context : Context, pool : Pool = RUNTIME_POOL) -> [(Exp, Context, Pool)]:
+    return _Shredder(context, pool).visit(e)
 
 class _Replacer(BottomUpRewriter):
     def __init__(self,
@@ -186,6 +205,10 @@ class _Replacer(BottomUpRewriter):
         return self.join(e, (self.visit(e.e), self.visit(e.f, e.e)))
     def visit_EMakeMap2(self, e):
         return self.join(e, (self.visit(e.e), self.visit(e.value, e.e)))
+    def visit_EMakeMinHeap(self, e):
+        return self.join(e, (self.visit(e.e), self.visit(e.f, e.e)))
+    def visit_EMakeMaxHeap(self, e):
+        return self.join(e, (self.visit(e.e), self.visit(e.f, e.e)))
     def visit(self, e, *args):
         if isinstance(e, Exp) and self.pool == self.needle_pool and alpha_equivalent(self.needle, e) and self.needle_context.alpha_equivalent(self.ctx):
             return self.ctx.adapt(self.replacement, self.needle_context)

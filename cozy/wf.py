@@ -23,6 +23,7 @@ class ExpIsNotWf(Exception):
 def exp_wf_nonrecursive(e : Exp, context : Context, pool = RUNTIME_POOL, assumptions : Exp = T):
     state_vars = OrderedSet(v for v, p in context.vars() if p == STATE_POOL)
     args       = OrderedSet(v for v, p in context.vars() if p == RUNTIME_POOL)
+    assumptions = EAll([assumptions, context.path_condition()])
 
     h = extension_handler(type(e))
     if h is not None:
@@ -82,6 +83,12 @@ def exp_wf_nonrecursive(e : Exp, context : Context, pool = RUNTIME_POOL, assumpt
         raise ExpIsNotWf(e, e, "conditional in state position")
     if isinstance(e, EMakeMap2) and isinstance(e.e, EEmptyList):
         raise ExpIsNotWf(e, e, "trivially empty map")
+    if not at_runtime and isinstance(e, EFilter):
+        # catch "peels": removal of zero or one elements
+        outer_size = ELen(e)
+        inner_size = ELen(e.e)
+        if valid(EImplies(assumptions, ELe(EBinOp(inner_size, "-", outer_size).with_type(INT), ONE))):
+            raise ExpIsNotWf(e, e, "filter is a peel")
     if not at_runtime and isinstance(e, EMakeMap2) and is_collection(e.type.v):
         all_collections = [sv for sv in state_vars if is_collection(sv.type)]
         total_size = ENum(0).with_type(INT)

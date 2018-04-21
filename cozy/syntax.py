@@ -224,6 +224,12 @@ def EGt(e1, e2):
 def ELt(e1, e2):
     return EBinOp(e1, "<", e2).with_type(BOOL)
 
+def EGe(e1, e2):
+    return EBinOp(e1, ">=", e2).with_type(BOOL)
+
+def ELe(e1, e2):
+    return EBinOp(e1, "<=", e2).with_type(BOOL)
+
 def EIn(e1, e2):
     return EBinOp(e1, BOp.In, e2).with_type(BOOL)
 
@@ -231,4 +237,8 @@ def EImplies(e1, e2):
     return EBinOp(ENot(e1), BOp.Or, e2).with_type(BOOL)
 
 def ELen(e):
+    if isinstance(e, EEmptyList):
+        return ZERO
+    if isinstance(e, ESingleton):
+        return ONE
     return EUnaryOp(UOp.Length, e).with_type(INT)
