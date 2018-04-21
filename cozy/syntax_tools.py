@@ -1801,23 +1801,17 @@ def cse_replace(elem):
     """
     # Fixed point routine that stops when eliminations stop occurring.
     while True:
-        print("replace")
         e_scan, capture_map, rewrite_map = cse_scan(elem)
 
         if not capture_map:
             # Nothing to replace.
-            break
+            return elem
 
         rewriter = CSERewriter(capture_map, rewrite_map)
-        elem_prime = rewriter.visit(e_scan, ())
-        elem = elem_prime
-
-        print(pprint(elem))
+        elem = rewriter.visit(e_scan, ())
 
         if not rewriter.did_alter_tree:
-            break
-
-    return elem
+            return elem
 
 def cse_replace_spec(spec):
     """
@@ -1829,5 +1823,4 @@ def cse_replace_spec(spec):
             return s
 
     op_visitor = OpVisitor()
-    spec2 = op_visitor.visit(spec)
-    return spec2
+    return op_visitor.visit(spec)
