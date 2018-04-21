@@ -178,7 +178,6 @@ def wc_card(e):
     return card(e)
 
 def asymptotic_runtime(e):
-    fvs = free_vars(e)
     terms = [ONE]
     stk = [e]
     while stk:
