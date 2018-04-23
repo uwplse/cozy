@@ -17,6 +17,7 @@ from cozy.logging import task
 
 save_solver_testcases = Option("save-solver-testcases", str, "", metavar="PATH")
 collection_depth_opt = Option("collection-depth", int, 4, metavar="N", description="Bound for bounded verification")
+use_quantified_encoding = Option("quantified-encoding", bool, False, description="Allow the use of quantifiers during formula encoding. The resulting formulas are still decideable using Z3's macro_finder option. Enabling this option offloads work from Python to Z3. Generally it harms performance.")
 
 class SolverReportedUnknown(Exception):
     pass
@@ -772,7 +773,7 @@ class ToZ3(Visitor):
             if not hasattr(self, "_lambdacache"):
                 self._lambdacache = {}
 
-            use_forall = False
+            use_forall = use_quantified_encoding.value
             fvs = sorted(free_vars(lam.body))
             f_funcs = free_funcs(lam.body)
 
@@ -790,9 +791,6 @@ class ToZ3(Visitor):
                 symb_argv = [v if isinstance(v, int) else z3.Const(fresh_name(), v.sort()) for v in argv]
                 assert len(symb_argv) == len(argv)
                 z3_vars = [v for v in symb_argv if not isinstance(v, int)]
-                if use_forall:
-                    indicator = z3.Bool(fresh_name(hint="indicator"), ctx=self.ctx)
-                    z3_vars.append(indicator)
                 symb_arg = pack(in_type, iter(symb_argv))
                 assert isinstance(symb_arg, tuple) and len(symb_arg) == len(fvs)
                 new_env = { v.id : a for (v, a) in zip(fvs, symb_arg) }
@@ -809,7 +807,7 @@ class ToZ3(Visitor):
                         f = z3.Function(fname, *[v.sort() for v in z3_vars], z3_body.sort())
                         if use_forall:
                             if z3_vars:
-                                self.solver.add(z3.ForAll(z3_vars, self.implies(indicator, f(*z3_vars) == z3_body)))
+                                self.solver.add(z3.ForAll(z3_vars, f(*z3_vars) == z3_body))
                             else:
                                 self.solver.add(f() == z3_body)
                         funcs.append((f, z3_vars, z3_body))
@@ -818,7 +816,7 @@ class ToZ3(Visitor):
             if funcs is not None:
                 # print("calling {} with {}".format(funcs, argv))
                 if use_forall:
-                    return pack(body_type, (f if isinstance(f, int) else f[0](*([v for v in argv if not isinstance(v, int)] + [self.true])) for f in funcs))
+                    return pack(body_type, (f if isinstance(f, int) else f[0](*[v for v in argv if not isinstance(v, int)]) for f in funcs))
                 else:
                     return pack(body_type, (f if isinstance(f, int) else z3.substitute(f[2], *zip(f[1], [x for x in argv if not isinstance(x, int)])) for f in funcs))
             else:
@@ -1051,6 +1049,8 @@ class IncrementalSolver(object):
         with _LOCK:
             ctx = z3.Context()
             solver = z3.Solver(ctx=ctx) if logic is None else z3.SolverFor(logic, ctx=ctx)
+            if use_quantified_encoding.value:
+                solver.set(":smt.macro_finder", True)
             if timeout is not None:
                 solver.set("timeout", int(timeout * 1000))
             solver.set("core.validate", validate_model)
