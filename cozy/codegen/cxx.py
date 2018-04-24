@@ -468,6 +468,9 @@ class CxxPrinter(CodeGenerator):
             raise NotImplementedError("adding collections: {}".format(e))
         elif op == "==":
             return self._eq(e.e1, e.e2)
+        elif op == "===":
+            # rewrite deep-equality test into regular equality
+            op = "=="
         elif op == "!=":
             return self.visit(ENot(EEq(e.e1, e.e2)))
         elif op == BOp.Or:
