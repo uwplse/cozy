@@ -1,5 +1,8 @@
 # Cozy
 
+[![Build Status](https://travis-ci.org/CozySynthesizer/cozy.svg?branch=master
+)](https://travis-ci.org/CozySynthesizer/cozy)
+
 Cozy is a tool that synthesizes a wide range of data structure implementations
 from very high-level specifications. It can greatly simplify the task of
 writing software modules with private state since it chooses a good
