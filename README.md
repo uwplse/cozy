@@ -14,7 +14,6 @@ developers normally don't, such as using [intrusive data structures](https://sta
 
 Dependencies:
  - [Python >= 3.4](https://www.python.org/)
- - [Z3 >= 4.5](https://github.com/Z3Prover/z3) (with Python 3 bindings)
  - The Python modules listed in `requirements.txt`
    (install with `pip install -r requirements.txt`)
 
