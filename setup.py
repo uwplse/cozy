@@ -8,8 +8,8 @@ def die(msg):
     print(msg, file=sys.stderr)
     sys.exit(1)
 
-if sys.version_info < (3, 4):
-    die("Need Python >= 3.4; found {}".format(sys.version))
+if sys.version_info < (3, 5):
+    die("Need Python >= 3.5; found {}".format(sys.version))
 
 try:
     import z3
