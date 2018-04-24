@@ -1,4 +1,11 @@
 language: python
+
+# These two lines give us a beefier VM with ~7Gb of memory instead of 4.  This
+# helps ensure that Z3 builds without errors.
+# See: https://docs.travis-ci.com/user/reference/overview/
+sudo: required
+dist: trusty
+
 cache: pip
 python:
   - "3.4"
