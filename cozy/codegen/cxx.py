@@ -564,15 +564,16 @@ class CxxPrinter(CodeGenerator):
 
     def for_each_native(self, x : EVar, iterable, body):
         if isinstance(iterable, EMapKeys):
-            raise NotImplementedError()
-            msetup, map = self.visit(iterable.e, indent)
+            map = self.visit(iterable.e)
             pair = self.fv(TNative("const auto &"))
-            return msetup + "{setup}{indent}for ({loop_decl} : {iterable}) {{\n{body}{indent}}}\n".format(
-                indent=indent,
-                setup=msetup,
-                loop_decl=self.visit(pair.type, pair.id),
-                iterable=map,
-                body=self.visit(seq([SDecl(x.id, EEscape("{p}.first", ("p",), (pair,)).with_type(x.type)), body]), indent+INDENT))
+            self.begin_statement()
+            self.write("for (", self.visit(pair.type, pair.id), " : ", map, ") ")
+            with self.block():
+                self.visit(SSeq(
+                    SDecl(x.id, EEscape("{p}.first", ("p",), (pair,)).with_type(x.type)),
+                    body))
+            self.end_statement()
+            return
         iterable = self.visit(iterable)
         self.begin_statement()
         self.write("for (", self.visit(x.type, x.id), " : ", iterable, ") ")
