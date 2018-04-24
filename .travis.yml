@@ -3,7 +3,7 @@ cache: pip
 python:
   - "3.4"
 install:
-  - pip install -r requirements.txt
+  - pip install -v -r requirements.txt
 script:
   - python -m unittest -v tests/*.py
   - python setup.py install
