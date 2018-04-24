@@ -1,0 +1,10 @@
+language: python
+python:
+  - "3.4"
+install:
+  - pip install -r requirements.txt
+  - pip install 'z3-solver (>= 4.5.0, <5)'
+script:
+  - python -m unittest -v tests/*.py
+  - python setup.py install
+  - which cozy
