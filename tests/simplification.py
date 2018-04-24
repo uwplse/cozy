@@ -46,6 +46,19 @@ class SimplificationTests(unittest.TestCase):
             y).with_type(mt)
         assert simplify(e, validate=True, debug=True) is not e
 
+    def test_simple_mapget(self):
+        t = INT
+        xs = EVar("xs").with_type(TBag(t))
+        x = EVar("x").with_type(t)
+        y = EVar("y").with_type(t)
+        mt = TTuple((INT, INT))
+        e = EMapGet(
+            EMakeMap2(xs, ELambda(x,
+                ETuple((x, y)).with_type(mt)
+                )).with_type(TMap(t, mt)),
+            y).with_type(mt)
+        assert simplify(e, validate=True, debug=True) is not e
+
     def test_regression08(self):
         simplify(EUnaryOp('sum', EEmptyList().with_type(TBag(TFloat()))).with_type(TFloat()), validate=True, debug=True)
 

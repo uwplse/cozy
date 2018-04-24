@@ -1,8 +1,19 @@
 from cozy.target_syntax import *
-from cozy.typecheck import is_collection
+from cozy.typecheck import is_collection, is_numeric
 from cozy.syntax_tools import BottomUpRewriter, alpha_equivalent, cse, compose, pprint, mk_lambda, replace
 from cozy.evaluation import construct_value, eval
 from cozy.solver import valid, satisfy
+
+def is_simple(t):
+    if is_numeric(t):
+        return True
+    if isinstance(t, TString) or isinstance(t, TEnum) or isinstance(t, TBool) or isinstance(t, TNative):
+        return True
+    if isinstance(t, TTuple) and all(is_simple(tt) for tt in t.ts):
+        return True
+    if isinstance(t, TRecord) and all(is_simple(tt) for f, tt in t.fields):
+        return True
+    return False
 
 class _V(BottomUpRewriter):
     def __init__(self, debug=False):
@@ -110,11 +121,17 @@ class _V(BottomUpRewriter):
         m = self.visit(e.map)
         k = self.visit(e.key)
         if isinstance(m, EMakeMap2):
-            return self.visit(EUnaryOp(UOp.The,
-                    EMap(
-                        EFilter(m.e,
-                            mk_lambda(m.type.k, lambda kk: EEq(kk, k))).with_type(TBag(m.type.k)),
-                        m.value).with_type(TBag(m.type.v))).with_type(m.type.v))
+            if is_simple(k.type):
+                return self.visit(ECond(
+                    EIn(k, m.e),
+                    m.value.apply_to(k),
+                    construct_value(m.type.v)).with_type(m.type.v))
+            else:
+                return self.visit(EUnaryOp(UOp.The,
+                        EMap(
+                            EFilter(m.e,
+                                mk_lambda(m.type.k, lambda kk: EEq(kk, k))).with_type(TBag(m.type.k)),
+                            m.value).with_type(TBag(m.type.v))).with_type(m.type.v))
         return EMapGet(m, k).with_type(e.type)
     def visit_EUnaryOp(self, e):
         if isinstance(e.e, ECond):
