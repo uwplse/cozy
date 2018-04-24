@@ -8,7 +8,7 @@ dist: trusty
 
 cache: pip
 python:
-  - "3.4"
+  - "3.5"
 install:
   - pip install -v -r requirements.txt
 script:

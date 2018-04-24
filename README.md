@@ -13,7 +13,7 @@ developers normally don't, such as using [intrusive data structures](https://sta
 ## Quickstart
 
 Dependencies:
- - [Python >= 3.4](https://www.python.org/)
+ - [Python >= 3.5](https://www.python.org/)
  - The Python modules listed in `requirements.txt`
    (install with `pip install -r requirements.txt`)
 
