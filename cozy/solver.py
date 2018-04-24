@@ -226,7 +226,7 @@ class ToZ3(Visitor):
         xs = [c for (c, b) in zip(xs, bs) if b is not identity]
         if not xs:
             return self.bool_to_z3(identity)
-        return f(*(xs + [self.ctx]))
+        return f(*xs, self.ctx)
 
     def all(self, *conds): return self.bfold(conds, z3.And, True, False)
     def any(self, *conds): return self.bfold(conds, z3.Or,  False, True)
