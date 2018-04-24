@@ -165,7 +165,6 @@ def improve(
         state_vars    : [EVar],
         args          : [EVar],
         assumptions   : Exp            = T,
-        cost_model    : CostModel      = None,
         stop_callback                  = never_stop,
         hints         : [Exp]          = (),
         examples      : [{str:object}] = ()):
@@ -194,7 +193,6 @@ def improve(
         assumptions={assumptions!r},
         state_vars={state_vars!r},
         args={args!r},
-        cost_model={cost_model!r},
         stop_callback={stop_callback!r},
         hints={hints!r},
         examples={examples!r})""".format(
@@ -202,7 +200,6 @@ def improve(
             assumptions=assumptions,
             state_vars=state_vars,
             args=args,
-            cost_model=cost_model,
             stop_callback=stop_callback,
             hints=hints,
             examples=examples))
