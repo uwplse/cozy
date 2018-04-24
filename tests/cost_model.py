@@ -2,7 +2,7 @@ import unittest
 import itertools
 
 from cozy.common import OrderedSet
-from cozy.cost_model import CostModel2 as CostModel, Order, debug_comparison
+from cozy.cost_model import CostModel, Order, debug_comparison
 from cozy.typecheck import INT, retypecheck
 from cozy.target_syntax import *
 from cozy.syntax_tools import equal, implies, pprint, fresh_var, mk_lambda, replace, subst, free_vars, all_exps

@@ -12,7 +12,7 @@ from cozy.wf import ExpIsNotWf, exp_wf
 from cozy.common import OrderedSet, ADT, Visitor, fresh_name, unique, pick_to_sum, cross_product, OrderedDefaultDict, OrderedSet, group_by, find_one, extend, StopException
 from cozy.solver import satisfy, satisfiable, valid, IncrementalSolver
 from cozy.evaluation import eval, eval_bulk, mkval, construct_value, uneval, eq
-from cozy.cost_model import CostModel2, Order, rt as runtime, asymptotic_runtime, max_storage_size, find_cost_cex
+from cozy.cost_model import CostModel, Order, rt as runtime, asymptotic_runtime, max_storage_size, find_cost_cex
 from cozy.opts import Option
 from cozy.pools import ALL_POOLS, RUNTIME_POOL, STATE_POOL, pool_name
 from cozy.enumeration import Enumerator, fingerprint
@@ -165,7 +165,7 @@ def improve(
         state_vars    : [EVar],
         args          : [EVar],
         assumptions   : Exp            = T,
-        cost_model    : CostModel2     = None,
+        cost_model    : CostModel      = None,
         stop_callback                  = never_stop,
         hints         : [Exp]          = (),
         examples      : [{str:object}] = ()):
@@ -244,7 +244,7 @@ def improve(
         return
 
     examples = list(examples)
-    cost_model = CostModel2(funcs=funcs, assumptions=assumptions)
+    cost_model = CostModel(funcs=funcs, assumptions=assumptions)
     learner = Learner(target, assumptions, state_vars, args, vars, examples, cost_model, stop_callback, hints, solver=solver)
     try:
         while True:

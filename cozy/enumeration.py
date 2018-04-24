@@ -7,7 +7,7 @@ from cozy.target_syntax import *
 from cozy.syntax_tools import pprint, fresh_var, free_vars, freshen_binders
 from cozy.evaluation import eval_bulk
 from cozy.typecheck import is_numeric, is_scalar, is_collection
-from cozy.cost_model import CostModel2, Order
+from cozy.cost_model import CostModel, Order
 from cozy.pools import Pool, ALL_POOLS, RUNTIME_POOL, STATE_POOL, pool_name
 from cozy.contexts import Context, RootCtx, UnderBinder
 from cozy.logging import task, task_begin, task_end, event, verbose
@@ -75,7 +75,7 @@ def _evict(e, context, better_exp):
     event("evicting {}".format(pprint(e)))
 
 class Enumerator(object):
-    def __init__(self, examples, cost_model : CostModel2, check_wf=None, hints=None, heuristics=None, stop_callback=None):
+    def __init__(self, examples, cost_model : CostModel, check_wf=None, hints=None, heuristics=None, stop_callback=None):
         self.examples = list(examples)
         self.cost_model = cost_model
         self.cache = { } # keys -> [exp]

@@ -30,7 +30,7 @@ def order_objects(x, y):
     if y < x: return Order.GT
     return Order.EQUAL
 
-class CostModel2(object):
+class CostModel(object):
 
     def __init__(self, assumptions : Exp = T, examples=(), funcs=()):
         self.assumptions = assumptions
@@ -284,7 +284,7 @@ def ESum(es, base_case=ZERO):
         es.append(ENum(sum(n.val for n in nums)).with_type(base_case.type))
     return build_balanced_tree(base_case.type, "+", es)
 
-def debug_comparison(cm : CostModel2, e1 : Exp, e2 : Exp, context : Context):
+def debug_comparison(cm : CostModel, e1 : Exp, e2 : Exp, context : Context):
     print("-" * 20)
     print("Comparing")
     print("  e1 = {}".format(pprint(e1)))
