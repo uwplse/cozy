@@ -111,7 +111,7 @@ def exp_wf(e : Exp, context : Context, pool = RUNTIME_POOL, assumptions : Exp = 
     """
     for x, ctx, p in shred(e, context, pool):
         try:
-            exp_wf_nonrecursive(x, ctx, p, assumptions=ctx.adapt(assumptions, context)) # TODO: context-specific assumptions
+            exp_wf_nonrecursive(x, ctx, p, assumptions=ctx.adapt(assumptions, context))
         except ExpIsNotWf as exc:
             raise ExpIsNotWf(e, x, exc.reason)
     return True
