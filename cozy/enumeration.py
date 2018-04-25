@@ -84,7 +84,7 @@ class Enumerator(object):
         if check_wf is None:
             check_wf = lambda e, ctx, pool: True
         self.check_wf = check_wf
-        self.hints = list(hints)
+        self.hints = [(e, most_general_context_for(ctx, free_vars(e)), p) for (e, ctx, p) in hints]
         if heuristics is None:
             heuristics = lambda e, ctx, pool: ()
         self.heuristics = heuristics
