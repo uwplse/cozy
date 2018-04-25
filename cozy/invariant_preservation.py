@@ -6,7 +6,7 @@ from cozy.typecheck import is_collection
 from cozy.solver import valid
 from cozy.syntax_tools import pprint, subst, enumerate_fragments, shallow_copy, mk_lambda
 from cozy.handle_tools import reachable_handles_at_method, implicit_handle_assumptions_for_method
-from cozy.incrementalization import delta_form
+from cozy.incrementalization import mutate
 from cozy.opts import Option
 
 invariant_preservation_check = Option("invariant-preservation-check", bool, True)
@@ -37,13 +37,12 @@ def check_ops_preserve_invariants(spec : Spec):
     for m in spec.methods:
         if not isinstance(m, Op):
             continue
-        remap = delta_form(spec.statevars, m)
         # print(m.name)
-        # for id, e in remap.items():
-        #     print("  {id} ---> {e}".format(id=id, e=pprint(e)))
+        # for id, ty in spec.statevars:
+        #     print("  {id} ---> {e}".format(id=id, e=pprint(mutate(EVar(id).with_type(ty), m.body))))
         for a in spec.assumptions:
             print("Checking that {} preserves {}...".format(m.name, pprint(a)))
-            a_post_delta = subst(a, remap)
+            a_post_delta = mutate(a, m.body)
             assumptions = list(m.assumptions) + list(spec.assumptions)
             if not valid(EImplies(EAll(assumptions), a_post_delta)):
                 res.append("{.name!r} may not preserve invariant {}".format(m, pprint(a)))

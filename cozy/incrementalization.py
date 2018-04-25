@@ -1,4 +1,4 @@
-from cozy.common import fresh_name
+from cozy.common import fresh_name, identity_func
 from cozy import syntax
 from cozy import target_syntax
 from cozy.syntax_tools import free_vars, pprint, fresh_var, mk_lambda, alpha_equivalent, strip_EStateVar, subst
@@ -9,72 +9,65 @@ from cozy.structures import extension_handler
 
 skip_stateless_synthesis = Option("skip-stateless-synthesis", bool, False,
     description="Do not waste time optimizing expressions that do not depend on the data structure state")
+delta_incrementalization = Option("delta-incrementalization", bool, True)
 
-def delta_form(members : [(str, syntax.Type)], op : syntax.Op) -> { str : syntax.Exp }:
+def mutate(e : syntax.Exp, op : syntax.Stm, k=identity_func) -> syntax.Exp:
     """
-    Given the abstract state of a data structure and an imperative operation
-    that modifies it, return new values for the abstract state in terms of the
-    old values.
-
-    Input:
-        members - a list of (id, type) tuples specifying the abstract state
-        op      - an imperative operation
-
-    Output:
-        dictionary mapping id->new_exp (suitable for use by syntax_tools.subst)
+    Return the new value of `e` after executing `op`.
     """
-    res = { v : syntax.EVar(v).with_type(t) for (v, t) in members }
-    return _delta_form(res, op.body)
-
-def _delta_form(res : { str : syntax.Exp }, op : syntax.Stm) -> { str : syntax.Exp }:
     if isinstance(op, syntax.SNoOp):
-        pass
+        return k(e)
+    elif isinstance(op, syntax.SAssign):
+        return k(_do_assignment(op.lhs, op.rhs, e))
     elif isinstance(op, syntax.SCall):
-        update = _rewriter(op.target)
         if op.func == "add":
-            update(res, lambda old: syntax.EBinOp(old, "+", syntax.ESingleton(op.args[0]).with_type(old.type)).with_type(old.type))
-        elif op.func == "add_back":
-            update(res, lambda old: syntax.EBinOp(old, "+", syntax.ESingleton(op.args[0]).with_type(old.type)).with_type(old.type))
-        elif op.func == "add_front":
-            update(res, lambda old: syntax.EBinOp(syntax.ESingleton(op.args[0]).with_type(old.type), "+", old).with_type(old.type))
-        elif op.func == "remove_back":
-            update(res, lambda old: target_syntax.EDropBack(old).with_type(old.type))
-        elif op.func == "remove_front":
-            update(res, lambda old: target_syntax.EDropFront(old).with_type(old.type))
+            return mutate(e, syntax.SCall(op.target, "add_all", (syntax.ESingleton(op.args[0]).with_type(op.target.type),)), k=k)
+        # TODO: list functions
+        # elif op.func == "add_back":
+        #     pass
+        # elif op.func == "add_front":
+        #     pass
+        # elif op.func == "remove_back":
+        #     pass
+        # elif op.func == "remove_front":
+        #     pass
+        elif op.func == "add_all":
+            return mutate(e, syntax.SAssign(op.target, syntax.EBinOp(op.target, "+", op.args[0]).with_type(op.target.type)), k=k)
         elif op.func == "remove":
-            update(res, lambda old: syntax.EBinOp(old, "-", syntax.ESingleton(op.args[0]).with_type(old.type)).with_type(old.type))
+            return mutate(e, syntax.SCall(op.target, "remove_all", (syntax.ESingleton(op.args[0]).with_type(op.target.type),)), k=k)
         elif op.func == "remove_all":
-            update(res, lambda old: syntax.EBinOp(old, "-", op.args[0]).with_type(old.type))
+            return mutate(e, syntax.SAssign(op.target, syntax.EBinOp(op.target, "-", op.args[0]).with_type(op.target.type)), k=k)
         else:
             raise Exception("Unknown func: {}".format(op.func))
-    elif isinstance(op, syntax.SAssign):
-        update = _rewriter(op.lhs)
-        update(res, lambda old: op.rhs)
     elif isinstance(op, syntax.SIf):
-        res_then = res.copy()
-        _delta_form(res_then, op.then_branch)
-        res_else = res.copy()
-        _delta_form(res_else, op.else_branch)
-
-        for key in res:
-            then_val = res_then[key]
-            else_val = res_else[key]
-
-            if then_val == else_val:
-                res[key] = then_val
-            else:
-                # Substatements differ; need to defer to ECond evaluation.
-                res[key] = syntax.ECond(op.cond, then_val, else_val).with_type(then_val.type)
+        return k(ECond(op.cond,
+            mutate(e, op.then_branch),
+            mutate(e, op.else_branch)).with_type(e.type))
     elif isinstance(op, syntax.SSeq):
-        _delta_form(res, op.s1)
-        _delta_form(res, subst(op.s2, res))
+        return mutate(e, op.s2, k=lambda e: mutate(e, op.s1, k=k))
+    elif isinstance(op, syntax.SDecl):
+        # TODO: this doesn't work if op.id is in free_vars(k)...
+        return subst(k(e), { op.id : op.val })
     else:
         raise NotImplementedError(type(op))
 
-    return res
+def _do_assignment(lval : syntax.Exp, new_value : syntax.Exp, e : syntax.Exp) -> syntax.Exp:
+    """
+    Return the value of `e` after the assignment `lval = new_value`.
+    """
+    if isinstance(lval, syntax.EVar):
+        return subst(e, { lval.id : new_value })
+    elif isinstance(lval, syntax.EGetField):
+        if isinstance(lval.e.type, syntax.THandle):
+            # Because any two handles might alias, we need to rewrite all
+            # reachable handles in `e`.
+            return global_rewrite(e, lval.e.type, lambda h: syntax.ECond(syntax.EEq(h, lval.e), target_syntax.EWithAlteredValue(h, new_value).with_type(h.type), h).with_type(h.type))
+        return _do_assignment(lval.e, _replace_field(lval.e, lval.f, new_value), e)
+    else:
+        raise Exception("not an lvalue: {}".format(pprint(lval)))
 
 def _fix_map(m : target_syntax.EMap) -> syntax.Exp:
-    # return m
+    return m
     from cozy.simplification import simplify
     m = simplify(m)
     if not isinstance(m, target_syntax.EMap):
@@ -91,40 +84,39 @@ def _fix_map(m : target_syntax.EMap) -> syntax.Exp:
     # print("Fix: {} ----> {}".format(pprint(m), pprint(e)))
     return e
 
-def _update_handle(e : syntax.Exp, handle : syntax.EVar, change):
+def _replace_field(record : syntax.Exp, field : str, new_value : syntax.Exp) -> syntax.Exp:
+    return syntax.EMakeRecord(tuple(
+        (f, new_value if f == field else syntax.EGetField(record, f).with_type(ft))
+        for f, ft in record.type.fields)).with_type(record.type)
+
+def global_rewrite(e : syntax.Exp, t : syntax.Type, change) -> syntax.Exp:
+    """
+    Apply `change` to all reachable values of type `t` in `e`.
+    """
+    fvs = free_vars(e)
+    return subst(e, { v.id : _global_rewrite(v, t, change) for v in fvs })
+
+def _global_rewrite(e : syntax.Exp, t : syntax.Type, change) -> syntax.Exp:
+    if e.type == t:
+        return change(e)
+
     if isinstance(e.type, syntax.TBag) or isinstance(e.type, syntax.TList):
-        return _fix_map(target_syntax.EMap(e, mk_lambda(e.type.t, lambda x: _update_handle(x, handle, change))).with_type(e.type))
+        return _fix_map(target_syntax.EMap(e, mk_lambda(e.type.t, lambda x: _global_rewrite(x, t, change))).with_type(e.type))
     elif isinstance(e.type, syntax.THandle):
-        if e.type == handle.type:
-            return syntax.ECond(syntax.EEq(e, handle), change(e), e).with_type(e.type)
-        else:
+        old_val = syntax.EGetField(e, "val").with_type(e.type.value_type)
+        new_val = _global_rewrite(old_val, t, change)
+        if old_val == new_val:
             return e
+        return target_syntax.EWithAlteredValue(e, new_val).with_type(e.type)
     elif isinstance(e.type, syntax.TTuple):
-        return syntax.ETuple(tuple(_update_handle(syntax.ETupleGet(e, i).with_type(e.type.ts[i]), handle, change) for i in range(len(e.type.ts)))).with_type(e.type)
+        return syntax.ETuple(tuple(_global_rewrite(syntax.ETupleGet(e, i).with_type(e.type.ts[i]), t, change) for i in range(len(e.type.ts)))).with_type(e.type)
+    elif isinstance(e.type, syntax.TRecord):
+        return syntax.EMakeRecord(tuple(
+            (f, _global_rewrite(syntax.EGetField(e, f).with_type(ft), t, change)) for f, ft in e.type.fields)).with_type(e.type)
     elif e.type == syntax.INT or e.type == syntax.LONG or e.type == syntax.BOOL or e.type == syntax.STRING or isinstance(e.type, syntax.TNative) or isinstance(e.type, syntax.TEnum):
         return e
     else:
         raise NotImplementedError(repr(e.type))
-
-def _rewriter(lval : syntax.Exp):
-    if isinstance(lval, syntax.EVar):
-        def f(env, change):
-            if isinstance(lval.type, syntax.THandle):
-                new_values = {id : _update_handle(e, lval, change) for (id, e) in env.items()}
-                for id in env.keys():
-                    env[id] = new_values[id]
-            elif lval.id in env:
-                env[lval.id] = change(env[lval.id])
-    elif isinstance(lval, syntax.EGetField):
-        g = _rewriter(lval.e)
-        def f(env, change):
-            if isinstance(lval.e.type, syntax.THandle):
-                g(env, lambda old: target_syntax.EWithAlteredValue(old, change(syntax.EGetField(old, "val").with_type(lval.e.type.value_type))).with_type(old.type))
-            else:
-                g(env, lambda old: syntax.EMakeRecord(tuple(((f, syntax.EGetField(old, f).with_type(t)) if f != lval.f else (f, change(syntax.EGetField(old, f)))) for (f, t) in lval.e.type.fields)).with_type(old.type))
-    else:
-        raise Exception("not an lvalue: {}".format(pprint(lval)))
-    return f
 
 def sketch_update(
         lval        : syntax.Exp,
@@ -173,7 +165,7 @@ def sketch_update(
             syntax.SForEach(v, to_add, syntax.SCall(lval, "add", [v]))])
     # elif isinstance(t, syntax.TList):
     #     raise NotImplementedError()
-    elif is_numeric(t):
+    elif is_numeric(t) and delta_incrementalization.value:
         change = make_subgoal(syntax.EBinOp(new_value, "-", old_value).with_type(t), docstring="delta for {}".format(pprint(lval)))
         stm = syntax.SAssign(lval, syntax.EBinOp(lval, "+", change).with_type(t))
     elif isinstance(t, syntax.TTuple):

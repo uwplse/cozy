@@ -172,9 +172,8 @@ class Implementation(object):
             for t, bag in handles.items():
                 # print("  {} : {}".format(pprint(t), pprint(bag)))
                 h = fresh_var(t)
-                delta = inc.delta_form(self.spec.statevars + op.args + [(h.id, h.type)], op)
                 lval = EGetField(h, "val").with_type(t.value_type)
-                new_val = simplify(subst(lval, delta))
+                new_val = inc.mutate(lval, op.body)
 
                 # get set of modified handles
                 modified_handles = Query(
@@ -217,16 +216,14 @@ class Implementation(object):
 
             self.concrete_state.extend(rep)
             self.query_impls[q.name] = rewrite_ret(q, lambda prev: ret, keep_assumptions=False)
-            op_deltas = { op.name : inc.delta_form(self.spec.statevars, op) for op in self.op_specs }
 
             for op in self.op_specs:
                 with task("incrementalizing query", query=q.name, op=op.name):
-                    delta = op_deltas[op.name]
                     for new_member, projection in rep:
                         (state_update_stm, subqueries) = inc.sketch_update(
                             new_member,
                             projection,
-                            subst(projection, delta),
+                            inc.mutate(projection, op.body),
                             self.abstract_state,
                             list(op.assumptions))
                         for sub_q in subqueries:
