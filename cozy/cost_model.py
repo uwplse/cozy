@@ -3,12 +3,12 @@ from enum import Enum
 
 from cozy.common import OrderedSet, partition
 from cozy.target_syntax import *
-from cozy.syntax_tools import pprint, fresh_var, free_vars, break_sum, all_exps
+from cozy.syntax_tools import pprint, fresh_var, free_vars, break_sum, all_exps, alpha_equivalent
 from cozy.contexts import Context
 from cozy.typecheck import is_collection, is_numeric
 from cozy.pools import Pool, RUNTIME_POOL, STATE_POOL
 from cozy.solver import satisfy
-from cozy.evaluation import eval_bulk
+from cozy.evaluation import eval, eval_bulk
 from cozy.structures import extension_handler
 from cozy.logging import task, event
 
@@ -38,16 +38,20 @@ class CostModel(object):
         self.funcs = OrderedDict(funcs)
 
     def add_example(self, new_example):
+        event("new cost example")
         self.examples.append(new_example)
 
     def _compare(self, e1 : Exp, e2 : Exp, context : Context):
-        # # heuristic: constant-time always better than not-constant-time
-        # e1_constant = not bool(free_vars(e1))
-        # e2_constant = not bool(free_vars(e2))
-        # if e1_constant and not e2_constant:
-        #     return Order.LT
-        # if not e1_constant and e2_constant:
-        #     return Order.GT
+        e1_constant = not bool(free_vars(e1))
+        e2_constant = not bool(free_vars(e2))
+        if e1_constant and e2_constant:
+            e1v = eval(e1, {})
+            e2v = eval(e2, {})
+            event("comparison obvious on constants: {} vs {}".format(e1v, e2v))
+            return order_objects(e1v, e2v)
+        if alpha_equivalent(e1, e2):
+            event("shortcutting comparison of identical terms")
+            return Order.EQUAL
 
         with task("compare costs in {}".format(context)):
             examples = context.instantiate_examples(self.examples)
