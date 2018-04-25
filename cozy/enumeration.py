@@ -304,10 +304,11 @@ class Enumerator(object):
                 fp = fingerprint(e, examples)
 
                 # collect all expressions from parent contexts
-                prev = []
-                for ctx in itertools.chain([context], parent_contexts(context)):
-                    for prev_exp in self.seen.get((ctx, pool, fp), ()):
-                        prev.append((ctx, prev_exp))
+                with task("collecting prev exps", size=size, context=context, pool=pool_name(pool)):
+                    prev = []
+                    for sz in range(0, size+1):
+                        prev.extend(self.enumerate(context, sz, pool))
+                    prev = [ p for p in prev if fingerprint(p, examples) == fp ]
 
                 # decide whether to keep this expression,
                 # decide which can be evicted
@@ -315,7 +316,7 @@ class Enumerator(object):
                 # cost = self.cost_model.cost(e, pool)
                 # print("prev={}".format(prev))
                 # print("seen={}".format(self.seen))
-                for ctx, prev_exp in prev:
+                for prev_exp in prev:
                     # prev_cost = self.cost_model.cost(prev_exp, pool)
                     # ordering = cost.compare_to(prev_cost)
                     ordering = cost_model.compare(e, prev_exp, context, pool)
