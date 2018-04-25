@@ -25,6 +25,8 @@ class Context(object):
         raise NotImplementedError()
     def path_condition(self):
         return EAll(self.path_conditions())
+    def generalize(self, fvs):
+        raise NotImplementedError()
 
 class RootCtx(Context):
     def __init__(self, state_vars : [Exp], args : [Exp]):
@@ -47,6 +49,8 @@ class RootCtx(Context):
         raise Exception("cannot adapt from {} to {}".format(ctx, self))
     def path_conditions(self):
         return []
+    def generalize(self, fvs):
+        return self
     def __hash__(self):
         return hash((tuple(self.state_vars), tuple(self.args)))
     def __eq__(self, other):
@@ -98,6 +102,17 @@ class UnderBinder(Context):
         pcs = [pc for pc in self._parent.path_conditions() if self.var not in free_vars(pc)]
         pcs.append(EDeepIn(self.var, self.bag))
         return pcs
+    def generalize(self, fvs):
+        if self.var not in fvs:
+            return self._parent.generalize(fvs)
+        new_parent = self._parent.generalize(fvs - { self.var } | free_vars(self.bag))
+        if new_parent is self._parent:
+            return self
+        return UnderBinder(
+            new_parent,
+            self.var,
+            self.bag,
+            self.pool)
     def __hash__(self):
         return hash((self._parent, self.var, self.bag, self.pool))
     def __eq__(self, other):

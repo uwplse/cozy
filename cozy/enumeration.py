@@ -35,16 +35,8 @@ def collections(exps):
         if is_collection(e.type):
             yield e
 
-def most_general_context_for(context, fvs):
-    assert context.legal_for(fvs), "{} does not belong in {}".format(fvs, context)
-    parent = context.parent()
-    while (parent is not None) and (parent.legal_for(fvs)):
-        context = parent
-        parent = context.parent()
-    return context
-
 def belongs_in_context(fvs, context):
-    return context is most_general_context_for(context, fvs)
+    return context is context.generalize(fvs)
 
 def parent_contexts(context):
     while context:
@@ -84,7 +76,7 @@ class Enumerator(object):
         if check_wf is None:
             check_wf = lambda e, ctx, pool: True
         self.check_wf = check_wf
-        self.hints = [(e, most_general_context_for(ctx, free_vars(e)), p) for (e, ctx, p) in hints]
+        self.hints = [(e, ctx.generalize(free_vars(e)), p) for (e, ctx, p) in hints]
         if heuristics is None:
             heuristics = lambda e, ctx, pool: ()
         self.heuristics = heuristics
