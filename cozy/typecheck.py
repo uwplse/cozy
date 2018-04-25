@@ -362,6 +362,14 @@ class Typechecker(Visitor):
                 if t1 != t2:
                     self.report_err(e, "cannot concat {} and {}".format(pprint(e.e1.type), pprint(e.e2.type)))
                 e.type = to_abstract(e.e1.type)
+        elif e.op in ["*"]:
+            if is_numeric(e.e1.type):
+                e.type = self.numeric_lub(e, e.e1.type, e.e2.type)
+                if not isinstance(e.e1, syntax.ENum) and not isinstance(e.e2, syntax.ENum):
+                    self.report_err(e, "multiplication is only legal when one operand is a constant")
+            else:
+                e.type = DEFAULT_TYPE
+                self.report_err(e, "cannot multiply {} and {}".format(pprint(e.e1.type), pprint(e.e2.type)))
         else:
             raise NotImplementedError(e.op)
 
