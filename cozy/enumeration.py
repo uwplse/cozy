@@ -58,7 +58,7 @@ def _interesting(e, context):
 def _consider(e, context):
     if _interesting(e, context) and not verbose.value:
         print("considering {} in {}".format(pprint(e), context))
-    task_begin("considering {} in {}".format(pprint(e), context))
+    task_begin("considering expression", expression=pprint(e), context=context)
 def _accept(e, context):
     if _interesting(e, context) and not verbose.value:
         print("accepting")
