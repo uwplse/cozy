@@ -700,8 +700,16 @@ class CxxPrinter(CodeGenerator):
         ee = self.visit(e.e)
         op = "."
         if isinstance(e.e.type, THandle):
-            op = "->"
-        return "({ee}{op}{f})".format(ee=ee, op=op, f=e.f)
+            # Ugh, we really need Cozy to know about partial functions...
+            # Cozy doesn't know that handle types (aka pointers) can be null.
+            # It assumes that reads of null pointers produce default-
+            # constructed values, so we need to generate appropriate code.
+            ee = EEscape(ee, (), ()).with_type(e.e.type)
+            null = ENull().with_type(e.e.type)
+            return self.visit(ECond(EEq(ee, null),
+                EEscape("{ee}->val", ("ee",), (ee,)).with_type(e.type),
+                evaluation.construct_value(e.type)).with_type(e.type))
+        return "({ee}.{f})".format(ee=ee, f=e.f)
 
     def visit_ETuple(self, e):
         name = self.typename(e.type)
