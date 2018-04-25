@@ -37,8 +37,10 @@ def task_end():
 
 @contextmanager
 def task(name, **kwargs):
-    yield task_begin(name, **kwargs)
-    task_end()
+    try:
+        yield task_begin(name, **kwargs)
+    finally:
+        task_end()
 
 def event(name):
     if not verbose.value:
