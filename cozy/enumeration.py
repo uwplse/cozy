@@ -44,25 +44,25 @@ def parent_contexts(context):
         yield parent
         context = parent
 
-def _interesting(e, context):
+def _interesting(e, context, pool):
     return isinstance(context, RootCtx) and hasattr(e, "_tag")
     # return True
-def _consider(e, context):
-    if _interesting(e, context) and not verbose.value:
+def _consider(e, context, pool):
+    if _interesting(e, context, pool) and not verbose.value:
         print("considering {} in {}".format(pprint(e), context))
-    task_begin("considering expression", expression=pprint(e), context=context)
-def _accept(e, context):
-    if _interesting(e, context) and not verbose.value:
+    task_begin("considering expression", expression=pprint(e), context=context, pool=pool_name(pool), interesting=_interesting(e, context, pool))
+def _accept(e, context, pool):
+    if _interesting(e, context, pool) and not verbose.value:
         print("accepting")
     event("accepting")
     task_end()
-def _skip(e, context, reason):
-    if _interesting(e, context) and not verbose.value:
+def _skip(e, context, pool, reason):
+    if _interesting(e, context, pool) and not verbose.value:
         print("skipping [{}]".format(reason))
     event("skipping [{}]".format(reason))
     task_end()
-def _evict(e, context, better_exp):
-    if _interesting(e, context) and not verbose.value:
+def _evict(e, context, pool, better_exp):
+    if _interesting(e, context, pool) and not verbose.value:
         print("evicting {}".format(pprint(e)))
     event("evicting {}".format(pprint(e)))
 
@@ -294,11 +294,11 @@ class Enumerator(object):
                     continue
 
                 e = freshen_binders(e, context)
-                _consider(e, context)
+                _consider(e, context, pool)
 
                 wf = self.check_wf(e, context, pool)
                 if not wf:
-                    _skip(e, context, "wf={}".format(wf))
+                    _skip(e, context, pool, "wf={}".format(wf))
                     continue
 
                 fp = fingerprint(e, examples)
@@ -322,11 +322,11 @@ class Enumerator(object):
                     if ordering == Order.LT:
                         pass
                     elif ordering == Order.GT:
-                        _skip(e, context, "worse than {}".format(pprint(prev_exp)))
+                        _skip(e, context, pool, "worse than {}".format(pprint(prev_exp)))
                         should_keep = False
                         break
                     else:
-                        _skip(e, context, "{} to cached {}".format(
+                        _skip(e, context, pool, "{} to cached {}".format(
                             "equal" if ordering == Order.EQUAL else "similar",
                             pprint(prev_exp)))
                         assert ordering in (Order.EQUAL, Order.AMBIGUOUS)
@@ -344,11 +344,11 @@ class Enumerator(object):
                                     to_evict.append((key, ee))
                     for key, ee in to_evict:
                         (p, s, c) = key
-                        _evict(ee.e, c, e)
+                        _evict(ee.e, c, pool, e)
                         self.cache[key].remove(ee)
                         self.seen[(c, p, fp)].remove(ee.e)
 
-                    _accept(e, context)
+                    _accept(e, context, pool)
                     seen_key = (context, pool, fp)
                     if seen_key not in self.seen:
                         self.seen[seen_key] = []
