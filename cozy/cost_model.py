@@ -53,47 +53,49 @@ class CostModel(object):
             event("shortcutting comparison of identical terms")
             return Order.EQUAL
 
-        with task("compare costs in {}".format(context)):
-            examples = context.instantiate_examples(self.examples)
-            e1_vals = eval_bulk(e1, examples)
-            e2_vals = eval_bulk(e2, examples)
-            if e1_vals == e2_vals:
-                model = find_cost_cex(EAll([ENot(EEq(e1, e2)), context.path_condition(), self.assumptions]),
-                    vars=[v for v, p in context.vars()],
-                    funcs=self.funcs)
-                # raise NotImplementedError("{}\n{}\n{}".format(pprint(e1), pprint(e2), context))
-                if model is not None:
-                    self.add_example(model)
-                    event("new cost example: {}".format(model))
-                    return self._compare(e1, e2, context)
-                else:
-                    event("proven equal: {} / {}".format(pprint(e1), pprint(e2)))
-                return Order.EQUAL
-            elif all(x <= y for x, y in zip(e1_vals, e2_vals)):
-                return Order.LT
-            elif all(x >= y for x, y in zip(e1_vals, e2_vals)):
-                return Order.GT
+        examples = context.instantiate_examples(self.examples)
+        e1_vals = eval_bulk(e1, examples)
+        e2_vals = eval_bulk(e2, examples)
+        if e1_vals == e2_vals:
+            model = find_cost_cex(EAll([ENot(EEq(e1, e2)), context.path_condition(), self.assumptions]),
+                vars=[v for v, p in context.vars()],
+                funcs=self.funcs)
+            if model is not None:
+                self.add_example(model)
+                return self._compare(e1, e2, context)
             else:
-                # for x, e1v, e2v in zip(examples, e1_vals, e2_vals):
-                #     print("---------")
-                #     print(x)
-                #     print(pprint(e1))
-                #     print("e1: {}".format(e1v))
-                #     print(pprint(e2))
-                #     print("e2: {}".format(e2v))
-                return Order.AMBIGUOUS
+                event("proven equal: {} / {}".format(pprint(e1), pprint(e2)))
+            # event("comparing vals {} vs {}: {}".format(e1_vals, e2_vals, Order.EQUAL))
+            return Order.EQUAL
+        elif all(x <= y for x, y in zip(e1_vals, e2_vals)):
+            # event("comparing vals {} vs {}: {}".format(e1_vals, e2_vals, Order.LT))
+            return Order.LT
+        elif all(x >= y for x, y in zip(e1_vals, e2_vals)):
+            # event("comparing vals {} vs {}: {}".format(e1_vals, e2_vals, Order.GT))
+            return Order.GT
+        else:
+            # for x, e1v, e2v in zip(examples, e1_vals, e2_vals):
+            #     print("---------")
+            #     print(x)
+            #     print(pprint(e1))
+            #     print("e1: {}".format(e1v))
+            #     print(pprint(e2))
+            #     print("e2: {}".format(e2v))
+            # event("comparing vals {} vs {}: {}".format(e1_vals, e2_vals, Order.AMBIGUOUS))
+            return Order.AMBIGUOUS
 
     def compare(self, e1 : Exp, e2 : Exp, context : Context, pool : Pool):
-        if pool == RUNTIME_POOL:
-            return composite_order(
-                lambda: self._compare(asymptotic_runtime(e1), asymptotic_runtime(e2), context),
-                lambda: self._compare(max_storage_size(e1), max_storage_size(e2), context),
-                lambda: self._compare(rt(e1), rt(e2), context),
-                lambda: order_objects(e1.size(), e2.size()))
-        else:
-            return composite_order(
-                lambda: self._compare(storage_size(e1), storage_size(e2), context),
-                lambda: order_objects(e1.size(), e2.size()))
+        with task("compare costs in {}".format(context)):
+            if pool == RUNTIME_POOL:
+                return composite_order(
+                    lambda: self._compare(asymptotic_runtime(e1), asymptotic_runtime(e2), context),
+                    lambda: self._compare(max_storage_size(e1), max_storage_size(e2), context),
+                    lambda: self._compare(rt(e1), rt(e2), context),
+                    lambda: order_objects(e1.size(), e2.size()))
+            else:
+                return composite_order(
+                    lambda: self._compare(storage_size(e1), storage_size(e2), context),
+                    lambda: order_objects(e1.size(), e2.size()))
 
     def compare_cardinalities(self, e1 : Exp, e2 : Exp, context : Context, pool : Pool):
         if not is_collection(e1.type):
