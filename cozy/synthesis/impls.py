@@ -19,6 +19,8 @@ from cozy.handle_tools import reachable_handles_at_method, implicit_handle_assum
 import cozy.incrementalization as inc
 from cozy.opts import Option
 from cozy.simplification import simplify
+from cozy.solver import valid
+from cozy.logging import task, event
 
 from .misc import queries_equivalent
 
@@ -31,6 +33,10 @@ def _queries_used_by(thing):
             qs.add(e.func)
     V().visit(thing)
     return qs
+
+def simplify_or_ignore(e):
+    ee = simplify(e)
+    return ee if ee.size() < e.size() else e
 
 def safe_feedback_arc_set(g, method):
     """
@@ -106,36 +112,53 @@ class Implementation(object):
         return [EVar(name).with_type(t) for (name, t) in self.spec.statevars]
 
     def _add_subquery(self, sub_q : Query, used_by : Stm) -> Stm:
-        print("Adding new query {}...".format(sub_q.name))
-        # orig_ret = sub_q.ret
-        # print("rewritng ret for {}".format(pprint(orig_ret)))
-        sub_q = shallow_copy(sub_q)
-        sub_q.assumptions += tuple(
-            implicit_handle_assumptions_for_method(
-                reachable_handles_at_method(self.spec, sub_q),
-                sub_q))
-        sub_q.ret = simplify(sub_q.ret)
-        # sub_q = rewrite_ret(sub_q, simplify)
-        # if sub_q.ret != orig_ret:
-        #     print("rewrote ret")
-        #     print(" --> {}".format(pprint(sub_q.ret)))
+        with task("adding query", query=sub_q.name):
+            sub_q = shallow_copy(sub_q)
+            with task("checking whether we need more handle assumptions"):
+                new_a = implicit_handle_assumptions_for_method(
+                    reachable_handles_at_method(self.spec, sub_q),
+                    sub_q)
+                if not valid(EImplies(EAll(sub_q.assumptions), EAll(new_a))):
+                    event("we do!")
+                    sub_q.assumptions += new_a
 
-        qq = find_one(self.query_specs, lambda qq: dedup_queries.value and queries_equivalent(qq, sub_q))
-        if qq is not None:
-            print("########### subgoal {} is equivalent to {}".format(sub_q.name, qq.name))
-            arg_reorder = [[x[0] for x in sub_q.args].index(a) for (a, t) in qq.args]
-            class Repl(BottomUpRewriter):
-                def visit_ECall(self, e):
-                    args = tuple(self.visit(a) for a in e.args)
-                    if e.func == sub_q.name:
-                        args = tuple(args[idx] for idx in arg_reorder)
-                        return ECall(qq.name, args).with_type(e.type)
-                    else:
-                        return ECall(e.func, args).with_type(e.type)
-            used_by = Repl().visit(used_by)
-        else:
-            self.add_query(sub_q)
-        return used_by
+            with task("simplifying"):
+                orig_a = sub_q.assumptions
+                orig_a_size = sum(a.size() for a in sub_q.assumptions)
+                orig_ret_size = sub_q.ret.size()
+                sub_q.assumptions = tuple(simplify_or_ignore(a) for a in sub_q.assumptions)
+                sub_q.ret = simplify(sub_q.ret)
+                a_size = sum(a.size() for a in sub_q.assumptions)
+                ret_size = sub_q.ret.size()
+                event("|assumptions|: {} -> {}".format(orig_a_size, a_size))
+                event("|ret|: {} -> {}".format(orig_ret_size, ret_size))
+
+                if a_size > orig_a_size:
+                    print("NO, BAD SIMPLIFICATION")
+                    print("original")
+                    for a in orig_a:
+                        print(" - {}".format(pprint(a)))
+                    print("simplified")
+                    for a in sub_q.assumptions:
+                        print(" - {}".format(pprint(a)))
+                    assert False
+
+            qq = find_one(self.query_specs, lambda qq: dedup_queries.value and queries_equivalent(qq, sub_q))
+            if qq is not None:
+                event("subgoal {} is equivalent to {}".format(sub_q.name, qq.name))
+                arg_reorder = [[x[0] for x in sub_q.args].index(a) for (a, t) in qq.args]
+                class Repl(BottomUpRewriter):
+                    def visit_ECall(self, e):
+                        args = tuple(self.visit(a) for a in e.args)
+                        if e.func == sub_q.name:
+                            args = tuple(args[idx] for idx in arg_reorder)
+                            return ECall(qq.name, args).with_type(e.type)
+                        else:
+                            return ECall(e.func, args).with_type(e.type)
+                used_by = Repl().visit(used_by)
+            else:
+                self.add_query(sub_q)
+            return used_by
 
     def _setup_handle_updates(self):
         """
@@ -180,35 +203,36 @@ class Implementation(object):
                 self.handle_updates[(t, op.name)] = state_update_stm
 
     def set_impl(self, q : Query, rep : [(EVar, Exp)], ret : Exp):
-        to_remove = set()
-        from cozy.solver import valid
-        for (v, e) in rep:
-            aeq = find_one(vv for (vv, ee) in self.concrete_state if e.type == ee.type and valid(EImplies(EAll(self.spec.assumptions), EEq(e, ee))))
-            # aeq = find_one(vv for (vv, ee) in self.concrete_state if e.type == ee.type and alpha_equivalent(e, ee))
-            if aeq is not None:
-                print("########### state var {} is equivalent to {}".format(v.id, aeq.id))
-                ret = subst(ret, { v.id : aeq })
-                to_remove.add(v)
-        rep = [ x for x in rep if x[0] not in to_remove ]
+        with task("updating implementation", query=q.name):
+            with task("finding duplicated state vars"):
+                to_remove = set()
+                for (v, e) in rep:
+                    aeq = find_one(vv for (vv, ee) in self.concrete_state if e.type == ee.type and valid(EImplies(EAll(self.spec.assumptions), EEq(e, ee))))
+                    # aeq = find_one(vv for (vv, ee) in self.concrete_state if e.type == ee.type and alpha_equivalent(e, ee))
+                    if aeq is not None:
+                        event("state var {} is equivalent to {}".format(v.id, aeq.id))
+                        ret = subst(ret, { v.id : aeq })
+                        to_remove.add(v)
+                rep = [ x for x in rep if x[0] not in to_remove ]
 
-        self.concrete_state.extend(rep)
-        self.query_impls[q.name] = rewrite_ret(q, lambda prev: ret, keep_assumptions=False)
-        op_deltas = { op.name : inc.delta_form(self.spec.statevars, op) for op in self.op_specs }
+            self.concrete_state.extend(rep)
+            self.query_impls[q.name] = rewrite_ret(q, lambda prev: ret, keep_assumptions=False)
+            op_deltas = { op.name : inc.delta_form(self.spec.statevars, op) for op in self.op_specs }
 
-        for op in self.op_specs:
-            # print("###### INCREMENTALIZING: {}".format(op.name))
-            delta = op_deltas[op.name]
-            for new_member, projection in rep:
-                (state_update_stm, subqueries) = inc.sketch_update(
-                    new_member,
-                    projection,
-                    subst(projection, delta),
-                    self.abstract_state,
-                    list(op.assumptions))
-                for sub_q in subqueries:
-                    sub_q.docstring = "[{}] {}".format(op.name, sub_q.docstring)
-                    state_update_stm = self._add_subquery(sub_q=sub_q, used_by=state_update_stm)
-                self.updates[(new_member, op.name)] = state_update_stm
+            for op in self.op_specs:
+                with task("incrementalizing query", query=q.name, op=op.name):
+                    delta = op_deltas[op.name]
+                    for new_member, projection in rep:
+                        (state_update_stm, subqueries) = inc.sketch_update(
+                            new_member,
+                            projection,
+                            subst(projection, delta),
+                            self.abstract_state,
+                            list(op.assumptions))
+                        for sub_q in subqueries:
+                            sub_q.docstring = "[{}] {}".format(op.name, sub_q.docstring)
+                            state_update_stm = self._add_subquery(sub_q=sub_q, used_by=state_update_stm)
+                        self.updates[(new_member, op.name)] = state_update_stm
 
     @property
     def code(self) -> Spec:
