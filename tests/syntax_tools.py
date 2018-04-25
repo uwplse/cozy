@@ -849,3 +849,56 @@ class TestElimination(unittest.TestCase):
         print(pprint(spec))
         print(pprint(_cse(spec)))
         assert False
+
+class TestLocalization(unittest.TestCase):
+    def _test_localize_econd(self):
+        """
+        let y = 1 in ( (x > z) ? (y + 2) : (z + 2) )
+        """
+        y = EVar("y").with_type(INT)
+        x = EVar("x").with_type(INT)
+        z = EVar("z").with_type(INT)
+
+        x_gt_z = EGt(x, z)
+        yp2 = EBinOp(y, "+", ENum(2).with_type(INT))
+        zp2 = EBinOp(z, "+", ENum(2).with_type(INT))
+
+        cond = ECond(EGt(x, z), yp2, zp2)
+
+        s = ELet(ONE, ELambda(y, cond))
+
+        assert retypecheck(s)
+        print(pprint(s))
+
+        s = fix_conditionals(s)
+        print(pprint(s))
+        print(s)
+
+        # assert "let y = 1 in (y + 2)" in pprint(s)
+
+        assert isinstance(s, EBinOp)
+
+    def __test_localize_if_(self):
+        s = parse_stm(
+            """
+            a = 2;
+
+            if (foo) {
+                // <--- a=2 should get moved here.
+                b = a;
+            } else {
+                b = g;
+            }
+            """
+        )
+
+        assert retypecheck(s)
+        print(pprint(s))
+
+        #s = cse_replace(s)
+        print(pprint(s))
+        print(s)
+
+        # assert "let y = 1 in (y + 2)" in pprint(s)
+
+        assert isinstance(s, EBinOp)

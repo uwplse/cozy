@@ -10,6 +10,7 @@ from contextlib import contextmanager
 import sys
 import itertools
 import functools
+from enum import Enum
 
 from pprint import pformat
 
@@ -1826,3 +1827,80 @@ def cse_replace_spec(spec):
 
     op_visitor = OpVisitor()
     return op_visitor.visit(spec)
+
+class UseType(Enum):
+    USED_NEVER = 0
+    USED_SOMETIMES = 1
+    USED_ALWAYS = 2
+
+USED_NEVER = UseType.USED_NEVER
+USED_SOMETIMES = UseType.USED_SOMETIMES
+USED_ALWAYS = UseType.USED_ALWAYS
+
+class ConditionalUseFinder(BottomUpExplorer):
+    def __init__(self, var):
+        self.var = var
+
+    def visit_Exp(self, e):
+        results = [
+            self.visit(child) for child in e.children()
+            if isinstance(child, syntax.Exp)
+        ]
+
+        if any(use_type == USED_ALWAYS for (child, use_type) in results):
+            usage = USED_ALWAYS
+        elif any(use_type == USED_SOMETIMES for (child, use_type) in results):
+            usage = USED_SOMETIMES
+        else:
+            usage = USED_NEVER
+
+        return (e, usage)
+
+    def visit_ECond(self, e):
+        _, cond_use_type = self.visit(e.cond)
+        _, e1_use_type = self.visit(e.then_branch)
+        _, e2_use_type = self.visit(e.else_branch)
+
+        if cond_use_type == USED_ALWAYS:
+            usage = USED_ALWAYS
+        elif e1_use_type == USED_ALWAYS and e2_use_type == USED_ALWAYS:
+            usage = USED_ALWAYS
+        elif e1_use_type == USED_ALWAYS or e2_use_type == USED_ALWAYS:
+            usage = USED_SOMETIMES
+        elif e1_use_type == USED_SOMETIMES or e2_use_type == USED_SOMETIMES:
+            usage = USED_SOMETIMES
+        else:
+            usage = USED_NEVER
+
+        return e, usage
+
+    def visit_EVar(self, v):
+        return (v, USED_ALWAYS if v == self.var else USED_NEVER)
+
+    def visit_object(self, o):
+        return (o, USED_NEVER)
+
+class BindingRewriter(BottomUpRewriter):
+    """
+    We want to do a depth-first processing so that the interior of e has been
+    processed before e. When we find an ELet in e to adjust, we recursively
+    find the optimal spot for it.
+    """
+    def visit_ELet(self, e1):
+        e = type(e1)(*[self.visit(child) for child in e1.children()])
+
+        bound_var = e.f.arg
+        subexpr = e.f.body
+
+        # print("Visiting let {}".format(pprint(e)))
+
+        finder = ConditionalUseFinder(bound_var)
+        _, use_type = finder.visit(subexpr)
+
+        # print("    > used = {}".format(use_type))
+
+        return e
+
+def fix_conditionals(e):
+    rewriter = BindingRewriter()
+    return rewriter.visit(e)
