@@ -37,6 +37,7 @@ _KEYWORDS = ([
     "max", "argmax",
     "if",
     "else",
+    "let",
     "Native"] +
     list(syntax.UOps) +
     list(syntax.BOps))
@@ -426,9 +427,12 @@ def make_parser():
     def p_basicstm(p):
         """basicstm : accesschain OP_OPEN_PAREN exp_list OP_CLOSE_PAREN OP_SEMICOLON
                     | accesschain OP_ASSIGN exp OP_SEMICOLON
-                    | KW_IF exp block maybeelse"""
+                    | KW_IF exp block maybeelse
+                    | KW_LET WORD OP_ASSIGN exp OP_SEMICOLON"""
         if p[1] == "if":
             p[0] = syntax.SIf(p[2], p[3], p[4])
+        elif p[1] == "let":
+            p[0] = syntax.SDecl(p[2], p[4])
         elif p[2] == "(":
             p[0] = syntax.SCall(p[1].e, p[1].f, p[3])
         else:
