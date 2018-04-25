@@ -97,8 +97,23 @@ class CostModel(object):
         return self._compare(card(e1), card(e2), context, pool)
 
 def find_cost_cex(f, vars, funcs):
-    return satisfy(f, vars=vars, funcs=funcs, min_collection_depth=2)
-    # return satisfy(f, vars=vars, funcs=funcs)
+    # return satisfy(f, vars=vars, funcs=funcs, min_collection_depth=2)
+    return satisfy(f, vars=vars, funcs=funcs)
+
+def find_case_where_better(e1, e2, vars, funcs, assumptions : Exp = T):
+    """
+    Find an example demonstrating that cost(e1) < cost(e2)
+    """
+    print("finding example for {}, {}...".format(pprint(e1), pprint(e2)))
+    for f in (asymptotic_runtime, max_storage_size, rt):
+        r1 = f(e1)
+        r2 = f(e2)
+        m = find_cost_cex(EAll([EGt(r2, r1), assumptions]), vars=vars, funcs=funcs)
+        if m is not None:
+            return m
+        m = find_cost_cex(EAll([ELt(r2, r1), assumptions]), vars=vars, funcs=funcs)
+        if m is not None:
+            return None
 
 def card(e):
     assert is_collection(e.type)

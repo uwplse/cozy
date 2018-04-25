@@ -12,12 +12,12 @@ from cozy.wf import ExpIsNotWf, exp_wf
 from cozy.common import OrderedSet, ADT, Visitor, fresh_name, unique, pick_to_sum, cross_product, OrderedDefaultDict, OrderedSet, group_by, find_one, extend, StopException
 from cozy.solver import satisfy, satisfiable, valid, IncrementalSolver
 from cozy.evaluation import eval, eval_bulk, mkval, construct_value, uneval, eq
-from cozy.cost_model import CostModel, Order, rt as runtime, asymptotic_runtime, max_storage_size, find_cost_cex
+from cozy.cost_model import CostModel, Order, rt as runtime, asymptotic_runtime, max_storage_size, find_case_where_better
 from cozy.opts import Option
 from cozy.pools import ALL_POOLS, RUNTIME_POOL, STATE_POOL, pool_name
 from cozy.enumeration import Enumerator, fingerprint
 from cozy.contexts import RootCtx, shred, replace
-from cozy.logging import task
+from cozy.logging import task, event
 
 from .acceleration import try_optimize
 
@@ -104,31 +104,44 @@ class Learner(object):
 
             n = 0
             for (e, ctx, pool) in frags:
-                for info in enum.enumerate_with_info(size=size, context=ctx, pool=pool):
-                    with task("checking substitution"):
-                        if self.stop_callback():
-                            raise StopException()
-                        if info.e.type != e.type:
-                            continue
-                        if alpha_equivalent(info.e, e):
-                            continue
+                with task("checking substitutions", target=pprint(replace(self.target, root_ctx, RUNTIME_POOL, e, ctx, pool, EVar("___")))):
+                    for info in enum.enumerate_with_info(size=size, context=ctx, pool=pool):
+                        with task("checking substitution", expression=pprint(info.e)):
+                            if self.stop_callback():
+                                raise StopException()
+                            if info.e.type != e.type:
+                                event("wrong type")
+                                continue
+                            if alpha_equivalent(info.e, e):
+                                event("no change")
+                                continue
 
-                        k = (e, ctx, pool, info.e)
-                        if k in self.blacklist:
-                            continue
-                        self.blacklist.add(k)
+                            k = (e, ctx, pool, info.e)
+                            if k in self.blacklist:
+                                event("blacklisted")
+                                continue
+                            self.blacklist.add(k)
 
-                        n += 1
-                        ee = freshen_binders(replace(
-                            self.target, root_ctx, RUNTIME_POOL,
-                            e, ctx, pool,
-                            info.e), root_ctx)
-                        if not self.matches(fingerprint(ee, self.examples), target_fp):
-                            continue
-                        if not check_wf(ee, root_ctx, RUNTIME_POOL):
-                            continue
-                        print("FOUND A GUESS AFTER {} CONSIDERED".format(n))
-                        return ee
+                            n += 1
+                            ee = freshen_binders(replace(
+                                self.target, root_ctx, RUNTIME_POOL,
+                                e, ctx, pool,
+                                info.e), root_ctx)
+                            if not self.matches(fingerprint(ee, self.examples), target_fp):
+                                event("incorrect")
+                                continue
+                            wf = check_wf(ee, root_ctx, RUNTIME_POOL)
+                            if not wf:
+                                event("not well-formed [wf={}]".format(wf))
+                                # if "expensive" in str(wf):
+                                #     print(repr(self.cost_model.examples))
+                                #     print(repr(ee))
+                                continue
+                            if self.cost_model.compare(ee, self.target, root_ctx, RUNTIME_POOL) != Order.LT:
+                                event("not an improvement")
+                                continue
+                            print("FOUND A GUESS AFTER {} CONSIDERED".format(n))
+                            return ee
 
             print("CONSIDERED {}".format(n))
             size += 1
@@ -282,19 +295,14 @@ def improve(
                 print("The replacement is valid!")
                 print("Confirming cost...")
                 with task("verifying cost"):
-                    for f in (asymptotic_runtime, max_storage_size, runtime):
-                        r1 = f(target)
-                        r2 = f(new_target)
-                        m = find_cost_cex(EAll([EGt(r2, r1), assumptions]), vars=vars, funcs=funcs)
-                        if m is None:
-                            print("Yep, it's an improvement!")
-                            yield new_target
-                            break
-                        else:
-                            print("Nope, it isn't better!")
-                            cost_model.add_example(m)
-                            new_target = target
-                            break
+                    cost_cex = find_case_where_better(target, new_target, vars=vars, funcs=funcs)
+                    if cost_cex is None:
+                        print("Yep, it's an improvement!")
+                        yield new_target
+                    else:
+                        print("Nope, it isn't better!")
+                        cost_model.add_example(cost_cex)
+                        new_target = target
 
                 # if reset_on_success.value and (not check_final_cost.value or ordering != Cost.UNORDERED):
                 learner.reset(examples)
