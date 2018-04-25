@@ -8,6 +8,7 @@ from cozy.pools import RUNTIME_POOL, STATE_POOL, ALL_POOLS, pool_name
 from cozy.simplification import simplify
 from cozy.structures.heaps import TMinHeap, TMaxHeap, EMakeMinHeap, EMakeMaxHeap, EHeapPeek, EHeapPeek2
 from cozy.evaluation import construct_value
+from cozy.logging import task
 
 accelerate = Option("acceleration-rules", bool, True)
 
@@ -49,33 +50,34 @@ def reachable_values_of_type(root : Exp, t : Type) -> Exp:
         return EEmptyList().with_type(TBag(t))
 
 def map_accelerate(e, state_vars, args):
-    for ctx in enumerate_fragments(e):
-        if ctx.pool != RUNTIME_POOL:
-            continue
-        arg = ctx.e
-        if any(v in ctx.bound_vars for v in free_vars(arg)):
-            continue
-        binder = fresh_var(arg.type)
-        # value = ctx.replace_e_with(binder)
-        # print("{} ? {}".format(pprint(e), pprint(ctx.e)))
-        value = replace(e, arg, binder, match=alpha_equivalent)
-        value = strip_EStateVar(value)
-        # print(" ----> {}".format(pprint(value)))
-        if any(v in args for v in free_vars(value)):
-            continue
-        for sv in state_vars:
-            keys = reachable_values_of_type(sv, arg.type)
-            # print("reachable values of type {}: {}".format(pprint(arg.type), pprint(keys)))
-            # for v in state_vars:
-            #     print("  {} : {}".format(pprint(v), pprint(v.type)))
-            m = EMakeMap2(keys,
-                ELambda(binder, value)).with_type(TMap(arg.type, e.type))
-            assert not any(v in args for v in free_vars(m)), "oops! {}; args={}".format(pprint(m), ", ".join(pprint(a) for a in args))
-            yield (m, STATE_POOL)
-            mg = EMapGet(EStateVar(m).with_type(m.type), arg).with_type(e.type)
-            # print(pprint(mg))
-            # mg._tag = True
-            yield (mg, RUNTIME_POOL)
+    with task("map_accelerate", size=e.size()):
+        for ctx in enumerate_fragments(e):
+            if ctx.pool != RUNTIME_POOL:
+                continue
+            arg = ctx.e
+            if any(v in ctx.bound_vars for v in free_vars(arg)):
+                continue
+            binder = fresh_var(arg.type)
+            # value = ctx.replace_e_with(binder)
+            # print("{} ? {}".format(pprint(e), pprint(ctx.e)))
+            value = replace(e, arg, binder, match=alpha_equivalent)
+            value = strip_EStateVar(value)
+            # print(" ----> {}".format(pprint(value)))
+            if any(v in args for v in free_vars(value)):
+                continue
+            for sv in state_vars:
+                keys = reachable_values_of_type(sv, arg.type)
+                # print("reachable values of type {}: {}".format(pprint(arg.type), pprint(keys)))
+                # for v in state_vars:
+                #     print("  {} : {}".format(pprint(v), pprint(v.type)))
+                m = EMakeMap2(keys,
+                    ELambda(binder, value)).with_type(TMap(arg.type, e.type))
+                assert not any(v in args for v in free_vars(m)), "oops! {}; args={}".format(pprint(m), ", ".join(pprint(a) for a in args))
+                yield (m, STATE_POOL)
+                mg = EMapGet(EStateVar(m).with_type(m.type), arg).with_type(e.type)
+                # print(pprint(mg))
+                # mg._tag = True
+                yield (mg, RUNTIME_POOL)
 
 def histogram(xs : Exp) -> Exp:
     elem_type = xs.type.t
