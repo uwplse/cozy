@@ -63,7 +63,7 @@ class Learner(object):
         # with task("pre-computing cardinalities"):
         #     cards = [self.cost_model.cardinality(ctx.e) for ctx in enumerate_fragments(self.target) if is_collection(ctx.e.type)]
         def check_wf(e, ctx, pool):
-            with task("Checking well-formedness", size=e.size()):
+            with task("checking well-formedness", size=e.size()):
                 try:
                     exp_wf(e, pool=pool, context=ctx, assumptions=self.assumptions)
                 except ExpIsNotWf as exc:
