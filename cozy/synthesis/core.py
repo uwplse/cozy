@@ -80,7 +80,9 @@ class Learner(object):
                 return True
 
         root_ctx = RootCtx(state_vars=self.state_vars, args=self.args)
-        frags = list(unique(shred(self.target, root_ctx)))
+        frags = list(unique(itertools.chain(
+            shred(self.target, root_ctx),
+            *[shred(h, root_ctx) for h in self.hints])))
         enum = Enumerator(
             examples=self.examples,
             cost_model=self.cost_model,
