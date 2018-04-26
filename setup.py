@@ -11,13 +11,6 @@ def die(msg):
 if sys.version_info < (3, 5):
     die("Need Python >= 3.5; found {}".format(sys.version))
 
-try:
-    import z3
-    if z3.get_version() < (4, 5):
-        die("Need Z3 >= 4.5; found {}".format(z3.get_version_string()))
-except ImportError:
-    die("Z3 Python module was not found")
-
 with open(os.path.join(os.path.dirname(__file__), "requirements.txt")) as f:
     reqs = [line.strip() for line in f]
 
