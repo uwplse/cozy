@@ -16,7 +16,7 @@ from cozy.cost_model import CostModel, Order, rt as runtime, asymptotic_runtime,
 from cozy.opts import Option
 from cozy.pools import ALL_POOLS, RUNTIME_POOL, STATE_POOL, pool_name
 from cozy.enumeration import Enumerator, fingerprint
-from cozy.contexts import RootCtx, shred, replace
+from cozy.contexts import Context, shred, replace
 from cozy.logging import task, event
 
 from .acceleration import try_optimize
@@ -28,9 +28,8 @@ class NoMoreImprovements(Exception):
     pass
 
 class Learner(object):
-    def __init__(self, target, assumptions, state_vars, args, legal_free_vars, examples, cost_model, stop_callback, hints, solver):
-        self.state_vars = OrderedSet(state_vars)
-        self.args = OrderedSet(args)
+    def __init__(self, target, assumptions, context, examples, cost_model, stop_callback, hints):
+        self.context = context
         self.stop_callback = stop_callback
         self.cost_model = cost_model
         self.assumptions = assumptions
@@ -79,7 +78,7 @@ class Learner(object):
                 #         return No("too big")
                 return True
 
-        root_ctx = RootCtx(state_vars=self.state_vars, args=self.args)
+        root_ctx = self.context
         frags = list(unique(itertools.chain(
             shred(self.target, root_ctx),
             *[shred(h, root_ctx) for h in self.hints])))
@@ -163,7 +162,7 @@ def can_elim_vars(spec : Exp, assumptions : Exp, vs : [EVar]):
         EEq(spec, subst(spec, sub))))
 
 _DONE = set([EVar, EEnumEntry, ENum, EStr, EBool, EEmptyList, ENull])
-def heuristic_done(e : Exp, args : [EVar] = []):
+def heuristic_done(e : Exp):
     return (
         (type(e) in _DONE) or
         (isinstance(e, ESingleton) and heuristic_done(e.e)) or
@@ -177,8 +176,7 @@ def never_stop():
 
 def improve(
         target        : Exp,
-        state_vars    : [EVar],
-        args          : [EVar],
+        context       : Context,
         assumptions   : Exp            = T,
         stop_callback                  = never_stop,
         hints         : [Exp]          = (),
@@ -205,22 +203,19 @@ def improve(
     print("call to improve:")
     print("""improve(
         target={target!r},
+        context={context!r},
         assumptions={assumptions!r},
-        state_vars={state_vars!r},
-        args={args!r},
         stop_callback={stop_callback!r},
         hints={hints!r},
         examples={examples!r})""".format(
             target=target,
+            context=context,
             assumptions=assumptions,
-            state_vars=state_vars,
-            args=args,
             stop_callback=stop_callback,
             hints=hints,
             examples=examples))
 
-    root_ctx = RootCtx(state_vars=state_vars, args=args)
-    target = freshen_binders(target, root_ctx)
+    target = freshen_binders(target, context)
 
     print()
     print("improving: {}".format(pprint(target)))
@@ -228,20 +223,21 @@ def improve(
     print()
 
     try:
-        assert exp_wf(target, context=root_ctx, assumptions=assumptions)
+        assert exp_wf(target, context=context, assumptions=assumptions)
     except ExpIsNotWf as ex:
         print("WARNING: initial target is not well-formed [{}]; this might go poorly...".format(str(ex)))
         print(pprint(ex.offending_subexpression))
         print(pprint(ex.offending_subexpression.type))
         # raise
 
+    state_vars = [v for (v, p) in context.vars() if p == STATE_POOL]
     if eliminate_vars.value and can_elim_vars(target, assumptions, state_vars):
         print("This job does not depend on state_vars.")
         # TODO: what can we do about it?
 
     hints = list(hints)
-    vars = list(free_vars(target) | free_vars(assumptions) | free_vars(EAll(hints)) | set(args) | set(state_vars))
-    funcs = free_funcs(EAll([target, assumptions] + hints))
+    vars = list(v for (v, p) in context.vars())
+    funcs = free_funcs(EAll([target, assumptions] + hints)) # TODO: context should know this
 
     solver = None
     if incremental.value:
@@ -258,7 +254,7 @@ def improve(
 
     examples = list(examples)
     cost_model = CostModel(funcs=funcs, assumptions=assumptions)
-    learner = Learner(target, assumptions, state_vars, args, vars, examples, cost_model, stop_callback, hints, solver=solver)
+    learner = Learner(target, assumptions, context, examples, cost_model, stop_callback, hints)
     try:
         while True:
             # 1. find any potential improvement to any sub-exp of target
@@ -312,7 +308,7 @@ def improve(
                 learner.watch(new_target)
                 target = new_target
 
-                if heuristic_done(new_target, args):
+                if heuristic_done(new_target):
                     print("target now matches doneness heuristic")
                     break
             if incremental.value:

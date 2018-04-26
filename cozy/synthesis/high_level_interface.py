@@ -12,6 +12,7 @@ from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, Bot
 import cozy.incrementalization as inc
 from cozy.timeouts import Timeout, TimeoutException
 from cozy import jobs
+from cozy.contexts import RootCtx
 from cozy.solver import valid
 from cozy.opts import Option
 
@@ -56,20 +57,16 @@ class ImproveQueryJob(jobs.Job):
             if nice_children.value:
                 os.nice(20)
 
-            relevant_state_vars = [v for v in self.state if v in free_vars(EAll(self.assumptions)) | free_vars(self.q.ret)]
-            used_vars = free_vars(self.q.ret)
-            for a in self.q.assumptions:
-                used_vars |= free_vars(a)
-            args = [EVar(v).with_type(t) for (v, t) in self.q.args]
-            args = [a for a in args if a in used_vars]
+            ctx = RootCtx(
+                state_vars=self.state,
+                args=[EVar(v).with_type(t) for (v, t) in self.q.args])
 
             try:
                 for expr in itertools.chain((self.q.ret,), core.improve(
                         target=self.q.ret,
                         assumptions=EAll(self.assumptions),
+                        context=ctx,
                         hints=self.hints,
-                        state_vars=relevant_state_vars,
-                        args=args,
                         stop_callback=lambda: self.stop_requested)):
 
                     new_rep, new_ret = tease_apart(expr)

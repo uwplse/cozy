@@ -2,6 +2,7 @@ import unittest
 
 from cozy.syntax_tools import mk_lambda, pprint, alpha_equivalent, subst, strip_EStateVar
 from cozy.target_syntax import *
+from cozy.contexts import RootCtx
 from cozy.typecheck import retypecheck
 from cozy.evaluation import Bag, mkval
 from cozy.synthesis.core import improve
@@ -14,10 +15,10 @@ handle3 = (3, mkval(INT))
 zero = ENum(0).with_type(INT)
 
 def check_discovery(spec, expected, state_vars=[], args=[], examples=[], assumptions=T):
+    ctx = RootCtx(state_vars=state_vars, args=args)
     for r in improve(spec,
             assumptions=assumptions,
-            state_vars=state_vars,
-            args=args,
+            context=ctx,
             examples=examples):
         print("GOT RESULT ==> {}".format(pprint(r)))
         if isinstance(expected, Exp):
