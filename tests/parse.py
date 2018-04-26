@@ -29,7 +29,7 @@ for filename in files:
     def setup(filename):
 
         def f(self):
-            with open(os.path.join("specs", filename + ".ds"), "r") as f:
+            with open(os.path.join("examples", filename + ".ds"), "r") as f:
                 ast = parse(f.read())
             assert isinstance(ast, Spec)
 

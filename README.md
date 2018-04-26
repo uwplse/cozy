@@ -23,9 +23,9 @@ installed):
     $ python3 -m cozy --help
 
 To synthesize an implementation (`Basic.java`) of the specification
-`specs/basic.ds`:
+`examples/basic.ds`:
 
-    $ python3 -m cozy specs/basic.ds --java Basic.java
+    $ python3 -m cozy examples/basic.ds --java Basic.java
 
 ## Installation
 
@@ -42,8 +42,8 @@ The setup script works in
 
 ## Writing Specifications
 
-The `specs` folder has a number of example specifications that you can use as
-templates. The most complete description of the grammar is the parser itself
+The `examples` folder has a number of example specifications that you can use
+as templates. The most complete description of the grammar is the parser itself
 (`cozy/parse.py`).
 
 Cozy specifications always have this general shape:
