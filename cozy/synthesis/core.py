@@ -239,8 +239,9 @@ def improve(
         print("This job does not depend on state_vars.")
         # TODO: what can we do about it?
 
-    vars = list(free_vars(target) | free_vars(assumptions) | set(args) | set(state_vars))
-    funcs = free_funcs(EAll([target, assumptions]))
+    hints = list(hints)
+    vars = list(free_vars(target) | free_vars(assumptions) | free_vars(EAll(hints)) | set(args) | set(state_vars))
+    funcs = free_funcs(EAll([target, assumptions] + hints))
 
     solver = None
     if incremental.value:
