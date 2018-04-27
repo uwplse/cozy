@@ -1084,12 +1084,11 @@ class IncrementalSolver(object):
 
     def _convert(self, e):
         _tick()
-        orig_size = len(list(all_exps(e)))
-        orig_e = e
         e = purify(e)
         if self.do_cse:
+            orig_size = e.size()
             e = cse(e, verify=False)
-            _tock(e, "cse (size: {} --> {})".format(orig_size, len(list(all_exps(e)))))
+            _tock(e, "cse (size: {} --> {})".format(orig_size, e.size()))
         with _LOCK:
             self._create_vars(vars=free_vars(e), funcs=free_funcs(e))
             with task("encode formula", size=e.size()):
