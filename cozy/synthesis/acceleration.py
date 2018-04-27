@@ -20,6 +20,8 @@ def EUnion(es):
 
 def MkFlatMap(bag, f):
     if isinstance(f.body, ESingleton):
+        if f.body.e == f.arg:
+            return bag
         return EMap(bag, ELambda(f.arg, f.body.e)).with_type(f.body.type)
     if isinstance(f.body, EEmptyList):
         return f.body
