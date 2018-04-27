@@ -76,7 +76,7 @@ def map_accelerate(e, context):
                 stk.append(arg.body)
                 continue
 
-            if True:
+            if context.legal_for(free_vars(arg)):
                 # all the work happens here
                 binder = make_binder(arg.type)
                 value = replace(e, arg, binder, match=alpha_equivalent)
