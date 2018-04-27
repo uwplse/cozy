@@ -6,7 +6,6 @@ from cozy.target_syntax import *
 from cozy.syntax_tools import fresh_var, free_vars, break_conj, pprint, enumerate_fragments, mk_lambda, strip_EStateVar, alpha_equivalent, subst, break_sum, replace, compose
 from cozy.typecheck import is_numeric, is_collection
 from cozy.pools import RUNTIME_POOL, STATE_POOL, ALL_POOLS, pool_name
-from cozy.simplification import simplify
 from cozy.structures.heaps import TMinHeap, TMaxHeap, EMakeMinHeap, EMakeMaxHeap, EHeapPeek, EHeapPeek2
 from cozy.evaluation import construct_value
 from cozy.logging import task, event
@@ -427,7 +426,6 @@ def _try_optimize(e, context, pool):
     state_vars = [v for v, p in context.vars() if p == STATE_POOL]
     args = [v for v, p in context.vars() if p == RUNTIME_POOL]
 
-    yield _check(simplify(e), context, pool)
     if pool == RUNTIME_POOL:
         if all(v in state_vars for v in free_vars(e)):
             nsv = strip_EStateVar(e)
