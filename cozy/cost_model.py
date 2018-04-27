@@ -110,16 +110,18 @@ def find_case_where_better(e1, e2, vars, funcs, assumptions : Exp = T):
     """
     Find an example demonstrating that cost(e1) < cost(e2)
     """
-    print("finding example for {}, {}...".format(pprint(e1), pprint(e2)))
-    for f in (asymptotic_runtime, max_storage_size, rt):
-        r1 = f(e1)
-        r2 = f(e2)
-        m = find_cost_cex(EAll([EGt(r2, r1), assumptions]), vars=vars, funcs=funcs)
-        if m is not None:
-            return m
-        m = find_cost_cex(EAll([ELt(r2, r1), assumptions]), vars=vars, funcs=funcs)
-        if m is not None:
-            return None
+    with task("finding a case where cost(e1) < cost(e2)", e1=pprint(e1), e2=pprint(e2)):
+        for f in (asymptotic_runtime, max_storage_size, rt):
+            r1 = f(e1)
+            r2 = f(e2)
+            with task("finding cost example", f=f.__name__):
+                m = find_cost_cex(EAll([EGt(r2, r1), assumptions]), vars=vars, funcs=funcs)
+                if m is not None:
+                    return m
+            with task("checking for cost equivalence", f=f.__name__):
+                m = find_cost_cex(EAll([ELt(r2, r1), assumptions]), vars=vars, funcs=funcs)
+                if m is not None:
+                    return None
 
 def card(e):
     assert is_collection(e.type)
