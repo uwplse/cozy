@@ -1946,14 +1946,30 @@ class BindingRewriter(BottomUpRewriter):
         bound_var = e.f.arg
         subexpr = e.f.body
 
-        # print("Visiting let {}".format(pprint(e)))
+        print("Visiting let {}".format(pprint(e)))
 
         finder = ConditionalUseFinder(bound_var)
         use_type = finder.visit(subexpr)
 
-        # print("    > used = {}".format(use_type))
+        print("    > used = {}".format(use_type))
 
-        return e
+        if use_type == USED_ALWAYS:
+            # Do nothing.
+            return e
+        elif use_type == USED_SOMETIMES:
+            # Move it into each of the children that use it.
+            # TODO: This needs to be recursive. Walk it into potentially deeply
+            #   nested subexprs.
+            if isinstance(subexpr, syntax.ECond):
+                for attr in ("cond", "then_branch", "else_branch"):
+                    attr_val = getattr(subexpr, attr)
+                    if finder.visit(attr_val) != USED_NEVER:
+                        setattr(subexpr, attr,
+                            syntax.ELet(e.e, syntax.ELambda(e.f.arg, attr_val)))
+            return subexpr
+        elif use_type == USED_NEVER:
+            # Eliminate the ELet.
+            return subexpr
 
 def fix_conditionals(e):
     rewriter = BindingRewriter()

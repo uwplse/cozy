@@ -844,10 +844,10 @@ class TestElimination(unittest.TestCase):
         op = Op('addElement', [('x', TInt())], [], SSeq(SSeq(SSeq(SDecl('_name5771', ECond(EBinOp(EBinOp(EBinOp(EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt()), '+', EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()), '<', ENum(5).with_type(TInt())).with_type(TBool()), 'or', EBinOp(EBinOp(EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt()), '+', EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()), '>', ENum(7).with_type(TInt())).with_type(TBool())).with_type(TBool()), EBinOp(EVar('_var2027').with_type(TBag(TInt())), '-', EBinOp(EVar('_var2027').with_type(TBag(TInt())), '+', ESingleton(EVar('x').with_type(TInt())).with_type(TBag(TInt()))).with_type(TBag(TInt()))).with_type(TBag(TInt())), EBinOp(EVar('_var2027').with_type(TBag(TInt())), '-', EVar('_var2027').with_type(TBag(TInt()))).with_type(TBag(TInt()))).with_type(TBag(TInt()))), SDecl('_name5772', ECond(EBinOp(EBinOp(EBinOp(EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt()), '+', EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()),'<', ENum(5).with_type(TInt())).with_type(TBool()), 'or', EBinOp(EBinOp(EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt()), '+', EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()), '>', ENum(7).with_type(TInt())).with_type(TBool())).with_type(TBool()), EBinOp(EBinOp(EVar('_var2027').with_type(TBag(TInt())), '+', ESingleton(EVar('x').with_type(TInt())).with_type(TBag(TInt()))).with_type(TBag(TInt())), '-', EVar('_var2027').with_type(TBag(TInt()))).with_type(TBag(TInt())), EBinOp(EVar('_var2027').with_type(TBag(TInt())), '-', EVar('_var2027').with_type(TBag(TInt()))).with_type(TBag(TInt()))).with_type(TBag(TInt())))), SAssign(EVar('_var507').with_type(TInt()), ECond(EBinOp(EBinOp(EBinOp(EUnaryOp('len', EEmptyList().with_type(TBag(TInt()))).with_type(TInt()), '+', EUnaryOp('len', EEmptyList().with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()), '<', ENum(5).with_type(TInt())).with_type(TBool()), 'or', EBinOp(ENum(5).with_type(TInt()), '>', ENum(7).with_type(TInt())).with_type(TBool())).with_type(TBool()), EBinOp(EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt()), '+', ENum(1).with_type(TInt())).with_type(TInt()), EUnaryOp('len', EEmptyList().with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()))), SSeq(SForEach(EVar('_var2988').with_type(TInt()), EVar('_name5771').with_type(TBag(TInt())), SCall(EVar('_var2027').with_type(TBag(TInt())), 'remove', [EVar('_var2988').with_type(TInt())])), SForEach(EVar('_var2988').with_type(TInt()), EVar('_name5772').with_type(TBag(TInt())), SCall(EVar('_var2027').with_type(TBag(TInt())), 'add', [EVar('_var2988').with_type(TInt())])))), '')
         spec = Spec("foo", (), (), (), (), [op], "", "", "")
 
-        assert retypecheck(op)
+        assert retypecheck(spec)
 
         print(pprint(spec))
-        print(pprint(_cse(spec)))
+        print(pprint(cse_replace_spec(spec)))
         assert False
 
 class TestConditionals(unittest.TestCase):
@@ -856,6 +856,8 @@ class TestConditionals(unittest.TestCase):
         f = ConditionalUseFinder(y)
 
         assert USED_ALWAYS == f.visit(parse_expr("y + 2"))
+        assert USED_ALWAYS == f.visit(parse_expr("-y"))
+        assert USED_ALWAYS == f.visit(parse_expr("-(-y)"))
         assert USED_ALWAYS == f.visit(parse_expr("y + y + 2"))
         assert USED_ALWAYS == f.visit(parse_expr("(x + y) + (x + 2)"))
 
@@ -865,12 +867,15 @@ class TestConditionals(unittest.TestCase):
 
         assert USED_SOMETIMES == f.visit(parse_expr("z > x ? y : 3"))
         assert USED_SOMETIMES == f.visit(parse_expr("z > x ? 2 : y"))
+        assert USED_SOMETIMES == f.visit(parse_expr("q + (z > x ? 2 : y)"))
 
+        assert USED_NEVER == f.visit(parse_expr("z > x ? z : x"))
+        assert USED_NEVER == f.visit(parse_expr("q + (z > x ? z : x)"))
         assert USED_NEVER == f.visit(parse_expr("(x + z) + (x + z)"))
         assert USED_NEVER == f.visit(parse_expr("6"))
         assert USED_NEVER == f.visit(parse_expr("x"))
 
-    def __test_localize_econd(self):
+    def test_let_rewrite(self):
         """
         let y = 1 in ( (x > z) ? (y + 2) : (z + 2) )
         """
@@ -878,7 +883,6 @@ class TestConditionals(unittest.TestCase):
         x = EVar("x").with_type(INT)
         z = EVar("z").with_type(INT)
 
-        x_gt_z = EGt(x, z)
         yp2 = EBinOp(y, "+", ENum(2).with_type(INT))
         zp2 = EBinOp(z, "+", ENum(2).with_type(INT))
 
@@ -895,7 +899,7 @@ class TestConditionals(unittest.TestCase):
 
         # assert "let y = 1 in (y + 2)" in pprint(s)
 
-        assert isinstance(s, EBinOp)
+        assert isinstance(s, ECond)
 
     def __test_localize_if_(self):
         s = parse_stm(
