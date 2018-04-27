@@ -173,6 +173,10 @@ def optimized_in(x, xs):
             optimized_in(x, xs.e1)).with_type(BOOL)
     elif isinstance(xs, EBinOp) and xs.op == "-":
         return EGt(optimized_count(x, xs.e1), optimized_count(x, xs.e2))
+    elif isinstance(xs, EBinOp) and xs.op == "+":
+        return EAny([
+            optimized_in(x, xs.e1),
+            optimized_in(x, xs.e2)])
     elif isinstance(xs, ECond):
         return optimized_cond(xs.cond,
             optimized_in(x, xs.then_branch),
@@ -195,6 +199,10 @@ def optimized_len(xs):
         return EBinOp(
             optimized_len(xs.e1), "-",
             optimized_cond(optimized_in(xs.e2.e, xs.e1), ONE, ZERO).with_type(INT)).with_type(INT)
+    elif isinstance(xs, EBinOp) and xs.op == "+":
+        return EBinOp(
+            optimized_len(xs.e1), "+",
+            optimized_len(xs.e2)).with_type(INT)
     elif isinstance(xs, ESingleton):
         return ONE
     elif isinstance(xs, EEmptyList):
