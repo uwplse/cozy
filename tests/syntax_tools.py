@@ -850,8 +850,27 @@ class TestElimination(unittest.TestCase):
         print(pprint(_cse(spec)))
         assert False
 
-class TestLocalization(unittest.TestCase):
-    def _test_localize_econd(self):
+class TestConditionals(unittest.TestCase):
+    def test_usage_finder(self):
+        y = EVar("y").with_type(INT)
+        f = ConditionalUseFinder(y)
+
+        assert USED_ALWAYS == f.visit(parse_expr("y + 2"))
+        assert USED_ALWAYS == f.visit(parse_expr("y + y + 2"))
+        assert USED_ALWAYS == f.visit(parse_expr("(x + y) + (x + 2)"))
+
+        assert USED_ALWAYS == f.visit(parse_expr("y < 2 ? 2 : 3"))
+        assert USED_ALWAYS == f.visit(parse_expr("z > x ? y : y+9"))
+        assert USED_ALWAYS == f.visit(parse_expr("y > 0 ? y : y+1"))
+
+        assert USED_SOMETIMES == f.visit(parse_expr("z > x ? y : 3"))
+        assert USED_SOMETIMES == f.visit(parse_expr("z > x ? 2 : y"))
+
+        assert USED_NEVER == f.visit(parse_expr("(x + z) + (x + z)"))
+        assert USED_NEVER == f.visit(parse_expr("6"))
+        assert USED_NEVER == f.visit(parse_expr("x"))
+
+    def __test_localize_econd(self):
         """
         let y = 1 in ( (x > z) ? (y + 2) : (z + 2) )
         """

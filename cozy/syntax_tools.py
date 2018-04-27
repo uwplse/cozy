@@ -1906,50 +1906,40 @@ class ConditionalUseFinder(BottomUpExplorer):
         self.var = var
 
     def visit_Exp(self, e):
-        results = [
-            self.visit(child) for child in e.children()
-            if isinstance(child, syntax.Exp)
-        ]
+        child_uses = set(self.visit(child) for child in e.children())
 
-        if any(use_type == USED_ALWAYS for (child, use_type) in results):
-            usage = USED_ALWAYS
-        elif any(use_type == USED_SOMETIMES for (child, use_type) in results):
-            usage = USED_SOMETIMES
+        if USED_ALWAYS in child_uses:
+            return USED_ALWAYS
+        elif USED_SOMETIMES in child_uses:
+            return USED_SOMETIMES
         else:
-            usage = USED_NEVER
-
-        return (e, usage)
+            return USED_NEVER
 
     def visit_ECond(self, e):
-        _, cond_use_type = self.visit(e.cond)
-        _, e1_use_type = self.visit(e.then_branch)
-        _, e2_use_type = self.visit(e.else_branch)
+        cond_use_type = self.visit(e.cond)
 
         if cond_use_type == USED_ALWAYS:
-            usage = USED_ALWAYS
-        elif e1_use_type == USED_ALWAYS and e2_use_type == USED_ALWAYS:
-            usage = USED_ALWAYS
-        elif e1_use_type == USED_ALWAYS or e2_use_type == USED_ALWAYS:
-            usage = USED_SOMETIMES
-        elif e1_use_type == USED_SOMETIMES or e2_use_type == USED_SOMETIMES:
-            usage = USED_SOMETIMES
-        else:
-            usage = USED_NEVER
+            return USED_ALWAYS
 
-        return e, usage
+        e1_use_type = self.visit(e.then_branch)
+        e2_use_type = self.visit(e.else_branch)
+
+        if e1_use_type == USED_ALWAYS and e2_use_type == USED_ALWAYS:
+            return USED_ALWAYS
+        elif e1_use_type == USED_ALWAYS or e2_use_type == USED_ALWAYS:
+            return USED_SOMETIMES
+        elif e1_use_type == USED_SOMETIMES or e2_use_type == USED_SOMETIMES:
+            return USED_SOMETIMES
+        else:
+            return USED_NEVER
 
     def visit_EVar(self, v):
-        return (v, USED_ALWAYS if v == self.var else USED_NEVER)
+        return USED_ALWAYS if v == self.var else USED_NEVER
 
     def visit_object(self, o):
-        return (o, USED_NEVER)
+        return USED_NEVER
 
 class BindingRewriter(BottomUpRewriter):
-    """
-    We want to do a depth-first processing so that the interior of e has been
-    processed before e. When we find an ELet in e to adjust, we recursively
-    find the optimal spot for it.
-    """
     def visit_ELet(self, e1):
         e = type(e1)(*[self.visit(child) for child in e1.children()])
 
@@ -1959,7 +1949,7 @@ class BindingRewriter(BottomUpRewriter):
         # print("Visiting let {}".format(pprint(e)))
 
         finder = ConditionalUseFinder(bound_var)
-        _, use_type = finder.visit(subexpr)
+        use_type = finder.visit(subexpr)
 
         # print("    > used = {}".format(use_type))
 
