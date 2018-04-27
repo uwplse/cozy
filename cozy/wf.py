@@ -11,6 +11,7 @@ from cozy.structures import extension_handler
 from cozy.contexts import Context, RootCtx, shred
 
 allow_conditional_state = Option("allow-conditional-state", bool, True)
+do_expensive_checks = Option("expensive-wf-checks", bool, True)
 
 class ExpIsNotWf(Exception):
     def __init__(self, e, offending_subexpression, reason):
@@ -83,11 +84,11 @@ def exp_wf_nonrecursive(e : Exp, context : Context, pool = RUNTIME_POOL, assumpt
         raise ExpIsNotWf(e, e, "conditional in state position")
     if isinstance(e, EMakeMap2) and isinstance(e.e, EEmptyList):
         raise ExpIsNotWf(e, e, "trivially empty map")
-    if not at_runtime and isinstance(e, EFilter):
+    if do_expensive_checks.value and not at_runtime and isinstance(e, EFilter):
         # catch "peels": removal of zero or one elements
         if valid(EImplies(assumptions, ELe(ELen(EFilter(e.e, ELambda(e.p.arg, ENot(e.p.body))).with_type(e.type)), ONE))):
             raise ExpIsNotWf(e, e, "filter is a peel")
-    if not at_runtime and isinstance(e, EMakeMap2) and is_collection(e.type.v):
+    if do_expensive_checks.value and not at_runtime and isinstance(e, EMakeMap2) and is_collection(e.type.v):
         all_collections = [sv for sv in state_vars if is_collection(sv.type)]
         total_size = ENum(0).with_type(INT)
         for c in all_collections:
