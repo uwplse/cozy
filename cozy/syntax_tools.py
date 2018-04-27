@@ -1324,6 +1324,65 @@ class ExpMap(object):
         for k, v in self.items():
             yield v
 
+_ReduceOp = collections.namedtuple("_ReduceOp", ("x", "n"))
+_UnbindOp = collections.namedtuple("_UnbindOp", ("v",))
+
+class IterativeReducer(object):
+
+    def bind(self, v : syntax.EVar):
+        pass
+
+    def unbind(self, v : syntax.EVar):
+        pass
+
+    def visit(self, x):
+        work_stack = [x]
+        done_stack = []
+        while work_stack:
+            # print("TODO: {}; DONE: {}".format(work_stack, done_stack))
+            top = work_stack.pop()
+            if isinstance(top, _ReduceOp):
+                args = [done_stack.pop() for i in range(top.n)]
+                args.reverse()
+                done_stack.append(self.reduce(top.x, tuple(args)))
+                continue
+            if isinstance(top, _UnbindOp):
+                self.unbind(top.v)
+                continue
+            children = self.children(top)
+            if isinstance(top, syntax.ELambda):
+                self.bind(top.arg)
+                work_stack.append(_UnbindOp(top.arg))
+            work_stack.append(_ReduceOp(top, len(children)))
+            work_stack.extend(reversed(children))
+        assert len(done_stack) == 1
+        return done_stack[0]
+
+    def children(self, x):
+        if isinstance(x, tuple) or isinstance(x, list):
+            return x
+        elif isinstance(x, dict):
+            raise NotImplementedError()
+        elif isinstance(x, common.ADT):
+            return x.children()
+        else:
+            return ()
+
+    def reduce(self, x, new_children):
+        if isinstance(x, common.ADT):
+            if all(a is b for (a, b) in zip(x.children(), new_children)):
+                return x
+            out = type(x)(*new_children)
+            if isinstance(x, syntax.Exp) and hasattr(x, "type"):
+                out = out.with_type(x.type)
+            return out
+        elif type(x) in [list, tuple, dict]:
+            if type(x) in [list, tuple] and all(a is b for (a, b) in zip(x, new_children)):
+                return x
+            return type(x)(new_children)
+        else:
+            return x
+
 def cse(e, verify=False):
     """
     Common subexpression elimination. Replaces re-used expressions with ELet,
@@ -1338,15 +1397,20 @@ def cse(e, verify=False):
         to_inline = common.OrderedSet(v for v in ravail if counts.get(v, 0) < 2 or ravail[v].size() < 2)
         sub = { v : ravail[v] for v in to_inline }
 
-        skip = { }
-        class V(BottomUpRewriter):
-            def visit_EVar(self, var):
-                if var in sub and var not in skip:
-                    return self.visit(sub[var])
-                return var
-            def visit_ELambda(self, lam):
-                with common.extend(skip, lam.arg, True):
-                    return target_syntax.ELambda(lam.arg, self.visit(lam.body))
+        skip = collections.defaultdict(int)
+        class V(IterativeReducer):
+            def children(self, x):
+                if isinstance(x, syntax.EVar) and x in sub and not skip[x]:
+                    return (sub[x],)
+                return super().children(x)
+            def reduce(self, x, new_children):
+                if isinstance(x, syntax.EVar) and x in sub and not skip[x]:
+                    return new_children[0]
+                return super().reduce(x, new_children)
+            def bind(self, v):
+                skip[v] += 1
+            def unbind(self, v):
+                skip[v] -= 1
 
         inliner = V()
         e = inliner.visit(e)
