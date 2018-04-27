@@ -669,7 +669,7 @@ class CxxPrinter(CodeGenerator):
         elif op in ("-", UOp.Not):
             ee = self.visit(e.e)
             op_str = "!" if op == UOp.Not else op
-            return "({op}{ee})".format(op=op_str, ee=ee)
+            return "({op}({ee}))".format(op=op_str, ee=ee)
         elif op == UOp.Distinct:
             v = self.fv(e.type, "v")
             self.declare(v, e)
