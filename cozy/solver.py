@@ -1032,7 +1032,8 @@ class IncrementalSolver(object):
             validate_model : bool = True,
             model_callback = None,
             logic : str = None,
-            timeout : float = None):
+            timeout : float = None,
+            do_cse : bool = True):
 
         if collection_depth is None:
             collection_depth = collection_depth_opt.value
@@ -1045,6 +1046,7 @@ class IncrementalSolver(object):
         self.model_callback = model_callback
         self._env = OrderedDict()
         self.stk = []
+        self.do_cse = do_cse
 
         with _LOCK:
             ctx = z3.Context()
@@ -1085,8 +1087,9 @@ class IncrementalSolver(object):
         orig_size = len(list(all_exps(e)))
         orig_e = e
         e = purify(e)
-        e = cse(e, verify=False)
-        _tock(e, "cse (size: {} --> {})".format(orig_size, len(list(all_exps(e)))))
+        if self.do_cse:
+            e = cse(e, verify=False)
+            _tock(e, "cse (size: {} --> {})".format(orig_size, len(list(all_exps(e)))))
         with _LOCK:
             self._create_vars(vars=free_vars(e), funcs=free_funcs(e))
             with task("encode formula", size=e.size()):

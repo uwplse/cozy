@@ -86,7 +86,7 @@ class TestSyntaxTools(unittest.TestCase):
                 continue
             print("checking {}...".format(pprint(x)))
             y = cse(x)
-            if not valid(EBinOp(x, "===", y).with_type(BOOL)):
+            if not valid(EBinOp(x, "===", y).with_type(BOOL), do_cse=False):
                 print("Bad behavior!")
                 print(pprint(x))
                 print(pprint(y))
