@@ -467,4 +467,4 @@ _parser = make_parser()
 
 def parse(s):
     parser = _parser
-    return parser.parse(s)
+    return parser.parse(s, lexer=_lexer)
