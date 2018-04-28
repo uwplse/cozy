@@ -105,7 +105,9 @@ class Learner(object):
 
             n = 0
             for (e, ctx, pool) in frags:
-                with task("checking substitutions", target=pprint(replace(self.target, root_ctx, RUNTIME_POOL, e, ctx, pool, EVar("___")))):
+                with task("checking substitutions",
+                        target=pprint(replace(self.target, root_ctx, RUNTIME_POOL, e, ctx, pool, EVar("___"))),
+                        e=pprint(e)):
                     for info in enum.enumerate_with_info(size=size, context=ctx, pool=pool):
                         with task("checking substitution", expression=pprint(info.e)):
                             if self.stop_callback():
