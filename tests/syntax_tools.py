@@ -856,6 +856,7 @@ class TestConditionals(unittest.TestCase):
         f = ConditionalUseFinder(y)
 
         assert USED_ALWAYS == f.visit(parse_expr("y + 2"))
+        assert USED_ALWAYS == f.visit(parse_expr("y"))
         assert USED_ALWAYS == f.visit(parse_expr("-y"))
         assert USED_ALWAYS == f.visit(parse_expr("-(-y)"))
         assert USED_ALWAYS == f.visit(parse_expr("y + y + 2"))
@@ -864,10 +865,15 @@ class TestConditionals(unittest.TestCase):
         assert USED_ALWAYS == f.visit(parse_expr("y < 2 ? 2 : 3"))
         assert USED_ALWAYS == f.visit(parse_expr("z > x ? y : y+9"))
         assert USED_ALWAYS == f.visit(parse_expr("y > 0 ? y : y+1"))
+        assert USED_ALWAYS == f.visit(parse_expr("y > 0 ? y : (y < 2 ? y : 0)"))
 
         assert USED_SOMETIMES == f.visit(parse_expr("z > x ? y : 3"))
         assert USED_SOMETIMES == f.visit(parse_expr("z > x ? 2 : y"))
         assert USED_SOMETIMES == f.visit(parse_expr("q + (z > x ? 2 : y)"))
+        assert USED_SOMETIMES == f.visit(parse_expr("x > 0 ? y : (x < 2 ? y : 0)"))
+        assert USED_SOMETIMES == f.visit(parse_expr("x > 0 ? 1 : (x < 2 ? y : 0)"))
+        assert USED_SOMETIMES == f.visit(parse_expr("x > 0 ? 1 : (x < 2 ? 2 : y)"))
+        assert USED_SOMETIMES == f.visit(parse_expr("(x>0?x:y) > 0 ? 1 : 2"))
 
         assert USED_NEVER == f.visit(parse_expr("z > x ? z : x"))
         assert USED_NEVER == f.visit(parse_expr("q + (z > x ? z : x)"))
@@ -897,9 +903,32 @@ class TestConditionals(unittest.TestCase):
         print(pprint(s))
         print(s)
 
-        # assert "let y = 1 in (y + 2)" in pprint(s)
+        assert isinstance(s, ECond)
+
+    def test_let_unused(self):
+        """
+        let y = 1 in ( (x > z) ? (z + 3) : (z + 2) )
+        """
+        y = EVar("y").with_type(INT)
+        x = EVar("x").with_type(INT)
+        z = EVar("z").with_type(INT)
+
+        zp3 = EBinOp(z, "+", ENum(3).with_type(INT))
+        zp2 = EBinOp(z, "+", ENum(2).with_type(INT))
+
+        cond = ECond(EGt(x, z), zp3, zp2)
+        s = ELet(ONE, ELambda(y, cond))
+
+        assert retypecheck(s)
+        print(pprint(s))
+
+        s = fix_conditionals(s)
+        new_form = pprint(s)
+        print(new_form)
+        print(s)
 
         assert isinstance(s, ECond)
+        assert "let y" not in new_form
 
     def __test_localize_if_(self):
         s = parse_stm(

@@ -1926,6 +1926,8 @@ class ConditionalUseFinder(BottomUpExplorer):
 
         if e1_use_type == USED_ALWAYS and e2_use_type == USED_ALWAYS:
             return USED_ALWAYS
+        elif cond_use_type == USED_SOMETIMES:
+            return USED_SOMETIMES
         elif e1_use_type == USED_ALWAYS or e2_use_type == USED_ALWAYS:
             return USED_SOMETIMES
         elif e1_use_type == USED_SOMETIMES or e2_use_type == USED_SOMETIMES:
@@ -1948,8 +1950,8 @@ class BindingRewriter(BottomUpRewriter):
 
         print("Visiting let {}".format(pprint(e)))
 
-        finder = ConditionalUseFinder(bound_var)
-        use_type = finder.visit(subexpr)
+        use_finder = ConditionalUseFinder(bound_var)
+        use_type = use_finder.visit(subexpr)
 
         print("    > used = {}".format(use_type))
 
@@ -1963,7 +1965,7 @@ class BindingRewriter(BottomUpRewriter):
             if isinstance(subexpr, syntax.ECond):
                 for attr in ("cond", "then_branch", "else_branch"):
                     attr_val = getattr(subexpr, attr)
-                    if finder.visit(attr_val) != USED_NEVER:
+                    if use_finder.visit(attr_val) != USED_NEVER:
                         setattr(subexpr, attr,
                             syntax.ELet(e.e, syntax.ELambda(e.f.arg, attr_val)))
             return subexpr
