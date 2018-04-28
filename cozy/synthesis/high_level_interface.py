@@ -211,6 +211,8 @@ def improve_implementation(
                     if progress_callback is not None:
                         progress_callback((impl, impl.code, impl.concretization_functions))
                     reconcile_jobs()
+                else:
+                    print("  (skipped)")
 
         # stop jobs
         print("Stopping jobs")
