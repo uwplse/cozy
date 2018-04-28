@@ -163,7 +163,7 @@ class _Shredder(Visitor):
     def visit_EMakeMinHeap(self, e):
         yield (e, self.ctx, self.pool)
         yield from self.visit(e.e)
-        yield from self.visit(e.value, e.e)
+        yield from self.visit(e.f, e.e)
     def visit_EMakeMaxHeap(self, e):
         yield (e, self.ctx, self.pool)
         yield from self.visit(e.e)
