@@ -121,7 +121,6 @@ class Learner(object):
                             if k in self.blacklist:
                                 event("blacklisted")
                                 continue
-                            self.blacklist.add(k)
 
                             n += 1
                             ee = freshen_binders(replace(
@@ -130,6 +129,7 @@ class Learner(object):
                                 info.e), root_ctx)
                             if not self.matches(fingerprint(ee, self.examples), target_fp):
                                 event("incorrect")
+                                self.blacklist.add(k)
                                 continue
                             wf = check_wf(ee, root_ctx, RUNTIME_POOL)
                             if not wf:
@@ -137,9 +137,11 @@ class Learner(object):
                                 # if "expensive" in str(wf):
                                 #     print(repr(self.cost_model.examples))
                                 #     print(repr(ee))
+                                self.blacklist.add(k)
                                 continue
                             if self.cost_model.compare(ee, self.target, root_ctx, RUNTIME_POOL) != Order.LT:
                                 event("not an improvement")
+                                self.blacklist.add(k)
                                 continue
                             print("FOUND A GUESS AFTER {} CONSIDERED".format(n))
                             return ee
