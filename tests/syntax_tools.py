@@ -893,17 +893,80 @@ class TestConditionals(unittest.TestCase):
         zp2 = EBinOp(z, "+", ENum(2).with_type(INT))
 
         cond = ECond(EGt(x, z), yp2, zp2)
-
         s = ELet(ONE, ELambda(y, cond))
 
         assert retypecheck(s)
         print(pprint(s))
-
         s = fix_conditionals(s)
-        print(pprint(s))
-        print(s)
-
+        new_form = pprint(s)
+        print(new_form)
         assert isinstance(s, ECond)
+        assert "let y = 1 in (y + 2)" in new_form
+
+        # now in the else block
+
+        cond = ECond(EGt(x, z), zp2, yp2)
+        s = ELet(ONE, ELambda(y, cond))
+
+        assert retypecheck(s)
+        print(pprint(s))
+        s = fix_conditionals(s)
+        new_form = pprint(s)
+        print(new_form)
+        assert isinstance(s, ECond)
+        assert "let y = 1 in (y + 2)" in new_form
+
+    def test_let_rewrite_into_binop(self):
+        """
+        let y = 1 in f + (x > z) ? (y + 2) : (z + 2)
+        """
+        f = EVar("f").with_type(INT)
+        y = EVar("y").with_type(INT)
+        x = EVar("x").with_type(INT)
+        z = EVar("z").with_type(INT)
+
+        yp2 = EBinOp(y, "+", ENum(2).with_type(INT))
+        zp2 = EBinOp(z, "+", ENum(2).with_type(INT))
+
+        cond = ECond(EGt(x, z), yp2, zp2)
+        f_plus_cond = EBinOp(f, "+", cond)
+        s = ELet(ONE, ELambda(y, f_plus_cond))
+
+        assert retypecheck(s)
+        print(pprint(s))
+        s = fix_conditionals(s)
+        new_form = pprint(s)
+        print(new_form)
+        assert isinstance(s, type(f_plus_cond))
+        assert "let y = 1 in (y + 2)" in new_form
+
+    def __test_let_rewrite_past_let(self):
+        """
+        let y = 1 in (
+            let x = (z>0?y+2:z+2) in (
+                (x > z) ? (y + 2) : (z + 2)
+            )
+        )
+        """
+        y = EVar("y").with_type(INT)
+        x = EVar("x").with_type(INT)
+        z = EVar("z").with_type(INT)
+
+        yp2 = EBinOp(y, "+", ENum(2).with_type(INT))
+        zp2 = EBinOp(z, "+", ENum(2).with_type(INT))
+        ypz = EBinOp(TWO, "+", z)
+
+        cond_zy = ECond(EGt(z, ZERO), yp2, zp2)
+        cond2 = ECond(EGt(x, z), yp2, zp2)
+        let_inner = ELet(cond_zy, ELambda(x, cond2))
+        s = ELet(ONE, ELambda(y, let_inner))
+
+        assert retypecheck(s)
+        print(pprint(s))
+        s = fix_conditionals(s)
+        new_form = pprint(s)
+        print(new_form)
+        assert False
 
     def test_let_unused(self):
         """
