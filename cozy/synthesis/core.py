@@ -104,7 +104,7 @@ class Learner(object):
                 raise StopException()
 
             n = 0
-            for (e, ctx, pool) in frags:
+            for (e, ctx, pool) in shred(self.target, root_ctx):
                 with task("checking substitutions",
                         target=pprint(replace(self.target, root_ctx, RUNTIME_POOL, e, ctx, pool, EVar("___"))),
                         e=pprint(e)):
