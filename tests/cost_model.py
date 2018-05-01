@@ -9,6 +9,7 @@ from cozy.syntax_tools import equal, implies, pprint, fresh_var, mk_lambda, repl
 from cozy.solver import valid
 from cozy.pools import RUNTIME_POOL, STATE_POOL
 from cozy.contexts import RootCtx, UnderBinder, replace
+from cozy.synthesis.acceleration import optimized_exists
 
 def cost_of(e, pool=RUNTIME_POOL):
     return None
@@ -699,3 +700,14 @@ class TestCostModel(unittest.TestCase):
         debug_comparison(CostModel(), target, new_target, root_ctx)
         assert find_case_where_better(target, new_target, vars=[u1, u2, users, groups, groupMembers], funcs=[]) is None
         assert find_case_where_better(new_target, target, vars=[u1, u2, users, groups, groupMembers], funcs=[]) is not None
+
+    def test_distribute_exists_over_or(self):
+        xs = EStateVar(EVar("xs").with_type(INT_BAG))
+        x = EVar("x").with_type(INT)
+        e1 = EUnaryOp(UOp.Exists, EFilter(xs, ELambda(x, EAny([ECall("f", (x,)).with_type(BOOL), ECall("g", (x,)).with_type(BOOL)]))))
+        assert retypecheck(e1)
+        e2 = optimized_exists(e1.e)
+        print(pprint(e1))
+        print(pprint(e2))
+        assert valid(EEq(e1, e2))
+        assert_cmp(e1, cost_of(e1), e2, cost_of(e2), Cost.WORSE)

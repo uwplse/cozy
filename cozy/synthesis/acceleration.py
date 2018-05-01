@@ -221,10 +221,29 @@ def optimized_empty(xs):
     return optimized_eq(l, ZERO)
 
 def optimized_exists(xs):
-    l = optimized_len(xs)
-    if isinstance(l, ENum):
-        return F if l.val == 0 else T
-    return EGt(l, ZERO)
+    if isinstance(xs, EFilter) and isinstance(xs.p.body, EBinOp) and xs.p.body.op == BOp.Or:
+        return EAny([
+            optimized_exists(EFilter(xs.e, ELambda(xs.p.arg, xs.p.body.e1)).with_type(xs.type)),
+            optimized_exists(EFilter(xs.e, ELambda(xs.p.arg, xs.p.body.e2)).with_type(xs.type))])
+    elif isinstance(xs, EStateVar):
+        return EStateVar(optimized_exists(xs.e)).with_type(INT)
+    elif isinstance(xs, EBinOp) and xs.op == "+":
+        return EAny([
+            optimized_exists(xs.e1),
+            optimized_exists(xs.e2)])
+    elif isinstance(xs, EBinOp) and xs.op == "-":
+        l = optimized_len(xs)
+        if isinstance(l, ENum):
+            return F if l.val == 0 else T
+        return EGt(l, ZERO)
+    elif isinstance(xs, ESingleton):
+        return T
+    elif isinstance(xs, EEmptyList):
+        return F
+    elif isinstance(xs, EMap):
+        return optimized_exists(xs.e)
+    else:
+        return EUnaryOp(UOp.Exists, xs).with_type(BOOL)
 
 def excluded_element(xs):
     if isinstance(xs, EFilter):
