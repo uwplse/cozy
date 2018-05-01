@@ -1,5 +1,6 @@
 import unittest
 import itertools
+from collections import OrderedDict
 
 from cozy.common import OrderedSet
 from cozy.cost_model import CostModel, Order, debug_comparison, find_case_where_better
@@ -711,3 +712,11 @@ class TestCostModel(unittest.TestCase):
         print(pprint(e2))
         assert valid(EEq(e1, e2))
         assert_cmp(e1, cost_of(e1), e2, cost_of(e2), Cost.WORSE)
+
+    def test_free_funcs(self):
+        funcs = OrderedDict([('after', TFunc((TNative('mongo::Date_t'), TNative('mongo::Milliseconds')), TNative('mongo::Date_t'))), ('eternity', TFunc((), TNative('mongo::Date_t')))])
+        a = ECall("eternity", ()).with_type(funcs["eternity"].ret_type)
+        b = EUnaryOp(UOp.The, ESingleton(EUnaryOp(UOp.The, EEmptyList().with_type(TBag(a.type)))))
+        assert retypecheck(b)
+        e1 = ECond(EEq(a, b), a, b).with_type(a.type)
+        assert_cmp(e1, cost_of(e1), b, cost_of(b), Cost.WORSE)

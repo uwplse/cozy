@@ -3,7 +3,7 @@ from enum import Enum
 
 from cozy.common import OrderedSet, partition
 from cozy.target_syntax import *
-from cozy.syntax_tools import pprint, fresh_var, free_vars, break_sum, all_exps, alpha_equivalent
+from cozy.syntax_tools import pprint, fresh_var, free_vars, free_funcs, break_sum, all_exps, alpha_equivalent
 from cozy.contexts import Context
 from cozy.typecheck import is_collection, is_numeric
 from cozy.pools import Pool, RUNTIME_POOL, STATE_POOL
@@ -42,8 +42,8 @@ class CostModel(object):
         self.examples.append(new_example)
 
     def _compare(self, e1 : Exp, e2 : Exp, context : Context):
-        e1_constant = not bool(free_vars(e1))
-        e2_constant = not bool(free_vars(e2))
+        e1_constant = not free_vars(e1) and not free_funcs(e1)
+        e2_constant = not free_vars(e2) and not free_funcs(e2)
         if e1_constant and e2_constant:
             e1v = eval(e1, {})
             e2v = eval(e2, {})
