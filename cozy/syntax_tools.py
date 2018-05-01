@@ -1948,12 +1948,8 @@ class BindingRewriter(BottomUpRewriter):
         bound_var = e.f.arg
         subexpr = e.f.body
 
-        print("Visiting let: {}".format(pprint(e)))
-
         use_finder = ConditionalUseFinder(bound_var)
         use_type = use_finder.visit(subexpr)
-
-        print("    > used = {}".format(use_type))
 
         if use_type == USED_ALWAYS:
             # Do nothing.
@@ -1961,19 +1957,17 @@ class BindingRewriter(BottomUpRewriter):
         elif use_type == USED_SOMETIMES:
             # Move it into each of the children that use it.
 
-            def inject_let(child):
-                """
-                Creates a new ELet wrapping the given child and visits it to
-                potentially move it further into the tree.
-                """
-                return self.visit(syntax.ELet(e.e, syntax.ELambda(e.f.arg, child)))
+            def maybe_rewrite_children(expr):
+                for child in expr.children():
+                    if use_finder.visit(child) != USED_NEVER:
+                        # Visit the resulting ELet to continue moving it deeper.
+                        yield self.visit(
+                            syntax.ELet(e.e, syntax.ELambda(e.f.arg, child)))
+                    else:
+                        yield child
 
-            for child in subexpr.children():
-                if use_finder.visit(child) != USED_NEVER:
-                    subexpr = common.ast_replace(subexpr, lambda c: c is child,
-                        inject_let)
+            return type(subexpr)(*maybe_rewrite_children(subexpr))
 
-            return subexpr
         elif use_type == USED_NEVER:
             # Eliminate the ELet.
             return subexpr

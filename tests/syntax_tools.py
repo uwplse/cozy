@@ -940,7 +940,7 @@ class TestConditionals(unittest.TestCase):
         assert isinstance(s, type(f_plus_cond))
         assert "let y = 1 in (y + 2)" in new_form
 
-    def __test_let_rewrite_past_let(self):
+    def test_let_rewrite_past_let(self):
         """
         let y = 1 in (
             let x = (z>0?y+2:z+2) in (
@@ -966,7 +966,54 @@ class TestConditionals(unittest.TestCase):
         s = fix_conditionals(s)
         new_form = pprint(s)
         print(new_form)
-        assert False
+        assert new_form.count("let y =") == 2
+
+    def test_let_rewrite_past_let_deep(self):
+        """
+        let y = 1 in (
+            let x = 2 in (
+                (z > 0) ? (y + x) : (z + 2)
+            )
+        )
+        """
+        y = EVar("y").with_type(INT)
+        x = EVar("x").with_type(INT)
+        z = EVar("z").with_type(INT)
+
+        ypx = EBinOp(y, "+", x)
+        zp2 = EBinOp(z, "+", ENum(2).with_type(INT))
+
+        cond_zy = ECond(EGt(z, ZERO), ypx, zp2)
+        s = ELet(ONE, ELambda(y, ELet(TWO, ELambda(x, cond_zy))))
+
+        assert retypecheck(s)
+        print(pprint(s))
+        s = fix_conditionals(s)
+        new_form = pprint(s)
+        print(new_form)
+        assert "let y = 1 in let x = 2 in (y + x)" in new_form
+
+    def test_let_rewrite_double_cond(self):
+        """
+        let y = 1 in (
+            z > 0 ? y : (x > 0 ? y : 0)
+        )
+        """
+        y = EVar("y").with_type(INT)
+        x = EVar("x").with_type(INT)
+        z = EVar("z").with_type(INT)
+
+        s = ELet(ONE, ELambda(y,
+            ECond(EGt(z, ZERO), y,
+                ECond(EGt(x, ZERO), y, ZERO))
+            ))
+
+        assert retypecheck(s)
+        print(pprint(s))
+        s = fix_conditionals(s)
+        new_form = pprint(s)
+        print(new_form)
+        assert new_form.count("let y") == 2
 
     def test_let_unused(self):
         """
