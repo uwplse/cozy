@@ -200,6 +200,14 @@ def wc_card(e):
         return ENum(EXTREME_COST).with_type(INT)
     return card(e)
 
+# These require walking over the entire collection.
+# Some others (e.g. "exists" or "empty") just look at the first item.
+LINEAR_TIME_UOPS = {
+    UOp.Sum, UOp.Length,
+    UOp.Distinct, UOp.AreUnique,
+    UOp.All, UOp.Any,
+    UOp.Reversed }
+
 def asymptotic_runtime(e):
     terms = [ONE]
     stk = [e]
@@ -223,7 +231,7 @@ def asymptotic_runtime(e):
         if isinstance(e, EBinOp) and e.op == "-" and is_collection(e.type):
             terms.append(ENum(EXTREME_COST).with_type(INT))
             terms.append(EBinOp(wc_card(e.e1), "*", wc_card(e.e2)).with_type(INT))
-        if isinstance(e, EUnaryOp) and is_collection(e.e):
+        if isinstance(e, EUnaryOp) and e.op in LINEAR_TIME_UOPS:
             terms.append(wc_card(e.e))
         if isinstance(e, EStateVar):
             continue
@@ -287,7 +295,7 @@ def rt(e, account_for_constant_factors=True):
         elif isinstance(e, EBinOp) and e.op in ("==", "!=", ">", "<", ">=", "<="):
             terms.append(storage_size(e.e1))
             terms.append(storage_size(e.e2))
-        elif isinstance(e, EUnaryOp) and is_collection(e.e.type):
+        elif isinstance(e, EUnaryOp) and e.op in LINEAR_TIME_UOPS:
             terms.append(card(e.e))
         elif isinstance(e, EMapGet):
             terms.append(hash_cost(e.key))
