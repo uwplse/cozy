@@ -10,8 +10,6 @@ cache: pip
 python:
   - "3.5"
 install:
-  - pip install -v -r requirements.txt
+  - pip install .
 script:
-  - python -m unittest -v tests/*.py
-  - python setup.py install
-  - which cozy
+  - python -m unittest -vb tests/*.py
