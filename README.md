@@ -33,12 +33,7 @@ Installation is optional; Cozy can run in this source directory as described
 in the "Quickstart" section. If you want to install the global executable
 "cozy" on your system:
 
-    $ ./setup.py install
-
-(Note: you may need to install the `setuptools` package with pip first.)
-
-The setup script works in
-[the usual manner](https://packaging.python.org/distributing/#setup-py).
+    $ pip3 install .
 
 ## Writing Specifications
 
