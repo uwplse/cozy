@@ -211,7 +211,7 @@ def asymptotic_runtime(e):
         if not isinstance(e, Exp):
             continue
         if isinstance(e, ELambda):
-            continue
+            e = e.body
         if isinstance(e, EFilter):
             terms.append(EBinOp(wc_card(e.e), "*", asymptotic_runtime(e.p)).with_type(INT))
         if isinstance(e, EMap) or isinstance(e, EFlatMap) or isinstance(e, EArgMin) or isinstance(e, EArgMax):
