@@ -542,7 +542,7 @@ class TestCostModel(unittest.TestCase):
         t = THandle("T", INT)
         x = EVar("x").with_type(t)
         e1 = ESingleton(EGetField(x, "val").with_type(INT)).with_type(INT_BAG)
-        e2 = EMap(ESingleton(x).with_type(TBag(t)), mk_lambda(t, lambda x: EGetField(x, "val").with_type(INT)))
+        e2 = EMap(ESingleton(x).with_type(TBag(t)), mk_lambda(t, lambda x: EGetField(x, "val").with_type(INT))).with_type(INT_BAG)
         assert_cmp(e1, cost_of(e1), e2, cost_of(e2), Cost.BETTER)
 
     def test_map_value_size_matters(self):
