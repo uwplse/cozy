@@ -1921,6 +1921,9 @@ USED_SOMETIMES = UseType.USED_SOMETIMES
 USED_ALWAYS = UseType.USED_ALWAYS
 
 class ConditionalUseFinder(BottomUpExplorer):
+    """
+    Computes whether the given var is always, sometimes, or never used in a tree.
+    """
     def __init__(self, var):
         self.var = var
 
@@ -1964,6 +1967,11 @@ class ConditionalUseFinder(BottomUpExplorer):
         return USED_NEVER
 
 class BindingRewriter(BottomUpRewriter):
+    """
+    Considers variable bindings and moves them into conditional structures in
+    the tree based on whether they're always, sometimes, or never used in those
+    structures.
+    """
     def visit_ELet(self, e1):
         e = type(e1)(*[self.visit(child) for child in e1.children()])
 
@@ -2004,10 +2012,10 @@ class BindingRewriter(BottomUpRewriter):
 
             if use_type == USED_ALWAYS:
                 return syntax.SSeq(decl, subexpr)
+
             elif use_type == USED_SOMETIMES:
                 def maybe_rewrite_children(expr):
                     for child in expr.children():
-
                         if use_finder.visit(child) != USED_NEVER:
                             # Visit the resulting SSeq to continue moving it deeper.
                             yield self.visit(syntax.SSeq(decl, child))
