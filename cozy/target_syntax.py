@@ -34,12 +34,15 @@ def EIsSingleton(e):
     arg = EVar(fresh_name()).with_type(e.type.t)
     return EBinOp(EUnaryOp(UOp.Sum, EMap(e, ELambda(arg, ONE)).with_type(TBag(INT))).with_type(INT), "<=", ONE).with_type(BOOL)
 
+def EDeepEq(e1, e2):
+    return EBinOp(e1, "===", e2).with_type(BOOL)
+
 def EDeepIn(e1, e2):
     from cozy.syntax_tools import free_vars, fresh_var
     arg = fresh_var(e1.type, omit=free_vars(e1))
     return EUnaryOp(UOp.Any,
         EMap(e2, ELambda(arg,
-            EBinOp(arg, "===", e1).with_type(BOOL))).with_type(BOOL_BAG)).with_type(BOOL)
+            EDeepEq(arg, e1))).with_type(BOOL_BAG)).with_type(BOOL)
 
 def ECountIn(e, collection):
     """Count the number of times e occurs in the collection"""
