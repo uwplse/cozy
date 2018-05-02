@@ -408,7 +408,7 @@ class PrettyPrinter(common.Visitor):
         return "{}{} = {};".format(indent, self.visit(s.lhs), self.visit(s.rhs))
 
     def visit_SDecl(self, s, indent=""):
-        return "{}{} {} : {} = {};".format(indent, self.format_keyword("var"), s.id, self.visit(s.val.type), self.visit(s.val))
+        return "{}{} {} = {};".format(indent, self.format_keyword("let"), s.id, self.visit(s.val))
 
     def visit_SSeq(self, s, indent=""):
         return "{}\n{}".format(self.visit(s.s1, indent), self.visit(s.s2, indent))
@@ -1993,9 +1993,6 @@ class BindingRewriter(BottomUpRewriter):
             return subexpr
 
     def visit_SSeq(self, seq):
-        import random
-        rand = random.randint(100, 1000)
-
         right_seq = build_right_seq_stick(seq)
         subexpr = self.visit(right_seq.s2)
 

@@ -582,7 +582,7 @@ class TestElimination(unittest.TestCase):
         new_form = pprint(s2)
         print(new_form)
 
-        assert new_form.count("var _tmp") == 1
+        assert new_form.count("let _tmp") == 1
 
     def test_cse_2_stm_expr_if(self):
         s = parse_stm(
@@ -1125,5 +1125,5 @@ class TestConditionals(unittest.TestCase):
         print(s)
 
         assert isinstance(s, SIf)
-        assert "var a : Int = 2;" in new_form
-        assert "var g : Int = 3;" in new_form
+        assert "let a = 2;" in new_form
+        assert "let g = 3;" in new_form
