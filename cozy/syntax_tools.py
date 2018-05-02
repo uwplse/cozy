@@ -1269,6 +1269,23 @@ def break_product(e : syntax.Exp):
 def break_seq(s : syntax.Stm):
     return break_binary(s, lambda s: (s.s1, s.s2) if isinstance(s, syntax.SSeq) else None)
 
+def build_right_seq_stick(seq):
+    """
+    Builds a recursive SSeq where each elem is (node, following_seq).
+    """
+    stms = [s for s in break_seq(seq) if not isinstance(s, syntax.SNoOp)]
+
+    if not stms:
+        return syntax.SNoOp()
+
+    reverse_iter = reversed(stms)
+    head = next(reverse_iter)
+
+    for s in reverse_iter:
+        head = syntax.SSeq(s, head)
+
+    return head
+
 class Aeq(object):
     def __init__(self, e : syntax.Exp):
         self.e = e
@@ -1331,7 +1348,6 @@ _ReduceOp = collections.namedtuple("_ReduceOp", ("x", "n"))
 _UnbindOp = collections.namedtuple("_UnbindOp", ("v",))
 
 class IterativeReducer(object):
-
     def bind(self, v : syntax.EVar):
         pass
 
@@ -1602,24 +1618,24 @@ class ExpressionMap(ExpMap):
         return ExpressionMap((exp, expinfo) for exp, expinfo in self.items()
             if var.id not in expinfo.dependents)
 
+class SLinearSequence(syntax.Stm):
+    """
+    An intermediate form of SSeq that just holds a list of its ordered
+    constituent statements.
+    """
+    def __init__(self, statements):
+        self.statements = statements
+    @classmethod
+    def from_seq(cls, seq):
+        return cls(list(break_seq(seq)))
+    def children(self):
+        return tuple(self.statements)
+    def __repr__(self):
+        return "SLinearSequence{}".format(repr(self.children()))
+
 def cse_scan(e):
     SIMPLE_EXPS = (syntax.ENum, syntax.EVar, syntax.EBool, syntax.EStr,
         syntax.ENative, syntax.EEnumEntry, syntax.ENull)
-
-    class SLinearSequence(syntax.Stm):
-        """
-        An intermediate form of SSeq that just holds a list of its ordered
-        constituent statements.
-        """
-        def __init__(self, statements):
-            self.statements = statements
-        @classmethod
-        def from_seq(cls, seq):
-            return cls(list(break_seq(seq)))
-        def children(self):
-            return tuple(self.statements)
-        def __repr__(self):
-            return "OrderedSequence{}".format(repr(self.children()))
 
     class SeqTransformer(BottomUpRewriter):
         """Rewrites SSeq -> SLinearSequence for CSE process."""
@@ -1938,6 +1954,9 @@ class ConditionalUseFinder(BottomUpExplorer):
         else:
             return USED_NEVER
 
+    visit_Stm = visit_Exp
+    visit_SIf = visit_ECond
+
     def visit_EVar(self, v):
         return USED_ALWAYS if v == self.var else USED_NEVER
 
@@ -1948,10 +1967,8 @@ class BindingRewriter(BottomUpRewriter):
     def visit_ELet(self, e1):
         e = type(e1)(*[self.visit(child) for child in e1.children()])
 
-        bound_var = e.f.arg
         subexpr = e.f.body
-
-        use_finder = ConditionalUseFinder(bound_var)
+        use_finder = ConditionalUseFinder(e.f.arg)
         use_type = use_finder.visit(subexpr)
 
         if use_type == USED_ALWAYS:
@@ -1974,6 +1991,38 @@ class BindingRewriter(BottomUpRewriter):
         elif use_type == USED_NEVER:
             # Eliminate the ELet.
             return subexpr
+
+    def visit_SSeq(self, seq):
+        import random
+        rand = random.randint(100, 1000)
+
+        right_seq = build_right_seq_stick(seq)
+        subexpr = self.visit(right_seq.s2)
+
+        if isinstance(right_seq.s1, syntax.SDecl):
+            decl = right_seq.s1
+            decl_var = syntax.EVar(decl.id).with_type(decl.val.type)
+            use_finder = ConditionalUseFinder(decl_var)
+            use_type = use_finder.visit(subexpr)
+
+            if use_type == USED_ALWAYS:
+                return syntax.SSeq(decl, subexpr)
+            elif use_type == USED_SOMETIMES:
+                def maybe_rewrite_children(expr):
+                    for child in expr.children():
+
+                        if use_finder.visit(child) != USED_NEVER:
+                            # Visit the resulting SSeq to continue moving it deeper.
+                            yield self.visit(syntax.SSeq(decl, child))
+                        else:
+                            yield child
+
+                return type(subexpr)(*maybe_rewrite_children(subexpr))
+
+            elif use_type == USED_NEVER:
+                return subexpr
+        else:
+            return syntax.SSeq(right_seq.s1, subexpr)
 
 def fix_conditionals(e):
     rewriter = BindingRewriter()

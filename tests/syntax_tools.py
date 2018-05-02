@@ -295,6 +295,31 @@ class TestSyntaxTools(unittest.TestCase):
         print(mod)
         assert handle_type is None
 
+    def test_build_right_seq(self):
+        s = parse_stm("""
+            a = 2;
+            b = 3;
+            c = 4;
+
+            if (b < 2) {
+                d = 5;
+                e = 7;
+            } else {
+                d = 2;
+                e = d;
+            }
+
+            d = 4;
+            e = 3;
+            f = 99;
+            """)
+
+        assert retypecheck(s)
+        s2 = build_right_seq_stick(s)
+        assert pprint(s) == pprint(s2)
+
+        build_right_seq_stick(seq([]))
+
 """
 Elimination tests.
 """
@@ -1048,10 +1073,10 @@ class TestConditionals(unittest.TestCase):
         assert isinstance(s, ECond)
         assert "let y" not in new_form
 
-    def __test_localize_if_(self):
+    def test_localize_if(self):
         s = parse_stm(
             """
-            a = 2;
+            let a = 2;
 
             if (foo) {
                 // <--- a=2 should get moved here.
@@ -1059,16 +1084,46 @@ class TestConditionals(unittest.TestCase):
             } else {
                 b = g;
             }
-            """
+            """,
+            dict(foo=BOOL)
         )
 
         assert retypecheck(s)
         print(pprint(s))
+        print(s)
 
-        #s = cse_replace(s)
+        s = fix_conditionals(s)
         print(pprint(s))
         print(s)
 
-        # assert "let y = 1 in (y + 2)" in pprint(s)
+        assert isinstance(s, SIf)
 
-        assert isinstance(s, EBinOp)
+    def test_localize_if_2(self):
+        s = parse_stm(
+            """
+            let a = 2;
+            let g = 3;
+
+            if (foo) {
+                // <--- a=2 should get moved here.
+                b = a;
+            } else {
+                // <--- and g here.
+                b = g;
+            }
+            """,
+            dict(foo=BOOL)
+        )
+
+        assert retypecheck(s)
+        print(pprint(s))
+        print(s)
+
+        s = fix_conditionals(s)
+        new_form = pprint(s)
+        print(new_form)
+        print(s)
+
+        assert isinstance(s, SIf)
+        assert "var a : Int = 2;" in new_form
+        assert "var g : Int = 3;" in new_form
