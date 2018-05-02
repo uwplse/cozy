@@ -253,6 +253,14 @@ class TestSyntaxTools(unittest.TestCase):
         assert l[2] is y
         assert l[3] is z
 
+    def test_all_exps_recursion_depth(self):
+        n = 100000
+        e = ENum(-1).with_type(INT)
+        for i in range(n):
+            e = EBinOp(e, "+", ENum(i).with_type(INT))
+        for x in all_exps(e):
+            pass
+
     def test_get_modified_var(self):
         htype = THandle("IntPtr", INT)
 

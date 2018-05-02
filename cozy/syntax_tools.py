@@ -579,14 +579,17 @@ def free_vars(exp, counts=False):
         res = common.OrderedSet(res.keys())
     return res
 
-def all_exps(e):
-    class V(BottomUpExplorer):
-        def join(self, x, children):
-            for child in children:
-                yield from child
-            if isinstance(x, syntax.Exp):
-                yield x
-    return V().visit(e)
+def all_exps(e : syntax.Exp):
+    q = [e]
+    while q:
+        e = q.pop()
+        if isinstance(e, tuple) or isinstance(e, list):
+            q.extend(e)
+            continue
+        if not isinstance(e, syntax.Exp):
+            continue
+        yield e
+        q.extend(e.children())
 
 Unknown = collections.namedtuple("Unknown", [])
 ElemOf = collections.namedtuple("ElemOf", ["bag"])
