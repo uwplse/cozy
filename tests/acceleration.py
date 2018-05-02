@@ -4,8 +4,26 @@ from cozy.target_syntax import *
 from cozy.syntax_tools import pprint, alpha_equivalent, free_vars
 from cozy.typecheck import retypecheck
 from cozy.contexts import RootCtx, UnderBinder
-from cozy.pools import RUNTIME_POOL
-from cozy.synthesis.acceleration import map_accelerate
+from cozy.pools import Pool, RUNTIME_POOL
+from cozy.synthesis.acceleration import try_optimize, map_accelerate
+from cozy.solver import valid
+from cozy.cost_model import find_case_where_better
+
+def can_improve(e, ctx, assumptions : Exp = T, pool : Pool = RUNTIME_POOL):
+    print("Optimizing {}...".format(pprint(e)))
+    for ee in try_optimize(e, ctx, pool):
+        print(" --> trying {}...".format(pprint(ee)))
+        if not valid(EImplies(assumptions, EEq(e, ee))):
+            print("    INVALID")
+            continue
+        else:
+            print("    VALID")
+        if find_case_where_better(e, ee, vars=None, funcs=None, assumptions=assumptions) is None and find_case_where_better(ee, e, vars=None, funcs=None, assumptions=assumptions) is not None:
+            print("    IMPROVED")
+            return True
+        else:
+            print("    NOT IMPROVED")
+    return False
 
 class TestAccelerationRules(unittest.TestCase):
 
@@ -36,3 +54,11 @@ class TestAccelerationRules(unittest.TestCase):
         e = EIn(ETuple((x, y)), pairs)
         assert retypecheck(e)
         assert [res for res, pool in map_accelerate(e, ctx) if pool == RUNTIME_POOL and isinstance(res, EMapGet)]
+
+    def test_argmin(self):
+        xs = EVar("xs").with_type(INT_BAG)
+        ys = EVar("ys").with_type(INT_BAG)
+        x = EVar("x").with_type(INT)
+        ctx = RootCtx(state_vars=[xs], args=[ys])
+        e = EArgMin(EBinOp(ys, "+", EStateVar(xs).with_type(xs.type)).with_type(INT_BAG), ELambda(x, x)).with_type(INT)
+        assert can_improve(e, ctx)

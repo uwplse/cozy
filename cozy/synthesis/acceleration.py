@@ -283,26 +283,23 @@ def optimized_best(xs, keyfunc, op, args):
     if isinstance(xs, ESingleton):
         return xs.e
     if isinstance(xs, EBinOp) and xs.op == "+":
-        a_ex = optimized_exists(xs.e1)
-        b_ex = optimized_exists(xs.e2)
-        a_best = optimized_best(xs.e1, keyfunc, op, args=args)
-        b_best = optimized_best(xs.e2, keyfunc, op, args=args)
-        return optimized_cond(
-            a_ex, optimized_cond(b_ex,
-                optimized_cond(
-                    EBinOp(keyfunc.apply_to(a_best), op, keyfunc.apply_to(b_best)).with_type(BOOL),
-                    a_best,
-                    b_best),
-                a_best),
-            b_best)
-        # return argbest(EBinOp(
-        #     ESingleton(optimized_best(xs.e1, keyfunc, op, args=args)).with_type(xs.type), "+",
-        #     ESingleton(optimized_best(xs.e2, keyfunc, op, args=args)).with_type(xs.type)).with_type(xs.type), keyfunc).with_type(elem_type)
+        parts = break_sum(xs)
+        found = F
+        best = construct_value(elem_type)
+        for p in parts:
+            ex = optimized_exists(p)
+            best_here = optimized_best(p, keyfunc, op, args=args)
+            best = optimized_cond(found,
+                optimized_cond(ex,
+                    optimized_cond(EBinOp(keyfunc.apply_to(best_here), op, keyfunc.apply_to(best)).with_type(BOOL),
+                        best_here,
+                        best),
+                    best),
+                best_here)
+            found = EAny([found, ex])
+        return best
     if isinstance(xs, EMap):
-        return optimized_cond(
-            optimized_exists(xs),
-            xs.f.apply_to(optimized_best(xs.e, compose(keyfunc, xs.f), op, args)),
-            construct_value(elem_type))
+        return xs.f.apply_to(optimized_best(xs.e, compose(keyfunc, xs.f), op, args))
     if isinstance(xs, EStateVar) and not any(v in args for v in free_vars(keyfunc)):
         return EStateVar(argbest(xs.e, keyfunc).with_type(elem_type)).with_type(elem_type)
     if isinstance(xs, ECond):
@@ -310,6 +307,8 @@ def optimized_best(xs, keyfunc, op, args):
             xs.cond,
             optimized_best(xs.then_branch, keyfunc, op, args=args),
             optimized_best(xs.else_branch, keyfunc, op, args=args))
+    if isinstance(xs, EUnaryOp) and xs.op == UOp.Distinct:
+        return optimized_best(xs.e, keyfunc, op, args=args)
     # if isinstance(xs, EFilter):
     #     return optimized_cond(
     #         xs.p.apply_to(optimized_best(xs.e, keyfunc, op, args=args)),
