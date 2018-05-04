@@ -459,11 +459,11 @@ def pprint(ast, format="plain"):
     _PRETTYPRINTER.format = format
     return _PRETTYPRINTER.visit(ast)
 
-def free_funcs(e : syntax.Exp) -> dict:
+def free_funcs(e : syntax.Exp) -> { str : syntax.TFunc }:
     res = collections.OrderedDict()
     for x in all_exps(e):
         if isinstance(x, syntax.ECall):
-            t = target_syntax.TFunc(tuple(arg.type for arg in x.args), x.type)
+            t = syntax.TFunc(tuple(arg.type for arg in x.args), x.type)
             if x.func in res:
                 assert res[x.func] == t
             else:

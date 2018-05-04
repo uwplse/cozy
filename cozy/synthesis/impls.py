@@ -108,7 +108,7 @@ class Implementation(object):
         return [ m for m in self.spec.methods if isinstance(m, Op) ]
 
     @property
-    def abstract_state(self):
+    def abstract_state(self) -> [EVar]:
         return [EVar(name).with_type(t) for (name, t) in self.spec.statevars]
 
     def _add_subquery(self, sub_q : Query, used_by : Stm) -> Stm:
