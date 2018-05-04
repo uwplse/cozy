@@ -82,33 +82,36 @@ def flatten(t, x):
 
 def pack(t, it):
     # MUST agree with flatten()
-    if decideable(t):
-        return next(it)
-    elif isinstance(t, TTuple):
-        return tuple(pack(tt, it) for tt in t.ts)
-    elif isinstance(t, TRecord):
-        return { f : pack(tt, it) for f, tt in t.fields }
-    elif isinstance(t, THandle):
-        return (pack(INT, it), pack(t.value_type, it))
-    elif is_collection(t):
-        n = next(it)
-        mask = []
-        elems = []
-        for i in range(n):
-            mask.append(pack(BOOL, it))
-            elems.append(pack(t.t, it))
-        return (mask, elems)
-    elif isinstance(t, TMap):
-        n = next(it)
-        default = pack(t.v, it)
-        mapping = []
-        for i in range(n):
-            mapping.append((
-                pack(BOOL, it),
-                pack(t.k, it),
-                pack(t.v, it)))
-        return {"default": default, "mapping": mapping}
-    raise NotImplementedError(t)
+    try:
+        if decideable(t):
+            return next(it)
+        elif isinstance(t, TTuple):
+            return tuple(pack(tt, it) for tt in t.ts)
+        elif isinstance(t, TRecord):
+            return { f : pack(tt, it) for f, tt in t.fields }
+        elif isinstance(t, THandle):
+            return (pack(INT, it), pack(t.value_type, it))
+        elif is_collection(t):
+            n = next(it)
+            mask = []
+            elems = []
+            for i in range(n):
+                mask.append(pack(BOOL, it))
+                elems.append(pack(t.t, it))
+            return (mask, elems)
+        elif isinstance(t, TMap):
+            n = next(it)
+            default = pack(t.v, it)
+            mapping = []
+            for i in range(n):
+                mapping.append((
+                    pack(BOOL, it),
+                    pack(t.k, it),
+                    pack(t.v, it)))
+            return {"default": default, "mapping": mapping}
+        raise NotImplementedError(t)
+    except StopIteration:
+        raise ValueError("not enough entries in iterable while unpacking {}".format(pprint(t)))
 
 def to_bool(e : z3.AstRef):
     """
