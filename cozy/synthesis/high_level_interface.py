@@ -18,7 +18,6 @@ from cozy.opts import Option
 
 from . import core
 from .impls import Implementation
-from .misc import queries_equivalent
 
 nice_children = Option("nice-children", bool, False)
 log_dir = Option("log-dir", str, "/tmp")
