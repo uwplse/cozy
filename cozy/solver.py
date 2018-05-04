@@ -913,47 +913,47 @@ class ToZ3(Visitor):
                 return self.unreconstruct(value, h.encoding_type(ty))
             raise NotImplementedError(ty)
 
-    def mkvar(self, collection_depth, type, min_collection_depth=0, on_z3_var=None, on_z3_assertion=None):
+    def mkvar(self, collection_depth, ty, min_collection_depth=0, on_z3_var=None, on_z3_assertion=None):
         ctx = self.ctx
         solver = self.solver
         if on_z3_var is None:
             on_z3_var = lambda v: v
         if on_z3_assertion is None:
             on_z3_assertion = solver.add
-        if type == INT or type == LONG or isinstance(type, TNative):
+        if ty == INT or ty == LONG or isinstance(ty, TNative):
             return on_z3_var(z3.Int(fresh_name(), ctx=ctx))
-        elif type == REAL or type == FLOAT:
+        elif ty == REAL or ty == FLOAT:
             return on_z3_var(z3.Real(fresh_name(), ctx=ctx))
-        elif type == STRING:
+        elif ty == STRING:
             i = on_z3_var(z3.Int(fresh_name(), ctx=ctx))
             on_z3_assertion(i >= 0)
             return i
-        elif type == BOOL:
+        elif ty == BOOL:
             return on_z3_var(z3.Bool(fresh_name(), ctx=ctx))
-        elif isinstance(type, TEnum):
-            ncases = len(type.cases)
+        elif isinstance(ty, TEnum):
+            ncases = len(ty.cases)
             n = on_z3_var(z3.Int(fresh_name(), ctx=ctx))
             on_z3_assertion(n >= 0)
             on_z3_assertion(n < ncases)
             return n
-        elif isinstance(type, TSet):
-            res = self.mkvar(collection_depth, TBag(type.t), min_collection_depth, on_z3_var, on_z3_assertion)
+        elif isinstance(ty, TSet):
+            res = self.mkvar(collection_depth, TBag(ty.t), min_collection_depth, on_z3_var, on_z3_assertion)
             mask, elems = res
             for i in range(1, len(mask)):
-                on_z3_assertion(self.implies(mask[i], self.distinct(type.t, *(elems[:(i+1)]))))
+                on_z3_assertion(self.implies(mask[i], self.distinct(ty.t, *(elems[:(i+1)]))))
             return res
-        elif isinstance(type, TBag) or isinstance(type, TList):
+        elif isinstance(ty, TBag) or isinstance(ty, TList):
             size = max(collection_depth, min_collection_depth)
             true_masks = [self.true for i in range(min_collection_depth)]
             symb_masks = [self.mkvar(collection_depth, BOOL, min_collection_depth, on_z3_var, on_z3_assertion) for i in range(size - min_collection_depth)]
             mask  = symb_masks + true_masks
-            elems = [self.mkvar(collection_depth, type.t, min_collection_depth, on_z3_var, on_z3_assertion) for i in range(collection_depth)]
+            elems = [self.mkvar(collection_depth, ty.t, min_collection_depth, on_z3_var, on_z3_assertion) for i in range(collection_depth)]
             # symmetry breaking
             for i in range(len(mask) - 1):
                 on_z3_assertion(self.implies(mask[i], mask[i+1]))
             return (mask, elems)
-        elif isinstance(type, TMap):
-            default = self.mkval(type.v)
+        elif isinstance(ty, TMap):
+            default = self.mkval(ty.v)
             mask = [self.mkvar(collection_depth, BOOL, min_collection_depth, on_z3_var, on_z3_assertion) for i in range(collection_depth)]
             # symmetry breaking
             for i in range(len(mask) - 1):
@@ -961,27 +961,27 @@ class ToZ3(Visitor):
             return {
                 "mapping": [(
                     mask[i],
-                    self.mkvar(collection_depth, type.k, min_collection_depth, on_z3_var, on_z3_assertion),
-                    self.mkvar(collection_depth, type.v, min_collection_depth, on_z3_var, on_z3_assertion))
+                    self.mkvar(collection_depth, ty.k, min_collection_depth, on_z3_var, on_z3_assertion),
+                    self.mkvar(collection_depth, ty.v, min_collection_depth, on_z3_var, on_z3_assertion))
                     for i in range(collection_depth)],
                 "default":
                     default }
-        elif isinstance(type, TRecord):
+        elif isinstance(ty, TRecord):
             # TODO: use Z3 ADTs
-            return { field : self.mkvar(collection_depth, t, min_collection_depth, on_z3_var, on_z3_assertion) for (field, t) in type.fields }
-        elif isinstance(type, TTuple):
+            return { field : self.mkvar(collection_depth, t, min_collection_depth, on_z3_var, on_z3_assertion) for (field, t) in ty.fields }
+        elif isinstance(ty, TTuple):
             # TODO: use Z3 ADTs
-            return tuple(self.mkvar(collection_depth, t, min_collection_depth, on_z3_var, on_z3_assertion) for t in type.ts)
-        elif isinstance(type, THandle):
+            return tuple(self.mkvar(collection_depth, t, min_collection_depth, on_z3_var, on_z3_assertion) for t in ty.ts)
+        elif isinstance(ty, THandle):
             h = on_z3_var(z3.Int(fresh_name(), ctx=ctx))
-            v = (h, self.mkvar(collection_depth, type.value_type, min_collection_depth, on_z3_var, on_z3_assertion))
+            v = (h, self.mkvar(collection_depth, ty.value_type, min_collection_depth, on_z3_var, on_z3_assertion))
             return v
-        elif isinstance(type, TFunc):
+        elif isinstance(ty, TFunc):
             return z3.Function(fresh_name(),
-                *[self.visit(t) for t in type.arg_types],
-                self.visit(type.ret_type))
+                *[self.visit(t) for t in ty.arg_types],
+                self.visit(ty.ret_type))
         else:
-            raise NotImplementedError(type)
+            raise NotImplementedError(ty)
 
 DECIDABLE_TYPES = set([TInt, TLong, TBool, TString, TEnum, TNative, TReal, TFloat])
 def decideable(t : Type):
