@@ -54,6 +54,11 @@ def deterministic_flattenable(t):
 
 def flatten(t, x):
     # MUST agree with pack()
+    h = extension_handler(type(t))
+    if h is not None:
+        yield from flatten(h.encoding_type(t), x)
+        return
+
     if decideable(t):
         yield x
     elif isinstance(t, TTuple):
@@ -82,6 +87,10 @@ def flatten(t, x):
 
 def pack(t, it):
     # MUST agree with flatten()
+    h = extension_handler(type(t))
+    if h is not None:
+        return pack(h.encoding_type(t), it)
+
     try:
         if decideable(t):
             return next(it)
@@ -129,6 +138,10 @@ def ite(ty : Type, cond : z3.AstRef, then_branch, else_branch):
     b = to_bool(cond)
     if b is not None:
         return then_branch if b else else_branch
+
+    h = extension_handler(type(ty))
+    if h is not None:
+        return ite(h.encoding_type(ty), cond, then_branch, else_branch)
 
     ctx = cond.ctx
     assert isinstance(ctx, z3.Context)
@@ -923,6 +936,11 @@ class ToZ3(Visitor):
             on_z3_var = lambda v: v
         if on_z3_assertion is None:
             on_z3_assertion = solver.add
+
+        h = extension_handler(type(ty))
+        if h is not None:
+            return self.mkvar(collection_depth, h.encoding_type(ty), min_collection_depth, on_z3_var, on_z3_assertion)
+
         if ty == INT or ty == LONG or isinstance(ty, TNative):
             return on_z3_var(z3.Int(fresh_name(), ctx=ctx))
         elif ty == REAL or ty == FLOAT:
