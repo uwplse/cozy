@@ -91,6 +91,15 @@ class Implementation(object):
         self.handle_updates = handle_updates # maps (handle_type, op_name) to stm
         self.state_solver = ModelCachingSolver(vars=self.abstract_state, funcs=self.extern_funcs)
 
+    def __getstate__(self):
+        d = dict(self.__dict__)
+        if "state_solver" in d:
+            del d["state_solver"]
+        if hasattr(self, "__slots__"):
+            for a in self.__slots__:
+                d[a] = getattr(self, a)
+        return d
+
     def add_query(self, q : Query):
         """
         Given a query in terms of abstract state, add an initial concrete
