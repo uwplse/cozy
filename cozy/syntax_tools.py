@@ -446,7 +446,7 @@ class PrettyPrinter(common.Visitor):
     def visit_SIf(self, s, indent=""):
         if isinstance(s.else_branch, syntax.SNoOp):
             return "{indent}{If} {} {{\n{}\n{indent}}}".format(self.visit(s.cond), self.visit(s.then_branch, indent + "  "), indent=indent, If=self.format_keyword("if"))
-        return "{indent}{If} {} {{\n{}\n{indent}}} {Else} {{\n{}\n}}".format(
+        return "{indent}{If} {} {{\n{}\n{indent}}} {Else} {{\n{}\n{indent}}}".format(
             self.visit(s.cond),
             self.visit(s.then_branch, indent + "  "),
             self.visit(s.else_branch, indent + "  "),
