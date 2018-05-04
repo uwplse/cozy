@@ -125,7 +125,7 @@ class Implementation(object):
                     sub_q)
                 if not valid(EImplies(EAll(sub_q.assumptions), EAll(new_a))):
                     event("we do!")
-                    sub_q.assumptions += new_a
+                    sub_q.assumptions = list(itertools.chain(sub_q.assumptions, new_a))
 
             with task("simplifying"):
                 orig_a = sub_q.assumptions
