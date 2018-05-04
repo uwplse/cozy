@@ -14,6 +14,7 @@ from cozy import evaluation
 from cozy.opts import Option
 from cozy.structures import extension_handler
 from cozy.logging import task
+from cozy.evaluation import eval_bulk
 
 save_solver_testcases = Option("save-solver-testcases", str, "", metavar="PATH")
 collection_depth_opt = Option("collection-depth", int, 4, metavar="N", description="Bound for bounded verification")
@@ -1317,3 +1318,35 @@ def satisfiable(e, **opts):
 def valid(e, **opts):
     s = IncrementalSolver(**opts)
     return s.valid(e)
+
+class ModelCachingSolver(object):
+    """
+    A non-incremental solver that caches the models it obtains.  This is useful
+    if you expect to be issuing many solver queries in similar contexts; solver
+    calls can often be avoided using a counterexample found on a previous call.
+    """
+
+    def __init__(self, vars : [EVar], funcs : { str : TFunc }):
+        self.vars = list(vars)
+        self.funcs = OrderedDict(funcs)
+        self.calls = 0
+        self.hits = 0
+        self.examples = []
+
+    def satisfy(self, e):
+        self.calls += 1
+        eval_results = eval_bulk(e, self.examples)
+        for x, res in zip(self.examples, eval_results):
+            if res:
+                self.hits += 1
+                return x
+        x = satisfy(e, vars=self.vars, funcs=self.funcs)
+        if x is not None:
+            self.examples.append(x)
+        return x
+
+    def satisfiable(self, e):
+        return self.satisfy(e) is not None
+
+    def valid(self, e):
+        return not self.satisfiable(ENot(e))

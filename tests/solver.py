@@ -1,11 +1,11 @@
 import unittest
 
 from cozy.common import OrderedSet
-from cozy.solver import satisfy, valid, satisfiable, IncrementalSolver
+from cozy.solver import satisfy, valid, satisfiable, IncrementalSolver, ModelCachingSolver
 from cozy.typecheck import typecheck, retypecheck
 from cozy.target_syntax import *
 from cozy.structures.heaps import *
-from cozy.syntax_tools import pprint, equal, implies, mk_lambda, subst
+from cozy.syntax_tools import pprint, equal, implies, mk_lambda, subst, free_vars
 from cozy.evaluation import eval, Bag, Handle
 
 zero = ENum(0).with_type(TInt())
@@ -504,3 +504,11 @@ class TestSolver(unittest.TestCase):
         e = EMapGet(EVar('_tmp56903').with_type(TMap(THandle('T', TNative('int')), TMinHeap(THandle('T', TNative('int')), ELambda(EVar('x').with_type(THandle('T', TNative('int'))), EGetField(EVar('x').with_type(THandle('T', TNative('int'))), 'val').with_type(TNative('int')))))), EVar('_var56869').with_type(THandle('T', TNative('int')))).with_type(TMinHeap(THandle('T', TNative('int')), ELambda(EVar('x').with_type(THandle('T', TNative('int'))), EGetField(EVar('x').with_type(THandle('T', TNative('int'))), 'val').with_type(TNative('int')))))
         v = fresh_var(e.type)
         assert satisfiable(EEq(e, v), validate_model=True)
+
+    def test_caching_solver(self):
+        e = EEq(EVar("x").with_type(INT), EVar("y").with_type(INT))
+        s = ModelCachingSolver(vars=free_vars(e), funcs=())
+        assert s.satisfiable(e)
+        assert s.satisfiable(e)
+        assert s.calls == 2
+        assert s.hits == 1
