@@ -1,6 +1,6 @@
 from cozy.common import fresh_name, declare_case
 from cozy.syntax import *
-from cozy.target_syntax import SWhile, SSwap, SSwitch, SEscapableBlock, SEscapeBlock
+from cozy.target_syntax import SWhile, SSwap, SSwitch, SEscapableBlock, SEscapeBlock, EMap, EFilter
 from cozy.syntax_tools import fresh_var, pprint, shallow_copy
 from cozy.pools import RUNTIME_POOL
 
@@ -18,6 +18,13 @@ EHeapElems = declare_case(Exp, "EHeapElems", ["e"]) # all elements
 EHeapPeek  = declare_case(Exp, "EHeapPeek",  ["e", "n"]) # look at min
 EHeapPeek2 = declare_case(Exp, "EHeapPeek2", ["e", "n"]) # look at 2nd min
 
+def to_heap(e : Exp) -> Exp:
+    if isinstance(e, EArgMin):
+        return EMakeMinHeap(e.e, e.f).with_type(TMinHeap(e.type, e.f))
+    if isinstance(e, EArgMax):
+        return EMakeMaxHeap(e.e, e.f).with_type(TMaxHeap(e.type, e.f))
+    raise ValueError(e)
+
 # Binary heap utilities
 def _left_child(idx : Exp) -> Exp:
     return EBinOp(EBinOp(idx, "<<", ONE).with_type(INT), "+", ONE).with_type(INT)
@@ -29,6 +36,11 @@ def _has_right_child(idx : Exp, size : Exp) -> Exp:
     return ELt(_right_child(idx), size)
 def _parent(idx : Exp) -> Exp:
     return EBinOp(EBinOp(idx, "-", ONE).with_type(INT), ">>", ONE).with_type(INT)
+
+def find_func(e : Exp) -> ELambda:
+    if isinstance(e, EMakeMinHeap) or isinstance(e, EMakeMaxHeap):
+        return e.f
+    raise NotImplementedError(e)
 
 class Heaps(object):
 
@@ -55,26 +67,35 @@ class Heaps(object):
 
     def encoding_type(self, t : Type) -> Type:
         assert isinstance(t, TMaxHeap) or isinstance(t, TMinHeap)
-        return TBag(t.t)
+        return TBag(TTuple((t.t, t.f.body.type)))
 
     def encode(self, e : Exp) -> Exp:
         if isinstance(e, EMakeMinHeap):
-            return e.e
+            tt = TTuple((e.f.arg.type, e.f.body.type))
+            return EMap(e.e, ELambda(e.f.arg, ETuple((e.f.arg, e.f.body)).with_type(tt))).with_type(TBag(tt))
         elif isinstance(e, EMakeMaxHeap):
-            return e.e
+            tt = TTuple((e.f.arg.type, e.f.body.type))
+            return EMap(e.e, ELambda(e.f.arg, ETuple((e.f.arg, e.f.body)).with_type(tt))).with_type(TBag(tt))
         elif isinstance(e, EHeapElems):
-            return e.e
+            arg = EVar(e.e.type.f.arg.id).with_type(TTuple((e.type.t, e.e.type.f.body.type)))
+            return EMap(e.e, ELambda(arg, ETupleGet(arg, 0).with_type(e.type.t))).with_type(e.type)
         elif isinstance(e, EHeapPeek):
             f = EArgMin if isinstance(e.e.type, TMinHeap) else EArgMax
-            return f(e.e, e.e.type.f).with_type(e.type)
+            return f(EHeapElems(e.e).with_type(TBag(e.type)), e.e.type.f).with_type(e.type)
         elif isinstance(e, EHeapPeek2):
             elem_type = e.e.type.t
             f = EArgMin if isinstance(e.e.type, TMinHeap) else EArgMax
-            return f(EBinOp(e.e, "-", ESingleton(EHeapPeek(e.e, e.n).with_type(elem_type)).with_type(TBag(elem_type))).with_type(TBag(elem_type)), e.e.type.f).with_type(e.type)
+            return f(EBinOp(EHeapElems(e.e).with_type(TBag(e.type)), "-", ESingleton(EHeapPeek(e.e, e.n).with_type(elem_type)).with_type(TBag(elem_type))).with_type(TBag(elem_type)), e.e.type.f).with_type(e.type)
         else:
-            raise NotImplementedError()
+            raise NotImplementedError(e)
 
-    def incrementalize(self, lval, old_value, new_value, state_vars, make_subgoal):
+    def mutate_in_place(self, lval, e, op, assumptions, make_subgoal):
+        from cozy.incrementalization import mutate
+
+        old_value = e
+        new_value = mutate(e, op)
+
+        # added/removed elements
         t = TBag(lval.type.t)
         old_elems = EHeapElems(old_value).with_type(t)
         new_elems = EHeapElems(new_value).with_type(t)
@@ -83,10 +104,18 @@ class Heaps(object):
         to_del_spec = EBinOp(old_elems, "-", new_elems).with_type(t)
         removed_count = make_subgoal(ELen(to_del_spec))
         to_del = make_subgoal(to_del_spec, docstring="deletions from {}".format(pprint(lval)))
+
+        # modified elements
+        f = lval.type.f
         v = fresh_var(t.t)
+        old_v_key = f.apply_to(v)
+        new_v_key = mutate(old_v_key, op)
+        mod_spec = EFilter(old_elems, ELambda(v, EAll([EIn(v, new_elems), ENot(EEq(new_v_key, old_v_key))]))).with_type(new_elems.type)
+        modified = make_subgoal(mod_spec)
         return seq([
             SCall(lval, "remove_all", (initial_count, to_del)),
-            SCall(lval, "add_all",    (EBinOp(initial_count, "-", removed_count).with_type(INT), to_add))])
+            SCall(lval, "add_all",    (EBinOp(initial_count, "-", removed_count).with_type(INT), to_add)),
+            SForEach(v, modified, SCall(lval, "update", (v, make_subgoal(new_v_key, a=[EIn(v, mod_spec)]))))])
 
     def rep_type(self, t : Type) -> Type:
         return TArray(t.t)

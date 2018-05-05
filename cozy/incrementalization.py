@@ -1,7 +1,7 @@
 from cozy.common import fresh_name, identity_func
 from cozy import syntax
 from cozy import target_syntax
-from cozy.syntax_tools import free_vars, pprint, fresh_var, mk_lambda, alpha_equivalent, strip_EStateVar, subst
+from cozy.syntax_tools import free_vars, pprint, fresh_var, mk_lambda, alpha_equivalent, strip_EStateVar, subst, break_seq, BottomUpRewriter
 from cozy.typecheck import is_numeric
 from cozy.solver import valid
 from cozy.opts import Option
@@ -50,6 +50,16 @@ def mutate(e : syntax.Exp, op : syntax.Stm, k=identity_func) -> syntax.Exp:
         return subst(k(e), { op.id : op.val })
     else:
         raise NotImplementedError(type(op))
+
+def replace_get_value(e : syntax.Exp, t : syntax.THandle, f):
+    class V(BottomUpRewriter):
+        def visit_EGetField(self, e):
+            ee = self.visit(e.e)
+            res = syntax.EGetField(ee, e.f).with_type(e.type)
+            if e.e.type == t and e.f == "val":
+                return f(res)
+            return res
+    return V().visit(e)
 
 def _do_assignment(lval : syntax.Exp, new_value : syntax.Exp, e : syntax.Exp) -> syntax.Exp:
     """
@@ -118,6 +128,91 @@ def _global_rewrite(e : syntax.Exp, t : syntax.Type, change) -> syntax.Exp:
     else:
         raise NotImplementedError(repr(e.type))
 
+def mutate_in_place(
+        lval           : syntax.Exp,
+        e              : syntax.Exp,
+        op             : syntax.Stm,
+        abstract_state : [syntax.EVar],
+        assumptions    : [syntax.Exp] = None,
+        subgoals_out   : [syntax.Query] = None) -> syntax.Stm:
+    """
+    Produce code to update `lval` that tracks derived value `e` when `op` is
+    run.
+    """
+
+    if assumptions is None:
+        assumptions = []
+
+    if subgoals_out is None:
+        subgoals_out = []
+
+    def make_subgoal(e, a=[], docstring=None):
+        # e = strip_EStateVar(e)
+        if skip_stateless_synthesis.value and not any(v in abstract_state for v in free_vars(e)):
+            return e
+        query_name = fresh_name("query")
+        query = syntax.Query(query_name, syntax.Visibility.Internal, [], assumptions + a, e, docstring)
+        query_vars = [v for v in free_vars(query) if v not in abstract_state]
+        query.args = [(arg.id, arg.type) for arg in query_vars]
+        subgoals_out.append(query)
+        return syntax.ECall(query_name, tuple(query_vars)).with_type(e.type)
+
+    h = extension_handler(type(lval.type))
+    if h is not None:
+        return h.mutate_in_place(
+            lval=lval,
+            e=e,
+            op=op,
+            assumptions=assumptions,
+            make_subgoal=make_subgoal)
+
+    # TODO!
+    # from cozy.syntax import EImplies, EAll, EEq, ELe, EGe, EArgMin, EArgMax, ENot, ELambda, seq, ELen, SCall, SAssign, SForEach, INT, EBinOp, ESingleton
+    # from cozy.target_syntax import EDeepIn, EDeepEq, EFilter, EStateVar
+    # from cozy.structures.heaps import to_heap, EHeapPeek2
+    # if False and (isinstance(e, EArgMin) or isinstance(e, EArgMax)):
+    #     new_elems = mutate(e.e, op)
+    #     if valid(EImplies(EAll(assumptions), EEq(e.e, new_elems))):
+    #         # Elements don't change!
+    #         h= to_heap(e)
+    #         h = EStateVar(h).with_type(h.type)
+    #         # if min changed: use heap
+    #         old_best = e.f.apply_to(e)
+    #         compare = ELe if isinstance(e, EArgMin) else EGe
+    #         new_best = mutate(old_best, op)
+    #         cond = compare(new_best, EStateVar(old_best).with_type(old_best.type))
+    #         return syntax.SIf(
+    #             make_subgoal(cond),
+    #             syntax.SAssign(lval, make_subgoal(
+    #                 type(e)(EBinOp(
+    #                     ESingleton(EStateVar(e).with_type(e.type)).with_type(e.e.type), "+",
+    #                     ESingleton(mutate(e, op)).with_type(e.e.type)).with_type(e.e.type), e.f).with_type(e.type), a=[cond])),
+    #             syntax.SAssign(lval, make_subgoal(
+    #                 EHeapPeek2(h,
+    #                 EStateVar(ELen(e.e)).with_type(INT)).with_type(lval.type), a=[ENot(cond)])))
+    #         # return syntax.SAssign(lval, EHeapPeek(
+    #         #     make_subgoal(EStateVar(h).with_type(h.type)),
+    #         #     make_subgoal(EStateVar(ELen(e.e)).with_type(INT))).with_type(h.type))
+
+    # fallback: use an update sketch
+    new_e = mutate(e, op)
+    s, sgs = sketch_update(lval, e, new_e, ctx=abstract_state, assumptions=assumptions)
+    subgoals_out.extend(sgs)
+    return s
+
+def value_at(m, k):
+    """
+    Assuming k is in EMapKeys(m), produce the value at k.
+    """
+    if isinstance(m, target_syntax.EMakeMap2):
+        return m.value.apply_to(k)
+    if isinstance(m, syntax.ECond):
+        return syntax.ECond(
+            m.cond,
+            value_at(m.then_branch, k),
+            value_at(m.else_branch, k)).with_type(m.type.v)
+    return target_syntax.EMapGet(m, k).with_type(m.type.v)
+
 def sketch_update(
         lval        : syntax.Exp,
         old_value   : syntax.Exp,
@@ -179,7 +274,6 @@ def sketch_update(
             recurse(get(lval, i), get(old_value, i), get(new_value, i), ctx, assumptions)
             for i in range(len(t.fields))])
     elif isinstance(t, syntax.TMap):
-        value_at = lambda m, k: target_syntax.EMapGet(m, k).with_type(lval.type.v)
         k = fresh_var(lval.type.k)
         v = fresh_var(lval.type.v)
         key_bag = syntax.TBag(lval.type.k)
@@ -239,11 +333,7 @@ def sketch_update(
             stm = syntax.SForEach(k, altered_keys,
                 target_syntax.SMapUpdate(lval, k, v, update_value))
     else:
-        h = extension_handler(type(lval.type))
-        if h is not None:
-            stm = h.incrementalize(lval=lval, old_value=old_value, new_value=new_value, state_vars=ctx, make_subgoal=make_subgoal)
-        else:
-            # Fallback rule: just compute a new value from scratch
-            stm = syntax.SAssign(lval, make_subgoal(new_value, docstring="new value for {}".format(pprint(lval))))
+        # Fallback rule: just compute a new value from scratch
+        stm = syntax.SAssign(lval, make_subgoal(new_value, docstring="new value for {}".format(pprint(lval))))
 
     return (stm, subgoals)

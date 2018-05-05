@@ -236,12 +236,14 @@ class Implementation(object):
             for op in self.op_specs:
                 with task("incrementalizing query", query=q.name, op=op.name):
                     for new_member, projection in rep:
-                        (state_update_stm, subqueries) = inc.sketch_update(
+                        subqueries = []
+                        state_update_stm = inc.mutate_in_place(
                             new_member,
                             projection,
-                            inc.mutate(projection, op.body),
-                            self.abstract_state,
-                            list(op.assumptions))
+                            op.body,
+                            abstract_state=self.abstract_state,
+                            assumptions=op.assumptions,
+                            subgoals_out=subqueries)
                         for sub_q in subqueries:
                             sub_q.docstring = "[{}] {}".format(op.name, sub_q.docstring)
                             state_update_stm = self._add_subquery(sub_q=sub_q, used_by=state_update_stm)
