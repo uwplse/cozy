@@ -153,11 +153,6 @@ class Learner(object):
 
         raise NoMoreImprovements()
 
-def truncate(s):
-    if len(s) > 60:
-        return s[:60] + "..."
-    return s
-
 def can_elim_vars(spec : Exp, assumptions : Exp, vs : [EVar]):
     spec = strip_EStateVar(spec)
     sub = { v.id : fresh_var(v.type) for v in vs }
@@ -291,8 +286,8 @@ def improve(
                     raise Exception("got a duplicate example")
                 # a. if incorrect: add example, reset the learner
                 examples.append(counterexample)
-                print("new example: {}".format(truncate(repr(counterexample))))
-                print("restarting with {} examples".format(len(examples)))
+                event("new example: {!r}".format(counterexample))
+                print("wrong; restarting with {} examples".format(len(examples)))
                 learner.reset(examples)
             else:
                 # b. if correct: yield it, watch the new target, goto 1
