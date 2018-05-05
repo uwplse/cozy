@@ -240,9 +240,9 @@ def improve(
         print("This job does not depend on state_vars.")
         # TODO: what can we do about it?
 
-    hints = [freshen_binders(h, context) for h in hints]
+    hints = [freshen_binders(h, context) for h in hints] + [target]
     vars = list(v for (v, p) in context.vars())
-    funcs = free_funcs(EAll([target, assumptions] + hints)) # TODO: context should know this
+    funcs = free_funcs(EAll([assumptions] + hints)) # TODO: context should know this
 
     solver = None
     if incremental.value:
