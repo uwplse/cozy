@@ -220,6 +220,7 @@ def improve(
             examples=examples))
 
     target = freshen_binders(target, context)
+    assumptions = freshen_binders(assumptions, context)
 
     print()
     print("improving: {}".format(pprint(target)))
@@ -239,7 +240,7 @@ def improve(
         print("This job does not depend on state_vars.")
         # TODO: what can we do about it?
 
-    hints = list(hints)
+    hints = [freshen_binders(h, context) for h in hints]
     vars = list(v for (v, p) in context.vars())
     funcs = free_funcs(EAll([target, assumptions] + hints)) # TODO: context should know this
 
