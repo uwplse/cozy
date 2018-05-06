@@ -190,9 +190,8 @@ class Typechecker(Visitor):
     def check_assignment(self, node, ltype, rtype):
         if ltype == rtype or ltype is DEFAULT_TYPE or rtype is DEFAULT_TYPE:
             return
-        for ct in (syntax.TBag, syntax.TSet, syntax.TList):
-            if isinstance(ltype, ct) and isinstance(rtype, ct):
-                return
+        if is_collection(ltype) and is_collection(rtype):
+            return
         self.report_err(node, "cannot assign {} to a {}".format(pprint(rtype), pprint(ltype)))
 
     def ensure_numeric(self, e):
