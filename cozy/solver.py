@@ -1220,9 +1220,16 @@ class IncrementalSolver(object):
                 res = { }
                 if model_extraction:
                     def mkfunc(f, arg_types, out_type):
-                        @lru_cache(maxsize=None)
+                        z3_func = model[f]
+                        *z3_entries, z3_default = z3_func.as_list()
+                        default = reconstruct(model, z3_default, out_type)
+                        entries = { }
+                        for *z3_input, z3_output in z3_entries:
+                            input = tuple(reconstruct(model, i, t) for (i, t) in zip(z3_input, arg_types))
+                            output = reconstruct(model, z3_output, out_type)
+                            entries[input] = output
                         def extracted_func(*args):
-                            return reconstruct(model, f(*[visitor.unreconstruct(v, t) for (v, t) in zip(args, arg_types)]), out_type)
+                            return entries.get(args, default)
                         return extracted_func
                     model = solver.model()
                     # print(model)
