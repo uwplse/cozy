@@ -50,14 +50,6 @@ class TestSolver(unittest.TestCase):
         assert model is not None
         assert model[x.id] == 0
 
-    def test_function_extraction(self):
-        x = EVar("x").with_type(TNative("Foo"))
-        e = ECall("f", (x,)).with_type(TBool())
-        model = satisfy(e)
-        assert "x" in model
-        assert "f" in model
-        assert model["f"](model["x"]) is True
-
     def test_symbolic_maps1(self):
         x = EVar("x").with_type(TMap(TInt(), TInt()))
         y = EVar("y").with_type(TMap(TInt(), TInt()))
@@ -374,12 +366,27 @@ class TestSolver(unittest.TestCase):
         v = EVar("b").with_type(BOOL)
         satisfy(EEq(v, res), validate_model=True)
 
-    def test_funcs(self):
+    def test_function_extraction01(self):
         x = EVar("x").with_type(INT)
         e = EEq(ECall("f", (x,)).with_type(INT), ZERO)
         model = satisfy(e)
         assert model
         assert model["f"](model["x"]) == 0
+
+    def test_function_extraction02(self):
+        x = EVar("x").with_type(TNative("Foo"))
+        e = ECall("f", (x,)).with_type(TBool())
+        model = satisfy(e)
+        assert "x" in model
+        assert "f" in model
+        assert model["f"](model["x"]) is True
+
+    def test_function_extraction03(self):
+        x = EVar("x").with_type(TNative("Foo"))
+        model = satisfy(EEq(x, x), funcs={ "f": TFunc((x.type,), BOOL) })
+        assert "x" in model
+        assert "f" in model
+        assert model["f"](model["x"]) in (True, False)
 
     def test_argmin1(self):
         satisfy(EUnaryOp('not', EBinOp(EUnaryOp('not', EBool(True).with_type(TBool())).with_type(TBool()), 'or', EBinOp(EBinOp(EArgMin(EBinOp(EVar('xs').with_type(TBag(TInt())), '+', ESingleton(EVar('i').with_type(TInt())).with_type(TBag(TInt()))).with_type(TBag(TInt())), ELambda(EVar('_var148').with_type(TInt()), EVar('_var148').with_type(TInt()))).with_type(TInt()), '+', EUnaryOp('-', EArgMin(EVar('xs').with_type(TBag(TInt())), ELambda(EVar('_var148').with_type(TInt()), EVar('_var148').with_type(TInt()))).with_type(TInt())).with_type(TInt())).with_type(TInt()), '==', EBinOp(EArgMin(EBinOp(EVar('_var164').with_type(TBag(TInt())), '+', ESingleton(EVar('i').with_type(TInt())).with_type(TBag(TInt()))).with_type(TBag(TInt())), ELambda(EVar('_var148').with_type(TInt()), EVar('_var148').with_type(TInt()))).with_type(TInt()), '+', EUnaryOp('-', EArgMin(EVar('_var164').with_type(TBag(TInt())), ELambda(EVar('_var148').with_type(TInt()), EVar('_var148').with_type(TInt()))).with_type(TInt())).with_type(TInt())).with_type(TInt())).with_type(TBool())).with_type(TBool())).with_type(TBool()), vars=OrderedSet([EVar('xs').with_type(TBag(TInt())), EVar('i').with_type(TInt()), EVar('_var164').with_type(TBag(TInt()))]), collection_depth=2, validate_model=True)

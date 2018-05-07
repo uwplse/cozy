@@ -1232,6 +1232,8 @@ class IncrementalSolver(object):
                 if model_extraction:
                     def mkfunc(f, arg_types, out_type):
                         z3_func = model[f]
+                        if z3_func is None:
+                            return ExtractedFunc({}, evaluation.mkval(out_type))
                         *z3_entries, z3_default = z3_func.as_list()
                         default = reconstruct(model, z3_default, out_type)
                         entries = OrderedDict()
