@@ -1040,6 +1040,17 @@ def _tock(e, event):
 
 _LOCK = threading.RLock()
 
+class ExtractedFunc(object):
+    def __init__(self, cases, default):
+        self.cases = cases
+        self.default = default
+    def __repr__(self):
+        return "ExtractedFunc(cases={!r}, default={!r})".format(self.cases, self.default)
+    def __str__(self):
+        return repr(self)
+    def __call__(self, *args):
+        return self.cases.get(args, self.default)
+
 class IncrementalSolver(object):
     SAVE_PROPS = [
         "vars",
@@ -1223,14 +1234,12 @@ class IncrementalSolver(object):
                         z3_func = model[f]
                         *z3_entries, z3_default = z3_func.as_list()
                         default = reconstruct(model, z3_default, out_type)
-                        entries = { }
+                        entries = OrderedDict()
                         for *z3_input, z3_output in z3_entries:
                             input = tuple(reconstruct(model, i, t) for (i, t) in zip(z3_input, arg_types))
                             output = reconstruct(model, z3_output, out_type)
                             entries[input] = output
-                        def extracted_func(*args):
-                            return entries.get(args, default)
-                        return extracted_func
+                        return ExtractedFunc(entries, default)
                     model = solver.model()
                     # print(model)
                     for name, t in self.funcs.items():
