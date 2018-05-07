@@ -388,6 +388,21 @@ class TestSolver(unittest.TestCase):
         assert "f" in model
         assert model["f"](model["x"]) in (True, False)
 
+    def test_function_extraction04(self):
+        x = EVar("x").with_type(TNative("Foo"))
+        model = satisfy(EEq(x, x), funcs={ "f": TFunc((), BOOL) })
+        assert "x" in model
+        assert "f" in model
+        assert model["f"]() in (True, False)
+
+    def test_function_extraction05(self):
+        x = EVar("x").with_type(TNative("Foo"))
+        e = ECall("f", ()).with_type(x.type)
+        model = satisfy(EEq(x, e))
+        assert "x" in model
+        assert "f" in model
+        assert model["f"](model["x"]) == model["x"]
+
     def test_argmin1(self):
         satisfy(EUnaryOp('not', EBinOp(EUnaryOp('not', EBool(True).with_type(TBool())).with_type(TBool()), 'or', EBinOp(EBinOp(EArgMin(EBinOp(EVar('xs').with_type(TBag(TInt())), '+', ESingleton(EVar('i').with_type(TInt())).with_type(TBag(TInt()))).with_type(TBag(TInt())), ELambda(EVar('_var148').with_type(TInt()), EVar('_var148').with_type(TInt()))).with_type(TInt()), '+', EUnaryOp('-', EArgMin(EVar('xs').with_type(TBag(TInt())), ELambda(EVar('_var148').with_type(TInt()), EVar('_var148').with_type(TInt()))).with_type(TInt())).with_type(TInt())).with_type(TInt()), '==', EBinOp(EArgMin(EBinOp(EVar('_var164').with_type(TBag(TInt())), '+', ESingleton(EVar('i').with_type(TInt())).with_type(TBag(TInt()))).with_type(TBag(TInt())), ELambda(EVar('_var148').with_type(TInt()), EVar('_var148').with_type(TInt()))).with_type(TInt()), '+', EUnaryOp('-', EArgMin(EVar('_var164').with_type(TBag(TInt())), ELambda(EVar('_var148').with_type(TInt()), EVar('_var148').with_type(TInt()))).with_type(TInt())).with_type(TInt())).with_type(TInt())).with_type(TBool())).with_type(TBool())).with_type(TBool()), vars=OrderedSet([EVar('xs').with_type(TBag(TInt())), EVar('i').with_type(TInt()), EVar('_var164').with_type(TBag(TInt()))]), collection_depth=2, validate_model=True)
 

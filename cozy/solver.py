@@ -1232,6 +1232,9 @@ class IncrementalSolver(object):
                 if model_extraction:
                     def mkfunc(f, arg_types, out_type):
                         z3_func = model[f]
+                        if not arg_types:
+                            default = reconstruct(model, f(), out_type)
+                            return ExtractedFunc({}, default)
                         if z3_func is None:
                             return ExtractedFunc({}, evaluation.mkval(out_type))
                         *z3_entries, z3_default = z3_func.as_list()
