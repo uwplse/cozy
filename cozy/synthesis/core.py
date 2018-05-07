@@ -247,7 +247,7 @@ def improve(
     else:
         _sat = lambda e: satisfy(e, vars=vars, funcs=funcs)
 
-    if _sat(T) is None:
+    if _sat(assumptions) is None:
         print("assumptions are unsat; this query will never be called")
         yield construct_value(target.type)
         return
