@@ -2,6 +2,7 @@ import unittest
 
 from cozy.target_syntax import *
 from cozy.syntax_tools import free_vars, pprint
+from cozy.solver import valid
 import cozy.incrementalization as inc
 
 class TestIncrementalization(unittest.TestCase):
@@ -25,3 +26,28 @@ class TestIncrementalization(unittest.TestCase):
                     print(pprint(g))
                     assert False
 
+    def test_mutate_sequence_order1(self):
+
+        e = EVar("xs").with_type(INT_BAG)
+        x = EVar("x").with_type(INT)
+        y = EVar("y").with_type(INT)
+        s = SSeq(
+            SCall(e, "add", (x,)),
+            SCall(e, "remove", (y,)))
+
+        assert valid(EDeepEq(
+            inc.mutate(e, s),
+            EBinOp(EBinOp(e, "+", ESingleton(x).with_type(INT_BAG)).with_type(INT_BAG), "-", ESingleton(y).with_type(INT_BAG)).with_type(INT_BAG)))
+
+    def test_mutate_sequence_order2(self):
+
+        e = EVar("xs").with_type(INT_BAG)
+        x = EVar("x").with_type(INT)
+        y = EVar("y").with_type(INT)
+        s = SSeq(
+            SCall(e, "remove", (y,)),
+            SCall(e, "add", (x,)))
+
+        assert valid(EDeepEq(
+            inc.mutate(e, s),
+            EBinOp(EBinOp(e, "-", ESingleton(y).with_type(INT_BAG)).with_type(INT_BAG), "+", ESingleton(x).with_type(INT_BAG)).with_type(INT_BAG)))
