@@ -579,17 +579,17 @@ def free_vars(exp, counts=False):
         res = common.OrderedSet(res.keys())
     return res
 
-def all_exps(e : syntax.Exp):
-    q = [e]
+def all_exps(x):
+    q = [x]
     while q:
         e = q.pop()
         if isinstance(e, tuple) or isinstance(e, list):
             q.extend(e)
             continue
-        if not isinstance(e, syntax.Exp):
-            continue
-        yield e
-        q.extend(e.children())
+        if isinstance(e, syntax.Exp):
+            yield e
+        if isinstance(e, common.ADT):
+            q.extend(e.children())
 
 Unknown = collections.namedtuple("Unknown", [])
 ElemOf = collections.namedtuple("ElemOf", ["bag"])

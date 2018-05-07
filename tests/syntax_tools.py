@@ -261,6 +261,10 @@ class TestSyntaxTools(unittest.TestCase):
         for x in all_exps(e):
             pass
 
+    def test_all_exps_on_stm(self):
+        s = SIf(T, SNoOp(), SNoOp())
+        assert list(all_exps(s)) == [T]
+
     def test_get_modified_var(self):
         htype = THandle("IntPtr", INT)
 
