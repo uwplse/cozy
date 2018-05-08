@@ -226,7 +226,7 @@ def optimized_exists(xs):
             optimized_exists(EFilter(xs.e, ELambda(xs.p.arg, xs.p.body.e1)).with_type(xs.type)),
             optimized_exists(EFilter(xs.e, ELambda(xs.p.arg, xs.p.body.e2)).with_type(xs.type))])
     elif isinstance(xs, EStateVar):
-        return EStateVar(optimized_exists(xs.e)).with_type(INT)
+        return EStateVar(optimized_exists(xs.e)).with_type(BOOL)
     elif isinstance(xs, EBinOp) and xs.op == "+":
         return EAny([
             optimized_exists(xs.e1),
