@@ -906,7 +906,7 @@ class TestElimination(unittest.TestCase):
             print("cse_replace(e) = {}".format(pprint(x)))
             assert ok
 
-    @unittest.skip("currently failing")
+    #@unittest.skip("currently failing")
     def test_regression01(self):
         self._check(EMakeMap2(EVar('xs').with_type(TBag(TInt())), ELambda(EVar('_var796').with_type(TInt()), EBinOp(EEmptyList().with_type(TBag(TInt())), '+', EEmptyList().with_type(TBag(TInt()))).with_type(TBag(TInt())))).with_type(TMap(TInt(), TBag(TInt()))))
 

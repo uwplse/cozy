@@ -1631,7 +1631,7 @@ class SLinearSequence(syntax.Stm):
 
 def cse_scan(e):
     SIMPLE_EXPS = (syntax.ENum, syntax.EVar, syntax.EBool, syntax.EStr,
-        syntax.ENative, syntax.EEnumEntry, syntax.ENull)
+        syntax.ENative, syntax.EEnumEntry, syntax.ENull, syntax.EEmptyList)
 
     class SeqTransformer(BottomUpRewriter):
         """Rewrites SSeq -> SLinearSequence for CSE process."""
