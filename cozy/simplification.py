@@ -3,6 +3,9 @@ from cozy.typecheck import is_collection, is_numeric
 from cozy.syntax_tools import BottomUpRewriter, alpha_equivalent, cse, compose, pprint, mk_lambda, replace
 from cozy.evaluation import construct_value, eval
 from cozy.solver import valid, satisfy
+from cozy.opts import Option
+
+checked_simplify = Option("checked-simplification", bool, False)
 
 def is_simple(t):
     if is_numeric(t):
@@ -183,7 +186,9 @@ class _V(BottomUpRewriter):
                 raise Exception("bad simplification: {} ---> {} (under model {!r}, got {!r} and {!r})".format(pprint(e), pprint(new), model, eval(e, model), eval(new, model)))
         return new
 
-def simplify(e, validate=True, debug=False):
+def simplify(e, validate=None, debug=False):
+    if validate is None:
+        validate = checked_simplify.value
     try:
         visitor = _V(debug)
         orig = e
