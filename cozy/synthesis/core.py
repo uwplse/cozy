@@ -7,7 +7,7 @@ import traceback
 
 from cozy.target_syntax import *
 from cozy.typecheck import is_collection
-from cozy.syntax_tools import subst, pprint, free_vars, free_funcs, fresh_var, alpha_equivalent, enumerate_fragments, strip_EStateVar, freshen_binders
+from cozy.syntax_tools import subst, pprint, free_vars, free_funcs, fresh_var, alpha_equivalent, enumerate_fragments, strip_EStateVar, freshen_binders, wrap_naked_statevars, break_conj
 from cozy.wf import ExpIsNotWf, exp_wf
 from cozy.common import OrderedSet, ADT, Visitor, fresh_name, unique, pick_to_sum, cross_product, OrderedDefaultDict, OrderedSet, group_by, find_one, extend, StopException
 from cozy.solver import satisfy, satisfiable, valid, IncrementalSolver, ModelCachingSolver
@@ -244,7 +244,12 @@ def improve(
         print("This job does not depend on state_vars.")
         # TODO: what can we do about it?
 
-    hints = [freshen_binders(h, context) for h in hints] + [target]
+    hints = ([freshen_binders(h, context) for h in hints]
+        + [freshen_binders(wrap_naked_statevars(a, state_vars), context) for a in break_conj(assumptions)]
+        + [target])
+    print("{} hints".format(len(hints)))
+    for h in hints:
+        print(" - {}".format(pprint(h)))
     vars = list(v for (v, p) in context.vars())
     funcs = free_funcs(EAll([assumptions] + hints)) # TODO: context should know this
 
