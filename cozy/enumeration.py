@@ -4,7 +4,7 @@ import itertools
 
 from cozy.common import pick_to_sum, OrderedSet, unique, make_random_access, StopException
 from cozy.target_syntax import *
-from cozy.syntax_tools import pprint, fresh_var, free_vars, freshen_binders
+from cozy.syntax_tools import pprint, fresh_var, free_vars, freshen_binders, alpha_equivalent
 from cozy.evaluation import eval_bulk
 from cozy.typecheck import is_numeric, is_scalar, is_collection
 from cozy.cost_model import CostModel, Order
@@ -65,6 +65,18 @@ def _evict(e, context, pool, better_exp):
     if _interesting(e, context, pool) and not verbose.value:
         print("evicting {}".format(pprint(e)))
     event("evicting {}".format(pprint(e)))
+
+def eviction_policy(new_exp : Exp, old_exp : Exp, context : Context, pool : Pool, cost_model : CostModel) -> [Exp]:
+    """Decide which expressions to keep in the cache.
+
+    The returned list contains the new exp, the old exp, or both.
+    """
+    ordering = cost_model.compare(new_exp, old_exp, context, pool)
+    if ordering == Order.LT:        return [new_exp]
+    if ordering == Order.GT:        return [old_exp]
+    if ordering == Order.EQUAL:     return [old_exp]
+    if ordering == Order.AMBIGUOUS: return [new_exp, old_exp]
+    raise ValueError(ordering)
 
 class Enumerator(object):
     def __init__(self, examples, cost_model : CostModel, check_wf=None, hints=None, heuristics=None, stop_callback=None):
@@ -310,44 +322,62 @@ class Enumerator(object):
                         prev.extend(self.enumerate(context, sz, pool))
                     prev = [ p for p in prev if fingerprint(p, examples) == fp ]
 
-                # decide whether to keep this expression,
-                # decide which can be evicted
-                should_keep = True
-                # cost = self.cost_model.cost(e, pool)
-                # print("prev={}".format(prev))
-                # print("seen={}".format(self.seen))
-                for prev_exp in prev:
-                    # prev_cost = self.cost_model.cost(prev_exp, pool)
-                    # ordering = cost.compare_to(prev_cost)
-                    ordering = cost_model.compare(e, prev_exp, context, pool)
-                    if ordering == Order.LT:
-                        pass
-                    elif ordering == Order.GT:
-                        _skip(e, context, pool, "worse than {}".format(pprint(prev_exp)))
-                        should_keep = False
-                        break
-                    else:
-                        _skip(e, context, pool, "{} to cached {}".format(
-                            "equal" if ordering == Order.EQUAL else "similar",
-                            pprint(prev_exp)))
-                        assert ordering in (Order.EQUAL, Order.AMBIGUOUS)
-                        should_keep = False
-                        break
+                if any(alpha_equivalent(e, p) for p in prev):
+                    _skip(e, context, pool, "duplicate")
+                    should_keep = False
+                else:
+                    # decide whether to keep this expression,
+                    # decide which can be evicted
+                    should_keep = True
+                    # cost = self.cost_model.cost(e, pool)
+                    # print("prev={}".format(prev))
+                    # print("seen={}".format(self.seen))
+                    with task("comparing to cached equivalents"):
+                        for prev_exp in prev:
+                            event("previous: {}".format(pprint(prev_exp)))
+                            # prev_cost = self.cost_model.cost(prev_exp, pool)
+                            # ordering = cost.compare_to(prev_cost)
+                            to_keep = eviction_policy(e, prev_exp, context, pool, cost_model)
+                            if e not in to_keep:
+                                _skip(e, context, pool, "preferring {}".format(pprint(prev_exp)))
+                                should_keep = False
+                                break
+
+                            # if ordering == Order.LT:
+                            #     pass
+                            # elif ordering == Order.GT:
+                            #     self.blacklist.add(e_key)
+                            #     _skip(e, context, pool, "worse than {}".format(pprint(prev_exp)))
+                            #     should_keep = False
+                            #     break
+                            # else:
+                            #     self.blacklist.add(e_key)
+                            #     _skip(e, context, pool, "{} to cached {}".format(
+                            #         "equal" if ordering == Order.EQUAL else "similar",
+                            #         pprint(prev_exp)))
+                            #     assert ordering in (Order.EQUAL, Order.AMBIGUOUS)
+                            #     should_keep = False
+                            #     break
 
                 if should_keep:
 
-                    to_evict = []
-                    for (key, exps) in self.cache.items():
-                        (p, s, c) = key
-                        if p == pool and c in itertools.chain([context], parent_contexts(context)):
-                            for ee in exps:
-                                if ee.fingerprint == fp and cost_model.compare(e, ee.e, context, pool) == Order.LT:
-                                    to_evict.append((key, ee))
-                    for key, ee in to_evict:
-                        (p, s, c) = key
-                        _evict(ee.e, c, pool, e)
-                        self.cache[key].remove(ee)
-                        self.seen[(c, p, fp)].remove(ee.e)
+                    with task("evicting"):
+                        to_evict = []
+                        for (key, exps) in self.cache.items():
+                            (p, s, c) = key
+                            if p == pool and c in itertools.chain([context], parent_contexts(context)):
+                                for ee in exps:
+                                    if ee.fingerprint == fp: # and cost_model.compare(e, ee.e, context, pool) == Order.LT:
+                                        # to_evict.append((key, ee))
+                                        to_keep = eviction_policy(e, ee.e, context, pool, cost_model)
+                                        if ee.e not in to_keep:
+                                            to_evict.append((key, ee))
+                        for key, ee in to_evict:
+                            (p, s, c) = key
+                            # self.blacklist.add((ee.e, c, pool))
+                            _evict(ee.e, c, pool, e)
+                            self.cache[key].remove(ee)
+                            self.seen[(c, p, fp)].remove(ee.e)
 
                     _accept(e, context, pool)
                     seen_key = (context, pool, fp)

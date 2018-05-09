@@ -7,7 +7,7 @@ from cozy.syntax_tools import pprint, fresh_var, free_vars, free_funcs, break_su
 from cozy.contexts import Context
 from cozy.typecheck import is_collection, is_numeric
 from cozy.pools import Pool, RUNTIME_POOL, STATE_POOL
-from cozy.solver import satisfy
+from cozy.solver import satisfy, ModelCachingSolver
 from cozy.evaluation import eval, eval_bulk
 from cozy.structures import extension_handler
 from cozy.logging import task, event
@@ -33,13 +33,19 @@ def order_objects(x, y):
 class CostModel(object):
 
     def __init__(self, assumptions : Exp = T, examples=(), funcs=()):
+        self.solver = ModelCachingSolver(vars=(), funcs=funcs, examples=examples)
         self.assumptions = assumptions
-        self.examples = list(examples)
+        # self.examples = list(examples)
         self.funcs = OrderedDict(funcs)
+
+    @property
+    def examples(self):
+        return tuple(self.solver.examples)
 
     def add_example(self, new_example):
         event("new cost example")
-        self.examples.append(new_example)
+        # self.examples.append(new_example)
+        self.solver.examples.append(new_example)
 
     def _compare(self, e1 : Exp, e2 : Exp, context : Context):
         e1_constant = not free_vars(e1) and not free_funcs(e1)
@@ -53,36 +59,13 @@ class CostModel(object):
             event("shortcutting comparison of identical terms")
             return Order.EQUAL
 
-        examples = context.instantiate_examples(self.examples)
-        e1_vals = eval_bulk(e1, examples)
-        e2_vals = eval_bulk(e2, examples)
-        if e1_vals == e2_vals:
-            model = find_cost_cex(EAll([ENot(EEq(e1, e2)), context.path_condition(), self.assumptions]),
-                vars=[v for v, p in context.vars()],
-                funcs=self.funcs)
-            if model is not None:
-                self.add_example(model)
-                return self._compare(e1, e2, context)
-            else:
-                event("proven equal: {} / {}".format(pprint(e1), pprint(e2)))
-            # event("comparing vals {} vs {}: {}".format(e1_vals, e2_vals, Order.EQUAL))
+        if self.solver.valid(EImplies(self.assumptions, EEq(e1, e2))):
             return Order.EQUAL
-        elif all(x <= y for x, y in zip(e1_vals, e2_vals)):
-            # event("comparing vals {} vs {}: {}".format(e1_vals, e2_vals, Order.LT))
+        if self.solver.valid(EImplies(self.assumptions, ELe(e1, e2))):
             return Order.LT
-        elif all(x >= y for x, y in zip(e1_vals, e2_vals)):
-            # event("comparing vals {} vs {}: {}".format(e1_vals, e2_vals, Order.GT))
+        if self.solver.valid(EImplies(self.assumptions, EGe(e1, e2))):
             return Order.GT
-        else:
-            # for x, e1v, e2v in zip(examples, e1_vals, e2_vals):
-            #     print("---------")
-            #     print(x)
-            #     print(pprint(e1))
-            #     print("e1: {}".format(e1v))
-            #     print(pprint(e2))
-            #     print("e2: {}".format(e2v))
-            # event("comparing vals {} vs {}: {}".format(e1_vals, e2_vals, Order.AMBIGUOUS))
-            return Order.AMBIGUOUS
+        return Order.AMBIGUOUS
 
     def compare(self, e1 : Exp, e2 : Exp, context : Context, pool : Pool):
         with task("compare costs in {}".format(context)):
@@ -280,10 +263,10 @@ def rt(e, account_for_constant_factors=True):
             stk.extend(e.children())
 
         if isinstance(e, EFilter):
-            constant += EXTREME_COST
+            # constant += EXTREME_COST
             terms.append(EUnaryOp(UOp.Sum, EMap(e.e, ELambda(e.p.arg, rt(e.p.body))).with_type(INT_BAG)).with_type(INT))
         elif isinstance(e, EMap) or isinstance(e, EFlatMap) or isinstance(e, EArgMin) or isinstance(e, EArgMax):
-            constant += EXTREME_COST
+            # constant += EXTREME_COST
             terms.append(EUnaryOp(UOp.Sum, EMap(e.e, ELambda(e.f.arg, rt(e.f.body))).with_type(INT_BAG)).with_type(INT))
         elif isinstance(e, EMakeMap2):
             constant += EXTREME_COST
@@ -320,17 +303,17 @@ def debug_comparison(cm : CostModel, e1 : Exp, e2 : Exp, context : Context):
     print("Comparing")
     print("  e1 = {}".format(pprint(e1)))
     print("  e2 = {}".format(pprint(e2)))
-    print("-" * 20)
+    print("-" * 20 + " {} examples...".format(len(cm.examples)))
     for f in asymptotic_runtime, max_storage_size, rt:
         for ename, e in [("e1", e1), ("e2", e2)]:
             print("{f}({e}) = {res}".format(f=f.__name__, e=ename, res=pprint(f(e))))
     for x in cm.examples:
         print("-" * 20)
         print(x)
-        print("asympto(e1) = {}".format(eval_bulk(asymptotic_runtime(e1), [x])[0]))
-        print("asympto(e2) = {}".format(eval_bulk(asymptotic_runtime(e2), [x])[0]))
-        print("storage(e1) = {}".format(eval_bulk(max_storage_size(e1), [x])[0]))
-        print("storage(e2) = {}".format(eval_bulk(max_storage_size(e2), [x])[0]))
-        print("runtime(e1) = {}".format(eval_bulk(rt(e1), [x])[0]))
-        print("runtime(e2) = {}".format(eval_bulk(rt(e2), [x])[0]))
+        print("asympto(e1) = {}".format(eval_bulk(asymptotic_runtime(e1), [x], use_default_values_for_undefined_vars=True)[0]))
+        print("asympto(e2) = {}".format(eval_bulk(asymptotic_runtime(e2), [x], use_default_values_for_undefined_vars=True)[0]))
+        print("storage(e1) = {}".format(eval_bulk(max_storage_size(e1), [x], use_default_values_for_undefined_vars=True)[0]))
+        print("storage(e2) = {}".format(eval_bulk(max_storage_size(e2), [x], use_default_values_for_undefined_vars=True)[0]))
+        print("runtime(e1) = {}".format(eval_bulk(rt(e1), [x], use_default_values_for_undefined_vars=True)[0]))
+        print("runtime(e2) = {}".format(eval_bulk(rt(e2), [x], use_default_values_for_undefined_vars=True)[0]))
     print("-" * 20)

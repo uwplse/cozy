@@ -1347,16 +1347,16 @@ class ModelCachingSolver(object):
     calls can often be avoided using a counterexample found on a previous call.
     """
 
-    def __init__(self, vars : [EVar], funcs : { str : TFunc }):
+    def __init__(self, vars : [EVar], funcs : { str : TFunc }, examples : [dict] = ()):
         self.vars = list(vars)
         self.funcs = OrderedDict(funcs)
         self.calls = 0
         self.hits = 0
-        self.examples = []
+        self.examples = list(examples)
 
     def satisfy(self, e):
         self.calls += 1
-        eval_results = eval_bulk(e, self.examples)
+        eval_results = eval_bulk(e, self.examples, use_default_values_for_undefined_vars=True)
         for x, res in zip(self.examples, eval_results):
             if res:
                 self.hits += 1
