@@ -1879,7 +1879,7 @@ class CSERewriter(PathAwareRewriter):
 
         return syntax.seq(output)
 
-def cse_replace(elem):
+def cse_replace(elem, fix_conditional_uses=True):
     """
     Eliminate common subexpressions on an AST element (an expression or a
     statement -- not a full spec).
@@ -1897,6 +1897,9 @@ def cse_replace(elem):
 
         if not rewriter.did_alter_tree:
             return elem
+
+        if fix_conditional_uses:
+            elem = fix_conditionals(elem)
 
 def cse_replace_spec(spec):
     """
@@ -1974,6 +1977,11 @@ class BindingRewriter(BottomUpRewriter):
     def visit_ELet(self, e1):
         e = type(e1)(*[self.visit(child) for child in e1.children()])
 
+        try:
+            e = e.with_type(e1.type)
+        except AttributeError:
+            pass
+
         subexpr = e.f.body
         use_finder = ConditionalUseFinder(e.f.arg)
         use_type = use_finder.visit(subexpr)
@@ -1988,8 +1996,14 @@ class BindingRewriter(BottomUpRewriter):
                 for child in expr.children():
                     if use_finder.visit(child) != USED_NEVER:
                         # Visit the resulting ELet to continue moving it deeper.
-                        yield self.visit(
-                            syntax.ELet(e.e, syntax.ELambda(e.f.arg, child)))
+                        let = syntax.ELet(e.e, syntax.ELambda(e.f.arg, child))
+
+                        try:
+                            let = let.with_type(child.type)
+                        except AttributeError:
+                            pass
+
+                        yield self.visit(let)
                     else:
                         yield child
 

@@ -1027,6 +1027,7 @@ class TestConditionals(unittest.TestCase):
         s = ELet(ONE, ELambda(y, let_inner))
 
         assert retypecheck(s)
+        print(s)
         print(pprint(s))
         s = fix_conditionals(s)
         new_form = pprint(s)
