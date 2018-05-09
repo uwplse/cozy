@@ -4,7 +4,7 @@ from cozy.common import typechecked, OrderedSet
 from cozy.typecheck import is_collection, is_scalar, is_numeric
 from cozy.target_syntax import *
 from cozy.syntax_tools import pprint, free_vars
-from cozy.solver import valid
+from cozy.solver import ModelCachingSolver
 from cozy.pools import RUNTIME_POOL, STATE_POOL
 from cozy.opts import Option
 from cozy.structures import extension_handler
@@ -20,8 +20,7 @@ class ExpIsNotWf(Exception):
         self.offending_subexpression = offending_subexpression
         self.reason = reason
 
-@typechecked
-def exp_wf_nonrecursive(e : Exp, context : Context, pool = RUNTIME_POOL, assumptions : Exp = T):
+def exp_wf_nonrecursive(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptions : Exp = T):
     state_vars = OrderedSet(v for v, p in context.vars() if p == STATE_POOL)
     args       = OrderedSet(v for v, p in context.vars() if p == RUNTIME_POOL)
     assumptions = EAll([assumptions, context.path_condition()])
@@ -86,7 +85,7 @@ def exp_wf_nonrecursive(e : Exp, context : Context, pool = RUNTIME_POOL, assumpt
         raise ExpIsNotWf(e, e, "trivially empty map")
     if do_expensive_checks.value and not at_runtime and isinstance(e, EFilter):
         # catch "peels": removal of zero or one elements
-        if valid(EImplies(assumptions, ELe(ELen(EFilter(e.e, ELambda(e.p.arg, ENot(e.p.body))).with_type(e.type)), ONE))):
+        if solver.valid(EImplies(assumptions, ELe(ELen(EFilter(e.e, ELambda(e.p.arg, ENot(e.p.body))).with_type(e.type)), ONE))):
             raise ExpIsNotWf(e, e, "filter is a peel")
     if do_expensive_checks.value and not at_runtime and isinstance(e, EMakeMap2) and is_collection(e.type.v):
         all_collections = [sv for sv in state_vars if is_collection(sv.type)]
@@ -97,7 +96,7 @@ def exp_wf_nonrecursive(e : Exp, context : Context, pool = RUNTIME_POOL, assumpt
         s = EImplies(
             assumptions,
             EBinOp(total_size, ">=", my_size).with_type(BOOL))
-        if not valid(s, collection_depth=3):
+        if not solver.valid(s):
             # from cozy.evaluation import eval
             # from cozy.solver import satisfy
             # model = satisfy(EAll([assumptions, EBinOp(total_size, "<", my_size).with_type(BOOL)]), collection_depth=3, validate_model=True)
@@ -106,13 +105,15 @@ def exp_wf_nonrecursive(e : Exp, context : Context, pool = RUNTIME_POOL, assumpt
             raise ExpIsNotWf(e, e, "non-polynomial-sized map")
 
 @typechecked
-def exp_wf(e : Exp, context : Context, pool = RUNTIME_POOL, assumptions : Exp = T):
+def exp_wf(e : Exp, context : Context, pool = RUNTIME_POOL, assumptions : Exp = T, solver = None):
     """
     Returns True or throws exception indicating why `e` is not well-formed.
     """
+    if solver is None:
+        solver = ModelCachingSolver(vars=[], funcs={})
     for x, ctx, p in shred(e, context, pool):
         try:
-            exp_wf_nonrecursive(x, ctx, p, assumptions=ctx.adapt(assumptions, context))
+            exp_wf_nonrecursive(solver, x, ctx, p, assumptions=ctx.adapt(assumptions, context))
         except ExpIsNotWf as exc:
             raise ExpIsNotWf(e, x, exc.reason)
     return True

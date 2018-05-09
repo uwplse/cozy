@@ -10,7 +10,7 @@ from cozy.typecheck import is_collection
 from cozy.syntax_tools import subst, pprint, free_vars, free_funcs, fresh_var, alpha_equivalent, enumerate_fragments, strip_EStateVar, freshen_binders
 from cozy.wf import ExpIsNotWf, exp_wf
 from cozy.common import OrderedSet, ADT, Visitor, fresh_name, unique, pick_to_sum, cross_product, OrderedDefaultDict, OrderedSet, group_by, find_one, extend, StopException
-from cozy.solver import satisfy, satisfiable, valid, IncrementalSolver
+from cozy.solver import satisfy, satisfiable, valid, IncrementalSolver, ModelCachingSolver
 from cozy.evaluation import eval, eval_bulk, mkval, construct_value, uneval, eq
 from cozy.cost_model import CostModel, Order, rt as runtime, asymptotic_runtime, max_storage_size, find_case_where_better, LINEAR_TIME_UOPS
 from cozy.opts import Option
@@ -28,7 +28,7 @@ class NoMoreImprovements(Exception):
     pass
 
 class Learner(object):
-    def __init__(self, target, assumptions, context, examples, cost_model, stop_callback, hints):
+    def __init__(self, target, assumptions, context, examples, cost_model, stop_callback, hints, funcs):
         self.context = context
         self.stop_callback = stop_callback
         self.cost_model = cost_model
@@ -36,6 +36,9 @@ class Learner(object):
         self.hints = list(hints)
         self.reset(examples)
         self.watch(target)
+        self.wf_solver = ModelCachingSolver(
+            vars=[v for (v, p) in context.vars()],
+            funcs=funcs)
 
     def reset(self, examples):
         self.examples = list(examples)
@@ -61,10 +64,12 @@ class Learner(object):
                 return "no: {}".format(self.msg)
         # with task("pre-computing cardinalities"):
         #     cards = [self.cost_model.cardinality(ctx.e) for ctx in enumerate_fragments(self.target) if is_collection(ctx.e.type)]
+
+        root_ctx = self.context
         def check_wf(e, ctx, pool):
             with task("checking well-formedness", size=e.size()):
                 try:
-                    exp_wf(e, pool=pool, context=ctx, assumptions=self.assumptions)
+                    exp_wf(e, pool=pool, context=ctx, assumptions=self.assumptions, solver=self.wf_solver)
                 except ExpIsNotWf as exc:
                     return No("at {}: {}".format(pprint(exc.offending_subexpression), exc.reason))
                 if pool == RUNTIME_POOL and self.cost_model.compare(e, self.target, ctx, pool) not in (Order.LT, Order.EQUAL):
@@ -78,7 +83,6 @@ class Learner(object):
                 #         return No("too big")
                 return True
 
-        root_ctx = self.context
         frags = list(unique(itertools.chain(
             shred(self.target, root_ctx),
             *[shred(h, root_ctx) for h in self.hints])))
@@ -254,7 +258,7 @@ def improve(
 
     examples = list(examples)
     cost_model = CostModel(funcs=funcs, assumptions=assumptions)
-    learner = Learner(target, assumptions, context, examples, cost_model, stop_callback, hints)
+    learner = Learner(target, assumptions, context, examples, cost_model, stop_callback, hints, funcs)
     try:
         while True:
             # 1. find any potential improvement to any sub-exp of target
