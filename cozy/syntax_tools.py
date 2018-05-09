@@ -1653,8 +1653,11 @@ def cse_scan(e):
             Returns (expr, dependent_vars, handle types) for each child of e by
             visiting it.
             """
-            return [self.visit(c, path + (i,), entries, capture_point)
-                for i, c in enumerate(e.children())]
+            return [
+                self.visit(c, path + (i,), entries, capture_point)
+                for i, c in enumerate(e.children())
+                if isinstance(c, syntax.ADT) # ignore non-ADT children, like strings.
+                ]
 
         def filter_captured_vars(self, outer_entries, inner_entries,
                 capture_path, bound_var, handle_capture=False):

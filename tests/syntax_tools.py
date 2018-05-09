@@ -906,15 +906,12 @@ class TestElimination(unittest.TestCase):
             print("cse_replace(e) = {}".format(pprint(x)))
             assert ok
 
-    #@unittest.skip("currently failing")
     def test_regression01(self):
         self._check(EMakeMap2(EVar('xs').with_type(TBag(TInt())), ELambda(EVar('_var796').with_type(TInt()), EBinOp(EEmptyList().with_type(TBag(TInt())), '+', EEmptyList().with_type(TBag(TInt()))).with_type(TBag(TInt())))).with_type(TMap(TInt(), TBag(TInt()))))
 
-    @unittest.skip("currently failing")
     def test_regression02(self):
         self._check(ETuple((EUnaryOp('len', EVar('_var651').with_type(TBag(TInt()))).with_type(TInt()), ENum(1).with_type(TInt()))).with_type(TTuple((TInt(), TInt()))))
 
-    @unittest.skip("currently failing")
     def test_regression03(self):
         self._check(EUnaryOp('exists', EFilter(EVar('_var40').with_type(TBag(TInt())), ELambda(EVar('x').with_type(TInt()), EBinOp(ECall('f', (EVar('x').with_type(TInt()),)).with_type(TBool()), 'or', ECall('g', (EVar('x').with_type(TInt()),)).with_type(TBool())).with_type(TBool()))).with_type(TBag(TInt()))).with_type(TBool()))
 
