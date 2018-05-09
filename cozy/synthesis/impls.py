@@ -22,7 +22,7 @@ from cozy.simplification import simplify
 from cozy.solver import valid, ModelCachingSolver
 from cozy.logging import task, event
 
-from .misc import queries_equivalent
+from .misc import queries_equivalent, pull_temps
 
 dedup_queries = Option("deduplicate-subqueries", bool, True)
 
@@ -294,16 +294,17 @@ class Implementation(object):
             for v, _ in ordered_concrete_state:
                 things_updated.append(v)
                 stm = updates[(v, operator.name)]
-
-                for e in all_exps(stm):
-                    if isinstance(e, ECall) and e.func in [q.name for q in self.query_specs]:
-                        problems = set(things_updated) & state_read_by_query[e.func]
-
-                        if problems:
-                            name = fresh_name()
-                            temps[operator.name].append(SDecl(name, e))
-                            stm = replace(stm, e, EVar(name).with_type(e.type))
-                            updates[(v, operator.name)] = stm
+                def problematic(e):
+                    for x in all_exps(e):
+                        if isinstance(x, ECall) and x.func in [q.name for q in self.query_specs]:
+                            problems = set(things_updated) & state_read_by_query[x.func]
+                            if problems:
+                                return True
+                    return False
+                stm = pull_temps(stm,
+                    decls_out=temps[operator.name],
+                    exp_is_bad=problematic)
+                updates[(v, operator.name)] = stm
 
         # construct new op implementations
         new_ops = []
