@@ -28,14 +28,14 @@ class NoMoreImprovements(Exception):
     pass
 
 class Learner(object):
-    def __init__(self, target, assumptions, context, examples, cost_model, stop_callback, hints, funcs):
+    def __init__(self, targets, assumptions, context, examples, cost_model, stop_callback, hints, funcs):
         self.context = context
         self.stop_callback = stop_callback
         self.cost_model = cost_model
         self.assumptions = assumptions
         self.hints = list(hints)
         self.reset(examples)
-        self.watch(target)
+        self.watch(targets)
         self.wf_solver = ModelCachingSolver(
             vars=[v for (v, p) in context.vars()],
             funcs=funcs)
@@ -43,8 +43,9 @@ class Learner(object):
     def reset(self, examples):
         self.examples = list(examples)
 
-    def watch(self, new_target):
-        self.target = new_target
+    def watch(self, new_targets):
+        assert new_targets
+        self.targets = list(new_targets)
 
     def matches(self, fp, target_fp):
         assert isinstance(fp[0], Type)
@@ -72,10 +73,10 @@ class Learner(object):
                     exp_wf(e, pool=pool, context=ctx, assumptions=self.assumptions, solver=self.wf_solver)
                 except ExpIsNotWf as exc:
                     return No("at {}: {}".format(pprint(exc.offending_subexpression), exc.reason))
-                if pool == RUNTIME_POOL and self.cost_model.compare(e, self.target, ctx, pool) not in (Order.LT, Order.EQUAL):
-                    # from cozy.cost_model import debug_comparison
-                    # debug_comparison(self.cost_model, e, self.target, ctx)
-                    return No("too expensive")
+                # if pool == RUNTIME_POOL and self.cost_model.compare(e, self.target, ctx, pool) not in (Order.LT, Order.AMBIGUOUS):
+                #     # from cozy.cost_model import debug_comparison
+                #     # debug_comparison(self.cost_model, e, self.target, ctx)
+                #     return No("too expensive")
                 # if isinstance(e.type, TBag):
                 #     c = self.cost_model.cardinality(e)
                 #     if all(cc < c for cc in cards):
@@ -84,7 +85,7 @@ class Learner(object):
                 return True
 
         frags = list(unique(itertools.chain(
-            shred(self.target, root_ctx),
+            *[shred(t, root_ctx) for t in self.targets],
             *[shred(h, root_ctx) for h in self.hints])))
         enum = Enumerator(
             examples=self.examples,
@@ -96,7 +97,7 @@ class Learner(object):
 
         size = 0
         # target_cost = self.cost_model.cost(self.target, RUNTIME_POOL)
-        target_fp = fingerprint(self.target, self.examples)
+        target_fp = fingerprint(self.targets[0], self.examples)
 
         if not hasattr(self, "blacklist"):
             self.blacklist = set()
@@ -108,49 +109,53 @@ class Learner(object):
                 raise StopException()
 
             n = 0
-            for (e, ctx, pool) in shred(self.target, root_ctx):
-                with task("checking substitutions",
-                        target=pprint(replace(self.target, root_ctx, RUNTIME_POOL, e, ctx, pool, EVar("___"))),
-                        e=pprint(e)):
-                    for info in enum.enumerate_with_info(size=size, context=ctx, pool=pool):
-                        with task("checking substitution", expression=pprint(info.e)):
-                            if self.stop_callback():
-                                raise StopException()
-                            if info.e.type != e.type:
-                                event("wrong type")
-                                continue
-                            if alpha_equivalent(info.e, e):
-                                event("no change")
-                                continue
+            for target in self.targets:
+                for (e, ctx, pool) in shred(target, root_ctx):
+                    with task("checking substitutions",
+                            target=pprint(replace(target, root_ctx, RUNTIME_POOL, e, ctx, pool, EVar("___"))),
+                            e=pprint(e)):
+                        for info in enum.enumerate_with_info(size=size, context=ctx, pool=pool):
+                            with task("checking substitution", expression=pprint(info.e)):
+                                if self.stop_callback():
+                                    raise StopException()
+                                if info.e.type != e.type:
+                                    event("wrong type")
+                                    continue
+                                if alpha_equivalent(info.e, e):
+                                    event("no change")
+                                    continue
 
-                            k = (e, ctx, pool, info.e)
-                            if k in self.blacklist:
-                                event("blacklisted")
-                                continue
+                                k = (e, ctx, pool, info.e)
+                                if k in self.blacklist:
+                                    event("blacklisted")
+                                    continue
 
-                            n += 1
-                            ee = freshen_binders(replace(
-                                self.target, root_ctx, RUNTIME_POOL,
-                                e, ctx, pool,
-                                info.e), root_ctx)
-                            if not self.matches(fingerprint(ee, self.examples), target_fp):
-                                event("incorrect")
-                                self.blacklist.add(k)
-                                continue
-                            wf = check_wf(ee, root_ctx, RUNTIME_POOL)
-                            if not wf:
-                                event("not well-formed [wf={}]".format(wf))
-                                # if "expensive" in str(wf):
-                                #     print(repr(self.cost_model.examples))
-                                #     print(repr(ee))
-                                self.blacklist.add(k)
-                                continue
-                            if self.cost_model.compare(ee, self.target, root_ctx, RUNTIME_POOL) != Order.LT:
-                                event("not an improvement")
-                                self.blacklist.add(k)
-                                continue
-                            print("FOUND A GUESS AFTER {} CONSIDERED".format(n))
-                            yield ee
+                                n += 1
+                                ee = freshen_binders(replace(
+                                    target, root_ctx, RUNTIME_POOL,
+                                    e, ctx, pool,
+                                    info.e), root_ctx)
+                                if any(alpha_equivalent(t, ee) for t in self.targets):
+                                    event("already seen")
+                                    continue
+                                if not self.matches(fingerprint(ee, self.examples), target_fp):
+                                    event("incorrect")
+                                    self.blacklist.add(k)
+                                    continue
+                                wf = check_wf(ee, root_ctx, RUNTIME_POOL)
+                                if not wf:
+                                    event("not well-formed [wf={}]".format(wf))
+                                    # if "expensive" in str(wf):
+                                    #     print(repr(self.cost_model.examples))
+                                    #     print(repr(ee))
+                                    self.blacklist.add(k)
+                                    continue
+                                if self.cost_model.compare(ee, target, root_ctx, RUNTIME_POOL) not in (Order.LT, Order.AMBIGUOUS):
+                                    event("not an improvement")
+                                    self.blacklist.add(k)
+                                    continue
+                                print("FOUND A GUESS AFTER {} CONSIDERED".format(n))
+                                yield ee
 
             print("CONSIDERED {}".format(n))
             size += 1
@@ -258,7 +263,8 @@ def improve(
 
     examples = list(examples)
     cost_model = CostModel(funcs=funcs, assumptions=assumptions)
-    learner = Learner(target, assumptions, context, examples, cost_model, stop_callback, hints, funcs)
+    watched_targets = [target]
+    learner = Learner(watched_targets, assumptions, context, examples, cost_model, stop_callback, hints, funcs)
     try:
         while True:
             # 1. find any potential improvement to any sub-exp of target
@@ -293,24 +299,39 @@ def improve(
                     break
                 else:
                     # b. if correct: yield it, watch the new target, goto 1
-                    print("The replacement is valid!")
-                    print("Confirming cost...")
-                    with task("verifying cost"):
-                        evc = eviction_policy(new_target, target, context, RUNTIME_POOL, cost_model)
-                        if target in evc:
-                            print("Nope, it isn't substantially better!")
+                    print("The candidate is valid!")
+                    print(repr(new_target))
+                    print("Determining whether to yield it...")
+                    with task("updating frontier"):
+                        to_evict = []
+                        keep = True
+                        for old_target in watched_targets:
+                            evc = eviction_policy(new_target, old_target, context, RUNTIME_POOL, cost_model)
+                            if old_target not in evc:
+                                to_evict.append(old_target)
+                            if new_target not in evc:
+                                keep = False
+                                break
+                        for t in to_evict:
+                            watched_targets.remove(t)
+                        if not keep:
+                            print("Whoops! Looks like we already found something better.")
                             continue
-                        else:
+                        if target in to_evict:
                             print("Yep, it's an improvement!")
                             yield new_target
+                            if heuristic_done(new_target):
+                                print("target now matches doneness heuristic")
+                                raise NoMoreImprovements()
+                            target = new_target
+                        else:
+                            print("Nope, it isn't substantially better!")
 
-                    # if reset_on_success.value and (not check_final_cost.value or ordering != Cost.UNORDERED):
-                    learner.watch(new_target)
-                    target = new_target
+                    watched_targets.append(new_target)
+                    print("Now watching {} targets".format(len(watched_targets)))
+                    learner.watch(watched_targets)
+                    break
 
-                    if heuristic_done(new_target):
-                        print("target now matches doneness heuristic")
-                        raise NoMoreImprovements()
                 if incremental.value:
                     solver.pop()
     except NoMoreImprovements:
