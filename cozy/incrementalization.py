@@ -279,6 +279,29 @@ def sketch_update(
         key_bag = syntax.TBag(lval.type.k)
 
         if True:
+
+            old_keys = target_syntax.EMapKeys(old_value).with_type(key_bag)
+            new_keys = target_syntax.EMapKeys(new_value).with_type(key_bag)
+
+            # (1) exit set
+            deleted_keys = syntax.EBinOp(old_keys, "-", new_keys).with_type(key_bag)
+            s1 = syntax.SForEach(k, make_subgoal(deleted_keys, docstring="keys removed from {}".format(pprint(lval))),
+                target_syntax.SMapDel(lval, k))
+
+            # (2) enter/mod set
+            new_or_modified = target_syntax.EFilter(new_keys,
+                syntax.ELambda(k, syntax.EAny([syntax.ENot(syntax.EIn(k, old_keys)), syntax.ENot(syntax.EEq(value_at(old_value, k), value_at(new_value, k)))]))).with_type(key_bag)
+            update_value = recurse(
+                v,
+                value_at(old_value, k),
+                value_at(new_value, k),
+                ctx = ctx,
+                assumptions = assumptions + [syntax.EIn(k, new_or_modified), syntax.EImplies(syntax.EIn(k, old_keys), syntax.EEq(v, value_at(old_value, k)))])
+            s2 = syntax.SForEach(k, make_subgoal(new_or_modified, docstring="new or modified keys from {}".format(pprint(lval))),
+                target_syntax.SMapUpdate(lval, k, v, update_value))
+
+            stm = syntax.SSeq(s1, s2)
+        elif True:
             old_keys = target_syntax.EMapKeys(old_value).with_type(key_bag)
             new_keys = target_syntax.EMapKeys(new_value).with_type(key_bag)
 
