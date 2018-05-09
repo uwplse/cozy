@@ -15,7 +15,7 @@ from cozy.evaluation import eval, eval_bulk, mkval, construct_value, uneval, eq
 from cozy.cost_model import CostModel, Order, rt as runtime, asymptotic_runtime, max_storage_size, find_case_where_better, LINEAR_TIME_UOPS
 from cozy.opts import Option
 from cozy.pools import ALL_POOLS, RUNTIME_POOL, STATE_POOL, pool_name
-from cozy.enumeration import Enumerator, fingerprint
+from cozy.enumeration import Enumerator, fingerprint, eviction_policy
 from cozy.contexts import Context, shred, replace
 from cozy.logging import task, event
 
@@ -150,7 +150,7 @@ class Learner(object):
                                 self.blacklist.add(k)
                                 continue
                             print("FOUND A GUESS AFTER {} CONSIDERED".format(n))
-                            return ee
+                            yield ee
 
             print("CONSIDERED {}".format(n))
             size += 1
@@ -262,61 +262,58 @@ def improve(
     try:
         while True:
             # 1. find any potential improvement to any sub-exp of target
-            try:
-                new_target = learner.next()
-            except NoMoreImprovements:
-                break
-            print("Found candidate improvement: {}".format(pprint(new_target)))
+            for new_target in learner.next():
+                print("Found candidate improvement: {}".format(pprint(new_target)))
 
-            # 2. check
-            with task("verifying candidate"):
-                if incremental.value:
-                    solver.push()
-                    solver.add_assumption(ENot(EBinOp(target, "==", new_target).with_type(BOOL)))
-                    counterexample = _sat(T)
-                else:
-                    formula = EAll([assumptions, ENot(EBinOp(target, "==", new_target).with_type(BOOL))])
-                    counterexample = _sat(formula)
-            if counterexample is not None:
-                if counterexample in examples:
-                    print("assumptions = {!r}".format(assumptions))
-                    print("duplicate example: {!r}".format(counterexample))
-                    print("old target = {!r}".format(target))
-                    print("new target = {!r}".format(new_target))
-                    print("old fp = {}".format(learner._fingerprint(old_e)))
-                    print("new fp = {}".format(learner._fingerprint(new_e)))
-                    print("old target fp = {}".format(learner._fingerprint(target)))
-                    print("new target fp = {}".format(learner._fingerprint(new_target)))
-                    raise Exception("got a duplicate example")
-                # a. if incorrect: add example, reset the learner
-                examples.append(counterexample)
-                event("new example: {!r}".format(counterexample))
-                print("wrong; restarting with {} examples".format(len(examples)))
-                learner.reset(examples)
-            else:
-                # b. if correct: yield it, watch the new target, goto 1
-                print("The replacement is valid!")
-                print("Confirming cost...")
-                with task("verifying cost"):
-                    cost_cex = find_case_where_better(target, new_target, vars=vars, funcs=funcs)
-                    if cost_cex is None:
-                        print("Yep, it's an improvement!")
-                        yield new_target
+                # 2. check
+                with task("verifying candidate"):
+                    if incremental.value:
+                        solver.push()
+                        solver.add_assumption(ENot(EBinOp(target, "==", new_target).with_type(BOOL)))
+                        counterexample = _sat(T)
                     else:
-                        print("Nope, it isn't better!")
-                        cost_model.add_example(cost_cex)
-                        new_target = target
-
-                # if reset_on_success.value and (not check_final_cost.value or ordering != Cost.UNORDERED):
-                learner.reset(examples)
-                learner.watch(new_target)
-                target = new_target
-
-                if heuristic_done(new_target):
-                    print("target now matches doneness heuristic")
+                        formula = EAll([assumptions, ENot(EBinOp(target, "==", new_target).with_type(BOOL))])
+                        counterexample = _sat(formula)
+                if counterexample is not None:
+                    if counterexample in examples:
+                        print("assumptions = {!r}".format(assumptions))
+                        print("duplicate example: {!r}".format(counterexample))
+                        print("old target = {!r}".format(target))
+                        print("new target = {!r}".format(new_target))
+                        print("old fp = {}".format(learner._fingerprint(old_e)))
+                        print("new fp = {}".format(learner._fingerprint(new_e)))
+                        print("old target fp = {}".format(learner._fingerprint(target)))
+                        print("new target fp = {}".format(learner._fingerprint(new_target)))
+                        raise Exception("got a duplicate example")
+                    # a. if incorrect: add example, reset the learner
+                    examples.append(counterexample)
+                    event("new example: {!r}".format(counterexample))
+                    print("wrong; restarting with {} examples".format(len(examples)))
+                    learner.reset(examples)
                     break
-            if incremental.value:
-                solver.pop()
+                else:
+                    # b. if correct: yield it, watch the new target, goto 1
+                    print("The replacement is valid!")
+                    print("Confirming cost...")
+                    with task("verifying cost"):
+                        evc = eviction_policy(new_target, target, context, RUNTIME_POOL, cost_model)
+                        if target in evc:
+                            print("Nope, it isn't substantially better!")
+                            continue
+                        else:
+                            print("Yep, it's an improvement!")
+                            yield new_target
 
+                    # if reset_on_success.value and (not check_final_cost.value or ordering != Cost.UNORDERED):
+                    learner.watch(new_target)
+                    target = new_target
+
+                    if heuristic_done(new_target):
+                        print("target now matches doneness heuristic")
+                        raise NoMoreImprovements()
+                if incremental.value:
+                    solver.pop()
+    except NoMoreImprovements:
+        return
     except KeyboardInterrupt:
         raise
