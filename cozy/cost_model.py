@@ -59,11 +59,13 @@ class CostModel(object):
             event("shortcutting comparison of identical terms")
             return Order.EQUAL
 
-        if self.solver.valid(EImplies(self.assumptions, EEq(e1, e2))):
+        always_le = self.solver.valid(EImplies(self.assumptions, ELe(e1, e2)))
+        always_ge = self.solver.valid(EImplies(self.assumptions, EGe(e1, e2)))
+        if always_le and always_ge:
             return Order.EQUAL
-        if self.solver.valid(EImplies(self.assumptions, ELe(e1, e2))):
+        if always_le:
             return Order.LT
-        if self.solver.valid(EImplies(self.assumptions, EGe(e1, e2))):
+        if always_ge:
             return Order.GT
         return Order.AMBIGUOUS
 
