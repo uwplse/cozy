@@ -125,7 +125,7 @@ def storage_size(e):
     elif isinstance(e.type, TEnum):
         return TWO
     elif isinstance(e.type, TNative):
-        return EIGHT
+        return FOUR
     elif isinstance(e.type, TTuple):
         return ESum([storage_size(ETupleGet(e, n).with_type(t)) for (n, t) in enumerate(e.type.ts)])
     elif isinstance(e.type, TRecord):
@@ -134,10 +134,12 @@ def storage_size(e):
         v = fresh_var(e.type.t, omit=free_vars(e))
         return EUnaryOp(UOp.Sum, EMap(e, ELambda(v, storage_size(v))).with_type(INT_BAG)).with_type(INT)
     elif isinstance(e.type, TMap):
-        v = fresh_var(e.type.k, omit=free_vars(e))
+        k = fresh_var(e.type.k, omit=free_vars(e))
         return EUnaryOp(UOp.Sum, EMap(
             EMapKeys(e).with_type(TBag(e.type.k)),
-            ELambda(v, storage_size(EMapGet(e, v).with_type(e.type.v)))).with_type(INT_BAG)).with_type(INT)
+            ELambda(k, ESum([
+                storage_size(k),
+                storage_size(EMapGet(e, k).with_type(e.type.v))]))).with_type(INT_BAG)).with_type(INT)
     else:
         raise NotImplementedError(e.type)
 
