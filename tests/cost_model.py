@@ -723,3 +723,8 @@ class TestCostModel(unittest.TestCase):
         assert retypecheck(b)
         e1 = ECond(EEq(a, b), a, b).with_type(a.type)
         assert_cmp(e1, cost_of(e1), b, cost_of(b), Cost.WORSE)
+
+    def test_regression53(self):
+        e1 = EStateVar(EUnaryOp('sum', EVar('l').with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt())
+        e2 = EUnaryOp('the', EStateVar(EUnaryOp('distinct', EMap(EVar('l').with_type(TBag(TInt())), ELambda(EVar('_var15186').with_type(TInt()), EUnaryOp('sum', EVar('l').with_type(TBag(TInt()))).with_type(TInt()))).with_type(TBag(TInt()))).with_type(TBag(TInt()))).with_type(TBag(TInt()))).with_type(TInt())
+        assert_cmp(e1, cost_of(e1), e2, cost_of(e2), Cost.BETTER)

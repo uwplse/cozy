@@ -134,14 +134,18 @@ def storage_size(e):
         return ESum([storage_size(EGetField(e, f).with_type(t)) for (f, t) in e.type.fields])
     elif is_collection(e.type):
         v = fresh_var(e.type.t, omit=free_vars(e))
-        return EUnaryOp(UOp.Sum, EMap(e, ELambda(v, storage_size(v))).with_type(INT_BAG)).with_type(INT)
+        return ESum([
+            FOUR,
+            EUnaryOp(UOp.Sum, EMap(e, ELambda(v, storage_size(v))).with_type(INT_BAG)).with_type(INT)])
     elif isinstance(e.type, TMap):
         k = fresh_var(e.type.k, omit=free_vars(e))
-        return EUnaryOp(UOp.Sum, EMap(
-            EMapKeys(e).with_type(TBag(e.type.k)),
-            ELambda(k, ESum([
-                storage_size(k),
-                storage_size(EMapGet(e, k).with_type(e.type.v))]))).with_type(INT_BAG)).with_type(INT)
+        return ESum([
+            FOUR,
+            EUnaryOp(UOp.Sum, EMap(
+                EMapKeys(e).with_type(TBag(e.type.k)),
+                ELambda(k, ESum([
+                    storage_size(k),
+                    storage_size(EMapGet(e, k).with_type(e.type.v))]))).with_type(INT_BAG)).with_type(INT)])
     else:
         raise NotImplementedError(e.type)
 
