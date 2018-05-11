@@ -1,0 +1,11 @@
+MinFinder:
+    handletype T = Native "int"
+    state xs : Bag<T>
+    invariant unique xs;
+    op chval(x : T, nv : Native "int")
+        assume x in xs;
+        assume x.val != nv;
+        x.val = nv;
+    query findmin()
+        assume exists xs;
+        argmin {x -> x.val} xs
