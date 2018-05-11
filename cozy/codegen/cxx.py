@@ -354,8 +354,6 @@ class CxxPrinter(CodeGenerator):
             return self.visit(e.map.type.get_key(e.map, e.key))
 
     def visit_SMapUpdate(self, update):
-        if isinstance(update.change, SNoOp):
-            return
         if isinstance(update.map.type, library.TNativeMap) or type(update.map.type) is TMap:
             map = self.visit(update.map)
             key = self.visit(update.key)
