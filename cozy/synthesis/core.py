@@ -7,7 +7,7 @@ import traceback
 
 from cozy.target_syntax import *
 from cozy.typecheck import is_collection
-from cozy.syntax_tools import subst, pprint, free_vars, free_funcs, fresh_var, alpha_equivalent, enumerate_fragments, strip_EStateVar, freshen_binders, wrap_naked_statevars, break_conj
+from cozy.syntax_tools import subst, pprint, free_vars, fresh_var, alpha_equivalent, enumerate_fragments, strip_EStateVar, freshen_binders, wrap_naked_statevars, break_conj
 from cozy.wf import ExpIsNotWf, exp_wf
 from cozy.common import OrderedSet, ADT, Visitor, fresh_name, unique, pick_to_sum, cross_product, OrderedDefaultDict, OrderedSet, group_by, find_one, extend, StopException
 from cozy.solver import satisfy, satisfiable, valid, IncrementalSolver, ModelCachingSolver
@@ -28,7 +28,7 @@ class NoMoreImprovements(Exception):
     pass
 
 class Learner(object):
-    def __init__(self, targets, assumptions, context, examples, cost_model, stop_callback, hints, funcs):
+    def __init__(self, targets, assumptions, context, examples, cost_model, stop_callback, hints):
         self.context = context
         self.stop_callback = stop_callback
         self.cost_model = cost_model
@@ -38,7 +38,7 @@ class Learner(object):
         self.watch(targets)
         self.wf_solver = ModelCachingSolver(
             vars=[v for (v, p) in context.vars()],
-            funcs=funcs)
+            funcs=context.funcs())
 
     def reset(self, examples):
         self.examples = list(examples)
@@ -251,7 +251,7 @@ def improve(
     for h in hints:
         print(" - {}".format(pprint(h)))
     vars = list(v for (v, p) in context.vars())
-    funcs = free_funcs(EAll([assumptions] + hints)) # TODO: context should know this
+    funcs = context.funcs()
 
     solver = None
     if incremental.value:
@@ -269,7 +269,7 @@ def improve(
     examples = list(examples)
     cost_model = CostModel(funcs=funcs, assumptions=assumptions)
     watched_targets = [target]
-    learner = Learner(watched_targets, assumptions, context, examples, cost_model, stop_callback, hints, funcs)
+    learner = Learner(watched_targets, assumptions, context, examples, cost_model, stop_callback, hints)
     try:
         while True:
             # 1. find any potential improvement to any sub-exp of target

@@ -1,7 +1,8 @@
+from collections import OrderedDict
 import itertools
 
 from cozy.common import OrderedSet, unique, Visitor
-from cozy.syntax import Exp, EVar, EAll
+from cozy.syntax import TFunc, Exp, EVar, EAll
 from cozy.target_syntax import EDeepIn
 from cozy.evaluation import eval
 from cozy.syntax_tools import pprint, alpha_equivalent, free_vars, subst, BottomUpRewriter
@@ -9,6 +10,8 @@ from cozy.pools import Pool, RUNTIME_POOL, STATE_POOL
 
 class Context(object):
     def vars(self) -> {(EVar, Pool)}:
+        raise NotImplementedError()
+    def funcs(self) -> {str:TFunc}:
         raise NotImplementedError()
     def parent(self):
         raise NotImplementedError()
@@ -29,14 +32,17 @@ class Context(object):
         raise NotImplementedError()
 
 class RootCtx(Context):
-    def __init__(self, state_vars : [Exp], args : [Exp]):
+    def __init__(self, state_vars : [Exp], args : [Exp], funcs : {str:TFunc} = None):
         self.state_vars = OrderedSet(state_vars)
         self.args = OrderedSet(args)
+        self.functions = OrderedDict(funcs or ())
         assert not (self.state_vars & self.args)
     def vars(self):
         return OrderedSet(itertools.chain(
             [(v, STATE_POOL)   for v in self.state_vars],
             [(v, RUNTIME_POOL) for v in self.args]))
+    def funcs(self):
+        return self.functions
     def parent(self):
         return None
     def instantiate_examples(self, examples : [dict]) -> [dict]:
@@ -56,7 +62,7 @@ class RootCtx(Context):
     def __eq__(self, other):
         return isinstance(other, RootCtx) and (self.state_vars, self.args) == (other.state_vars, other.args)
     def __repr__(self):
-        return "RootCtx(state_vars={!r}, args={!r})".format(self.state_vars, self.args)
+        return "RootCtx(state_vars={!r}, args={!r}, funcs={!r})".format(self.state_vars, self.args, self.functions)
     def __str__(self):
         return "(root)"
 
@@ -71,6 +77,8 @@ class UnderBinder(Context):
         self.pool = bag_pool
     def vars(self):
         return self._parent.vars() | {(self.var, self.pool)}
+    def funcs(self):
+        return self._parent.funcs()
     def parent(self):
         return self._parent
     def instantiate_examples(self, examples : [dict]) -> [dict]:

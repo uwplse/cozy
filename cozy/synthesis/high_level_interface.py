@@ -8,7 +8,7 @@ from queue import Empty
 from cozy.common import typechecked, fresh_name, pick_to_sum, nested_dict, find_one, OrderedSet
 from cozy.target_syntax import *
 import cozy.syntax_tools
-from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, BottomUpRewriter, free_vars, pprint, subst, implies, fresh_var, mk_lambda, all_exps, equal, is_scalar, tease_apart, shallow_copy, wrap_naked_statevars
+from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, BottomUpRewriter, free_vars, free_funcs, pprint, subst, implies, fresh_var, mk_lambda, all_exps, equal, is_scalar, tease_apart, shallow_copy, wrap_naked_statevars
 from cozy.timeouts import Timeout, TimeoutException
 from cozy import jobs
 from cozy.contexts import RootCtx
@@ -57,7 +57,8 @@ class ImproveQueryJob(jobs.Job):
 
             ctx = RootCtx(
                 state_vars=self.state,
-                args=[EVar(v).with_type(t) for (v, t) in self.q.args])
+                args=[EVar(v).with_type(t) for (v, t) in self.q.args],
+                funcs=free_funcs(EAll(self.assumptions + self.hints)))
 
             try:
                 for expr in itertools.chain((self.q.ret,), core.improve(
