@@ -3,9 +3,9 @@ import unittest
 from cozy.target_syntax import *
 from cozy.syntax_tools import free_vars, pprint
 from cozy.solver import valid
-import cozy.incrementalization as inc
+import cozy.state_maintenance as inc
 
-class TestIncrementalization(unittest.TestCase):
+class TestStateMaintenance(unittest.TestCase):
 
     def test_regression1(self):
         """

@@ -6,7 +6,7 @@ from cozy.typecheck import is_collection
 from cozy.solver import valid
 from cozy.syntax_tools import pprint, subst, enumerate_fragments, shallow_copy, mk_lambda
 from cozy.handle_tools import reachable_handles_at_method, implicit_handle_assumptions_for_method
-from cozy.incrementalization import mutate
+from cozy.state_maintenance import mutate
 from cozy.opts import Option
 
 invariant_preservation_check = Option("invariant-preservation-check", bool, True)

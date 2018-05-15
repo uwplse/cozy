@@ -95,7 +95,7 @@ def fix_ewithalteredvalue(e : Exp):
     This rewrites `e` to avoid them, but may result in a much slower
     implementation.
     """
-    # TODO: should we do this earlier? Maybe at incrementalization time?
+    # TODO: should we do this earlier? Maybe at state maintenance time?
 
     if not any(isinstance(x, EWithAlteredValue) for x in all_exps(e)):
         # Good! This is the dream.

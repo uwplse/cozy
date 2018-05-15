@@ -9,7 +9,7 @@ from cozy.structures import extension_handler
 
 skip_stateless_synthesis = Option("skip-stateless-synthesis", bool, False,
     description="Do not waste time optimizing expressions that do not depend on the data structure state")
-delta_incrementalization = Option("delta-incrementalization", bool, True)
+update_numbers_with_deltas = Option("update-numbers-with-deltas", bool, True)
 
 def mutate(e : syntax.Exp, op : syntax.Stm, k=identity_func) -> syntax.Exp:
     """
@@ -260,7 +260,7 @@ def sketch_update(
             syntax.SForEach(v, to_add, syntax.SCall(lval, "add", [v]))])
     # elif isinstance(t, syntax.TList):
     #     raise NotImplementedError()
-    elif is_numeric(t) and delta_incrementalization.value:
+    elif is_numeric(t) and update_numbers_with_deltas.value:
         change = make_subgoal(syntax.EBinOp(new_value, "-", old_value).with_type(t), docstring="delta for {}".format(pprint(lval)))
         stm = syntax.SAssign(lval, syntax.EBinOp(lval, "+", change).with_type(t))
     elif isinstance(t, syntax.TTuple):
