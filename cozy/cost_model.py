@@ -142,6 +142,9 @@ def max_storage_size(e):
 def hash_cost(e):
     return storage_size(e)
 
+def comparison_cost(e1, e2):
+    return ESum([storage_size(e1), storage_size(e2)])
+
 # def iterates_over_bag(e):
 #     if isinstance(e, EFilter) or isinstance(e, EMap) or isinstance(e, EFlatMap) or isinstance(e, EArgMin) or isinstance(e, EArgMax) or isinstance(e, EMakeMap2):
 #         return e.e
@@ -258,12 +261,12 @@ def rt(e, account_for_constant_factors=True):
             terms.append(card(e.e1))
             terms.append(card(e.e2))
         elif isinstance(e, EBinOp) and e.op in ("==", "!=", ">", "<", ">=", "<="):
-            terms.append(storage_size(e.e1))
-            terms.append(storage_size(e.e2))
+            terms.append(comparison_cost(e.e1, e.e2))
         elif isinstance(e, EUnaryOp) and e.op in LINEAR_TIME_UOPS:
             terms.append(card(e.e))
         elif isinstance(e, EMapGet):
             terms.append(hash_cost(e.key))
+            terms.append(comparison_cost(e.key, e.key))
 
     terms.append(ENum(constant).with_type(INT))
     if not account_for_constant_factors:
