@@ -33,7 +33,7 @@ def order_objects(x, y):
 class CostModel(object):
 
     def __init__(self, assumptions : Exp = T, examples=(), funcs=()):
-        self.solver = ModelCachingSolver(vars=(), funcs=funcs, examples=examples)
+        self.solver = ModelCachingSolver(vars=(), funcs=funcs, examples=examples, assumptions=assumptions)
         self.assumptions = assumptions
         # self.examples = list(examples)
         self.funcs = OrderedDict(funcs)
@@ -59,8 +59,8 @@ class CostModel(object):
             event("shortcutting comparison of identical terms")
             return Order.EQUAL
 
-        always_le = self.solver.valid(EImplies(self.assumptions, ELe(e1, e2)))
-        always_ge = self.solver.valid(EImplies(self.assumptions, EGe(e1, e2)))
+        always_le = self.solver.valid(ELe(e1, e2))
+        always_ge = self.solver.valid(EGe(e1, e2))
         if always_le and always_ge:
             return Order.EQUAL
         if always_le:

@@ -1347,12 +1347,14 @@ class ModelCachingSolver(object):
     calls can often be avoided using a counterexample found on a previous call.
     """
 
-    def __init__(self, vars : [EVar], funcs : { str : TFunc }, examples : [dict] = ()):
+    def __init__(self, vars : [EVar], funcs : { str : TFunc }, examples : [dict] = (), assumptions : Exp = T):
         self.vars = list(vars)
         self.funcs = OrderedDict(funcs)
         self.calls = 0
         self.hits = 0
         self.examples = list(examples)
+        self.solver = IncrementalSolver(vars=vars, funcs=funcs)
+        self.solver.add_assumption(assumptions)
 
     def satisfy(self, e):
         self.calls += 1
@@ -1361,7 +1363,7 @@ class ModelCachingSolver(object):
             if res:
                 self.hits += 1
                 return x
-        x = satisfy(e, vars=self.vars, funcs=self.funcs)
+        x = self.solver.satisfy(e)
         if x is not None:
             self.examples.append(x)
         return x
