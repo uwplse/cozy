@@ -410,19 +410,21 @@ def optimize_filter_as_if_distinct(xs, p, args):
     p_body = p.body
 
     cases = dnf(nnf(p_body))
-    cases = [unique(c) for c in cases]
+    cases = [list(unique(c)) for c in cases]
     # for c in cases:
     #     print("; ".join(pprint(x) for x in c))
-    if len(cases) == 0:
-        return EFilter(xs, p).with_type(xs.type)
-    else:
-        res = xs
-        for c in sorted(unique(cases[0]), key=lambda c: 1 if any(v in args for v in free_vars(c)) else 0):
-            res = _simple_filter(res, ELambda(p.arg, c), args)
-        if cases[1:]:
-            cond = EAll([ENot(EAll(cases[0])), EAny(EAll(c) for c in cases[1:])])
-            res = EBinOp(res, "+", optimize_filter_as_if_distinct(xs, ELambda(p.arg, cond), args=args)).with_type(res.type)
-        return res
+    assert cases
+    res = xs
+    for c in sorted(unique(cases[0]), key=lambda c: 1 if any(v in args for v in free_vars(c)) else 0):
+        res = _simple_filter(res, ELambda(p.arg, c), args)
+    if cases[1:]:
+        cond = EAny(EAll(c) for c in cases[1:])
+        res = EBinOp(res, "+",
+            _simple_filter(
+                optimize_filter_as_if_distinct(xs, ELambda(p.arg, cond), args=args),
+                ELambda(p.arg, ENot(EAll(cases[0]))),
+                args=args)).with_type(res.type)
+    return res
 
 def optimize_map(xs, f, args):
     res_type = TBag(f.body.type)
