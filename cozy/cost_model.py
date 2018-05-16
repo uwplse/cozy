@@ -82,32 +82,6 @@ class CostModel(object):
                     lambda: self._compare(storage_size(e1), storage_size(e2), context),
                     lambda: order_objects(e1.size(), e2.size()))
 
-    def compare_cardinalities(self, e1 : Exp, e2 : Exp, context : Context, pool : Pool):
-        if not is_collection(e1.type):
-            return Order.EQUAL
-        return self._compare(card(e1), card(e2), context, pool)
-
-def find_cost_cex(f, vars, funcs):
-    # return satisfy(f, vars=vars, funcs=funcs, min_collection_depth=2)
-    return satisfy(f, vars=vars, funcs=funcs)
-
-def find_case_where_better(e1, e2, vars, funcs, assumptions : Exp = T):
-    """
-    Find an example demonstrating that cost(e1) < cost(e2)
-    """
-    with task("finding a case where cost(e1) < cost(e2)", e1=pprint(e1), e2=pprint(e2)):
-        for f in (asymptotic_runtime, max_storage_size, rt):
-            r1 = f(e1)
-            r2 = f(e2)
-            with task("finding cost example", f=f.__name__):
-                m = find_cost_cex(EAll([EGt(r2, r1), assumptions]), vars=vars, funcs=funcs)
-                if m is not None:
-                    return m
-            with task("checking for cost equivalence", f=f.__name__):
-                m = find_cost_cex(EAll([ELt(r2, r1), assumptions]), vars=vars, funcs=funcs)
-                if m is not None:
-                    return None
-
 def card(e):
     assert is_collection(e.type)
     return ELen(e)

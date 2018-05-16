@@ -12,7 +12,7 @@ from cozy.wf import ExpIsNotWf, exp_wf
 from cozy.common import OrderedSet, ADT, Visitor, fresh_name, unique, pick_to_sum, cross_product, OrderedDefaultDict, OrderedSet, group_by, find_one, extend, StopException
 from cozy.solver import satisfy, satisfiable, valid, IncrementalSolver, ModelCachingSolver
 from cozy.evaluation import eval, eval_bulk, mkval, construct_value, uneval, eq
-from cozy.cost_model import CostModel, Order, rt as runtime, asymptotic_runtime, max_storage_size, find_case_where_better, LINEAR_TIME_UOPS
+from cozy.cost_model import CostModel, Order, rt as runtime, asymptotic_runtime, max_storage_size, LINEAR_TIME_UOPS
 from cozy.opts import Option
 from cozy.pools import ALL_POOLS, RUNTIME_POOL, STATE_POOL, pool_name
 from cozy.enumeration import Enumerator, fingerprint, eviction_policy

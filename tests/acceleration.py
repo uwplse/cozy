@@ -7,10 +7,11 @@ from cozy.contexts import RootCtx, UnderBinder
 from cozy.pools import Pool, RUNTIME_POOL
 from cozy.synthesis.acceleration import try_optimize, map_accelerate
 from cozy.solver import valid
-from cozy.cost_model import find_case_where_better
+from cozy.cost_model import CostModel, Order, debug_comparison
 
 def can_improve(e, ctx, assumptions : Exp = T, pool : Pool = RUNTIME_POOL):
     print("Optimizing {}...".format(pprint(e)))
+    cm = CostModel(assumptions=assumptions, funcs=ctx.funcs())
     for ee in try_optimize(e, ctx, pool):
         print(" --> trying {}...".format(pprint(ee)))
         if not valid(EImplies(assumptions, EEq(e, ee))):
@@ -18,11 +19,13 @@ def can_improve(e, ctx, assumptions : Exp = T, pool : Pool = RUNTIME_POOL):
             continue
         else:
             print("    VALID")
-        if find_case_where_better(e, ee, vars=None, funcs=None, assumptions=assumptions) is None and find_case_where_better(ee, e, vars=None, funcs=None, assumptions=assumptions) is not None:
+        order = cm.compare(ee, e, ctx, pool)
+        if order == Order.LT:
             print("    IMPROVED")
             return True
         else:
-            print("    NOT IMPROVED")
+            print("    NOT IMPROVED: order is {}".format(order))
+            debug_comparison(cm, ee, e, ctx)
     return False
 
 class TestAccelerationRules(unittest.TestCase):
