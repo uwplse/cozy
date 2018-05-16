@@ -1,7 +1,7 @@
 import itertools
 
 from cozy.common import typechecked, OrderedSet
-from cozy.typecheck import is_collection, is_scalar, is_numeric
+from cozy.typecheck import is_collection, is_scalar
 from cozy.target_syntax import *
 from cozy.syntax_tools import pprint, free_vars
 from cozy.solver import ModelCachingSolver
@@ -47,8 +47,8 @@ def exp_wf_nonrecursive(solver, e : Exp, context : Context, pool = RUNTIME_POOL,
         raise ExpIsNotWf(e, e, "EDrop* in state position")
     if isinstance(e, EFlatMap) and not at_runtime:
         raise ExpIsNotWf(e, e, "EFlatMap in state position")
-    if not at_runtime and isinstance(e, EBinOp) and is_numeric(e.type):
-        raise ExpIsNotWf(e, e, "arithmetic in state position")
+    if not at_runtime and isinstance(e, EBinOp) and e.type == INT:
+        raise ExpIsNotWf(e, e, "integer arithmetic in state position")
     # if isinstance(e, EUnaryOp) and e.op == UOp.Distinct and not at_runtime:
     #     raise ExpIsNotWf(e, e, "'distinct' in state position")
     # if isinstance(e, EMapKeys) and not at_runtime:
@@ -77,8 +77,8 @@ def exp_wf_nonrecursive(solver, e : Exp, context : Context, pool = RUNTIME_POOL,
         raise ExpIsNotWf(e, e, "collection subtraction in state position")
     if not at_runtime and isinstance(e, ESingleton):
         raise ExpIsNotWf(e, e, "singleton in state position")
-    if not at_runtime and isinstance(e, ENum) and e.val != 0:
-        raise ExpIsNotWf(e, e, "nonzero numerical constant in state position")
+    if not at_runtime and isinstance(e, ENum) and e.val != 0 and e.type == INT:
+        raise ExpIsNotWf(e, e, "nonzero integer constant in state position")
     if not allow_conditional_state.value and not at_runtime and isinstance(e, ECond):
         raise ExpIsNotWf(e, e, "conditional in state position")
     if isinstance(e, EMakeMap2) and isinstance(e.e, EEmptyList):
