@@ -8,7 +8,7 @@ from queue import Empty
 from cozy.common import typechecked, fresh_name, pick_to_sum, nested_dict, find_one, OrderedSet
 from cozy.target_syntax import *
 import cozy.syntax_tools
-from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, BottomUpRewriter, free_vars, free_funcs, pprint, subst, implies, fresh_var, mk_lambda, all_exps, equal, is_scalar, tease_apart, shallow_copy, wrap_naked_statevars
+from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, BottomUpRewriter, free_vars, pprint, subst, implies, fresh_var, mk_lambda, all_exps, equal, is_scalar, tease_apart, shallow_copy, wrap_naked_statevars
 from cozy.timeouts import Timeout, TimeoutException
 from cozy import jobs
 from cozy.contexts import RootCtx
@@ -31,7 +31,8 @@ class ImproveQueryJob(jobs.Job):
             assumptions : [Exp],
             q : Query,
             k,
-            hints : [Exp] = []):
+            hints : [Exp] = [],
+            funcs : { str:TFunc } = { }):
         assert all(v in state for v in free_vars(q)), "Oops, query looks malformed due to {}:\n{}\nfree_vars({})".format([v for v in free_vars(q) if v not in state], pprint(q), repr(q))
         super().__init__()
         self.ctx = ctx
@@ -42,6 +43,7 @@ class ImproveQueryJob(jobs.Job):
         self.q = q
         self.hints = hints
         self.k = k
+        self.funcs = OrderedDict(funcs)
     def __str__(self):
         return "ImproveQueryJob[{}]".format(self.q.name)
     def run(self):
@@ -58,7 +60,7 @@ class ImproveQueryJob(jobs.Job):
             ctx = RootCtx(
                 state_vars=self.state,
                 args=[EVar(v).with_type(t) for (v, t) in self.q.args],
-                funcs=free_funcs(EAll(self.assumptions + self.hints)))
+                funcs=self.funcs)
 
             try:
                 for expr in itertools.chain((self.q.ret,), core.improve(
@@ -125,7 +127,8 @@ def improve_implementation(
                         list(impl.spec.assumptions) + list(q.assumptions),
                         q,
                         k=(lambda q: lambda new_rep, new_ret: solutions_q.put((q, new_rep, new_ret)))(q),
-                        hints=[EStateVar(c).with_type(c.type) for c in impl.concretization_functions.values()]))
+                        hints=[EStateVar(c).with_type(c.type) for c in impl.concretization_functions.values()],
+                        funcs=impl.extern_funcs))
 
             # figure out what old jobs we can stop
             impl_query_names = set(q.name for q in impl.query_specs)

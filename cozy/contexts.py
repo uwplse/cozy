@@ -187,6 +187,8 @@ class _Shredder(Visitor):
         return ()
     def visit_int(self, i):
         return ()
+    def visit_float(self, i):
+        return ()
 
 def shred(e : Exp, context : Context, pool : Pool = RUNTIME_POOL) -> [(Exp, Context, Pool)]:
     return _Shredder(context, pool).visit(e)
