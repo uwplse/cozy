@@ -340,16 +340,34 @@ def optimized_val(e):
         return e.new_value
     return EGetField(e, "val").with_type(e.type.value_type)
 
+def mapkeys(m):
+    if isinstance(m, EMakeMap2):
+        return m.keys
+    return EMapKeys(m).with_type(TBag(m.type.k))
+
+def map_values(m, f):
+    if isinstance(m, EMakeMap2):
+        new_body = f(m.value.body)
+        return EMakeMap2(m.e, ELambda(m.value.arg, new_body)).with_type(TMap(m.type.k, new_body.type))
+    if isinstance(m, ECond):
+        return optimized_cond(
+            m.cond,
+            map_values(m.then_branch, f),
+            map_values(m.else_branch, f))
+
 def _simple_filter(xs, p, args):
     if p.body == T:
         return xs
-    elif p.body == F:
+    if p.body == F:
         return EEmptyList().with_type(xs.type)
-    elif isinstance(xs, EEmptyList):
+    if isinstance(xs, EEmptyList):
         return xs
-    elif isinstance(xs, EStateVar) and not any(v in args for v in free_vars(p)):
+    if isinstance(xs, EStateVar) and not any(v in args for v in free_vars(p)):
         return EStateVar(EFilter(xs.e, strip_EStateVar(p)).with_type(xs.type)).with_type(xs.type)
-    elif isinstance(p.body, EBinOp) and p.body.op == "==" and p.body.e1 == p.arg and p.arg not in free_vars(p.body.e2):
+    if isinstance(xs, EMapGet) and isinstance(xs.map, EStateVar) and not any(v in args for v in free_vars(p)):
+        m = map_values(xs.map.e, lambda ys: _simple_filter(ys, p, args))
+        return EMapGet(EStateVar(m).with_type(m.type), xs.key).with_type(xs.type)
+    if isinstance(p.body, EBinOp) and p.body.op == "==" and p.body.e1 == p.arg and p.arg not in free_vars(p.body.e2):
         return optimized_cond(
             optimized_in(p.body.e2, xs),
             ESingleton(p.body.e2).with_type(xs.type),
@@ -393,37 +411,30 @@ def optimized_bag_difference(xs, ys):
     # only legal if xs are distinct, but we'll give it a go...
     return EFilter(xs, mk_lambda(xs.type.t, lambda x: ENot(optimized_in(x, ys)))).with_type(xs.type)
 
-def optimize_filter_as_if_distinct(xs, p, args):
+def optimize_filter_as_if_distinct(xs, p, args, dnf=True):
     if isinstance(xs, EBinOp) and xs.op == "-":
         return EBinOp(
             optimize_filter_as_if_distinct(xs.e1, p, args), "-",
             optimize_filter_as_if_distinct(xs.e2, p, args)).with_type(xs.type)
         # return optimize_filter_as_if_distinct(xs.e1, ELambda(p.arg, EAll([ENot(optimized_in(p.arg, xs.e2)), p.body])), args)
-    from cozy.syntax_tools import dnf, nnf
 
-    # conds = []
-    # e = xs
-    # while isinstance(e, EFilter):
-    #     conds.append(subst(e.p.body, {e.p.arg.id:p.arg}))
-    #     e = e.e
-    # p_body = EAll(conds)
-    p_body = p.body
+    if dnf:
+        from cozy.syntax_tools import dnf, nnf
+        cases = dnf(nnf(p.body))
+        cases = [list(unique(c)) for c in cases]
+        # for c in cases:
+        #     print("; ".join(pprint(x) for x in c))
+        assert cases
+    else:
+        cases = [list(break_conj(p.body))]
 
-    cases = dnf(nnf(p_body))
-    cases = [list(unique(c)) for c in cases]
-    # for c in cases:
-    #     print("; ".join(pprint(x) for x in c))
-    assert cases
     res = xs
     for c in sorted(unique(cases[0]), key=lambda c: 1 if any(v in args for v in free_vars(c)) else 0):
         res = _simple_filter(res, ELambda(p.arg, c), args)
     if cases[1:]:
-        cond = EAny(EAll(c) for c in cases[1:])
+        cond = EAll([ENot(EAll(cases[0])), EAny(EAll(c) for c in cases[1:])])
         res = EBinOp(res, "+",
-            _simple_filter(
-                optimize_filter_as_if_distinct(xs, ELambda(p.arg, cond), args=args),
-                ELambda(p.arg, ENot(EAll(cases[0]))),
-                args=args)).with_type(res.type)
+                optimize_filter_as_if_distinct(xs, ELambda(p.arg, cond), args=args, dnf=False)).with_type(res.type)
     return res
 
 def optimize_map(xs, f, args):
