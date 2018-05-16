@@ -311,7 +311,7 @@ def improve(
                         to_evict = []
                         keep = True
                         for old_target in watched_targets:
-                            evc = eviction_policy(new_target, old_target, context, RUNTIME_POOL, cost_model)
+                            evc = eviction_policy(new_target, context, old_target, context, RUNTIME_POOL, cost_model)
                             if old_target not in evc:
                                 to_evict.append(old_target)
                             if new_target not in evc:

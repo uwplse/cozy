@@ -66,11 +66,25 @@ def _evict(e, context, pool, better_exp):
         print("evicting {}".format(pprint(e)))
     event("evicting {}".format(pprint(e)))
 
-def eviction_policy(new_exp : Exp, old_exp : Exp, context : Context, pool : Pool, cost_model : CostModel) -> [Exp]:
+def more_specific(ctx1, ctx2):
+    a = ctx1
+    while a != ctx2:
+        a = a.parent()
+    if a == ctx2:
+        return ctx1
+    a = ctx2
+    while a != ctx1:
+        a = a.parent()
+    if a == ctx1:
+        return ctx2
+    raise ValueError("not common: {}, {}".format(ctx1, ctx2))
+
+def eviction_policy(new_exp : Exp, new_ctx : Context, old_exp : Exp, old_ctx : Context, pool : Pool, cost_model : CostModel) -> [Exp]:
     """Decide which expressions to keep in the cache.
 
     The returned list contains the new exp, the old exp, or both.
     """
+    context = more_specific(new_ctx, old_ctx)
     ordering = cost_model.compare(new_exp, old_exp, context, pool)
     if ordering == Order.LT:        return [new_exp]
     if ordering == Order.GT:        return [old_exp]
@@ -337,7 +351,7 @@ class Enumerator(object):
                             event("previous: {}".format(pprint(prev_exp)))
                             # prev_cost = self.cost_model.cost(prev_exp, pool)
                             # ordering = cost.compare_to(prev_cost)
-                            to_keep = eviction_policy(e, prev_exp, context, pool, cost_model)
+                            to_keep = eviction_policy(e, context, prev_exp, context, pool, cost_model)
                             if e not in to_keep:
                                 _skip(e, context, pool, "preferring {}".format(pprint(prev_exp)))
                                 should_keep = False
@@ -369,7 +383,7 @@ class Enumerator(object):
                                 for ee in exps:
                                     if ee.fingerprint == fp: # and cost_model.compare(e, ee.e, context, pool) == Order.LT:
                                         # to_evict.append((key, ee))
-                                        to_keep = eviction_policy(e, ee.e, context, pool, cost_model)
+                                        to_keep = eviction_policy(e, context, ee.e, c, pool, cost_model)
                                         if ee.e not in to_keep:
                                             to_evict.append((key, ee))
                         for key, ee in to_evict:
