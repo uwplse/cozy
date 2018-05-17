@@ -65,7 +65,7 @@ class CostModel(object):
         return Order.AMBIGUOUS
 
     def compare(self, e1 : Exp, e2 : Exp, context : Context, pool : Pool):
-        with task("compare costs in {}".format(context)):
+        with task("compare costs", context=context):
             if pool == RUNTIME_POOL:
                 return composite_order(
                     lambda: self._compare(asymptotic_runtime(e1), asymptotic_runtime(e2), context),
