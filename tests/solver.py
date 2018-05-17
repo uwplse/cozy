@@ -11,6 +11,11 @@ from cozy.evaluation import eval, Bag, Handle
 zero = ENum(0).with_type(TInt())
 one  = ENum(1).with_type(TInt())
 
+def check_encoding(e, **opts):
+    v = fresh_var(e.type)
+    m = satisfy(EEq(e, v), validate_model=True, **opts)
+    assert m is not None
+
 class TestSolver(unittest.TestCase):
 
     def test_symbolic_tuple(self):
@@ -19,7 +24,7 @@ class TestSolver(unittest.TestCase):
         y = EVar("y").with_type(TTuple((INT, INT)))
         e = equal(ETupleGet(ECond(b, x, y), 0), one)
         assert retypecheck(e)
-        assert satisfiable(e, validate_model=True)
+        check_encoding(e)
 
     def test_the_empty(self):
         x = EEmptyList().with_type(TBag(TInt()))
@@ -54,7 +59,7 @@ class TestSolver(unittest.TestCase):
         x = EVar("x").with_type(TMap(TInt(), TInt()))
         y = EVar("y").with_type(TMap(TInt(), TInt()))
         e = ENot(equal(x, y))
-        assert satisfiable(e, validate_model=True)
+        check_encoding(e)
 
     def test_symbolic_maps2(self):
         x = EVar("x").with_type(TMap(TInt(), TInt()))
@@ -68,7 +73,7 @@ class TestSolver(unittest.TestCase):
         z = EVar("z").with_type(INT)
         e = equal(EMapGet(ECond(b, x, y), z), z)
         assert retypecheck(e)
-        assert satisfiable(e, validate_model=True)
+        check_encoding(e)
 
     def test_flatmap(self):
         satisfy(EUnaryOp('not', EBinOp(EUnaryOp('not', EBinOp(EUnaryOp('unique', EMap(EVar('ints').with_type(TBag(THandle('_HandleType12', TInt()))), ELambda(EVar('_var13').with_type(THandle('_HandleType12', TInt())), EGetField(EVar('_var13').with_type(THandle('_HandleType12', TInt())), 'val').with_type(TInt()))).with_type(TBag(TInt()))).with_type(TBool()), 'and', EUnaryOp('unique', EVar('ints').with_type(TBag(THandle('_HandleType12', TInt())))).with_type(TBool())).with_type(TBool())).with_type(TBool()), 'or', EUnaryOp('unique', EFlatMap(EVar('ints').with_type(TBag(THandle('_HandleType12', TInt()))), ELambda(EVar('_var458').with_type(THandle('_HandleType12', TInt())), ESingleton(EVar('_var458').with_type(THandle('_HandleType12', TInt()))).with_type(TBag(THandle('_HandleType12', TInt()))))).with_type(TBag(THandle('_HandleType12', TInt())))).with_type(TBool())).with_type(TBool())).with_type(TBool()), vars=None, collection_depth=2, validate_model=True)
@@ -93,11 +98,11 @@ class TestSolver(unittest.TestCase):
 
     def test_unary_minus(self):
         a = EVar("a").with_type(INT)
-        assert satisfiable(ENot(equal(a, EUnaryOp("-", a).with_type(INT))), validate_model=True)
+        check_encoding(ENot(equal(a, EUnaryOp("-", a).with_type(INT))))
 
     def test_distinct(self):
         a = EVar("a").with_type(TBag(INT))
-        assert satisfiable(ENot(equal(a, EUnaryOp("distinct", a).with_type(TBag(INT)))), validate_model=True)
+        check_encoding(ENot(equal(a, EUnaryOp("distinct", a).with_type(TBag(INT)))))
 
     def test_unique_distinct(self):
         a = EVar("a").with_type(TBag(INT))
@@ -107,59 +112,59 @@ class TestSolver(unittest.TestCase):
         for t in (TSet, TBag, TList):
             e = EEmptyList().with_type(t(INT))
             x = EVar("x").with_type(e.type)
-            assert satisfiable(EEq(x, EUnaryOp(UOp.Distinct, e).with_type(e.type)), validate_model=True)
+            check_encoding(EEq(x, EUnaryOp(UOp.Distinct, e).with_type(e.type)))
 
     def test_emap(self):
         e = EEq(
             EVar("xs").with_type(INT_BAG),
             EMap(EVar("ys").with_type(INT_BAG), mk_lambda(INT, lambda x: EBinOp(x, "+", ONE).with_type(INT))).with_type(INT_BAG))
-        assert satisfiable(e, validate_model=True)
+        check_encoding(e)
 
     def test_map_keys_unique(self):
         a = EVar("a").with_type(TMap(INT, INT))
         e = EUnaryOp(UOp.AreUnique, EMapKeys(a).with_type(TBag(INT))).with_type(BOOL)
         assert valid(e, validate_model=True)
-        assert satisfiable(e, validate_model=True)
+        check_encoding(e)
 
     def test_map_keys_distinct(self):
         a = EVar("a").with_type(TMap(INT, INT))
         e = equal(EMapKeys(a).with_type(TBag(INT)), EUnaryOp(UOp.Distinct, EMapKeys(a).with_type(TBag(INT))).with_type(TBag(INT)))
         assert valid(e, validate_model=True)
-        assert satisfiable(e, validate_model=True)
+        check_encoding(e)
 
     def test_distinct_filter(self):
         a = EVar("a").with_type(TBag(INT))
         e = ENot(equal(EUnaryOp(UOp.Distinct, EFilter(a, mk_lambda(a.type.t, lambda x: equal(x, zero)))), EEmptyList().with_type(a.type)))
         assert retypecheck(e)
-        assert satisfiable(e, validate_model=True)
+        check_encoding(e)
 
     def test_unary_all(self):
         a = EUnaryOp(UOp.All, EVar("a").with_type(TBag(BOOL)))
         assert retypecheck(a)
-        assert satisfiable(a, validate_model=True)
+        check_encoding(a)
 
     def test_unary_any(self):
         a = EUnaryOp(UOp.Any, EVar("a").with_type(TBag(BOOL)))
         assert retypecheck(a)
-        assert satisfiable(a, validate_model=True)
+        check_encoding(a)
 
     def test_symbolic_enum_left(self):
         T = TEnum(("A", "B"))
         x = EVar("x").with_type(T)
         e = equal(x, EEnumEntry("B").with_type(T))
-        assert satisfiable(e, validate_model=True)
+        check_encoding(e)
 
     def test_symbolic_enum_right(self):
         T = TEnum(("A", "B"))
         x = EVar("x").with_type(T)
         e = equal(EEnumEntry("B").with_type(T), x)
-        assert satisfiable(e, validate_model=True)
+        check_encoding(e)
 
     def test_enum_order(self):
         T = TEnum(("B", "A"))
         x = EVar("x").with_type(T)
         y = EVar("y").with_type(T)
-        assert satisfiable(EBinOp(x, "<", y).with_type(BOOL), validate_model=True)
+        check_encoding(EBinOp(x, "<", y).with_type(BOOL))
 
     def test_handle_eq_behavior(self):
         T = THandle("T", INT)
@@ -195,7 +200,7 @@ class TestSolver(unittest.TestCase):
             EWithAlteredValue(x, ENum(1).with_type(INT))).with_type(BOOL))
         assert retypecheck(e)
         assert valid(e, validate_model=True)
-        assert satisfiable(e, validate_model=True)
+        check_encoding(e)
 
     def test_with_altered_value_deep_equals_2(self):
         """
@@ -207,7 +212,7 @@ class TestSolver(unittest.TestCase):
             ESingleton(EWithAlteredValue(x, ENum(1).with_type(INT))).with_type(TBag(x.type))).with_type(BOOL))
         assert retypecheck(e)
         assert valid(e, validate_model=True)
-        assert satisfiable(e, validate_model=True)
+        check_encoding(e)
 
     def test_with_altered_value_deep_equals_3(self):
         """
@@ -219,7 +224,7 @@ class TestSolver(unittest.TestCase):
             EMakeMap2(ESingleton(EWithAlteredValue(x, ENum(1).with_type(INT))).with_type(TBag(x.type)), ELambda(x, ONE)).with_type(TMap(x.type, INT))).with_type(BOOL)
         assert retypecheck(e)
         assert valid(e, validate_model=True)
-        assert satisfiable(e, validate_model=True)
+        check_encoding(e)
 
     def test_with_altered_value_deep_equals_4(self):
         """
@@ -232,7 +237,7 @@ class TestSolver(unittest.TestCase):
             EMakeMap2(ESingleton(ONE).with_type(TBag(INT)), ELambda(y, EWithAlteredValue(x, ENum(1).with_type(INT)).with_type(x.type))).with_type(TMap(INT, x.type))).with_type(BOOL))
         assert retypecheck(e)
         assert valid(e, validate_model=True)
-        assert satisfiable(e, validate_model=True)
+        check_encoding(e)
 
     def test_bag_deep_equals(self):
         x = EVar("x").with_type(INT_BAG)
@@ -450,19 +455,19 @@ class TestSolver(unittest.TestCase):
         xs = EVar("xs").with_type(TList(INT))
         ys = EVar("ys").with_type(TList(INT))
         e = EAll([EEq(xs, ys), EUnaryOp(UOp.Exists, xs).with_type(BOOL)])
-        assert satisfiable(e, collection_depth=2, validate_model=True)
+        check_encoding(e, collection_depth=2)
 
     def test_lists4(self):
         xs = EVar("xs").with_type(TList(INT))
         e = EEq(xs, EDropFront(xs).with_type(xs.type))
-        assert satisfiable(e, collection_depth=2, validate_model=True)
+        check_encoding(e, collection_depth=2)
 
     def test_lists5(self):
         xs = EVar("xs").with_type(TList(INT))
         e = EAll([
             EUnaryOp(UOp.Empty, EDropFront(xs).with_type(xs.type)).with_type(BOOL),
             EUnaryOp(UOp.Exists, xs).with_type(BOOL)])
-        assert satisfiable(e, collection_depth=2, validate_model=True)
+        check_encoding(e, collection_depth=2)
 
     def test_var_under_estatevar(self):
         # wow, very tricky!
@@ -486,7 +491,7 @@ class TestSolver(unittest.TestCase):
         z = EVar("z").with_type(FLOAT)
         for op in ("+", "-", "*"):
             e = EEq(EBinOp(x, op, y).with_type(FLOAT), z)
-            assert satisfiable(e, validate_model=True)
+            check_encoding(e)
 
     def test_regression19(self):
         e = ELet(EVar('xs').with_type(TBag(THandle('H', TNative('Value')))), ELambda(EVar('_tmp1008014').with_type(TBag(THandle('H', TNative('Value')))), ELet(EMakeMap2(EMap(EVar('_tmp1008014').with_type(TBag(THandle('H', TNative('Value')))), ELambda(EVar('_var1012').with_type(THandle('H', TNative('Value'))), EGetField(EVar('_var1012').with_type(THandle('H', TNative('Value'))), 'val').with_type(TNative('Value')))).with_type(TBag(TNative('Value'))), ELambda(EVar('_var1009').with_type(TNative('Value')), EEmptyList().with_type(TBag(THandle('H', TNative('Value')))))).with_type(TMap(TNative('Value'), TBag(THandle('H', TNative('Value'))))), ELambda(EVar('_tmp1008019').with_type(TMap(TNative('Value'), TBag(THandle('H', TNative('Value'))))), ELet(EFlatMap(EVar('_tmp1008014').with_type(TBag(THandle('H', TNative('Value')))), ELambda(EVar('_var1012').with_type(THandle('H', TNative('Value'))), ESingleton(EVar('_var1012').with_type(THandle('H', TNative('Value')))).with_type(TBag(THandle('H', TNative('Value')))))).with_type(TBag(THandle('H', TNative('Value')))), ELambda(EVar('_tmp1008026').with_type(TBag(THandle('H', TNative('Value')))), ELet(EVar('_var1008010').with_type(TMap(TNative('Value'), TBag(THandle('H', TNative('Value'))))), ELambda(EVar('_tmp1008048').with_type(TMap(TNative('Value'), TBag(THandle('H', TNative('Value'))))), ELet(EVar('_tmp1008014').with_type(TBag(THandle('H', TNative('Value')))), ELambda(EVar('_var1008013').with_type(TBag(THandle('H', TNative('Value')))), ELet(EMap(EVar('_tmp1008014').with_type(TBag(THandle('H', TNative('Value')))), ELambda(EVar('_var1012').with_type(THandle('H', TNative('Value'))), EVar('_tmp1008019').with_type(TMap(TNative('Value'), TBag(THandle('H', TNative('Value'))))))).with_type(TBag(TMap(TNative('Value'), TBag(THandle('H', TNative('Value')))))), ELambda(EVar('_var1008012').with_type(TBag(TMap(TNative('Value'), TBag(THandle('H', TNative('Value')))))), ELet(EVar('_tmp1008019').with_type(TMap(TNative('Value'), TBag(THandle('H', TNative('Value'))))), ELambda(EVar('_var1008011').with_type(TMap(TNative('Value'), TBag(THandle('H', TNative('Value'))))), ELet(EMapKeys(EVar('_var1008011').with_type(TMap(TNative('Value'), TBag(THandle('H', TNative('Value')))))).with_type(TBag(TNative('Value'))), ELambda(EVar('_tmp1008044').with_type(TBag(TNative('Value'))), EUnaryOp('not', EBinOp(EUnaryOp('not', EBinOp(EUnaryOp('unique', EVar('_tmp1008014').with_type(TBag(THandle('H', TNative('Value'))))).with_type(TBool()), 'and', EUnaryOp('all', EMap(EVar('_tmp1008026').with_type(TBag(THandle('H', TNative('Value')))), ELambda(EVar('_var1012').with_type(THandle('H', TNative('Value'))), ELet(EVar('_var1012').with_type(THandle('H', TNative('Value'))), ELambda(EVar('_tmp1008029').with_type(THandle('H', TNative('Value'))), EUnaryOp('all', EMap(EVar('_tmp1008026').with_type(TBag(THandle('H', TNative('Value')))), ELambda(EVar('_var1013').with_type(THandle('H', TNative('Value'))), ELet(EVar('_var1013').with_type(THandle('H', TNative('Value'))), ELambda(EVar('_tmp1008030').with_type(THandle('H', TNative('Value'))), EBinOp(EUnaryOp('not', EBinOp(EVar('_tmp1008029').with_type(THandle('H', TNative('Value'))), '==', EVar('_tmp1008030').with_type(THandle('H', TNative('Value')))).with_type(TBool())).with_type(TBool()), 'or', EBinOp(EGetField(EVar('_tmp1008029').with_type(THandle('H', TNative('Value'))), 'val').with_type(TNative('Value')), '==', EGetField(EVar('_tmp1008030').with_type(THandle('H', TNative('Value'))), 'val').with_type(TNative('Value'))).with_type(TBool())).with_type(TBool()))).with_type(TBool()))).with_type(TBag(TBool()))).with_type(TBool()))).with_type(TBool()))).with_type(TBag(TBool()))).with_type(TBool())).with_type(TBool())).with_type(TBool()), 'or', EUnaryOp('not', EBinOp(EUnaryOp('len', EFilter(EFlatMap(EVar('_tmp1008044').with_type(TBag(TNative('Value'))), ELambda(EVar('_var1009').with_type(TNative('Value')), EVar('_var1008012').with_type(TBag(TMap(TNative('Value'), TBag(THandle('H', TNative('Value')))))))).with_type(TBag(TMap(TNative('Value'), TBag(THandle('H', TNative('Value')))))), ELambda(EVar('_var0').with_type(TMap(TNative('Value'), TBag(THandle('H', TNative('Value'))))), EBinOp(EVar('_var0').with_type(TMap(TNative('Value'), TBag(THandle('H', TNative('Value'))))), '==', EVar('_tmp1008048').with_type(TMap(TNative('Value'), TBag(THandle('H', TNative('Value')))))).with_type(TBool()))).with_type(TBag(TMap(TNative('Value'), TBag(THandle('H', TNative('Value'))))))).with_type(TInt()), '>', EUnaryOp('len', EFilter(EFlatMap(EVar('_var1008013').with_type(TBag(THandle('H', TNative('Value')))), ELambda(EVar('_var1012').with_type(THandle('H', TNative('Value'))), EMap(EVar('_tmp1008044').with_type(TBag(TNative('Value'))), ELambda(EVar('_var1009').with_type(TNative('Value')), EMakeMap2(EEmptyList().with_type(TBag(TNative('Value'))), ELambda(EVar('_var1009').with_type(TNative('Value')), EEmptyList().with_type(TBag(THandle('H', TNative('Value')))))).with_type(TMap(TNative('Value'), TBag(THandle('H', TNative('Value'))))))).with_type(TBag(TMap(TNative('Value'), TBag(THandle('H', TNative('Value')))))))).with_type(TBag(TMap(TNative('Value'), TBag(THandle('H', TNative('Value')))))), ELambda(EVar('_var0').with_type(TMap(TNative('Value'), TBag(THandle('H', TNative('Value'))))), EBinOp(EVar('_var0').with_type(TMap(TNative('Value'), TBag(THandle('H', TNative('Value'))))), '==', EVar('_tmp1008048').with_type(TMap(TNative('Value'), TBag(THandle('H', TNative('Value')))))).with_type(TBool()))).with_type(TBag(TMap(TNative('Value'), TBag(THandle('H', TNative('Value'))))))).with_type(TInt())).with_type(TBool())).with_type(TBool())).with_type(TBool())).with_type(TBool()))).with_type(TBool()))).with_type(TBool()))).with_type(TBool()))).with_type(TBool()))).with_type(TBool()))).with_type(TBool()))).with_type(TBool()))).with_type(TBool())
@@ -515,17 +520,17 @@ class TestSolver(unittest.TestCase):
     def test_regression23(self):
         e = EBinOp(EHeapElems(EMakeMinHeap(EMap(EVar('xs').with_type(TBag(THandle('T', TNative('int')))), ELambda(EVar('_var2247').with_type(THandle('T', TNative('int'))), ECond(EBinOp(EVar('_var2247').with_type(THandle('T', TNative('int'))), '==', EVar('x').with_type(THandle('T', TNative('int')))).with_type(TBool()), EWithAlteredValue(EVar('_var2247').with_type(THandle('T', TNative('int'))), EVar('nv').with_type(TNative('int'))).with_type(THandle('T', TNative('int'))), EVar('_var2247').with_type(THandle('T', TNative('int')))).with_type(THandle('T', TNative('int'))))).with_type(TBag(THandle('T', TNative('int')))), ELambda(EVar('_var2248').with_type(THandle('T', TNative('int'))), EGetField(EVar('_var2248').with_type(THandle('T', TNative('int'))), 'val').with_type(TNative('int')))).with_type(TMinHeap(THandle('T', TNative('int')), ELambda(EVar('x').with_type(THandle('T', TNative('int'))), EGetField(EVar('x').with_type(THandle('T', TNative('int'))), 'val').with_type(TNative('int')))))).with_type(TBag(THandle('T', TNative('int')))), '-', EHeapElems(EMakeMinHeap(EVar('xs').with_type(TBag(THandle('T', TNative('int')))), ELambda(EVar('x').with_type(THandle('T', TNative('int'))), EGetField(EVar('x').with_type(THandle('T', TNative('int'))), 'val').with_type(TNative('int')))).with_type(TMinHeap(THandle('T', TNative('int')), ELambda(EVar('x').with_type(THandle('T', TNative('int'))), EGetField(EVar('x').with_type(THandle('T', TNative('int'))), 'val').with_type(TNative('int')))))).with_type(TBag(THandle('T', TNative('int'))))).with_type(TBag(THandle('T', TNative('int'))))
         v = fresh_var(e.type)
-        assert satisfiable(EEq(e, v), validate_model=True)
+        check_encoding(EEq(e, v))
 
+    @unittest.skip("heap reconstruction not supported")
     def test_regression24(self):
         e = EMakeMap2(EVar('xs').with_type(TBag(THandle('T', TNative('int')))), ELambda(EVar('_key39413').with_type(THandle('T', TNative('int'))), EFilter(EHeapElems(EVar('_tmp40830').with_type(TMinHeap(THandle('T', TNative('int')), ELambda(EVar('x').with_type(THandle('T', TNative('int'))), EGetField(EVar('x').with_type(THandle('T', TNative('int'))), 'val').with_type(TNative('int')))))).with_type(TBag(THandle('T', TNative('int')))), ELambda(EVar('_var2266').with_type(THandle('T', TNative('int'))), EBinOp(EVar('_var2266').with_type(THandle('T', TNative('int'))), '==', EVar('_key39413').with_type(THandle('T', TNative('int')))).with_type(TBool()))).with_type(TBag(THandle('T', TNative('int')))))).with_type(TMap(THandle('T', TNative('int')), TBag(THandle('T', TNative('int')))))
-        v = fresh_var(e.type)
-        assert satisfiable(EEq(e, v), validate_model=True)
+        check_encoding(e)
 
+    @unittest.skip("heap reconstruction not supported")
     def test_regression25(self):
         e = EMapGet(EVar('_tmp56903').with_type(TMap(THandle('T', TNative('int')), TMinHeap(THandle('T', TNative('int')), ELambda(EVar('x').with_type(THandle('T', TNative('int'))), EGetField(EVar('x').with_type(THandle('T', TNative('int'))), 'val').with_type(TNative('int')))))), EVar('_var56869').with_type(THandle('T', TNative('int')))).with_type(TMinHeap(THandle('T', TNative('int')), ELambda(EVar('x').with_type(THandle('T', TNative('int'))), EGetField(EVar('x').with_type(THandle('T', TNative('int'))), 'val').with_type(TNative('int')))))
-        v = fresh_var(e.type)
-        assert satisfiable(EEq(e, v), validate_model=True)
+        check_encoding(e)
 
     def test_caching_solver(self):
         e = EEq(EVar("x").with_type(INT), EVar("y").with_type(INT))
@@ -538,12 +543,12 @@ class TestSolver(unittest.TestCase):
     def test_regression26(self):
         e = EMap(EVar('_tmp639').with_type(TList(TFloat())), ELambda(EVar('x').with_type(TFloat()), EVar('x').with_type(TFloat()))).with_type(TList(TFloat()))
         v = fresh_var(e.type)
-        assert satisfiable(EEq(e, v), validate_model=True)
+        check_encoding(EEq(e, v))
 
     def test_regression27(self):
         e = EUnaryOp('not', EBinOp(EBinOp(EUnaryOp('sum', EMap(EFilter(EVar('xs').with_type(TList(TFloat())), ELambda(EVar('x').with_type(TFloat()), EBinOp(ECall('log', (EBinOp(ENum(1.0).with_type(TFloat()), '+', EVar('x').with_type(TFloat())).with_type(TFloat()),)).with_type(TFloat()), '<', ECall('log', (ENum(1.5).with_type(TFloat()),)).with_type(TFloat())).with_type(TBool()))).with_type(TList(TFloat())), ELambda(EVar('_var633').with_type(TFloat()), ENum(4).with_type(TInt()))).with_type(TBag(TInt()))).with_type(TInt()), '+', ENum(4).with_type(TInt())).with_type(TInt()), '<=', EBinOp(EUnaryOp('sum', EMap(EMap(EFilter(EVar('xs').with_type(TList(TFloat())), ELambda(EVar('x').with_type(TFloat()), EBinOp(ECall('log', (EBinOp(ENum(1.0).with_type(TFloat()), '+', EVar('x').with_type(TFloat())).with_type(TFloat()),)).with_type(TFloat()), '<', ECall('log', (ENum(1.5).with_type(TFloat()),)).with_type(TFloat())).with_type(TBool()))).with_type(TList(TFloat())), ELambda(EVar('x').with_type(TFloat()), EVar('x').with_type(TFloat()))).with_type(TList(TFloat())), ELambda(EVar('_var634').with_type(TFloat()), ENum(4).with_type(TInt()))).with_type(TBag(TInt()))).with_type(TInt()), '+', ENum(4).with_type(TInt())).with_type(TInt())).with_type(TBool())).with_type(TBool())
         v = fresh_var(e.type)
-        assert satisfiable(EEq(e, v), validate_model=True)
+        check_encoding(EEq(e, v))
 
     def test_lambdacache_type_conflict(self):
         i = IncrementalSolver(validate_model=True)
