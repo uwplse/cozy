@@ -382,7 +382,13 @@ def make_parser():
                 if isinstance(p[3], syntax.Exp):
                     p[0] = syntax.EListGet(p[1], p[3])
                 elif isinstance(p[3], tuple):
-                    p[0] = syntax.EListSlice(p[1], p[3][0], p[3][1])
+                    start = p[3][0]
+                    end = p[3][1]
+                    if start is None:
+                        start = syntax.ZERO
+                    if end is None:
+                        end = syntax.ELen(p[1])
+                    p[0] = syntax.EListSlice(p[1], start, end)
             elif p[1] == "[":
                 p[0] = syntax.EListComprehension(p[2], p[4])
             elif p[2] == "(":
