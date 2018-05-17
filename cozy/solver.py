@@ -903,7 +903,7 @@ class ToZ3(Visitor):
         elif isinstance(ty, TBool):
             return self.true if value else self.false
         elif is_collection(ty):
-            masks = [self.true for v in value]
+            masks = [self.true] * len(value)
             values = [self.unreconstruct(v, ty.t) for v in value]
             return (masks, values)
         elif isinstance(ty, TMap):
