@@ -276,6 +276,21 @@ def make_parser():
         """lambda : OP_OPEN_BRACE WORD OP_RIGHT_ARROW exp OP_CLOSE_BRACE"""
         p[0] = syntax.ELambda(syntax.EVar(p[2]), p[4])
 
+    def p_slice(p):
+        """slice : exp
+                 | exp OP_COLON
+                 | OP_COLON exp
+                 | exp OP_COLON exp"""
+        if len(p) == 2:
+            p[0] = p[1]
+        elif len(p) == 3:
+            if p[1] == ":":
+                p[0] = (None, p[2])
+            elif p[2] == ":":
+                p[0] = (p[1], None)
+        elif len(p) == 4:
+            p[0] = (p[1], p[3])
+
     def p_exp(p):
         """exp : NUM
                | FLOAT
@@ -296,7 +311,7 @@ def make_parser():
                | exp KW_OR exp
                | exp OP_IMPLIES exp
                | exp OP_QUESTION exp OP_COLON exp
-               | exp OP_OPEN_BRACKET exp OP_CLOSE_BRACKET
+               | exp OP_OPEN_BRACKET slice OP_CLOSE_BRACKET
                | KW_NOT exp
                | OP_MINUS exp
                | exp KW_IN exp
@@ -364,7 +379,10 @@ def make_parser():
             if p[2] == "?":
                 p[0] = syntax.ECond(p[1], p[3], p[5])
             elif p[2] == "[":
-                p[0] = syntax.EListGet(p[1], p[3])
+                if isinstance(p[3], syntax.Exp):
+                    p[0] = syntax.EListGet(p[1], p[3])
+                elif isinstance(p[3], tuple):
+                    p[0] = syntax.EListSlice(p[1], p[3][0], p[3][1])
             elif p[1] == "[":
                 p[0] = syntax.EListComprehension(p[2], p[4])
             elif p[2] == "(":
