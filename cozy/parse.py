@@ -263,6 +263,7 @@ def make_parser():
         ("left", "OP_TIMES"),
         ("left", "KW_IN"),
         ("left", "KW_NOT", "KW_DISTINCT", "KW_UNIQUE", "KW_EMPTY", "KW_EXISTS", "KW_THE", "KW_MIN", "KW_MAX", "KW_ARGMIN", "KW_ARGMAX", "KW_SUM", "KW_ANY", "KW_ALL", "KW_LEN", "KW_REVERSED"),
+        ("left", "OP_OPEN_BRACKET"),
         ("left", "OP_OPEN_PAREN"),
         ("left", "OP_DOT"),
         ("left", "KW_OP", "KW_QUERY", "KW_PRIVATE"))
