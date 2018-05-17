@@ -42,11 +42,6 @@ class CostModel(object):
     def examples(self):
         return tuple(self.solver.examples)
 
-    def add_example(self, new_example):
-        event("new cost example")
-        # self.examples.append(new_example)
-        self.solver.examples.append(new_example)
-
     def _compare(self, e1 : Exp, e2 : Exp, context : Context):
         e1_constant = not free_vars(e1) and not free_funcs(e1)
         e2_constant = not free_vars(e2) and not free_funcs(e2)
