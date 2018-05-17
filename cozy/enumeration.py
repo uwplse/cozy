@@ -166,7 +166,7 @@ class Enumerator(object):
 
         for e in self.enumerate(context, size-1, pool):
             if is_numeric(e.type):
-                yield EUnaryOp("-", e).with_type(INT)
+                yield EUnaryOp("-", e).with_type(e.type)
 
         for m in self.enumerate(context, size-1, pool):
             if isinstance(m.type, TMap):
