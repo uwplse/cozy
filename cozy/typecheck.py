@@ -424,6 +424,19 @@ class Typechecker(Visitor):
         self.visit(e.index)
         self.ensure_type(e.index, INT, "list index must be an Int")
 
+    def visit_EListSlice(self, e):
+        self.visit(e.e)
+        if isinstance(e.e.type, syntax.TList):
+            e.type = e.e.type
+        else:
+            e.type = DEFAULT_TYPE
+            if e.e.type is not DEFAULT_TYPE:
+                self.report_err(e, "cannot get element from non-list")
+        self.visit(e.start)
+        self.ensure_type(e.start, INT, "slice start must be an Int")
+        self.visit(e.end)
+        self.ensure_type(e.end, INT, "slice end must be an Int")
+
     def visit_EListComprehension(self, e):
         with self.scope():
             for clause in e.clauses:
