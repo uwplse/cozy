@@ -321,6 +321,9 @@ class PrettyPrinter(common.Visitor):
     def visit_EListGet(self, e):
         return "{}[{}]".format(self.visit(e.e), self.visit(e.index))
 
+    def visit_EListSlice(self, e):
+        return "{}[{}:{}]".format(self.visit(e.e), self.visit(e.start), self.visit(e.end))
+
     def visit_EMakeMap(self, e):
         return "{}({}, {}, {})".format(self.format_builtin("MkMap"), self.visit(e.e), self.visit(e.key), self.visit(e.value))
 
