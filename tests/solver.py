@@ -544,3 +544,16 @@ class TestSolver(unittest.TestCase):
         e = EUnaryOp('not', EBinOp(EBinOp(EUnaryOp('sum', EMap(EFilter(EVar('xs').with_type(TList(TFloat())), ELambda(EVar('x').with_type(TFloat()), EBinOp(ECall('log', (EBinOp(ENum(1.0).with_type(TFloat()), '+', EVar('x').with_type(TFloat())).with_type(TFloat()),)).with_type(TFloat()), '<', ECall('log', (ENum(1.5).with_type(TFloat()),)).with_type(TFloat())).with_type(TBool()))).with_type(TList(TFloat())), ELambda(EVar('_var633').with_type(TFloat()), ENum(4).with_type(TInt()))).with_type(TBag(TInt()))).with_type(TInt()), '+', ENum(4).with_type(TInt())).with_type(TInt()), '<=', EBinOp(EUnaryOp('sum', EMap(EMap(EFilter(EVar('xs').with_type(TList(TFloat())), ELambda(EVar('x').with_type(TFloat()), EBinOp(ECall('log', (EBinOp(ENum(1.0).with_type(TFloat()), '+', EVar('x').with_type(TFloat())).with_type(TFloat()),)).with_type(TFloat()), '<', ECall('log', (ENum(1.5).with_type(TFloat()),)).with_type(TFloat())).with_type(TBool()))).with_type(TList(TFloat())), ELambda(EVar('x').with_type(TFloat()), EVar('x').with_type(TFloat()))).with_type(TList(TFloat())), ELambda(EVar('_var634').with_type(TFloat()), ENum(4).with_type(TInt()))).with_type(TBag(TInt()))).with_type(TInt()), '+', ENum(4).with_type(TInt())).with_type(TInt())).with_type(TBool())).with_type(TBool())
         v = fresh_var(e.type)
         assert satisfiable(EEq(e, v), validate_model=True)
+
+    def test_lambdacache_type_conflict(self):
+        i = IncrementalSolver(validate_model=True)
+        xs = EVar("xs").with_type(INT_BAG)
+        e1 = EMap(xs, ELambda(EVar("x"), EVar("x")))
+        ys = EVar("ys").with_type(BOOL_BAG)
+        e2 = EMap(ys, ELambda(EVar("x"), EVar("x")))
+        assert retypecheck(e1)
+        assert retypecheck(e2)
+
+        for e in (e1, e2):
+            v = fresh_var(e.type)
+            assert i.satisfiable(EEq(e, v))

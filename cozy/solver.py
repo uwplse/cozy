@@ -797,7 +797,7 @@ class ToZ3(Visitor):
             in_type = TTuple(tuple(v.type for v in fvs))
             body_type = lam.body.type
             argv = list(flatten(in_type, tuple(env[v.id] for v in fvs)))
-            key = (len(argv), lam)
+            key = (len(argv), lam.arg.type, lam.body.type, lam)
             funcs = self._lambdacache.get(key)
 
             if funcs is None:
