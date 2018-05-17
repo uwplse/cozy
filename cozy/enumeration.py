@@ -345,8 +345,8 @@ class Enumerator(object):
                 with task("collecting prev exps", size=size, context=context, pool=pool_name(pool)):
                     prev = []
                     for sz in range(0, size+1):
-                        prev.extend(self.enumerate(context, sz, pool))
-                    prev = [ p for p in prev if fingerprint(p, examples) == fp ]
+                        prev.extend(self.enumerate_with_info(context, sz, pool))
+                    prev = [ p.e for p in prev if p.fingerprint == fp ]
 
                 if any(alpha_equivalent(e, p) for p in prev):
                     _skip(e, context, pool, "duplicate")
