@@ -204,12 +204,24 @@ class Enumerator(object):
                     for k in of_type(self.enumerate(context, sz2, pool), m.type.k):
                         yield EMapGet(m, k).with_type(m.type.v)
                         yield EHasKey(m, k).with_type(BOOL)
+            for l in self.enumerate(context, sz1, pool):
+                if not isinstance(l.type, TList):
+                    continue
+                for i in of_type(self.enumerate(context, sz2, pool), INT):
+                    yield EListGet(l, i).with_type(l.type.t)
 
         for (sz1, sz2, sz3) in pick_to_sum(3, size-1):
             for cond in of_type(self.enumerate(context, sz1, pool), BOOL):
                 for then_branch in self.enumerate(context, sz2, pool):
                     for else_branch in of_type(self.enumerate(context, sz2, pool), then_branch.type):
                         yield ECond(cond, then_branch, else_branch).with_type(then_branch.type)
+
+            for l in self.enumerate(context, sz1, pool):
+                if not isinstance(l.type, TList):
+                    continue
+                for st in of_type(self.enumerate(context, sz2, pool), INT):
+                    for ed in of_type(self.enumerate(context, sz3, pool), INT):
+                        yield EListSlice(l, st, ed).with_type(l.type)
 
         for bag in collections(self.enumerate(context, size-1, pool)):
             # len of bag
