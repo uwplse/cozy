@@ -562,3 +562,7 @@ class TestSolver(unittest.TestCase):
         for e in (e1, e2):
             v = fresh_var(e.type)
             assert i.satisfiable(EEq(e, v))
+
+    def test_list_slice(self):
+        e = EListSlice(EVar('xs').with_type(TList(TFloat())), ENum(0).with_type(TInt()), EVar('index').with_type(TInt())).with_type(TList(TFloat()))
+        check_encoding(e)

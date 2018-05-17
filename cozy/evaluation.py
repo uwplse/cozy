@@ -480,6 +480,12 @@ def list_index(default):
             default)
     return _list_index
 
+def list_slice(stk):
+    end = stk.pop()
+    start = stk.pop()
+    l = stk.pop()
+    stk.append(l[start:end])
+
 _EMPTY_BAG = Bag()
 def _compile(e, env : {str:int}, out, bind_callback):
     if isinstance(e, EVar):
@@ -645,6 +651,11 @@ def _compile(e, env : {str:int}, out, bind_callback):
         _compile(e.e, env, out, bind_callback=bind_callback)
         _compile(e.index, env, out, bind_callback=bind_callback)
         out.append(list_index(mkval(e.type)))
+    elif isinstance(e, EListSlice):
+        _compile(e.e, env, out, bind_callback=bind_callback)
+        _compile(e.start, env, out, bind_callback=bind_callback)
+        _compile(e.end, env, out, bind_callback=bind_callback)
+        out.append(list_slice)
     elif isinstance(e, EDropFront):
         _compile(e.e, env, out, bind_callback=bind_callback)
         out.append(drop_front)

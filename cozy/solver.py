@@ -700,6 +700,19 @@ class ToZ3(Visitor):
                     f((mask[1:], elems[1:]), idx - self.int_one)),
                 f((mask[1:], elems[1:]), idx))
         return f(self.visit(e.e, env), self.visit(e.index, env))
+    def visit_EListSlice(self, e, env):
+        def symb_slice(l, st, ed, idx):
+            if not l:
+                return l
+            m = l[0]
+            next_index = idx + ite(INT, m, self.int_one, self.int_zero)
+            rest = symb_slice(l[1:], st, ed, next_index)
+            return [self.all(m, st <= idx, idx < ed)] + rest
+        masks, elems = self.visit(e.e, env)
+        start = self.visit(e.start, env)
+        end = self.visit(e.end, env)
+        new_masks = symb_slice(masks, start, end, self.int_zero)
+        return (new_masks, elems)
     # def fold(self, out_type, bag, f, init):
     #     res = init
     #     mask, elems = bag
