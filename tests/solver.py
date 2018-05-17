@@ -534,3 +534,13 @@ class TestSolver(unittest.TestCase):
         assert s.satisfiable(e)
         assert s.calls == 2
         assert s.hits == 1
+
+    def test_regression26(self):
+        e = EMap(EVar('_tmp639').with_type(TList(TFloat())), ELambda(EVar('x').with_type(TFloat()), EVar('x').with_type(TFloat()))).with_type(TList(TFloat()))
+        v = fresh_var(e.type)
+        assert satisfiable(EEq(e, v), validate_model=True)
+
+    def test_regression27(self):
+        e = EUnaryOp('not', EBinOp(EBinOp(EUnaryOp('sum', EMap(EFilter(EVar('xs').with_type(TList(TFloat())), ELambda(EVar('x').with_type(TFloat()), EBinOp(ECall('log', (EBinOp(ENum(1.0).with_type(TFloat()), '+', EVar('x').with_type(TFloat())).with_type(TFloat()),)).with_type(TFloat()), '<', ECall('log', (ENum(1.5).with_type(TFloat()),)).with_type(TFloat())).with_type(TBool()))).with_type(TList(TFloat())), ELambda(EVar('_var633').with_type(TFloat()), ENum(4).with_type(TInt()))).with_type(TBag(TInt()))).with_type(TInt()), '+', ENum(4).with_type(TInt())).with_type(TInt()), '<=', EBinOp(EUnaryOp('sum', EMap(EMap(EFilter(EVar('xs').with_type(TList(TFloat())), ELambda(EVar('x').with_type(TFloat()), EBinOp(ECall('log', (EBinOp(ENum(1.0).with_type(TFloat()), '+', EVar('x').with_type(TFloat())).with_type(TFloat()),)).with_type(TFloat()), '<', ECall('log', (ENum(1.5).with_type(TFloat()),)).with_type(TFloat())).with_type(TBool()))).with_type(TList(TFloat())), ELambda(EVar('x').with_type(TFloat()), EVar('x').with_type(TFloat()))).with_type(TList(TFloat())), ELambda(EVar('_var634').with_type(TFloat()), ENum(4).with_type(TInt()))).with_type(TBag(TInt()))).with_type(TInt()), '+', ENum(4).with_type(TInt())).with_type(TInt())).with_type(TBool())).with_type(TBool())
+        v = fresh_var(e.type)
+        assert satisfiable(EEq(e, v), validate_model=True)
