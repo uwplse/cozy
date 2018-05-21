@@ -481,8 +481,8 @@ def list_index(default):
     return _list_index
 
 def list_slice(stk):
-    end = stk.pop()
-    start = stk.pop()
+    end   = max(stk.pop(), 0)
+    start = max(stk.pop(), 0)
     l = stk.pop()
     stk.append(l[start:end])
 
