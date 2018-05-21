@@ -11,6 +11,7 @@ from cozy.cost_model import CostModel, Order
 from cozy.pools import Pool, ALL_POOLS, RUNTIME_POOL, STATE_POOL, pool_name
 from cozy.contexts import Context, RootCtx, UnderBinder
 from cozy.logging import task, task_begin, task_end, event, verbose
+from cozy.synthesis.acceleration import histogram
 
 def fingerprint(e : Exp, examples : [{str:object}]):
     return (e.type,) + tuple(eval_bulk(e, examples))
@@ -113,6 +114,52 @@ class Enumerator(object):
     def cache_size(self):
         return sum(len(v) for v in self.cache.values())
 
+    def heuristic_enumeration(self, context : Context, size : int, pool : Pool) -> [Exp]:
+        if pool == RUNTIME_POOL:
+
+            # is `x` the last of its kind in `xs`?
+            for sz1, sz2 in pick_to_sum(2, size-1):
+
+                for xs in self.enumerate(context, sz1, STATE_POOL):
+                    if not is_collection(xs.type):
+                        continue
+
+                    h = histogram(xs)
+                    h = EStateVar(h).with_type(h.type)
+                    for x in of_type(self.enumerate(context, sz2, RUNTIME_POOL), xs.type.t):
+                        mg = EMapGet(h, x).with_type(INT)
+                        e = EEq(mg, ONE)
+                        yield e
+                        # yield mg
+                    # yield h
+
+            # is `x` the last of its kind in `xs` AND is it argmin
+            # according to some interesting function?
+            for sz1, sz2 in pick_to_sum(2, size-1):
+                for best in self.enumerate(context, sz1, STATE_POOL):
+                    if not (isinstance(best, EArgMin) or isinstance(best, EArgMax)):
+                        continue
+
+                    h = histogram(best.e)
+                    h = EStateVar(h).with_type(h.type)
+                    from cozy.structures.heaps import to_heap, EHeapPeek2
+                    heap = to_heap(best)
+                    heap = EStateVar(heap).with_type(h.type)
+                    for x in of_type(self.enumerate(context, sz2, RUNTIME_POOL), best.type):
+                        mg = EMapGet(h, x).with_type(INT)
+                        e = EEq(mg, ONE)
+                        b = EStateVar(best).with_type(best.type)
+                        e = EAll([e, EEq(x, b)])
+                        e._tag = True
+                        yield e
+                        e = ECond(e,
+                            EHeapPeek2(heap, EStateVar(ELen(best.e)).with_type(INT)).with_type(best.type),
+                            b).with_type(best.type)
+                        e._tag = True
+                        yield e
+                        # yield mg
+                    # yield h
+
     def enumerate_core(self, context : Context, size : int, pool : Pool) -> [Exp]:
         """
         Arguments:
@@ -138,6 +185,8 @@ class Enumerator(object):
                 if p == pool and ctx.alpha_equivalent(context):
                     yield context.adapt(e, ctx)
             return
+
+        yield from self.heuristic_enumeration(context, size, pool)
 
         for e in collections(self.enumerate(context, size-1, pool)):
             yield EEmptyList().with_type(e.type)
