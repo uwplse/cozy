@@ -40,7 +40,7 @@ def mutate(e : syntax.Exp, op : syntax.Stm, k=identity_func) -> syntax.Exp:
         else:
             raise Exception("Unknown func: {}".format(op.func))
     elif isinstance(op, syntax.SIf):
-        return k(ECond(op.cond,
+        return k(syntax.ECond(op.cond,
             mutate(e, op.then_branch),
             mutate(e, op.else_branch)).with_type(e.type))
     elif isinstance(op, syntax.SSeq):

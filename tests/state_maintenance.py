@@ -51,3 +51,11 @@ class TestStateMaintenance(unittest.TestCase):
         assert valid(EDeepEq(
             inc.mutate(e, s),
             EBinOp(EBinOp(e, "-", ESingleton(y).with_type(INT_BAG)).with_type(INT_BAG), "+", ESingleton(x).with_type(INT_BAG)).with_type(INT_BAG)))
+
+    def test_conditional(self):
+        x = EVar("x").with_type(INT)
+        b = EVar("b").with_type(BOOL)
+        s = SIf(b, SAssign(x, ONE), SAssign(x, ZERO))
+        assert valid(EEq(
+            inc.mutate(x, s),
+            ECond(b, ONE, ZERO).with_type(INT)))
