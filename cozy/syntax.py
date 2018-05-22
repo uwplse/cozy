@@ -235,7 +235,7 @@ def EIn(e1, e2):
     return EBinOp(e1, BOp.In, e2).with_type(BOOL)
 
 def EImplies(e1, e2):
-    return EBinOp(ENot(e1), BOp.Or, e2).with_type(BOOL)
+    return EBinOp(e1, "=>", e2).with_type(BOOL)
 
 def ELen(e):
     if isinstance(e, EEmptyList):

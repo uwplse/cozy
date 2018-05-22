@@ -650,6 +650,8 @@ class ToZ3(Visitor):
             return self.all(v1, v2)
         elif e.op == BOp.Or:
             return self.any(v1, v2)
+        elif e.op == "=>":
+            return self.implies(v1, v2)
         elif e.op == "==":
             return self.eq(e.e1.type, v1, v2, env)
         elif e.op == "!=":

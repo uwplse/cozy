@@ -612,6 +612,8 @@ def _compile(e, env : {str:int}, out, bind_callback):
             return _compile(ECond(e.e1, e.e2, F).with_type(BOOL), env, out, bind_callback=bind_callback)
         elif e.op == "or":
             return _compile(ECond(e.e1, T, e.e2).with_type(BOOL), env, out, bind_callback=bind_callback)
+        elif e.op == "=>":
+            return _compile(ECond(e.e1, e.e2, T).with_type(BOOL), env, out, bind_callback=bind_callback)
         _compile(e.e1, env, out, bind_callback=bind_callback)
         _compile(e.e2, env, out, bind_callback=bind_callback)
         e1type = e.e1.type
