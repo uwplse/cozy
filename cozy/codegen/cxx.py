@@ -308,6 +308,11 @@ class CxxPrinter(CodeGenerator):
         i = self.visit(e.i)
         return "{}[{}]".format(a, i)
 
+    def visit_EListGet(self, e):
+        l = self.visit(e.e)
+        i = self.visit(e.index)
+        return "{}[{}]".format(l, i)
+
     def visit_EArrayIndexOf(self, e):
         assert isinstance(e.a, EVar) # TODO: make this fast when this is false
         it = self.fv(TNative("{}::const_iterator".format(self.visit(e.a.type, "").strip())), "cursor")
@@ -549,6 +554,15 @@ class CxxPrinter(CodeGenerator):
             assert isinstance(new_body, Stm)
             return self.for_each(iterable.e,
                 body=lambda bag: SForEach(v, iterable.f.apply_to(bag), new_body))
+        elif isinstance(iterable, EListSlice):
+            s = self.fv(INT, "start")
+            e = self.fv(INT, "end")
+            l = self.visit(iterable.e)
+            self.declare(s, iterable.start)
+            self.declare(e, iterable.end)
+            return self.visit(SWhile(ELt(s, e), SSeq(
+                body(EEscape("{l}[{i}]", ("l", "i"), (iterable.e, s)).with_type(iterable.type.t)),
+                SAssign(s, EBinOp(s, "+", ONE).with_type(INT)))))
         elif isinstance(iterable, ECall) and iterable.func in self.queries:
             q = self.queries[iterable.func]
             return self.for_each(subst(q.ret, { a : v for ((a, t), v) in zip(q.args, iterable.args) }), body)
