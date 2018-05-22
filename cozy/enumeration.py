@@ -130,6 +130,12 @@ class Enumerator(object):
                         mg = EMapGet(h, x).with_type(INT)
                         e = EEq(mg, ONE)
                         yield e
+                        yield ECond(e,
+                            ESingleton(x).with_type(xs.type),
+                            EEmptyList().with_type(xs.type)).with_type(xs.type)
+                        yield ECond(e,
+                            EEmptyList().with_type(xs.type),
+                            ESingleton(x).with_type(xs.type)).with_type(xs.type)
                         # yield mg
                     # yield h
 
