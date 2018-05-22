@@ -73,10 +73,10 @@ class Learner(object):
                     exp_wf(e, pool=pool, context=ctx, assumptions=self.assumptions, solver=self.wf_solver)
                 except ExpIsNotWf as exc:
                     return No("at {}: {}".format(pprint(exc.offending_subexpression), exc.reason))
-                # if pool == RUNTIME_POOL and self.cost_model.compare(e, self.target, ctx, pool) not in (Order.LT, Order.AMBIGUOUS):
-                #     # from cozy.cost_model import debug_comparison
-                #     # debug_comparison(self.cost_model, e, self.target, ctx)
-                #     return No("too expensive")
+                if pool == RUNTIME_POOL and self.cost_model.compare(e, self.targets[0], ctx, pool) == Order.GT:
+                    # from cozy.cost_model import debug_comparison
+                    # debug_comparison(self.cost_model, e, self.target, ctx)
+                    return No("too expensive")
                 # if isinstance(e.type, TBag):
                 #     c = self.cost_model.cardinality(e)
                 #     if all(cc < c for cc in cards):
