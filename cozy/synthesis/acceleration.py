@@ -4,7 +4,7 @@ from functools import lru_cache
 from cozy.common import find_one, partition, pick_to_sum, unique, OrderedSet
 from cozy.target_syntax import *
 from cozy.syntax_tools import fresh_var, free_vars, break_conj, pprint, enumerate_fragments, mk_lambda, strip_EStateVar, alpha_equivalent, subst, break_sum, replace, compose
-from cozy.typecheck import is_numeric, is_collection
+from cozy.typecheck import is_numeric, is_collection, retypecheck
 from cozy.pools import RUNTIME_POOL, STATE_POOL, ALL_POOLS, pool_name
 from cozy.structures.heaps import TMinHeap, TMaxHeap, EMakeMinHeap, EMakeMaxHeap, EHeapPeek, EHeapPeek2
 from cozy.evaluation import construct_value
@@ -245,20 +245,19 @@ def optimized_exists(xs):
     else:
         return EUnaryOp(UOp.Exists, xs).with_type(BOOL)
 
-def excluded_element(xs):
+def excluded_element(xs, args):
     if isinstance(xs, EFilter):
         arg = xs.p.arg
         e = xs.p.body
-        if isinstance(e, EBinOp) and e.op == "!=":
-            if e.e1 == arg:
-                return (xs.e, e.e2)
-            if e.e2 == arg:
-                return (xs.e, e.e1)
         if isinstance(e, EUnaryOp) and e.op == UOp.Not and isinstance(e.e, EBinOp) and e.e.op == "==":
-            if e.e.e1 == arg:
-                return (xs.e, e.e.e2)
-            if e.e.e2 == arg:
-                return (xs.e, e.e.e1)
+            e = EBinOp(e.e.e1, "!=", e.e.e2).with_type(BOOL)
+        if isinstance(e, EBinOp) and e.op == "!=":
+            arg_left = arg in free_vars(e.e1)
+            arg_right = arg in free_vars(e.e2)
+            if arg_left and not arg_right:
+                return (xs.e, EUnaryOp(UOp.The, _simple_filter(xs.e, ELambda(arg, EEq(e.e1, e.e2)), args=args)).with_type(xs.type.t))
+            if arg_right and not arg_left:
+                return (xs.e, EUnaryOp(UOp.The, _simple_filter(xs.e, ELambda(arg, EEq(e.e1, e.e2)), args=args)).with_type(xs.type.t))
     if isinstance(xs, EBinOp) and xs.op == "-" and isinstance(xs.e2, ESingleton):
         return (xs.e1, xs.e2.e)
     return None
@@ -266,8 +265,8 @@ def excluded_element(xs):
 def optimized_best(xs, keyfunc, op, args):
     argbest = EArgMin if op == "<" else EArgMax
     elem_type = xs.type.t
-    if excluded_element(xs) is not None:
-        bag, x = excluded_element(xs)
+    if excluded_element(xs, args) is not None:
+        bag, x = excluded_element(xs, args)
         if all(v not in args for v in free_vars(bag)):
             heap_type, make_heap = (TMinHeap, EMakeMinHeap) if op == "<" else (TMaxHeap, EMakeMaxHeap)
             bag = EStateVar(strip_EStateVar(bag)).with_type(bag.type)
@@ -367,13 +366,26 @@ def _simple_filter(xs, p, args):
     if isinstance(xs, EMapGet) and isinstance(xs.map, EStateVar) and not any(v in args for v in free_vars(p)):
         m = map_values(xs.map.e, lambda ys: _simple_filter(ys, p, args))
         return EMapGet(EStateVar(m).with_type(m.type), xs.key).with_type(xs.type)
-    if isinstance(p.body, EBinOp) and p.body.op == "==" and p.body.e1 == p.arg and p.arg not in free_vars(p.body.e2):
-        return optimized_cond(
-            optimized_in(p.body.e2, xs),
-            ESingleton(p.body.e2).with_type(xs.type),
-            EEmptyList().with_type(xs.type)).with_type(xs.type)
-    else:
-        return EFilter(xs, p).with_type(xs.type)
+    if isinstance(p.body, EBinOp) and p.body.op == "==":
+        fvs2 = free_vars(p.body.e2)
+        if p.body.e1 == p.arg and p.arg not in fvs2:
+            return optimized_cond(
+                optimized_in(p.body.e2, xs),
+                ESingleton(p.body.e2).with_type(xs.type),
+                EEmptyList().with_type(xs.type)).with_type(xs.type)
+        fvs1 = free_vars(p.body.e1)
+        if p.arg in fvs1 and not any(a in fvs1 for a in args) and p.arg not in fvs2 and isinstance(xs, EStateVar):
+            k = fresh_var(p.body.e1.type)
+            e = EMapGet(
+                EStateVar(
+                    EMakeMap2(
+                        EMap(xs.e, ELambda(p.arg, p.body.e1)),
+                        ELambda(k, EFilter(xs.e, ELambda(p.arg, EEq(p.body.e1, k)))))),
+                p.body.e2)
+            res = retypecheck(e)
+            assert res
+            return e
+    return EFilter(xs, p).with_type(xs.type)
 
 def optimized_bag_difference(xs, ys):
     # EStateVar(distinct xs) - (EStateVar(xs) - [i])
