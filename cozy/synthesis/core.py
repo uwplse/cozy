@@ -110,7 +110,7 @@ class Learner(object):
 
             n = 0
             for target in self.targets:
-                for (e, ctx, pool) in shred(target, root_ctx):
+                for (e, ctx, pool) in unique(shred(target, root_ctx)):
                     with task("checking substitutions",
                             target=pprint(replace(target, root_ctx, RUNTIME_POOL, e, ctx, pool, EVar("___"))),
                             e=pprint(e)):
