@@ -487,7 +487,7 @@ def list_slice(stk):
     stk.append(l[start:end])
 
 _EMPTY_BAG = Bag()
-def _compile(e, env : {str:int}, out, bind_callback):
+def _compile(e, env : {str:int}, out):
     if isinstance(e, EVar):
         i = env[e.id]
         if isinstance(i, int):
@@ -520,36 +520,36 @@ def _compile(e, env : {str:int}, out, bind_callback):
             stk.append(_EMPTY_BAG)
         out.append(push_empty_list)
     elif isinstance(e, ESingleton):
-        _compile(e.e, env, out, bind_callback=bind_callback)
+        _compile(e.e, env, out)
         if isinstance(e.type, TList):
             out.append(make_singleton_list)
         else:
             out.append(make_singleton_bag)
     elif isinstance(e, EHandle):
-        _compile(e.addr, env, out, bind_callback=bind_callback)
-        _compile(e.value, env, out, bind_callback=bind_callback)
+        _compile(e.addr, env, out)
+        _compile(e.value, env, out)
         out.append(make_handle)
     elif isinstance(e, EWithAlteredValue):
-        _compile(e.handle, env, out, bind_callback=bind_callback)
-        _compile(e.new_value, env, out, bind_callback=bind_callback)
+        _compile(e.handle, env, out)
+        _compile(e.new_value, env, out)
         out.append(withalteredvalue)
     elif isinstance(e, ENull):
         out.append(push_null)
     elif isinstance(e, ECond):
-        _compile(e.cond, env, out, bind_callback=bind_callback)
-        then_code = []; _compile(e.then_branch, env, then_code, bind_callback=bind_callback)
-        else_code = []; _compile(e.else_branch, env, else_code, bind_callback=bind_callback)
+        _compile(e.cond, env, out)
+        then_code = []; _compile(e.then_branch, env, then_code)
+        else_code = []; _compile(e.else_branch, env, else_code)
         def ite(stk):
             return then_code if stk.pop() else else_code
         out.append(ite)
     elif isinstance(e, EMakeRecord):
         for (f, ee) in e.fields:
-            _compile(ee, env, out, bind_callback=bind_callback)
+            _compile(ee, env, out)
         def make_record(stk):
             stk.append(FrozenDict((f, stk.pop()) for (f, _) in reversed(e.fields)))
         out.append(make_record)
     elif isinstance(e, EGetField):
-        _compile(e.e, env, out, bind_callback=bind_callback)
+        _compile(e.e, env, out)
         if isinstance(e.e.type, THandle):
             assert e.f == "val"
             out.append(get_handle_value)
@@ -562,25 +562,25 @@ def _compile(e, env : {str:int}, out, bind_callback):
     elif isinstance(e, ETuple):
         n = len(e.es)
         for ee in e.es:
-            _compile(ee, env, out, bind_callback=bind_callback)
+            _compile(ee, env, out)
         def make_tuple(stk):
             entries = reversed([stk.pop() for i in range(n)])
             stk.append(tuple(entries))
         out.append(make_tuple)
     elif isinstance(e, ETupleGet):
-        _compile(e.e, env, out, bind_callback=bind_callback)
+        _compile(e.e, env, out)
         def tuple_get(stk):
             stk.append(stk.pop()[e.n])
         out.append(tuple_get)
     elif isinstance(e, EStateVar):
-        _compile(e.e, env, out, bind_callback=bind_callback)
+        _compile(e.e, env, out)
     elif isinstance(e, ENative):
-        _compile(e.e, env, out, bind_callback=bind_callback)
+        _compile(e.e, env, out)
         def make_native(stk):
             stk.append((e.type.name, stk.pop()))
         out.append(make_native)
     elif isinstance(e, EUnaryOp):
-        _compile(e.e, env, out, bind_callback=bind_callback)
+        _compile(e.e, env, out)
         if e.op == UOp.Not:
             out.append(unaryop_not)
         elif e.op == UOp.Sum:
@@ -609,13 +609,13 @@ def _compile(e, env : {str:int}, out, bind_callback):
             raise NotImplementedError(e.op)
     elif isinstance(e, EBinOp):
         if e.op == BOp.And:
-            return _compile(ECond(e.e1, e.e2, F).with_type(BOOL), env, out, bind_callback=bind_callback)
+            return _compile(ECond(e.e1, e.e2, F).with_type(BOOL), env, out)
         elif e.op == BOp.Or:
-            return _compile(ECond(e.e1, T, e.e2).with_type(BOOL), env, out, bind_callback=bind_callback)
+            return _compile(ECond(e.e1, T, e.e2).with_type(BOOL), env, out)
         elif e.op == "=>":
-            return _compile(ECond(e.e1, e.e2, T).with_type(BOOL), env, out, bind_callback=bind_callback)
-        _compile(e.e1, env, out, bind_callback=bind_callback)
-        _compile(e.e2, env, out, bind_callback=bind_callback)
+            return _compile(ECond(e.e1, e.e2, T).with_type(BOOL), env, out)
+        _compile(e.e1, env, out)
+        _compile(e.e2, env, out)
         e1type = e.e1.type
         if e.op == "+":
             if is_collection(e.type):
@@ -650,26 +650,26 @@ def _compile(e, env : {str:int}, out, bind_callback):
         else:
             raise NotImplementedError(e.op)
     elif isinstance(e, EListGet):
-        _compile(e.e, env, out, bind_callback=bind_callback)
-        _compile(e.index, env, out, bind_callback=bind_callback)
+        _compile(e.e, env, out)
+        _compile(e.index, env, out)
         out.append(list_index(mkval(e.type)))
     elif isinstance(e, EListSlice):
-        _compile(e.e, env, out, bind_callback=bind_callback)
-        _compile(e.start, env, out, bind_callback=bind_callback)
-        _compile(e.end, env, out, bind_callback=bind_callback)
+        _compile(e.e, env, out)
+        _compile(e.start, env, out)
+        _compile(e.end, env, out)
         out.append(list_slice)
     elif isinstance(e, EDropFront):
-        _compile(e.e, env, out, bind_callback=bind_callback)
+        _compile(e.e, env, out)
         out.append(drop_front)
     elif isinstance(e, EDropBack):
-        _compile(e.e, env, out, bind_callback=bind_callback)
+        _compile(e.e, env, out)
         out.append(drop_back)
     elif isinstance(e, EFilter):
-        _compile(e.e, env, out, bind_callback=bind_callback)
+        _compile(e.e, env, out)
         box = [None]
         body = []
         with extend(env, e.p.arg.id, lambda: box[0]):
-            _compile(e.p.body, env, body, bind_callback=bind_callback)
+            _compile(e.p.body, env, body)
         def set_arg(v):
             def set_arg(stk):
                 box[0] = v
@@ -683,18 +683,17 @@ def _compile(e, env : {str:int}, out, bind_callback):
             ops = []
             for (i, val) in enumerate(bag):
                 ops.append(set_arg(val))
-                bind_callback(e.p.arg, val)
                 ops.extend(body)
                 ops.append(maybe_append_to_result(res_idx))
             return ops
         out.append(do_filter)
         out.append(iterable_to_bag)
     elif isinstance(e, EMap):
-        _compile(e.e, env, out, bind_callback=bind_callback)
+        _compile(e.e, env, out)
         box = [None]
         body = []
         with extend(env, e.f.arg.id, lambda: box[0]):
-            _compile(e.f.body, env, body, bind_callback=bind_callback)
+            _compile(e.f.body, env, body)
         def set_arg(v):
             def set_arg(stk):
                 box[0] = v
@@ -708,14 +707,13 @@ def _compile(e, env : {str:int}, out, bind_callback):
             ops = []
             for (i, val) in enumerate(bag):
                 ops.append(set_arg(val))
-                bind_callback(e.f.arg, val)
                 ops.extend(body)
                 ops.append(append_to_result(res_idx))
             return ops
         out.append(do_map)
         out.append(iterable_to_bag)
     elif isinstance(e, EFlatMap):
-        _compile(EMap(e.e, e.f).with_type(TBag(e.type)), env, out, bind_callback=bind_callback)
+        _compile(EMap(e.e, e.f).with_type(TBag(e.type)), env, out)
         out.append(do_concat)
     elif isinstance(e, EArgMin) or isinstance(e, EArgMax):
         # stack layout:
@@ -728,7 +726,7 @@ def _compile(e, env : {str:int}, out, bind_callback):
             box[0] = stk[-1]
         body = [set_arg]
         with extend(env, e.f.arg.id, lambda: box[0]):
-            _compile(e.f.body, env, body, bind_callback=bind_callback)
+            _compile(e.f.body, env, body)
 
         keytype = e.f.body.type
 
@@ -750,11 +748,11 @@ def _compile(e, env : {str:int}, out, bind_callback):
                     [],
                     [drop, drop, push(best), push(key)]), push(len-1), loop]
 
-        _compile(e.e, env, out, bind_callback=bind_callback)
+        _compile(e.e, env, out)
         out.append(initialize)
         out.append(loop)
     elif isinstance(e, EMakeMap2):
-        _compile(EMap(e.e, ELambda(e.value.arg, ETuple((e.value.arg, e.value.body)).with_type(TTuple((e.value.arg.type, e.value.body.type))))).with_type(TBag(TTuple((e.value.arg.type, e.value.body.type)))), env, out, bind_callback=bind_callback)
+        _compile(EMap(e.e, ELambda(e.value.arg, ETuple((e.value.arg, e.value.body)).with_type(TTuple((e.value.arg.type, e.value.body.type))))).with_type(TBag(TTuple((e.value.arg.type, e.value.body.type)))), env, out)
         default = mkval(e.type.v)
         def make_map(stk):
             res = Map(e.type, default)
@@ -763,20 +761,20 @@ def _compile(e, env : {str:int}, out, bind_callback):
             stk.append(res)
         out.append(make_map)
     elif isinstance(e, EMapGet):
-        _compile(e.map, env, out, bind_callback=bind_callback)
-        _compile(e.key, env, out, bind_callback=bind_callback)
+        _compile(e.map, env, out)
+        _compile(e.key, env, out)
         out.append(read_map)
     elif isinstance(e, EHasKey):
-        _compile(e.map, env, out, bind_callback=bind_callback)
-        _compile(e.key, env, out, bind_callback=bind_callback)
+        _compile(e.map, env, out)
+        _compile(e.key, env, out)
         out.append(has_key(e.key.type))
     elif isinstance(e, EMapKeys):
-        _compile(e.e, env, out, bind_callback=bind_callback)
+        _compile(e.e, env, out)
         out.append(read_map_keys)
     elif isinstance(e, ECall):
-        _compile(EVar(e.func), env, out, bind_callback=bind_callback)
+        _compile(EVar(e.func), env, out)
         for a in e.args:
-            _compile(a, env, out, bind_callback=bind_callback)
+            _compile(a, env, out)
         n = len(e.args)
         def call(stk):
             args = reversed([stk.pop() for i in range(n)])
@@ -784,7 +782,7 @@ def _compile(e, env : {str:int}, out, bind_callback):
             stk.append(f(*args))
         out.append(call)
     elif isinstance(e, ELet):
-        _compile(e.e, env, out, bind_callback=bind_callback)
+        _compile(e.e, env, out)
         box = [None]
         def set_arg(v):
             def set_arg(stk):
@@ -794,11 +792,11 @@ def _compile(e, env : {str:int}, out, bind_callback):
             return [set_arg(stk.pop())]
         out.append(do_bind)
         with extend(env, e.f.arg.id, lambda: box[0]):
-            _compile(e.f.body, env, out, bind_callback=bind_callback)
+            _compile(e.f.body, env, out)
     else:
         h = extension_handler(type(e))
         if h is not None:
-            _compile(h.encode(e), env, out, bind_callback=bind_callback)
+            _compile(h.encode(e), env, out)
         else:
             raise NotImplementedError(type(e))
     if hasattr(e, "type") and isinstance(e.type, TList):
@@ -810,11 +808,8 @@ def free_vars_and_funcs(e):
     for f in free_funcs(e):
         yield f
 
-def eval_bulk(e, envs, bind_callback=None, use_default_values_for_undefined_vars : bool = False):
+def eval_bulk(e, envs, use_default_values_for_undefined_vars : bool = False):
     e = purify(e)
-    if bind_callback is None:
-        bind_callback = lambda arg, val: None
-    # return [eval(e, env, bind_callback=bind_callback) for env in envs]
     if not envs:
         return []
     ops = []
@@ -831,5 +826,5 @@ def eval_bulk(e, envs, bind_callback=None, use_default_values_for_undefined_vars
         # import pdb
         # pdb.set_trace()
         raise
-    _compile(e, vmap, ops, bind_callback)
+    _compile(e, vmap, ops)
     return [_eval_compiled(ops, env) for env in envs]
