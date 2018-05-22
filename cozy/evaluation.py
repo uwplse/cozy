@@ -608,9 +608,9 @@ def _compile(e, env : {str:int}, out, bind_callback):
         else:
             raise NotImplementedError(e.op)
     elif isinstance(e, EBinOp):
-        if e.op == "and":
+        if e.op == BOp.And:
             return _compile(ECond(e.e1, e.e2, F).with_type(BOOL), env, out, bind_callback=bind_callback)
-        elif e.op == "or":
+        elif e.op == BOp.Or:
             return _compile(ECond(e.e1, T, e.e2).with_type(BOOL), env, out, bind_callback=bind_callback)
         elif e.op == "=>":
             return _compile(ECond(e.e1, e.e2, T).with_type(BOOL), env, out, bind_callback=bind_callback)
