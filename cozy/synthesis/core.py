@@ -119,7 +119,7 @@ class Learner(object):
                                 if self.stop_callback():
                                     raise StopException()
                                 if info.e.type != e.type:
-                                    event("wrong type")
+                                    event("wrong type (is {}, need {})".format(pprint(e.type), pprint(info.e.type)))
                                     continue
                                 if alpha_equivalent(info.e, e):
                                     event("no change")
