@@ -15,7 +15,7 @@ developers normally don't, such as using [intrusive data structures](https://sta
 Dependencies:
  - [Python >= 3.5](https://www.python.org/)
  - The Python modules listed in `requirements.txt`
-   (install with `pip install -r requirements.txt`)
+   (install with `pip3 install -r requirements.txt`)
 
 To list all command-line options (and ensure that everything is correctly
 installed):
