@@ -224,6 +224,7 @@ def rt(e, account_for_constant_factors=True):
             continue
         if isinstance(e, EBinOp) and e.op == BOp.In:
             v = fresh_var(e.e1.type, omit=free_vars(e.e1))
+            stk.append(e.e1)
             stk.append(EUnaryOp(UOp.Any, EMap(e.e2, ELambda(v, EEq(v, e.e1))).with_type(BOOL_BAG)).with_type(BOOL))
             continue
         if isinstance(e, EBinOp) and e.op == BOp.And:
