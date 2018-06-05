@@ -86,6 +86,7 @@ def card(e):
 TWO   = ENum(2).with_type(INT)
 FOUR  = ENum(4).with_type(INT)
 EIGHT = ENum(8).with_type(INT)
+TWENTY = ENum(20).with_type(INT)
 def storage_size(e):
     h = extension_handler(type(e.type))
     if h is not None:
@@ -99,6 +100,8 @@ def storage_size(e):
         return TWO
     elif isinstance(e.type, TNative):
         return FOUR
+    elif isinstance(e.type, TString):
+        return TWENTY
     elif isinstance(e.type, TTuple):
         return ESum([storage_size(ETupleGet(e, n).with_type(t)) for (n, t) in enumerate(e.type.ts)])
     elif isinstance(e.type, TRecord):
