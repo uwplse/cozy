@@ -310,17 +310,20 @@ def improve(
                     with task("updating frontier"):
                         to_evict = []
                         keep = True
+                        old_better = None
                         for old_target in watched_targets:
                             evc = eviction_policy(new_target, context, old_target, context, RUNTIME_POOL, cost_model)
                             if old_target not in evc:
                                 to_evict.append(old_target)
                             if new_target not in evc:
+                                old_better = old_target
                                 keep = False
                                 break
                         for t in to_evict:
                             watched_targets.remove(t)
                         if not keep:
                             print("Whoops! Looks like we already found something better.")
+                            print(" --> {}".format(pprint(old_better)))
                             continue
                         if target in to_evict:
                             print("Yep, it's an improvement!")
