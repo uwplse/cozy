@@ -70,7 +70,7 @@ class CostModel(object):
         with task("compare costs", context=context):
             if pool == RUNTIME_POOL:
                 return composite_order(
-                    lambda: self._compare(asymptotic_runtime(e1), asymptotic_runtime(e2), context),
+                    lambda: order_objects(asymptotic_runtime(e1), asymptotic_runtime(e2)),
                     lambda: self._compare(max_storage_size(e1), max_storage_size(e2), context),
                     lambda: self._compare(rt(e1), rt(e2), context),
                     lambda: order_objects(e1.size(), e2.size()))
@@ -152,12 +152,16 @@ def wc_card(e):
     if isinstance(e, EBinOp) and e.op == "-":
         return wc_card(e.e1)
     if isinstance(e, EBinOp) and e.op == "+":
-        return EBinOp(wc_card(e.e1), "+", wc_card(e.e2)).with_type(INT)
+        return max(wc_card(e.e1), wc_card(e.e2))
+    if isinstance(e, EFlatMap):
+        return wc_card(e.e) * wc_card(e.f.body)
     if isinstance(e, ECond):
-        return max_of(wc_card(e.then_branch), wc_card(e.else_branch))
-    if isinstance(e, EVar):
-        return ENum(EXTREME_COST).with_type(INT)
-    return card(e)
+        return max(wc_card(e.then_branch), wc_card(e.else_branch))
+    if isinstance(e, EEmptyList):
+        return 0
+    if isinstance(e, ESingleton):
+        return 1
+    return EXTREME_COST
 
 # These require walking over the entire collection.
 # Some others (e.g. "exists" or "empty") just look at the first item.
@@ -168,7 +172,7 @@ LINEAR_TIME_UOPS = {
     UOp.Reversed }
 
 def asymptotic_runtime(e):
-    terms = [ONE]
+    res = 0
     stk = [e]
     while stk:
         e = stk.pop()
@@ -180,22 +184,25 @@ def asymptotic_runtime(e):
         if isinstance(e, ELambda):
             e = e.body
         if isinstance(e, EFilter):
-            terms.append(EBinOp(wc_card(e.e), "*", asymptotic_runtime(e.p)).with_type(INT))
-        if isinstance(e, EMap) or isinstance(e, EFlatMap) or isinstance(e, EArgMin) or isinstance(e, EArgMax):
-            terms.append(EBinOp(wc_card(e.e), "*", asymptotic_runtime(e.f)).with_type(INT))
+            res += wc_card(e.e) * asymptotic_runtime(e.p)
+        if isinstance(e, EMap) or isinstance(e, EArgMin) or isinstance(e, EArgMax):
+            res += wc_card(e.e) * asymptotic_runtime(e.f)
         if isinstance(e, EMakeMap2):
-            terms.append(EBinOp(wc_card(e.e), "*", asymptotic_runtime(e.value)).with_type(INT))
+            res += wc_card(e.e) * asymptotic_runtime(e.value)
         if isinstance(e, EBinOp) and e.op == BOp.In:
-            terms.append(wc_card(e.e2))
+            res += wc_card(e.e2)
         if isinstance(e, EBinOp) and e.op == "-" and is_collection(e.type):
-            terms.append(ENum(EXTREME_COST).with_type(INT))
-            terms.append(EBinOp(wc_card(e.e1), "*", wc_card(e.e2)).with_type(INT))
+            res += wc_card(e.e1) + wc_card(e.e2) + wc_card(e.e1) * wc_card(e.e2)
         if isinstance(e, EUnaryOp) and e.op in LINEAR_TIME_UOPS:
-            terms.append(wc_card(e.e))
+            res += wc_card(e.e)
+        if isinstance(e, ECond):
+            res += max(asymptotic_runtime(e.then_branch), asymptotic_runtime(e.else_branch))
+            stk.append(e.cond)
+            continue
         if isinstance(e, EStateVar):
             continue
         stk.extend(e.children())
-    return max_of(*terms)
+    return max(res, 1)
 
 # Some kinds of expressions have a massive penalty associated with them if they
 # appear at runtime.
@@ -277,8 +284,8 @@ def debug_comparison(cm : CostModel, e1 : Exp, e2 : Exp, context : Context):
     for x in cm.examples:
         print("-" * 20)
         print(x)
-        print("asympto(e1) = {}".format(eval_bulk(asymptotic_runtime(e1), [x], use_default_values_for_undefined_vars=True)[0]))
-        print("asympto(e2) = {}".format(eval_bulk(asymptotic_runtime(e2), [x], use_default_values_for_undefined_vars=True)[0]))
+        print("asympto(e1) = {}".format(asymptotic_runtime(e1)))
+        print("asympto(e2) = {}".format(asymptotic_runtime(e2)))
         print("storage(e1) = {}".format(eval_bulk(max_storage_size(e1), [x], use_default_values_for_undefined_vars=True)[0]))
         print("storage(e2) = {}".format(eval_bulk(max_storage_size(e2), [x], use_default_values_for_undefined_vars=True)[0]))
         print("runtime(e1) = {}".format(eval_bulk(rt(e1), [x], use_default_values_for_undefined_vars=True)[0]))
