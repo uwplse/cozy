@@ -7,7 +7,7 @@ from cozy.handle_tools import fix_ewithalteredvalue
 from cozy.solver import satisfy
 from cozy.evaluation import eval
 
-class TestSyntaxTools(unittest.TestCase):
+class TestHandleTools(unittest.TestCase):
 
     def check_ewithalteredvalue(self, e1):
         e2 = fix_ewithalteredvalue(e1)
