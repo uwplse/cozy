@@ -123,21 +123,12 @@ def storage_size(e):
     else:
         raise NotImplementedError(e.type)
 
-def max_of(*es):
-    x = EVar("x").with_type(INT)
-    parts = ESum([ESingleton(e).with_type(INT_BAG) for e in es], base_case=EEmptyList().with_type(INT_BAG))
-    if isinstance(parts, EEmptyList):
-        return ZERO
-    if isinstance(parts, ESingleton):
-        return parts.e
-    return EArgMax(parts, ELambda(x, x)).with_type(INT)
-
 def max_storage_size(e):
     sizes = OrderedSet()
     for x in all_exps(e):
         if isinstance(x, EStateVar):
             sizes.add(storage_size(x.e))
-    return max_of(*sizes)
+    return max_of(*sizes, type=INT)
 
 def hash_cost(e):
     return storage_size(e)
@@ -273,16 +264,6 @@ def rt(e, account_for_constant_factors=True):
     if not account_for_constant_factors:
         terms = [t for t in terms if not isinstance(t, ENum)]
     return ESum(terms)
-
-def ESum(es, base_case=ZERO):
-    es = [e for x in es for e in break_sum(x) if e != base_case]
-    if not es:
-        return base_case
-    nums, nonnums = partition(es, lambda e: isinstance(e, ENum))
-    es = nonnums
-    if nums:
-        es.append(ENum(sum(n.val for n in nums)).with_type(base_case.type))
-    return build_balanced_tree(base_case.type, "+", es)
 
 def debug_comparison(cm : CostModel, e1 : Exp, e2 : Exp, context : Context):
     print("-" * 20)

@@ -2,7 +2,7 @@
 AST definitions.
 """
 
-from cozy.common import ADT, declare_case, typechecked
+from cozy.common import ADT, declare_case, typechecked, partition
 
 Spec                = declare_case(ADT, "Spec", ["name", "types", "extern_funcs", "statevars", "assumptions", "methods", "header", "footer", "docstring"])
 ExternFunc          = declare_case(ADT, "ExternFunc", ["name", "args", "out_type", "body_string"])
@@ -243,3 +243,29 @@ def ELen(e):
     if isinstance(e, ESingleton):
         return ONE
     return EUnaryOp(UOp.Length, e).with_type(INT)
+
+def ESum(es, base_case=ZERO):
+    es = [e for e in es if e != base_case]
+    if not es:
+        return base_case
+    nums, nonnums = partition(es, lambda e: isinstance(e, ENum))
+    es = nonnums
+    if nums:
+        es.append(ENum(sum(n.val for n in nums)).with_type(base_case.type))
+    return build_balanced_tree(base_case.type, "+", es)
+
+def max_of(*es, type=None):
+    if not es:
+        if type is None:
+            raise ValueError("need to supply `type=...` keyword argument for max_of to support an empty set of arguments")
+        x = EVar("x").with_type(type)
+        return EArgMax(EEmptyList().with_type(TBag(type)), ELambda(x, x)).with_type(type)
+    if len(es) == 1:
+        return es[0]
+    type = es[0].type if type is None else type
+    x = EVar("x").with_type(type)
+    if type is None:
+        raise ValueError("no type supplied")
+    t_bag = TBag(type)
+    parts = ESum([ESingleton(e).with_type(t_bag) for e in es], base_case=EEmptyList().with_type(t_bag))
+    return EArgMax(parts, ELambda(x, x)).with_type(type)
