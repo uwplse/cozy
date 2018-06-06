@@ -151,20 +151,24 @@ def fix_ewithalteredvalue(e : Exp):
             ee = self.visit(e.e)
             v = self.visit(e.value)
             if isinstance(e.type.k, THandle):
-                ee = EMap(ee, fst()).with_type(ee.type.t.ts[0])
-            return EMakeMap2(ee, v).with_type(TMap(ee.type.t, v.body.type))
+                ee = EMap(ee, fst())
+            return EMakeMap2(ee, v)
         def visit_EMapGet(self, e):
             m = self.visit(e.map)
             k = self.visit(e.key)
-            if isinstance(m.type.k, THandle):
+            if isinstance(e.map.type.k, THandle):
                 k = fst().apply_to(k)
-            return EMapGet(m, k).with_type(m.type.v)
+            return EMapGet(m, k)
         def visit_EHasKey(self, e):
             m = self.visit(e.map)
             k = self.visit(e.key)
-            if isinstance(m.type.k, THandle):
+            if isinstance(e.map.type.k, THandle):
                 k = fst().apply_to(k)
-            return EHasKey(m, k).with_type(m.type.v)
+            return EHasKey(m, k)
+        def visit_EMapKeys(self, e):
+            # Oops!  The map has thrown away too much information for us to
+            # recover.  There is no hope.
+            raise NotImplementedError()
         def visit_EBinOp(self, e):
             e1 = self.visit(e.e1)
             e2 = self.visit(e.e2)
