@@ -79,7 +79,7 @@ def map_accelerate(e, context):
             if context.legal_for(free_vars(arg)):
                 # all the work happens here
                 binder = make_binder(arg.type)
-                value = replace(e, arg, binder, match=alpha_equivalent)
+                value = replace(e, arg, binder, match=lambda e1, e2: type(e1) == type(e2) and e1.type == e2.type and alpha_equivalent(e1, e2))
                 value = strip_EStateVar(value)
                 # print(" ----> {}".format(pprint(value)))
                 if any(v in args for v in free_vars(value)):
