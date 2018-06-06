@@ -282,21 +282,29 @@ def optimized_best(xs, keyfunc, op, args):
     if isinstance(xs, ESingleton):
         return xs.e
     if isinstance(xs, EBinOp) and xs.op == "+":
-        parts = break_sum(xs)
-        found = F
-        best = construct_value(elem_type)
-        for p in parts:
-            ex = optimized_exists(p)
-            best_here = optimized_best(p, keyfunc, op, args=args)
-            best = optimized_cond(found,
-                optimized_cond(ex,
-                    optimized_cond(EBinOp(keyfunc.apply_to(best_here), op, keyfunc.apply_to(best)).with_type(BOOL),
-                        best_here,
+        if isinstance(xs.e1, EStateVar) or isinstance(xs.e2, EStateVar):
+            sv, other = (xs.e1, xs.e2) if isinstance(xs.e1, EStateVar) else (xs.e2, xs.e1)
+            sv_best = optimized_best(sv, keyfunc, op, args=args)
+            return optimized_cond(
+                optimized_exists(sv),
+                argbest(EBinOp(ESingleton(sv_best).with_type(xs.type), "+", other).with_type(xs.type), keyfunc).with_type(elem_type),
+                optimized_best(other, keyfunc, op, args=args))
+        else:
+            parts = break_sum(xs)
+            found = F
+            best = construct_value(elem_type)
+            for p in parts:
+                ex = optimized_exists(p)
+                best_here = optimized_best(p, keyfunc, op, args=args)
+                best = optimized_cond(found,
+                    optimized_cond(ex,
+                        optimized_cond(EBinOp(keyfunc.apply_to(best_here), op, keyfunc.apply_to(best)).with_type(BOOL),
+                            best_here,
+                            best),
                         best),
-                    best),
-                best_here)
-            found = EAny([found, ex])
-        return best
+                    best_here)
+                found = EAny([found, ex])
+            return best
     if isinstance(xs, EMap):
         return xs.f.apply_to(optimized_best(xs.e, compose(keyfunc, xs.f), op, args))
     if isinstance(xs, EStateVar) and not any(v in args for v in free_vars(keyfunc)):
