@@ -193,6 +193,11 @@ class _Shredder(Visitor):
 def shred(e : Exp, context : Context, pool : Pool = RUNTIME_POOL) -> [(Exp, Context, Pool)]:
     return _Shredder(context, pool).visit(e)
 
+def _sametype(e1 : Exp, e2 : Exp):
+    if hasattr(e1, "type") and hasattr(e2, "type"):
+        return e1.type == e2.type
+    return True
+
 class _Replacer(BottomUpRewriter):
     def __init__(self,
             haystack_context : Context,
@@ -235,7 +240,7 @@ class _Replacer(BottomUpRewriter):
     def visit_EMakeMaxHeap(self, e):
         return self.join(e, (self.visit(e.e), self.visit(e.f, e.e)))
     def visit(self, e, *args):
-        if isinstance(e, Exp) and e.type == self.needle.type and self.pool == self.needle_pool and alpha_equivalent(self.needle, e) and self.needle_context.alpha_equivalent(self.ctx):
+        if isinstance(e, Exp) and _sametype(e, self.needle) and self.pool == self.needle_pool and alpha_equivalent(self.needle, e) and self.needle_context.alpha_equivalent(self.ctx):
             return self.ctx.adapt(self.replacement, self.needle_context)
         return super().visit(e, *args)
 
