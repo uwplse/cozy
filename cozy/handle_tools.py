@@ -8,7 +8,7 @@ from collections import OrderedDict
 
 from cozy.common import typechecked, extend, fresh_name
 from cozy.target_syntax import *
-from cozy.syntax_tools import fresh_var, mk_lambda, all_exps, BottomUpRewriter, deep_copy, free_vars
+from cozy.syntax_tools import pprint, fresh_var, mk_lambda, all_exps, BottomUpRewriter, deep_copy, free_vars
 from cozy.typecheck import is_collection, is_scalar, retypecheck
 
 @typechecked
@@ -198,7 +198,6 @@ def fix_ewithalteredvalue(e : Exp):
     e = undo(V(free_vars(e)).visit(e), orig.type)
     res = retypecheck(e)
     if not res:
-        from cozy.syntax_tools import pprint
         for v in free_vars(orig):
             print(" > {} : {}".format(pprint(v), pprint(v.type)))
         print("FIXING {}".format(pprint(orig)))
