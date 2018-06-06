@@ -2,7 +2,7 @@ import unittest
 
 from cozy.syntax import *
 from cozy.pools import RUNTIME_POOL
-from cozy.contexts import RootCtx, UnderBinder, shred
+from cozy.contexts import RootCtx, UnderBinder, shred, replace
 from cozy.structures.heaps import TMinHeap, EMakeMinHeap
 
 x = EVar("x").with_type(INT)
@@ -37,3 +37,29 @@ class TestContexts(unittest.TestCase):
         e = EMakeMinHeap(EEmptyList().with_type(INT_BAG), f).with_type(TMinHeap(INT, f))
         ctx = RootCtx(args=(), state_vars=())
         list(shred(e, ctx))
+
+    def test_replace_numeric_literal(self):
+        f = ELambda(x, x)
+        e = ENum(1.0).with_type(FLOAT)
+        needle = ENum(1.0).with_type(FLOAT)
+        replacement = ENum(0.0).with_type(FLOAT)
+        ctx = RootCtx(args=(), state_vars=())
+        res = replace(
+            e, ctx, RUNTIME_POOL,
+            needle, ctx, RUNTIME_POOL,
+            replacement)
+        assert res == replacement
+        assert res.type == FLOAT
+
+    def test_replace_different_typed_numeric_literal(self):
+        f = ELambda(x, x)
+        e = ENum(1.0).with_type(FLOAT)
+        needle = ENum(1).with_type(INT)
+        replacement = ENum(0).with_type(INT)
+        ctx = RootCtx(args=(), state_vars=())
+        res = replace(
+            e, ctx, RUNTIME_POOL,
+            needle, ctx, RUNTIME_POOL,
+            replacement)
+        assert res == e
+        assert res.type == FLOAT
