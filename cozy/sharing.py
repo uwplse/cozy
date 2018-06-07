@@ -5,13 +5,7 @@ from cozy import solver
 
 @common.typechecked
 def uses_intrusive_data(e : target_syntax.Exp, handle : target_syntax.Exp) -> target_syntax.Exp:
-    if isinstance(e, target_syntax.EMakeMap):
-        if isinstance(e.e.type, target_syntax.TBag) and e.e.type.t == handle.type:
-            k = e.key.apply_to(handle)
-            kk = syntax_tools.fresh_var(k.type, "k")
-            return uses_intrusive_data(e.value.apply_to(target_syntax.EFilter(e.e, target_syntax.ELambda(handle, syntax_tools.equal(k, kk)))), handle)
-        return target_syntax.F
-    elif isinstance(e, target_syntax.EMakeMap2):
+    if isinstance(e, target_syntax.EMakeMap2):
         if e.e.type.t == handle.type:
             k = syntax_tools.fresh_var(e.type.k)
             return target_syntax.EImplies(

@@ -747,17 +747,6 @@ class ToZ3(Visitor):
         return res_mask, bag_elems
     def visit_EFilter(self, e, env):
         return self.do_filter(self.visit(e.e, env), e.p, env)
-    def visit_EMakeMap(self, e, env):
-        bag = self.visit(e.e, env)
-        bag_mask, bag_elems = bag
-        ks = [ self.apply(e.key, x, env) for x in bag_elems ]
-        x = EVar(fresh_name()).with_type(e.e.type.t)
-        m = {"mapping": [(self.true, k, self.apply(
-                e.value,
-                self.raw_filter(bag, lambda x: self.eq(e.key.body.type, self.apply(e.key, x, env), k, env)),
-                env)) for k in ks],
-            "default": self.apply(e.value, ([], []), env)}
-        return m
     def visit_EMakeMap2(self, e, env):
         bag_mask, bag_elems = self.visit(e.e, env)
         keys = zip(bag_mask, bag_elems)

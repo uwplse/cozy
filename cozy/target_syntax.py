@@ -77,7 +77,6 @@ EDropBack  = declare_case(Exp, "EDropBack",  ["e"])
 EWithAlteredValue = declare_case(Exp, "EWithAlteredValue", ["handle", "new_value"])
 
 # Maps
-EMakeMap   = declare_case(Exp, "EMakeMap", ["e", "key", "value"])
 EMakeMap2  = declare_case(Exp, "EMakeMap2", ["e", "value"])
 EMapGet    = declare_case(Exp, "EMapGet", ["map", "key"])
 EHasKey    = declare_case(Exp, "EHasKey", ["map", "key"])

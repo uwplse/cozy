@@ -564,15 +564,6 @@ class Typechecker(Visitor):
         self.ensure_type(e.p.body, BOOL)
         e.type = to_abstract(e.e.type)
 
-    def visit_EMakeMap(self, e):
-        self.visit(e.e)
-        t = self.get_collection_type(e.e)
-        e.key.arg.type = t
-        e.value.arg.type = e.e.type
-        self.visit(e.key)
-        self.visit(e.value)
-        e.type = syntax.TMap(e.key.body.type, e.value.body.type)
-
     def visit_EMakeMap2(self, e):
         self.visit(e.e)
         t = self.get_collection_type(e.e)

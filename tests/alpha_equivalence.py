@@ -30,12 +30,6 @@ class TestAlphaEquivalent(unittest.TestCase):
         e2 = mk_lambda(employers.type.t, lambda employer: EGetField(EGetField(employer, "val"), "employer_name"))
         assert alpha_equivalent(e1, e2)
 
-    def test_make_map(self):
-        employers = EVar("employers").with_type(TBag(TInt()))
-        e1 = EMakeMap(employers, mk_lambda(employers.type.t, lambda employer: EGetField(EGetField(employer, "val"), "employer_name")), mk_lambda(employers.type, lambda es: es))
-        e2 = EMakeMap(employers, mk_lambda(employers.type.t, lambda employer: EGetField(EGetField(employer, "val"), "employer_name")), mk_lambda(employers.type, lambda es: es))
-        assert alpha_equivalent(e1, e2)
-
     def test_tuples(self):
         one = ENum(1)
         e = ETuple((one, one))
