@@ -171,7 +171,7 @@ LINEAR_TIME_UOPS = {
     UOp.All, UOp.Any,
     UOp.Reversed }
 
-def asymptotic_runtime(e):
+def asymptotic_runtime(e : Exp) -> int:
     res = 0
     stk = [e]
     while stk:
@@ -205,6 +205,9 @@ def asymptotic_runtime(e):
             continue
         stk.extend(e.children())
     return max(res, 1)
+
+def is_constant_time(e : Exp) -> bool:
+    return asymptotic_runtime(e) < EXTREME_COST
 
 # Some kinds of expressions have a massive penalty associated with them if they
 # appear at runtime.

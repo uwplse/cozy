@@ -9,6 +9,7 @@ from cozy.pools import RUNTIME_POOL, STATE_POOL, ALL_POOLS, pool_name
 from cozy.structures.heaps import TMinHeap, TMaxHeap, EMakeMinHeap, EMakeMaxHeap, EHeapPeek, EHeapPeek2
 from cozy.evaluation import construct_value
 from cozy.logging import task, event
+from cozy.cost_model import is_constant_time
 
 accelerate = Option("acceleration-rules", bool, True)
 
@@ -53,6 +54,9 @@ def reachable_values_of_type(root : Exp, t : Type) -> Exp:
 
 def map_accelerate(e, context):
     with task("map_accelerate", size=e.size()):
+        if is_constant_time(e):
+            event("skipping map lookup inference for constant-time exp: {}".format(pprint(e)))
+            return
 
         @lru_cache()
         def make_binder(t):
