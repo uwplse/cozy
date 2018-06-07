@@ -1013,16 +1013,6 @@ DECIDABLE_TYPES = set([TInt, TLong, TBool, TString, TEnum, TNative, TReal, TFloa
 def decideable(t : Type):
     return type(t) in DECIDABLE_TYPES
 
-def mkconst(ctx, solver, val):
-    if type(val) == int:
-        return z3.IntVal(val, ctx)
-    elif type(val) == bool:
-        return z3.BoolVal(val, ctx)
-    elif type(val) == tuple:
-        return ([z3.BoolVal(True, ctx) for x in val], [mkconst(ctx, solver, x) for x in val])
-    else:
-        raise NotImplementedError(repr(val))
-
 _start = None
 _debug_duration = timedelta(seconds=5)
 def _tick():
