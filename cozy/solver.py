@@ -571,7 +571,8 @@ class ToZ3(Visitor):
         first = True
         bestkey = None
         legal = self.false
-        keyelems = [self.apply(e.f, x, env) for x in elems]
+        f = self.visit(e.f, env)
+        keyelems = [f(x) for x in elems]
         for m, key in reversed(list(zip(mask, keyelems))):
             if first:
                 bestkey = key
@@ -729,13 +730,14 @@ class ToZ3(Visitor):
             return ite(e.type, m, (mask, elems), drop1(mask, elems))
         return drop1(*self.visit(e.e, env))
     def visit_EMap(self, e, env):
+        f = self.visit(e.f, env)
         bag_mask, bag_elems = self.visit(e.e, env)
         res_elems = []
         for x in bag_elems:
-            res_elems.append(self.apply(e.f, x, env))
+            res_elems.append(f(x))
         return bag_mask, res_elems
-    def do_filter(self, bag, p, env):
-        return self.raw_filter(bag, lambda x: self.apply(p, x, env))
+    def do_filter(self, bag, p : ELambda, env):
+        return self.raw_filter(bag, self.visit(p, env))
     def raw_filter(self, bag, p):
         bag_mask, bag_elems = bag
         res_mask = []
@@ -749,8 +751,9 @@ class ToZ3(Visitor):
     def visit_EMakeMap2(self, e, env):
         bag_mask, bag_elems = self.visit(e.e, env)
         keys = zip(bag_mask, bag_elems)
+        proj = self.visit(e.value, env)
         return {
-            "mapping": [(mask, key, self.apply(e.value, key, env)) for (mask, key) in keys],
+            "mapping": [(mask, key, proj(key)) for (mask, key) in keys],
             "default": self.mkval(e.type.v) }
     def visit_EMapKeys(self, e, env):
         m = self.visit(e.e, env)
@@ -783,61 +786,52 @@ class ToZ3(Visitor):
                 env[v.id] = self.visit(x, env)
             else:
                 return self.visit(thing, env)
-    def apply(self, lam : ELambda, arg : object, env):
-        with extend(env, lam.arg.id, arg):
-            # return self.visit(lam.body, env)
-            if not hasattr(self, "_lambdacache"):
-                self._lambdacache = {}
 
-            use_forall = use_quantified_encoding.value
-            fvs = sorted(free_vars(lam.body))
-            f_funcs = free_funcs(lam.body)
+    def visit_ELambda(self, lam : ELambda, env):
 
-            in_type = TTuple(tuple(v.type for v in fvs))
-            body_type = lam.body.type
-            argv = list(flatten(in_type, tuple(env[v.id] for v in fvs)))
-            key = (len(argv), lam.arg.type, lam.body.type, lam)
-            funcs = self._lambdacache.get(key)
+        env = dict(env)
+        cache = { }
+        in_type = lam.arg.type
+        body_type = lam.body.type
+
+        def compiled_lambda(arg):
+            argv = list(flatten(in_type, arg))
+            key = len(argv)
+            funcs = cache.get(key)
 
             if funcs is None:
                 # print("encoding func: {} -> {}".format(pprint(lam.arg.type), pprint(lam.body.type)))
                 # print("  lam = {}".format(pprint(lam)))
-                # print("  args: {}".format(", ".join("{} : {}".format(v.id, pprint(v.type)) for v in fvs)))
                 # print("  env = {}".format(env))
                 symb_argv = [v if isinstance(v, int) else z3.Const(fresh_name(), v.sort()) for v in argv]
+                # print("  symb_argv = {}".format(symb_argv))
                 assert len(symb_argv) == len(argv)
                 z3_vars = [v for v in symb_argv if not isinstance(v, int)]
                 symb_arg = pack(in_type, iter(symb_argv))
-                assert isinstance(symb_arg, tuple) and len(symb_arg) == len(fvs)
-                new_env = { v.id : a for (v, a) in zip(fvs, symb_arg) }
-                for f in f_funcs:
-                    new_env[f] = env[f]
-                res = self.visit(lam.body, new_env)
+                with extend(env, lam.arg.id, symb_arg):
+                    res = self.visit(lam.body, env)
                 # print("  f({}) = {}".format(", ".join(map(str, z3_vars)), res))
                 funcs = []
                 for z3_body in flatten(body_type, res):
                     if isinstance(z3_body, int):
                         funcs.append(z3_body)
                     else:
-                        fname = fresh_name("f")
-                        f = z3.Function(fname, *[v.sort() for v in z3_vars], z3_body.sort())
-                        if use_forall:
-                            if z3_vars:
-                                self.solver.add(z3.ForAll(z3_vars, f(*z3_vars) == z3_body))
-                            else:
-                                self.solver.add(f() == z3_body)
-                        funcs.append((f, z3_vars, z3_body))
-                self._lambdacache[key] = funcs
+                        funcs.append((z3_vars, z3_body))
+                cache[key] = funcs
+                # print("  created {}x{} func: {} -> {}".format(
+                #     len(z3_vars), len(funcs),
+                #     pprint(lam.arg.type), pprint(lam.body.type)))
+                # for i, x in enumerate(funcs):
+                #     if isinstance(x, int):
+                #         print("    out[{}] = {}".format(i, x))
+                #     else:
+                #         z3_vars, z3_body = x
+                #         print("    out[{}] = {}".format(i, z3_body))
 
-            if funcs is not None:
-                # print("calling {} with {}".format(funcs, argv))
-                if use_forall:
-                    return pack(body_type, (f if isinstance(f, int) else f[0](*[v for v in argv if not isinstance(v, int)]) for f in funcs))
-                else:
-                    return pack(body_type, (f if isinstance(f, int) else z3.substitute(f[2], *zip(f[1], [x for x in argv if not isinstance(x, int)])) for f in funcs))
-            else:
-                with extend(env, lam.arg.id, arg):
-                    return self.visit(lam.body, env)
+            return pack(body_type, (f if isinstance(f, int) else z3.substitute(f[1], *zip(f[0], [x for x in argv if not isinstance(x, int)])) for f in funcs))
+
+        return compiled_lambda
+
     def visit_clauses(self, clauses, e, env):
         if not clauses:
             return [True], [self.visit(e, env)]
