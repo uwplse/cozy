@@ -3,12 +3,14 @@
 [![Build Status](https://travis-ci.org/CozySynthesizer/cozy.svg?branch=master
 )](https://travis-ci.org/CozySynthesizer/cozy)
 
-Cozy is a tool that synthesizes a wide range of data structure implementations
+Cozy is a tool that synthesizes data structure implementations
 from very high-level specifications. It can greatly simplify the task of
 writing software modules with private state since it chooses a good
 representation of your data and efficient method implementations automatically.
-In some cases, Cozy can apply abstraction-breaking optimizations that human
-developers normally don't, such as using [intrusive data structures](https://stackoverflow.com/questions/5004162/what-does-it-mean-for-a-data-structure-to-be-intrusive).
+In most cases, Cozy specifications are short and self-documenting, and are
+therefore much easier to maintain than handwritten implementations.
+Occasionally Cozy can discover abstraction-breaking optimizations that human
+developers shy away from.
 
 ## Quickstart
 
