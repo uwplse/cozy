@@ -69,6 +69,17 @@ class TestCostModel(unittest.TestCase):
         c2 = cost_of(e2)
         assert_cmp(e1, c1, e2, c2, Cost.WORSE)
 
+    def test_map_vs_flatmap(self):
+        t = TTuple((INT, INT))
+        xs = EVar("xs").with_type(TBag(t))
+        x = EVar("x").with_type(t)
+        e1 = EMap(EStateVar(xs), ELambda(x, ETupleGet(x, 0)))
+        e2 = EFlatMap(EStateVar(xs), ELambda(x, ESingleton(ETupleGet(x, 0))))
+        assert retypecheck(e1)
+        assert retypecheck(e2)
+        assert valid(EEq(e1, e2))
+        assert_cmp(e1, cost_of(e1), e2, cost_of(e2), Cost.BETTER)
+
     def test_map_vs_const_filter(self):
         # e1 = Filter {(\_var11 : xs.Handle -> ((_var11).val == z))} ((xs + []))
         xs = EVar("xs").with_type(TBag(INT))
@@ -516,6 +527,7 @@ class TestCostModel(unittest.TestCase):
         assert e1 != e2
         assert_cmp(e1, cost_of(e1), e2, cost_of(e2), Cost.WORSE)
 
+    @unittest.skip("ambiguous")
     def test_regression40(self):
         pool = STATE_POOL
         e1 = EArgMin(EMap(EFilter(EFilter(EVar('tokens').with_type(TBag(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool()))))))), ELambda(EVar('_var685').with_type(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))))), EGetField(ETupleGet(EVar('_var685').with_type(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))))), 1).with_type(TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))), 'important').with_type(TBool()))).with_type(TBag(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool()))))))), ELambda(EVar('_var685').with_type(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))))), EBinOp(EGetField(ETupleGet(EVar('_var685').with_type(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))))), 1).with_type(TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))), 'score').with_type(TFloat()), '>', ECall('floatZero', ()).with_type(TFloat())).with_type(TBool()))).with_type(TBag(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool()))))))), ELambda(EVar('_var685').with_type(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))))), EGetField(ETupleGet(EVar('_var685').with_type(TTuple((TInt(), TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))))), 1).with_type(TRecord((('score', TFloat()), ('startOffset', TInt()), ('endOffset', TInt()), ('important', TBool())))), 'startOffset').with_type(TInt()))).with_type(TBag(TInt())), ELambda(EVar('_var679').with_type(TInt()), EVar('_var679').with_type(TInt()))).with_type(TInt())

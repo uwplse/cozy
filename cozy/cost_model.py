@@ -184,9 +184,11 @@ def asymptotic_runtime(e):
         if isinstance(e, ELambda):
             e = e.body
         if isinstance(e, EFilter):
-            res += wc_card(e.e) * asymptotic_runtime(e.p)
-        if isinstance(e, EMap) or isinstance(e, EArgMin) or isinstance(e, EArgMax):
-            res += wc_card(e.e) * asymptotic_runtime(e.f)
+            res += max(wc_card(e.e) * asymptotic_runtime(e.p), asymptotic_runtime(e.e))
+            continue
+        if isinstance(e, EMap) or isinstance(e, EFlatMap) or isinstance(e, EArgMin) or isinstance(e, EArgMax):
+            res += max(wc_card(e.e) * asymptotic_runtime(e.f), asymptotic_runtime(e.e))
+            continue
         if isinstance(e, EMakeMap2):
             res += wc_card(e.e) * asymptotic_runtime(e.value)
         if isinstance(e, EBinOp) and e.op == BOp.In:
