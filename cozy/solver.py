@@ -747,6 +747,8 @@ class ToZ3(Visitor):
         return res_mask, bag_elems
     def visit_EFilter(self, e, env):
         return self.do_filter(self.visit(e.e, env), e.p, env)
+    def visit_EMakeRecord(self, e, env):
+        return { f:self.visit(v, env) for (f, v) in e.fields }
     def visit_EMakeMap2(self, e, env):
         bag_mask, bag_elems = self.visit(e.e, env)
         keys = zip(bag_mask, bag_elems)
@@ -760,8 +762,6 @@ class ToZ3(Visitor):
         bag_mask = [mask for (mask, k, v) in m]
         bag_elems = [k for (mask, k, v) in m]
         return self.distinct_bag_elems((bag_mask, bag_elems), e.type.t, env)
-    def visit_EMakeRecord(self, e, env):
-        return { f:self.visit(v, env) for (f, v) in e.fields }
     def _map_get(self, map_type, map, key, env):
         res = map["default"]
         # print("map get {} on {}".format(key, map))
