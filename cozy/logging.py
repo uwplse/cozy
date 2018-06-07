@@ -8,6 +8,7 @@ verbose = Option("verbose", bool, False)
 
 _times = defaultdict(float)
 _task_stack = []
+_begin = datetime.datetime.now()
 
 def log(string):
     if verbose.value:
@@ -49,7 +50,9 @@ def event(name):
     log("{indent}{name}".format(indent=indent, name=name))
 
 def dump_profile():
+    duration = (datetime.datetime.now() - _begin).total_seconds()
     with open("/tmp/cozy.profile", "w") as f:
+        f.write("Total duration: {:.3} seconds\n".format(duration))
         f.write("Currently in: {}\n\n".format(", ".join(name for (name, start) in _task_stack)))
         for k in sorted(_times.keys(), key=_times.get, reverse=True):
             f.write("{:16.3}".format(_times[k]))
