@@ -281,7 +281,7 @@ class ToZ3(Visitor):
             return e1 > e2
         else:
             raise NotImplementedError(t)
-    def eq(self, t, e1, e2, env, deep=False):
+    def eq(self, t, e1, e2, deep=False):
         if e1 is e2:
             return self.true
 
@@ -302,7 +302,7 @@ class ToZ3(Visitor):
             eqs = grid(len(lhs_mask), len(rhs_mask))
             for (row, l) in enumerate(lhs_elems):
                 for (col, r) in enumerate(rhs_elems):
-                    eqs[row][col] = self.eq(elem_type, l, r, env, deep=deep)
+                    eqs[row][col] = self.eq(elem_type, l, r, deep=deep)
 
             # res[i][j] := lhs[i:] ?= rhs[i:]
             res = grid(len(lhs_mask) + 1, len(rhs_mask) + 1)
@@ -351,13 +351,13 @@ class ToZ3(Visitor):
             conds = []
             conds.append(e1len == e2len)
 
-            lhs_counts = [ (x, self.count_in(elem_type, e1, x, env, deep=deep)) for x in lhs_elems ]
+            lhs_counts = [ (x, self.count_in(elem_type, e1, x, deep=deep)) for x in lhs_elems ]
             for x, count in lhs_counts:
-                conds.append(count == self.count_in(elem_type, e2, x, env, deep=deep))
+                conds.append(count == self.count_in(elem_type, e2, x, deep=deep))
 
-            rhs_counts = [ (x, self.count_in(elem_type, e1, x, env, deep=deep)) for x in rhs_elems ]
+            rhs_counts = [ (x, self.count_in(elem_type, e1, x, deep=deep)) for x in rhs_elems ]
             for x, count in rhs_counts:
-                conds.append(count == self.count_in(elem_type, e1, x, env, deep=deep))
+                conds.append(count == self.count_in(elem_type, e1, x, deep=deep))
 
             if deep:
                 # TODO: the(e1) == the(e2)
@@ -365,23 +365,21 @@ class ToZ3(Visitor):
 
             return self.all(*conds)
         elif isinstance(t, TMap):
-            conds = [self.eq(t.v, e1["default"], e2["default"], env, deep=deep)]
+            conds = [self.eq(t.v, e1["default"], e2["default"], deep=deep)]
             def map_keys(m):
                 return ([mask for (mask, k, v) in m["mapping"]], [k for (mask, k, v) in m["mapping"]])
             e1keys = map_keys(e1)
             e2keys = map_keys(e2)
             conds.append(self.eq(
                 TBag(t.k),
-                self.distinct_bag_elems(e1keys, t.k, env),
-                self.distinct_bag_elems(e2keys, t.k, env),
-                env,
+                self.distinct_bag_elems(e1keys, t.k),
+                self.distinct_bag_elems(e2keys, t.k),
                 deep=False))
             for (mask, k, v) in e1["mapping"] + e2["mapping"]:
                 conds.append(self.implies(mask, self.eq(
                     t.v,
-                    self._map_get(t, e1, k, env),
-                    self._map_get(t, e2, k, env),
-                    env,
+                    self._map_get(t, e1, k),
+                    self._map_get(t, e2, k),
                     deep=deep)))
             return self.all(*conds)
         elif isinstance(t, THandle):
@@ -389,29 +387,28 @@ class ToZ3(Visitor):
             h2, val2 = e2
             res = h1 == h2
             if deep:
-                res = self.all(res, self.eq(t.value_type, val1, val2, env, deep=deep))
+                res = self.all(res, self.eq(t.value_type, val1, val2, deep=deep))
             return res
         elif isinstance(t, TRecord):
-            conds = [self.eq(tt, e1[f], e2[f], env, deep=deep) for (f, tt) in t.fields]
+            conds = [self.eq(tt, e1[f], e2[f], deep=deep) for (f, tt) in t.fields]
             return self.all(*conds)
         elif isinstance(t, TTuple):
-            conds = [self.eq(t, x, y, env, deep=deep) for (t, x, y) in zip(t.ts, e1, e2)]
+            conds = [self.eq(t, x, y, deep=deep) for (t, x, y) in zip(t.ts, e1, e2)]
             return self.all(*conds)
         else:
             raise NotImplementedError(t)
-    def count_in(self, t, bag, x, env, deep=False):
+    def count_in(self, t, bag, x, deep=False):
         """
         t - type of elems in bag
         bag - a bag
         x - elem
-        env - environment
 
         returns # of times x appears in bag
         """
         bag_mask, bag_elems = bag
         l = self.int_zero
         for i in range(len(bag_elems)):
-            l = ite(INT, self.all(bag_mask[i], self.eq(t, x, bag_elems[i], env, deep=deep)), self.int_one, self.int_zero) + l
+            l = ite(INT, self.all(bag_mask[i], self.eq(t, x, bag_elems[i], deep=deep)), self.int_one, self.int_zero) + l
         return l
     def is_in(self, t, bag, x, env, deep=False):
         """
@@ -424,7 +421,7 @@ class ToZ3(Visitor):
         """
         bag_mask, bag_elems = bag
         conds = [
-            self.all(mask, self.eq(t, x, elem, env, deep=deep))
+            self.all(mask, self.eq(t, x, elem, deep=deep))
             for (mask, elem) in zip(bag_mask, bag_elems)]
         return self.any(*conds)
     def len_of(self, val):
@@ -495,12 +492,12 @@ class ToZ3(Visitor):
         then_branch = self.visit(e.then_branch, env)
         else_branch = self.visit(e.else_branch, env)
         return ite(e.type, cond, then_branch, else_branch)
-    def distinct_bag_elems(self, bag, elem_type, env):
+    def distinct_bag_elems(self, bag, elem_type):
         mask, elems = bag
         if elems:
             rest_mask, rest_elems = self.raw_filter(
-                self.distinct_bag_elems((mask[1:], elems[1:]), elem_type, env),
-                lambda x: self.implies(mask[0], self.neg(self.eq(elem_type, elems[0], x, env))))
+                self.distinct_bag_elems((mask[1:], elems[1:]), elem_type),
+                lambda x: self.implies(mask[0], self.neg(self.eq(elem_type, elems[0], x))))
             return ([mask[0]] + rest_mask, [elems[0]] + rest_elems)
         else:
             return bag
@@ -542,7 +539,7 @@ class ToZ3(Visitor):
             return self.any(*[self.all(m, e) for (m, e) in zip(mask, elems)])
         elif e.op == UOp.Distinct:
             elem_type = e.type.t
-            return self.distinct_bag_elems(self.visit(e.e, env), elem_type, env)
+            return self.distinct_bag_elems(self.visit(e.e, env), elem_type)
         elif e.op == UOp.Length:
             return self.len_of(self.visit(e.e, env))
         elif e.op == UOp.The:
@@ -599,7 +596,7 @@ class ToZ3(Visitor):
                 legal = m
             else:
                 res = ite(e.type,
-                    self.any(self.all(m, self.eq(keytype, key, bestkey, env)), self.neg(legal)),
+                    self.any(self.all(m, self.eq(keytype, key, bestkey)), self.neg(legal)),
                     x,
                     res)
                 legal = self.any(m, legal)
@@ -626,7 +623,7 @@ class ToZ3(Visitor):
         if not masks:
             return bag
         rest_masks, rest_elems = self.remove_one(bag_type, (masks[1:], elems[1:]), elem, env)
-        return ite(bag_type, self.all(masks[0], self.eq(bag_type.t, elems[0], elem, env)),
+        return ite(bag_type, self.all(masks[0], self.eq(bag_type.t, elems[0], elem)),
             (masks[1:], elems[1:]),
             ([masks[0]] + rest_masks, [elems[0]] + rest_elems))
     def remove_all(self, bag_type, bag, to_remove, env):
@@ -653,11 +650,11 @@ class ToZ3(Visitor):
         elif e.op == "=>":
             return self.implies(v1, v2)
         elif e.op == "==":
-            return self.eq(e.e1.type, v1, v2, env)
+            return self.eq(e.e1.type, v1, v2)
         elif e.op == "!=":
-            return self.neg(self.eq(e.e1.type, v1, v2, env))
+            return self.neg(self.eq(e.e1.type, v1, v2))
         elif e.op == "===":
-            return self.eq(e.e1.type, v1, v2, env, deep=True)
+            return self.eq(e.e1.type, v1, v2, deep=True)
         elif e.op == ">":
             return self.gt(e.e1.type, v1, v2, env)
         elif e.op == "<":
@@ -697,7 +694,7 @@ class ToZ3(Visitor):
             m = mask[0]
             x = elems[0]
             return ite(e.type, m,
-                ite(e.type, self.eq(INT, idx, self.int_zero, env),
+                ite(e.type, self.eq(INT, idx, self.int_zero),
                     x,
                     f((mask[1:], elems[1:]), idx - self.int_one)),
                 f((mask[1:], elems[1:]), idx))
@@ -761,8 +758,8 @@ class ToZ3(Visitor):
         m = m["mapping"]
         bag_mask = [mask for (mask, k, v) in m]
         bag_elems = [k for (mask, k, v) in m]
-        return self.distinct_bag_elems((bag_mask, bag_elems), e.type.t, env)
-    def _map_get(self, map_type, map, key, env):
+        return self.distinct_bag_elems((bag_mask, bag_elems), e.type.t)
+    def _map_get(self, map_type, map, key):
         res = map["default"]
         # print("map get {} on {}".format(key, map))
         for (mask, k, v) in reversed(map["mapping"]):
@@ -770,12 +767,12 @@ class ToZ3(Visitor):
             # print("   key = {}".format(repr(key)))
             # print("   v   = {}".format(repr(v)))
             # print("   res = {}".format(repr(res)))
-            res = ite(map_type.v, self.all(mask, self.eq(map_type.k, k, key, env)), v, res)
+            res = ite(map_type.v, self.all(mask, self.eq(map_type.k, k, key)), v, res)
         return res
     def visit_EMapGet(self, e, env):
         map = self.visit(e.map, env)
         key = self.visit(e.key, env)
-        return self._map_get(e.map.type, map, key, env)
+        return self._map_get(e.map.type, map, key)
     def visit_EHasKey(self, e, env):
         return self.visit(EIn(e.key, EMapKeys(e.map).with_type(TSet(e.map.type.k))), env)
     def visit_EApp(self, e, env):
