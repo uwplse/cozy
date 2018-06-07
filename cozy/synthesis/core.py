@@ -14,7 +14,7 @@ from cozy.solver import satisfy, satisfiable, valid, IncrementalSolver, ModelCac
 from cozy.evaluation import eval, eval_bulk, mkval, construct_value, uneval, eq
 from cozy.cost_model import CostModel, Order, rt as runtime, asymptotic_runtime, max_storage_size, LINEAR_TIME_UOPS
 from cozy.opts import Option
-from cozy.pools import ALL_POOLS, RUNTIME_POOL, STATE_POOL, pool_name
+from cozy.pools import Pool, ALL_POOLS, RUNTIME_POOL, STATE_POOL, pool_name
 from cozy.enumeration import Enumerator, fingerprint, eviction_policy
 from cozy.contexts import Context, shred, replace
 from cozy.logging import task, event
@@ -26,6 +26,21 @@ incremental = Option("incremental", bool, False, description="Experimental optio
 
 class NoMoreImprovements(Exception):
     pass
+
+def exploration_order(targets : [Exp], context : Context, pool : Pool = RUNTIME_POOL):
+    """
+    What order should subexpressions of the given targets be explored for
+    possible improvements?
+
+    Yields (target, subexpression, subcontext, subpool) tuples.
+    """
+
+    # current policy:
+    #  - for each target in arbitrary order,
+    #  - check subexpressions in order of size from smallest to largest
+    for target in targets:
+        for e, ctx, p in sorted(unique(shred(target, context, pool=pool)), key=lambda tup: tup[0].size()):
+            yield (target, e, ctx, p)
 
 class Learner(object):
     def __init__(self, targets, assumptions, context, examples, cost_model, stop_callback, hints):
@@ -109,53 +124,52 @@ class Learner(object):
                 raise StopException()
 
             n = 0
-            for target in self.targets:
-                for (e, ctx, pool) in unique(shred(target, root_ctx)):
-                    with task("checking substitutions",
-                            target=pprint(replace(target, root_ctx, RUNTIME_POOL, e, ctx, pool, EVar("___"))),
-                            e=pprint(e)):
-                        for info in enum.enumerate_with_info(size=size, context=ctx, pool=pool):
-                            with task("checking substitution", expression=pprint(info.e)):
-                                if self.stop_callback():
-                                    raise StopException()
-                                if info.e.type != e.type:
-                                    event("wrong type (is {}, need {})".format(pprint(e.type), pprint(info.e.type)))
-                                    continue
-                                if alpha_equivalent(info.e, e):
-                                    event("no change")
-                                    continue
+            for target, e, ctx, pool in exploration_order(self.targets, root_ctx):
+                with task("checking substitutions",
+                        target=pprint(replace(target, root_ctx, RUNTIME_POOL, e, ctx, pool, EVar("___"))),
+                        e=pprint(e)):
+                    for info in enum.enumerate_with_info(size=size, context=ctx, pool=pool):
+                        with task("checking substitution", expression=pprint(info.e)):
+                            if self.stop_callback():
+                                raise StopException()
+                            if info.e.type != e.type:
+                                event("wrong type (is {}, need {})".format(pprint(e.type), pprint(info.e.type)))
+                                continue
+                            if alpha_equivalent(info.e, e):
+                                event("no change")
+                                continue
 
-                                k = (e, ctx, pool, info.e)
-                                if k in self.blacklist:
-                                    event("blacklisted")
-                                    continue
+                            k = (e, ctx, pool, info.e)
+                            if k in self.blacklist:
+                                event("blacklisted")
+                                continue
 
-                                n += 1
-                                ee = freshen_binders(replace(
-                                    target, root_ctx, RUNTIME_POOL,
-                                    e, ctx, pool,
-                                    info.e), root_ctx)
-                                if any(alpha_equivalent(t, ee) for t in self.targets):
-                                    event("already seen")
-                                    continue
-                                if not self.matches(fingerprint(ee, self.examples), target_fp):
-                                    event("incorrect")
-                                    self.blacklist.add(k)
-                                    continue
-                                wf = check_wf(ee, root_ctx, RUNTIME_POOL)
-                                if not wf:
-                                    event("not well-formed [wf={}]".format(wf))
-                                    # if "expensive" in str(wf):
-                                    #     print(repr(self.cost_model.examples))
-                                    #     print(repr(ee))
-                                    self.blacklist.add(k)
-                                    continue
-                                if self.cost_model.compare(ee, target, root_ctx, RUNTIME_POOL) not in (Order.LT, Order.AMBIGUOUS):
-                                    event("not an improvement")
-                                    self.blacklist.add(k)
-                                    continue
-                                print("FOUND A GUESS AFTER {} CONSIDERED".format(n))
-                                yield ee
+                            n += 1
+                            ee = freshen_binders(replace(
+                                target, root_ctx, RUNTIME_POOL,
+                                e, ctx, pool,
+                                info.e), root_ctx)
+                            if any(alpha_equivalent(t, ee) for t in self.targets):
+                                event("already seen")
+                                continue
+                            if not self.matches(fingerprint(ee, self.examples), target_fp):
+                                event("incorrect")
+                                self.blacklist.add(k)
+                                continue
+                            wf = check_wf(ee, root_ctx, RUNTIME_POOL)
+                            if not wf:
+                                event("not well-formed [wf={}]".format(wf))
+                                # if "expensive" in str(wf):
+                                #     print(repr(self.cost_model.examples))
+                                #     print(repr(ee))
+                                self.blacklist.add(k)
+                                continue
+                            if self.cost_model.compare(ee, target, root_ctx, RUNTIME_POOL) not in (Order.LT, Order.AMBIGUOUS):
+                                event("not an improvement")
+                                self.blacklist.add(k)
+                                continue
+                            print("FOUND A GUESS AFTER {} CONSIDERED".format(n))
+                            yield ee
 
             print("CONSIDERED {}".format(n))
             size += 1
