@@ -312,9 +312,6 @@ class PrettyPrinter(common.Visitor):
     def visit_ELambda(self, e):
         return "{} -> {}".format(e.arg.id, self.visit(e.body))
 
-    def visit_EApp(self, e):
-        return "{}({})".format(self.visit(e.f), self.visit(e.arg))
-
     def visit_EMapGet(self, e):
         return "{}[{}]".format(self.visit(e.map), self.visit(e.key))
 
