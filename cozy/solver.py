@@ -1100,15 +1100,20 @@ class IncrementalSolver(object):
 
     def _convert(self, e):
         _tick()
-        e = purify(e)
-        if self.do_cse:
-            orig_size = e.size()
-            e = cse(e, verify=False)
-            _tock(e, "cse (size: {} --> {})".format(orig_size, e.size()))
-        with _LOCK:
-            self._create_vars(vars=free_vars(e), funcs=free_funcs(e))
-            with task("encode formula", size=e.size()):
-                return self.visitor.visit(e, self._env)
+        orig_e = e
+        try:
+            e = purify(e)
+            if self.do_cse:
+                orig_size = e.size()
+                e = cse(e, verify=False)
+                _tock(e, "cse (size: {} --> {})".format(orig_size, e.size()))
+            with _LOCK:
+                self._create_vars(vars=free_vars(e), funcs=free_funcs(e))
+                with task("encode formula", size=e.size()):
+                    return self.visitor.visit(e, self._env)
+        except:
+            print("conversion failed for: {!r}".format(orig_e))
+            raise
 
     def add_assumption(self, e):
         # print("Pushing assumption [size={}]...".format(e.size()))
