@@ -1,14 +1,13 @@
 from cozy.common import fresh_name, declare_case
 from cozy.syntax import *
 from cozy.target_syntax import SWhile, SSwap, SSwitch, SEscapableBlock, SEscapeBlock, EMap, EFilter
-from cozy.syntax_tools import fresh_var, pprint, shallow_copy
+from cozy.syntax_tools import fresh_var, pprint, shallow_copy, mk_lambda
 from cozy.pools import RUNTIME_POOL
 
 from .arrays import TArray, EArrayGet, EArrayIndexOf, SArrayAlloc, SEnsureCapacity
 
-# Key func is part of heap type
-TMinHeap = declare_case(Type, "TMinHeap", ["t", "f"])
-TMaxHeap = declare_case(Type, "TMaxHeap", ["t", "f"])
+TMinHeap = declare_case(Type, "TMinHeap", ["elem_type", "key_type"])
+TMaxHeap = declare_case(Type, "TMaxHeap", ["elem_type", "key_type"])
 
 # Like EArgMin: bag, keyfunc
 EMakeMinHeap = declare_case(Exp, "EMakeMinHeap", ["e", "f"])
@@ -37,10 +36,9 @@ def _has_right_child(idx : Exp, size : Exp) -> Exp:
 def _parent(idx : Exp) -> Exp:
     return EBinOp(EBinOp(idx, "-", ONE).with_type(INT), ">>", ONE).with_type(INT)
 
-def find_func(e : Exp) -> ELambda:
-    if isinstance(e, EMakeMinHeap) or isinstance(e, EMakeMaxHeap):
-        return e.f
-    raise NotImplementedError(e)
+def nth(t : TTuple, n : int):
+    x = EVar("x").with_type(t)
+    return ELambda(x, ETupleGet(x, n).with_type(t.ts[n]))
 
 class Heaps(object):
 
@@ -49,47 +47,78 @@ class Heaps(object):
 
     def default_value(self, t : Type) -> Exp:
         f = EMakeMinHeap if isinstance(t, TMinHeap) else EMakeMaxHeap
-        x = EVar("x").with_type(t.t)
-        return f(EEmptyList().with_type(TBag(t.t)), ELambda(x, x))
+        x = EVar("x").with_type(t.elem_type)
+        return f(EEmptyList().with_type(TBag(t.elem_type)), ELambda(x, x))
 
-    def check_wf(self, e : Exp, state_vars : {EVar}, args : {EVar}, pool = RUNTIME_POOL, assumptions : Exp = T):
-        from cozy.solver import valid
+    def check_wf(self, e : Exp, is_valid, state_vars : {EVar}, args : {EVar}, pool = RUNTIME_POOL, assumptions : Exp = T):
         if (isinstance(e, EHeapPeek) or isinstance(e, EHeapPeek2)):
+            heap = e.e
             if pool != RUNTIME_POOL:
                 return "heap peek in state position"
-            if not valid(EEq(e.n, ELen(e.e))):
+            if not is_valid(EEq(e.n, ELen(EHeapElems(heap).with_type(TBag(heap.type.elem_type))))):
                 return "invalid `n` parameter"
         return None
 
+    def typecheck(self, e : Exp, typecheck, report_err):
+        if isinstance(e, EMakeMaxHeap) or isinstance(e, EMakeMinHeap):
+            typecheck(e.e)
+            e.f.arg.type = e.e.type.t
+            typecheck(e.f)
+            e.type = TMinHeap(e.e.type.t, e.f.body.type)
+        elif isinstance(e, EHeapPeek) or isinstance(e, EHeapPeek2):
+            typecheck(e.e)
+            typecheck(e.n)
+            ok = True
+            if not (isinstance(e.e.type, TMinHeap) or isinstance(e.e.type, TMaxHeap)):
+                report_err(e, "cannot peek a non-heap")
+                ok = False
+            if e.n.type != INT:
+                report_err(e, "length param is not an int")
+                ok = False
+            if ok:
+                e.type = e.e.type.elem_type
+        elif isinstance(e, EHeapElems):
+            typecheck(e.e)
+            if isinstance(e.e.type, TMinHeap) or isinstance(e.e.type, TMaxHeap):
+                e.type = TBag(e.e.type.elem_type)
+            else:
+                report_err(e, "cannot get heap elems of non-hep")
+        else:
+            raise NotImplementedError(e)
+
     def storage_size(self, e : Exp, k):
         assert type(e.type) in (TMinHeap, TMaxHeap)
-        return k(EHeapElems(e).with_type(TBag(e.type.t)))
+        return k(EHeapElems(e).with_type(TBag(e.type.elem_type)))
 
     def encoding_type(self, t : Type) -> Type:
         assert isinstance(t, TMaxHeap) or isinstance(t, TMinHeap)
-        return TBag(TTuple((t.t, t.f.body.type)))
+        # bag of (elem, key(elem)) pairs
+        return TBag(TTuple((t.elem_type, t.key_type)))
 
     def encode(self, e : Exp) -> Exp:
         if isinstance(e, EMakeMinHeap):
-            tt = TTuple((e.f.arg.type, e.f.body.type))
+            tt = TTuple((e.type.elem_type, e.type.key_type))
             return EMap(e.e, ELambda(e.f.arg, ETuple((e.f.arg, e.f.body)).with_type(tt))).with_type(TBag(tt))
         elif isinstance(e, EMakeMaxHeap):
-            tt = TTuple((e.f.arg.type, e.f.body.type))
+            tt = TTuple((e.type.elem_type, e.type.key_type))
             return EMap(e.e, ELambda(e.f.arg, ETuple((e.f.arg, e.f.body)).with_type(tt))).with_type(TBag(tt))
         elif isinstance(e, EHeapElems):
-            arg = EVar(e.e.type.f.arg.id).with_type(TTuple((e.type.t, e.e.type.f.body.type)))
-            return EMap(e.e, ELambda(arg, ETupleGet(arg, 0).with_type(e.type.t))).with_type(e.type)
+            tt = TTuple((e.e.type.elem_type, e.e.type.key_type))
+            return EMap(e.e, mk_lambda(tt, lambda arg: ETupleGet(arg, 0).with_type(e.type.t))).with_type(e.type)
         elif isinstance(e, EHeapPeek):
+            tt = TTuple((e.e.type.elem_type, e.e.type.key_type))
             f = EArgMin if isinstance(e.e.type, TMinHeap) else EArgMax
-            return f(EHeapElems(e.e).with_type(TBag(e.type)), e.e.type.f).with_type(e.type)
+            return nth(tt, 0).apply_to(f(e.e, nth(tt, 1)).with_type(tt))
         elif isinstance(e, EHeapPeek2):
-            elem_type = e.e.type.t
+            tt = TTuple((e.e.type.elem_type, e.e.type.key_type))
             f = EArgMin if isinstance(e.e.type, TMinHeap) else EArgMax
-            return f(EBinOp(EHeapElems(e.e).with_type(TBag(e.type)), "-", ESingleton(EHeapPeek(e.e, e.n).with_type(elem_type)).with_type(TBag(elem_type))).with_type(TBag(elem_type)), e.e.type.f).with_type(e.type)
+            best = f(e.e, nth(tt, 1)).with_type(tt)
+            return nth(tt, 0).apply_to(f(EBinOp(e.e, "-", ESingleton(best).with_type(TBag(tt))).with_type(TBag(tt)), nth(tt, 1)).with_type(tt))
         else:
             raise NotImplementedError(e)
 
     def mutate_in_place(self, lval, e, op, assumptions, make_subgoal):
+        raise NotImplementedError()
         from cozy.state_maintenance import mutate
 
         old_value = e
@@ -121,6 +150,7 @@ class Heaps(object):
         return TArray(t.t)
 
     def codegen(self, e : Exp, out : EVar) -> Stm:
+        raise NotImplementedError()
         if isinstance(e, EMakeMinHeap) or isinstance(e, EMakeMaxHeap):
             out_raw = EVar(out.id).with_type(self.rep_type(e.type))
             l = fresh_var(INT, "alloc_len")
@@ -146,6 +176,7 @@ class Heaps(object):
             raise NotImplementedError(e)
 
     def implement_stmt(self, s : Stm) -> Stm:
+        raise NotImplementedError()
         op = "<=" if isinstance(s.target.type, TMinHeap) else ">="
         f = s.target.type.f
         if isinstance(s, SCall):

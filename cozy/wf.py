@@ -27,7 +27,7 @@ def exp_wf_nonrecursive(solver, e : Exp, context : Context, pool = RUNTIME_POOL,
 
     h = extension_handler(type(e))
     if h is not None:
-        msg = h.check_wf(e, state_vars=state_vars, args=args, pool=pool, assumptions=assumptions)
+        msg = h.check_wf(e, state_vars=state_vars, args=args, pool=pool, assumptions=assumptions, is_valid=solver.valid)
         if msg is not None:
             raise ExpIsNotWf(e, e, msg)
         return

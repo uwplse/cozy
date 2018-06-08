@@ -510,7 +510,8 @@ class TestSolver(unittest.TestCase):
         s.satisfy(e1)
 
     def test_regression21(self):
-        e = EBinOp(EMakeMinHeap(EVar('xs').with_type(TBag(TNative('T'))), ELambda(EVar('x').with_type(TNative('T')), EVar('x').with_type(TNative('T')))).with_type(TMinHeap(TNative('T'), ELambda(EVar('x').with_type(TNative('T')), EVar('x').with_type(TNative('T'))))), '==', EMakeMinHeap(EBinOp(EVar('xs').with_type(TBag(TNative('T'))), '+', ESingleton(EVar('i').with_type(TNative('T'))).with_type(TBag(TNative('T')))).with_type(TBag(TNative('T'))), ELambda(EVar('x').with_type(TNative('T')), EVar('x').with_type(TNative('T')))).with_type(TMinHeap(TNative('T'), ELambda(EVar('x').with_type(TNative('T')), EVar('x').with_type(TNative('T')))))).with_type(TBool())
+        e = EBinOp(EMakeMinHeap(EVar('xs'), ELambda(EVar('x'), EVar('x'))), '==', EMakeMinHeap(EBinOp(EVar('xs'), '+', ESingleton(EVar('i'))), ELambda(EVar('x'), EVar('x'))))
+        assert retypecheck(e, env={"xs": TBag(TNative("T")), "i": TNative("T")})
         assert not satisfiable(e, validate_model=True)
 
     def test_regression22(self):
@@ -518,7 +519,13 @@ class TestSolver(unittest.TestCase):
         assert not satisfiable(e, validate_model=True)
 
     def test_regression23(self):
-        e = EBinOp(EHeapElems(EMakeMinHeap(EMap(EVar('xs').with_type(TBag(THandle('T', TNative('int')))), ELambda(EVar('_var2247').with_type(THandle('T', TNative('int'))), ECond(EBinOp(EVar('_var2247').with_type(THandle('T', TNative('int'))), '==', EVar('x').with_type(THandle('T', TNative('int')))).with_type(TBool()), EWithAlteredValue(EVar('_var2247').with_type(THandle('T', TNative('int'))), EVar('nv').with_type(TNative('int'))).with_type(THandle('T', TNative('int'))), EVar('_var2247').with_type(THandle('T', TNative('int')))).with_type(THandle('T', TNative('int'))))).with_type(TBag(THandle('T', TNative('int')))), ELambda(EVar('_var2248').with_type(THandle('T', TNative('int'))), EGetField(EVar('_var2248').with_type(THandle('T', TNative('int'))), 'val').with_type(TNative('int')))).with_type(TMinHeap(THandle('T', TNative('int')), ELambda(EVar('x').with_type(THandle('T', TNative('int'))), EGetField(EVar('x').with_type(THandle('T', TNative('int'))), 'val').with_type(TNative('int')))))).with_type(TBag(THandle('T', TNative('int')))), '-', EHeapElems(EMakeMinHeap(EVar('xs').with_type(TBag(THandle('T', TNative('int')))), ELambda(EVar('x').with_type(THandle('T', TNative('int'))), EGetField(EVar('x').with_type(THandle('T', TNative('int'))), 'val').with_type(TNative('int')))).with_type(TMinHeap(THandle('T', TNative('int')), ELambda(EVar('x').with_type(THandle('T', TNative('int'))), EGetField(EVar('x').with_type(THandle('T', TNative('int'))), 'val').with_type(TNative('int')))))).with_type(TBag(THandle('T', TNative('int'))))).with_type(TBag(THandle('T', TNative('int'))))
+        e = EBinOp(EHeapElems(EMakeMinHeap(EMap(EVar('xs'), ELambda(EVar('_var2247'), ECond(EBinOp(EVar('_var2247'), '==', EVar('x')), EWithAlteredValue(EVar('_var2247'), EVar('nv')), EVar('_var2247')))), ELambda(EVar('_var2248'), EGetField(EVar('_var2248'), 'val')))), '-', EHeapElems(EMakeMinHeap(EVar('xs'), ELambda(EVar('x'), EGetField(EVar('x'), 'val')))))
+        assert retypecheck(e, env={
+            'xs' : TBag(THandle('T', TNative('int'))),
+            '_var2247' : THandle('T', TNative('int')),
+            'x' : THandle('T', TNative('int')),
+            'nv' : TNative('int'),
+            '_var2248' : THandle('T', TNative('int')),})
         v = fresh_var(e.type)
         check_encoding(EEq(e, v))
 
@@ -569,3 +576,13 @@ class TestSolver(unittest.TestCase):
 
     def test_regression28(self):
         satisfy(EBinOp(EBinOp(EBinOp(EVar('index').with_type(TInt()), '>=', ENum(0).with_type(TInt())).with_type(TBool()), 'and', EBinOp(EVar('index').with_type(TInt()), '<', EUnaryOp('len', EVar('xs').with_type(TList(TFloat()))).with_type(TInt())).with_type(TBool())).with_type(TBool()), 'and', EUnaryOp('not', EBinOp(EBinOp(EListSlice(EStateVar(EVar('xs').with_type(TList(TFloat()))).with_type(TList(TFloat())), ENum(0).with_type(TInt()), EVar('index').with_type(TInt())).with_type(TList(TFloat())), '+', EListSlice(EStateVar(EVar('xs').with_type(TList(TFloat()))).with_type(TList(TFloat())), EBinOp(EVar('index').with_type(TInt()), '+', ENum(1).with_type(TInt())).with_type(TInt()), EStateVar(EUnaryOp('len', EVar('xs').with_type(TList(TFloat()))).with_type(TInt())).with_type(TInt())).with_type(TList(TFloat()))).with_type(TList(TFloat())), '==', EListSlice(EStateVar(EVar('xs').with_type(TList(TFloat()))).with_type(TList(TFloat())), ENum(0).with_type(TInt()), EUnaryOp('-', ENum(1).with_type(TInt())).with_type(TInt())).with_type(TList(TFloat()))).with_type(TBool())).with_type(TBool())).with_type(TBool()), vars=OrderedSet([EVar('xs').with_type(TList(TFloat())), EVar('index').with_type(TInt())]), collection_depth=4, validate_model=True)
+
+    def test_heap_2ndmin(self):
+        xs = EVar("xs").with_type(INT_BAG)
+        x = EVar("x").with_type(xs.type.t)
+        f = ELambda(x, x)
+        for mkh in (EMakeMinHeap, EMakeMaxHeap):
+            h = mkh(xs, f)
+            e = ENot(EEq(EHeapPeek(h, ELen(xs)), EHeapPeek2(h, ELen(xs))))
+            assert retypecheck(e)
+            assert satisfiable(e, validate_model=True)

@@ -4,6 +4,7 @@ from cozy import target_syntax
 from cozy.syntax_tools import pprint, all_exps, is_scalar
 
 from cozy.syntax import BOOL, INT, LONG, FLOAT, STRING
+from cozy.structures import extension_handler
 
 def typecheck(ast, env=None, fenv=None):
     """
@@ -598,6 +599,15 @@ class Typechecker(Visitor):
     def visit_EStateVar(self, e):
         self.visit(e.e)
         e.type = e.e.type
+
+    def report(self, e, err):
+        self.report_err(e, err)
+        e.type = DEFAULT_TYPE
+
+    def visit_Exp(self, e):
+        h = extension_handler(type(e))
+        if h is not None:
+            h.typecheck(e, self.visit, self.report)
 
     def visit_SMapUpdate(self, s):
         self.visit(s.map)
