@@ -150,7 +150,7 @@ class Enumerator(object):
                     h = EStateVar(h).with_type(h.type)
                     from cozy.structures.heaps import to_heap, EHeapPeek2
                     heap = to_heap(best)
-                    heap = EStateVar(heap).with_type(h.type)
+                    heap = EStateVar(heap).with_type(heap.type)
                     for x in of_type(self.enumerate(context, sz2, RUNTIME_POOL), best.type):
                         mg = EMapGet(h, x).with_type(INT)
                         e = EEq(mg, ONE)
