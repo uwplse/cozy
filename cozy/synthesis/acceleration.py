@@ -269,12 +269,13 @@ def excluded_element(xs, args):
 def optimized_best(xs, keyfunc, op, args):
     argbest = EArgMin if op == "<" else EArgMax
     elem_type = xs.type.t
+    key_type = keyfunc.body.type
     if excluded_element(xs, args) is not None:
         bag, x = excluded_element(xs, args)
         if all(v not in args for v in free_vars(bag)):
             heap_type, make_heap = (TMinHeap, EMakeMinHeap) if op == "<" else (TMaxHeap, EMakeMaxHeap)
             bag = EStateVar(strip_EStateVar(bag)).with_type(bag.type)
-            h = make_heap(bag.e, keyfunc).with_type(heap_type(elem_type, keyfunc))
+            h = make_heap(bag.e, keyfunc).with_type(heap_type(elem_type, key_type))
             prev_min = EStateVar(optimized_best(bag.e, keyfunc, op, args=args).with_type(elem_type)).with_type(elem_type)
             heap_peek = EHeapPeek2(EStateVar(h).with_type(h.type), EStateVar(ELen(bag.e)).with_type(INT)).with_type(elem_type)
             return optimized_cond(
