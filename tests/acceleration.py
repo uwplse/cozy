@@ -19,8 +19,8 @@ def can_improve(e, context, assumptions : Exp = T, pool : Pool = RUNTIME_POOL):
         print(" --> trying {}...".format(pprint(ee)))
         try:
             exp_wf(ee, context=context, pool=pool, assumptions=assumptions)
-        except ExpIsNotWf:
-            print("    NOT WELL-FORMED")
+        except ExpIsNotWf as exc:
+            print("    NOT WELL-FORMED: {}".format(exc))
             continue
         if not valid(EImplies(assumptions, EEq(e, ee))):
             print("    INVALID")
