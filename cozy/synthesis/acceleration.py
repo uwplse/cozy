@@ -463,17 +463,21 @@ def optimize_filter_as_if_distinct(xs, p, args, dnf=True):
     return res
 
 def optimize_map(xs, f, args):
-    res_type = TBag(f.body.type)
+    res_type = type(xs.type)(f.body.type)
     if isinstance(xs, ESingleton):
-        return ESingleton(f.apply_to(xs.e)).with_type(res_type)
-    elif isinstance(xs, EEmptyList):
-        return EEmptyList().with_type(res_type)
-    elif isinstance(f.body, ECond):
-        return EBinOp(
-            optimize_map(optimize_filter_as_if_distinct(xs, ELambda(f.arg,      f.body.cond) , args=args), ELambda(f.arg, f.body.then_branch), args), "+",
-            optimize_map(optimize_filter_as_if_distinct(xs, ELambda(f.arg, ENot(f.body.cond)), args=args), ELambda(f.arg, f.body.else_branch), args)).with_type(res_type)
-    else:
-        return EMap(xs, f).with_type(res_type)
+        yield ESingleton(f.apply_to(xs.e)).with_type(res_type)
+    if isinstance(xs, EEmptyList):
+        yield EEmptyList().with_type(res_type)
+    if isinstance(xs, EBinOp):
+        if xs.op == "+":
+            for a in optimize_map(xs.e1, f, args):
+                for b in optimize_map(xs.e2, f, args):
+                    yield EBinOp(a, "+", b).with_type(res_type)
+    if isinstance(f.body, ECond):
+        for a     in optimize_map(optimize_filter_as_if_distinct(xs, ELambda(f.arg,      f.body.cond) , args=args), ELambda(f.arg, f.body.then_branch), args):
+            for b in optimize_map(optimize_filter_as_if_distinct(xs, ELambda(f.arg, ENot(f.body.cond)), args=args), ELambda(f.arg, f.body.else_branch), args):
+                yield EBinOp(a, "+", b).with_type(res_type)
+    yield EMap(xs, f).with_type(res_type)
 
 sum_of = lambda xs: EUnaryOp(UOp.Sum, xs).with_type(xs.type.t)
 
@@ -563,8 +567,8 @@ def _try_optimize(e, context, pool):
                 yield _check(ee, context, RUNTIME_POOL)
 
         if isinstance(e, EMap):
-            ee = optimize_map(e.e, e.f, args=args)
-            yield _check(ee, context, RUNTIME_POOL)
+            for ee in optimize_map(e.e, e.f, args=args):
+                yield _check(ee, context, RUNTIME_POOL)
 
 def try_optimize(e, context, pool):
     for ee in _try_optimize(e, context, pool):
