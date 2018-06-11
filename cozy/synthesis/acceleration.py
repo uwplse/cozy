@@ -475,6 +475,25 @@ def optimize_map(xs, f, args):
     else:
         return EMap(xs, f).with_type(res_type)
 
+sum_of = lambda xs: EUnaryOp(UOp.Sum, xs).with_type(xs.type.t)
+
+def optimized_sum(xs, args):
+    elem_type = xs.type.t
+    if isinstance(xs, EStateVar):
+        yield EStateVar(sum_of(xs)).with_type(elem_type)
+    if isinstance(xs, EBinOp) and xs.op == "+":
+        for a in optimized_sum(xs.e1, args=args):
+            for b in optimized_sum(xs.e2, args=args):
+                yield EBinOp(a, "+", b).with_type(elem_type)
+    if isinstance(xs, EBinOp) and xs.op == "-":
+        arg = fresh_var(elem_type)
+        for a in optimized_sum(xs.e1, args=args):
+            for b in optimized_sum(_simple_filter(xs.e2, ELambda(arg, optimized_in(arg, xs.e1)), args).with_type(xs.type), args=args):
+                yield EBinOp(a, "-", b).with_type(elem_type)
+    if isinstance(xs, ESingleton):
+        yield xs.e
+    yield sum_of(xs)
+
 def _check(e, context, pool):
     """
     When Cozy chokes on malformed expressions, bad acceleration rules are often
@@ -518,6 +537,10 @@ def _try_optimize(e, context, pool):
         if isinstance(e, EBinOp) and e.op == BOp.In:
             ee = optimized_in(e.e1, e.e2)
             yield _check(ee, context, RUNTIME_POOL)
+
+        if isinstance(e, EUnaryOp) and e.op == UOp.Sum:
+            for ee in optimized_sum(e.e, args):
+                yield _check(ee, context, RUNTIME_POOL)
 
         if isinstance(e, EUnaryOp) and e.op == UOp.Empty:
             ee = optimized_empty(e.e)
