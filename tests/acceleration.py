@@ -10,12 +10,18 @@ from cozy.pools import Pool, RUNTIME_POOL
 from cozy.synthesis.acceleration import try_optimize, map_accelerate
 from cozy.solver import valid
 from cozy.cost_model import CostModel, Order, debug_comparison
+from cozy.wf import exp_wf, ExpIsNotWf
 
 def can_improve(e, context, assumptions : Exp = T, pool : Pool = RUNTIME_POOL):
     print("Optimizing {}...".format(pprint(e)))
     cm = CostModel(assumptions=assumptions, funcs=context.funcs())
     for ee in try_optimize(e, context, pool):
         print(" --> trying {}...".format(pprint(ee)))
+        try:
+            exp_wf(ee, context=context, pool=pool, assumptions=assumptions)
+        except ExpIsNotWf:
+            print("    NOT WELL-FORMED")
+            continue
         if not valid(EImplies(assumptions, EEq(e, ee))):
             print("    INVALID")
             continue
