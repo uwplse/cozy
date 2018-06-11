@@ -586,3 +586,11 @@ class TestSolver(unittest.TestCase):
             e = ENot(EEq(EHeapPeek(h, ELen(xs)), EHeapPeek2(h, ELen(xs))))
             assert retypecheck(e)
             assert satisfiable(e, validate_model=True)
+
+    def test_to_heap(self):
+        for f in (EArgMin, EArgMax):
+            xs = EVar("xs").with_type(INT_BAG)
+            x = EVar("x").with_type(xs.type.t)
+            e = f(xs, ELambda(x, EUnaryOp("-", x)))
+            assert retypecheck(e)
+            assert valid(EEq(e, EHeapPeek(to_heap(e), ELen(e)).with_type(INT)))

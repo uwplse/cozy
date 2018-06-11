@@ -19,9 +19,13 @@ EHeapPeek2 = declare_case(Exp, "EHeapPeek2", ["e", "n"]) # look at 2nd min
 
 def to_heap(e : Exp) -> Exp:
     if isinstance(e, EArgMin):
-        return EMakeMinHeap(e.e, e.f).with_type(TMinHeap(e.type, e.f))
+        elem_type = e.type
+        key_type = e.f.body.type
+        return EMakeMinHeap(e.e, e.f).with_type(TMinHeap(elem_type, key_type))
     if isinstance(e, EArgMax):
-        return EMakeMaxHeap(e.e, e.f).with_type(TMaxHeap(e.type, e.f))
+        elem_type = e.type
+        key_type = e.f.body.type
+        return EMakeMaxHeap(e.e, e.f).with_type(TMaxHeap(elem_type, key_type))
     raise ValueError(e)
 
 # Binary heap utilities
