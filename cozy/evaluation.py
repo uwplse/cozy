@@ -189,7 +189,7 @@ def construct_value(t : Type) -> Exp:
     else:
         h = extension_handler(type(t))
         if h is not None:
-            return h.default_value(t)
+            return h.default_value(t, construct_value)
         raise NotImplementedError(pprint(t))
     return e.with_type(t)
 

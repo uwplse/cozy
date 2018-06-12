@@ -49,10 +49,10 @@ class Heaps(object):
     def owned_types(self):
         return (TMinHeap, TMaxHeap, EMakeMinHeap, EMakeMaxHeap, EHeapElems, EHeapPeek, EHeapPeek2)
 
-    def default_value(self, t : Type) -> Exp:
+    def default_value(self, t : Type, default_value) -> Exp:
         f = EMakeMinHeap if isinstance(t, TMinHeap) else EMakeMaxHeap
         x = EVar("x").with_type(t.elem_type)
-        return f(EEmptyList().with_type(TBag(t.elem_type)), ELambda(x, x))
+        return f(EEmptyList().with_type(TBag(t.elem_type)), ELambda(x, default_value(t.key_type))).with_type(t)
 
     def check_wf(self, e : Exp, is_valid, state_vars : {EVar}, args : {EVar}, pool = RUNTIME_POOL, assumptions : Exp = T):
         if (isinstance(e, EHeapPeek) or isinstance(e, EHeapPeek2)):
