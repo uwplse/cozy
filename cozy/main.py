@@ -177,13 +177,6 @@ def run():
     print(syntax_tools.pprint(impl))
     """
 
-    print("Fixing EWithAlteredValue...")
-    impl = syntax_tools.shallow_copy(impl)
-    impl.methods = tuple(
-        syntax_tools.rewrite_ret(m, handle_tools.fix_ewithalteredvalue) if isinstance(m, syntax.Query) else m
-        for m in impl.methods)
-    print("Done!")
-
     try:
         java = args.java
         if java is not None:

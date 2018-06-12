@@ -51,6 +51,15 @@ def ECountIn(e, collection):
     arg = fresh_var(e.type, omit=free_vars(e))
     return EUnaryOp(UOp.Length, EFilter(collection, ELambda(arg, EEq(arg, e))).with_type(collection.type)).with_type(INT)
 
+def EArgDistinct(bag, key):
+    b = EVar(fresh_name())
+    distinct_keys = EUnaryOp(UOp.Distinct, EMap(b, key))
+    res = EMap(distinct_keys,
+        mk_lambda(None, lambda x:
+            EUnaryOp(UOp.The, EFilter(b, mk_lambda(None, lambda y:
+                EEq(x, key.apply_to(y)))))))
+    return ELet(bag, ELambda(b, res))
+
 # Fixed-length vectors
 TVector    = declare_case(Type, "TVector", ["t", "n"])
 EVectorGet = declare_case(Exp, "EVectorGet", ["e", "i"])
@@ -72,9 +81,6 @@ EFlatMap = declare_case(Exp, "EFlatMap", ["e", "f"])
 # List transformations
 EDropFront = declare_case(Exp, "EDropFront", ["e"])
 EDropBack  = declare_case(Exp, "EDropBack",  ["e"])
-
-# Handle transformations
-EWithAlteredValue = declare_case(Exp, "EWithAlteredValue", ["handle", "new_value"])
 
 # Maps
 EMakeMap2  = declare_case(Exp, "EMakeMap2", ["e", "value"])

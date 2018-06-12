@@ -608,9 +608,6 @@ class ToZ3(Visitor):
         return self._optimal(e, env, self.lt)
     def visit_EArgMax(self, e, env):
         return self._optimal(e, env, self.gt)
-    def visit_EWithAlteredValue(self, e, env):
-        id, val = self.visit(e.handle, env)
-        return (id, self.visit(e.new_value, env))
     def visit_EGetField(self, e, env):
         r = self.visit(e.e, env)
         if isinstance(e.e.type, THandle):

@@ -41,8 +41,6 @@ def exp_wf_nonrecursive(solver, e : Exp, context : Context, pool = RUNTIME_POOL,
         bad = [v for v in fvs if v not in state_vars]
         if bad:
             raise ExpIsNotWf(e, e, "free non-statevars in state position: {}".format(", ".join(v.id for v in bad)))
-    if isinstance(e, EWithAlteredValue) and not at_runtime:
-        raise ExpIsNotWf(e, e, "EWithAlteredValue in state position")
     if (isinstance(e, EDropFront) or isinstance(e, EDropBack)) and not at_runtime:
         raise ExpIsNotWf(e, e, "EDrop* in state position")
     if isinstance(e, EFlatMap) and not at_runtime:

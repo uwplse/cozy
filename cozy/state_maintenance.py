@@ -51,13 +51,20 @@ def mutate(e : syntax.Exp, op : syntax.Stm, k=identity_func) -> syntax.Exp:
     else:
         raise NotImplementedError(type(op))
 
-def replace_get_value(e : syntax.Exp, t : syntax.THandle, f):
+def replace_get_value(e : syntax.Exp, ptr : syntax.Exp, new_value : syntax.Exp):
+    t = ptr.type
+    fvs = free_vars(ptr) | free_vars(new_value)
     class V(BottomUpRewriter):
+        def visit_ELambda(self, e):
+            if e.arg in fvs:
+                v = fresh_var(e.arg.type, omit=fvs)
+                e = syntax.ELambda(v, e.apply_to(v))
+            return syntax.ELambda(e.arg, self.visit(e.body))
         def visit_EGetField(self, e):
             ee = self.visit(e.e)
             res = syntax.EGetField(ee, e.f).with_type(e.type)
             if e.e.type == t and e.f == "val":
-                return f(res)
+                res = syntax.ECond(syntax.EEq(ee, ptr), new_value, res).with_type(e.type)
             return res
     return V().visit(e)
 
@@ -69,9 +76,10 @@ def _do_assignment(lval : syntax.Exp, new_value : syntax.Exp, e : syntax.Exp) ->
         return subst(e, { lval.id : new_value })
     elif isinstance(lval, syntax.EGetField):
         if isinstance(lval.e.type, syntax.THandle):
+            assert lval.f == "val"
             # Because any two handles might alias, we need to rewrite all
             # reachable handles in `e`.
-            return global_rewrite(e, lval.e.type, lambda h: syntax.ECond(syntax.EEq(h, lval.e), target_syntax.EWithAlteredValue(h, new_value).with_type(h.type), h).with_type(h.type))
+            return replace_get_value(e, lval.e, new_value)
         return _do_assignment(lval.e, _replace_field(lval.e, lval.f, new_value), e)
     else:
         raise Exception("not an lvalue: {}".format(pprint(lval)))
@@ -98,35 +106,6 @@ def _replace_field(record : syntax.Exp, field : str, new_value : syntax.Exp) -> 
     return syntax.EMakeRecord(tuple(
         (f, new_value if f == field else syntax.EGetField(record, f).with_type(ft))
         for f, ft in record.type.fields)).with_type(record.type)
-
-def global_rewrite(e : syntax.Exp, t : syntax.Type, change) -> syntax.Exp:
-    """
-    Apply `change` to all reachable values of type `t` in `e`.
-    """
-    fvs = free_vars(e)
-    return subst(e, { v.id : _global_rewrite(v, t, change) for v in fvs })
-
-def _global_rewrite(e : syntax.Exp, t : syntax.Type, change) -> syntax.Exp:
-    if e.type == t:
-        return change(e)
-
-    if isinstance(e.type, syntax.TBag) or isinstance(e.type, syntax.TList):
-        return _fix_map(target_syntax.EMap(e, mk_lambda(e.type.t, lambda x: _global_rewrite(x, t, change))).with_type(e.type))
-    elif isinstance(e.type, syntax.THandle):
-        old_val = syntax.EGetField(e, "val").with_type(e.type.value_type)
-        new_val = _global_rewrite(old_val, t, change)
-        if old_val == new_val:
-            return e
-        return target_syntax.EWithAlteredValue(e, new_val).with_type(e.type)
-    elif isinstance(e.type, syntax.TTuple):
-        return syntax.ETuple(tuple(_global_rewrite(syntax.ETupleGet(e, i).with_type(e.type.ts[i]), t, change) for i in range(len(e.type.ts)))).with_type(e.type)
-    elif isinstance(e.type, syntax.TRecord):
-        return syntax.EMakeRecord(tuple(
-            (f, _global_rewrite(syntax.EGetField(e, f).with_type(ft), t, change)) for f, ft in e.type.fields)).with_type(e.type)
-    elif e.type == syntax.INT or e.type == syntax.LONG or e.type == syntax.BOOL or e.type == syntax.STRING or isinstance(e.type, syntax.TNative) or isinstance(e.type, syntax.TEnum):
-        return e
-    else:
-        raise NotImplementedError(repr(e.type))
 
 def mutate_in_place(
         lval           : syntax.Exp,

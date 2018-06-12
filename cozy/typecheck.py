@@ -482,13 +482,6 @@ class Typechecker(Visitor):
             self.report_err(e, "cannot get field {} from non-record {}".format(e.f, e.e.type))
             e.type = DEFAULT_TYPE
 
-    def visit_EWithAlteredValue(self, e):
-        self.visit(e.handle)
-        self.visit(e.new_value)
-        t = self.get_handle_type(e.handle)
-        self.check_assignment(e, t, e.new_value.type)
-        e.type = e.handle.type
-
     def visit_EVar(self, e):
         if e.id in self.env:
             e.type = self.env[e.id]

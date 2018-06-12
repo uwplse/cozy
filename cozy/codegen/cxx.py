@@ -424,9 +424,6 @@ class CxxPrinter(CodeGenerator):
     def visit_EBoolToInt(self, e):
         return "static_cast<int>(" + self.visit(e.e) + ")"
 
-    def visit_EWithAlteredValue(self, e):
-        raise NotImplementedError()
-
     # def _is_concrete(self, e):
     #     if is_scalar(e.type):
     #         return True

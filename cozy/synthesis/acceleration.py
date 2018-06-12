@@ -343,13 +343,9 @@ def optimized_eq(a, b):
         return EEq(a, b)
 
 def optimized_addr(e):
-    while isinstance(e, EWithAlteredValue):
-        e = e.handle
     return e
 
 def optimized_val(e):
-    if isinstance(e, EWithAlteredValue):
-        return e.new_value
     return EGetField(e, "val").with_type(e.type.value_type)
 
 def mapkeys(m):

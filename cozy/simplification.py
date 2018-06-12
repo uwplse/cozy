@@ -34,9 +34,6 @@ class _V(BottomUpRewriter):
             e2 = self.visit(e.e2)
             if alpha_equivalent(e1, e2):
                 return T
-            if e.op == "==":
-                while isinstance(e1, EWithAlteredValue): e1 = e1.handle
-                while isinstance(e2, EWithAlteredValue): e2 = e2.handle
             if isinstance(e2, ECond) and alpha_equivalent(e1, e2.else_branch):
                 return self.visit(EBinOp(ENot(e2.cond), BOp.Or, EBinOp(e1, e.op, e2.then_branch).with_type(BOOL)).with_type(BOOL))
             e = EBinOp(e1, e.op, e2).with_type(e.type)
@@ -60,24 +57,12 @@ class _V(BottomUpRewriter):
         tb = replace(e.then_branch, cond, T)
         eb = replace(e.else_branch, cond, F)
         return ECond(cond, self.visit(tb), self.visit(eb)).with_type(e.type)
-    def visit_EWithAlteredValue(self, e):
-        t = e.type
-        addr = self.visit(e.handle)
-        val = self.visit(e.new_value)
-        while isinstance(addr, EWithAlteredValue): addr = addr.handle
-        if isinstance(addr, ECond):
-            return self.visit(ECond(addr.cond,
-                EWithAlteredValue(addr.then_branch, val).with_type(t),
-                EWithAlteredValue(addr.else_branch, val).with_type(t)).with_type(t))
-        return EWithAlteredValue(addr, val).with_type(t)
     def visit_EGetField(self, e):
         record = self.visit(e.e)
         if isinstance(record, ECond):
             return self.visit(ECond(record.cond,
                 EGetField(record.then_branch, e.f).with_type(e.type),
                 EGetField(record.else_branch, e.f).with_type(e.type)).with_type(e.type))
-        if isinstance(record, EWithAlteredValue) and e.f == "val":
-            return record.new_value
         if isinstance(record, EMakeRecord):
             return dict(record.fields)[e.f]
         return EGetField(record, e.f).with_type(e.type)

@@ -529,10 +529,6 @@ def _compile(e, env : {str:int}, out):
         _compile(e.addr, env, out)
         _compile(e.value, env, out)
         out.append(make_handle)
-    elif isinstance(e, EWithAlteredValue):
-        _compile(e.handle, env, out)
-        _compile(e.new_value, env, out)
-        out.append(withalteredvalue)
     elif isinstance(e, ENull):
         out.append(push_null)
     elif isinstance(e, ECond):

@@ -209,7 +209,7 @@ class TestCostModel(unittest.TestCase):
         y = EVar("y").with_type(t)
         z = EVar("z").with_type(t)
         filt = EFilter(ESingleton(x), mk_lambda(t, lambda _: EEq(y, z)))
-        e1 = EMap(filt, mk_lambda(t, lambda v: EWithAlteredValue(v, ZERO)))
+        e1 = EMap(filt, mk_lambda(t, lambda v: ZERO))
         e2 = EFlatMap(filt, mk_lambda(t, lambda w: subst(e1, {x.id:w})))
         assert retypecheck(e1)
         assert retypecheck(e2)
