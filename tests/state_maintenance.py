@@ -1,6 +1,7 @@
 import unittest
 
 from cozy.target_syntax import *
+from cozy.structures.heaps import *
 from cozy.syntax_tools import free_vars, pprint
 from cozy.solver import valid
 import cozy.state_maintenance as inc
@@ -59,3 +60,18 @@ class TestStateMaintenance(unittest.TestCase):
         assert valid(EEq(
             inc.mutate(x, s),
             ECond(b, ONE, ZERO).with_type(INT)))
+
+    def test_heaps(self):
+        sgs = []
+        s = inc.mutate_in_place(
+            lval=EVar('_var6975').with_type(TMinHeap(THandle('T', TNative('int')), TNative('int'))),
+            e=EMakeMinHeap(EVar('xs').with_type(TBag(THandle('T', TNative('int')))), ELambda(EVar('_var2813').with_type(THandle('T', TNative('int'))), EGetField(EVar('_var2813').with_type(THandle('T', TNative('int'))), 'val').with_type(TNative('int')))).with_type(TMinHeap(THandle('T', TNative('int')), TNative('int'))),
+            op=SCall(EVar('xs').with_type(TBag(THandle('T', TNative('int')))), 'remove', (EVar('x').with_type(THandle('T', TNative('int'))),)),
+            abstract_state=[EVar('xs').with_type(TBag(THandle('T', TNative('int'))))],
+            assumptions=[EBinOp(EVar('x').with_type(THandle('T', TNative('int'))), 'in', EVar('xs').with_type(TBag(THandle('T', TNative('int'))))).with_type(TBool()), EUnaryOp('all', EMap(EBinOp(EFlatMap(EVar('xs').with_type(TBag(THandle('T', TNative('int')))), ELambda(EVar('_var12').with_type(THandle('T', TNative('int'))), ESingleton(EVar('_var12').with_type(THandle('T', TNative('int')))).with_type(TBag(THandle('T', TNative('int')))))).with_type(TBag(THandle('T', TNative('int')))), '+', ESingleton(EVar('x').with_type(THandle('T', TNative('int')))).with_type(TBag(THandle('T', TNative('int'))))).with_type(TBag(THandle('T', TNative('int')))), ELambda(EVar('_var13').with_type(THandle('T', TNative('int'))), EUnaryOp('all', EMap(EBinOp(EFlatMap(EVar('xs').with_type(TBag(THandle('T', TNative('int')))), ELambda(EVar('_var12').with_type(THandle('T', TNative('int'))), ESingleton(EVar('_var12').with_type(THandle('T', TNative('int')))).with_type(TBag(THandle('T', TNative('int')))))).with_type(TBag(THandle('T', TNative('int')))), '+', ESingleton(EVar('x').with_type(THandle('T', TNative('int')))).with_type(TBag(THandle('T', TNative('int'))))).with_type(TBag(THandle('T', TNative('int')))), ELambda(EVar('_var14').with_type(THandle('T', TNative('int'))), EBinOp(EBinOp(EVar('_var13').with_type(THandle('T', TNative('int'))), '==', EVar('_var14').with_type(THandle('T', TNative('int')))).with_type(TBool()), '=>', EBinOp(EGetField(EVar('_var13').with_type(THandle('T', TNative('int'))), 'val').with_type(TNative('int')), '==', EGetField(EVar('_var14').with_type(THandle('T', TNative('int'))), 'val').with_type(TNative('int'))).with_type(TBool())).with_type(TBool()))).with_type(TBag(TBool()))).with_type(TBool()))).with_type(TBag(TBool()))).with_type(TBool())],
+            subgoals_out=sgs)
+        print("---")
+        print(pprint(s))
+        for g in sgs:
+            print(pprint(g))
+        print("---")

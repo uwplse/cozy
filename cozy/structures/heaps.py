@@ -44,6 +44,11 @@ def nth(t : TTuple, n : int):
     x = EVar("x").with_type(t)
     return ELambda(x, ETupleGet(x, n).with_type(t.ts[n]))
 
+def heap_func(e : Exp) -> ELambda:
+    if isinstance(e, EMakeMinHeap) or isinstance(e, EMakeMaxHeap):
+        return e.f
+    raise NotImplementedError(repr(e))
+
 class Heaps(object):
 
     def owned_types(self):
@@ -122,14 +127,13 @@ class Heaps(object):
             raise NotImplementedError(e)
 
     def mutate_in_place(self, lval, e, op, assumptions, make_subgoal):
-        raise NotImplementedError()
         from cozy.state_maintenance import mutate
 
         old_value = e
         new_value = mutate(e, op)
 
         # added/removed elements
-        t = TBag(lval.type.t)
+        t = TBag(lval.type.elem_type)
         old_elems = EHeapElems(old_value).with_type(t)
         new_elems = EHeapElems(new_value).with_type(t)
         initial_count = make_subgoal(ELen(old_elems))
@@ -139,10 +143,11 @@ class Heaps(object):
         to_del = make_subgoal(to_del_spec, docstring="deletions from {}".format(pprint(lval)))
 
         # modified elements
-        f = lval.type.f
+        f1 = heap_func(old_value)
+        f2 = heap_func(new_value)
         v = fresh_var(t.t)
-        old_v_key = f.apply_to(v)
-        new_v_key = mutate(old_v_key, op)
+        old_v_key = f1.apply_to(v)
+        new_v_key = f2.apply_to(v)
         mod_spec = EFilter(old_elems, ELambda(v, EAll([EIn(v, new_elems), ENot(EEq(new_v_key, old_v_key))]))).with_type(new_elems.type)
         modified = make_subgoal(mod_spec)
         return seq([
