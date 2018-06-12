@@ -4,8 +4,8 @@ import itertools
 
 from cozy.common import pick_to_sum, OrderedSet, unique, make_random_access, StopException
 from cozy.target_syntax import *
-from cozy.syntax_tools import pprint, fresh_var, free_vars, freshen_binders, alpha_equivalent
-from cozy.evaluation import eval_bulk
+from cozy.syntax_tools import pprint, fresh_var, free_vars, freshen_binders, alpha_equivalent, all_types
+from cozy.evaluation import eval_bulk, construct_value
 from cozy.typecheck import is_numeric, is_scalar, is_collection
 from cozy.cost_model import CostModel, Order
 from cozy.pools import Pool, ALL_POOLS, RUNTIME_POOL, STATE_POOL, pool_name
@@ -187,9 +187,13 @@ class Enumerator(object):
             for (v, p) in context.vars():
                 if p == pool:
                     yield v
+                for t in all_types(v):
+                    yield construct_value(t)
             for (e, ctx, p) in self.hints:
                 if p == pool and ctx.alpha_equivalent(context):
                     yield context.adapt(e, ctx)
+                for t in all_types(e):
+                    yield construct_value(t)
             return
 
         yield from self.heuristic_enumeration(context, size, pool)
