@@ -75,8 +75,8 @@ def exp_wf_nonrecursive(solver, e : Exp, context : Context, pool = RUNTIME_POOL,
         raise ExpIsNotWf(e, e, "collection subtraction in state position")
     if not at_runtime and isinstance(e, ESingleton):
         raise ExpIsNotWf(e, e, "singleton in state position")
-    if not at_runtime and isinstance(e, ENum) and e.val != 0 and e.type == INT:
-        raise ExpIsNotWf(e, e, "nonzero integer constant in state position")
+    # if not at_runtime and isinstance(e, ENum) and e.val != 0 and e.type == INT:
+    #     raise ExpIsNotWf(e, e, "nonzero integer constant in state position")
     if not allow_conditional_state.value and not at_runtime and isinstance(e, ECond):
         raise ExpIsNotWf(e, e, "conditional in state position")
     if isinstance(e, EMakeMap2) and isinstance(e.e, EEmptyList):
