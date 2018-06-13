@@ -494,6 +494,22 @@ def optimized_sum(xs, args):
         yield xs.e
     yield sum_of(xs)
 
+def optimize_the(xs, args):
+    t = xs.type.t
+    if isinstance(xs, ECond):
+        for e1 in optimize_the(xs.then_branch, args):
+            for e2 in optimize_the(xs.else_branch, args):
+                yield optimized_cond(xs.cond, e1, e2)
+    if isinstance(xs, EStateVar):
+        yield EStateVar(EUnaryOp(UOp.The, xs.e).with_type(t)).with_type(t)
+    if isinstance(xs.type, TList):
+        x = excluded_element(xs, args)
+        if x is not None:
+            bag, x = x
+            for elem in optimize_the(bag, args):
+                yield optimized_cond(EEq(elem, x), EListGet(bag, ONE).with_type(t), elem)
+    yield EUnaryOp(UOp.The, xs).with_type(t)
+
 def _check(e, context, pool):
     """
     When Cozy chokes on malformed expressions, bad acceleration rules are often
@@ -553,6 +569,10 @@ def _try_optimize(e, context, pool):
         if isinstance(e, EUnaryOp) and e.op == UOp.Length:
             ee = optimized_len(e.e)
             yield _check(ee, context, RUNTIME_POOL)
+
+        if isinstance(e, EUnaryOp) and e.op == UOp.The:
+            for ee in optimize_the(e.e, args):
+                yield _check(ee, context, RUNTIME_POOL)
 
         if isinstance(e, EFilter):
             ee = optimize_filter_as_if_distinct(e.e, e.p, args=args)
