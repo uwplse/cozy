@@ -2,7 +2,7 @@ from contextlib import contextmanager
 import itertools
 import json
 
-from cozy import common, library, evaluation
+from cozy import common, evaluation
 from cozy.target_syntax import *
 from cozy.syntax_tools import free_vars, subst, is_scalar, all_exps
 from cozy.structures.arrays import TArray
@@ -229,10 +229,7 @@ class JavaPrinter(CxxPrinter):
     def _eq(self, e1, e2):
         if not self.boxed and self.is_primitive(e1.type):
             return self.visit(EEscape("({e1} == {e2})", ("e1", "e2"), (e1, e2)).with_type(BOOL))
-        if (is_scalar(e1.type) or
-                (isinstance(e1.type, library.TNativeMap) and isinstance(e2.type, library.TNativeMap)) or
-                (isinstance(e1.type, library.TNativeSet) and isinstance(e2.type, library.TNativeSet)) or
-                (isinstance(e1.type, library.TNativeList) and isinstance(e2.type, library.TNativeList))):
+        if is_scalar(e1.type):
             return self.visit(EEscape("java.util.Objects.equals({e1}, {e2})", ["e1", "e2"], [e1, e2]).with_type(BOOL))
         return super()._eq(e1, e2)
 
@@ -468,7 +465,7 @@ class JavaPrinter(CxxPrinter):
     def visit_SCall(self, call):
         target = self.visit(call.target)
         args = [self.visit(a) for a in call.args]
-        if type(call.target.type) in (library.TNativeList, TBag, library.TNativeSet, TSet):
+        if type(call.target.type) in (TBag, TSet):
             self.begin_statement()
             if call.func == "add":
                 self.write(target, ".add(", args[0], ");")
@@ -548,41 +545,35 @@ class JavaPrinter(CxxPrinter):
         return super().for_each_native(x, iterable, body)
 
     def visit_SMapPut(self, update):
-        if isinstance(update.map.type, library.TNativeMap) or type(update.map.type) is TMap:
-            if update.map.type.k == INT:
-                self.array_resize_for_index(update.map.type.v, update.map, update.key)
-            map = self.visit(update.map)
-            key = self.visit(update.key)
-            if update.map.type.k == INT:
-                self.visit(self.array_put(update.map.type.v, EEscape(map, [], []).with_type(update.map.type), EEscape(key, [], []).with_type(update.key.type), update.value))
-            else:
-                val = self.fv(update.value.type)
-                self.declare(val, update.value)
-                self.begin_statement()
-                self.write(map, ".put(", key, ", ", val.id, ");")
-                self.end_statement()
+        if update.map.type.k == INT:
+            self.array_resize_for_index(update.map.type.v, update.map, update.key)
+        map = self.visit(update.map)
+        key = self.visit(update.key)
+        if update.map.type.k == INT:
+            self.visit(self.array_put(update.map.type.v, EEscape(map, [], []).with_type(update.map.type), EEscape(key, [], []).with_type(update.key.type), update.value))
         else:
-            return super().visit_SMapPut(update)
+            val = self.fv(update.value.type)
+            self.declare(val, update.value)
+            self.begin_statement()
+            self.write(map, ".put(", key, ", ", val.id, ");")
+            self.end_statement()
 
     def visit_SMapUpdate(self, update):
         if isinstance(update.change, SNoOp):
             return ""
-        if isinstance(update.map.type, library.TNativeMap) or type(update.map.type) is TMap:
-            if update.map.type.k == INT:
-                self.array_resize_for_index(update.map.type.v, update.map, update.key)
-            # TODO: liveness analysis to avoid this map lookup in some cases
-            self.declare(update.val_var, EMapGet(update.map, update.key).with_type(update.map.type.v))
-            map = self.visit(update.map) # TODO: deduplicate
-            key = self.visit(update.key) # TODO: deduplicate
-            self.visit(update.change)
-            self.begin_statement()
-            if update.map.type.k == INT:
-                do_put = self.visit(self.array_put(update.map.type.v, EEscape(map, [], []).with_type(update.map.type), EEscape(key, [], []).with_type(update.key.type), update.val_var))
-            else:
-                self.write("{map}.put({key}, {val});\n".format(map=map, key=key, val=update.val_var.id))
-            self.end_statement()
+        if update.map.type.k == INT:
+            self.array_resize_for_index(update.map.type.v, update.map, update.key)
+        # TODO: liveness analysis to avoid this map lookup in some cases
+        self.declare(update.val_var, EMapGet(update.map, update.key).with_type(update.map.type.v))
+        map = self.visit(update.map) # TODO: deduplicate
+        key = self.visit(update.key) # TODO: deduplicate
+        self.visit(update.change)
+        self.begin_statement()
+        if update.map.type.k == INT:
+            do_put = self.visit(self.array_put(update.map.type.v, EEscape(map, [], []).with_type(update.map.type), EEscape(key, [], []).with_type(update.key.type), update.val_var))
         else:
-            return super().visit_SMapUpdate(update)
+            self.write("{map}.put({key}, {val});\n".format(map=map, key=key, val=update.val_var.id))
+        self.end_statement()
 
     def visit_SArrayAlloc(self, s):
         lval = self.visit(s.a)

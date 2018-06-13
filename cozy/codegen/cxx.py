@@ -3,7 +3,7 @@ import json
 import itertools
 from io import StringIO
 
-from cozy import common, library, evaluation
+from cozy import common, evaluation
 from cozy.common import fresh_name, declare_case
 from cozy.target_syntax import *
 from cozy.syntax_tools import all_types, fresh_var, subst, free_vars, is_scalar, mk_lambda, alpha_equivalent, all_exps, break_seq
@@ -88,6 +88,9 @@ class CxxPrinter(CodeGenerator):
         if type(t) is TBag:
             return self.visit_TNativeList(t, name)
         return self.visit_Type(t, name)
+
+    def visit_TSet(self, t, name):
+        return self.visit_TNativeSet(t, name)
 
     def visit_TNativeList(self, t, name):
         return "std::vector< {} > {}".format(self.visit(t.t, ""), name)
@@ -234,20 +237,20 @@ class CxxPrinter(CodeGenerator):
         """
         if hasattr(t, "construct_concrete"):
             return t.construct_concrete(e, out)
-        elif isinstance(t, library.TNativeList) or type(t) is TBag or type(t) is TList:
+        elif isinstance(t, TBag) or isinstance(t, TList):
             assert out not in free_vars(e)
             x = self.fv(t.t, "x")
             return SSeq(
                 self.initialize_native_list(out),
                 SForEach(x, e, SCall(out, "add", [x])))
-        elif isinstance(t, library.TNativeSet) or type(t) is TSet:
+        elif isinstance(t, TSet):
             if isinstance(e, EUnaryOp) and e.op == UOp.Distinct:
                 return self.construct_concrete(t, e.e, out)
             x = self.fv(t.t, "x")
             return SSeq(
                 self.initialize_native_set(out),
                 SForEach(x, e, SCall(out, "add", [x])))
-        elif isinstance(t, library.TNativeMap) or type(t) is TMap:
+        elif isinstance(t, TMap):
             return SSeq(
                 self.initialize_native_map(out),
                 self.construct_map(t, e, out))
@@ -348,52 +351,40 @@ class CxxPrinter(CodeGenerator):
         return "{map}.find({key}) != {map}.end()".format(map=map, key=key)
 
     def visit_EMapGet(self, e):
-        if isinstance(e.map.type, library.TNativeMap) or type(e.map.type) is TMap:
-            return self.native_map_get(
-                e,
-                lambda out: self.construct_concrete(
-                    e.map.type.v,
-                    evaluation.construct_value(e.map.type.v),
-                    out))
-        else:
-            return self.visit(e.map.type.get_key(e.map, e.key))
+        return self.native_map_get(
+            e,
+            lambda out: self.construct_concrete(
+                e.map.type.v,
+                evaluation.construct_value(e.map.type.v),
+                out))
 
     def visit_SMapUpdate(self, update):
-        if isinstance(update.map.type, library.TNativeMap) or type(update.map.type) is TMap:
-            map = self.visit(update.map)
-            key = self.visit(update.key)
-            self.begin_statement()
-            self.write("{decl} = {map}[{key}];\n".format(
-                decl=self.visit(TRef(update.val_var.type), update.val_var.id),
-                map=map,
-                key=key))
-            self.end_statement()
-            self.visit(update.change)
-        else:
-            return self.visit(update.map.type.update_key(update.map, update.key, update.val_var, update.change))
+        map = self.visit(update.map)
+        key = self.visit(update.key)
+        self.begin_statement()
+        self.write("{decl} = {map}[{key}];\n".format(
+            decl=self.visit(TRef(update.val_var.type), update.val_var.id),
+            map=map,
+            key=key))
+        self.end_statement()
+        self.visit(update.change)
 
     def visit_SMapPut(self, update):
-        if isinstance(update.map.type, library.TNativeMap) or type(update.map.type) is TMap:
-            map = self.visit(update.map)
-            key = self.visit(update.key)
-            val = self.fv(update.value.type)
-            self.declare(val, update.value)
-            val = self.visit(EMove(val))
-            self.begin_statement()
-            self.write(map, ".emplace(", key, ", ", val, ");")
-            self.end_statement()
-        else:
-            raise NotImplementedError()
+        map = self.visit(update.map)
+        key = self.visit(update.key)
+        val = self.fv(update.value.type)
+        self.declare(val, update.value)
+        val = self.visit(EMove(val))
+        self.begin_statement()
+        self.write(map, ".emplace(", key, ", ", val, ");")
+        self.end_statement()
 
     def visit_SMapDel(self, update):
-        if isinstance(update.map.type, library.TNativeMap) or type(update.map.type) is TMap:
-            map = self.visit(update.map)
-            key = self.visit(update.key)
-            self.begin_statement()
-            self.write(map, ".erase(", key, ");")
-            self.end_statement()
-        else:
-            raise NotImplementedError()
+        map = self.visit(update.map)
+        key = self.visit(update.key)
+        self.begin_statement()
+        self.write(map, ".erase(", key, ");")
+        self.end_statement()
 
     def visit_Exp(self, e):
         h = extension_handler(type(e))
@@ -432,7 +423,7 @@ class CxxPrinter(CodeGenerator):
     #     return True
 
     def histogram(self, e) -> EVar:
-        t = library.TNativeMap(e.type.t, INT)
+        t = TMap(e.type.t, INT)
         hist = self.fv(t, "hist")
         x = self.fv(e.type.t)
         val = self.fv(INT, "val")
@@ -444,23 +435,7 @@ class CxxPrinter(CodeGenerator):
         return hist
 
     def _eq(self, e1, e2):
-        if isinstance(e1.type, THandle):
-            return self.visit(EEscape("({e1} == {e2})", ["e1", "e2"], [e1, e2]).with_type(BOOL))
-        if (is_scalar(e1.type) or
-                (isinstance(e1.type, library.TNativeMap) and isinstance(e2.type, library.TNativeMap)) or
-                (isinstance(e1.type, library.TNativeSet) and isinstance(e2.type, library.TNativeSet)) or
-                (isinstance(e1.type, library.TNativeList) and isinstance(e2.type, library.TNativeList))):
-            return self.visit(EEscape("({e1} == {e2})", ["e1", "e2"], [e1, e2]).with_type(BOOL))
-        elif isinstance(e1.type, TSet) and isinstance(e2.type, TSet):
-            raise NotImplementedError("set equality")
-        elif isinstance(e1.type, TBag) or isinstance(e2.type, TBag):
-            v1 = self.histogram(e1)
-            v2 = self.histogram(e2)
-            return self._eq(v1, v2)
-        elif isinstance(e1.type, TMap) or isinstance(e2.type, TMap):
-            raise NotImplementedError("map equality")
-        else:
-            raise NotImplementedError((e1.type, e2.type))
+        return self.visit(EEscape("({e1} == {e2})", ["e1", "e2"], [e1, e2]).with_type(BOOL))
 
     def visit_EBinOp(self, e):
         op = e.op
@@ -529,7 +504,7 @@ class CxxPrinter(CodeGenerator):
                 iterable.e,
                 lambda v: body(iterable.f.apply_to(v)))
         elif isinstance(iterable, EUnaryOp) and iterable.op == UOp.Distinct:
-            tmp = self.fv(library.TNativeSet(iterable.type.t), "tmp")
+            tmp = self.fv(TSet(iterable.type.t), "tmp")
             self.declare(tmp)
             self.visit(self.initialize_native_set(tmp))
             self.for_each(iterable.e, lambda x: SIf(
@@ -542,7 +517,7 @@ class CxxPrinter(CodeGenerator):
             self.for_each(iterable.e1, body)
             self.for_each(iterable.e2, body)
         elif isinstance(iterable, EBinOp) and iterable.op == "-":
-            t = library.TNativeList(iterable.type.t)
+            t = TList(iterable.type.t)
             e = self.visit(EBinOp(iterable.e1, "-", iterable.e2).with_type(t))
             return self.for_each(EEscape(e, (), ()).with_type(t), body)
         elif isinstance(iterable, EFlatMap):
@@ -566,10 +541,9 @@ class CxxPrinter(CodeGenerator):
         elif isinstance(iterable, ELet):
             return self.for_each(iterable.f.apply_to(iterable.e), body)
         else:
+            assert is_collection(iterable.type)
             x = self.fv(iterable.type.t, "x")
-            if type(iterable.type) in (TBag, library.TNativeList, TSet, library.TNativeSet, TList):
-                return self.for_each_native(x, iterable, body(x))
-            return self.visit(iterable.type.for_each(x, iterable, body(x)))
+            return self.for_each_native(x, iterable, body(x))
 
     def for_each_native(self, x : EVar, iterable, body):
         if isinstance(iterable, EMapKeys):
@@ -637,7 +611,7 @@ class CxxPrinter(CodeGenerator):
         return self.min_or_max(">", e.e, e.f)
 
     def reverse_inplace(self, e : EVar) -> Stm:
-        assert type(e.type) in (TList, library.TNativeList)
+        assert isinstance(e.type, TList)
         return SEscape("{indent}std::reverse({e}.begin(), {e}.end());\n", ("e",), (e,))
 
     def visit_EUnaryOp(self, e):
@@ -684,7 +658,7 @@ class CxxPrinter(CodeGenerator):
             self.declare(v, e)
             return v.id
         elif op == UOp.AreUnique:
-            s = self.fv(library.TNativeSet(e.e.type.t), "unique_elems")
+            s = self.fv(TSet(e.e.type.t), "unique_elems")
             u = self.fv(BOOL, "is_unique")
             x = self.fv(e.e.type.t)
             label = fresh_name("label")
@@ -841,7 +815,7 @@ class CxxPrinter(CodeGenerator):
         args = [self.visit(a) for a in call.args]
         self.begin_statement()
 
-        if type(call.target.type) in (library.TNativeList, TBag, TList):
+        if type(call.target.type) in (TBag, TList):
             if call.func == "add":
                 self.write(target, ".push_back(", args[0], ");")
             elif call.func == "remove":
@@ -852,7 +826,7 @@ class CxxPrinter(CodeGenerator):
                 self.write("if (", v.id, " != ", target, ".end()) { ", target, ".erase(", v.id, "); }")
             else:
                 raise NotImplementedError(call.func)
-        elif type(call.target.type) in (library.TNativeSet, TSet):
+        elif isinstance(call.target.type, TSet):
             if call.func == "add":
                 self.write(target, ".insert(", args[0], ");")
             elif call.func == "remove":

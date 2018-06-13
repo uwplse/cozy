@@ -20,13 +20,10 @@ from cozy import syntax_tools
 from cozy import handle_tools
 from cozy import invariant_preservation
 from cozy import synthesis
-from cozy import library
-from cozy import autotuning
 from cozy import sharing
 from cozy import opts
 
 save_failed_codegen_inputs = opts.Option("save-failed-codegen-inputs", str, "/tmp/failed_codegen.py", metavar="PATH")
-enable_autotuning = opts.Option("enable-autotuning", bool, False)
 checkpoint_prefix = opts.Option("checkpoint-prefix", str, "")
 
 def run():
@@ -149,22 +146,8 @@ def run():
             pickle.dump(ast, f)
             print("Saved implementation to file {}".format(args.save))
 
-    if enable_autotuning.value:
-        print("Generating final concrete implementation...")
-        lib = library.Library()
-        impls = list(autotuning.enumerate_impls(code, state_map, lib, assumptions=ast.spec.assumptions))
-        print("# impls: {}".format(len(impls)))
-
-        impl = impls[0] # TODO: autotuning
-        for (v, t) in impl.statevars:
-            print("{} ~~> {}".format(v, syntax_tools.pprint(t)))
-        share_info = sharing.compute_sharing(state_map, dict(impl.statevars))
-
-        print()
-        print(impl.statevars)
-    else:
-        impl = code
-        share_info = defaultdict(list)
+    impl = code
+    share_info = defaultdict(list)
 
     """
     impl = syntax_tools.inline_calls(impl)
