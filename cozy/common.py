@@ -13,6 +13,7 @@ Extra collection types:
  - OrderedDefaultDict: a fusion of Python's OrderedDict and defaultdict
 """
 
+# builtins
 from collections import defaultdict, OrderedDict, MutableSet
 from contextlib import contextmanager
 from functools import total_ordering, wraps
@@ -24,6 +25,10 @@ import threading
 import ctypes
 import tempfile
 import shutil
+
+# 3rd party
+from oset import oset as OrderedSet
+from dictionaries import FrozenDict
 
 def check_type(value, ty, value_name="value"):
     """
@@ -249,25 +254,6 @@ def ast_replace_ref(haystack, needle, replacement):
         lambda x: x is needle,
         lambda x: replacement)
 
-@total_ordering
-class FrozenDict(dict):
-    """
-    Immutable dictionary that is hashable (suitable for use in sets/maps)
-    """
-    def __init__(self, d):
-        super().__init__(d)
-        self.hc = None
-    def __setitem__(self, k, v):
-        raise Exception("immutable")
-    def __delitem__(self, k):
-        raise Exception("immutable")
-    def __hash__(self):
-        if self.hc is None:
-            self.hc = hash(tuple(sorted(self.items())))
-        return self.hc
-    def __lt__(self, other):
-        return tuple(sorted(self.items())) < tuple(sorted(other.items()))
-
 _MISSING = object()
 class OrderedDefaultDict(OrderedDict):
     def __init__(self, factory):
@@ -346,68 +332,6 @@ def split(iter, p):
             f.append(x)
     return (t, f)
 
-class OrderedSet(MutableSet):
-    """
-    Set implementation that remembers the insertion order of elements.
-    Source: https://code.activestate.com/recipes/576694/
-    """
-
-    def __init__(self, iterable=None):
-        self.end = end = []
-        end += [None, end, end]         # sentinel node for doubly linked list
-        self.map = {}                   # key --> [key, prev, next]
-        if iterable is not None:
-            self |= iterable
-
-    def __len__(self):
-        return len(self.map)
-
-    def __contains__(self, key):
-        return key in self.map
-
-    def add(self, key):
-        if key not in self.map:
-            end = self.end
-            curr = end[1]
-            curr[2] = end[1] = self.map[key] = [key, curr, end]
-
-    def discard(self, key):
-        if key in self.map:
-            key, prev, next = self.map.pop(key)
-            prev[2] = next
-            next[1] = prev
-
-    def __iter__(self):
-        end = self.end
-        curr = end[2]
-        while curr is not end:
-            yield curr[0]
-            curr = curr[2]
-
-    def __reversed__(self):
-        end = self.end
-        curr = end[1]
-        while curr is not end:
-            yield curr[0]
-            curr = curr[1]
-
-    def pop(self, last=True):
-        if not self:
-            raise KeyError('set is empty')
-        key = self.end[1][0] if last else self.end[2][0]
-        self.discard(key)
-        return key
-
-    def __repr__(self):
-        if not self:
-            return '%s()' % (self.__class__.__name__,)
-        return '%s(%r)' % (self.__class__.__name__, list(self))
-
-    def __eq__(self, other):
-        if isinstance(other, OrderedSet):
-            return len(self) == len(other) and list(self) == list(other)
-        return set(self) == set(other)
-
 def unique(iter):
     """
     Yields a stream of deduplicated elements.
@@ -455,19 +379,6 @@ def save_property(x, prop_name):
     old_val = getattr(x, prop_name)
     yield
     setattr(x, prop_name, old_val)
-
-def cross_product(iters, i=0):
-    """
-    Take the cross product of a finite set of possibly-infinite iterators.
-    """
-    iters = make_random_access(iters)
-    if i == len(iters):
-        yield ()
-    if i >= len(iters):
-        return
-    for x in iters[i]:
-        for rest in cross_product(iters, i + 1):
-            yield (x,) + rest
 
 def group_by(iter, k, v=list):
     xs = defaultdict(list)
@@ -551,17 +462,10 @@ def exists(iter, p=lambda x: True):
             return True
     return False
 
-def assert_eq(x, y):
-    assert x == y, "{!r} == {!r}".format(x, y)
-
 def divide_integers_and_round_up(x, y):
     assert x > 0
     assert y > 0
     return (x - 1) // y + 1
-
-assert_eq(divide_integers_and_round_up(1, 2), 1)
-assert_eq(divide_integers_and_round_up(2, 2), 1)
-assert_eq(divide_integers_and_round_up(3, 2), 2)
 
 def integer_log2_round_up(x):
     """
@@ -575,12 +479,6 @@ def integer_log2_round_up(x):
         i += 1
         p *= 2
     return i
-
-assert_eq(integer_log2_round_up(1), 1)
-assert_eq(integer_log2_round_up(2), 1)
-assert_eq(integer_log2_round_up(3), 2)
-assert_eq(integer_log2_round_up(4), 2)
-assert_eq(integer_log2_round_up(5), 3)
 
 def identity_func(x):
     return x
