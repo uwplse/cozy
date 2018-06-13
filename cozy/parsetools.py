@@ -1,6 +1,4 @@
-"""
-Helper functions for the parser.
-"""
+"""Helper functions for the parser."""
 
 from cozy.common import fresh_name
 

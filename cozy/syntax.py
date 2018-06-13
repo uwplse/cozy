@@ -1,6 +1,4 @@
-"""
-AST definitions.
-"""
+"""Abstract syntax for Cozy specifications."""
 
 from cozy.common import ADT, declare_case, typechecked, partition
 

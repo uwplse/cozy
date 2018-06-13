@@ -1,3 +1,16 @@
+"""Classes for managing "contexts".
+
+A Context object describes in-scope variables and functions.  Each variable is
+one of
+ - a state variable (part of the data structure state)
+ - an argument (provided as an argument to a method call)
+ - a binder (a bound variable introduced in a lambda)
+
+Important functions:
+ - shred: enumerate subexpressions and contexts from a top-level expression
+ - replace: context-aware expression replacement
+"""
+
 from collections import OrderedDict
 import itertools
 

@@ -1,3 +1,5 @@
+"""Well-formedness tests for Cozy expressions."""
+
 import itertools
 
 from cozy.common import typechecked, OrderedSet

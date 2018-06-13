@@ -1,3 +1,13 @@
+"""Bounded satisfiability checking using an SMT solver.
+
+Important functions and classes:
+ - satisfy: search for a small model for a boolean expression
+ - satisfiable: check whether a small model exists (but do not return it)
+ - valid: check whether an expression is valid for all small models
+ - IncrementalSolver: a class to efficiently check assertions incrementally
+ - ModelCachingSolver: a class that saves models between satisfiability checks
+"""
+
 from collections import defaultdict, OrderedDict
 from datetime import datetime, timedelta
 import itertools

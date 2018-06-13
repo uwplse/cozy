@@ -1,3 +1,9 @@
+"""A simple HTTP server to show progress.
+
+This module exports ProgressServer, a class that runs a simple HTTP server to
+show progress of some task.
+"""
+
 from threading import Thread
 from http.server import HTTPServer, BaseHTTPRequestHandler
 

@@ -1,4 +1,5 @@
-"""
+"""Additional internal syntax.
+
 While the syntax module declares the core _input_ language, this module declares
 additional syntax extensions that can appear in the _target_ language: the
 primitives the tool can output and use during synthesis.

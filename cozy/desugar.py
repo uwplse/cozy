@@ -1,3 +1,5 @@
+"""Functions to desguar higher-level constructs to lower-level ones."""
+
 from cozy.common import typechecked
 from cozy.target_syntax import *
 from cozy.typecheck import retypecheck

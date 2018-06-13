@@ -1,3 +1,10 @@
+"""Interpreter for expressions.
+
+Important functions:
+ - eval: execute an expression in an environment
+ - eval_bulk: execute the same expression on many different environments
+"""
+
 from collections import UserDict, defaultdict, namedtuple
 from functools import total_ordering, cmp_to_key, lru_cache
 import itertools

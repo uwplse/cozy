@@ -1,3 +1,5 @@
+"""Typechecking for Cozy specifications."""
+
 from cozy.common import Visitor
 from cozy import syntax
 from cozy import target_syntax

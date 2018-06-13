@@ -1,8 +1,11 @@
-"""
-Various utilities for working with syntax trees.
+"""Utilities for working with syntax trees.
 
-    pprint(ast) -> str            prettyprint a syntax tree
-
+Important functions:
+ - pprint: prettyprint a syntax tree
+ - free_vars: compute the set of free variables
+ - alpha_equivalent: test alpha equivalence of two expressions
+ - tease_apart: separate a packed expression into its state and runtime
+    components
 """
 
 import collections

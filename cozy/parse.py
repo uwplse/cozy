@@ -1,8 +1,7 @@
-"""
-Parser for Cozy files.
+"""Parser for Cozy files.
 
-The key function to look at is:
-    parse(string) -> AST
+The only important function here is:
+ - parse: str -> Spec
 """
 
 # builtin

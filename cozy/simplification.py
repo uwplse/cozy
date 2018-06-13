@@ -1,3 +1,11 @@
+"""Helper method to do a little simplification on expressions.
+
+This is useful both to make expressions visually simpler for presentation and
+to make them simpler for the synthesis backend.
+
+The most important function is `simplify`.
+"""
+
 from cozy.target_syntax import *
 from cozy.typecheck import is_collection, is_numeric
 from cozy.syntax_tools import BottomUpRewriter, alpha_equivalent, cse, compose, pprint, mk_lambda, replace

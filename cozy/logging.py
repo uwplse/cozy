@@ -1,3 +1,10 @@
+"""A small logging framework that supports timing and indented log messages.
+
+Important functions:
+ - task: a context manager to wrap self-contained tasks
+ - event: print a log message (indented based on active tasks)
+"""
+
 from collections import defaultdict
 from contextlib import contextmanager
 import datetime

@@ -1,3 +1,5 @@
+"""A class to represent a timeout relative to a given start time."""
+
 import datetime
 import time
 

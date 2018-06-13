@@ -1,3 +1,5 @@
+"""Static cost model to order expressions."""
+
 from collections import OrderedDict
 from enum import Enum
 
@@ -66,7 +68,7 @@ class CostModel(object):
             return Order.GT
         return Order.AMBIGUOUS
 
-    def compare(self, e1 : Exp, e2 : Exp, context : Context, pool : Pool):
+    def compare(self, e1 : Exp, e2 : Exp, context : Context, pool : Pool) -> Order:
         with task("compare costs", context=context):
             if pool == RUNTIME_POOL:
                 return composite_order(

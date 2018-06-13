@@ -1,3 +1,18 @@
+"""Utility functions and classes not found in the standard libraries.
+
+Important functions and classes:
+ - @typechecked: decorator to perform runtime typechecking
+ - ADT: top-level class for algebraic data types
+ - declare_case: create a new subclass of an ADT
+ - Visitor: top-level class for visitors over ADTs
+ - fresh_name: generate a never-before-seen name (string)
+
+Extra collection types:
+ - OrderedSet: complements Python's OrderedDict
+ - FrozenDict: a hashable immutable dictionary
+ - OrderedDefaultDict: a fusion of Python's OrderedDict and defaultdict
+"""
+
 from collections import defaultdict, OrderedDict, MutableSet
 from contextlib import contextmanager
 from functools import total_ordering, wraps

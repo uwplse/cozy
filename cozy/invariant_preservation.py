@@ -1,3 +1,5 @@
+"""Functions for checking invariants and other properties of a Cozy spec."""
+
 from itertools import chain
 
 from cozy.common import typechecked

@@ -1,3 +1,10 @@
+"""Functions for managing stateful computation.
+
+Important functions:
+ - mutate: compute the new value of an expression after a statement executes
+ - mutate_in_place: write code to keep a derived value in sync with its inputs
+"""
+
 from cozy.common import fresh_name, identity_func
 from cozy import syntax
 from cozy import target_syntax

@@ -1,10 +1,11 @@
+"""Helper class to implement interruptable tasks."""
+
 from multiprocessing import Process, Array, Queue
 from queue import Queue as PlainQueue, Empty, Full
 import time
 import threading
 import sys
 
-from cozy.timeouts import Timeout
 from cozy.opts import Option
 
 do_profiling = Option("profile", bool, False, description="Profile Cozy itself")
