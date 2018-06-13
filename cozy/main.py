@@ -20,7 +20,6 @@ from cozy import syntax_tools
 from cozy import handle_tools
 from cozy import invariant_preservation
 from cozy import synthesis
-from cozy import sharing
 from cozy import opts
 
 save_failed_codegen_inputs = opts.Option("save-failed-codegen-inputs", str, "/tmp/failed_codegen.py", metavar="PATH")

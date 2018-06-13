@@ -10,7 +10,6 @@ import unittest
 from cozy.target_syntax import *
 from cozy.syntax_tools import pprint, mk_lambda, fresh_var
 from cozy.codegen import CxxPrinter, JavaPrinter
-from cozy.sharing import compute_sharing
 from cozy.typecheck import retypecheck
 
 class TestCodegen(unittest.TestCase):

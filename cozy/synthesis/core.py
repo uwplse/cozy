@@ -15,11 +15,11 @@ from cozy.evaluation import eval, eval_bulk, mkval, construct_value, uneval, eq
 from cozy.cost_model import CostModel, Order, rt as runtime, asymptotic_runtime, max_storage_size, LINEAR_TIME_UOPS
 from cozy.opts import Option
 from cozy.pools import Pool, ALL_POOLS, RUNTIME_POOL, STATE_POOL, pool_name
-from cozy.enumeration import Enumerator, fingerprint, eviction_policy
 from cozy.contexts import Context, shred, replace
 from cozy.logging import task, event
 
 from .acceleration import try_optimize
+from .enumeration import Enumerator, fingerprint, eviction_policy
 
 eliminate_vars = Option("eliminate-vars", bool, False)
 incremental = Option("incremental", bool, False, description="Experimental option that can greatly improve performance.")
