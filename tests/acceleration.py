@@ -8,7 +8,8 @@ from cozy.typecheck import retypecheck
 from cozy.contexts import RootCtx, UnderBinder
 from cozy.pools import Pool, RUNTIME_POOL
 from cozy.synthesis.acceleration import try_optimize, map_accelerate
-from cozy.solver import valid
+from cozy.solver import satisfy
+from cozy.evaluation import eval
 from cozy.cost_model import CostModel, Order, debug_comparison
 from cozy.wf import exp_wf, ExpIsNotWf
 
@@ -25,8 +26,12 @@ def can_improve(e, context, assumptions : Exp = T, pool : Pool = RUNTIME_POOL):
         if ee.type != e.type:
             print("    DIFFERENT TYPE: is {}, should be {}".format(pprint(ee.type), pprint(e.type)))
             continue
-        if not valid(EImplies(assumptions, EEq(e, ee))):
+        model = satisfy(ENot(EImplies(assumptions, EEq(e, ee))))
+        if model is not None:
             print("    INVALID")
+            print("    model = {!r}".format(model))
+            print("    expected = {!r}".format(eval(e, model)))
+            print("    actual   = {!r}".format(eval(ee, model)))
             continue
         else:
             print("    VALID")
