@@ -28,7 +28,7 @@ import shutil
 
 # 3rd party
 from oset import oset as OrderedSet
-from dictionaries import FrozenDict
+from dictionaries import FrozenDict as _FrozenDict
 
 def check_type(value, ty, value_name="value"):
     """
@@ -253,6 +253,15 @@ def ast_replace_ref(haystack, needle, replacement):
     return ast_replace(haystack,
         lambda x: x is needle,
         lambda x: replacement)
+
+@total_ordering
+class FrozenDict(_FrozenDict):
+    """
+    Immutable dictionary that is hashable (suitable for use in sets/maps)
+    and orderable (supports <, >, etc).
+    """
+    def __lt__(self, other):
+        return tuple(sorted(self.items())) < tuple(sorted(other.items()))
 
 _MISSING = object()
 class OrderedDefaultDict(OrderedDict):
