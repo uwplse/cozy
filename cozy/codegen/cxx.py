@@ -6,7 +6,7 @@ from io import StringIO
 from cozy import common, evaluation
 from cozy.common import fresh_name, declare_case
 from cozy.target_syntax import *
-from cozy.syntax_tools import all_types, fresh_var, subst, free_vars, is_scalar, mk_lambda, alpha_equivalent, all_exps, break_seq
+from cozy.syntax_tools import all_types, fresh_var, subst, free_vars, is_scalar, mk_lambda, alpha_equivalent, all_exps, break_seq, is_lvalue
 from cozy.typecheck import is_collection, is_numeric
 from cozy.structures import extension_handler
 
@@ -230,6 +230,13 @@ class CxxPrinter(CodeGenerator):
             evaluation.construct_value(e.type),
             EEscape("{it}->second", ("it",), (iterator,)).with_type(e.type)).with_type(e.type))
 
+    def to_lvalue(self, e : Exp) -> Exp:
+        if is_lvalue(e):
+            return e
+        v = self.fv(e.type, "x")
+        self.declare(v, e)
+        return v
+
     def construct_concrete(self, t : Type, e : Exp, out : Exp):
         """
         Construct a value of type `t` from the expression `e` and store it in
@@ -312,9 +319,7 @@ class CxxPrinter(CodeGenerator):
         return "{}[{}]".format(a, i)
 
     def visit_EListGet(self, e):
-        l = self.visit(e.e)
-        i = self.visit(e.index)
-        return "{}[{}]".format(l, i)
+        return self.visit(EEscape("{l}[{i}]", ("l", "i"), (self.to_lvalue(e.e), e.index)))
 
     def visit_EArrayIndexOf(self, e):
         assert isinstance(e.a, EVar) # TODO: make this fast when this is false

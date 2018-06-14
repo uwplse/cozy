@@ -2047,3 +2047,14 @@ class BindingRewriter(BottomUpRewriter):
 def fix_conditionals(e):
     rewriter = BindingRewriter()
     return rewriter.visit(e)
+
+def is_lvalue(e : syntax.Exp) -> bool:
+    if isinstance(e, syntax.EVar):
+        return True
+    if isinstance(e, syntax.EGetField):
+        return True
+    if isinstance(e, syntax.EListGet):
+        return True
+    if isinstance(e, target_syntax.EMapGet):
+        return True
+    return False
