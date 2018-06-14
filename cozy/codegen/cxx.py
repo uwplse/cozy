@@ -326,7 +326,12 @@ class CxxPrinter(CodeGenerator):
         return "{}[{}]".format(a, i)
 
     def visit_EListGet(self, e):
-        return self.visit(EEscape("{l}[{i}]", ("l", "i"), (self.to_lvalue(e.e), e.index)))
+        l = self.to_lvalue(e.e)
+        i = self.fv(INT)
+        return self.visit(ELet(e.index, ELambda(i,
+            ECond(EAll([EGe(i, ZERO), ELt(i, EEscape("{l}.size()", ("l",), (l,)).with_type(INT))]),
+                EEscape("{l}[{i}]", ("l", "i"), (l, i)).with_type(e.type),
+                evaluation.construct_value(e.type)).with_type(e.type))).with_type(e.type))
 
     def visit_EArrayIndexOf(self, e):
         assert isinstance(e.a, EVar) # TODO: make this fast when this is false
