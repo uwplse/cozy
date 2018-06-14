@@ -44,9 +44,12 @@ def nth(t : TTuple, n : int):
     x = EVar("x").with_type(t)
     return ELambda(x, ETupleGet(x, n).with_type(t.ts[n]))
 
-def heap_func(e : Exp) -> ELambda:
+def heap_func(e : Exp, concretization_functions : { str : Exp } = None) -> ELambda:
     if isinstance(e, EMakeMinHeap) or isinstance(e, EMakeMaxHeap):
         return e.f
+    if isinstance(e, EVar) and concretization_functions:
+        ee = concretization_functions.get(e.id)
+        return heap_func(ee)
     raise NotImplementedError(repr(e))
 
 class Heaps(object):
@@ -156,14 +159,13 @@ class Heaps(object):
             SForEach(v, modified, SCall(lval, "update", (v, make_subgoal(new_v_key, a=[EIn(v, mod_spec)]))))])
 
     def rep_type(self, t : Type) -> Type:
-        return TArray(t.t)
+        return TArray(t.elem_type)
 
-    def codegen(self, e : Exp, out : EVar) -> Stm:
-        raise NotImplementedError()
+    def codegen(self, e : Exp, concretization_functions : { str : Exp }, out : EVar) -> Stm:
         if isinstance(e, EMakeMinHeap) or isinstance(e, EMakeMaxHeap):
             out_raw = EVar(out.id).with_type(self.rep_type(e.type))
             l = fresh_var(INT, "alloc_len")
-            x = fresh_var(e.type.t, "x")
+            x = fresh_var(e.type.elem_type, "x")
             return seq([
                 SDecl(l.id, ELen(e.e)),
                 SArrayAlloc(out_raw, l),
@@ -175,7 +177,7 @@ class Heaps(object):
         elif isinstance(e, EHeapPeek2):
             from cozy.evaluation import construct_value
             best = EArgMin if isinstance(e.e.type, TMinHeap) else EArgMax
-            f = e.e.type.f
+            f = heap_func(e.e, concretization_functions)
             return SSwitch(e.n, (
                 (ZERO, SAssign(out, construct_value(e.type))),
                 (ONE,  SAssign(out, construct_value(e.type))),
@@ -184,12 +186,11 @@ class Heaps(object):
         else:
             raise NotImplementedError(e)
 
-    def implement_stmt(self, s : Stm) -> Stm:
-        raise NotImplementedError()
+    def implement_stmt(self, s : Stm, concretization_functions : { str : Exp }) -> Stm:
         op = "<=" if isinstance(s.target.type, TMinHeap) else ">="
-        f = s.target.type.f
+        f = heap_func(s.target, concretization_functions)
         if isinstance(s, SCall):
-            elem_type = s.target.type.t
+            elem_type = s.target.type.elem_type
             target_raw = EVar(s.target.id).with_type(self.rep_type(s.target.type))
             if s.func == "add_all":
                 size = fresh_var(INT, "heap_size")

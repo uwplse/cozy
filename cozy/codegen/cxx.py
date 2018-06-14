@@ -268,7 +268,7 @@ class CxxPrinter(CodeGenerator):
         else:
             h = extension_handler(type(t))
             if h is not None:
-                return h.codegen(e, out)
+                return h.codegen(e, self.state_exps, out=out)
             raise NotImplementedError(t, e, out)
 
     def construct_map(self, t, e, out):
@@ -396,7 +396,7 @@ class CxxPrinter(CodeGenerator):
         if h is not None:
             v = self.fv(e.type)
             self.declare(v)
-            self.visit(h.codegen(e, out=v))
+            self.visit(h.codegen(e, self.state_exps, out=v))
             return v.id
         else:
             raise NotImplementedError(e)
@@ -814,7 +814,7 @@ class CxxPrinter(CodeGenerator):
     def visit_SCall(self, call):
         h = extension_handler(type(call.target.type))
         if h is not None:
-            return self.visit(h.implement_stmt(call))
+            return self.visit(h.implement_stmt(call, self.state_exps))
 
         target = self.visit(call.target)
         args = [self.visit(a) for a in call.args]
