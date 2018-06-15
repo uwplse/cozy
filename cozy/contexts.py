@@ -28,6 +28,13 @@ class Context(object):
         raise NotImplementedError()
     def parent(self):
         raise NotImplementedError()
+    def complexity(self):
+        n = 0
+        ctx = self
+        while ctx is not None:
+            n += 1
+            ctx = ctx.parent()
+        return n
     def legal_for(self, fvs : {EVar}) -> bool:
         vs = {v for (v, pool) in self.vars()}
         return all(v in vs for v in fvs)

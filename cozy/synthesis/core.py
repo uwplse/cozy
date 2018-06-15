@@ -35,11 +35,16 @@ def exploration_order(targets : [Exp], context : Context, pool : Pool = RUNTIME_
     Yields (target, subexpression, subcontext, subpool) tuples.
     """
 
-    # current policy:
-    #  - for each target in arbitrary order,
-    #  - check subexpressions in order of size from smallest to largest
+    # current policy (earlier requirements have priority):
+    #  - visit runtime expressions first
+    #  - visit low-complexity contexts first
+    #  - visit small expressions first
+    def sort_key(tup):
+        e, ctx, p = tup
+        return (0 if p == RUNTIME_POOL else 1, ctx.complexity(), e.size())
+
     for target in targets:
-        for e, ctx, p in sorted(unique(shred(target, context, pool=pool)), key=lambda tup: tup[0].size()):
+        for e, ctx, p in sorted(unique(shred(target, context, pool=pool)), key=sort_key):
             yield (target, e, ctx, p)
 
 class Learner(object):
