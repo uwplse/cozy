@@ -508,6 +508,10 @@ def optimize_the(xs, args):
             bag, x = x
             for elem in optimize_the(bag, args):
                 yield optimized_cond(EEq(elem, x), EListGet(bag, ONE).with_type(t), elem)
+    if isinstance(xs, EMap):
+        empty = optimized_empty(xs.e)
+        for x in optimize_the(xs.e, args):
+            yield optimized_cond(empty, construct_value(t), xs.f.apply_to(x))
     yield EUnaryOp(UOp.The, xs).with_type(t)
 
 def _check(e, context, pool):
