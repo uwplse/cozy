@@ -420,7 +420,8 @@ class CxxPrinter(CodeGenerator):
         return e.name
 
     def visit_ENum(self, e):
-        val = float(e.val) if isinstance(e.type, TFloat) else e.val
+        if isinstance(e.type, TFloat):
+            return "{!r}f".format(float(e.val))
         return repr(e.val)
 
     def visit_EStr(self, e):
