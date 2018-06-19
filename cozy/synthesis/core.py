@@ -207,7 +207,8 @@ def improve(
         assumptions   : Exp            = T,
         stop_callback                  = never_stop,
         hints         : [Exp]          = (),
-        examples      : [{str:object}] = ()):
+        examples      : [{str:object}] = (),
+        cost_model    : CostModel      = None):
     """
     Improve the target expression using enumerative synthesis.
     This function is a generator that yields increasingly better and better
@@ -234,13 +235,15 @@ def improve(
         assumptions={assumptions!r},
         stop_callback={stop_callback!r},
         hints={hints!r},
-        examples={examples!r})""".format(
+        examples={examples!r}
+        cost_model={cost_model!r})""".format(
             target=target,
             context=context,
             assumptions=assumptions,
             stop_callback=stop_callback,
             hints=hints,
-            examples=examples))
+            examples=examples,
+            cost_model=cost_model))
 
     target = freshen_binders(target, context)
     assumptions = freshen_binders(assumptions, context)
@@ -286,7 +289,10 @@ def improve(
         return
 
     examples = list(examples)
-    cost_model = CostModel(funcs=funcs, assumptions=assumptions)
+    
+    if cost_model is None:
+        cost_model = CostModel(funcs=funcs, assumptions=assumptions)
+
     watched_targets = [target]
     learner = Learner(watched_targets, assumptions, context, examples, cost_model, stop_callback, hints)
     try:
