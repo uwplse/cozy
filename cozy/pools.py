@@ -8,12 +8,19 @@ This module declares constants for the two pools and a `pool_name` function to
 print them.
 """
 
-# TODO: `import enum` and make Pool a proper enum type
-Pool = int
-STATE_POOL   = 0
-RUNTIME_POOL = 1
-ALL_POOLS = (STATE_POOL, RUNTIME_POOL)
+from enum import Enum
 
-_POOL_NAMES = ("state", "runtime")
+class Pool(Enum):
+    STATE_POOL   = 0
+    RUNTIME_POOL = 1
+
+STATE_POOL   = Pool.STATE_POOL
+RUNTIME_POOL = Pool.RUNTIME_POOL
+ALL_POOLS = tuple(Pool)
+
+_POOL_NAMES = {
+    STATE_POOL: "state",
+    RUNTIME_POOL: "runtime",
+}
 def pool_name(pool):
     return _POOL_NAMES[pool]
