@@ -16,8 +16,6 @@ import json
 import functools
 from enum import Enum
 
-from pprint import pformat
-
 from cozy import common
 from cozy import syntax
 from cozy import target_syntax
