@@ -201,14 +201,14 @@ class Implementation(object):
                 modified_handles.args = [(arg.id, arg.type) for arg in query_vars]
 
                 # modify each one
-                (state_update_stm, subqueries) = inc.sketch_update(
+                subqueries = []
+                state_update_stm = inc.mutate_in_place(
                     lval,
                     lval,
-                    new_val,
-                    self.abstract_state,
-                    list(op.assumptions) + [EDeepIn(h, bag), EIn(h, modified_handles.ret)])
-                # print("  got {} subqueries".format(len(subqueries)))
-                # print("  to update {} in {}, use\n{}".format(pprint(t), op.name, pprint(state_update_stm)))
+                    op.body,
+                    abstract_state=self.abstract_state,
+                    assumptions=list(op.assumptions) + [EDeepIn(h, bag), EIn(h, modified_handles.ret)],
+                    subgoals_out=subqueries)
                 for sub_q in subqueries:
                     sub_q.docstring = "[{}] {}".format(op.name, sub_q.docstring)
                     state_update_stm = self._add_subquery(sub_q=sub_q, used_by=state_update_stm)
