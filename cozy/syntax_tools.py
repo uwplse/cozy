@@ -471,6 +471,18 @@ def free_funcs(e : syntax.Exp) -> { str : syntax.TFunc }:
     return res
 
 def free_vars(exp, counts=False):
+    """Find all free variables in an AST.
+
+    This function can be used on expressions, statements, and methods.
+
+    If counts=False (the default), then this function returns an OrderedSet of
+    EVar objects in a deterministic order.
+
+    If counts=True, then this function returns an OrderedDict in a
+    deterministic order mapping each EVar to the number of times it occurs in
+    the AST.
+    """
+
     res = collections.OrderedDict()
     bound = collections.defaultdict(int)
 
@@ -499,6 +511,11 @@ def free_vars(exp, counts=False):
         def exec(self):
             push_scope()
 
+    # Find free variables using a work stack (to avoid running out of stack
+    # frames on large expressions).  The work stack contains AST objects whose
+    # free variables are yet to be added to `res`.  Additionally, it contains
+    # Bind, PushScope, and PopScope objects indicating when scopes start and
+    # end and where bound variable are introduced.
     stk = [exp]
     while stk:
         x = stk.pop()
