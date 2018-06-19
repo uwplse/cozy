@@ -628,6 +628,12 @@ class CxxPrinter(CodeGenerator):
     def visit_EArgMax(self, e):
         return self.min_or_max(">", e.e, e.f)
 
+    def visit_EMap(self, e):
+        return self.visit(self.to_lvalue(e))
+
+    def visit_EFilter(self, e):
+        return self.visit(self.to_lvalue(e))
+
     def reverse_inplace(self, e : EVar) -> Stm:
         assert isinstance(e.type, TList)
         return SEscape("{indent}std::reverse({e}.begin(), {e}.end());\n", ("e",), (e,))
