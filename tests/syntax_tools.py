@@ -6,32 +6,27 @@ from cozy.syntax_tools import *
 from cozy.typecheck import retypecheck
 from cozy.solver import valid
 from cozy.evaluation import eval
-from cozy.parse import parse
+from cozy import parse
 
-def parse_spec(spec, types={}):
-    class TypeInstaller(BottomUpRewriter):
-        def visit_EVar(self, e):
-            return e.with_type(types.get(e.id, INT))
+def fix_types(x, types):
+    x = deep_copy(x)
+    types = dict(types)
+    for v in free_vars(x):
+        if v.id not in types:
+            types[v.id] = INT
+    assert retypecheck(x, types)
+    return x
 
-    ast = parse(spec)
-    return TypeInstaller().visit(ast)
-
-def _parse_fragment(fragment, types={}, expr=False):
-    """
-    Can be used to obtain a parse tree for an arbitrary syntax fragment.
-    Include a dictionary of var_name -> type object. By default, they're INTs.
-
-    Doesn't work for things only in target_syntax, like (let x=3 in...).
-    """
-    spec = "Test: {} foo() {}".format("query" if expr else "op", fragment)
-    ast = parse_spec(spec, types)
-    return ast.methods[0].ret if expr else ast.methods[0].body
+def parse_spec(spec):
+    spec = parse.parse_spec(spec)
+    assert retypecheck(spec)
+    return spec
 
 def parse_stm(frag, types={}):
-    return _parse_fragment(frag, types, expr=False)
+    return fix_types(parse.parse_stm(frag), types)
 
-def parse_expr(frag, types={}):
-    return _parse_fragment(frag, types, expr=True)
+def parse_exp(frag, types={}):
+    return fix_types(parse.parse_exp(frag), types)
 
 class TestSyntaxTools(unittest.TestCase):
     def test_eall(self):
@@ -331,7 +326,7 @@ Elimination tests.
 
 class TestElimination(unittest.TestCase):
     def test_y_plus_1(self):
-        e = parse_expr(
+        e = parse_exp(
             """
             (y + 1)
             +
@@ -439,7 +434,7 @@ class TestElimination(unittest.TestCase):
         assert newForm.count("z + 1") == 1
 
     def test_y_plus_1_3x(self):
-        e = parse_expr(
+        e = parse_exp(
             """
             (
                 (y + 1)
@@ -462,7 +457,7 @@ class TestElimination(unittest.TestCase):
         assert newForm.count("z + 1") == 1
 
     def test_cse_2_expr(self):
-        e2 = parse_expr(
+        e2 = parse_exp(
             """
             (x < y)
                 ? ((x < y) ? x + y : x + y)
@@ -774,7 +769,7 @@ class TestElimination(unittest.TestCase):
             Spec:
                 handletype IntPtr = Int
 
-                op foo()
+                op foo(a : Int, b : Int, c : Int, d : Int, h : IntPtr, g : IntPtr)
                     /*
                     Assigning to a handle type should invalidate ALL other vars of the same handle type.
                     */
@@ -789,9 +784,7 @@ class TestElimination(unittest.TestCase):
 
                     c = h.val + 7;
                     d = h.val + 7;
-            """,
-            dict(a=INT, b=INT, c=INT, d=INT,
-                h=THandle("IntPtr", INT), g=THandle("IntPtr", INT))
+            """
         )
 
         assert retypecheck(spec)
@@ -808,7 +801,9 @@ class TestElimination(unittest.TestCase):
             Spec:
                 handletype IntPtr = Int
 
-                op foo2()
+                op foo2(a : Int, b : Int, c : Int, d : Int,
+                        q : Int, r : Int, s : Int, t : Int,
+                        h : IntPtr, g : IntPtr, i : IntPtr)
                     /*
                     ...but reassigning the handle itself (not its val) should act
                     as just reassigning a non-handle var.
@@ -827,12 +822,7 @@ class TestElimination(unittest.TestCase):
                     d = h.val + 7;
                     s = g.val + 6;
                     t = g.val + 6;
-            """,
-            dict(a=INT, b=INT, c=INT, d=INT,
-                q=INT, r=INT, s=INT, t=INT,
-                h=THandle("IntPtr", INT),
-                g=THandle("IntPtr", INT),
-                i=THandle("IntPtr", INT))
+            """
         )
 
         assert retypecheck(spec)
@@ -851,7 +841,8 @@ class TestElimination(unittest.TestCase):
                 handletype IntPtr = Int
                 handletype IntPtr2 = Int // a diff't type.
 
-                op foo()
+                op foo(a : Int, b : Int, c : Int, d : Int, e : Int, f : Int,
+                       h : IntPtr, j : IntPtr2)
                     h.val = 0;
 
                     a = h.val + 7;
@@ -864,10 +855,7 @@ class TestElimination(unittest.TestCase):
 
                     e = h.val + 7;
                     f = h.val + 7;
-            """,
-            dict(a=INT, b=INT, c=INT, d=INT, e=INT, f=INT,
-                h=THandle("IntPtr", INT),
-                j=THandle("IntPtr2", INT))
+            """
         )
 
         assert retypecheck(spec)
@@ -920,31 +908,31 @@ class TestConditionals(unittest.TestCase):
         y = EVar("y").with_type(INT)
         f = ConditionalUseFinder(y)
 
-        assert USED_ALWAYS == f.visit(parse_expr("y + 2"))
-        assert USED_ALWAYS == f.visit(parse_expr("y"))
-        assert USED_ALWAYS == f.visit(parse_expr("-y"))
-        assert USED_ALWAYS == f.visit(parse_expr("-(-y)"))
-        assert USED_ALWAYS == f.visit(parse_expr("y + y + 2"))
-        assert USED_ALWAYS == f.visit(parse_expr("(x + y) + (x + 2)"))
+        assert USED_ALWAYS == f.visit(parse_exp("y + 2"))
+        assert USED_ALWAYS == f.visit(parse_exp("y"))
+        assert USED_ALWAYS == f.visit(parse_exp("-y"))
+        assert USED_ALWAYS == f.visit(parse_exp("-(-y)"))
+        assert USED_ALWAYS == f.visit(parse_exp("y + y + 2"))
+        assert USED_ALWAYS == f.visit(parse_exp("(x + y) + (x + 2)"))
 
-        assert USED_ALWAYS == f.visit(parse_expr("y < 2 ? 2 : 3"))
-        assert USED_ALWAYS == f.visit(parse_expr("z > x ? y : y+9"))
-        assert USED_ALWAYS == f.visit(parse_expr("y > 0 ? y : y+1"))
-        assert USED_ALWAYS == f.visit(parse_expr("y > 0 ? y : (y < 2 ? y : 0)"))
+        assert USED_ALWAYS == f.visit(parse_exp("y < 2 ? 2 : 3"))
+        assert USED_ALWAYS == f.visit(parse_exp("z > x ? y : y+9"))
+        assert USED_ALWAYS == f.visit(parse_exp("y > 0 ? y : y+1"))
+        assert USED_ALWAYS == f.visit(parse_exp("y > 0 ? y : (y < 2 ? y : 0)"))
 
-        assert USED_SOMETIMES == f.visit(parse_expr("z > x ? y : 3"))
-        assert USED_SOMETIMES == f.visit(parse_expr("z > x ? 2 : y"))
-        assert USED_SOMETIMES == f.visit(parse_expr("q + (z > x ? 2 : y)"))
-        assert USED_SOMETIMES == f.visit(parse_expr("x > 0 ? y : (x < 2 ? y : 0)"))
-        assert USED_SOMETIMES == f.visit(parse_expr("x > 0 ? 1 : (x < 2 ? y : 0)"))
-        assert USED_SOMETIMES == f.visit(parse_expr("x > 0 ? 1 : (x < 2 ? 2 : y)"))
-        assert USED_SOMETIMES == f.visit(parse_expr("(x>0?x:y) > 0 ? 1 : 2"))
+        assert USED_SOMETIMES == f.visit(parse_exp("z > x ? y : 3"))
+        assert USED_SOMETIMES == f.visit(parse_exp("z > x ? 2 : y"))
+        assert USED_SOMETIMES == f.visit(parse_exp("q + (z > x ? 2 : y)"))
+        assert USED_SOMETIMES == f.visit(parse_exp("x > 0 ? y : (x < 2 ? y : 0)"))
+        assert USED_SOMETIMES == f.visit(parse_exp("x > 0 ? 1 : (x < 2 ? y : 0)"))
+        assert USED_SOMETIMES == f.visit(parse_exp("x > 0 ? 1 : (x < 2 ? 2 : y)"))
+        assert USED_SOMETIMES == f.visit(parse_exp("(x>0?x:y) > 0 ? 1 : 2"))
 
-        assert USED_NEVER == f.visit(parse_expr("z > x ? z : x"))
-        assert USED_NEVER == f.visit(parse_expr("q + (z > x ? z : x)"))
-        assert USED_NEVER == f.visit(parse_expr("(x + z) + (x + z)"))
-        assert USED_NEVER == f.visit(parse_expr("6"))
-        assert USED_NEVER == f.visit(parse_expr("x"))
+        assert USED_NEVER == f.visit(parse_exp("z > x ? z : x"))
+        assert USED_NEVER == f.visit(parse_exp("q + (z > x ? z : x)"))
+        assert USED_NEVER == f.visit(parse_exp("(x + z) + (x + z)"))
+        assert USED_NEVER == f.visit(parse_exp("6"))
+        assert USED_NEVER == f.visit(parse_exp("x"))
 
     def test_let_rewrite(self):
         """

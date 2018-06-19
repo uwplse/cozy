@@ -1,7 +1,7 @@
 import pickle
 import unittest
 
-from cozy.parse import parse
+from cozy.parse import parse_spec
 from cozy.typecheck import typecheck
 from cozy.desugar import desugar
 from cozy.syntax_tools import pprint
@@ -10,7 +10,7 @@ from cozy.synthesis.impls import construct_initial_implementation
 class TestImplObjects(unittest.TestCase):
 
     def test_pickling(self):
-        i = parse("""
+        i = parse_spec("""
             Foo:
                 type T = Native "int"
                 extern newX(x : Int) : T = "..."

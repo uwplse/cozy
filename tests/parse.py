@@ -2,7 +2,7 @@ import os
 import unittest
 
 from cozy.target_syntax import *
-from cozy.parse import parse
+from cozy.parse import parse_spec
 from cozy.typecheck import typecheck
 from cozy import syntax
 
@@ -30,7 +30,7 @@ for filename in files:
 
         def f(self):
             with open(os.path.join("examples", filename + ".ds"), "r") as f:
-                ast = parse(f.read())
+                ast = parse_spec(f.read())
             assert isinstance(ast, Spec)
 
             errs = typecheck(ast)
@@ -50,7 +50,7 @@ class TestParser(unittest.TestCase):
             query fooLen()
                 sum [1 | _ <- foo]
         """
-        parse(sample)
+        parse_spec(sample)
 
     def test_parse_len(self):
         sample = """
@@ -59,7 +59,7 @@ class TestParser(unittest.TestCase):
             query fooLen()
                 len foo
         """
-        parse(sample)
+        parse_spec(sample)
 
     def test_parse_method_call_with_expr(self):
         sample = """
@@ -74,7 +74,7 @@ class TestParser(unittest.TestCase):
             op addNegative(i : Int)
                 foo.add(0 - i);
         """
-        parse(sample)
+        parse_spec(sample)
 
     def test_guard_mechanism(self):
         sample = """
@@ -85,7 +85,7 @@ class TestParser(unittest.TestCase):
                     foo.add(i + i);
                 }
         """
-        parse(sample)
+        parse_spec(sample)
 
     def test_dangling_else(self):
         sample = """Test:
@@ -100,7 +100,7 @@ class TestParser(unittest.TestCase):
                 }
         """
         # Verify that `else` code pairs with inner `if`.
-        ast = parse(sample)
+        ast = parse_spec(sample)
         foo = ast.methods[0]
         assert isinstance(foo.body, syntax.SIf)
         assert isinstance(foo.body.then_branch.else_branch, syntax.SCall)

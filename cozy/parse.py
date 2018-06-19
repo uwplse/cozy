@@ -496,6 +496,15 @@ def make_parser():
 
 _parser = make_parser()
 
-def parse(s):
+def parse_spec(s):
+    """Parse a string as a Cozy specification."""
     parser = _parser
     return parser.parse(s, lexer=_lexer)
+
+def parse_stm(s) -> syntax.Stm:
+    """Parse a string as a statement."""
+    return parse_spec("X: op f() " + s).methods[0].body
+
+def parse_exp(s) -> syntax.Exp:
+    """Parse a string as an expression."""
+    return parse_spec("X: query f() " + s).methods[0].ret

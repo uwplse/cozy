@@ -2,11 +2,11 @@ import unittest
 
 from cozy.desugar import desugar
 from cozy.typecheck import typecheck
-from cozy.parse import parse
+from cozy.parse import parse_spec
 from cozy.invariant_preservation import check_ops_preserve_invariants
 
 def get_invariant_preservation_errs(spec : str):
-    spec = parse(spec)
+    spec = parse_spec(spec)
     errs = typecheck(spec)
     assert not errs, str(errs)
     spec = desugar(spec)

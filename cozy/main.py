@@ -63,7 +63,7 @@ def run():
         print("Loaded implementation from {}".format("stdin" if args.file is None else "file {}".format(args.file)))
     else:
         input_text = sys.stdin.read() if args.file is None else common.read_file(args.file)
-        ast = parse.parse(input_text)
+        ast = parse.parse_spec(input_text)
 
         errors = typecheck.typecheck(ast)
         if errors:
