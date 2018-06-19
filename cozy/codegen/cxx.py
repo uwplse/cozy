@@ -634,6 +634,9 @@ class CxxPrinter(CodeGenerator):
     def visit_EFilter(self, e):
         return self.visit(self.to_lvalue(e))
 
+    def visit_EListSlice(self, e):
+        return self.visit(self.to_lvalue(e))
+
     def reverse_inplace(self, e : EVar) -> Stm:
         assert isinstance(e.type, TList)
         return SEscape("{indent}std::reverse({e}.begin(), {e}.end());\n", ("e",), (e,))
