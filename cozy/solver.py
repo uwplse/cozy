@@ -161,9 +161,6 @@ def ite(ty : Type, cond : z3.AstRef, then_branch, else_branch):
     elif is_collection(ty):
         assert isinstance(then_branch, tuple)
         assert isinstance(else_branch, tuple)
-        # print("CONSTRUCTING SYMBOLIC UNION [cond=({})]".format(cond))
-        # print(" ---> {}".format(then_branch))
-        # print(" ---> {}".format(else_branch))
         then_mask, then_elems = then_branch
         else_mask, else_elems = else_branch
         maxlen = max(len(then_mask), len(else_mask))
@@ -175,9 +172,6 @@ def ite(ty : Type, cond : z3.AstRef, then_branch, else_branch):
                 mask.append(z3.If(cond, then_mask[i], else_mask[i], ctx))
                 elems.append(ite(ty.t, cond, then_elems[i], else_elems[i]))
             elif i < len(then_mask):
-                # print("ctx              = {}".format(ctx))
-                # print("cond.ctx         = {}".format(cond.ctx_ref()))
-                # print("then_mask[i].ctx = {}".format(then_mask[i].ctx_ref()))
                 mask.append(z3.And(cond, then_mask[i], ctx))
                 elems.append(then_elems[i])
             else:
@@ -368,10 +362,6 @@ class ToZ3(Visitor):
             rhs_counts = [ (x, self.count_in(elem_type, e1, x, deep=deep)) for x in rhs_elems ]
             for x, count in rhs_counts:
                 conds.append(count == self.count_in(elem_type, e1, x, deep=deep))
-
-            if deep:
-                # TODO: the(e1) == the(e2)
-                pass
 
             return self.all(*conds)
         elif isinstance(t, TMap):
@@ -720,12 +710,6 @@ class ToZ3(Visitor):
         end = self.visit(e.end, env)
         new_masks = symb_slice(masks, start, end, self.int_zero)
         return (new_masks, elems)
-    # def fold(self, out_type, bag, f, init):
-    #     res = init
-    #     mask, elems = bag
-    #     for (i, (m, x)) in enumerate(reversed(list(zip(mask, elems)))):
-    #         res = ite(out_type, m, f(x, res), res)
-    #     return res
     def visit_EDropFront(self, e, env):
         def drop1(mask, elems):
             if not mask:
@@ -771,12 +755,7 @@ class ToZ3(Visitor):
         return self.distinct_bag_elems((bag_mask, bag_elems), e.type.t)
     def _map_get(self, map_type, map, key):
         res = map["default"]
-        # print("map get {} on {}".format(key, map))
         for (mask, k, v) in reversed(map["mapping"]):
-            # print("   k   = {}".format(repr(k)))
-            # print("   key = {}".format(repr(key)))
-            # print("   v   = {}".format(repr(v)))
-            # print("   res = {}".format(repr(res)))
             res = ite(map_type.v, self.all(mask, self.eq(map_type.k, k, key)), v, res)
         return res
     def visit_EMapGet(self, e, env):
@@ -807,17 +786,12 @@ class ToZ3(Visitor):
             funcs = cache.get(key)
 
             if funcs is None:
-                # print("encoding func: {} -> {}".format(pprint(lam.arg.type), pprint(lam.body.type)))
-                # print("  lam = {}".format(pprint(lam)))
-                # print("  env = {}".format(env))
                 symb_argv = [v if isinstance(v, int) else z3.Const(fresh_name(), v.sort()) for v in argv]
-                # print("  symb_argv = {}".format(symb_argv))
                 assert len(symb_argv) == len(argv)
                 z3_vars = [v for v in symb_argv if not isinstance(v, int)]
                 symb_arg = pack(in_type, iter(symb_argv))
                 with extend(env, lam.arg.id, symb_arg):
                     res = self.visit(lam.body, env)
-                # print("  f({}) = {}".format(", ".join(map(str, z3_vars)), res))
                 funcs = []
                 for z3_body in flatten(body_type, res):
                     if isinstance(z3_body, int):
@@ -825,15 +799,6 @@ class ToZ3(Visitor):
                     else:
                         funcs.append((z3_vars, z3_body))
                 cache[key] = funcs
-                # print("  created {}x{} func: {} -> {}".format(
-                #     len(z3_vars), len(funcs),
-                #     pprint(lam.arg.type), pprint(lam.body.type)))
-                # for i, x in enumerate(funcs):
-                #     if isinstance(x, int):
-                #         print("    out[{}] = {}".format(i, x))
-                #     else:
-                #         z3_vars, z3_body = x
-                #         print("    out[{}] = {}".format(i, z3_body))
 
             return pack(body_type, (f if isinstance(f, int) else z3.substitute(f[1], *zip(f[0], [x for x in argv if not isinstance(x, int)])) for f in funcs))
 
@@ -989,10 +954,8 @@ class ToZ3(Visitor):
                 "default":
                     default }
         elif isinstance(ty, TRecord):
-            # TODO: use Z3 ADTs
             return { field : self.mkvar(collection_depth, t, min_collection_depth, on_z3_var, on_z3_assertion) for (field, t) in ty.fields }
         elif isinstance(ty, TTuple):
-            # TODO: use Z3 ADTs
             return tuple(self.mkvar(collection_depth, t, min_collection_depth, on_z3_var, on_z3_assertion) for t in ty.ts)
         elif isinstance(ty, THandle):
             h = on_z3_var(z3.Int(fresh_name(), ctx=ctx))
@@ -1018,15 +981,11 @@ def _tick():
 def _tock(e, event):
     global _start
     now = datetime.now()
-    # print("tock({}) @ {}".format(event, now))
     elapsed = now - _start
     _start = now
     if elapsed > _debug_duration:
         import sys
         print("WARNING: took {elapsed}s to {event}".format(event=event, elapsed=elapsed.total_seconds()))
-        # print("e = {}".format(pprint(e)), file=sys.stderr)
-        # print(repr(e), file=sys.stderr)
-        # raise NotImplementedError()
 
 _LOCK = threading.RLock()
 
@@ -1123,8 +1082,6 @@ class IncrementalSolver(object):
             raise
 
     def add_assumption(self, e):
-        # print("Pushing assumption [size={}]...".format(e.size()))
-        # print("adding assumption {} to {}".format(pprint(e), id(self)))
         try:
             with _LOCK:
                 self.z3_solver.add(self._convert(e))
@@ -1137,13 +1094,6 @@ class IncrementalSolver(object):
             raise
 
     def satisfy(self, e, model_extraction=True):
-        # print("Solving formula [size={}]...".format(e.size()))
-        # if e.size() < 100:
-        #     print(pprint(e))
-        # print(pprint(e))
-        # print("sat? {}".format(pprint(e)))
-        # assert e.type == BOOL
-
         _env = self._env
         solver = self.z3_solver
         vars = self.vars
@@ -1206,21 +1156,15 @@ class IncrementalSolver(object):
             solver.push()
             solver.add(a)
 
-            # print("Assertions")
-            # for a in solver.assertions():
-            #     print(" - {}".format(a))
-
             _tock(e, "encode")
             with task("invoke Z3"):
                 res = solver.check()
             _tock(e, "solve")
             if res == z3.unsat:
                 solver.pop()
-                # print("Finished solving formula [UNSAT]")
                 return None
             elif res == z3.unknown:
                 solver.pop()
-                # print("Finished solving formula [UNKNOWN]")
                 raise SolverReportedUnknown("z3 reported unknown")
             else:
                 res = { }
@@ -1241,7 +1185,6 @@ class IncrementalSolver(object):
                             entries[input] = output
                         return ExtractedFunc(entries, default)
                     model = solver.model()
-                    # print(model)
                     for name, t in self.funcs.items():
                         f = _env[name]
                         out_type = t.ret_type
@@ -1274,7 +1217,6 @@ class IncrementalSolver(object):
                                     f.write("\n")
                             wq = [(e, _env, res)]
                             while wq:
-                                # print("checking ?/{}...".format(len(wq)))
                                 x, solver_env, eval_env = wq.pop()
                                 for x in sorted(all_exps(x), key=lambda xx: xx.size()):
                                     if all(v.id in eval_env for v in free_vars(x)) and not isinstance(x, ELambda):
@@ -1297,7 +1239,6 @@ class IncrementalSolver(object):
                                                 smask, selems = visitor.visit(x.e, solver_env)
                                                 for (mask, elem) in zip(smask, selems):
                                                     if reconstruct(model, mask, BOOL):
-                                                        # print("recursing on {}".format(elem))
                                                         senv = dict(solver_env)
                                                         eenv = dict(eval_env)
                                                         senv[x.p.arg.id] = elem
@@ -1314,7 +1255,6 @@ class IncrementalSolver(object):
                             raise ModelValidationError("model validation failed")
                     _tock(e, "extract model")
                 solver.pop()
-                # print("Finished solving formula [SAT]")
                 return res
 
     def satisfiable(self, e):
