@@ -41,7 +41,7 @@ def mutate(e : syntax.Exp, op : syntax.Stm) -> syntax.Exp:
             mutate(e, op.else_branch)).with_type(e.type)
     elif isinstance(op, syntax.SSeq):
         if isinstance(op.s1, syntax.SSeq):
-            return mutate(e, SSeq(op.s1.s1, SSeq(op.s1.s2, op.s2)))
+            return mutate(e, syntax.SSeq(op.s1.s1, syntax.SSeq(op.s1.s2, op.s2)))
         e2 = mutate(mutate(e, op.s2), op.s1)
         if isinstance(op.s1, syntax.SDecl):
             e2 = subst(e2, { op.s1.id : op.s1.val })
