@@ -90,7 +90,6 @@ def _fix_map(m : target_syntax.EMap) -> syntax.Exp:
     m = simplify(m)
     if not isinstance(m, target_syntax.EMap):
         return m
-    # print("fixing {}...".format(pprint(m)))
     elem_type = m.e.type.t
     assert m.f.body.type == elem_type
     changed = target_syntax.EFilter(m.e, mk_lambda(elem_type, lambda x: syntax.ENot(syntax.EBinOp(x, "===", m.f.apply_to(x)).with_type(syntax.BOOL)))).with_type(m.e.type)
@@ -99,7 +98,6 @@ def _fix_map(m : target_syntax.EMap) -> syntax.Exp:
         print("WARNING: rewrite failed")
         print("_fix_map({!r})".format(m))
         return m
-    # print("Fix: {} ----> {}".format(pprint(m), pprint(e)))
     return e
 
 def _replace_field(record : syntax.Exp, field : str, new_value : syntax.Exp) -> syntax.Exp:
@@ -126,7 +124,6 @@ def mutate_in_place(
         subgoals_out = []
 
     def make_subgoal(e, a=[], docstring=None):
-        # e = strip_EStateVar(e)
         if skip_stateless_synthesis.value and not any(v in abstract_state for v in free_vars(e)):
             return e
         query_name = fresh_name("query")
@@ -186,7 +183,6 @@ def sketch_update(
     new_value = strip_EStateVar(new_value)
 
     def make_subgoal(e, a=[], docstring=None):
-        # e = strip_EStateVar(e)
         if skip_stateless_synthesis.value and not any(v in ctx for v in free_vars(e)):
             return e
         query_name = fresh_name("query")
@@ -209,8 +205,6 @@ def sketch_update(
         stm = syntax.seq([
             syntax.SForEach(v, to_del, syntax.SCall(lval, "remove", [v])),
             syntax.SForEach(v, to_add, syntax.SCall(lval, "add", [v]))])
-    # elif isinstance(t, syntax.TList):
-    #     raise NotImplementedError()
     elif is_numeric(t) and update_numbers_with_deltas.value:
         change = make_subgoal(syntax.EBinOp(new_value, "-", old_value).with_type(t), docstring="delta for {}".format(pprint(lval)))
         stm = syntax.SAssign(lval, syntax.EBinOp(lval, "+", change).with_type(t))
@@ -229,83 +223,27 @@ def sketch_update(
         v = fresh_var(lval.type.v)
         key_bag = syntax.TBag(lval.type.k)
 
-        if True:
+        old_keys = target_syntax.EMapKeys(old_value).with_type(key_bag)
+        new_keys = target_syntax.EMapKeys(new_value).with_type(key_bag)
 
-            old_keys = target_syntax.EMapKeys(old_value).with_type(key_bag)
-            new_keys = target_syntax.EMapKeys(new_value).with_type(key_bag)
+        # (1) exit set
+        deleted_keys = syntax.EBinOp(old_keys, "-", new_keys).with_type(key_bag)
+        s1 = syntax.SForEach(k, make_subgoal(deleted_keys, docstring="keys removed from {}".format(pprint(lval))),
+            target_syntax.SMapDel(lval, k))
 
-            # (1) exit set
-            deleted_keys = syntax.EBinOp(old_keys, "-", new_keys).with_type(key_bag)
-            s1 = syntax.SForEach(k, make_subgoal(deleted_keys, docstring="keys removed from {}".format(pprint(lval))),
-                target_syntax.SMapDel(lval, k))
+        # (2) enter/mod set
+        new_or_modified = target_syntax.EFilter(new_keys,
+            syntax.ELambda(k, syntax.EAny([syntax.ENot(syntax.EIn(k, old_keys)), syntax.ENot(syntax.EEq(value_at(old_value, k), value_at(new_value, k)))]))).with_type(key_bag)
+        update_value = recurse(
+            v,
+            value_at(old_value, k),
+            value_at(new_value, k),
+            ctx = ctx,
+            assumptions = assumptions + [syntax.EIn(k, new_or_modified), syntax.EImplies(syntax.EIn(k, old_keys), syntax.EEq(v, value_at(old_value, k)))])
+        s2 = syntax.SForEach(k, make_subgoal(new_or_modified, docstring="new or modified keys from {}".format(pprint(lval))),
+            target_syntax.SMapUpdate(lval, k, v, update_value))
 
-            # (2) enter/mod set
-            new_or_modified = target_syntax.EFilter(new_keys,
-                syntax.ELambda(k, syntax.EAny([syntax.ENot(syntax.EIn(k, old_keys)), syntax.ENot(syntax.EEq(value_at(old_value, k), value_at(new_value, k)))]))).with_type(key_bag)
-            update_value = recurse(
-                v,
-                value_at(old_value, k),
-                value_at(new_value, k),
-                ctx = ctx,
-                assumptions = assumptions + [syntax.EIn(k, new_or_modified), syntax.EImplies(syntax.EIn(k, old_keys), syntax.EEq(v, value_at(old_value, k)))])
-            s2 = syntax.SForEach(k, make_subgoal(new_or_modified, docstring="new or modified keys from {}".format(pprint(lval))),
-                target_syntax.SMapUpdate(lval, k, v, update_value))
-
-            stm = syntax.SSeq(s1, s2)
-        elif True:
-            old_keys = target_syntax.EMapKeys(old_value).with_type(key_bag)
-            new_keys = target_syntax.EMapKeys(new_value).with_type(key_bag)
-
-            # (1) exit set
-            deleted_keys = syntax.EBinOp(old_keys, "-", new_keys).with_type(key_bag)
-            s1 = syntax.SForEach(k, make_subgoal(deleted_keys, docstring="keys removed from {}".format(pprint(lval))),
-                target_syntax.SMapDel(lval, k))
-
-            # (2) modify set
-            common_keys = target_syntax.EFilter(old_keys, target_syntax.ELambda(k, syntax.EIn(k, new_keys))).with_type(key_bag)
-            update_value = recurse(
-                v,
-                value_at(old_value, k),
-                value_at(new_value, k),
-                ctx = ctx,
-                assumptions = assumptions + [syntax.EIn(k, common_keys), syntax.ENot(syntax.EEq(value_at(old_value, k), value_at(new_value, k)))])
-            if isinstance(update_value, syntax.SNoOp):
-                s2 = update_value
-            else:
-                altered_keys = target_syntax.EFilter(
-                    common_keys,
-                    target_syntax.ELambda(k,
-                        syntax.ENot(syntax.EEq(value_at(old_value, k), value_at(new_value, k))))).with_type(key_bag)
-                s2 = syntax.SForEach(k, make_subgoal(altered_keys, docstring="altered keys in {}".format(pprint(lval))),
-                    target_syntax.SMapUpdate(lval, k, v, update_value))
-
-            # (3) enter set
-            fresh_keys = syntax.EBinOp(new_keys, "-", old_keys).with_type(key_bag)
-            s3 = syntax.SForEach(k, make_subgoal(fresh_keys, docstring="new keys in {}".format(pprint(lval))),
-                target_syntax.SMapPut(lval, k, make_subgoal(value_at(new_value, k), a=[syntax.EIn(k, fresh_keys)], docstring="new value inserted at {}".format(pprint(target_syntax.EMapGet(lval, k))))))
-
-            stm = syntax.seq([s1, s2, s3])
-
-        else:
-            # update_value = code to update for value v at key k (given that k is an altered key)
-            update_value = recurse(
-                v,
-                value_at(old_value, k),
-                value_at(new_value, k),
-                ctx = ctx,
-                assumptions = assumptions + [syntax.ENot(syntax.EEq(value_at(old_value, k), value_at(new_value, k)))])
-
-            # altered_keys = [k | k <- distinct(lval.keys() + new_value.keys()), value_at(old_value, k) != value_at(new_value, k))]
-            altered_keys = make_subgoal(
-                target_syntax.EFilter(
-                    syntax.EUnaryOp(syntax.UOp.Distinct, syntax.EBinOp(
-                        target_syntax.EMapKeys(old_value).with_type(key_bag), "+",
-                        target_syntax.EMapKeys(new_value).with_type(key_bag)).with_type(key_bag)).with_type(key_bag),
-                    target_syntax.ELambda(k,
-                        syntax.ENot(syntax.EEq(value_at(old_value, k), value_at(new_value, k))))
-                ).with_type(key_bag))
-            stm = syntax.SForEach(k, altered_keys,
-                target_syntax.SMapUpdate(lval, k, v, update_value))
+        stm = syntax.SSeq(s1, s2)
     else:
         # Fallback rule: just compute a new value from scratch
         stm = syntax.SAssign(lval, make_subgoal(new_value, docstring="new value for {}".format(pprint(lval))))
