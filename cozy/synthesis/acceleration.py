@@ -13,11 +13,8 @@ from cozy.cost_model import is_constant_time
 
 accelerate = Option("acceleration-rules", bool, True)
 
-def EUnion(es):
-    es = [e for x in es for e in break_sum(x) if e != EEmptyList()]
-    if not es:
-        return EEmptyList()
-    return build_balanced_tree(es[0].type, "+", es)
+def EUnion(es, elem_type):
+    return ESum(es, base_case=EEmptyList().with_type(TBag(elem_type)))
 
 def MkFlatMap(bag, f):
     if isinstance(f.body, ESingleton):
@@ -43,10 +40,10 @@ def reachable_values_of_type(root : Exp, t : Type) -> Exp:
         return reachable_values_of_type(EGetField(root, "val").with_type(root.type.value_type), t)
     elif isinstance(root.type, TTuple):
         sub = [reachable_values_of_type(ETupleGet(root, i).with_type(tt), t) for (i, tt) in enumerate(root.type.ts)]
-        return EUnion(sub).with_type(TBag(t))
+        return EUnion(sub, t)
     elif isinstance(root.type, TRecord):
         sub = [reachable_values_of_type(EGetField(root, f).with_type(ft), t) for (f, ft) in root.type.fields]
-        return EUnion(sub).with_type(TBag(t))
+        return EUnion(sub, t)
     elif isinstance(root.type, TMap):
         raise NotImplementedError()
     else:

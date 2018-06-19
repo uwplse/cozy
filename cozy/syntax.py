@@ -1,6 +1,6 @@
 """Abstract syntax for Cozy specifications."""
 
-from cozy.common import ADT, declare_case, typechecked, partition
+from cozy.common import ADT, declare_case, typechecked, partition, make_random_access
 
 Spec                = declare_case(ADT, "Spec", ["name", "types", "extern_funcs", "statevars", "assumptions", "methods", "header", "footer", "docstring"])
 ExternFunc          = declare_case(ADT, "ExternFunc", ["name", "args", "out_type", "body_string"])
@@ -149,21 +149,9 @@ ONE = ENum(1).with_type(INT)
 TWO = ENum(2).with_type(INT)
 NULL = ENull()
 
-def seq(stms):
-    stms = [s for s in stms if not isinstance(s, SNoOp)]
-    if not stms:
-        return SNoOp()
-    elif len(stms) == 1:
-        return stms[0]
-    else:
-        result = None
-        for s in stms:
-            result = s if result is None else SSeq(result, s)
-        return result
-
-def build_balanced_tree(t, op, es : [Exp], st=None, ed=None):
+def build_balanced_tree(es, f, st=None, ed=None):
     """
-    Create a balanced expression tree out of an associative binary operator.
+    Create a balanced tree out of an associative binary operator.
 
     Many internal functions do not like deep, stick-shaped trees since those
     functions are recursive and Python has a small-ish maximum stack depth.
@@ -178,9 +166,19 @@ def build_balanced_tree(t, op, es : [Exp], st=None, ed=None):
         return es[st]
     else:
         cut = st + (n // 2)
-        return EBinOp(
-            build_balanced_tree(t, op, es, st=st, ed=cut), op,
-            build_balanced_tree(t, op, es, st=cut, ed=ed)).with_type(t)
+        return f(
+            build_balanced_tree(es, f, st=st, ed=cut),
+            build_balanced_tree(es, f, st=cut, ed=ed))
+
+def build_balanced_binop_tree(t, op, es : [Exp]):
+    es = make_random_access(es)
+    return build_balanced_tree(es, lambda e1, e2: EBinOp(e1, op, e2).with_type(t))
+
+def seq(stms):
+    stms = [s for s in stms if not isinstance(s, SNoOp)]
+    if not stms:
+        return SNoOp()
+    return build_balanced_tree(stms, SSeq)
 
 def EAll(exps):
     exps = [ e for e in exps if e != T ]
@@ -188,7 +186,7 @@ def EAll(exps):
         return F
     if not exps:
         return T
-    return build_balanced_tree(BOOL, BOp.And, exps)
+    return build_balanced_binop_tree(BOOL, BOp.And, exps)
 
 def EAny(exps):
     exps = [ e for e in exps if e != F ]
@@ -196,7 +194,7 @@ def EAny(exps):
         return T
     if not exps:
         return F
-    return build_balanced_tree(BOOL, BOp.Or, exps)
+    return build_balanced_binop_tree(BOOL, BOp.Or, exps)
 
 def ENot(e):
     if isinstance(e, EUnaryOp) and e.op == "not":
@@ -250,7 +248,7 @@ def ESum(es, base_case=ZERO):
     es = nonnums
     if nums:
         es.append(ENum(sum(n.val for n in nums)).with_type(base_case.type))
-    return build_balanced_tree(base_case.type, "+", es)
+    return build_balanced_binop_tree(base_case.type, "+", es)
 
 def max_of(*es, type=None):
     if not es:
