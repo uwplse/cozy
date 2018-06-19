@@ -18,34 +18,36 @@ skip_stateless_synthesis = Option("skip-stateless-synthesis", bool, False,
     description="Do not waste time optimizing expressions that do not depend on the data structure state")
 update_numbers_with_deltas = Option("update-numbers-with-deltas", bool, False)
 
-def mutate(e : syntax.Exp, op : syntax.Stm, k=identity_func) -> syntax.Exp:
-    """
-    Return the new value of `e` after executing `op`.
-    """
+def mutate(e : syntax.Exp, op : syntax.Stm) -> syntax.Exp:
+    """Return the new value of `e` after executing `op`."""
     if isinstance(op, syntax.SNoOp):
-        return k(e)
+        return e
     elif isinstance(op, syntax.SAssign):
-        return k(_do_assignment(op.lhs, op.rhs, e))
+        return _do_assignment(op.lhs, op.rhs, e)
     elif isinstance(op, syntax.SCall):
         if op.func == "add":
-            return mutate(e, syntax.SCall(op.target, "add_all", (syntax.ESingleton(op.args[0]).with_type(op.target.type),)), k=k)
+            return mutate(e, syntax.SCall(op.target, "add_all", (syntax.ESingleton(op.args[0]).with_type(op.target.type),)))
         elif op.func == "add_all":
-            return mutate(e, syntax.SAssign(op.target, syntax.EBinOp(op.target, "+", op.args[0]).with_type(op.target.type)), k=k)
+            return mutate(e, syntax.SAssign(op.target, syntax.EBinOp(op.target, "+", op.args[0]).with_type(op.target.type)))
         elif op.func == "remove":
-            return mutate(e, syntax.SCall(op.target, "remove_all", (syntax.ESingleton(op.args[0]).with_type(op.target.type),)), k=k)
+            return mutate(e, syntax.SCall(op.target, "remove_all", (syntax.ESingleton(op.args[0]).with_type(op.target.type),)))
         elif op.func == "remove_all":
-            return mutate(e, syntax.SAssign(op.target, syntax.EBinOp(op.target, "-", op.args[0]).with_type(op.target.type)), k=k)
+            return mutate(e, syntax.SAssign(op.target, syntax.EBinOp(op.target, "-", op.args[0]).with_type(op.target.type)))
         else:
             raise Exception("Unknown func: {}".format(op.func))
     elif isinstance(op, syntax.SIf):
-        return k(syntax.ECond(op.cond,
+        return syntax.ECond(op.cond,
             mutate(e, op.then_branch),
-            mutate(e, op.else_branch)).with_type(e.type))
+            mutate(e, op.else_branch)).with_type(e.type)
     elif isinstance(op, syntax.SSeq):
-        return mutate(e, op.s2, k=lambda e: mutate(e, op.s1, k=k))
+        if isinstance(op.s1, syntax.SSeq):
+            return mutate(e, SSeq(op.s1.s1, SSeq(op.s1.s2, op.s2)))
+        e2 = mutate(mutate(e, op.s2), op.s1)
+        if isinstance(op.s1, syntax.SDecl):
+            e2 = subst(e2, { op.s1.id : op.s1.val })
+        return e2
     elif isinstance(op, syntax.SDecl):
-        # TODO: this doesn't work if op.id is in free_vars(k)...
-        return subst(k(e), { op.id : op.val })
+        return e
     else:
         raise NotImplementedError(type(op))
 
