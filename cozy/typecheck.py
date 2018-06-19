@@ -3,7 +3,7 @@
 from cozy.common import Visitor
 from cozy import syntax
 from cozy import target_syntax
-from cozy.syntax_tools import pprint, all_exps, is_scalar
+from cozy.syntax_tools import pprint, all_exps, is_scalar, free_vars
 
 from cozy.syntax import BOOL, INT, LONG, FLOAT, STRING
 from cozy.structures import extension_handler
@@ -19,7 +19,6 @@ def typecheck(ast, env=None, fenv=None):
     return typechecker.errors
 
 def retypecheck(exp, env=None):
-    from cozy.syntax_tools import free_vars
     if env is None:
         env = { v.id:v.type for v in free_vars(exp) }
     fenv = { }
