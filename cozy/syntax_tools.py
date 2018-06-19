@@ -1149,14 +1149,6 @@ def alpha_equivalent(e1 : syntax.Exp, e2 : syntax.Exp) -> bool:
             if type(e1) is not type(e2):
                 return False
             return all(self.visit(x, y) for (x, y) in zip(e1.children(), e2.children()))
-        def visit_Query(self, q1, q2):
-            if type(q2) is not syntax.Query:
-                return False
-            if len(q1.args) != len(q2.args):
-                return False
-            with self.unify(list(zip([arg for (arg, t) in q1.args], [arg for (arg, t) in q2.args]))):
-                # TODO: assumptions
-                return self.visit(q1.ret, q2.ret)
         def visit_object(self, o, *args):
             raise NotImplementedError("{} ({})".format(type(o), repr(o)))
 
