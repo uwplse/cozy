@@ -381,6 +381,8 @@ def _simple_filter(xs, p, args):
     if isinstance(xs, EMapGet) and isinstance(xs.map, EStateVar) and not any(v in args for v in free_vars(p)):
         m = map_values(xs.map.e, lambda ys: _simple_filter(ys, p, args))
         return EMapGet(EStateVar(m).with_type(m.type), xs.key).with_type(xs.type)
+    if isinstance(xs, EBinOp) and xs.op == "+":
+        return EBinOp(_simple_filter(xs.e1, p, args), "+", _simple_filter(xs.e2, p, args)).with_type(xs.type)
     if isinstance(p.body, EBinOp) and p.body.op == "==":
         fvs2 = free_vars(p.body.e2)
         if p.body.e1 == p.arg and p.arg not in fvs2:
@@ -551,6 +553,9 @@ def _try_optimize(e, context, pool):
         for ee, p in map_accelerate(e, context):
             if p == RUNTIME_POOL:
                 yield _check(ee, context, p)
+
+        if isinstance(e, EListGet) and e.index == ZERO:
+            yield _check(EUnaryOp(UOp.The, e.e).with_type(e.type), context, RUNTIME_POOL)
 
         if isinstance(e, EArgMin) or isinstance(e, EArgMax):
             ee = optimized_best(e.e, e.f, "<" if isinstance(e, EArgMin) else ">", args=args)
