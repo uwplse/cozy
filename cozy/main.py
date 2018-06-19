@@ -24,8 +24,14 @@ from cozy import opts
 
 save_failed_codegen_inputs = opts.Option("save-failed-codegen-inputs", str, "/tmp/failed_codegen.py", metavar="PATH")
 checkpoint_prefix = opts.Option("checkpoint-prefix", str, "")
+do_cse = opts.Option("cse", bool, False, description="Perform common subexpression elimination just before codegen")
 
 def run():
+    """Entry point for Cozy executable.
+
+    This procedure reads sys.argv and executes the requested tasks.
+    """
+
     parser = argparse.ArgumentParser(description='Data structure synthesizer.')
     parser.add_argument("-S", "--save", metavar="FILE", type=str, default=None, help="Save synthesis output")
     parser.add_argument("-R", "--resume", action="store_true", help="Resume from saved synthesis output")
@@ -65,12 +71,8 @@ def run():
                 print("Error: {}".format(e))
             sys.exit(1)
 
-        # print()
-        # print(syntax_tools.pprint(ast))
-
         ast = desugar.desugar(ast)
         ast = invariant_preservation.add_implicit_handle_assumptions(ast)
-        # print(syntax_tools.pprint(ast))
 
         print("Checking assumptions...")
         errors = (
@@ -85,9 +87,11 @@ def run():
         ast = synthesis.construct_initial_implementation(ast)
 
     start = datetime.datetime.now()
+
     if not args.simple:
         callback = None
         server = None
+
         if checkpoint_prefix.value:
             def callback(res):
                 impl, ast, state_map = res
@@ -123,10 +127,13 @@ def run():
                 state[0] = s
             server = progress_server.ProgressServer(port=args.port, callback=lambda: state[0])
             server.start_async()
+
+        # Do full synthesis
         ast = synthesis.improve_implementation(
             ast,
             timeout           = datetime.timedelta(seconds=args.timeout),
             progress_callback = callback)
+
         if server is not None:
             server.join()
 
@@ -148,16 +155,9 @@ def run():
     impl = code
     share_info = defaultdict(list)
 
-    """
-    impl = syntax_tools.inline_calls(impl)
-    print()
-    print(syntax_tools.pprint(impl))
-    print(impl)
-    impl = syntax_tools.eliminate_common_subexpressions(impl)
-    print(impl)
-    print()
-    print(syntax_tools.pprint(impl))
-    """
+    if do_cse.value:
+        impl = syntax_tools.inline_calls(impl)
+        impl = syntax_tools.eliminate_common_subexpressions(impl)
 
     try:
         java = args.java
