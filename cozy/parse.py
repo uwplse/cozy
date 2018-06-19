@@ -16,6 +16,7 @@ from ply import lex, yacc
 # ours
 from cozy import parsetools
 from cozy import syntax
+from cozy.syntax_tools import pprint
 
 # Each keyword becomes a KW_* token for the lexer. So, e.g. "and" becomes
 # KW_AND.
@@ -168,6 +169,10 @@ def tokenize(s):
         yield tok
 
 # Parser #######################################################################
+
+def report_parse_error(where, message):
+    print("at {}: {}".format(pprint(where), message), file=sys.stderr)
+    sys.exit(1)
 
 def make_parser():
     start = "spec"
@@ -461,6 +466,8 @@ def make_parser():
         elif p[1] == "let":
             p[0] = syntax.SDecl(p[2], p[4])
         elif p[2] == "(":
+            if not isinstance(p[1], syntax.EGetField):
+                report_parse_error(p[1], "Method calls must have the form `target.method(...)`")
             p[0] = syntax.SCall(p[1].e, p[1].f, p[3])
         else:
             p[0] = syntax.SAssign(p[1], p[3])
