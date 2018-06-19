@@ -29,15 +29,6 @@ def mutate(e : syntax.Exp, op : syntax.Stm, k=identity_func) -> syntax.Exp:
     elif isinstance(op, syntax.SCall):
         if op.func == "add":
             return mutate(e, syntax.SCall(op.target, "add_all", (syntax.ESingleton(op.args[0]).with_type(op.target.type),)), k=k)
-        # TODO: list functions
-        # elif op.func == "add_back":
-        #     pass
-        # elif op.func == "add_front":
-        #     pass
-        # elif op.func == "remove_back":
-        #     pass
-        # elif op.func == "remove_front":
-        #     pass
         elif op.func == "add_all":
             return mutate(e, syntax.SAssign(op.target, syntax.EBinOp(op.target, "+", op.args[0]).with_type(op.target.type)), k=k)
         elif op.func == "remove":
@@ -151,34 +142,6 @@ def mutate_in_place(
             op=op,
             assumptions=assumptions,
             make_subgoal=make_subgoal)
-
-    # TODO!
-    # from cozy.syntax import EImplies, EAll, EEq, ELe, EGe, EArgMin, EArgMax, ENot, ELambda, seq, ELen, SCall, SAssign, SForEach, INT, EBinOp, ESingleton
-    # from cozy.target_syntax import EDeepIn, EDeepEq, EFilter, EStateVar
-    # from cozy.structures.heaps import to_heap, EHeapPeek2
-    # if False and (isinstance(e, EArgMin) or isinstance(e, EArgMax)):
-    #     new_elems = mutate(e.e, op)
-    #     if valid(EImplies(EAll(assumptions), EEq(e.e, new_elems))):
-    #         # Elements don't change!
-    #         h= to_heap(e)
-    #         h = EStateVar(h).with_type(h.type)
-    #         # if min changed: use heap
-    #         old_best = e.f.apply_to(e)
-    #         compare = ELe if isinstance(e, EArgMin) else EGe
-    #         new_best = mutate(old_best, op)
-    #         cond = compare(new_best, EStateVar(old_best).with_type(old_best.type))
-    #         return syntax.SIf(
-    #             make_subgoal(cond),
-    #             syntax.SAssign(lval, make_subgoal(
-    #                 type(e)(EBinOp(
-    #                     ESingleton(EStateVar(e).with_type(e.type)).with_type(e.e.type), "+",
-    #                     ESingleton(mutate(e, op)).with_type(e.e.type)).with_type(e.e.type), e.f).with_type(e.type), a=[cond])),
-    #             syntax.SAssign(lval, make_subgoal(
-    #                 EHeapPeek2(h,
-    #                 EStateVar(ELen(e.e)).with_type(INT)).with_type(lval.type), a=[ENot(cond)])))
-    #         # return syntax.SAssign(lval, EHeapPeek(
-    #         #     make_subgoal(EStateVar(h).with_type(h.type)),
-    #         #     make_subgoal(EStateVar(ELen(e.e)).with_type(INT))).with_type(h.type))
 
     # fallback: use an update sketch
     new_e = mutate(e, op)
