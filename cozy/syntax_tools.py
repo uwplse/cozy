@@ -12,6 +12,7 @@ import collections
 from contextlib import contextmanager
 import sys
 import itertools
+import json
 import functools
 from enum import Enum
 
@@ -301,7 +302,7 @@ class PrettyPrinter(common.Visitor):
         return self.format_builtin("true" if e.val else "false")
 
     def visit_EStr(self, e):
-        return repr(e.val)
+        return json.dumps(e.val)
 
     def visit_ENum(self, e):
         return str(e.val)

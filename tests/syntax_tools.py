@@ -29,6 +29,11 @@ def parse_exp(frag, types={}):
     return fix_types(parse.parse_exp(frag), types)
 
 class TestSyntaxTools(unittest.TestCase):
+
+    def test_string_pprint(self):
+        s = parse_exp('"string"')
+        assert parse_exp(pprint(s)) == s
+
     def test_eall(self):
         assert eval(EAll(()), {})
         for l in range(5):
