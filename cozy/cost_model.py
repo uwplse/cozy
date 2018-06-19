@@ -138,15 +138,6 @@ def hash_cost(e):
 def comparison_cost(e1, e2):
     return ESum([storage_size(e1), storage_size(e2)])
 
-# def iterates_over_bag(e):
-#     if isinstance(e, EFilter) or isinstance(e, EMap) or isinstance(e, EFlatMap) or isinstance(e, EArgMin) or isinstance(e, EArgMax) or isinstance(e, EMakeMap2):
-#         return e.e
-#     if isinstance(e, EUnaryOp) and is_collection(e.e.type):
-#         return e.e
-#     if isinstance(e, EBinOp) and e.op == BOp.In:
-#         return e.e2
-#     return None
-
 def wc_card(e):
     assert is_collection(e.type)
     while isinstance(e, EFilter) or isinstance(e, EMap) or isinstance(e, EFlatMap) or isinstance(e, EArgMin) or isinstance(e, EArgMax) or isinstance(e, EMakeMap2) or isinstance(e, EStateVar) or (isinstance(e, EUnaryOp) and e.op == UOp.Distinct):
