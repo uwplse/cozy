@@ -280,6 +280,12 @@ def rt(e, account_for_constant_factors=True):
     return ESum(terms)
 
 def debug_comparison(cm : CostModel, e1 : Exp, e2 : Exp, context : Context):
+    """Print information about the cost relationship of two expressions.
+
+    This procedure gives a lot of insight into the relationship between e1 and
+    e2 under the given cost model.
+    """
+
     print("-" * 20)
     print("Comparing")
     print("  e1 = {}".format(pprint(e1)))
