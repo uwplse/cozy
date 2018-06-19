@@ -56,9 +56,9 @@ class CostModel(object):
             event("shortcutting comparison of identical terms")
             return Order.EQUAL
 
-        a = EAll(context.path_conditions())
-        always_le = self.solver.valid(EImplies(a, ELe(e1, e2)))
-        always_ge = self.solver.valid(EImplies(a, EGe(e1, e2)))
+        path_condition = EAll(context.path_conditions())
+        always_le = self.solver.valid(EImplies(path_condition, ELe(e1, e2)))
+        always_ge = self.solver.valid(EImplies(path_condition, EGe(e1, e2)))
 
         if always_le and always_ge:
             return Order.EQUAL
