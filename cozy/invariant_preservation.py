@@ -39,9 +39,6 @@ def check_ops_preserve_invariants(spec : Spec):
     for m in spec.methods:
         if not isinstance(m, Op):
             continue
-        # print(m.name)
-        # for id, ty in spec.statevars:
-        #     print("  {id} ---> {e}".format(id=id, e=pprint(mutate(EVar(id).with_type(ty), m.body))))
         for a in spec.assumptions:
             print("Checking that {} preserves {}...".format(m.name, pprint(a)))
             a_post_delta = mutate(a, m.body)
