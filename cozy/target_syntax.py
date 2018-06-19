@@ -53,6 +53,7 @@ def ECountIn(e, collection):
     return EUnaryOp(UOp.Length, EFilter(collection, ELambda(arg, EEq(arg, e))).with_type(collection.type)).with_type(INT)
 
 def EArgDistinct(bag, key):
+    from cozy.syntax_tools import mk_lambda
     b = EVar(fresh_name())
     distinct_keys = EUnaryOp(UOp.Distinct, EMap(b, key))
     res = EMap(distinct_keys,
