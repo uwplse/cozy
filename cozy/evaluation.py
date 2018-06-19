@@ -120,7 +120,6 @@ def cmp(t, v1, v2, deep=False):
             if i1 <  i2: return LT
             else:        return GT
         elif isinstance(t, TBag) or isinstance(t, TSet):
-            # TODO: if deep, handle "the"?
             if deep:
                 elems1 = list(v1)
                 elems2 = list(v2)
