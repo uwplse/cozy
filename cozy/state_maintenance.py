@@ -16,7 +16,7 @@ from cozy.structures import extension_handler
 
 skip_stateless_synthesis = Option("skip-stateless-synthesis", bool, False,
     description="Do not waste time optimizing expressions that do not depend on the data structure state")
-update_numbers_with_deltas = Option("update-numbers-with-deltas", bool, True)
+update_numbers_with_deltas = Option("update-numbers-with-deltas", bool, False)
 
 def mutate(e : syntax.Exp, op : syntax.Stm, k=identity_func) -> syntax.Exp:
     """
