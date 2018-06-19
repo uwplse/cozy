@@ -246,6 +246,12 @@ def optimized_exists(xs):
         return F
     elif isinstance(xs, EMap):
         return optimized_exists(xs.e)
+    elif isinstance(xs, EListSlice):
+        return EAll([
+            optimized_exists(xs.e),
+            EGe(xs.start, ZERO),
+            ELt(xs.start, optimized_len(xs.e)),
+            ELt(xs.start, xs.end)])
     else:
         return EUnaryOp(UOp.Exists, xs).with_type(BOOL)
 
@@ -509,9 +515,14 @@ def optimize_the(xs, args):
             for elem in optimize_the(bag, args):
                 yield optimized_cond(EEq(elem, x), EListGet(bag, ONE).with_type(t), elem)
     if isinstance(xs, EMap):
-        empty = optimized_empty(xs.e)
+        exists = optimized_exists(xs.e)
         for x in optimize_the(xs.e, args):
-            yield optimized_cond(empty, construct_value(t), xs.f.apply_to(x))
+            yield optimized_cond(exists, xs.f.apply_to(x), construct_value(t))
+    if isinstance(xs, EBinOp) and xs.op == "+":
+        e1_exists = optimized_exists(xs.e1)
+        for x in optimize_the(xs.e1, args):
+            for y in optimize_the(xs.e2, args):
+                yield optimized_cond(e1_exists, x, y)
     yield EUnaryOp(UOp.The, xs).with_type(t)
 
 def _check(e, context, pool):
