@@ -825,8 +825,6 @@ def eval_bulk(e, envs, use_default_values_for_undefined_vars : bool = False):
         print("OH NO", file=sys.stderr)
         print("e = {}".format(pprint(e)), file=sys.stderr)
         print("eval_bulk({!r}, {!r}, use_default_values_for_undefined_vars={!r})".format(e, envs, use_default_values_for_undefined_vars), file=sys.stderr)
-        # import pdb
-        # pdb.set_trace()
         raise
     _compile(e, vmap, ops)
     return [_eval_compiled(ops, env) for env in envs]
