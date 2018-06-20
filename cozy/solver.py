@@ -691,11 +691,10 @@ class ToZ3(Visitor):
                 return self.mkval(e.type)
             m = mask[0]
             x = elems[0]
-            return ite(e.type, m,
-                ite(e.type, self.eq(INT, idx, self.int_zero),
-                    x,
-                    f((mask[1:], elems[1:]), idx - self.int_one)),
-                f((mask[1:], elems[1:]), idx))
+            succ = ite(INT, m, self.int_one, self.int_zero)
+            return ite(e.type, self.all(m, self.eq(INT, idx, self.int_zero)),
+                x,
+                f((mask[1:], elems[1:]), idx - succ))
         return f(self.visit(e.e, env), self.visit(e.index, env))
     def visit_EListSlice(self, e, env):
         def symb_slice(l, st, ed, idx):
