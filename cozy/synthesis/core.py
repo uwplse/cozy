@@ -310,10 +310,6 @@ def improve(
                         print("duplicate example: {!r}".format(counterexample))
                         print("old target = {!r}".format(target))
                         print("new target = {!r}".format(new_target))
-                        print("old fp = {}".format(learner._fingerprint(old_e)))
-                        print("new fp = {}".format(learner._fingerprint(new_e)))
-                        print("old target fp = {}".format(learner._fingerprint(target)))
-                        print("new target fp = {}".format(learner._fingerprint(new_target)))
                         raise Exception("got a duplicate example")
                     # a. if incorrect: add example, reset the learner
                     examples.append(counterexample)
