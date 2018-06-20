@@ -14,6 +14,7 @@ from cozy import jobs
 from cozy.contexts import RootCtx
 from cozy.solver import valid
 from cozy.opts import Option
+from cozy.cost_model import CostModel
 
 from . import core
 from .impls import Implementation
@@ -62,13 +63,19 @@ class ImproveQueryJob(jobs.Job):
                 args=[EVar(v).with_type(t) for (v, t) in self.q.args],
                 funcs=self.funcs)
 
+            cost_model = CostModel(
+                    funcs=ctx.funcs(), 
+                    assumptions=EAll(self.assumptions), 
+                    freebies=[h.e for h in self.hints if isinstance(h, EStateVar)])
+
             try:
                 for expr in itertools.chain((self.q.ret,), core.improve(
                         target=self.q.ret,
                         assumptions=EAll(self.assumptions),
                         context=ctx,
                         hints=self.hints,
-                        stop_callback=lambda: self.stop_requested)):
+                        stop_callback=lambda: self.stop_requested,
+                        cost_model=cost_model)):
 
                     new_rep, new_ret = tease_apart(expr)
                     self.k(new_rep, new_ret)

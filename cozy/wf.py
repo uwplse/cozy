@@ -14,6 +14,7 @@ from cozy.contexts import Context, RootCtx, shred
 
 allow_conditional_state = Option("allow-conditional-state", bool, True)
 do_expensive_checks = Option("expensive-wf-checks", bool, True)
+no_int_arithmetic_state = Option("allow-int-arith-state", bool, False)
 
 class ExpIsNotWf(Exception):
     def __init__(self, e, offending_subexpression, reason):
@@ -47,7 +48,7 @@ def exp_wf_nonrecursive(solver, e : Exp, context : Context, pool = RUNTIME_POOL,
         raise ExpIsNotWf(e, e, "EDrop* in state position")
     if isinstance(e, EFlatMap) and not at_runtime:
         raise ExpIsNotWf(e, e, "EFlatMap in state position")
-    if not at_runtime and isinstance(e, EBinOp) and e.type == INT:
+    if no_int_arithmetic_state and not at_runtime and isinstance(e, EBinOp) and e.type == INT:
         raise ExpIsNotWf(e, e, "integer arithmetic in state position")
     # if isinstance(e, EUnaryOp) and e.op == UOp.Distinct and not at_runtime:
     #     raise ExpIsNotWf(e, e, "'distinct' in state position")

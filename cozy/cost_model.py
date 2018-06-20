@@ -34,11 +34,12 @@ def order_objects(x, y):
 
 class CostModel(object):
 
-    def __init__(self, assumptions : Exp = T, examples=(), funcs=()):
+    def __init__(self, assumptions : Exp = T, examples=(), funcs=(), freebies : [Exp] = []):
         self.solver = ModelCachingSolver(vars=(), funcs=funcs, examples=examples, assumptions=assumptions)
         self.assumptions = assumptions
         # self.examples = list(examples)
         self.funcs = OrderedDict(funcs)
+        self.freebies = freebies;
 
     @property
     def examples(self):
@@ -73,12 +74,12 @@ class CostModel(object):
             if pool == RUNTIME_POOL:
                 return composite_order(
                     lambda: order_objects(asymptotic_runtime(e1), asymptotic_runtime(e2)),
-                    lambda: self._compare(max_storage_size(e1), max_storage_size(e2), context),
+                    lambda: self._compare(max_storage_size(e1, self.freebies), max_storage_size(e2, self.freebies), context),
                     lambda: self._compare(rt(e1), rt(e2), context),
                     lambda: order_objects(e1.size(), e2.size()))
             else:
                 return composite_order(
-                    lambda: self._compare(storage_size(e1), storage_size(e2), context),
+                    lambda: self._compare(storage_size(e1, self.freebies), storage_size(e2, self.freebies), context),
                     lambda: order_objects(e1.size(), e2.size()))
 
 def card(e):
@@ -89,12 +90,14 @@ TWO   = ENum(2).with_type(INT)
 FOUR  = ENum(4).with_type(INT)
 EIGHT = ENum(8).with_type(INT)
 TWENTY = ENum(20).with_type(INT)
-def storage_size(e):
+def storage_size(e, freebies : [Exp] = []):
     h = extension_handler(type(e.type))
     if h is not None:
         return h.storage_size(e, k=storage_size)
-
-    if e.type == BOOL:
+    
+    if e in freebies:
+        return ZERO
+    elif e.type == BOOL:
         return ONE
     elif is_numeric(e.type) or isinstance(e.type, THandle):
         return FOUR
@@ -125,11 +128,11 @@ def storage_size(e):
     else:
         raise NotImplementedError(e.type)
 
-def max_storage_size(e):
+def max_storage_size(e, freebies : [Exp] = []):
     sizes = OrderedSet()
     for x in all_exps(e):
         if isinstance(x, EStateVar):
-            sizes.add(storage_size(x.e))
+            sizes.add(storage_size(x.e, freebies))
     return max_of(*sizes, type=INT)
 
 def hash_cost(e):
