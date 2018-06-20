@@ -34,7 +34,7 @@ def order_objects(x, y):
 
 class CostModel(object):
 
-    def __init__(self, assumptions : Exp = T, examples=(), funcs=(), freebies : [EStateVar] = []):
+    def __init__(self, assumptions : Exp = T, examples=(), funcs=(), freebies : [Exp] = []):
         self.solver = ModelCachingSolver(vars=(), funcs=funcs, examples=examples, assumptions=assumptions)
         self.assumptions = assumptions
         # self.examples = list(examples)
@@ -90,7 +90,7 @@ TWO   = ENum(2).with_type(INT)
 FOUR  = ENum(4).with_type(INT)
 EIGHT = ENum(8).with_type(INT)
 TWENTY = ENum(20).with_type(INT)
-def storage_size(e, freebies : [EStateVar] = []):
+def storage_size(e, freebies : [Exp] = []):
     h = extension_handler(type(e.type))
     if h is not None:
         return h.storage_size(e, k=storage_size)
@@ -128,7 +128,7 @@ def storage_size(e, freebies : [EStateVar] = []):
     else:
         raise NotImplementedError(e.type)
 
-def max_storage_size(e, freebies : [EStateVar] = []):
+def max_storage_size(e, freebies : [Exp] = []):
     sizes = OrderedSet()
     for x in all_exps(e):
         if isinstance(x, EStateVar):

@@ -235,7 +235,7 @@ def improve(
         assumptions={assumptions!r},
         stop_callback={stop_callback!r},
         hints={hints!r},
-        examples={examples!r}
+        examples={examples!r},
         cost_model={cost_model!r})""".format(
             target=target,
             context=context,
