@@ -21,6 +21,12 @@ class Option(object):
         self.metavar = metavar
         _OPTS.append(self)
 
+    def __bool__(self):
+        raise Exception(
+            "An attempt was made to convert an Option to a boolean. " +
+            "If you intended to read the value of this Option, use `_.value`. " +
+            "If you intended to check whether this object is None, use `_ is None`.")
+
 def _argname(o):
     if o.type is bool:
         return ("no-" + o.name) if o.default else o.name
