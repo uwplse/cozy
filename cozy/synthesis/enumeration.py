@@ -115,6 +115,17 @@ class Enumerator(object):
         return sum(len(v) for v in self.cache.values())
 
     def heuristic_enumeration(self, context : Context, size : int, pool : Pool) -> [Exp]:
+        # lambda-instantiation
+        for sz1, sz2 in pick_to_sum(2, size-1):
+            for e in self.enumerate(context, sz1, pool):
+                for child in e.children():
+                    if isinstance(child, ELambda):
+                        for arg in self.enumerate(context, sz2, pool):
+                            if child.arg.type == arg.type:
+                                x = child.apply_to(arg)
+                                x._tag = True
+                                yield x
+
         if pool == RUNTIME_POOL:
 
             # is `x` the last of its kind in `xs`?
