@@ -122,9 +122,7 @@ class Enumerator(object):
                     if isinstance(child, ELambda):
                         for arg in self.enumerate(context, sz2, pool):
                             if child.arg.type == arg.type:
-                                x = child.apply_to(arg)
-                                x._tag = True
-                                yield x
+                                yield child.apply_to(arg)
 
         if pool == RUNTIME_POOL:
 
