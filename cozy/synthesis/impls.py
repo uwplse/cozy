@@ -26,14 +26,6 @@ from .misc import queries_equivalent, pull_temps
 
 dedup_queries = Option("deduplicate-subqueries", bool, True)
 
-def _queries_used_by(thing):
-    qs = set()
-    class V(BottomUpExplorer):
-        def visit_ECall(self, e):
-            qs.add(e.func)
-    V().visit(thing)
-    return qs
-
 def simplify_or_ignore(e):
     ee = simplify(e)
     return ee if ee.size() < e.size() else e
@@ -255,12 +247,7 @@ class Implementation(object):
         state_read_by_query = {
             query_name : free_vars(query)
             for query_name, query in self.query_impls.items() }
-
-        def queries_used_by(stm):
-            for e in all_exps(stm):
-                if isinstance(e, ECall) and e.func in [q.name for q in self.query_specs]:
-                    yield e.func
-
+        
         # prevent read-after-write by lifting reads before writes.
 
         # list of SDecls
@@ -276,7 +263,7 @@ class Implementation(object):
             g.add_vertices(len(self.concrete_state))
             for (i, (v1, _)) in enumerate(self.concrete_state):
                 v1_update_code = self.updates[(v1, operator.name)]
-                v1_queries = list(queries_used_by(v1_update_code))
+                v1_queries = list(self.queries_used_by(v1_update_code))
                 for (j, (v2, _)) in enumerate(self.concrete_state):
                     # if v1_update_code reads v2...
                     if any(v2 in state_read_by_query[q] for q in v1_queries):
@@ -364,13 +351,13 @@ class Implementation(object):
             for op in self.op_specs:
                 for ((ht, op_name), code) in self.handle_updates.items():
                     if op.name == op_name:
-                        for qname in _queries_used_by(code):
+                        for qname in self.queries_used_by(code):
                             if qname not in queries_to_keep:
                                 queries_to_keep.add(qname)
                                 changed = True
 
                 for sv in state_vars_to_keep:
-                    for qname in _queries_used_by(self.updates[(sv, op.name)]):
+                    for qname in self.queries_used_by(self.updates[(sv, op.name)]):
                         if qname not in queries_to_keep:
                             queries_to_keep.add(qname)
                             changed = True
@@ -393,6 +380,18 @@ class Implementation(object):
             v, op_name = k
             if v not in [var for (var, exp) in self.concrete_state]:
                 del self.updates[k]
+
+    def queries_used_by(self, stm):
+        for e in all_exps(stm):
+            if isinstance(e, ECall) and e.func in [q.name for q in self.query_specs]:
+                yield e.func
+
+    def states_maintained_by(self, q : Query) -> [EVar]:
+        concrete_vars = []
+        for (var_name, op_name), stm in self.updates.items():
+            if q.name in self.queries_used_by(stm):
+                concrete_vars.append(var_name)
+        return concrete_vars
 
 @typechecked
 def construct_initial_implementation(spec : Spec) -> Implementation:
