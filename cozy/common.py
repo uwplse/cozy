@@ -143,6 +143,19 @@ def _size(x):
             wq.extend(x.items())
     return res
 
+class No(object):
+    """A falsy object with a message.
+
+    This is useful if you want to return False with an associated reason."""
+    def __init__(self, msg):
+        self.msg = msg
+    def __bool__(self):
+        return False
+    def __str__(self):
+        return "no: {}".format(self.msg)
+    def __repr__(self):
+        return "No({!r})".format(self.msg)
+
 @total_ordering
 class ADT(object):
     def children(self):
