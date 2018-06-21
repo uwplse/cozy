@@ -239,7 +239,7 @@ def sketch_update(
             value_at(old_value, k),
             value_at(new_value, k),
             ctx = ctx,
-            assumptions = assumptions + [syntax.EIn(k, new_or_modified), syntax.EImplies(syntax.EIn(k, old_keys), syntax.EEq(v, value_at(old_value, k)))])
+            assumptions = assumptions + [syntax.EIn(k, new_or_modified), syntax.EEq(v, value_at(old_value, k))])
         s2 = syntax.SForEach(k, make_subgoal(new_or_modified, docstring="new or modified keys from {}".format(pprint(lval))),
             target_syntax.SMapUpdate(lval, k, v, update_value))
 
