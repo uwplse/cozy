@@ -33,6 +33,7 @@ class ImproveQueryJob(jobs.Job):
             q : Query,
             k,
             hints : [Exp] = [],
+            freebies : [Exp] = [],
             funcs : { str:TFunc } = { }):
         assert all(v in state for v in free_vars(q)), "Oops, query looks malformed due to {}:\n{}\nfree_vars({})".format([v for v in free_vars(q) if v not in state], pprint(q), repr(q))
         super().__init__()
@@ -43,6 +44,7 @@ class ImproveQueryJob(jobs.Job):
         q.ret = wrap_naked_statevars(q.ret, OrderedSet(state))
         self.q = q
         self.hints = hints
+        self.freebies = freebies
         self.k = k
         self.funcs = OrderedDict(funcs)
     def __str__(self):
@@ -66,7 +68,7 @@ class ImproveQueryJob(jobs.Job):
             cost_model = CostModel(
                     funcs=ctx.funcs(), 
                     assumptions=EAll(self.assumptions), 
-                    freebies=[h.e for h in self.hints if isinstance(h, EStateVar)])
+                    freebies=self.freebies)
 
             try:
                 for expr in itertools.chain((self.q.ret,), core.improve(
@@ -128,6 +130,7 @@ def improve_implementation(
             new = []
             for q in impl.query_specs:
                 if q.name not in job_query_names:
+                    states_maintained_by_q = impl.states_maintained_by(q)
                     new.append(ImproveQueryJob(
                         ctx,
                         impl.abstract_state,
@@ -135,6 +138,7 @@ def improve_implementation(
                         q,
                         k=(lambda q: lambda new_rep, new_ret: solutions_q.put((q, new_rep, new_ret)))(q),
                         hints=[EStateVar(c).with_type(c.type) for c in impl.concretization_functions.values()],
+                        freebies=[e for (v, e) in impl.concrete_state if v in states_maintained_by_q],
                         funcs=impl.extern_funcs))
 
             # figure out what old jobs we can stop
