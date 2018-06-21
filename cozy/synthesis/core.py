@@ -6,7 +6,7 @@ import sys
 import traceback
 
 from cozy.target_syntax import *
-from cozy.typecheck import is_collection
+from cozy.typecheck import is_collection, is_scalar
 from cozy.syntax_tools import subst, pprint, free_vars, fresh_var, alpha_equivalent, enumerate_fragments, strip_EStateVar, freshen_binders, wrap_naked_statevars, break_conj
 from cozy.wf import ExpIsNotWf, exp_wf
 from cozy.common import No, OrderedSet, ADT, Visitor, fresh_name, unique, pick_to_sum, OrderedDefaultDict, OrderedSet, group_by, find_one, extend, StopException
@@ -47,6 +47,76 @@ def exploration_order(targets : [Exp], context : Context, pool : Pool = RUNTIME_
         for e, ctx, p in sorted(unique(shred(target, context, pool=pool)), key=sort_key):
             yield (target, e, ctx, p)
 
+# Options that control `good_idea`
+allow_conditional_state = Option("allow-conditional-state", bool, True)
+allow_peels = Option("allow-peels", bool, False)
+allow_big_sets = Option("allow-big-sets", bool, False)
+allow_big_maps = Option("allow-big-maps", bool, False)
+allow_int_arithmetic_state = Option("allow-int-arith-state", bool, True)
+
+def good_idea(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptions : Exp = T) -> bool:
+    """Heuristic filter to ignore expressions that are almost certainly useless."""
+
+    state_vars = OrderedSet(v for v, p in context.vars() if p == STATE_POOL)
+    args       = OrderedSet(v for v, p in context.vars() if p == RUNTIME_POOL)
+    assumptions = EAll([assumptions, context.path_condition()])
+    at_runtime = pool == RUNTIME_POOL
+
+    if isinstance(e, EStateVar) and not free_vars(e.e):
+        return No("constant value in state position")
+    if (isinstance(e, EDropFront) or isinstance(e, EDropBack)) and not at_runtime:
+        return No("EDrop* in state position")
+    if not allow_big_sets.value and isinstance(e, EFlatMap) and not at_runtime:
+        return No("EFlatMap in state position")
+    if not allow_int_arithmetic_state.value and not at_runtime and isinstance(e, EBinOp) and e.type == INT:
+        return No("integer arithmetic in state position")
+    if is_collection(e.type) and not is_scalar(e.type.t):
+        return No("collection of nonscalar")
+    if isinstance(e.type, TMap) and not is_scalar(e.type.k):
+        return No("bad key type {}".format(pprint(e.type.k)))
+    if isinstance(e.type, TMap) and isinstance(e.type.v, TMap):
+        return No("map to map")
+    # This check is probably a bad idea: whether `the` is legal may depend on
+    # the contex that the expression is embedded within, so we can't skip it
+    # during synthesis just because it looks invalid now.
+    # if isinstance(e, EUnaryOp) and e.op == UOp.The:
+    #     len = EUnaryOp(UOp.Length, e.e).with_type(INT)
+    #     if not valid(EImplies(assumptions, EBinOp(len, "<=", ENum(1).with_type(INT)).with_type(BOOL))):
+    #         return No("illegal application of 'the': could have >1 elems")
+    if not at_runtime and isinstance(e, EBinOp) and e.op == "-" and is_collection(e.type):
+        return No("collection subtraction in state position")
+    # if not at_runtime and isinstance(e, ESingleton):
+    #     return No("singleton in state position")
+    # if not at_runtime and isinstance(e, ENum) and e.val != 0 and e.type == INT:
+    #     return No("nonzero integer constant in state position")
+    if not allow_conditional_state.value and not at_runtime and isinstance(e, ECond):
+        return No("conditional in state position")
+    if isinstance(e, EMakeMap2) and isinstance(e.e, EEmptyList):
+        return No("trivially empty map")
+    if not allow_peels.value and not at_runtime and isinstance(e, EFilter):
+        # catch "peels": removal of zero or one elements
+        if solver.valid(EImplies(assumptions, ELe(ELen(EFilter(e.e, ELambda(e.p.arg, ENot(e.p.body))).with_type(e.type)), ONE))):
+            return No("filter is a peel")
+    if not allow_big_maps.value and not at_runtime and isinstance(e, EMakeMap2) and is_collection(e.type.v):
+        all_collections = [sv for sv in state_vars if is_collection(sv.type)]
+        total_size = ENum(0).with_type(INT)
+        for c in all_collections:
+            total_size = EBinOp(total_size, "+", EUnaryOp(UOp.Length, c).with_type(INT)).with_type(INT)
+        my_size = EUnaryOp(UOp.Length, EFlatMap(EUnaryOp(UOp.Distinct, e.e).with_type(e.e.type), e.value).with_type(e.type.v)).with_type(INT)
+        s = EImplies(
+            assumptions,
+            EBinOp(total_size, ">=", my_size).with_type(BOOL))
+        if not solver.valid(s):
+            # from cozy.evaluation import eval
+            # from cozy.solver import satisfy
+            # model = satisfy(EAll([assumptions, EBinOp(total_size, "<", my_size).with_type(BOOL)]), collection_depth=3, validate_model=True)
+            # assert model is not None
+            # return No("non-polynomial-sized map ({}); total_size={}, this_size={}".format(model, eval(total_size, model), eval(my_size, model)))
+            return No("non-polynomial-sized map")
+
+    return True
+
+
 class Learner(object):
     def __init__(self, targets, assumptions, context, examples, cost_model, stop_callback, hints):
         self.context = context
@@ -86,6 +156,10 @@ class Learner(object):
                     exp_wf(e, pool=pool, context=ctx, assumptions=self.assumptions, solver=self.wf_solver)
                 except ExpIsNotWf as exc:
                     return No("at {}: {}".format(pprint(exc.offending_subexpression), exc.reason))
+                for (sub, sub_ctx, sub_pool) in shred(e, ctx, pool):
+                    res = good_idea(self.wf_solver, sub, sub_ctx, sub_pool, assumptions=self.assumptions)
+                    if not res:
+                        return res
                 if pool == RUNTIME_POOL and self.cost_model.compare(e, self.targets[0], ctx, pool) == Order.GT:
                     # from cozy.cost_model import debug_comparison
                     # debug_comparison(self.cost_model, e, self.target, ctx)
