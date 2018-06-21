@@ -145,8 +145,6 @@ class Enumerator(object):
                         yield ECond(e,
                             EEmptyList().with_type(xs.type),
                             ESingleton(x).with_type(xs.type)).with_type(xs.type)
-                        # yield mg
-                    # yield h
 
             # is `x` the last of its kind in `xs` AND is it argmin
             # according to some interesting function?
@@ -165,15 +163,11 @@ class Enumerator(object):
                         e = EEq(mg, ONE)
                         b = EStateVar(best).with_type(best.type)
                         e = EAll([e, EEq(x, b)])
-                        e._tag = True
                         yield e
                         e = ECond(e,
                             EHeapPeek2(heap, EStateVar(ELen(best.e)).with_type(INT)).with_type(best.type),
                             b).with_type(best.type)
-                        e._tag = True
                         yield e
-                        # yield mg
-                    # yield h
 
     def enumerate_core(self, context : Context, size : int, pool : Pool) -> [Exp]:
         """
