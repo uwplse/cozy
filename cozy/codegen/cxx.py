@@ -4,7 +4,7 @@ import itertools
 from io import StringIO
 
 from cozy import common, evaluation
-from cozy.common import fresh_name, declare_case
+from cozy.common import fresh_name, declare_case, extend
 from cozy.target_syntax import *
 from cozy.syntax_tools import all_types, fresh_var, subst, free_vars, is_scalar, mk_lambda, alpha_equivalent, all_exps, break_seq, is_lvalue
 from cozy.typecheck import is_collection, is_numeric
@@ -22,6 +22,7 @@ class CxxPrinter(CodeGenerator):
         self.types = OrderedDict()
         self.funcs = {}
         self.queries = {}
+        self.labels = {}
         self.use_qhash = use_qhash
         self.vars = set() # set of strings
 
@@ -161,12 +162,14 @@ class CxxPrinter(CodeGenerator):
         self.end_statement()
 
     def visit_SEscapableBlock(self, s):
-        self.visit(SScoped(s.body))
-        self.write(s.label, ":\n")
+        l = fresh_name("label")
+        with extend(self.labels, s.label, l):
+            self.visit(SScoped(s.body))
+            self.write(l, ":\n")
 
     def visit_SEscapeBlock(self, s):
         self.begin_statement()
-        self.write("goto ", s.label, ";")
+        self.write("goto ", self.labels[s.label], ";")
         self.end_statement()
 
     def visit_Query(self, q):
