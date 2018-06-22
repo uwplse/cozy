@@ -1,7 +1,7 @@
 from cozy.common import fresh_name, declare_case
 from cozy.syntax import *
 from cozy.target_syntax import SWhile, SSwap, SSwitch, SEscapableBlock, SEscapeBlock, EMap, EFilter
-from cozy.syntax_tools import fresh_var, pprint, shallow_copy, mk_lambda
+from cozy.syntax_tools import fresh_var, pprint, shallow_copy, mk_lambda, alpha_equivalent
 from cozy.pools import RUNTIME_POOL
 
 from .arrays import TArray, EArrayGet, EArrayIndexOf, SArrayAlloc, SEnsureCapacity, EArrayLen
@@ -51,6 +51,13 @@ def heap_func(e : Exp, concretization_functions : { str : Exp } = None) -> ELamb
         ee = concretization_functions.get(e.id)
         if ee is not None:
             return heap_func(ee)
+    if isinstance(e, ECond):
+        h1 = heap_func(e.then_branch)
+        h2 = heap_func(e.else_branch)
+        if alpha_equivalent(h1, h2):
+            return h1
+        v = fresh_var(h1.arg.type)
+        return ELambda(v, ECond(e.cond, h1.apply_to(v), h2.apply_to(v)).with_type(h1.body.type))
     raise NotImplementedError(repr(e))
 
 class Heaps(object):
