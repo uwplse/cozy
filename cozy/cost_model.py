@@ -80,7 +80,7 @@ class CostModel(object):
         with task("compare costs", context=context):
             if pool == RUNTIME_POOL:
                 return composite_order(
-                    #lambda: order_objects(asymptotic_runtime(e1), asymptotic_runtime(e2)),
+                    lambda: order_objects(asymptotic_runtime(e1), asymptotic_runtime(e2)),
                     lambda: self._compare(maintenance_cost(e1, self.ops, self.freebies), maintenance_cost(e2, self.ops, self.freebies), context))
                     #lambda: self._compare(max_storage_size(e1, self.freebies), max_storage_size(e2, self.freebies), context),
                     #lambda: self._compare(rt(e1), rt(e2), context),
