@@ -822,27 +822,27 @@ class FragmentEnumerator(common.Visitor):
         with self.intro_vars([(syntax.EVar(v).with_type(t), Unknown()) for (v, t) in s.statevars]):
             with self.push_assumptions():
                 for ctx in self.visit_assumptions_seq(s.assumptions):
-                    yield self.update_repl(ctx, lambda r: lambda x: syntax.Spec(s.name, s.types, s.extern_funcs, s.statevars, r(x), s.methods, s.header, s.footer))
+                    yield self.update_repl(ctx, lambda r: lambda x: syntax.Spec(s.name, s.types, s.extern_funcs, s.statevars, r(x), s.methods, s.header, s.footer, s.docstring))
                 for ctx in self.visit(s.methods):
-                    yield self.update_repl(ctx, lambda r: lambda x: syntax.Spec(s.name, s.types, s.extern_funcs, s.statevars, s.assumptions, ms, s.header, s.footer))
+                    yield self.update_repl(ctx, lambda r: lambda x: syntax.Spec(s.name, s.types, s.extern_funcs, s.statevars, s.assumptions, r(x), s.header, s.footer, s.docstring))
 
     def visit_Op(self, m):
         yield self.make_ctx(m)
         with self.intro_vars([(syntax.EVar(v).with_type(t), Unknown()) for (v, t) in m.args]):
             with self.push_assumptions():
                 for ctx in self.visit_assumptions_seq(m.assumptions):
-                    yield self.update_repl(ctx, lambda r: lambda x: syntax.Op(m.name, m.args, r(x), m.body))
+                    yield self.update_repl(ctx, lambda r: lambda x: syntax.Op(m.name, m.args, r(x), m.body, m.docstring))
                 for ctx in self.visit(m.body):
-                    yield self.update_repl(ctx, lambda r: lambda x: syntax.Op(m.name, m.args, m.assumptions, r(x)))
+                    yield self.update_repl(ctx, lambda r: lambda x: syntax.Op(m.name, m.args, m.assumptions, r(x), m.docstring))
 
     def visit_Query(self, q):
         yield self.make_ctx(q)
         with self.intro_vars([(syntax.EVar(v).with_type(t), Unknown()) for (v, t) in q.args]):
             with self.push_assumptions():
                 for ctx in self.visit_assumptions_seq(q.assumptions):
-                    yield self.update_repl(ctx, lambda r: lambda x: syntax.Query(q.name, q.args, r(x), q.ret))
+                    yield self.update_repl(ctx, lambda r: lambda x: syntax.Query(q.name, q.visibility, q.args, r(x), q.ret, q.docstring))
                 for ctx in self.visit(q.ret):
-                    yield self.update_repl(ctx, lambda r: lambda x: syntax.Query(q.name, q.args, q.assumptions, r(x)))
+                    yield self.update_repl(ctx, lambda r: lambda x: syntax.Query(q.name, q.visibility, q.args, q.assumptions, r(x), q.docstring))
 
     def visit_ADT(self, obj):
         yield self.make_ctx(obj)
