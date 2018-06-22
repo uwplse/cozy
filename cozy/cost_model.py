@@ -5,7 +5,7 @@ from enum import Enum
 
 from cozy.common import OrderedSet, partition
 from cozy.target_syntax import *
-from cozy.syntax_tools import pprint, fresh_var, free_vars, free_funcs, break_sum, all_exps, alpha_equivalent
+from cozy.syntax_tools import pprint, fresh_var, free_vars, free_funcs, break_sum, all_exps, alpha_equivalent, is_scalar, mk_lambda
 from cozy.contexts import Context
 from cozy.typecheck import is_collection, is_numeric
 from cozy.pools import Pool, RUNTIME_POOL, STATE_POOL
@@ -13,6 +13,7 @@ from cozy.solver import satisfy, ModelCachingSolver
 from cozy.evaluation import eval, eval_bulk
 from cozy.structures import extension_handler
 from cozy.logging import task, event
+from cozy.state_maintenance import mutate
 
 class Order(Enum):
     EQUAL     = 0
@@ -34,12 +35,18 @@ def order_objects(x, y):
 
 class CostModel(object):
 
-    def __init__(self, assumptions : Exp = T, examples=(), funcs=(), freebies : [Exp] = []):
+    def __init__(self, 
+            assumptions     : Exp   = T, 
+            examples                = (), 
+            funcs                   = (), 
+            freebies        : [Exp] = [], 
+            ops             : [Op]  = []):
         self.solver = ModelCachingSolver(vars=(), funcs=funcs, examples=examples, assumptions=assumptions)
         self.assumptions = assumptions
         # self.examples = list(examples)
         self.funcs = OrderedDict(funcs)
         self.freebies = freebies;
+        self.ops = ops;
 
     @property
     def examples(self):
@@ -73,13 +80,15 @@ class CostModel(object):
         with task("compare costs", context=context):
             if pool == RUNTIME_POOL:
                 return composite_order(
-                    lambda: order_objects(asymptotic_runtime(e1), asymptotic_runtime(e2)),
-                    lambda: self._compare(max_storage_size(e1, self.freebies), max_storage_size(e2, self.freebies), context),
-                    lambda: self._compare(rt(e1), rt(e2), context),
-                    lambda: order_objects(e1.size(), e2.size()))
+                    #lambda: order_objects(asymptotic_runtime(e1), asymptotic_runtime(e2)),
+                    lambda: self._compare(maintenance_cost(e1, self.ops, self.freebies), maintenance_cost(e2, self.ops, self.freebies), context))
+                    #lambda: self._compare(max_storage_size(e1, self.freebies), max_storage_size(e2, self.freebies), context),
+                    #lambda: self._compare(rt(e1), rt(e2), context),
+                    #lambda: order_objects(e1.size(), e2.size())) # index spec will be wrong if this line is uncommented
             else:
                 return composite_order(
-                    lambda: self._compare(storage_size(e1, self.freebies), storage_size(e2, self.freebies), context),
+                    lambda: self._compare(maintenance_cost(e1, self.ops, self.freebies), maintenance_cost(e2, self.ops, self.freebies), context),
+                    #lambda: self._compare(storage_size(e1, self.freebies), storage_size(e2, self.freebies), context),
                     lambda: order_objects(e1.size(), e2.size()))
 
 def card(e):
@@ -158,6 +167,61 @@ def wc_card(e):
     if isinstance(e, ESingleton):
         return 1
     return EXTREME_COST
+
+def _maintenance_cost(e : Exp, op : Op, freebies : [Exp] = []):
+    print("op: {}".format(op))
+    print("e: {}".format(pprint(e)))
+    if is_scalar(e.type):
+        return storage_size(e)
+    elif isinstance(e.type, TBag) or isinstance(e.type, TSet):
+        e_prime = mutate(e, op.body)
+
+        things_added = storage_size(
+                EBinOp(e_prime, "-", e).with_type(e.type), freebies).with_type(INT)
+        things_remov = storage_size(
+                EBinOp(e, "-", e_prime).with_type(e.type), freebies).with_type(INT)
+
+        return ESum([things_added, things_remov])
+    elif isinstance(e.type, TList):
+        e_prime = mutate(e, op.body)
+        if EEq(e, e_prime):
+            return ZERO
+        else:
+            return storage_size(e_prime, freebies)
+    elif isinstance(e.type, TMap):
+        keys = EMapKeys(e).with_type(TBag(e.type.k))
+        vals = EMap(keys, mk_lambda(e.type.k, lambda k: EMapGet(e, k).with_type(e.type.v))).with_type(TBag(e.type.v))
+        
+        keys_prime = mutate(keys, op.body)
+        vals_prime = mutate(vals, op.body)
+
+        keys_added = storage_size(
+            EBinOp(keys_prime, "-", keys).with_type(keys.type), freebies).with_type(INT) 
+        keys_rmved = storage_size(
+            EBinOp(keys, "-", keys_prime).with_type(keys.type), freebies).with_type(INT) 
+
+        vals_added = storage_size(
+            EBinOp(vals_prime, "-", vals).with_type(vals.type), freebies).with_type(INT) 
+        vals_rmved = storage_size(
+            EBinOp(vals, "-", vals_prime).with_type(vals.type), freebies).with_type(INT) 
+
+        keys_difference = ESum([keys_added, keys_rmved])
+        vals_difference = ESum([vals_added, vals_rmved])
+        return EBinOp(keys_difference, "*", vals_difference).with_type(INT)
+
+    else: 
+        raise NotImplementedError(repr(e.type))
+
+def maintenance_cost(e : Exp, ops : [Op] = [], freebies : [Exp] = []):
+    res = ZERO
+    for op in ops:
+        res = ESum([
+            res,
+            ESum([
+                _maintenance_cost(x.e, op, freebies) for x in all_exps(e) if isinstance(x, EStateVar)])])
+    print("- res = {}".format(pprint(res)))
+    return res
+
 
 # These require walking over the entire collection.
 # Some others (e.g. "exists" or "empty") just look at the first item.
