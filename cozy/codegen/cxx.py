@@ -566,7 +566,7 @@ class CxxPrinter(CodeGenerator):
         elif isinstance(iterable, ELet):
             return self.for_each(iterable.f.apply_to(iterable.e), body)
         else:
-            assert is_collection(iterable.type)
+            assert is_collection(iterable.type), repr(iterable)
             x = self.fv(iterable.type.t, "x")
             return self.for_each_native(x, iterable, body(x))
 
@@ -744,6 +744,7 @@ class CxxPrinter(CodeGenerator):
             f = self.funcs[e.func]
             return "({})".format(f.body_string.format(**{ arg: "({})".format(val) for (arg, _), val in zip(f.args, args) }))
         elif e.func in self.queries:
+            print("Inlining query {}".format(e.func))
             q = self.queries[e.func]
             body = subst(q.ret, { q.args[i][0] : EEscape(args[i], (), ()).with_type(q.args[i][1]) for i in range(len(q.args)) })
             return self.visit(body)
