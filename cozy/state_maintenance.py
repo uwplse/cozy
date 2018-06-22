@@ -13,6 +13,7 @@ from cozy.typecheck import is_numeric
 from cozy.solver import valid
 from cozy.opts import Option
 from cozy.structures import extension_handler
+from cozy.evaluation import construct_value
 
 skip_stateless_synthesis = Option("skip-stateless-synthesis", bool, False,
     description="Do not waste time optimizing expressions that do not depend on the data structure state")
@@ -149,11 +150,12 @@ def mutate_in_place(
     return s
 
 def value_at(m, k):
-    """
-    Assuming k is in EMapKeys(m), produce the value at k.
-    """
+    """Make an AST node for m[k]."""
     if isinstance(m, target_syntax.EMakeMap2):
-        return m.value.apply_to(k)
+        return syntax.ECond(
+            syntax.EIn(k, m.e),
+            m.value.apply_to(k),
+            construct_value(m.type.v)).with_type(m.type.v)
     if isinstance(m, syntax.ECond):
         return syntax.ECond(
             m.cond,
