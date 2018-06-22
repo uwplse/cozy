@@ -385,11 +385,17 @@ class CxxPrinter(CodeGenerator):
     def visit_SMapUpdate(self, update):
         map = self.visit(update.map)
         key = self.visit(update.key)
+        t = self.visit(update.map.type, "").strip() + "::iterator"
+        iterator = self.fv(TNative(t), "map_iterator")
+        self.declare(iterator, EEscape(map + ".find(" + key + ")", (), ()))
+        self.visit(SIf(
+            EEscape("{it} == " + map + ".end()", ("it",), (iterator,)).with_type(BOOL),
+            SAssign(iterator, EEscape(map + ".emplace(" + key + ", {value}).first", ("value",), (evaluation.construct_value(update.val_var.type),)).with_type(iterator.type)),
+            SNoOp()))
         self.begin_statement()
-        self.write("{decl} = {map}[{key}];\n".format(
+        self.write("{decl} = {it}->second;\n".format(
             decl=self.visit(TRef(update.val_var.type), update.val_var.id),
-            map=map,
-            key=key))
+            it=iterator.id))
         self.end_statement()
         self.visit(update.change)
 
