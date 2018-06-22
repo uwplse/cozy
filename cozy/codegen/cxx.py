@@ -328,6 +328,10 @@ class CxxPrinter(CodeGenerator):
         i = self.visit(e.i)
         return "{}[{}]".format(a, i)
 
+    def visit_EArrayLen(self, e):
+        a = self.visit(e.e)
+        return "{}.size()".format(a)
+
     def visit_EListGet(self, e):
         l = self.to_lvalue(e.e)
         i = self.fv(INT)

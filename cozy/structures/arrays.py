@@ -3,6 +3,7 @@ from cozy.syntax import Type, Exp, Stm
 
 TArray = declare_case(Type, "TArray", ["t"])
 EArrayCapacity = declare_case(Exp, "EArrayCapacity", ["e"])
+EArrayLen = declare_case(Exp, "EArrayLen", ["e"])
 EArrayGet = declare_case(Exp, "EArrayGet", ["a", "i"])
 EArrayIndexOf = declare_case(Exp, "EArrayIndexOf", ["a", "x"])
 SArrayAlloc = declare_case(Stm, "SArrayAlloc", ["a", "capacity"])
