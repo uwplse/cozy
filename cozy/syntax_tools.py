@@ -1523,14 +1523,14 @@ def cse(e, verify=False):
 
 def inline_calls(spec):
     extern_func_names = set(e.name for e in spec.extern_funcs)
-    queries = {}
+    queries = {q.name : q for q in spec.methods if isinstance(q, syntax.Query)}
 
     class CallInliner(BottomUpRewriter):
-        def visit_Query(self, q):
-            # Don't want to inline calls to extern functions.
-            if q.name not in extern_func_names:
-                queries[q.name] = q
-            return q
+
+        def visit_Spec(self, spec):
+            spec = shallow_copy(spec)
+            spec.methods = tuple(self.visit(m) for m in spec.methods if not (isinstance(m, syntax.Query) and m.visibility != syntax.Visibility.Public))
+            return spec
 
         def visit_ECall(self, e):
             query = queries.get(e.func)
@@ -1539,7 +1539,7 @@ def inline_calls(spec):
                 return e
 
             return subst(query.ret,
-                {arg: expr for ((arg, argtype), expr) in zip(query.args, e.args)})
+                {arg: self.visit(expr) for ((arg, argtype), expr) in zip(query.args, e.args)})
 
     rewriter = CallInliner()
     return rewriter.visit(spec)
