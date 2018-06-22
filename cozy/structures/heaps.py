@@ -4,7 +4,7 @@ from cozy.target_syntax import SWhile, SSwap, SSwitch, SEscapableBlock, SEscapeB
 from cozy.syntax_tools import fresh_var, pprint, shallow_copy, mk_lambda
 from cozy.pools import RUNTIME_POOL
 
-from .arrays import TArray, EArrayGet, EArrayIndexOf, SArrayAlloc, SEnsureCapacity
+from .arrays import TArray, EArrayGet, EArrayIndexOf, SArrayAlloc, SEnsureCapacity, EArrayLen
 
 TMinHeap = declare_case(Type, "TMinHeap", ["elem_type", "key_type"])
 TMaxHeap = declare_case(Type, "TMaxHeap", ["elem_type", "key_type"])
@@ -49,7 +49,8 @@ def heap_func(e : Exp, concretization_functions : { str : Exp } = None) -> ELamb
         return e.f
     if isinstance(e, EVar) and concretization_functions:
         ee = concretization_functions.get(e.id)
-        return heap_func(ee)
+        if ee is not None:
+            return heap_func(ee)
     raise NotImplementedError(repr(e))
 
 class Heaps(object):
@@ -171,7 +172,16 @@ class Heaps(object):
                 SArrayAlloc(out_raw, l),
                 SCall(out, "add_all", (ZERO, e.e))])
         elif isinstance(e, EHeapElems):
-            raise NotImplementedError()
+            elem_type = e.type.t
+            if isinstance(e.e, EMakeMinHeap) or isinstance(e.e, EMakeMaxHeap):
+                x = fresh_var(elem_type, "x")
+                return SForEach(x, e.e.e, SCall(out, "add", (x,)))
+            i = fresh_var(INT, "i")
+            return seq([
+                SDecl(i.id, ZERO),
+                SWhile(ELt(i, EArrayLen(e.e).with_type(INT)), seq([
+                    SCall(out, "add", (EArrayGet(e.e, i).with_type(elem_type),)),
+                    SAssign(i, EBinOp(i, "+", ONE).with_type(INT))]))])
         elif isinstance(e, EHeapPeek):
             raise NotImplementedError()
         elif isinstance(e, EHeapPeek2):
