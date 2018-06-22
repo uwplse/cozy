@@ -1,7 +1,9 @@
 import unittest
 
-from cozy.syntax import *
-from cozy.pools import RUNTIME_POOL
+from cozy.target_syntax import *
+from cozy.typecheck import retypecheck
+from cozy.syntax_tools import pprint
+from cozy.pools import RUNTIME_POOL, STATE_POOL
 from cozy.contexts import RootCtx, UnderBinder, shred, replace
 from cozy.structures.heaps import TMinHeap, EMakeMinHeap
 
@@ -63,3 +65,21 @@ class TestContexts(unittest.TestCase):
             replacement)
         assert res == e
         assert res.type == FLOAT
+
+    def test_estatevar_ctx(self):
+        xs = EVar("xs").with_type(INT_BAG)
+        x = EVar("x").with_type(INT)
+        y = EVar("y").with_type(BOOL)
+        e = EMap(xs, ELambda(x, EStateVar(y)))
+        ctx = RootCtx(args=(xs,), state_vars=(y,))
+        assert retypecheck(e)
+        for ee, ctx, pool in shred(e, ctx):
+            if ee == y:
+                assert isinstance(ctx, RootCtx)
+
+        e = replace(
+            e, ctx, RUNTIME_POOL,
+            y, ctx, STATE_POOL,
+            T)
+
+        assert e == EMap(xs, ELambda(x, EStateVar(T))), pprint(e)

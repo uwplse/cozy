@@ -152,6 +152,7 @@ class UnderBinder(Context):
 
 class _Shredder(Visitor):
     def __init__(self, ctx, pool=RUNTIME_POOL):
+        self.root_ctx = ctx
         self.ctx = ctx
         self.pool = pool
     def visit_ELambda(self, e, bag):
@@ -161,9 +162,12 @@ class _Shredder(Visitor):
     def visit_EStateVar(self, e):
         yield (e, self.ctx, self.pool)
         old_pool = self.pool
+        old_ctx = self.ctx
         self.pool = STATE_POOL
+        self.ctx = self.root_ctx
         yield from self.visit(e.e)
         self.pool = old_pool
+        self.ctx = old_ctx
     def visit_EMap(self, e):
         yield (e, self.ctx, self.pool)
         yield from self.visit(e.e)
@@ -227,6 +231,7 @@ class _Replacer(BottomUpRewriter):
             needle_pool : Pool,
             replacement : Exp):
         self.ctx = haystack_context
+        self.root_ctx = haystack_context
         self.pool = RUNTIME_POOL
         self.needle = needle
         self.needle_context = needle_context
@@ -239,9 +244,12 @@ class _Replacer(BottomUpRewriter):
         return self.join(e, (e.arg, new_body))
     def visit_EStateVar(self, e):
         old_pool = self.pool
+        old_ctx = self.ctx
         self.pool = STATE_POOL
+        self.ctx = self.root_ctx
         ee = self.visit(e.e)
         self.pool = old_pool
+        self.ctx = old_ctx
         return self.join(e, (ee,))
     def visit_EMap(self, e):
         return self.join(e, (self.visit(e.e), self.visit(e.f, e.e)))
