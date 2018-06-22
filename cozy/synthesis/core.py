@@ -47,6 +47,16 @@ def exploration_order(targets : [Exp], context : Context, pool : Pool = RUNTIME_
         for e, ctx, p in sorted(unique(shred(target, context, pool=pool)), key=sort_key):
             yield (target, e, ctx, p)
 
+def hint_order(tup):
+    """What order should the enumerator see hints?
+
+    Takes an (e, ctx, pool) tuple as input and returns a sort key.
+    """
+
+    # current policy: visit smaller expressions first
+    e, ctx, pool = tup
+    return e.size()
+
 # Options that control `good_idea`
 allow_conditional_state = Option("allow-conditional-state", bool, True)
 allow_peels = Option("allow-peels", bool, False)
@@ -174,6 +184,7 @@ class Learner(object):
         frags = list(unique(itertools.chain(
             *[shred(t, root_ctx) for t in self.targets],
             *[shred(h, root_ctx) for h in self.hints])))
+        frags.sort(key=hint_order)
         enum = Enumerator(
             examples=self.examples,
             cost_model=self.cost_model,
