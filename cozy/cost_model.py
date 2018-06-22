@@ -39,7 +39,7 @@ class CostModel(object):
         self.assumptions = assumptions
         # self.examples = list(examples)
         self.funcs = OrderedDict(funcs)
-        self.freebies = freebies;
+        self.freebies = freebies
 
     @property
     def examples(self):
