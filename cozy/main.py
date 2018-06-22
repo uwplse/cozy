@@ -139,6 +139,8 @@ def run():
 
     print("Generating IR...")
     code = ast.code
+    print("Inlining calls...")
+    code = syntax_tools.inline_calls(code)
     print("Loading concretization functions...")
     state_map = ast.concretization_functions
     print()
@@ -156,7 +158,6 @@ def run():
     share_info = defaultdict(list)
 
     if do_cse.value:
-        impl = syntax_tools.inline_calls(impl)
         impl = syntax_tools.eliminate_common_subexpressions(impl)
 
     try:
