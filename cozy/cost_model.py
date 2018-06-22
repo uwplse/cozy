@@ -41,6 +41,13 @@ class CostModel(object):
         self.funcs = OrderedDict(funcs)
         self.freebies = freebies
 
+    def __repr__(self):
+        return "CostModel(assumptions={!r}, examples={!r}, funcs={!r}, freebies={!r})".format(
+            self.assumptions,
+            self.examples,
+            self.funcs,
+            self.freebies)
+
     @property
     def examples(self):
         return tuple(self.solver.examples)
