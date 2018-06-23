@@ -12,6 +12,8 @@ therefore much easier to maintain than handwritten implementations.
 Occasionally Cozy can discover abstraction-breaking optimizations that human
 developers shy away from.
 
+Currently, Cozy can generate code for C++ and Java. The generator source code is in the `cozy/codegen` folder.
+
 ## Quickstart
 
 Dependencies:
