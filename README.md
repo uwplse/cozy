@@ -12,7 +12,7 @@ therefore much easier to maintain than handwritten implementations.
 Occasionally Cozy can discover abstraction-breaking optimizations that human
 developers shy away from.
 
-Currently, Cozy can generate code for C++ and Java. The generator source code is in the `cozy/codegen` folder.
+Currently, Cozy can generate code for C++ and Java.
 
 ## Quickstart
 
@@ -301,3 +301,7 @@ with
 
 (The `-b` flag "buffers" output so that Python only shows output from failing
 tests.)
+
+## Implementation details
+
+The `cozy/codegen` folder implements source code generation for C++ and Java.
