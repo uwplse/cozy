@@ -9,7 +9,7 @@ from cozy.syntax_tools import pprint, fresh_var, free_vars, free_funcs, break_su
 from cozy.contexts import Context
 from cozy.typecheck import is_collection, is_numeric
 from cozy.pools import Pool, RUNTIME_POOL, STATE_POOL
-from cozy.solver import satisfy, ModelCachingSolver
+from cozy.solver import satisfy, ModelCachingSolver, valid
 from cozy.evaluation import eval, eval_bulk
 from cozy.structures import extension_handler
 from cozy.logging import task, event
@@ -81,13 +81,13 @@ class CostModel(object):
             if pool == RUNTIME_POOL:
                 return composite_order(
                     lambda: order_objects(asymptotic_runtime(e1), asymptotic_runtime(e2)),
-                    lambda: self._compare(maintenance_cost(e1, self.ops, self.freebies), maintenance_cost(e2, self.ops, self.freebies), context))
+                    lambda: self._compare(maintenance_cost(e1, self.ops, self.freebies, self.solver), maintenance_cost(e2, self.ops, self.freebies, self.solver), context))
                     #lambda: self._compare(max_storage_size(e1, self.freebies), max_storage_size(e2, self.freebies), context),
                     #lambda: self._compare(rt(e1), rt(e2), context),
                     #lambda: order_objects(e1.size(), e2.size())) # index spec will be wrong if this line is uncommented
             else:
                 return composite_order(
-                    lambda: self._compare(maintenance_cost(e1, self.ops, self.freebies), maintenance_cost(e2, self.ops, self.freebies), context),
+                    lambda: self._compare(maintenance_cost(e1, self.ops, self.freebies, self.solver), maintenance_cost(e2, self.ops, self.freebies, self.solver), context),
                     #lambda: self._compare(storage_size(e1, self.freebies), storage_size(e2, self.freebies), context),
                     lambda: order_objects(e1.size(), e2.size()))
 
@@ -168,14 +168,14 @@ def wc_card(e):
         return 1
     return EXTREME_COST
 
-def _maintenance_cost(e : Exp, op : Op, freebies : [Exp] = []):
-    print("op: {}".format(op))
-    print("e: {}".format(pprint(e)))
+def _maintenance_cost( e : Exp, op : Op, freebies : [Exp] = [], solver : ModelCachingSolver = None):
+    e_prime = mutate(e, op.body)
+    if solver.valid(EEq(e, e_prime)):
+        return ZERO
+
     if is_scalar(e.type):
         return storage_size(e)
     elif isinstance(e.type, TBag) or isinstance(e.type, TSet):
-        e_prime = mutate(e, op.body)
-
         things_added = storage_size(
                 EBinOp(e_prime, "-", e).with_type(e.type), freebies).with_type(INT)
         things_remov = storage_size(
@@ -183,17 +183,21 @@ def _maintenance_cost(e : Exp, op : Op, freebies : [Exp] = []):
 
         return ESum([things_added, things_remov])
     elif isinstance(e.type, TList):
-        e_prime = mutate(e, op.body)
-        if EEq(e, e_prime):
-            return ZERO
-        else:
             return storage_size(e_prime, freebies)
     elif isinstance(e.type, TMap):
         keys = EMapKeys(e).with_type(TBag(e.type.k))
-        vals = EMap(keys, mk_lambda(e.type.k, lambda k: EMapGet(e, k).with_type(e.type.v))).with_type(TBag(e.type.v))
+        vals = EMap(
+            keys, 
+            mk_lambda(
+                e.type.k, 
+                lambda k: EMapGet(e, k).with_type(e.type.v))).with_type(TBag(e.type.v))
         
-        keys_prime = mutate(keys, op.body)
-        vals_prime = mutate(vals, op.body)
+        keys_prime = EMapKeys(e_prime).with_type(TBag(e_prime.type.k))
+        vals_prime = EMap(
+            keys_prime, 
+            mk_lambda(
+                e_prime.type.k, 
+                lambda k: EMapGet(e_prime, k).with_type(e_prime.type.v))).with_type(TBag(e_prime.type.v))
 
         keys_added = storage_size(
             EBinOp(keys_prime, "-", keys).with_type(keys.type), freebies).with_type(INT) 
@@ -212,14 +216,16 @@ def _maintenance_cost(e : Exp, op : Op, freebies : [Exp] = []):
     else: 
         raise NotImplementedError(repr(e.type))
 
-def maintenance_cost(e : Exp, ops : [Op] = [], freebies : [Exp] = []):
+def maintenance_cost(e : Exp, ops : [Op] = [], freebies : [Exp] = [], solver : ModelCachingSolver = None):
     res = ZERO
     for op in ops:
         res = ESum([
             res,
             ESum([
-                _maintenance_cost(x.e, op, freebies) for x in all_exps(e) if isinstance(x, EStateVar)])])
-    print("- res = {}".format(pprint(res)))
+                _maintenance_cost(
+                    x.e, op, freebies, solver) for x in all_exps(e) if isinstance(x, EStateVar)])])
+    print("- e: {}".format(pprint(e)))
+    print("- cost: {}".format(pprint(res)))
     return res
 
 
