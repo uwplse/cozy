@@ -55,7 +55,7 @@ def _consider(e, size, context, pool):
 def _accept(e, size, context, pool):
     if _interesting(e, size, context, pool) and not verbose.value:
         print("accepting")
-    event("accepting")
+    event("accepting {} @ {} in {}/{}".format(pprint(e), size, context, pool_name(pool)))
     task_end()
 def _skip(e, size, context, pool, reason):
     if _interesting(e, size, context, pool) and not verbose.value:
