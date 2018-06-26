@@ -202,6 +202,28 @@ class Learner(object):
         if not hasattr(self, "blacklist"):
             self.blacklist = set()
 
+        def consider_new_target(new_target):
+            nonlocal n
+            n += 1
+            if any(alpha_equivalent(t, new_target) for t in self.targets):
+                event("already seen")
+                return
+            wf = check_wf(new_target, root_ctx, RUNTIME_POOL)
+            if not wf:
+                event("not well-formed [wf={}]".format(wf))
+                self.blacklist.add(k)
+                return
+            if not self.matches(fingerprint(new_target, self.examples), target_fp):
+                event("not correct")
+                self.blacklist.add(k)
+                return
+            if self.cost_model.compare(new_target, target, root_ctx, RUNTIME_POOL) not in (Order.LT, Order.AMBIGUOUS):
+                event("not an improvement")
+                self.blacklist.add(k)
+                return
+            print("FOUND A GUESS AFTER {} CONSIDERED".format(n))
+            yield new_target
+
         while True:
 
             print("starting minor iteration {} with |cache|={}".format(size, enum.cache_size()))
@@ -217,44 +239,24 @@ class Learner(object):
                         with task("checking substitution", expression=pprint(info.e)):
                             if self.stop_callback():
                                 raise StopException()
-                            if info.e.type != e.type:
-                                event("wrong type (is {}, need {})".format(pprint(info.e.type), pprint(e.type)))
+                            replacement = info.e
+                            if replacement.type != e.type:
+                                event("wrong type (is {}, need {})".format(pprint(replacement.type), pprint(e.type)))
                                 continue
-                            if alpha_equivalent(info.e, e):
+                            if alpha_equivalent(replacement, e):
                                 event("no change")
                                 continue
 
-                            k = (e, ctx, pool, info.e)
+                            k = (e, ctx, pool, replacement)
                             if k in self.blacklist:
                                 event("blacklisted")
                                 continue
 
-                            n += 1
                             ee = freshen_binders(replace(
                                 target, root_ctx, RUNTIME_POOL,
                                 e, ctx, pool,
-                                info.e), root_ctx)
-                            if any(alpha_equivalent(t, ee) for t in self.targets):
-                                event("already seen")
-                                continue
-                            if not self.matches(fingerprint(ee, self.examples), target_fp):
-                                event("incorrect")
-                                self.blacklist.add(k)
-                                continue
-                            wf = check_wf(ee, root_ctx, RUNTIME_POOL)
-                            if not wf:
-                                event("not well-formed [wf={}]".format(wf))
-                                # if "expensive" in str(wf):
-                                #     print(repr(self.cost_model.examples))
-                                #     print(repr(ee))
-                                self.blacklist.add(k)
-                                continue
-                            if self.cost_model.compare(ee, target, root_ctx, RUNTIME_POOL) not in (Order.LT, Order.AMBIGUOUS):
-                                event("not an improvement")
-                                self.blacklist.add(k)
-                                continue
-                            print("FOUND A GUESS AFTER {} CONSIDERED".format(n))
-                            yield ee
+                                replacement), root_ctx)
+                            yield from consider_new_target(ee)
 
             print("CONSIDERED {}".format(n))
             size += 1
