@@ -247,12 +247,15 @@ class Learner(object):
                         e=pprint(e)):
                     for info in enum.enumerate_with_info(size=size, context=ctx, pool=pool):
 
+                        # TODO: we only have to do this once per (size, ctx, pool) tuple
                         with task("searching for obvious substitution", expression=pprint(info.e)):
                             fp = info.fingerprint
                             for ((fpx, cc, pp), reses) in watches.items():
                                 if cc != ctx or pp != pool:
                                     continue
 
+                                # TODO: enumerator provides us fingerprints in the most general
+                                # context for the expression, not in the context we asked for
                                 if not (len(fpx) == len(fp) and self.matches(fpx, fp)):
                                     continue
 
