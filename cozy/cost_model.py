@@ -224,8 +224,6 @@ def maintenance_cost(e : Exp, ops : [Op] = [], freebies : [Exp] = [], solver : M
             ESum([
                 _maintenance_cost(
                     x.e, op, freebies, solver) for x in all_exps(e) if isinstance(x, EStateVar)])])
-    print("- e: {}".format(pprint(e)))
-    print("- cost: {}".format(pprint(res)))
     return res
 
 
