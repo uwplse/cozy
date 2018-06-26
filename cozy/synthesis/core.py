@@ -202,6 +202,14 @@ class Learner(object):
         if not hasattr(self, "blacklist"):
             self.blacklist = set()
 
+        watches = defaultdict(list)
+        for target in self.targets:
+            for e, ctx, pool in unique(shred(target, context=root_ctx, pool=RUNTIME_POOL)):
+                exs = ctx.instantiate_examples(self.examples)
+                fp = fingerprint(e, exs)
+                # print("watch {}: {}".format(fp, pprint(e)))
+                watches[(fp, ctx, pool)].append((target, e))
+
         def consider_new_target(new_target):
             nonlocal n
             n += 1
@@ -236,6 +244,35 @@ class Learner(object):
                         target=pprint(replace(target, root_ctx, RUNTIME_POOL, e, ctx, pool, EVar("___"))),
                         e=pprint(e)):
                     for info in enum.enumerate_with_info(size=size, context=ctx, pool=pool):
+
+                        with task("searching for obvious substitution", expression=pprint(info.e)):
+                            fp = info.fingerprint
+                            for ((fpx, cc, pp), reses) in watches.items():
+                                if cc != ctx or pp != pool:
+                                    continue
+
+                                if not (len(fpx) == len(fp) and self.matches(fpx, fp)):
+                                    continue
+
+                                for target, watched_e in reses:
+                                    replacement = info.e
+                                    event("possible substitution: {} ---> {}".format(pprint(watched_e), pprint(replacement)))
+
+                                    if alpha_equivalent(watched_e, replacement):
+                                        event("no change")
+                                        continue
+
+                                    k = (e, ctx, pool, replacement)
+                                    if k in self.blacklist:
+                                        event("blacklisted")
+                                        continue
+
+                                    ee = freshen_binders(replace(
+                                        target, root_ctx, RUNTIME_POOL,
+                                        watched_e, ctx, pool,
+                                        replacement), root_ctx)
+                                    yield from consider_new_target(ee)
+
                         with task("checking substitution", expression=pprint(info.e)):
                             if self.stop_callback():
                                 raise StopException()
