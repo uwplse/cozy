@@ -218,12 +218,11 @@ def _maintenance_cost( e : Exp, op : Op, freebies : [Exp] = [], solver : ModelCa
 
 def maintenance_cost(e : Exp, ops : [Op] = [], freebies : [Exp] = [], solver : ModelCachingSolver = None):
     res = ZERO
-    for op in ops:
-        res = ESum([
-            res,
-            ESum([
-                _maintenance_cost(
-                    x.e, op, freebies, solver) for x in all_exps(e) if isinstance(x, EStateVar)])])
+    for x in all_exps(e):
+        if isinstance(x, EStateVar):
+            res = ESum([
+                res,
+                ESum([_maintenance_cost(x.e, op, freebies, solver) for op in ops])])
     return res
 
 
