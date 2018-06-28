@@ -82,13 +82,21 @@ class CostModel(object):
             if pool == RUNTIME_POOL:
                 return composite_order(
                     lambda: order_objects(asymptotic_runtime(e1), asymptotic_runtime(e2)),
-                    lambda: self._compare(maintenance_cost(e1, self.solver, self.ops, self.freebies), maintenance_cost(e2, self.solver, self.ops, self.freebies), context))
+                    lambda: self._compare(
+                        maintenance_cost(
+                            e=e1, solver=self.solver, ops=self.ops, freebies=self.freebies),
+                        maintenance_cost(
+                            e=e2, solver=self.solver, ops=self.ops, freebies=self.freebies), context))
                     #lambda: self._compare(max_storage_size(e1, self.freebies), max_storage_size(e2, self.freebies), context),
                     #lambda: self._compare(rt(e1), rt(e2), context),
                     #lambda: order_objects(e1.size(), e2.size())) # index spec will be wrong if this line is uncommented
             else:
                 return composite_order(
-                    lambda: self._compare(maintenance_cost(e1, self.ops, self.freebies, self.solver), maintenance_cost(e2, self.ops, self.freebies, self.solver), context),
+                    lambda: self._compare(
+                        maintenance_cost(
+                            e=e1, solver=self.solver, ops=self.ops, freebies=self.freebies),
+                        maintenance_cost(
+                            e=e2, solver=self.solver, ops=self.ops, freebies=self.freebies), context),
                     #lambda: self._compare(storage_size(e1, self.freebies), storage_size(e2, self.freebies), context),
                     lambda: order_objects(e1.size(), e2.size()))
 
