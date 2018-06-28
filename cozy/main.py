@@ -137,8 +137,21 @@ def run():
         if server is not None:
             server.join()
 
+    if args.save:
+        with open(args.save, "wb") as f:
+            pickle.dump(ast, f)
+            print("Saved implementation to file {}".format(args.save))
+
     print("Generating IR...")
     code = ast.code
+
+    print("Inlining calls...")
+    code = syntax_tools.inline_calls(code)
+
+    if do_cse.value:
+        print("Eliminating common subexpressions...")
+        code = syntax_tools.cse_replace_spec(code)
+
     print("Loading concretization functions...")
     state_map = ast.concretization_functions
     print()
@@ -147,17 +160,8 @@ def run():
     print()
     print(syntax_tools.pprint(code))
 
-    if args.save:
-        with open(args.save, "wb") as f:
-            pickle.dump(ast, f)
-            print("Saved implementation to file {}".format(args.save))
-
     impl = code
     share_info = defaultdict(list)
-
-    if do_cse.value:
-        impl = syntax_tools.inline_calls(impl)
-        impl = syntax_tools.eliminate_common_subexpressions(impl)
 
     try:
         java = args.java

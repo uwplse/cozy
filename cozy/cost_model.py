@@ -45,8 +45,15 @@ class CostModel(object):
         self.assumptions = assumptions
         # self.examples = list(examples)
         self.funcs = OrderedDict(funcs)
-        self.freebies = freebies;
-        self.ops = ops;
+        self.ops = ops
+        self.freebies = freebies
+
+    def __repr__(self):
+        return "CostModel(assumptions={!r}, examples={!r}, funcs={!r}, freebies={!r})".format(
+            self.assumptions,
+            self.examples,
+            self.funcs,
+            self.freebies)
 
     @property
     def examples(self):
@@ -161,7 +168,7 @@ def comparison_cost(e1, e2):
 
 def wc_card(e):
     assert is_collection(e.type)
-    while isinstance(e, EFilter) or isinstance(e, EMap) or isinstance(e, EFlatMap) or isinstance(e, EArgMin) or isinstance(e, EArgMax) or isinstance(e, EMakeMap2) or isinstance(e, EStateVar) or (isinstance(e, EUnaryOp) and e.op == UOp.Distinct):
+    while isinstance(e, EFilter) or isinstance(e, EMap) or isinstance(e, EFlatMap) or isinstance(e, EMakeMap2) or isinstance(e, EStateVar) or (isinstance(e, EUnaryOp) and e.op == UOp.Distinct) or isinstance(e, EListSlice):
         e = e.e
     if isinstance(e, EBinOp) and e.op == "-":
         return wc_card(e.e1)
@@ -330,6 +337,8 @@ def rt(e, account_for_constant_factors=True):
         elif isinstance(e, EMap) or isinstance(e, EFlatMap) or isinstance(e, EArgMin) or isinstance(e, EArgMax):
             # constant += EXTREME_COST
             terms.append(EUnaryOp(UOp.Sum, EMap(e.e, ELambda(e.f.arg, rt(e.f.body))).with_type(INT_BAG)).with_type(INT))
+        elif isinstance(e, EListSlice):
+            terms.append(max_of(ZERO, EBinOp(e.end, "-", e.start).with_type(INT)))
         elif isinstance(e, EMakeMap2):
             constant += EXTREME_COST
             terms.append(EUnaryOp(UOp.Sum, EMap(e.e, ELambda(e.value.arg, rt(e.value.body))).with_type(INT_BAG)).with_type(INT))

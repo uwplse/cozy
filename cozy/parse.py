@@ -73,6 +73,14 @@ _OPERATORS = [
     ("VBAR", "|")
     ]
 
+def report_lex_error(line, message):
+    print("on line {}: {}".format(line, message), file=sys.stderr)
+    sys.exit(1)
+
+def report_parse_error(where, message):
+    print("at {}: {}".format(pprint(where), message), file=sys.stderr)
+    sys.exit(1)
+
 # Lexer ########################################################################
 
 def keyword_token_name(kw):
@@ -153,8 +161,7 @@ def make_lexer():
     t_ignore = ' \t'
 
     def t_error(t):
-        print("Illegal character {} on line {}".format(repr(t.value[0]), t.lexer.lineno), file=sys.stderr)
-        t.lexer.skip(1)
+        report_lex_error(t.lexer.lineno, "Illegal character {}".format(repr(t.value[0])))
 
     return lex.lex()
 
@@ -169,10 +176,6 @@ def tokenize(s):
         yield tok
 
 # Parser #######################################################################
-
-def report_parse_error(where, message):
-    print("at {}: {}".format(pprint(where), message), file=sys.stderr)
-    sys.exit(1)
 
 def make_parser():
     start = "spec"

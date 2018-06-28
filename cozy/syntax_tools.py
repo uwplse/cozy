@@ -1523,14 +1523,14 @@ def cse(e, verify=False):
 
 def inline_calls(spec):
     extern_func_names = set(e.name for e in spec.extern_funcs)
-    queries = {}
+    queries = {q.name : q for q in spec.methods if isinstance(q, syntax.Query)}
 
     class CallInliner(BottomUpRewriter):
-        def visit_Query(self, q):
-            # Don't want to inline calls to extern functions.
-            if q.name not in extern_func_names:
-                queries[q.name] = q
-            return q
+
+        def visit_Spec(self, spec):
+            spec = shallow_copy(spec)
+            spec.methods = tuple(self.visit(m) for m in spec.methods if not (isinstance(m, syntax.Query) and m.visibility != syntax.Visibility.Public))
+            return spec
 
         def visit_ECall(self, e):
             query = queries.get(e.func)
@@ -1539,7 +1539,7 @@ def inline_calls(spec):
                 return e
 
             return subst(query.ret,
-                {arg: expr for ((arg, argtype), expr) in zip(query.args, e.args)})
+                {arg: self.visit(expr) for ((arg, argtype), expr) in zip(query.args, e.args)})
 
     rewriter = CallInliner()
     return rewriter.visit(spec)
@@ -1663,6 +1663,7 @@ def cse_scan(e):
             Returns (expr, dependent_vars, handle types) for each child of e by
             visiting it.
             """
+            assert isinstance(e, common.ADT)
             return [
                 self.visit(c, path + (i,), entries, capture_point)
                 for i, c in enumerate(e.children())
@@ -1685,7 +1686,7 @@ def cse_scan(e):
                     should_capture = bound_var.id in expinfo.dependents
 
                 if should_capture:
-                    if expinfo.count > 1 and not isinstance(expr, SIMPLE_EXPS):
+                    if expinfo.count > 1 and type(expr) not in SIMPLE_EXPS:
                         self.captures[capture_path].append((expinfo.tempvar, expr))
                         self.rewrites.update({p: expinfo.tempvar for p in expinfo.paths})
                 else:
@@ -1889,7 +1890,7 @@ class CSERewriter(PathAwareRewriter):
 
         return syntax.seq(output)
 
-def cse_replace(elem, fix_conditional_uses=True):
+def cse_replace(elem):
     """
     Eliminate common subexpressions on an AST element (an expression or a
     statement -- not a full spec).
@@ -1900,16 +1901,15 @@ def cse_replace(elem, fix_conditional_uses=True):
 
         if not capture_map:
             # Nothing to replace.
-            return elem
+            break
 
         rewriter = CSERewriter(capture_map, rewrite_map)
         elem = rewriter.visit(e_scan, ())
 
         if not rewriter.did_alter_tree:
-            return elem
+            break
 
-        if fix_conditional_uses:
-            elem = fix_conditionals(elem)
+    return fix_conditionals(elem)
 
 def cse_replace_spec(spec):
     """
@@ -1978,79 +1978,56 @@ class ConditionalUseFinder(BottomUpExplorer):
     def visit_object(self, o):
         return USED_NEVER
 
+def introduce_decl(var : syntax.EVar, value : syntax.Exp, thing):
+    if isinstance(thing, syntax.Stm):
+        return syntax.SSeq(syntax.SDecl(var.id, value), thing)
+    if isinstance(thing, syntax.Exp):
+        return syntax.ELet(value, syntax.ELambda(var, thing)).with_type(thing.type)
+    raise ValueError(thing)
+
+def push_decl(var : syntax.EVar, value : syntax.Exp, thing):
+    if isinstance(thing, tuple) or isinstance(thing, list):
+        return tuple(push_decl(var, value, x) for x in thing)
+    if isinstance(value, syntax.EVar):
+        return subst(thing, {var.id:value})
+    if isinstance(thing, syntax.ELambda):
+        assert var != thing.arg
+        return syntax.ELambda(thing.arg, push_decl(var, value, thing.body))
+    if not isinstance(thing, common.ADT):
+        return thing
+    use_type = ConditionalUseFinder(var).visit(thing)
+    if use_type == USED_NEVER:
+        return thing
+    if use_type == USED_ALWAYS:
+        return introduce_decl(var, value, thing)
+    if use_type == USED_SOMETIMES:
+        new_children = tuple(push_decl(var, value, child) for child in thing.children())
+        res = type(thing)(*new_children)
+        if isinstance(thing, syntax.Exp):
+            res = res.with_type(thing.type)
+        return res
+
 class BindingRewriter(BottomUpRewriter):
     """
     Considers variable bindings and moves them into conditional structures in
     the tree based on whether they're always, sometimes, or never used in those
     structures.
     """
-    def visit_ELet(self, e1):
-        e = type(e1)(*[self.visit(child) for child in e1.children()])
 
-        try:
-            e = e.with_type(e1.type)
-        except AttributeError:
-            pass
-
-        subexpr = e.f.body
-        use_finder = ConditionalUseFinder(e.f.arg)
-        use_type = use_finder.visit(subexpr)
-
-        if use_type == USED_ALWAYS:
-            # Do nothing.
-            return e
-        elif use_type == USED_SOMETIMES:
-            # Move it into each of the children that use it.
-
-            def maybe_rewrite_children(expr):
-                for child in expr.children():
-                    if use_finder.visit(child) != USED_NEVER:
-                        # Visit the resulting ELet to continue moving it deeper.
-                        let = syntax.ELet(e.e, syntax.ELambda(e.f.arg, child))
-
-                        try:
-                            let = let.with_type(child.type)
-                        except AttributeError:
-                            pass
-
-                        yield self.visit(let)
-                    else:
-                        yield child
-
-            return type(subexpr)(*maybe_rewrite_children(subexpr))
-
-        elif use_type == USED_NEVER:
-            # Eliminate the ELet.
-            return subexpr
+    def visit_ELet(self, e):
+        return push_decl(e.f.arg, e.e, self.visit(e.f.body))
 
     def visit_SSeq(self, seq):
-        right_seq = build_right_seq_stick(seq)
-        subexpr = self.visit(right_seq.s2)
-
-        if isinstance(right_seq.s1, syntax.SDecl):
-            decl = right_seq.s1
-            decl_var = syntax.EVar(decl.id).with_type(decl.val.type)
-            use_finder = ConditionalUseFinder(decl_var)
-            use_type = use_finder.visit(subexpr)
-
-            if use_type == USED_ALWAYS:
-                return syntax.SSeq(decl, subexpr)
-
-            elif use_type == USED_SOMETIMES:
-                def maybe_rewrite_children(expr):
-                    for child in expr.children():
-                        if use_finder.visit(child) != USED_NEVER:
-                            # Visit the resulting SSeq to continue moving it deeper.
-                            yield self.visit(syntax.SSeq(decl, child))
-                        else:
-                            yield child
-
-                return type(subexpr)(*maybe_rewrite_children(subexpr))
-
-            elif use_type == USED_NEVER:
-                return subexpr
-        else:
-            return syntax.SSeq(right_seq.s1, subexpr)
+        parts = [self.visit(part) for part in break_seq(seq)]
+        res = parts[-1]
+        for i in reversed(range(len(parts) - 1)):
+            p = parts[i]
+            if isinstance(p, syntax.SDecl):
+                decl_var = syntax.EVar(p.id).with_type(p.val.type)
+                res = push_decl(decl_var, p.val, res)
+            else:
+                res = syntax.SSeq(p, res)
+        return syntax.seq(break_seq(res))
 
 def fix_conditionals(e):
     rewriter = BindingRewriter()

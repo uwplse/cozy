@@ -267,6 +267,23 @@ def ast_replace_ref(haystack, needle, replacement):
         lambda x: x is needle,
         lambda x: replacement)
 
+# Monkey-patch OrderedSet to avoid infinite loops during interpreter shutdown.
+# The implementors of the library implemented __del__, a dangerous magic method
+# that runs when an object is garbage-collected.  This can go horribly awry in
+# the following complex---but possible---set of circumstances:
+#   (1) Several OrderedSets are queued for garbage collection simultaneously
+#   (2) The hash codes of some of the elements of some OrderedSet A depend on
+#       the elements present in a different OrderedSet B (this can be
+#       reasonable: while OrderedSets are mutable, hashing tuple(ordered_set)
+#       really ought to be safe)
+#   (3) The garbage collector decides to invoke __del__ on B first
+#   (4) The change in hash code results in an infinite loop when calling
+#       __del__ on A, which now contains an element that it cannot find via
+#       hash lookup.
+# Removing the __del__ method is perfectly safe: Python's cycle collector will
+# kick in and do the job that this is trying to achieve.
+del OrderedSet.__del__
+
 @total_ordering
 class FrozenDict(_FrozenDict):
     """
