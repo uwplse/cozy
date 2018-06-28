@@ -202,36 +202,55 @@ class Learner(object):
         target_fp = fingerprint(self.targets[0], self.examples)
 
         if not hasattr(self, "blacklist"):
-            self.blacklist = set()
+            self.blacklist = {}
 
-        watches = defaultdict(list)
+        watches = OrderedDict()
         for target in self.targets:
             for e, ctx, pool in unique(shred(target, context=root_ctx, pool=RUNTIME_POOL)):
                 exs = ctx.instantiate_examples(self.examples)
                 fp = fingerprint(e, exs)
                 # print("watch {}: {}".format(fp, pprint(e)))
-                watches[(fp, ctx, pool)].append((target, e))
+                k = (fp, ctx, pool)
+                l = watches.get(k)
+                if l is None:
+                    l = []
+                    watches[k] = l
+                l.append((target, e))
+        watched_ctxs = list(unique((ctx, pool) for fp, ctx, pool in watches.keys()))
 
-        def consider_new_target(new_target):
+        def consider_new_target(old_target, e, ctx, pool, replacement):
             nonlocal n
             n += 1
+            k = (e, ctx, pool, replacement)
+            if k in self.blacklist:
+                event("blacklisted")
+                print("skipping blacklisted substitution: {} ---> {} ({})".format(pprint(e), pprint(replacement), self.blacklist[k]))
+                return
+            new_target = freshen_binders(replace(
+                target, root_ctx, RUNTIME_POOL,
+                e, ctx, pool,
+                replacement), root_ctx)
             if any(alpha_equivalent(t, new_target) for t in self.targets):
                 event("already seen")
                 return
             wf = check_wf(new_target, root_ctx, RUNTIME_POOL)
             if not wf:
-                event("not well-formed [wf={}]".format(wf))
-                self.blacklist.add(k)
+                msg = "not well-formed [wf={}]".format(wf)
+                event(msg)
+                self.blacklist[k] = msg
                 return
             if not self.matches(fingerprint(new_target, self.examples), target_fp):
-                event("not correct")
-                self.blacklist.add(k)
+                msg = "not correct"
+                event(msg)
+                self.blacklist[k] = msg
                 return
             if self.cost_model.compare(new_target, target, root_ctx, RUNTIME_POOL) not in (Order.LT, Order.AMBIGUOUS):
-                event("not an improvement")
-                self.blacklist.add(k)
+                msg = "not an improvement"
+                event(msg)
+                self.blacklist[k] = msg
                 return
             print("FOUND A GUESS AFTER {} CONSIDERED".format(n))
+            print("In {}, replacing {} ----> {}".format(pprint(old_target), pprint(e), pprint(replacement)))
             yield new_target
 
         while True:
@@ -241,13 +260,10 @@ class Learner(object):
                 raise StopException()
 
             n = 0
-            for target, e, ctx, pool in exploration_order(self.targets, root_ctx):
-                with task("checking substitutions",
-                        target=pprint(replace(target, root_ctx, RUNTIME_POOL, e, ctx, pool, EVar("___"))),
-                        e=pprint(e)):
-                    for info in enum.enumerate_with_info(size=size, context=ctx, pool=pool):
 
-                        # TODO: we only have to do this once per (size, ctx, pool) tuple
+            for ctx, pool in watched_ctxs:
+                with task("searching for obvious substitutions", ctx=ctx, pool=pool_name(pool)):
+                    for info in enum.enumerate_with_info(size=size, context=ctx, pool=pool):
                         with task("searching for obvious substitution", expression=pprint(info.e)):
                             fp = info.fingerprint
                             for ((fpx, cc, pp), reses) in watches.items():
@@ -262,22 +278,19 @@ class Learner(object):
                                 for target, watched_e in reses:
                                     replacement = info.e
                                     event("possible substitution: {} ---> {}".format(pprint(watched_e), pprint(replacement)))
+                                    event("replacement locations: {}".format(pprint(replace(target, root_ctx, RUNTIME_POOL, watched_e, ctx, pool, EVar("___")))))
 
                                     if alpha_equivalent(watched_e, replacement):
                                         event("no change")
                                         continue
 
-                                    k = (e, ctx, pool, replacement)
-                                    if k in self.blacklist:
-                                        event("blacklisted")
-                                        continue
+                                    yield from consider_new_target(target, watched_e, ctx, pool, replacement)
 
-                                    ee = freshen_binders(replace(
-                                        target, root_ctx, RUNTIME_POOL,
-                                        watched_e, ctx, pool,
-                                        replacement), root_ctx)
-                                    yield from consider_new_target(ee)
-
+            for target, e, ctx, pool in exploration_order(self.targets, root_ctx):
+                with task("checking substitutions",
+                        target=pprint(replace(target, root_ctx, RUNTIME_POOL, e, ctx, pool, EVar("___"))),
+                        e=pprint(e)):
+                    for info in enum.enumerate_with_info(size=size, context=ctx, pool=pool):
                         with task("checking substitution", expression=pprint(info.e)):
                             if self.stop_callback():
                                 raise StopException()
@@ -289,16 +302,7 @@ class Learner(object):
                                 event("no change")
                                 continue
 
-                            k = (e, ctx, pool, replacement)
-                            if k in self.blacklist:
-                                event("blacklisted")
-                                continue
-
-                            ee = freshen_binders(replace(
-                                target, root_ctx, RUNTIME_POOL,
-                                e, ctx, pool,
-                                replacement), root_ctx)
-                            yield from consider_new_target(ee)
+                            yield from consider_new_target(target, e, ctx, pool, replacement)
 
             print("CONSIDERED {}".format(n))
             size += 1

@@ -265,3 +265,19 @@ def max_of(*es, type=None):
     t_bag = TBag(type)
     parts = ESum([ESingleton(e).with_type(t_bag) for e in es], base_case=EEmptyList().with_type(t_bag))
     return EArgMax(parts, ELambda(x, x)).with_type(type)
+
+def min_of(*es, type=None):
+    if not es:
+        if type is None:
+            raise ValueError("need to supply `type=...` keyword argument for max_of to support an empty set of arguments")
+        x = EVar("x").with_type(type)
+        return EArgMin(EEmptyList().with_type(TBag(type)), ELambda(x, x)).with_type(type)
+    if len(es) == 1:
+        return es[0]
+    type = es[0].type if type is None else type
+    x = EVar("x").with_type(type)
+    if type is None:
+        raise ValueError("no type supplied")
+    t_bag = TBag(type)
+    parts = ESum([ESingleton(e).with_type(t_bag) for e in es], base_case=EEmptyList().with_type(t_bag))
+    return EArgMin(parts, ELambda(x, x)).with_type(type)

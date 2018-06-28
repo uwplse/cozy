@@ -13,7 +13,7 @@ class SemanticsTests(unittest.TestCase):
     Tests for a few equivalences we expect to be true.
     """
 
-    def assert_same(self, e1, e2):
+    def assert_same(self, e1, e2, assumptions : Exp = T):
         assert e1.type == e2.type, "{} | {}".format(pprint(e1.type), pprint(e2.type))
         def dbg(model):
             print("model: {!r}".format(model))
@@ -23,7 +23,9 @@ class SemanticsTests(unittest.TestCase):
             print(" ---> {!r}".format(r1))
             print("e2: {}".format(pprint(e2)))
             print(" ---> {!r}".format(r2))
-        assert satisfy(ENot(EBinOp(e1, "===", e2).with_type(BOOL)), model_callback=dbg) is None
+        assert satisfy(EAll([
+            assumptions,
+            ENot(EBinOp(e1, "===", e2).with_type(BOOL))]), model_callback=dbg) is None
 
     def test_distinct_mapkeys(self):
         xs = EVar("xs").with_type(INT_BAG)
@@ -181,3 +183,15 @@ class SemanticsTests(unittest.TestCase):
             EUnaryOp(UOp.The, EEmptyList().with_type(xs.type)))
         assert retypecheck(e2)
         self.assert_same(e1, e2)
+
+    def test_slice_of_slice(self):
+        xs = EVar("xs").with_type(TList(INT))
+        st1 = EVar("st1").with_type(INT)
+        ed1 = EVar("ed1").with_type(INT)
+        st2 = EVar("st2").with_type(INT)
+        ed2 = EVar("ed2").with_type(INT)
+        e1 = EListSlice(EListSlice(xs, st1, ed1), st2, ed2)
+        assert retypecheck(e1)
+        e2 = EListSlice(xs, EBinOp(max_of(st2, ZERO), "+", max_of(st1, ZERO)), min_of(ed1, ESum([max_of(st1, ZERO), ed2])))
+        assert retypecheck(e2)
+        self.assert_same(e1, e2, assumptions=EUnaryOp(UOp.AreUnique, xs).with_type(BOOL))
