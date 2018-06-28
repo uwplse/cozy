@@ -4,13 +4,24 @@ from collections import OrderedDict
 
 from cozy.common import OrderedSet
 from cozy.cost_model import CostModel, Order, debug_comparison
-from cozy.typecheck import INT, retypecheck
+from cozy.typecheck import INT, retypecheck, typecheck
 from cozy.target_syntax import *
 from cozy.syntax_tools import equal, implies, pprint, fresh_var, mk_lambda, replace, subst, free_vars, all_exps
 from cozy.solver import valid
 from cozy.pools import RUNTIME_POOL, STATE_POOL
 from cozy.contexts import RootCtx, UnderBinder, replace
 from cozy.synthesis.acceleration import optimized_exists
+from cozy import parse
+
+def get_ops(x):
+    spec = parse.parse_spec(x)
+    errs = typecheck(spec)
+    assert not errs, errs
+    ops = []
+    for method in spec.methods:
+        if isinstance(method, Op):
+            ops.append(method)
+    return ops
 
 def cost_of(e, pool=RUNTIME_POOL):
     return None
@@ -35,21 +46,19 @@ def create_context(*exps):
     args = fvs - svs
     return RootCtx(state_vars=svs, args=args)
 
-def _assert_cmp(e1, c1, e2, c2, cmp, assumptions, freebies : [Exp] = []):
+def _assert_cmp(e1, c1, e2, c2, cmp, assumptions, freebies : [Exp] = [], ops : [Op] = []):
     ctx = create_context(e1, e2)
 
-    cm = CostModel(assumptions=assumptions)
-    if freebies: 
-        cm = CostModel(assumptions=assumptions, freebies=freebies)
+    cm = CostModel(assumptions=assumptions, freebies=freebies, ops=ops)
 
     c = cm.compare(e1, e2, context=ctx, pool=RUNTIME_POOL)
     if c != cmp:
         debug_comparison(cm, e1, e2, ctx)
         assert c == cmp, "expected {}, but was {}".format(cmp, c)
 
-def assert_cmp(e1, c1, e2, c2, cmp, assumptions : Exp = T, freebies : [Exp] = []):
-    _assert_cmp(e1, c1, e2, c2, cmp, assumptions, freebies)
-    _assert_cmp(e2, c2, e1, c1, INVERT[cmp], assumptions, freebies)
+def assert_cmp(e1, c1, e2, c2, cmp, assumptions : Exp = T, freebies : [Exp] = [], ops : [Op] = []):
+    _assert_cmp(e1, c1, e2, c2, cmp, assumptions, freebies, ops)
+    _assert_cmp(e2, c2, e1, c1, INVERT[cmp], assumptions, freebies, ops)
 
 class TestCostModel(unittest.TestCase):
 
@@ -248,6 +257,17 @@ class TestCostModel(unittest.TestCase):
         assert_cmp(e1, cost1, e2, cost2, Cost.WORSE, freebies=[s2])
 
     def test_len_in_state_vs_recalc(self):
+        ops = get_ops(
+            """
+            Spec:
+                state xs : List<Int>
+
+                op o(xs : List <Int>, i : Int)
+                    xs = xs[:i] + xs[i+1:];       
+            """
+        )
+        for op in ops:
+            print(pprint(op))
         xs1 = EVar("xs").with_type(TBag(INT))
         xs2 = EStateVar(xs1)
         e1 = EStateVar(EUnaryOp(UOp.Length, xs1).with_type(INT))
@@ -257,6 +277,27 @@ class TestCostModel(unittest.TestCase):
         cost1 = cost_of(e1)
         cost2 = cost_of(e2)
         assert_cmp(e1, cost1, e2, cost2, Cost.BETTER)
+        assert_cmp(e1, cost1, e2, cost2, Cost.BETTER, ops=ops)
+        
+    def test_state_list_vs_int(self):
+        ops = get_ops(
+            """
+            Spec:
+                state x : Int
+                op o(i : Int) x = i;
+            """
+        )
+        xs = EVar("xs").with_type(TList(INT))
+        x = EVar("x").with_type(INT)
+        slice_xs = EListSlice(xs, ZERO, x).with_type(xs.type)
+        assert retypecheck(slice_xs)
+        e1 = EStateVar(x)
+        e2 = EStateVar(slice_xs)
+        assert retypecheck(e1)
+        assert retypecheck(e2)
+        cost1 = cost_of(e1)
+        cost2 = cost_of(e2)
+        assert_cmp(e1, cost1, e2, cost2, Cost.BETTER, ops=ops)
 
     def test_regression1(self):
         e1 = EFilter(EUnaryOp('distinct', EBinOp(EUnaryOp('distinct', EMap(ESingleton(EVar('e').with_type(THandle('Entry', TRecord((('key', TNative('uint64_t')), ('pixmap', TNative('QPixmap *')), ('indexData', TNative('QByteArray')), ('memSize', TInt()), ('diskSize', TInt()), ('st', TEnum(('Disk', 'Loading', 'DiskAndMemory', 'MemoryOnly', 'Saving', 'NetworkPending', 'IndexPending', 'Invalid'))), ('inUse', TBool())))))).with_type(TBag(THandle('Entry', TRecord((('key', TNative('uint64_t')), ('pixmap', TNative('QPixmap *')), ('indexData', TNative('QByteArray')), ('memSize', TInt()), ('diskSize', TInt()), ('st', TEnum(('Disk', 'Loading', 'DiskAndMemory', 'MemoryOnly', 'Saving', 'NetworkPending', 'IndexPending', 'Invalid'))), ('inUse', TBool())))))), ELambda(EVar('_var156899').with_type(THandle('Entry', TRecord((('key', TNative('uint64_t')), ('pixmap', TNative('QPixmap *')), ('indexData', TNative('QByteArray')), ('memSize', TInt()), ('diskSize', TInt()), ('st', TEnum(('Disk', 'Loading', 'DiskAndMemory', 'MemoryOnly', 'Saving', 'NetworkPending', 'IndexPending', 'Invalid'))), ('inUse', TBool()))))), EGetField(EGetField(EVar('_var156899').with_type(THandle('Entry', TRecord((('key', TNative('uint64_t')), ('pixmap', TNative('QPixmap *')), ('indexData', TNative('QByteArray')), ('memSize', TInt()), ('diskSize', TInt()), ('st', TEnum(('Disk', 'Loading', 'DiskAndMemory', 'MemoryOnly', 'Saving', 'NetworkPending', 'IndexPending', 'Invalid'))), ('inUse', TBool()))))), 'val').with_type(TRecord((('key', TNative('uint64_t')), ('pixmap', TNative('QPixmap *')), ('indexData', TNative('QByteArray')), ('memSize', TInt()), ('diskSize', TInt()), ('st', TEnum(('Disk', 'Loading', 'DiskAndMemory', 'MemoryOnly', 'Saving', 'NetworkPending', 'IndexPending', 'Invalid'))), ('inUse', TBool())))), 'inUse').with_type(TBool()))).with_type(TBag(TBool()))).with_type(TBag(TBool())), '+', EMap(ESingleton(EVar('e').with_type(THandle('Entry', TRecord((('key', TNative('uint64_t')), ('pixmap', TNative('QPixmap *')), ('indexData', TNative('QByteArray')), ('memSize', TInt()), ('diskSize', TInt()), ('st', TEnum(('Disk', 'Loading', 'DiskAndMemory', 'MemoryOnly', 'Saving', 'NetworkPending', 'IndexPending', 'Invalid'))), ('inUse', TBool())))))).with_type(TBag(THandle('Entry', TRecord((('key', TNative('uint64_t')), ('pixmap', TNative('QPixmap *')), ('indexData', TNative('QByteArray')), ('memSize', TInt()), ('diskSize', TInt()), ('st', TEnum(('Disk', 'Loading', 'DiskAndMemory', 'MemoryOnly', 'Saving', 'NetworkPending', 'IndexPending', 'Invalid'))), ('inUse', TBool())))))), ELambda(EVar('_var156899').with_type(THandle('Entry', TRecord((('key', TNative('uint64_t')), ('pixmap', TNative('QPixmap *')), ('indexData', TNative('QByteArray')), ('memSize', TInt()), ('diskSize', TInt()), ('st', TEnum(('Disk', 'Loading', 'DiskAndMemory', 'MemoryOnly', 'Saving', 'NetworkPending', 'IndexPending', 'Invalid'))), ('inUse', TBool()))))), ECond(EBinOp(EVar('_var156899').with_type(THandle('Entry', TRecord((('key', TNative('uint64_t')), ('pixmap', TNative('QPixmap *')), ('indexData', TNative('QByteArray')), ('memSize', TInt()), ('diskSize', TInt()), ('st', TEnum(('Disk', 'Loading', 'DiskAndMemory', 'MemoryOnly', 'Saving', 'NetworkPending', 'IndexPending', 'Invalid'))), ('inUse', TBool()))))), '==', EVar('e').with_type(THandle('Entry', TRecord((('key', TNative('uint64_t')), ('pixmap', TNative('QPixmap *')), ('indexData', TNative('QByteArray')), ('memSize', TInt()), ('diskSize', TInt()), ('st', TEnum(('Disk', 'Loading', 'DiskAndMemory', 'MemoryOnly', 'Saving', 'NetworkPending', 'IndexPending', 'Invalid'))), ('inUse', TBool())))))).with_type(TBool()), EVar('inUse').with_type(TBool()), EGetField(EGetField(EVar('_var156899').with_type(THandle('Entry', TRecord((('key', TNative('uint64_t')), ('pixmap', TNative('QPixmap *')), ('indexData', TNative('QByteArray')), ('memSize', TInt()), ('diskSize', TInt()), ('st', TEnum(('Disk', 'Loading', 'DiskAndMemory', 'MemoryOnly', 'Saving', 'NetworkPending', 'IndexPending', 'Invalid'))), ('inUse', TBool()))))), 'val').with_type(TRecord((('key', TNative('uint64_t')), ('pixmap', TNative('QPixmap *')), ('indexData', TNative('QByteArray')), ('memSize', TInt()), ('diskSize', TInt()), ('st', TEnum(('Disk', 'Loading', 'DiskAndMemory', 'MemoryOnly', 'Saving', 'NetworkPending', 'IndexPending', 'Invalid'))), ('inUse', TBool())))), 'inUse').with_type(TBool())).with_type(TBool()))).with_type(TBag(TBool()))).with_type(TBag(TBool()))).with_type(TBag(TBool())), ELambda(EVar('_var156894').with_type(TBool()), EBinOp(EBinOp(EGetField(EGetField(EVar('e').with_type(THandle('Entry', TRecord((('key', TNative('uint64_t')), ('pixmap', TNative('QPixmap *')), ('indexData', TNative('QByteArray')), ('memSize', TInt()), ('diskSize', TInt()), ('st', TEnum(('Disk', 'Loading', 'DiskAndMemory', 'MemoryOnly', 'Saving', 'NetworkPending', 'IndexPending', 'Invalid'))), ('inUse', TBool()))))), 'val').with_type(TRecord((('key', TNative('uint64_t')), ('pixmap', TNative('QPixmap *')), ('indexData', TNative('QByteArray')), ('memSize', TInt()), ('diskSize', TInt()), ('st', TEnum(('Disk', 'Loading', 'DiskAndMemory', 'MemoryOnly', 'Saving', 'NetworkPending', 'IndexPending', 'Invalid'))), ('inUse', TBool())))), 'st').with_type(TEnum(('Disk', 'Loading', 'DiskAndMemory', 'MemoryOnly', 'Saving', 'NetworkPending', 'IndexPending', 'Invalid'))), '==', EEnumEntry('DiskAndMemory').with_type(TEnum(('Disk', 'Loading', 'DiskAndMemory', 'MemoryOnly', 'Saving', 'NetworkPending', 'IndexPending', 'Invalid')))).with_type(TBool()), 'or', EBinOp(EGetField(EGetField(EVar('e').with_type(THandle('Entry', TRecord((('key', TNative('uint64_t')), ('pixmap', TNative('QPixmap *')), ('indexData', TNative('QByteArray')), ('memSize', TInt()), ('diskSize', TInt()), ('st', TEnum(('Disk', 'Loading', 'DiskAndMemory', 'MemoryOnly', 'Saving', 'NetworkPending', 'IndexPending', 'Invalid'))), ('inUse', TBool()))))), 'val').with_type(TRecord((('key', TNative('uint64_t')), ('pixmap', TNative('QPixmap *')), ('indexData', TNative('QByteArray')), ('memSize', TInt()), ('diskSize', TInt()), ('st', TEnum(('Disk', 'Loading', 'DiskAndMemory', 'MemoryOnly', 'Saving', 'NetworkPending', 'IndexPending', 'Invalid'))), ('inUse', TBool())))), 'st').with_type(TEnum(('Disk', 'Loading', 'DiskAndMemory', 'MemoryOnly', 'Saving', 'NetworkPending', 'IndexPending', 'Invalid'))), '==', EEnumEntry('MemoryOnly').with_type(TEnum(('Disk', 'Loading', 'DiskAndMemory', 'MemoryOnly', 'Saving', 'NetworkPending', 'IndexPending', 'Invalid')))).with_type(TBool())).with_type(TBool()))).with_type(TBag(TBool()))
