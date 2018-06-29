@@ -236,6 +236,8 @@ def asymptotic_runtime(e : Exp) -> int:
         if isinstance(e, EStateVar):
             continue
         stk.extend(e.children())
+    if res.exponent == 0:
+        return DominantTerm.ONE
     return res
 
 def is_constant_time(e : Exp) -> bool:
