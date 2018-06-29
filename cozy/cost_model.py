@@ -241,7 +241,7 @@ def asymptotic_runtime(e : Exp) -> int:
     return res
 
 def is_constant_time(e : Exp) -> bool:
-    return asymptotic_runtime(e) < EXTREME_COST
+    return asymptotic_runtime(e).exponent == 0
 
 # Some kinds of expressions have a massive penalty associated with them if they
 # appear at runtime.
