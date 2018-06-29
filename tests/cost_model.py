@@ -39,7 +39,7 @@ def _assert_cmp(e1, c1, e2, c2, cmp, assumptions, freebies : [Exp] = []):
     ctx = create_context(e1, e2)
 
     cm = CostModel(assumptions=assumptions)
-    if freebies: 
+    if freebies:
         cm = CostModel(assumptions=assumptions, freebies=freebies)
 
     c = cm.compare(e1, e2, context=ctx, pool=RUNTIME_POOL)

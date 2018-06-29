@@ -39,4 +39,3 @@ class TokenizerTests(unittest.TestCase):
         assert_token_stream_matches("foo /* bar ***/ 1", 'WORD', 'NUM')
         assert_token_stream_matches("foo /* \n bar \n ***/ 1", 'WORD', 'NUM')
         assert_token_stream_matches("foo /* \n bar /* / \n ***/ 1", 'WORD', 'NUM')
-
