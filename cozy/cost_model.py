@@ -5,9 +5,9 @@ from enum import Enum
 
 from cozy.common import OrderedSet
 from cozy.target_syntax import *
-from cozy.syntax_tools import pprint, fresh_var, free_vars, free_funcs, break_sum, all_exps, alpha_equivalent, is_scalar, mk_lambda
+from cozy.syntax_tools import pprint, fresh_var, free_vars, free_funcs, break_sum, all_exps, alpha_equivalent, mk_lambda
 from cozy.contexts import Context
-from cozy.typecheck import is_collection, is_numeric
+from cozy.typecheck import is_collection, is_numeric, is_scalar
 from cozy.pools import Pool, RUNTIME_POOL, STATE_POOL
 from cozy.solver import satisfy, ModelCachingSolver, valid
 from cozy.evaluation import eval, eval_bulk
@@ -49,11 +49,12 @@ class CostModel(object):
         self.freebies = freebies
 
     def __repr__(self):
-        return "CostModel(assumptions={!r}, examples={!r}, funcs={!r}, freebies={!r})".format(
+        return "CostModel(assumptions={!r}, examples={!r}, funcs={!r}, freebies={!r}, ops={!r})".format(
             self.assumptions,
             self.examples,
             self.funcs,
-            self.freebies)
+            self.freebies,
+            self.ops)
 
     @property
     def examples(self):
@@ -186,6 +187,8 @@ def wc_card(e):
 
 def _maintenance_cost(e : Exp, solver : ModelCachingSolver, op : Op, freebies : [Exp] = []):
     e_prime = mutate(e, op.body)
+#    print("e        : {}".format(pprint(e)))
+#    print("e_prime  : {}".format(pprint(e_prime)))
     if solver.valid(EEq(e, e_prime)):
         return ZERO
 
@@ -234,7 +237,11 @@ def _maintenance_cost(e : Exp, solver : ModelCachingSolver, op : Op, freebies : 
 
 def maintenance_cost(e : Exp, solver : ModelCachingSolver, ops : [Op] = [], freebies : [Exp] = []):
     res = ZERO
+#    for x in all_exps(e):
+#        if isinstance(x, EStateVar):
+#            print("e: {}".format(pprint(x.e)))
     for op in ops:
+#        print(pprint(op))
         res = ESum([
             res,
             ESum([
@@ -377,15 +384,17 @@ def debug_comparison(cm : CostModel, e1 : Exp, e2 : Exp, context : Context):
             if f is maintenance_cost:
                 print("{f}({e}) = {res}".format(f=f.__name__, e=ename, res=pprint(f(e, cm.solver, cm.ops))))
             else:
-                print("{f}({e}) = {res}".format(f=f.__name__, e=ename, res=(f(e))))
+                print("{f}({e}) = {res}".format(f=f.__name__, e=ename, res=(pprint(f(e)))))
 
     for x in cm.examples:
         print("-" * 20)
         print(x)
         print("asympto(e1) = {}".format(asymptotic_runtime(e1)))
         print("asympto(e2) = {}".format(asymptotic_runtime(e2)))
+
         print("maintcost(e1) = {}".format(eval_bulk(maintenance_cost(e1, cm.solver, cm.ops), [x], use_default_values_for_undefined_vars=True)[0]))
         print("maintcost(e2) = {}".format(eval_bulk(maintenance_cost(e2, cm.solver, cm.ops), [x], use_default_values_for_undefined_vars=True)[0]))
+
         print("storage(e1) = {}".format(eval_bulk(max_storage_size(e1), [x], use_default_values_for_undefined_vars=True)[0]))
         print("storage(e2) = {}".format(eval_bulk(max_storage_size(e2), [x], use_default_values_for_undefined_vars=True)[0]))
         print("runtime(e1) = {}".format(eval_bulk(rt(e1), [x], use_default_values_for_undefined_vars=True)[0]))
