@@ -1,6 +1,6 @@
 import unittest
 
-from cozy.syntax_tools import subst, pprint, mk_lambda, equal
+from cozy.syntax_tools import subst
 from cozy.target_syntax import *
 from cozy.solver import valid
 from cozy.typecheck import retypecheck
@@ -16,4 +16,4 @@ class TestSubst(unittest.TestCase):
         g = subst(f, { y.id : x })
         a = EVar("a").with_type(TInt())
         b = EVar("b").with_type(TInt())
-        assert valid(equal(g.apply_to(a), g.apply_to(b)))
+        assert valid(EEq(g.apply_to(a), g.apply_to(b)))

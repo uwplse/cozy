@@ -1,12 +1,11 @@
-import itertools
 from functools import lru_cache
 
-from cozy.common import find_one, partition, pick_to_sum, unique, OrderedSet
+from cozy.common import unique, OrderedSet
 from cozy.target_syntax import *
-from cozy.syntax_tools import fresh_var, free_vars, break_conj, pprint, enumerate_fragments, mk_lambda, strip_EStateVar, alpha_equivalent, subst, break_sum, replace, compose
-from cozy.typecheck import is_numeric, is_collection, retypecheck
-from cozy.pools import RUNTIME_POOL, STATE_POOL, ALL_POOLS, pool_name
-from cozy.structures.heaps import TMinHeap, TMaxHeap, EMakeMinHeap, EMakeMaxHeap, EHeapPeek, EHeapPeek2
+from cozy.syntax_tools import fresh_var, free_vars, break_conj, pprint, mk_lambda, strip_EStateVar, alpha_equivalent, break_sum, replace, compose
+from cozy.typecheck import is_collection, retypecheck
+from cozy.pools import RUNTIME_POOL, STATE_POOL
+from cozy.structures.heaps import TMinHeap, TMaxHeap, EMakeMinHeap, EMakeMaxHeap, EHeapPeek2
 from cozy.evaluation import construct_value
 from cozy.logging import task, event
 from cozy.cost_model import is_constant_time

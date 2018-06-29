@@ -5,12 +5,12 @@ Important functions:
  - eval_bulk: execute the same expression on many different environments
 """
 
-from collections import UserDict, defaultdict, namedtuple
+from collections import namedtuple
 from functools import total_ordering, cmp_to_key, lru_cache
 import itertools
 
 from cozy.target_syntax import *
-from cozy.syntax_tools import equal, pprint, free_vars, free_funcs, all_exps, purify
+from cozy.syntax_tools import pprint, free_vars, free_funcs, purify
 from cozy.common import FrozenDict, OrderedSet, extend
 from cozy.typecheck import is_numeric, is_collection
 from cozy.structures import extension_handler

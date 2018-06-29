@@ -14,7 +14,7 @@ Extra collection types:
 """
 
 # builtins
-from collections import defaultdict, OrderedDict, MutableSet
+from collections import defaultdict, OrderedDict
 from contextlib import contextmanager
 from functools import total_ordering, wraps
 import sys

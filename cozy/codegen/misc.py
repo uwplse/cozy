@@ -1,6 +1,6 @@
 from contextlib import contextmanager
 
-from cozy.syntax import Stm, Exp, Type
+from cozy.syntax import Stm, Exp
 from cozy.common import declare_case, Visitor
 
 INDENT = "  "

@@ -3,7 +3,7 @@
 from collections import OrderedDict
 from enum import Enum
 
-from cozy.common import OrderedSet, partition
+from cozy.common import OrderedSet
 from cozy.target_syntax import *
 from cozy.syntax_tools import pprint, fresh_var, free_vars, free_funcs, break_sum, all_exps, alpha_equivalent, is_scalar, mk_lambda
 from cozy.contexts import Context
@@ -119,7 +119,7 @@ def storage_size(e, freebies : [Exp] = []):
     h = extension_handler(type(e.type))
     if h is not None:
         return h.storage_size(e, k=storage_size)
-    
+
     if e in freebies:
         return ZERO
     elif e.type == BOOL:

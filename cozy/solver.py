@@ -10,9 +10,7 @@ Important functions and classes:
 
 from collections import defaultdict, OrderedDict
 from datetime import datetime, timedelta
-import itertools
 import threading
-from functools import lru_cache
 
 import z3
 
@@ -983,7 +981,6 @@ def _tock(e, event):
     elapsed = now - _start
     _start = now
     if elapsed > _debug_duration:
-        import sys
         print("WARNING: took {elapsed}s to {event}".format(event=event, elapsed=elapsed.total_seconds()))
 
 _LOCK = threading.RLock()

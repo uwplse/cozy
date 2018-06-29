@@ -6,10 +6,10 @@ from cozy.common import OrderedSet
 from cozy.cost_model import CostModel, Order, debug_comparison
 from cozy.typecheck import INT, retypecheck, typecheck
 from cozy.target_syntax import *
-from cozy.syntax_tools import equal, implies, pprint, fresh_var, mk_lambda, replace, subst, free_vars, all_exps
+from cozy.syntax_tools import equal, pprint, fresh_var, mk_lambda, subst, free_vars, all_exps
 from cozy.solver import valid
 from cozy.pools import RUNTIME_POOL, STATE_POOL
-from cozy.contexts import RootCtx, UnderBinder, replace
+from cozy.contexts import RootCtx
 from cozy.synthesis.acceleration import optimized_exists
 from cozy import parse
 

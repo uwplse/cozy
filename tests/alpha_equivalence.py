@@ -1,6 +1,6 @@
 import unittest
 
-from cozy.syntax_tools import alpha_equivalent, pprint, mk_lambda
+from cozy.syntax_tools import alpha_equivalent, mk_lambda
 from cozy.target_syntax import *
 
 class TestAlphaEquivalent(unittest.TestCase):

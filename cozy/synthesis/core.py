@@ -1,20 +1,16 @@
-from collections import defaultdict, OrderedDict
-import datetime
+from collections import OrderedDict
 import itertools
-import functools
-import sys
-import traceback
 
 from cozy.target_syntax import *
 from cozy.typecheck import is_collection, is_scalar
-from cozy.syntax_tools import subst, pprint, free_vars, fresh_var, alpha_equivalent, enumerate_fragments, strip_EStateVar, freshen_binders, wrap_naked_statevars, break_conj
+from cozy.syntax_tools import subst, pprint, free_vars, fresh_var, alpha_equivalent, strip_EStateVar, freshen_binders, wrap_naked_statevars, break_conj
 from cozy.wf import ExpIsNotWf, exp_wf
-from cozy.common import No, OrderedSet, ADT, Visitor, fresh_name, unique, pick_to_sum, OrderedDefaultDict, OrderedSet, group_by, find_one, extend, StopException
-from cozy.solver import satisfy, satisfiable, valid, IncrementalSolver, ModelCachingSolver
-from cozy.evaluation import eval, eval_bulk, mkval, construct_value, uneval, eq
-from cozy.cost_model import CostModel, Order, rt as runtime, asymptotic_runtime, max_storage_size, LINEAR_TIME_UOPS
+from cozy.common import No, OrderedSet, unique, OrderedSet, StopException
+from cozy.solver import satisfy, valid, IncrementalSolver, ModelCachingSolver
+from cozy.evaluation import construct_value, eq
+from cozy.cost_model import CostModel, Order, LINEAR_TIME_UOPS
 from cozy.opts import Option
-from cozy.pools import Pool, ALL_POOLS, RUNTIME_POOL, STATE_POOL, pool_name
+from cozy.pools import Pool, RUNTIME_POOL, STATE_POOL, pool_name
 from cozy.contexts import Context, shred, replace
 from cozy.logging import task, event
 
@@ -417,7 +413,7 @@ def improve(
         return
 
     examples = list(examples)
-    
+
     if cost_model is None:
         cost_model = CostModel(funcs=funcs, assumptions=assumptions)
 

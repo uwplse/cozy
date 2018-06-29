@@ -6,10 +6,10 @@ handling handles.
 
 from collections import OrderedDict
 
-from cozy.common import typechecked, extend, fresh_name
+from cozy.common import typechecked
 from cozy.target_syntax import *
-from cozy.syntax_tools import pprint, fresh_var, mk_lambda, all_exps, BottomUpRewriter, deep_copy, free_vars
-from cozy.typecheck import is_collection, is_scalar, retypecheck
+from cozy.syntax_tools import fresh_var, mk_lambda
+from cozy.typecheck import is_collection
 
 @typechecked
 def _merge(a : {THandle:Exp}, b : {THandle:Exp}) -> {THandle:Exp}:

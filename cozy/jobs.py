@@ -2,9 +2,7 @@
 
 from multiprocessing import Process, Array, Queue
 from queue import Queue as PlainQueue, Empty, Full
-import time
 import threading
-import sys
 
 from cozy.opts import Option
 
