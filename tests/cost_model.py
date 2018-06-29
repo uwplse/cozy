@@ -6,10 +6,10 @@ from cozy.common import OrderedSet
 from cozy.cost_model import CostModel, Order, debug_comparison
 from cozy.typecheck import INT, retypecheck
 from cozy.target_syntax import *
-from cozy.syntax_tools import equal, implies, pprint, fresh_var, mk_lambda, replace, subst, free_vars, all_exps
+from cozy.syntax_tools import equal, pprint, fresh_var, mk_lambda, subst, free_vars, all_exps
 from cozy.solver import valid
 from cozy.pools import RUNTIME_POOL, STATE_POOL
-from cozy.contexts import RootCtx, UnderBinder, replace
+from cozy.contexts import RootCtx
 from cozy.synthesis.acceleration import optimized_exists
 
 def cost_of(e, pool=RUNTIME_POOL):
@@ -39,7 +39,7 @@ def _assert_cmp(e1, c1, e2, c2, cmp, assumptions, freebies : [Exp] = []):
     ctx = create_context(e1, e2)
 
     cm = CostModel(assumptions=assumptions)
-    if freebies: 
+    if freebies:
         cm = CostModel(assumptions=assumptions, freebies=freebies)
 
     c = cm.compare(e1, e2, context=ctx, pool=RUNTIME_POOL)

@@ -1,5 +1,4 @@
-from collections import namedtuple, OrderedDict
-from enum import Enum
+from collections import namedtuple
 import itertools
 
 from cozy.common import pick_to_sum, OrderedSet, unique, make_random_access, StopException

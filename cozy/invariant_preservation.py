@@ -1,12 +1,9 @@
 """Functions for checking invariants and other properties of a Cozy spec."""
 
-from itertools import chain
-
 from cozy.common import typechecked
 from cozy.target_syntax import *
-from cozy.typecheck import is_collection
 from cozy.solver import valid
-from cozy.syntax_tools import pprint, subst, enumerate_fragments, shallow_copy, mk_lambda
+from cozy.syntax_tools import pprint, enumerate_fragments, shallow_copy
 from cozy.handle_tools import reachable_handles_at_method, implicit_handle_assumptions_for_method
 from cozy.state_maintenance import mutate
 from cozy.opts import Option

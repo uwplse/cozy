@@ -5,10 +5,10 @@ Important functions:
  - mutate_in_place: write code to keep a derived value in sync with its inputs
 """
 
-from cozy.common import fresh_name, identity_func
+from cozy.common import fresh_name
 from cozy import syntax
 from cozy import target_syntax
-from cozy.syntax_tools import free_vars, pprint, fresh_var, mk_lambda, alpha_equivalent, strip_EStateVar, subst, break_seq, BottomUpRewriter
+from cozy.syntax_tools import free_vars, pprint, fresh_var, mk_lambda, strip_EStateVar, subst, BottomUpRewriter
 from cozy.typecheck import is_numeric
 from cozy.solver import valid
 from cozy.opts import Option

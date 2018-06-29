@@ -1,10 +1,10 @@
 import unittest
 
-from cozy.syntax_tools import mk_lambda, pprint, alpha_equivalent, subst, strip_EStateVar
+from cozy.syntax_tools import mk_lambda, pprint, alpha_equivalent
 from cozy.target_syntax import *
 from cozy.contexts import RootCtx
 from cozy.typecheck import retypecheck
-from cozy.evaluation import Bag, mkval
+from cozy.evaluation import mkval
 from cozy.synthesis.core import improve
 from cozy.solver import valid, satisfy
 

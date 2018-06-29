@@ -1,6 +1,6 @@
 import unittest
 
-from cozy.syntax_tools import mk_lambda, pprint
+from cozy.syntax_tools import mk_lambda
 from cozy.target_syntax import *
 from cozy.structures.heaps import *
 from cozy.typecheck import typecheck, retypecheck

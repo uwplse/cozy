@@ -2,7 +2,7 @@ import unittest
 
 from cozy.target_syntax import *
 from cozy.syntax_tools import *
-from cozy.evaluation import eval, Bag, Map, Handle, cmp, eq, EQ, LT, GT
+from cozy.evaluation import eval, Bag, Map, Handle, cmp, eq, EQ
 from cozy.typecheck import retypecheck
 
 zero = ENum(0).with_type(INT)

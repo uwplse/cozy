@@ -1,18 +1,17 @@
-from collections import namedtuple, deque, defaultdict, OrderedDict
+from collections import namedtuple, defaultdict, OrderedDict
 import datetime
 import itertools
 import sys
 import os
 from queue import Empty
 
-from cozy.common import typechecked, fresh_name, pick_to_sum, nested_dict, find_one, OrderedSet
+from cozy.common import typechecked, OrderedSet
 from cozy.target_syntax import *
-import cozy.syntax_tools
-from cozy.syntax_tools import all_types, alpha_equivalent, BottomUpExplorer, BottomUpRewriter, free_vars, pprint, subst, implies, fresh_var, mk_lambda, all_exps, equal, is_scalar, tease_apart, shallow_copy, wrap_naked_statevars
-from cozy.timeouts import Timeout, TimeoutException
+from cozy.syntax_tools import all_types, free_vars, pprint, tease_apart, shallow_copy, wrap_naked_statevars
+from cozy.typecheck import is_scalar
+from cozy.timeouts import Timeout
 from cozy import jobs
 from cozy.contexts import RootCtx
-from cozy.solver import valid
 from cozy.opts import Option
 from cozy.cost_model import CostModel
 
@@ -66,8 +65,8 @@ class ImproveQueryJob(jobs.Job):
                 funcs=self.funcs)
 
             cost_model = CostModel(
-                    funcs=ctx.funcs(), 
-                    assumptions=EAll(self.assumptions), 
+                    funcs=ctx.funcs(),
+                    assumptions=EAll(self.assumptions),
                     freebies=self.freebies)
 
             try:

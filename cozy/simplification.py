@@ -8,7 +8,7 @@ The most important function is `simplify`.
 
 from cozy.target_syntax import *
 from cozy.typecheck import is_collection, is_numeric
-from cozy.syntax_tools import BottomUpRewriter, alpha_equivalent, cse, compose, pprint, mk_lambda, replace
+from cozy.syntax_tools import BottomUpRewriter, alpha_equivalent, compose, pprint, mk_lambda, replace
 from cozy.evaluation import construct_value, eval
 from cozy.solver import valid, satisfy
 from cozy.opts import Option

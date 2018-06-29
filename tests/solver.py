@@ -5,8 +5,7 @@ from cozy.solver import satisfy, valid, satisfiable, IncrementalSolver, ModelCac
 from cozy.typecheck import typecheck, retypecheck
 from cozy.target_syntax import *
 from cozy.structures.heaps import *
-from cozy.syntax_tools import pprint, equal, implies, mk_lambda, subst, free_vars
-from cozy.evaluation import eval, Bag, Handle
+from cozy.syntax_tools import pprint, equal, implies, mk_lambda, free_vars
 
 zero = ENum(0).with_type(TInt())
 one  = ENum(1).with_type(TInt())

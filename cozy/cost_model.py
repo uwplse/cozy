@@ -3,13 +3,13 @@
 from collections import OrderedDict
 from enum import Enum
 
-from cozy.common import OrderedSet, partition
+from cozy.common import OrderedSet
 from cozy.target_syntax import *
-from cozy.syntax_tools import pprint, fresh_var, free_vars, free_funcs, break_sum, all_exps, alpha_equivalent
+from cozy.syntax_tools import pprint, fresh_var, free_vars, free_funcs, all_exps, alpha_equivalent
 from cozy.contexts import Context
 from cozy.typecheck import is_collection, is_numeric
-from cozy.pools import Pool, RUNTIME_POOL, STATE_POOL
-from cozy.solver import satisfy, ModelCachingSolver
+from cozy.pools import Pool, RUNTIME_POOL
+from cozy.solver import ModelCachingSolver
 from cozy.evaluation import eval, eval_bulk
 from cozy.structures import extension_handler
 from cozy.logging import task, event
@@ -101,7 +101,7 @@ def storage_size(e, freebies : [Exp] = []):
     h = extension_handler(type(e.type))
     if h is not None:
         return h.storage_size(e, k=storage_size)
-    
+
     if e in freebies:
         return ZERO
     elif e.type == BOOL:

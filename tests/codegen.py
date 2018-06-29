@@ -1,9 +1,7 @@
 from collections import OrderedDict, defaultdict
 import io
 import os
-import shutil
 import subprocess
-import sys
 import tempfile
 import unittest
 
@@ -11,7 +9,6 @@ from cozy.target_syntax import *
 from cozy.structures.heaps import *
 from cozy.syntax_tools import pprint, mk_lambda, fresh_var
 from cozy.codegen import CxxPrinter, JavaPrinter
-from cozy.typecheck import retypecheck
 
 class TestCodegen(unittest.TestCase):
 
