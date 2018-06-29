@@ -1,7 +1,7 @@
 from cozy.common import fresh_name, declare_case
 from cozy.syntax import *
 from cozy.target_syntax import SWhile, SSwap, SSwitch, SEscapableBlock, SEscapeBlock, EMap, EFilter
-from cozy.syntax_tools import fresh_var, pprint, shallow_copy, mk_lambda, alpha_equivalent
+from cozy.syntax_tools import fresh_var, pprint, mk_lambda, alpha_equivalent
 from cozy.pools import RUNTIME_POOL
 
 from .arrays import TArray, EArrayGet, EArrayIndexOf, SArrayAlloc, SEnsureCapacity, EArrayLen

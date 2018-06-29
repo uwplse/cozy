@@ -1,10 +1,10 @@
 from contextlib import contextmanager
 import itertools
-import json
 
 from cozy import common, evaluation
 from cozy.target_syntax import *
-from cozy.syntax_tools import free_vars, subst, is_scalar, all_exps
+from cozy.syntax_tools import free_vars, subst, all_exps
+from cozy.typecheck import is_scalar
 from cozy.structures.arrays import TArray
 
 from .cxx import CxxPrinter

@@ -3,7 +3,7 @@
 from cozy.common import Visitor
 from cozy import syntax
 from cozy import target_syntax
-from cozy.syntax_tools import pprint, all_exps, is_scalar, free_vars
+from cozy.syntax_tools import pprint, all_exps, free_vars
 
 from cozy.syntax import BOOL, INT, LONG, FLOAT, STRING
 from cozy.structures import extension_handler
@@ -38,6 +38,24 @@ DEFAULT_TYPE = object()
 
 def is_numeric(t):
     return t in (INT, LONG, FLOAT)
+
+_SCALAR_TYPES = set((
+    syntax.TBool,
+    syntax.TString,
+    syntax.TNative,
+    syntax.THandle,
+    syntax.TEnum))
+def is_scalar(t : syntax.Type):
+    from cozy.typecheck import is_numeric
+    if is_numeric(t):
+        return True
+    if type(t) in _SCALAR_TYPES:
+        return True
+    if isinstance(t, syntax.TTuple):
+        return all(is_scalar(tt) for tt in t.ts)
+    if isinstance(t, syntax.TRecord):
+        return all(is_scalar(tt) for (f, tt) in t.fields)
+    return False
 
 COLLECTION_TYPES = (syntax.TBag, syntax.TSet, syntax.TList)
 def is_collection(t):

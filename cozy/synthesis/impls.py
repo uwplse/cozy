@@ -13,8 +13,8 @@ import igraph
 
 from cozy.common import fresh_name, find_one, typechecked, OrderedSet
 from cozy.syntax import *
-from cozy.target_syntax import EFilter, EDeepIn, EStateVar
-from cozy.syntax_tools import subst, free_vars, fresh_var, alpha_equivalent, all_exps, BottomUpRewriter, BottomUpExplorer, pprint, replace, shallow_copy, tease_apart, wrap_naked_statevars, rewrite_ret
+from cozy.target_syntax import EFilter, EDeepIn
+from cozy.syntax_tools import subst, free_vars, fresh_var, all_exps, BottomUpRewriter, pprint, shallow_copy, tease_apart, wrap_naked_statevars, rewrite_ret
 from cozy.handle_tools import reachable_handles_at_method, implicit_handle_assumptions_for_method
 import cozy.state_maintenance as inc
 from cozy.opts import Option

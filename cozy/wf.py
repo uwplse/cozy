@@ -1,16 +1,11 @@
 """Well-formedness tests for Cozy expressions."""
 
-import itertools
-
 from cozy.common import typechecked, OrderedSet
-from cozy.typecheck import is_collection, is_scalar
 from cozy.target_syntax import *
-from cozy.syntax_tools import pprint, free_vars
 from cozy.solver import ModelCachingSolver
 from cozy.pools import RUNTIME_POOL, STATE_POOL
-from cozy.opts import Option
 from cozy.structures import extension_handler
-from cozy.contexts import Context, RootCtx, shred
+from cozy.contexts import Context, shred
 
 class ExpIsNotWf(Exception):
     def __init__(self, e, offending_subexpression, reason):

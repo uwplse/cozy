@@ -1,2 +1,6 @@
-from .cxx import CxxPrinter
-from .java import JavaPrinter
+from . import cxx
+from . import java
+
+# re-export the most important functions and types
+JavaPrinter = java.JavaPrinter
+CxxPrinter  = cxx.CxxPrinter

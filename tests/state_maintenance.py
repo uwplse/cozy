@@ -2,7 +2,7 @@ import unittest
 
 from cozy.target_syntax import *
 from cozy.structures.heaps import *
-from cozy.syntax_tools import free_vars, pprint
+from cozy.syntax_tools import pprint
 from cozy.solver import valid
 import cozy.state_maintenance as inc
 

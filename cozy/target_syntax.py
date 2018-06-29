@@ -6,7 +6,7 @@ primitives the tool can output and use during synthesis.
 """
 
 from cozy.syntax import *
-from cozy.common import declare_case, typechecked, fresh_name
+from cozy.common import declare_case, fresh_name
 from cozy.opts import Option
 
 enforce_estatevar_wf = Option("enforce-well-formed-state-var-boundaries", bool, False)

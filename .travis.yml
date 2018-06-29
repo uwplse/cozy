@@ -22,6 +22,10 @@ script:
   #  - https://pycodestyle.readthedocs.io/en/latest/intro.html#error-codes
   # Error codes we use:
   #  - E901, E999: syntax and indentation errors
+  #  - F401: module imported but unused
+  #  - F402: import module shadowed by loop variable
+  #  - F406: 'from module import *' only allowed at module level
+  #  - F705: a return statement with arguments inside a generator
   #  - F821: undefined name
   #  - F822: undefined name in __all__
   #  - F823: local variable referenced before assignment
@@ -31,7 +35,7 @@ script:
   #  - E111, E114: indentation is not a multiple of four
   #  - W191: indentation contains tabs
   - "flake8
-      --select=E901,E999,F821,F822,F823,W2,W3,E703,E111,E114,W191
+      --select=E901,E999,F401,F402,F406,F705,F821,F822,F823,W2,W3,E703,E111,E114,W191
       --show-source
       $(find cozy tests -name '*.py' -not -name 'parsetab.py')"
   - python -m unittest -vb tests/*.py

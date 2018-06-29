@@ -1,13 +1,12 @@
 from collections import OrderedDict
 import json
 import itertools
-from io import StringIO
 
 from cozy import common, evaluation
 from cozy.common import fresh_name, declare_case, extend
 from cozy.target_syntax import *
-from cozy.syntax_tools import all_types, fresh_var, subst, free_vars, is_scalar, mk_lambda, alpha_equivalent, all_exps, break_seq, is_lvalue
-from cozy.typecheck import is_collection, is_numeric
+from cozy.syntax_tools import all_types, fresh_var, subst, free_vars, all_exps, break_seq, is_lvalue
+from cozy.typecheck import is_collection, is_scalar
 from cozy.structures import extension_handler
 
 from .misc import *
