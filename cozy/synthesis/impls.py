@@ -247,7 +247,7 @@ class Implementation(object):
         state_read_by_query = {
             query_name : free_vars(query)
             for query_name, query in self.query_impls.items() }
-        
+
         # prevent read-after-write by lifting reads before writes.
 
         # list of SDecls

@@ -417,7 +417,7 @@ def improve(
         return
 
     examples = list(examples)
-    
+
     if cost_model is None:
         cost_model = CostModel(funcs=funcs, assumptions=assumptions)
 

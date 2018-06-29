@@ -970,7 +970,7 @@ class CxxPrinter(CodeGenerator):
             self.write(";")
             self.end_statement()
         elif isinstance(t, TTuple):
-            return self.define_type(toplevel_name, TRecord(tuple(("_{}".format(i), t.ts[i]) for i in range(len(t.ts)))), name, sharing);
+            return self.define_type(toplevel_name, TRecord(tuple(("_{}".format(i), t.ts[i]) for i in range(len(t.ts)))), name, sharing)
         else:
             return ""
 

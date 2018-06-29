@@ -66,8 +66,8 @@ class ImproveQueryJob(jobs.Job):
                 funcs=self.funcs)
 
             cost_model = CostModel(
-                    funcs=ctx.funcs(), 
-                    assumptions=EAll(self.assumptions), 
+                    funcs=ctx.funcs(),
+                    assumptions=EAll(self.assumptions),
                     freebies=self.freebies)
 
             try:
