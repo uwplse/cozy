@@ -149,7 +149,7 @@ def hash_cost(e):
 def comparison_cost(e1, e2):
     return ESum([storage_size(e1), storage_size(e2)])
 
-def wc_card(e):
+def wc_card(e : Exp) -> DominantTerm:
     assert is_collection(e.type)
     while isinstance(e, EFilter) or isinstance(e, EMap) or isinstance(e, EFlatMap) or isinstance(e, EMakeMap2) or isinstance(e, EStateVar) or (isinstance(e, EUnaryOp) and e.op == UOp.Distinct) or isinstance(e, EListSlice):
         e = e.e
@@ -177,6 +177,11 @@ LINEAR_TIME_UOPS = {
 
 @functools.total_ordering
 class DominantTerm(object):
+    """A term of the form c*n^e for some unknown n.
+
+    Instances of this class can be added, multiplied, and compared.  A term
+    with a higher exponent is always greater than one with a lower exponent.
+    """
     __slots__ = ("multiplier", "exponent")
     def __init__(self, multiplier, exponent):
         self.multiplier = multiplier
@@ -202,7 +207,7 @@ DominantTerm.ZERO = DominantTerm(0, 0)
 DominantTerm.ONE  = DominantTerm(1, 0)
 DominantTerm.N    = DominantTerm(1, 1)
 
-def asymptotic_runtime(e : Exp) -> int:
+def asymptotic_runtime(e : Exp) -> DominantTerm:
     res = DominantTerm.ZERO
     stk = [e]
     while stk:
