@@ -86,7 +86,6 @@ class CostModel(object):
 
     def compare(self, e1 : Exp, e2 : Exp, context : Context, pool : Pool) -> Order:
         with task("compare costs", context=context):
-            debug_comparison(cm=self, e1=e1, e2=e2, context=context)
             if pool == RUNTIME_POOL:
                 return composite_order(
                     lambda: order_objects(asymptotic_runtime(e1), asymptotic_runtime(e2)),
@@ -377,17 +376,21 @@ def debug_comparison(cm : CostModel, e1 : Exp, e2 : Exp, context : Context):
     print("Comparing")
     print("  e1 = {}".format(pprint(e1)))
     print("  e2 = {}".format(pprint(e2)))
-    print("-" * 20 + " {} examples...".format(len(cm.examples)))
+    print("  res = {}".format(cm.compare(e1, e2, context=context, pool=RUNTIME_POOL)))
     print("-" * 20 + " {} ops...".format(len(cm.ops)))
-    for f in asymptotic_runtime, max_storage_size, rt, maintenance_cost:
+    for o in cm.ops:
+        print(pprint(o))
         for ename, e in [("e1", e1), ("e2", e2)]:
-            if f is maintenance_cost:
-                print("{f}({e}) = {res}".format(f=f.__name__, e=ename, res=pprint(f(e, cm.solver, cm.ops))))
-            else:
-                print("{f}({e}) = {res}".format(f=f.__name__, e=ename, res=(pprint(f(e)))))
+            print("maintenance_cost({e}) = {res}".format(e=ename, res=pprint(maintenance_cost(e, cm.solver, [o]))))
 
+    print("-" * 20)
+    for f in asymptotic_runtime, max_storage_size, rt:
+        for ename, e in [("e1", e1), ("e2", e2)]:
+            res = f(e)
+            print("{f}({e}) = {res}".format(f=f.__name__, e=ename, res=(pprint(res) if isinstance(res, Exp) else res)))
+
+    print("-" * 20 + " {} examples...".format(len(cm.examples)))
     for x in cm.examples:
-        print("-" * 20)
         print(x)
         print("asympto(e1) = {}".format(asymptotic_runtime(e1)))
         print("asympto(e2) = {}".format(asymptotic_runtime(e2)))
@@ -399,4 +402,4 @@ def debug_comparison(cm : CostModel, e1 : Exp, e2 : Exp, context : Context):
         print("storage(e2) = {}".format(eval_bulk(max_storage_size(e2), [x], use_default_values_for_undefined_vars=True)[0]))
         print("runtime(e1) = {}".format(eval_bulk(rt(e1), [x], use_default_values_for_undefined_vars=True)[0]))
         print("runtime(e2) = {}".format(eval_bulk(rt(e2), [x], use_default_values_for_undefined_vars=True)[0]))
-    print("-" * 20)
+        print("-" * 20)
