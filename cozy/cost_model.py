@@ -149,32 +149,6 @@ def hash_cost(e):
 def comparison_cost(e1, e2):
     return ESum([storage_size(e1), storage_size(e2)])
 
-def wc_card(e : Exp) -> DominantTerm:
-    assert is_collection(e.type)
-    while isinstance(e, EFilter) or isinstance(e, EMap) or isinstance(e, EFlatMap) or isinstance(e, EMakeMap2) or isinstance(e, EStateVar) or (isinstance(e, EUnaryOp) and e.op == UOp.Distinct) or isinstance(e, EListSlice):
-        e = e.e
-    if isinstance(e, EBinOp) and e.op == "-":
-        return wc_card(e.e1)
-    if isinstance(e, EBinOp) and e.op == "+":
-        return wc_card(e.e1) + wc_card(e.e2)
-    if isinstance(e, EFlatMap):
-        return wc_card(e.e) * wc_card(e.f.body)
-    if isinstance(e, ECond):
-        return max(wc_card(e.then_branch), wc_card(e.else_branch))
-    if isinstance(e, EEmptyList):
-        return DominantTerm.ZERO
-    if isinstance(e, ESingleton):
-        return DominantTerm.ONE
-    return DominantTerm.N
-
-# These require walking over the entire collection.
-# Some others (e.g. "exists" or "empty") just look at the first item.
-LINEAR_TIME_UOPS = {
-    UOp.Sum, UOp.Length,
-    UOp.Distinct, UOp.AreUnique,
-    UOp.All, UOp.Any,
-    UOp.Reversed }
-
 @functools.total_ordering
 class DominantTerm(object):
     """A term of the form c*n^e for some unknown n.
@@ -202,6 +176,32 @@ class DominantTerm(object):
         return self
     def __mul__(self, other):
         return DominantTerm(self.multiplier * other.multiplier, self.exponent + other.exponent)
+
+def wc_card(e : Exp) -> DominantTerm:
+    assert is_collection(e.type)
+    while isinstance(e, EFilter) or isinstance(e, EMap) or isinstance(e, EFlatMap) or isinstance(e, EMakeMap2) or isinstance(e, EStateVar) or (isinstance(e, EUnaryOp) and e.op == UOp.Distinct) or isinstance(e, EListSlice):
+        e = e.e
+    if isinstance(e, EBinOp) and e.op == "-":
+        return wc_card(e.e1)
+    if isinstance(e, EBinOp) and e.op == "+":
+        return wc_card(e.e1) + wc_card(e.e2)
+    if isinstance(e, EFlatMap):
+        return wc_card(e.e) * wc_card(e.f.body)
+    if isinstance(e, ECond):
+        return max(wc_card(e.then_branch), wc_card(e.else_branch))
+    if isinstance(e, EEmptyList):
+        return DominantTerm.ZERO
+    if isinstance(e, ESingleton):
+        return DominantTerm.ONE
+    return DominantTerm.N
+
+# These require walking over the entire collection.
+# Some others (e.g. "exists" or "empty") just look at the first item.
+LINEAR_TIME_UOPS = {
+    UOp.Sum, UOp.Length,
+    UOp.Distinct, UOp.AreUnique,
+    UOp.All, UOp.Any,
+    UOp.Reversed }
 
 DominantTerm.ZERO = DominantTerm(0, 0)
 DominantTerm.ONE  = DominantTerm(1, 0)
