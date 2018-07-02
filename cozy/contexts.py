@@ -114,6 +114,8 @@ class UnderBinder(Context):
     def alpha_equivalent(self, other):
         if not isinstance(other, UnderBinder):
             return False
+        if self.pool != other.pool:
+            return False
         if not self.var.type == other.var.type:
             return False
         if not self._parent.alpha_equivalent(other._parent):
