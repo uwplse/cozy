@@ -298,36 +298,23 @@ class Implementation(object):
         Remove unused state, queries, and updates.
         """
 
-        # sort of like mark-and-sweep
-        queries_to_keep = OrderedSet(q.name for q in self.query_specs if q.visibility == Visibility.Public)
-        state_vars_to_keep = OrderedSet()
-        changed = True
-        while changed:
-            changed = False
-            for qname in list(queries_to_keep):
-                if qname in self.query_impls:
-                    for sv in free_vars(self.query_impls[qname]):
-                        if sv not in state_vars_to_keep:
-                            state_vars_to_keep.add(sv)
-                            changed = True
-                    for e in all_exps(self.query_impls[qname].ret):
-                        if isinstance(e, ECall):
-                            if e.func not in queries_to_keep:
-                                queries_to_keep.add(e.func)
-                                changed = True
-            for op in self.op_specs:
-                for ((ht, op_name), code) in self.handle_updates.items():
-                    if op.name == op_name:
-                        for qname in self.queries_used_by(code):
-                            if qname not in queries_to_keep:
-                                queries_to_keep.add(qname)
-                                changed = True
+        def deps(thing):
+            if isinstance(thing, str):
+                yield from free_vars(self.query_impls[thing])
+            elif isinstance(thing, EVar):
+                for op in self.op_specs:
+                    yield self.updates[(thing, op.name)]
+            elif isinstance(thing, Stm):
+                yield from self.queries_used_by(thing)
+            else:
+                raise ValueError(repr(thing))
 
-                for sv in state_vars_to_keep:
-                    for qname in self.queries_used_by(self.updates[(sv, op.name)]):
-                        if qname not in queries_to_keep:
-                            queries_to_keep.add(qname)
-                            changed = True
+        g = DirectedGraph(
+            nodes=itertools.chain(self.query_impls.keys(), (v for v, _ in self.concrete_state), self.updates.values()),
+            successors=deps)
+        roots = [q.name for q in self.query_specs if q.visibility == Visibility.Public]
+        roots.extend(itertools.chain(*[self.queries_used_by(code) for ((ht, op_name), code) in self.handle_updates.items()]))
+        queries_to_keep = set(q for q in g.reachable_nodes(roots) if isinstance(q, str))
 
         # remove old specs
         for q in list(self.query_specs):

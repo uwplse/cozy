@@ -48,7 +48,10 @@ class DirectedGraph(object):
         self.g = igraph.Graph().as_directed()
         self.g.add_vertices(len(self.nodes))
         for i in range(len(self.nodes)):
-            self.g.add_edges([(i, self.nodes.index(n)) for n in successors(self.nodes[i])])
+            self.g.add_edges([(i, self._vertex_id(n)) for n in successors(self.nodes[i])])
+
+    def _vertex_id(self, label):
+        return self.nodes.index(label)
 
     def minimum_feedback_arc_set(self):
         return _safe_feedback_arc_set(self.g)
@@ -59,3 +62,15 @@ class DirectedGraph(object):
     def toposort(self):
         for node_id in self.g.topological_sorting(mode="OUT"):
             yield self.nodes[node_id]
+
+    def reachable_nodes(self, roots):
+        # incredibly, igraph has no method for this
+        seen = set()
+        stk = [self._vertex_id(r) for r in roots]
+        while stk:
+            n = stk.pop()
+            if n in seen:
+                continue
+            yield self.nodes[n]
+            seen.add(n)
+            stk.extend(self.g.successors(n))
