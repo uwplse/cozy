@@ -9,8 +9,6 @@ they store various other information to aid synthesis.
 import itertools
 from collections import OrderedDict, defaultdict
 
-import igraph
-
 from cozy.common import fresh_name, find_one, typechecked, OrderedSet
 from cozy.syntax import *
 from cozy.target_syntax import EFilter, EDeepIn
@@ -21,6 +19,7 @@ from cozy.opts import Option
 from cozy.simplification import simplify
 from cozy.solver import valid, ModelCachingSolver
 from cozy.logging import task, event
+from cozy.graph_theory import DirectedGraph
 
 from .misc import queries_equivalent, pull_temps
 
@@ -29,41 +28,6 @@ dedup_queries = Option("deduplicate-subqueries", bool, True)
 def simplify_or_ignore(e):
     ee = simplify(e)
     return ee if ee.size() < e.size() else e
-
-def safe_feedback_arc_set(g, method):
-    """
-    Compute the feedback arc set for directed graph `g`.
-
-    This function works around a potential segfault in igraph:
-    https://github.com/igraph/igraph/issues/858
-    """
-
-    assert g.is_directed()
-
-    # No verts? No problem!
-    if g.vcount() == 0:
-        return []
-
-    orig_g = g
-    g = g.copy()
-
-    # Add a "terminal" node with an edge from every vertex.
-    # This should not affect the feedback arc set.
-    new_vertex_id = g.vcount()
-    g.add_vertices(1)
-    g.add_edges([(v, new_vertex_id) for v in range(new_vertex_id)])
-
-    edge_ids = g.feedback_arc_set(method=method)
-
-    # I assume the edge ids are the same between g and its copy?
-    # Let's do a little bit of checking just in case.
-    g.delete_vertices([new_vertex_id])
-    to_check = [g.es[e].source for e in edge_ids]
-    d1 = orig_g.degree(to_check)
-    d2 = g.degree(to_check)
-    assert d1 == d2, "{!r} vs {!r}".format(d1, d2)
-
-    return edge_ids
 
 class Implementation(object):
 
@@ -254,31 +218,34 @@ class Implementation(object):
         temps = defaultdict(list)
         updates = dict(self.updates)
 
+        concrete_state_vars = [v for v, e in self.concrete_state]
+
         for operator in self.op_specs:
+
             # Compute order constraints between statements:
             #   v1 -> v2 means that the update code for v1 should (if possible)
             #   appear before the update code for v2
             #   (i.e. the update code for v1 reads v2)
-            g = igraph.Graph().as_directed()
-            g.add_vertices(len(self.concrete_state))
-            for (i, (v1, _)) in enumerate(self.concrete_state):
+            def state_used_during_update(v1 : EVar) -> [EVar]:
                 v1_update_code = self.updates[(v1, operator.name)]
                 v1_queries = list(self.queries_used_by(v1_update_code))
-                for (j, (v2, _)) in enumerate(self.concrete_state):
-                    # if v1_update_code reads v2...
-                    if any(v2 in state_read_by_query[q] for q in v1_queries):
-                        # then v1->v2
-                        g.add_edges([(i, j)])
+                res = OrderedSet()
+                for q in v1_queries:
+                    res |= state_read_by_query[q]
+                return res
+            g = DirectedGraph(
+                nodes=concrete_state_vars,
+                successors=state_used_during_update)
 
             # Find the minimum set of edges we need to break (see "feedback arc
             # set problem")
-            edges_to_break = safe_feedback_arc_set(g, method="ip")
+            edges_to_break = g.minimum_feedback_arc_set()
             g.delete_edges(edges_to_break)
-            ordered_concrete_state = [self.concrete_state[i] for i in g.topological_sorting(mode="OUT")]
+            ordered_concrete_state = list(g.toposort())
 
             # Lift auxiliary declarations as needed
             things_updated = []
-            for v, _ in ordered_concrete_state:
+            for v in ordered_concrete_state:
                 things_updated.append(v)
                 stm = updates[(v, operator.name)]
                 def problematic(e):
@@ -297,7 +264,7 @@ class Implementation(object):
         new_ops = []
         for op in self.op_specs:
 
-            stms = [ updates[(v, op.name)] for (v, _) in ordered_concrete_state ]
+            stms = [ updates[(v, op.name)] for v in ordered_concrete_state ]
             stms.extend(hup for ((t, op_name), hup) in self.handle_updates.items() if op.name == op_name)
             new_stms = seq(temps[op.name] + stms)
             new_ops.append(Op(
