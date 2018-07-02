@@ -105,3 +105,18 @@ class TestContexts(unittest.TestCase):
 
         assert c1 != c2
         assert not c1.alpha_equivalent(c2)
+
+    def test_let(self):
+        e1 = ELet(ZERO, ELambda(x, x))
+        root_ctx = RootCtx(args=(), state_vars=())
+        assert retypecheck(e1)
+        n = 0
+        for ee, ctx, pool in shred(e1, root_ctx, RUNTIME_POOL):
+            if ee == x:
+                e2 = replace(
+                    e1, root_ctx, RUNTIME_POOL,
+                    x, ctx, pool,
+                    ZERO)
+                assert e2 == ELet(ZERO, ELambda(x, ZERO))
+                n += 1
+        assert n == 1

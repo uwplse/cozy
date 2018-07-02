@@ -15,7 +15,7 @@ from collections import OrderedDict
 import itertools
 
 from cozy.common import OrderedSet, unique, Visitor
-from cozy.syntax import TFunc, Exp, EVar, EAll
+from cozy.syntax import TFunc, TBag, Exp, EVar, EAll, ESingleton
 from cozy.target_syntax import EDeepIn
 from cozy.evaluation import eval
 from cozy.syntax_tools import pprint, alpha_equivalent, free_vars, subst, BottomUpRewriter
@@ -202,6 +202,10 @@ class _Shredder(Visitor):
         yield (e, self.ctx, self.pool)
         yield from self.visit(e.e)
         yield from self.visit(e.f, e.e)
+    def visit_ELet(self, e):
+        yield (e, self.ctx, self.pool)
+        yield from self.visit(e.e)
+        yield from self.visit(e.f, ESingleton(e.e).with_type(TBag(e.e.type)))
     def visit_Exp(self, e):
         yield (e, self.ctx, self.pool)
         for child in e.children():
@@ -269,6 +273,8 @@ class _Replacer(BottomUpRewriter):
         return self.join(e, (self.visit(e.e), self.visit(e.f, e.e)))
     def visit_EMakeMaxHeap(self, e):
         return self.join(e, (self.visit(e.e), self.visit(e.f, e.e)))
+    def visit_ELet(self, e):
+        return self.join(e, (self.visit(e.e), self.visit(e.f, ESingleton(e.e).with_type(TBag(e.e.type)))))
     def visit(self, e, *args):
         if isinstance(e, Exp) and _sametype(e, self.needle) and self.pool == self.needle_pool and alpha_equivalent(self.needle, e) and self.needle_context.alpha_equivalent(self.ctx):
             return self.ctx.adapt(self.replacement, self.needle_context)
