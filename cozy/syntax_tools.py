@@ -1520,8 +1520,8 @@ def inline_calls(spec):
             if query is None:
                 return e
 
-            return subst(query.ret,
-                {arg: self.visit(expr) for ((arg, argtype), expr) in zip(query.args, e.args)})
+            return self.visit(subst(query.ret,
+                {arg: self.visit(expr) for ((arg, argtype), expr) in zip(query.args, e.args)}))
 
     rewriter = CallInliner()
     return rewriter.visit(spec)
