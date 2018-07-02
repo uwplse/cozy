@@ -3,7 +3,7 @@
 from cozy.common import typechecked
 from cozy.target_syntax import *
 from cozy.solver import valid
-from cozy.syntax_tools import pprint, enumerate_fragments, shallow_copy
+from cozy.syntax_tools import pprint, enumerate_fragments, shallow_copy, inline_calls, subst
 from cozy.handle_tools import reachable_handles_at_method, implicit_handle_assumptions_for_method
 from cozy.state_maintenance import mutate
 from cozy.opts import Option
@@ -52,4 +52,21 @@ def check_the_wf(spec : Spec):
             a = ctx.facts
             if not valid(EImplies(EAll(a), EAny([EIsSingleton(e.e), EEmpty(e.e)]))):
                 res.append("at {}: `the` is illegal since its argument may not be singleton".format(pprint(e)))
+    return res
+
+def check_calls_wf(spec : Spec):
+    res = []
+    queries = { m.name : m for m in spec.methods if isinstance(m, Query) }
+    for ctx in enumerate_fragments(spec):
+        e = ctx.e
+        if isinstance(e, ECall):
+            q = queries.get(e.func)
+            if q is None:
+                continue
+            print("Checking call {}...".format(pprint(e)))
+            a = EAll(ctx.facts)
+            for precond in q.assumptions:
+                precond = subst(precond, { v : val for (v, t), val in zip(q.args, e.args) })
+                if not valid(inline_calls(spec, EImplies(a, precond))):
+                    res.append("at {}: call may not satisfy precondition {}".format(pprint(e), pprint(precond)))
     return res

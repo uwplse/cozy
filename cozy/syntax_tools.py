@@ -1503,7 +1503,10 @@ def cse(e, verify=False):
             assert False
     return res
 
-def inline_calls(spec):
+def inline_calls(spec, target=None):
+    if target is None:
+        target = spec
+
     extern_func_names = set(e.name for e in spec.extern_funcs)
     queries = {q.name : q for q in spec.methods if isinstance(q, syntax.Query)}
 
@@ -1524,7 +1527,7 @@ def inline_calls(spec):
                 {arg: self.visit(expr) for ((arg, argtype), expr) in zip(query.args, e.args)}))
 
     rewriter = CallInliner()
-    return rewriter.visit(spec)
+    return rewriter.visit(target)
 
 def get_modified_var(stm):
     """

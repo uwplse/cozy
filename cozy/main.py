@@ -71,12 +71,16 @@ def run():
 
         ast = desugar.desugar(ast)
         ast = invariant_preservation.add_implicit_handle_assumptions(ast)
+
+        print("Checking call legality...")
+        call_errors = invariant_preservation.check_calls_wf(ast)
         ast = syntax_tools.inline_calls(ast)
 
         print("Checking assumptions...")
         errors = (
             invariant_preservation.check_ops_preserve_invariants(ast) +
-            invariant_preservation.check_the_wf(ast))
+            invariant_preservation.check_the_wf(ast) +
+            call_errors)
         if errors:
             for e in errors:
                 print("Error: {}".format(e))
