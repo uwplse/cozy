@@ -76,7 +76,7 @@ def run():
         call_errors = invariant_preservation.check_calls_wf(ast)
         ast = syntax_tools.inline_calls(ast)
 
-        print("Checking assumptions...")
+        print("Checking invariant preservation...")
         errors = (
             invariant_preservation.check_ops_preserve_invariants(ast) +
             invariant_preservation.check_the_wf(ast) +
