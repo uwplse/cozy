@@ -71,6 +71,7 @@ def run():
 
         ast = desugar.desugar(ast)
         ast = invariant_preservation.add_implicit_handle_assumptions(ast)
+        ast = syntax_tools.inline_calls(ast)
 
         print("Checking assumptions...")
         errors = (
