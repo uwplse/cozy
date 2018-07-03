@@ -70,19 +70,6 @@ def desugar(spec : Spec) -> Spec:
 
     assert retypecheck(spec, env={})
 
-    # organize queries by name
-    queries = { q.name : q for q in spec.methods if isinstance(q, Query) }
-
-    class V(BottomUpRewriter):
-        def visit_ECall(self, e):
-            q = queries.get(e.func)
-            if q is not None:
-                return self.visit(subst(q.ret, { arg_name: arg for ((arg_name, ty), arg) in zip(q.args, e.args) }))
-            else:
-                return ECall(e.func, tuple(self.visit(a) for a in e.args)).with_type(e.type)
-    spec = V().visit(spec)
-    spec.methods = [m for m in spec.methods if not (isinstance(m, Query) and m.visibility == Visibility.Private)]
-
     class V(BottomUpRewriter):
         def visit_Exp(self, e):
             return desugar_list_comprehensions(e)

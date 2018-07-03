@@ -366,6 +366,10 @@ def rt(e, account_for_constant_factors=True):
                 rt(e.then_branch),
                 rt(e.else_branch)).with_type(INT))
             continue
+        if isinstance(e, ELet):
+            stk.append(e.e)
+            terms.append(ELet(e.e, ELambda(e.f.arg, rt(e.f.body))).with_type(INT))
+            continue
 
         constant += 1
         if isinstance(e, EStateVar):

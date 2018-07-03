@@ -46,7 +46,6 @@ def parent_contexts(context):
 
 def _interesting(e, size, context, pool):
     return isinstance(context, RootCtx) and hasattr(e, "_tag")
-    # return True
 def _consider(e, size, context, pool):
     if _interesting(e, size, context, pool) and not verbose.value:
         print("considering {} @ size={} in {}/{}".format(pprint(e), size, context, pool_name(pool)))
@@ -309,6 +308,16 @@ class Enumerator(object):
             for lam_body in self.enumerate(inner_context, body_size, pool):
                 yield ELambda(v, lam_body)
 
+        # Let-expressions
+        for (sz1, sz2) in pick_to_sum(2, size - 1):
+            for x in self.enumerate(context, sz1, pool):
+                bag = ESingleton(x).with_type(TBag(x.type))
+                for lam in build_lambdas(bag, pool, sz2):
+                    e = ELet(x, lam).with_type(lam.body.type)
+                    # if x == EBinOp(EVar("x"), "+", EVar("x")):
+                    #     e._tag = True
+                    yield e
+
         # Iteration
         for (sz1, sz2) in pick_to_sum(2, size - 1):
             for bag in collections(self.enumerate(context, sz1, pool)):
@@ -367,11 +376,9 @@ class Enumerator(object):
         k = (pool, size, context)
         res = self.cache.get(k)
         if res is not None:
-            # print("[[{} cached @ size={}]]".format(len(res), size))
             for e in res:
                 yield e
         else:
-            # print("ENTER {}".format(k))
             examples = context.instantiate_examples(self.examples)
             assert k not in self.in_progress, "recursive enumeration?? {}".format(k)
             self.in_progress.add(k)
@@ -413,38 +420,16 @@ class Enumerator(object):
                     _skip(e, size, context, pool, "duplicate")
                     should_keep = False
                 else:
-                    # decide whether to keep this expression,
-                    # decide which can be evicted
+                    # decide whether to keep this expression
                     should_keep = True
-                    # cost = self.cost_model.cost(e, pool)
-                    # print("prev={}".format(prev))
-                    # print("seen={}".format(self.seen))
                     with task("comparing to cached equivalents"):
                         for prev_exp in prev:
                             event("previous: {}".format(pprint(prev_exp)))
-                            # prev_cost = self.cost_model.cost(prev_exp, pool)
-                            # ordering = cost.compare_to(prev_cost)
                             to_keep = eviction_policy(e, context, prev_exp, context, pool, cost_model)
                             if e not in to_keep:
                                 _skip(e, size, context, pool, "preferring {}".format(pprint(prev_exp)))
                                 should_keep = False
                                 break
-
-                            # if ordering == Order.LT:
-                            #     pass
-                            # elif ordering == Order.GT:
-                            #     self.blacklist.add(e_key)
-                            #     _skip(e, size, context, pool, "worse than {}".format(pprint(prev_exp)))
-                            #     should_keep = False
-                            #     break
-                            # else:
-                            #     self.blacklist.add(e_key)
-                            #     _skip(e, size, context, pool, "{} to cached {}".format(
-                            #         "equal" if ordering == Order.EQUAL else "similar",
-                            #         pprint(prev_exp)))
-                            #     assert ordering in (Order.EQUAL, Order.AMBIGUOUS)
-                            #     should_keep = False
-                            #     break
 
                 if should_keep:
 
@@ -452,16 +437,15 @@ class Enumerator(object):
                         to_evict = []
                         for (key, exps) in self.cache.items():
                             (p, s, c) = key
-                            if p == pool and c in itertools.chain([context], parent_contexts(context)):
+                            if p == pool and c == context:
                                 for ee in exps:
-                                    if ee.fingerprint == fp: # and cost_model.compare(e, ee.e, context, pool) == Order.LT:
-                                        # to_evict.append((key, ee))
+                                    if ee.fingerprint == fp:
+                                        event("considering eviction of {}".format(pprint(ee.e)))
                                         to_keep = eviction_policy(e, context, ee.e, c, pool, cost_model)
                                         if ee.e not in to_keep:
                                             to_evict.append((key, ee))
                         for key, ee in to_evict:
                             (p, s, c) = key
-                            # self.blacklist.add((ee.e, c, pool))
                             _evict(ee.e, s, c, pool, e)
                             self.cache[key].remove(ee)
                             self.seen[(c, p, fp)].remove(ee.e)
@@ -481,8 +465,7 @@ class Enumerator(object):
                     with task("accelerating"):
                         to_try = make_random_access(self.heuristics(e, context, pool))
                         if to_try:
-                            # print("trying {} accelerations".format(len(to_try)))
+                            event("trying {} accelerations of {}".format(len(to_try), pprint(e)))
                             queue = itertools.chain(to_try, queue)
 
-            # print("EXIT {}".format(k))
             self.in_progress.remove(k)

@@ -65,3 +65,12 @@ class TestSynthesisCore(unittest.TestCase):
         spec = EIn(y, EStateVar(xs))
         assert retypecheck(spec)
         assert check_discovery(spec=spec, expected=lambda e: (isinstance(e, EMapGet) or isinstance(e, EHasKey)) and isinstance(e.map, EStateVar) and valid(EEq(e, spec)), args=[y], state_vars=[xs])
+
+    def test_let_discovery(self):
+        x = EVar("x").with_type(INT)
+        spec = ESum([x, x, x, x])
+        assert retypecheck(spec)
+        y = EVar("y").with_type(INT)
+        goal = ELet(ESum([x, x]), ELambda(y, ESum([y, y])))
+        assert retypecheck(goal)
+        assert check_discovery(spec=spec, args=[x], expected=goal)

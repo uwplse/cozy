@@ -83,3 +83,40 @@ class TestContexts(unittest.TestCase):
             T)
 
         assert e == EMap(xs, ELambda(x, EStateVar(T))), pprint(e)
+
+    def test_pool_affects_alpha_equivalence(self):
+        e = EMap(EEmptyList().with_type(INT_BAG), ELambda(x, ONE))
+        root_ctx = RootCtx(args=(), state_vars=())
+        assert retypecheck(e)
+
+        c1 = []
+        for ee, ctx, pool in shred(e, root_ctx, RUNTIME_POOL):
+            if ee == ONE:
+                c1.append(ctx)
+        assert len(c1) == 1
+        c1 = c1[0]
+
+        c2 = []
+        for ee, ctx, pool in shred(e, root_ctx, STATE_POOL):
+            if ee == ONE:
+                c2.append(ctx)
+        assert len(c2) == 1
+        c2 = c2[0]
+
+        assert c1 != c2
+        assert not c1.alpha_equivalent(c2)
+
+    def test_let(self):
+        e1 = ELet(ZERO, ELambda(x, x))
+        root_ctx = RootCtx(args=(), state_vars=())
+        assert retypecheck(e1)
+        n = 0
+        for ee, ctx, pool in shred(e1, root_ctx, RUNTIME_POOL):
+            if ee == x:
+                e2 = replace(
+                    e1, root_ctx, RUNTIME_POOL,
+                    x, ctx, pool,
+                    ZERO)
+                assert e2 == ELet(ZERO, ELambda(x, ZERO))
+                n += 1
+        assert n == 1
