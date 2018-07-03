@@ -89,7 +89,7 @@ class RootCtx(Context):
 class UnderBinder(Context):
     def __init__(self, parent : Context, v : EVar, bag : Exp, bag_pool : Pool):
         assert v.type == bag.type.t
-        assert parent.legal_for(free_vars(bag))
+        assert parent.legal_for(free_vars(bag)), "cannot create context for {} in {}, {}".format(v.id, pprint(bag), parent)
         assert not any(v == vv for vv, p in parent.vars()), "binder {} already free in {}".format(v.id, parent)
         self._parent = parent
         self.var = v
