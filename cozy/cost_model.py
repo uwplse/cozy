@@ -120,7 +120,6 @@ def storage_size(e, freebies : [Exp] = []):
     h = extension_handler(type(e.type))
     if h is not None:
         return h.storage_size(e, k=storage_size)
-    print("{e}: {free}".format(e=pprint(e), free=freebies))
     if e in freebies:
         return ZERO
     elif e.type == BOOL:
@@ -214,7 +213,6 @@ def wc_card(e : Exp) -> DominantTerm:
     return DominantTerm.N
 
 def _maintenance_cost(e : Exp, solver : ModelCachingSolver, op : Op, freebies : [Exp] = []):
-    print("In _maintenance_cost... {}".format(freebies))
     e_prime = mutate(e, op.body)
 #    print("e        : {}".format(pprint(e)))
 #    print("e_prime  : {}".format(pprint(e_prime)))
