@@ -456,6 +456,7 @@ class Enumerator(object):
                                 for ee in exps:
                                     if ee.fingerprint == fp: # and cost_model.compare(e, ee.e, context, pool) == Order.LT:
                                         # to_evict.append((key, ee))
+                                        event("considering eviction of {}".format(pprint(ee.e)))
                                         to_keep = eviction_policy(e, context, ee.e, c, pool, cost_model)
                                         if ee.e not in to_keep:
                                             to_evict.append((key, ee))
@@ -481,7 +482,7 @@ class Enumerator(object):
                     with task("accelerating"):
                         to_try = make_random_access(self.heuristics(e, context, pool))
                         if to_try:
-                            # print("trying {} accelerations".format(len(to_try)))
+                            event("trying {} accelerations of {}".format(len(to_try), pprint(e)))
                             queue = itertools.chain(to_try, queue)
 
             # print("EXIT {}".format(k))
