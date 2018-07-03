@@ -94,10 +94,10 @@ class CostModel(object):
                         maintenance_cost(
                             e=e1, solver=self.solver, ops=self.ops, freebies=self.freebies),
                         maintenance_cost(
-                            e=e2, solver=self.solver, ops=self.ops, freebies=self.freebies), context))
+                            e=e2, solver=self.solver, ops=self.ops, freebies=self.freebies), context),
                     #lambda: self._compare(max_storage_size(e1, self.freebies), max_storage_size(e2, self.freebies), context),
                     #lambda: self._compare(rt(e1), rt(e2), context),
-                    #lambda: order_objects(e1.size(), e2.size())) # index spec will be wrong if this line is uncommented
+                    lambda: order_objects(e1.size(), e2.size())) # index spec will be wrong if this line is uncommented
             else:
                 return composite_order(
                     lambda: self._compare(
@@ -120,7 +120,7 @@ def storage_size(e, freebies : [Exp] = []):
     h = extension_handler(type(e.type))
     if h is not None:
         return h.storage_size(e, k=storage_size)
-
+    print("{e}: {free}".format(e=pprint(e), free=freebies))
     if e in freebies:
         return ZERO
     elif e.type == BOOL:
@@ -214,6 +214,7 @@ def wc_card(e : Exp) -> DominantTerm:
     return DominantTerm.N
 
 def _maintenance_cost(e : Exp, solver : ModelCachingSolver, op : Op, freebies : [Exp] = []):
+    print("In _maintenance_cost... {}".format(freebies))
     e_prime = mutate(e, op.body)
 #    print("e        : {}".format(pprint(e)))
 #    print("e_prime  : {}".format(pprint(e_prime)))
@@ -221,7 +222,7 @@ def _maintenance_cost(e : Exp, solver : ModelCachingSolver, op : Op, freebies : 
         return ZERO
 
     if is_scalar(e.type):
-        return storage_size(e)
+        return storage_size(e, freebies)
     elif isinstance(e.type, TBag) or isinstance(e.type, TSet):
         things_added = storage_size(
                 EBinOp(e_prime, "-", e).with_type(e.type), freebies).with_type(INT)
@@ -264,7 +265,7 @@ def _maintenance_cost(e : Exp, solver : ModelCachingSolver, op : Op, freebies : 
         raise NotImplementedError(repr(e.type))
 
 def maintenance_cost(e : Exp, solver : ModelCachingSolver, ops : [Op] = [], freebies : [Exp] = []):
-    res = ZERO
+    res = rt(e)
 #    for x in all_exps(e):
 #        if isinstance(x, EStateVar):
 #            print("e: {}".format(pprint(x.e)))
