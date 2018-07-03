@@ -452,7 +452,7 @@ class Enumerator(object):
                         to_evict = []
                         for (key, exps) in self.cache.items():
                             (p, s, c) = key
-                            if p == pool and c in itertools.chain([context], parent_contexts(context)):
+                            if p == pool and c == context:
                                 for ee in exps:
                                     if ee.fingerprint == fp: # and cost_model.compare(e, ee.e, context, pool) == Order.LT:
                                         # to_evict.append((key, ee))
