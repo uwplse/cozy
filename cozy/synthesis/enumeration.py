@@ -308,6 +308,16 @@ class Enumerator(object):
             for lam_body in self.enumerate(inner_context, body_size, pool):
                 yield ELambda(v, lam_body)
 
+        # Let-expressions
+        for (sz1, sz2) in pick_to_sum(2, size - 1):
+            for x in self.enumerate(context, sz1, pool):
+                bag = ESingleton(x).with_type(TBag(x.type))
+                for lam in build_lambdas(bag, pool, sz2):
+                    e = ELet(x, lam).with_type(lam.body.type)
+                    # if x == EBinOp(EVar("x"), "+", EVar("x")):
+                    #     e._tag = True
+                    yield e
+
         # Iteration
         for (sz1, sz2) in pick_to_sum(2, size - 1):
             for bag in collections(self.enumerate(context, sz1, pool)):
