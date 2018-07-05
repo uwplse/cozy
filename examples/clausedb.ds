@@ -6,14 +6,14 @@ ClauseDB:
 
     invariant empty [l | l <- falselits, l >= N];
 
+    private query nonfalse(c : Set<Bound>)
+        [l | l <- c, not (l in falselits)]
+
     query unsat()
         not empty [c | c <- clauses, empty nonfalse(c)]
 
     query unit()
         [c | c <- clauses, sum [1 | l <- c, not (l in falselits)] == 1]
-
-    private query nonfalse(c : Set<Bound>)
-        [l | l <- c, not (l in falselits)]
 
     op addClause(c : Set<Bound>)
         assume not (c in clauses);
