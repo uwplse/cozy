@@ -266,9 +266,7 @@ class Learner(object):
                                 if cc != ctx or pp != pool:
                                     continue
 
-                                # TODO: enumerator provides us fingerprints in the most general
-                                # context for the expression, not in the context we asked for
-                                if not (len(fpx) == len(fp) and self.matches(fpx, fp)):
+                                if not self.matches(fpx, fp):
                                     continue
 
                                 for target, watched_e in reses:
