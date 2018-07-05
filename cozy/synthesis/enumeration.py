@@ -371,8 +371,13 @@ class Enumerator(object):
                 yield info._replace(e=context.adapt(info.e, canonical_context))
             return
 
+        examples = context.instantiate_examples(self.examples)
         if context.parent() is not None:
-            yield from self.enumerate_with_info(context.parent(), size, pool)
+            for info in self.enumerate_with_info(context.parent(), size, pool):
+                e = info.e
+                yield EnumeratedExp(
+                    e=e,
+                    fingerprint=fingerprint(e, examples))
 
         k = (pool, size, context)
         res = self.cache.get(k)
@@ -380,7 +385,6 @@ class Enumerator(object):
             for e in res:
                 yield e
         else:
-            examples = context.instantiate_examples(self.examples)
             assert k not in self.in_progress, "recursive enumeration?? {}".format(k)
             self.in_progress.add(k)
             res = []
