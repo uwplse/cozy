@@ -1,3 +1,5 @@
+# Python libraries used by Cozy.  Install by running:
+#   pip3 install -r requirements.txt
 ply (>=3.8, <4.0)
 python-igraph (>=0.7.1, <1.0)
 z3-solver (>=4.5, <5)

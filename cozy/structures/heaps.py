@@ -18,6 +18,7 @@ EHeapPeek  = declare_case(Exp, "EHeapPeek",  ["e", "n"]) # look at min
 EHeapPeek2 = declare_case(Exp, "EHeapPeek2", ["e", "n"]) # look at 2nd min
 
 def to_heap(e : Exp) -> Exp:
+    """Implement expression e as a heap operation."""
     if isinstance(e, EArgMin):
         elem_type = e.type
         key_type = e.f.body.type
@@ -28,7 +29,8 @@ def to_heap(e : Exp) -> Exp:
         return EMakeMaxHeap(e.e, e.f).with_type(TMaxHeap(elem_type, key_type))
     raise ValueError(e)
 
-# Binary heap utilities
+# Binary heap-index utilities.  Each takes an index and returns an index,
+# and thus is independent of the heap itself.
 def _left_child(idx : Exp) -> Exp:
     return EBinOp(EBinOp(idx, "<<", ONE).with_type(INT), "+", ONE).with_type(INT)
 def _has_left_child(idx : Exp, size : Exp) -> Exp:
@@ -41,10 +43,19 @@ def _parent(idx : Exp) -> Exp:
     return EBinOp(EBinOp(idx, "-", ONE).with_type(INT), ">>", ONE).with_type(INT)
 
 def nth(t : TTuple, n : int):
+    """
+    Returns an expression whose value is a function
+    that obtains the nth element of a value of type `t`.
+    """
+    ## Hard-coded variable name is OK because no capturing or shadowing is possible.
     x = EVar("x").with_type(t)
     return ELambda(x, ETupleGet(x, n).with_type(t.ts[n]))
 
 def heap_func(e : Exp, concretization_functions : { str : Exp } = None) -> ELambda:
+    """
+    Returns an expression whose value is a function
+    that performs a heap operation.
+    """
     if isinstance(e, EMakeMinHeap) or isinstance(e, EMakeMaxHeap):
         return e.f
     if isinstance(e, EVar) and concretization_functions:
@@ -102,7 +113,7 @@ class Heaps(object):
             if isinstance(e.e.type, TMinHeap) or isinstance(e.e.type, TMaxHeap):
                 e.type = TBag(e.e.type.elem_type)
             else:
-                report_err(e, "cannot get heap elems of non-hep")
+                report_err(e, "cannot get heap elems of non-heap")
         else:
             raise NotImplementedError(e)
 
