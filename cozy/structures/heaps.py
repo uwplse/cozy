@@ -194,7 +194,7 @@ class Heaps(object):
             if isinstance(e.e, EMakeMinHeap) or isinstance(e.e, EMakeMaxHeap):
                 x = fresh_var(elem_type, "x")
                 return SForEach(x, e.e.e, SCall(out, "add", (x,)))
-            i = fresh_var(INT, "i")
+            i = fresh_var(INT, "i") # the array index
             return seq([
                 SDecl(i.id, ZERO),
                 SWhile(ELt(i, EArrayLen(e.e).with_type(INT)), seq([
