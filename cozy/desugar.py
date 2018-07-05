@@ -47,6 +47,12 @@ def desugar(spec : Spec) -> Spec:
         for name in t.cases }
     spec = subst(spec, repl)
 
+    ## TODO: it wasn't clear where the bags are.  A list can have
+    ## duplicates, so it can represent a bag.  Or, maybe this comment
+    ## refers to more than just the very next statement?  If it refers to
+    ## more, then change whitespace to either put a blank line after it or
+    ## to remove all blank lines within the section of the function that
+    ## the comment refers to.
     # convert all collection types to bags
     spec = Spec(
         spec.name,

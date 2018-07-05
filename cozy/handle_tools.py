@@ -1,3 +1,4 @@
+## TODO: heap-allocated vs. pure is not a dichotomy, but the first sentence treats it as such.
 """
 Handles (aka heap-allocated objects) require careful treatment since everything
 else in Cozy is relatively pure.  This module defines some useful functions for
@@ -11,9 +12,11 @@ from cozy.target_syntax import *
 from cozy.syntax_tools import fresh_var, mk_lambda
 from cozy.typecheck import is_collection
 
+## TODO: Write better documentation.  Merges each element of b into a and returns a.
 @typechecked
 def _merge(a : {THandle:Exp}, b : {THandle:Exp}) -> {THandle:Exp}:
     """NOTE: assumes ownership of `a`"""
+    ## TODO: Why does the code define a new variable rather than operating on a directly?
     res = a
     for k, vb in b.items():
         va = res.get(k)
@@ -23,6 +26,7 @@ def _merge(a : {THandle:Exp}, b : {THandle:Exp}) -> {THandle:Exp}:
             res[k] = EBinOp(va, "+", vb).with_type(va.type)
     return res
 
+## TODO: Why are duplicates permitted? Does it mean that the handle is reachable via multiple paths, or something else?
 @typechecked
 def reachable_handles_by_type(root : Exp) -> {THandle:Exp}:
     """
@@ -56,6 +60,7 @@ def reachable_handles_by_type(root : Exp) -> {THandle:Exp}:
     else:
         return OrderedDict()
 
+## TODO: Document
 @typechecked
 def reachable_handles_at_method(spec : Spec, m : Method) -> {THandle:Exp}:
     res = OrderedDict()

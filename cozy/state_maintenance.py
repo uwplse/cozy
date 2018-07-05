@@ -52,6 +52,7 @@ def mutate(e : syntax.Exp, op : syntax.Stm) -> syntax.Exp:
     else:
         raise NotImplementedError(type(op))
 
+## TODO: add documentation.
 def replace_get_value(e : syntax.Exp, ptr : syntax.Exp, new_value : syntax.Exp):
     t = ptr.type
     fvs = free_vars(ptr) | free_vars(new_value)
@@ -85,8 +86,10 @@ def _do_assignment(lval : syntax.Exp, new_value : syntax.Exp, e : syntax.Exp) ->
     else:
         raise Exception("not an lvalue: {}".format(pprint(lval)))
 
+## TODO: add documentation
 def _fix_map(m : target_syntax.EMap) -> syntax.Exp:
     return m
+    ## TODO: the remainder of the code in this function seems to be dead.
     from cozy.simplification import simplify
     m = simplify(m)
     if not isinstance(m, target_syntax.EMap):

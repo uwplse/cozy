@@ -14,6 +14,7 @@ EMakeMinHeap = declare_case(Exp, "EMakeMinHeap", ["e", "f"])
 EMakeMaxHeap = declare_case(Exp, "EMakeMaxHeap", ["e", "f"])
 
 EHeapElems = declare_case(Exp, "EHeapElems", ["e"]) # all elements
+## TODO: the field name "n" is confusing.  Name it "length" instead.
 EHeapPeek  = declare_case(Exp, "EHeapPeek",  ["e", "n"]) # look at min
 EHeapPeek2 = declare_case(Exp, "EHeapPeek2", ["e", "n"]) # look at 2nd min
 
@@ -40,6 +41,8 @@ def _has_right_child(idx : Exp, size : Exp) -> Exp:
 def _parent(idx : Exp) -> Exp:
     return EBinOp(EBinOp(idx, "-", ONE).with_type(INT), ">>", ONE).with_type(INT)
 
+## TODO: Why isn't this called nth_func, by parallelism with heap_func below?
+## Both of them return functions.
 def nth(t : TTuple, n : int):
     x = EVar("x").with_type(t)
     return ELambda(x, ETupleGet(x, n).with_type(t.ts[n]))
@@ -65,6 +68,11 @@ class Heaps(object):
     def owned_types(self):
         return (TMinHeap, TMaxHeap, EMakeMinHeap, EMakeMaxHeap, EHeapElems, EHeapPeek, EHeapPeek2)
 
+    ## TODO: I find it confusing to name one of the formal paramters the
+    ## same as the method itself.  I am not sure which one the occurrence
+    ## in the body refers to, but I think it's the formal parameter.  This
+    ## is confusing.  Is this a standard Python idiom?  I see it in
+    ## `typecheck` below as well.
     def default_value(self, t : Type, default_value) -> Exp:
         f = EMakeMinHeap if isinstance(t, TMinHeap) else EMakeMaxHeap
         x = EVar("x").with_type(t.elem_type)
@@ -79,6 +87,8 @@ class Heaps(object):
                 return "invalid `n` parameter"
         return None
 
+    ## TODO: Document.  Returns no value.  May err.  Has side effects (say
+    ## what they are).
     def typecheck(self, e : Exp, typecheck, report_err):
         if isinstance(e, EMakeMaxHeap) or isinstance(e, EMakeMinHeap):
             typecheck(e.e)
@@ -91,6 +101,8 @@ class Heaps(object):
             ok = True
             if not (isinstance(e.e.type, TMinHeap) or isinstance(e.e.type, TMaxHeap)):
                 report_err(e, "cannot peek a non-heap")
+                ## TODO: Why is the `ok` variable needed at all?  Couldn't
+                ## you just return here and at the other assignment to `ok`?
                 ok = False
             if e.n.type != INT:
                 report_err(e, "length param is not an int")
@@ -106,6 +118,7 @@ class Heaps(object):
         else:
             raise NotImplementedError(e)
 
+    ## TODO: document k
     def storage_size(self, e : Exp, k):
         assert type(e.type) in (TMinHeap, TMaxHeap)
         return k(EHeapElems(e).with_type(TBag(e.type.elem_type)))
@@ -115,6 +128,7 @@ class Heaps(object):
         # bag of (elem, key(elem)) pairs
         return TBag(TTuple((t.elem_type, t.key_type)))
 
+    # TODO: document.  Is this a lowering?
     def encode(self, e : Exp) -> Exp:
         if isinstance(e, EMakeMinHeap):
             tt = TTuple((e.type.elem_type, e.type.key_type))
