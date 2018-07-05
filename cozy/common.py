@@ -36,8 +36,9 @@ def check_type(value, ty, value_name="value"):
     """
     Verify that the given value has the given type.
         value      - the value to check
-        ty         - the type to check for
-        value_name - the name to print for debugging
+        ty         - the type to check for, or None to do no checking
+        value_name - the variable or expression that evaluates to `value`;
+                     printed in diagnostic messages
 
     The type ty can be:
         str, int, float, or bytes - value must have this type
@@ -46,6 +47,7 @@ def check_type(value, ty, value_name="value"):
     """
 
     if ty is None:
+        # The Python formal variable does not have a type annotation
         pass
     elif type(ty) is tuple:
         assert isinstance(value, tuple), "{} has type {}, not {}".format(value_name, type(value).__name__, "tuple")
@@ -114,14 +116,14 @@ def match(value, binders):
 
     return None
 
-# _protect helps to help guard against infinite recursion
+# _protect helps to help guard against infinite recursion.
 # Since it is global, locking uses seems wise.
 _protect = set()
 _protect_lock = threading.RLock()
 
 def my_caller(up=0):
     """
-    Returns an info object of caller function.
+    Returns an info object about the caller of the function that called my_caller.
     You might care about these properties:
         .filename
         .function
@@ -215,6 +217,7 @@ class ADT(object):
 
 class Visitor(object):
     def visit(self, x, *args, **kwargs):
+        """Call the method named "visit_TYPE" where TYPE is type(x)."""
         t = type(x)
         first_visit_func = None
         while t is not None:
@@ -231,6 +234,7 @@ class Visitor(object):
         print("Warning: {} does not implement {}".format(self, first_visit_func), file=sys.stderr)
 
 def ast_find(ast, pred):
+    """Yield all non-collection, non-ADT nodes that satisfy pred."""
     class V(Visitor):
         def visit(self, x):
             if pred(x):
@@ -357,9 +361,11 @@ def fresh_name(hint="name", omit=None):
     return fresh_names(1, hint=hint, omit=omit)[0]
 
 def capitalize(s):
+    """Return a new string like s, but with the first letter capitalized."""
     return (s[0].upper() + s[1:]) if s else s
 
 def product(iter):
+    """Return the product of all the elements of iter, which should be numbers."""
     p = 1
     for x in iter:
         p *= x
@@ -382,19 +388,20 @@ class AtomicWriteableFile(object):
         self.tmp_file.write(thing)
 
 def open_maybe_stdout(f):
+    """Open file f, or open standard output if f is "-"."""
     if f == "-":
         return os.fdopen(os.dup(sys.stdout.fileno()), "w")
     return AtomicWriteableFile(f)
 
-def split(iter, p):
-    t = []
-    f = []
+def split(iter, pred):
+    trues = []
+    falses = []
     for x in iter:
-        if p(x):
-            t.append(x)
+        if pred(x):
+            trues.append(x)
         else:
-            f.append(x)
-    return (t, f)
+            falses.append(x)
+    return (trues, falses)
 
 def unique(iter):
     """
@@ -405,17 +412,16 @@ def unique(iter):
 
 ### TODO: split() and partition() seem to be the same routine.  Remove one of them.
 ### Also, document it.
-def partition(iter, p):
-    t = []
-    f = []
+def partition(iter, pred):
+    trues = []
+    falses = []
     for x in iter:
-        (t if p(x) else f).append(x)
-    return (t, f)
+        (trues if pred(x) else falses).append(x)
+    return (trues, falses)
 
 def pick_to_sum(n, total_size):
     """
-    Enumerate all the ways to pick N integers greater than zero that sum to
-    total_size.
+    Enumerate all the ways to pick N positive integers that sum to total_size.
 
     Formally: yields all tuples T where len(T) = N and sum(T) = total_size.
     """
@@ -431,11 +437,13 @@ def pick_to_sum(n, total_size):
             yield (size,) + rest
 
 def make_random_access(iter):
+    """Return a list or tuple containing the elements of iter."""
     if isinstance(iter, list) or isinstance(iter, tuple):
         return iter
     return list(iter)
 
 def intersects(s1 : set, s2 : set):
+    """Return true if the intersection of s1 and s2 is non-empty."""
     if len(s1) > len(s2):
         s1, s2 = s2, s1
     return any(x in s2 for x in s1)
@@ -516,15 +524,15 @@ def read_file(filename):
     with open(filename, "r") as f:
         return f.read()
 
-def find_one(iter, p=lambda x: True):
+def find_one(iter, pred=lambda x: True):
     for x in iter:
-        if p(x):
+        if pred(x):
             return x
     return None
 
-def exists(iter, p=lambda x: True):
+def exists(iter, pred=lambda x: True):
     for x in iter:
-        if p(x):
+        if pred(x):
             return True
     return False
 
