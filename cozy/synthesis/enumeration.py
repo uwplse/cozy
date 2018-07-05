@@ -18,7 +18,6 @@ def fingerprint(e : Exp, examples : [{str:object}]):
 EnumeratedExp = namedtuple("EnumeratedExp", [
     "e",                # The expression
     "fingerprint",      # Its fingerprint
-    "cost",             # Its cost
     ])
 
 LITERALS = [(e, pool)
@@ -457,8 +456,7 @@ class Enumerator(object):
                     self.seen[seen_key].append(e)
                     info = EnumeratedExp(
                         e=e,
-                        fingerprint=fp,
-                        cost=None)
+                        fingerprint=fp)
                     res.append(info)
                     yield info
 
