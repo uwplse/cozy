@@ -14,6 +14,12 @@ class ExpIsNotWf(Exception):
         self.offending_subexpression = offending_subexpression
         self.reason = reason
 
+## TODO: This function creates a ExpIsNotWf whose e and
+## offending_subexpression are always ignored.  The only purpose of this
+## function is to return a string (or to indicate no error).  Therefore, it
+## would be cleaner and clearer for this function to return a string or
+## None, just like check_wf does.  This might not save a lot of lines of
+## code, but it would make the code clearer.
 def exp_wf_nonrecursive(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptions : Exp = T):
     state_vars = OrderedSet(v for v, p in context.vars() if p == STATE_POOL)
     args       = OrderedSet(v for v, p in context.vars() if p == RUNTIME_POOL)
@@ -34,6 +40,8 @@ def exp_wf_nonrecursive(solver, e : Exp, context : Context, pool = RUNTIME_POOL,
         elif not at_runtime and e in args:
             raise ExpIsNotWf(e, e, "arg in state exp")
 
+## TODO: What is the purpose of this returning true?  If it is called for
+## side effect, I think it would be clearer to not have a return value.
 @typechecked
 def exp_wf(e : Exp, context : Context, pool = RUNTIME_POOL, assumptions : Exp = T, solver = None):
     """

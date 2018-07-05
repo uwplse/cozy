@@ -1,3 +1,20 @@
+## TODO: I don't understand "argument" below.  An argument is an expression
+## but not necessarily a variable.  Do you mean a formal parameter?  But it
+## isn't provided as an argument.  Please explain.
+## TODO: A context describes variables and functions, but this comment only
+## gives more information about variables.  What are the types of
+## functions?  Are all functions treated uniformly with variables (there
+## are the same types of functions as variables), or something else?
+## TODO: What is the reason for the name "shred"?  Can you come up with a
+## more informative name?
+## TODO: From the documentation, it wasn't clear whether shred returns a
+## heterogeneous list of expressions and contexts, or a list of pairs.
+## Actually, shred returns a list of triples.  The last element is a pool
+## (I'm not yet sure what that is.) Please update the documentation, here
+## and at the definition of shred.
+## TODO: Is replace context-aware in that it does alpha-renaming?  Please
+## clarify "context-aware".
+
 """Classes for managing "contexts".
 
 A Context object describes in-scope variables and functions.  Each variable is
@@ -21,6 +38,7 @@ from cozy.evaluation import eval
 from cozy.syntax_tools import pprint, alpha_equivalent, free_vars, subst, BottomUpRewriter
 from cozy.pools import Pool, RUNTIME_POOL, STATE_POOL
 
+## TODO: Document each method.
 class Context(object):
     def vars(self) -> {(EVar, Pool)}:
         raise NotImplementedError()
@@ -51,6 +69,8 @@ class Context(object):
     def generalize(self, fvs):
         raise NotImplementedError()
 
+## TODO: document the fields (the constructor arguments), and state the
+## contract (exactly one of state_vars and args is non-None).
 class RootCtx(Context):
     def __init__(self, state_vars : [Exp], args : [Exp], funcs : {str:TFunc} = None):
         self.state_vars = OrderedSet(state_vars)
@@ -58,6 +78,8 @@ class RootCtx(Context):
         self.functions = OrderedDict(funcs or ())
         assert not (self.state_vars & self.args)
     def vars(self):
+        ## Since exactly one of state_vars and args is non-None, I think an
+        ## "if" would be clearer than `chain`.
         return OrderedSet(itertools.chain(
             [(v, STATE_POOL)   for v in self.state_vars],
             [(v, RUNTIME_POOL) for v in self.args]))
@@ -158,6 +180,12 @@ class _Shredder(Visitor):
         self.ctx = ctx
         self.pool = pool
     def visit_ELambda(self, e, bag):
+        ## It's inconsistent that visit_EStateVar uses a code pattern of
+        ## saving the old value and reinstating it, whereas this method
+        ## recomputes the value.  I think it would be more consistent to
+        ## use the old_* pattern consistently.  Even though it will take
+        ## one more line of code, it conveys the intention more clearly.
+        ## The same comment applies to _Replacer.
         self.ctx = UnderBinder(self.ctx, e.arg, bag, self.pool)
         yield from self.visit(e.body)
         self.ctx = self.ctx.parent()

@@ -30,6 +30,8 @@ import shutil
 from oset import oset as OrderedSet
 from dictionaries import FrozenDict as _FrozenDict
 
+## TODO: What is the type of ty?  The documentation says it's a type, but
+## the code has to call type() on it.  Please clarify.
 def check_type(value, ty, value_name="value"):
     """
     Verify that the given value has the given type.
@@ -82,6 +84,7 @@ def typechecked(f):
         return ret
     return g
 
+## TODO: document
 def match(value, binders):
 
     def match_into(value, pattern, out):
@@ -125,10 +128,15 @@ def my_caller(up=0):
         .lineno
     """
     stack = inspect.stack()
+    ## TODO: frame is reassigned here.  Do both occurrences have the same type?
+    ## Or should you use a different variable name for one of the next two lines?
     frame = stack[up+2] # caller of caller of this function
     frame = frame[0]
     return inspect.getframeinfo(frame)
 
+## TODO: document.  This returns the recursive size of the data structure,
+## which is approximately the number of heap-allocated nodes/objects that
+## are reachable or that represent it.
 def _size(x):
     wq = [x]
     res = 0
@@ -245,6 +253,9 @@ def ast_find_one(ast, pred):
         return match
     return None
 
+
+## TODO: ast_replace and ast_replace_ref do not seem to be used.  Can they be removed from common.py?
+## TODO: If they are retained, I notice an inefficiency: ast_replace always returns a new object, even if it performs no replacement.  I wonder if it would be better to return the argument if no replacement occurs.  This would make the code a bit more complex, but would avoid allocation and garbage collection.  I don't know how important this is.
 def ast_replace(haystack, pred, repl_func):
     class V(Visitor):
         def visit(self, x):
@@ -267,6 +278,8 @@ def ast_replace_ref(haystack, needle, replacement):
         lambda x: x is needle,
         lambda x: replacement)
 
+## TODO: Did you submit a bug report for OrderedSet?  It would be good to
+## do so, and to give a link to it in a comment.
 # Monkey-patch OrderedSet to avoid infinite loops during interpreter shutdown.
 # The implementors of the library implemented __del__, a dangerous magic method
 # that runs when an object is garbage-collected.  This can go horribly awry in
@@ -294,6 +307,7 @@ class FrozenDict(_FrozenDict):
         return tuple(sorted(self.items())) < tuple(sorted(other.items()))
 
 _MISSING = object()
+## TODO: document
 class OrderedDefaultDict(OrderedDict):
     def __init__(self, factory):
         super().__init__()
@@ -310,8 +324,17 @@ def nested_dict(n, t):
         return t()
     return OrderedDefaultDict(lambda: nested_dict(n-1, t))
 
+## TODO: Rename this varable; for example, _fresh_names_counter.
 _i = Value(ctypes.c_uint64, 0)
+
+## TODO: This routine is never used, except by fresh_name which passes n=1.
+## I would remove this routine.
+## TODO: "hint" is a non-obvious parameter name.  It's not just a hint --
+## it is always used.  Choose a better name (throughout where "hint" is
+## used) and document it.  I would use `name` (in which case you need to
+## rename the local variable `name`) or `base_name`.
 def fresh_names(n : int, hint : str = "name", omit : {str} = None) -> [str]:
+    ## TODO: why do you do this rather than making the default value of omit be ()?
     if omit is None:
         omit = ()
 
@@ -323,6 +346,8 @@ def fresh_names(n : int, hint : str = "name", omit : {str} = None) -> [str]:
             while name is None or name in omit:
                 name = "_{}{}".format(hint, i)
                 i += 1
+            ## TODO: This doesn't give a guarantee of freshness.
+            ## That is worth clarifying in the documentation.
             res.append(name)
         _i.value = i
 
@@ -378,6 +403,8 @@ def unique(iter):
     """
     yield from OrderedSet(iter)
 
+### TODO: split() and partition() seem to be the same routine.  Remove one of them.
+### Also, document it.
 def partition(iter, p):
     t = []
     f = []
