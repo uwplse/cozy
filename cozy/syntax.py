@@ -24,7 +24,8 @@ TNative             = declare_case(Type, "TNative", ["name"])
 THandle             = declare_case(Type, "THandle", ["statevar", "value_type"])
 ## TODO: I find the very short field names "t" confusing; there are a lot of
 ## `t.t` in the code that are unnecessarily hard to understand.
-## I would use something like "eltType" instead.
+## I would use something like "eltType" instead, or "elem_type" as is used
+## for heaps (for consistency with them).
 ## This will also prevent the use of the identical field name "t" for
 ## a different meaning in TApp than in TBag, TSet, and TList.
 TBag                = declare_case(Type, "TBag",    ["t"])

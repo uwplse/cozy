@@ -194,10 +194,13 @@ class Heaps(object):
     def rep_type(self, t : Type) -> Type:
         return TArray(t.elem_type)
 
+    ## TODO: document `out`.  Is it the variable to be set?  The result
+    ## variable?  It is incremented, not set.
     def codegen(self, e : Exp, concretization_functions : { str : Exp }, out : EVar) -> Stm:
         if isinstance(e, EMakeMinHeap) or isinstance(e, EMakeMaxHeap):
             out_raw = EVar(out.id).with_type(self.rep_type(e.type))
             l = fresh_var(INT, "alloc_len")
+            ## TODO: x is not used after being defined here.
             x = fresh_var(e.type.elem_type, "x")
             return seq([
                 SDecl(l.id, ELen(e.e)),
@@ -208,7 +211,7 @@ class Heaps(object):
             if isinstance(e.e, EMakeMinHeap) or isinstance(e.e, EMakeMaxHeap):
                 x = fresh_var(elem_type, "x")
                 return SForEach(x, e.e.e, SCall(out, "add", (x,)))
-            i = fresh_var(INT, "i")
+            i = fresh_var(INT, "i") # the array index
             return seq([
                 SDecl(i.id, ZERO),
                 SWhile(ELt(i, EArrayLen(e.e).with_type(INT)), seq([
@@ -228,7 +231,11 @@ class Heaps(object):
         else:
             raise NotImplementedError(e)
 
+    ## s must be a call to add_all or remove_all.  Why does this handle
+    ## only those two cases?  Why is it OK for this not to handle anything
+    ## else?
     def implement_stmt(self, s : Stm, concretization_functions : { str : Exp }) -> Stm:
+        ## I think "cmp" would be a better name than "op"
         op = "<=" if isinstance(s.target.type, TMinHeap) else ">="
         f = heap_func(s.target, concretization_functions)
         if isinstance(s, SCall):
