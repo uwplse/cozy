@@ -100,6 +100,8 @@ class Enumerator(object):
         if check_wf is None:
             check_wf = lambda e, ctx, pool: True
         self.check_wf = check_wf
+        if hints is None:
+            hints = ()
         self.hints = OrderedSet((e, ctx.generalize(free_vars(e)), p) for (e, ctx, p) in hints)
         if heuristics is None:
             heuristics = lambda e, ctx, pool: ()
