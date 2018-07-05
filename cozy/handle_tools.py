@@ -1,8 +1,8 @@
 ## TODO: heap-allocated vs. pure is not a dichotomy, but the first sentence treats it as such.
 """
 Handles (aka heap-allocated objects) require careful treatment since everything
-else in Cozy is relatively pure.  This module defines some useful functions for
-handling handles.
+else in Cozy is relatively pure.  This module defines some useful functions
+that operate on handles.
 """
 
 from collections import OrderedDict
@@ -31,7 +31,7 @@ def _merge(a : {THandle:Exp}, b : {THandle:Exp}) -> {THandle:Exp}:
 def reachable_handles_by_type(root : Exp) -> {THandle:Exp}:
     """
     Compute a mapping from handle types to bags of all handle objects of that
-    type reachable from the root given root.
+    type reachable from the given root.
 
     Note that the bags may contain duplicate handles.
     """

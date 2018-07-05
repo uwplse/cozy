@@ -1,6 +1,7 @@
 In:
 
     handletype Elem = (Int, Int)
+
     state xs : Set<Elem>
 
     query a(st : Int, ed : Int)

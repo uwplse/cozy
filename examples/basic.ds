@@ -1,15 +1,12 @@
-
 Basic:
 
     state l : Bag<Int>
 
-    invariant true;
+    query elems()
+        l
 
     op add(n : Int)
         l.add(n);
 
     op remove(n : Int)
         l.remove(n);
-
-    query elems()
-        l

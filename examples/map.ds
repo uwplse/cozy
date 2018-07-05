@@ -2,12 +2,12 @@ Map:
 
     state xs : Bag<Int>
 
+    query a(z : Int)
+        [ x | x <- xs, x == z ]
+
     op add(x : Int)
         xs.add(x);
 
     op rm(x : Int)
         assume x in xs;
         xs.remove(x);
-
-    query a(z : Int)
-        [ x | x <- xs, x == z ]
