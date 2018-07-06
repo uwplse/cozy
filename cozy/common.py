@@ -74,6 +74,7 @@ def check_type(value, ty, value_name="value"):
 def typechecked(f):
     """
     Use the @typechecked decorator on a function to perform run-time typechecking.
+    The docstring for `check_type` describes how type annotations should look.
     """
     argspec = inspect.getfullargspec(f)
     annotations = f.__annotations__
