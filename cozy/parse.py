@@ -42,9 +42,9 @@ _KEYWORDS = ([
     list(syntax.UOps) +
     list(syntax.BOps))
 
-# Each operator has a name and a raw string. Each becomes an OP_* token for the
-# lexer. So, e.g. ("ASSIGN", "=") matches "=" and the token will be named
-# OP_ASSIGN.
+# Each operator has a name and a synaxt in a Cozy specification. Each
+# becomes an OP_* token for the lexer. So, e.g. ("ASSIGN", "=") matches "="
+# and the token will be named OP_ASSIGN.
 _OPERATORS = [
     ("ASSIGN", "="),
     ("IMPLIES", "=>"),

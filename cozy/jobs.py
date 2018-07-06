@@ -117,9 +117,8 @@ class SafeQueue(object):
         return self.sideq.get(block=block, timeout=timeout)
     def drain(self, block=False, timeout=None):
         """
-        Remove all elements currently in the queue and put them in a list.
-        The first element in the list is the first element that would have
-        been returned by .get(), the second is the second, and so on.
+        Remove all elements currently in the queue and put them in a list,
+        in the order they would have been returned by .get().
 
         If block=False (the default), then the timeout is ignored and this
         method may return an empty list.
