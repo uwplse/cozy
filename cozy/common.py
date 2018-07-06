@@ -524,6 +524,7 @@ class extend(object):
             self.d[self.k] = self.old_val
 
 def read_file(filename):
+    """Returns the file contents as a single string."""
     with open(filename, "r") as f:
         return f.read()
 
@@ -542,7 +543,7 @@ def exists(iter, pred=lambda x: True):
 def divide_integers_and_round_up(x, y):
     assert x > 0
     assert y > 0
-    return (x - 1) // y + 1
+    return ((x - 1) // y) + 1
 
 def integer_log2_round_up(x):
     """
@@ -550,20 +551,21 @@ def integer_log2_round_up(x):
     log2(x) rounded up.
     """
     assert x > 0
-    i = 1
-    p = 2 ** i
-    while p < x:
-        i += 1
-        p *= 2
-    return i
+    bits = 1
+    representable = 2 ** bits
+    while representable < x:
+        bits += 1
+        representable *= 2
+    return bits
 
 def identity_func(x):
     return x
 
 def compare_with_lt(x, y):
     """
-    Comparator function that promises only to use the `<` binary operator.
-    See also: `functools.cmp_to_key` if you plan to use this with `sorted`
+    Comparator function that promises only to use the `<` binary operator
+    (not `>`, `<=`, etc.)
+    See also: `functools.cmp_to_key` if you plan to use this with `sorted`.
     """
     if x < y:
         return -1
