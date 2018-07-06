@@ -454,6 +454,7 @@ def save_property(x, prop_name):
     yield
     setattr(x, prop_name, old_val)
 
+# TODO: Document
 def group_by(iter, k, v=list):
     xs = defaultdict(list)
     for x in iter:
@@ -463,6 +464,7 @@ def group_by(iter, k, v=list):
         res[key] = v(val)
     return res
 
+# TODO: Explain the naming; why "case"?  (Maybe because it becomes a new case in switch statements?)
 def declare_case(supertype, name, attrs=()):
     """
     Usage:
@@ -487,6 +489,7 @@ def declare_case(supertype, name, attrs=()):
     globals()[name] = t
     return t
 
+# TODO: Document
 class extend_multi(object):
     def __init__(self, d, items):
         self.things = [extend(d, k, v) for (k, v) in items]
@@ -569,6 +572,11 @@ def compare_with_lt(x, y):
     else:
         return 0
 
+## TODO: This doesn't collapse, it splits.  How about renaming it something
+## like `split_into_sublists`?
+## TODO: the documentation is incorrect; the guuarantee is that
+## `split_at(x_(i-i), x_i)` returns false.  Change the documentation or the
+## code (probably the documentation?).
 def collapse_runs(it, split_at):
     """
     Collapse runs of elements [x_0, x_1, ...] in `it` such that
@@ -583,6 +591,7 @@ def collapse_runs(it, split_at):
     """
     l = make_random_access(it)
     if not l:
+        ## TODO: Why does this return two elements?
         return l, []
     prev = l[0]
     res = [[prev]]
