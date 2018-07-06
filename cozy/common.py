@@ -501,38 +501,6 @@ def compare_with_lt(x, y):
     else:
         return 0
 
-## TODO: This doesn't collapse, it splits.  How about renaming it something
-## like `split_into_sublists`?
-## TODO: the documentation is incorrect; the guuarantee is that
-## `split_at(x_(i-i), x_i)` returns false.  Change the documentation or the
-## code (probably the documentation?).
-def collapse_runs(it, split_at):
-    """
-    Collapse runs of elements [x_0, x_1, ...] in `it` such that
-    `split_at(x_0, x_i)` returns false for all i > 1.
-
-    This function returns a list of runs (i.e. a list of lists).
-
-    For instance, to remove duplicates from a sorted list:
-        l = [0, 0, 0, 1, 2, 2]
-        l = collapse_runs(l, split_at=lambda x, y: x != y)
-        # l is now [[0,0,0], [1], [2,2]]
-    """
-    l = make_random_access(it)
-    if not l:
-        ## TODO: Why does this return two elements?
-        return l, []
-    prev = l[0]
-    res = [[prev]]
-    for i in range(1, len(l)):
-        x = l[i]
-        if split_at(prev, x):
-            res.append([x])
-        else:
-            res[-1].append(x)
-        prev = x
-    return res
-
 class StopException(Exception):
     """
     Used to indicate that a process should stop operation.
