@@ -19,6 +19,8 @@ from .enumeration import Enumerator, fingerprint, eviction_policy
 
 eliminate_vars = Option("eliminate-vars", bool, False)
 incremental = Option("incremental", bool, False, description="Experimental option that can greatly improve performance.")
+enable_blacklist = Option("enable-blacklist", bool, False)
+check_all_substitutions = Option("check-all-substitutions", bool, True)
 
 class NoMoreImprovements(Exception):
     pass
@@ -218,7 +220,7 @@ class Learner(object):
             nonlocal n
             n += 1
             k = (e, ctx, pool, replacement)
-            if k in self.blacklist:
+            if enable_blacklist.value and k in self.blacklist:
                 event("blacklisted")
                 print("skipping blacklisted substitution: {} ---> {} ({})".format(pprint(e), pprint(replacement), self.blacklist[k]))
                 return
@@ -266,9 +268,7 @@ class Learner(object):
                                 if cc != ctx or pp != pool:
                                     continue
 
-                                # TODO: enumerator provides us fingerprints in the most general
-                                # context for the expression, not in the context we asked for
-                                if not (len(fpx) == len(fp) and self.matches(fpx, fp)):
+                                if not self.matches(fpx, fp):
                                     continue
 
                                 for target, watched_e in reses:
@@ -282,23 +282,24 @@ class Learner(object):
 
                                     yield from consider_new_target(target, watched_e, ctx, pool, replacement)
 
-            for target, e, ctx, pool in exploration_order(self.targets, root_ctx):
-                with task("checking substitutions",
-                        target=pprint(replace(target, root_ctx, RUNTIME_POOL, e, ctx, pool, EVar("___"))),
-                        e=pprint(e)):
-                    for info in enum.enumerate_with_info(size=size, context=ctx, pool=pool):
-                        with task("checking substitution", expression=pprint(info.e)):
-                            if self.stop_callback():
-                                raise StopException()
-                            replacement = info.e
-                            if replacement.type != e.type:
-                                event("wrong type (is {}, need {})".format(pprint(replacement.type), pprint(e.type)))
-                                continue
-                            if alpha_equivalent(replacement, e):
-                                event("no change")
-                                continue
+            if check_all_substitutions.value:
+                for target, e, ctx, pool in exploration_order(self.targets, root_ctx):
+                    with task("checking substitutions",
+                            target=pprint(replace(target, root_ctx, RUNTIME_POOL, e, ctx, pool, EVar("___"))),
+                            e=pprint(e)):
+                        for info in enum.enumerate_with_info(size=size, context=ctx, pool=pool):
+                            with task("checking substitution", expression=pprint(info.e)):
+                                if self.stop_callback():
+                                    raise StopException()
+                                replacement = info.e
+                                if replacement.type != e.type:
+                                    event("wrong type (is {}, need {})".format(pprint(replacement.type), pprint(e.type)))
+                                    continue
+                                if alpha_equivalent(replacement, e):
+                                    event("no change")
+                                    continue
 
-                            yield from consider_new_target(target, e, ctx, pool, replacement)
+                                yield from consider_new_target(target, e, ctx, pool, replacement)
 
             print("CONSIDERED {}".format(n))
             size += 1

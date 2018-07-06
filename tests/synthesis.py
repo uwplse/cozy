@@ -2,11 +2,14 @@ import unittest
 
 from cozy.syntax_tools import mk_lambda, pprint, alpha_equivalent
 from cozy.target_syntax import *
-from cozy.contexts import RootCtx
+from cozy.contexts import RootCtx, UnderBinder
 from cozy.typecheck import retypecheck
 from cozy.evaluation import mkval
+from cozy.cost_model import CostModel
 from cozy.synthesis.core import improve
+from cozy.synthesis.enumeration import Enumerator
 from cozy.solver import valid, satisfy
+from cozy.pools import RUNTIME_POOL
 
 handle_type = THandle("H", INT)
 handle1 = (1, mkval(INT))
@@ -74,3 +77,24 @@ class TestSynthesisCore(unittest.TestCase):
         goal = ELet(ESum([x, x]), ELambda(y, ESum([y, y])))
         assert retypecheck(goal)
         assert check_discovery(spec=spec, args=[x], expected=goal)
+
+    def test_enumerator_fingerprints(self):
+        """
+        The enumerator should always give us fingerprints in the context we
+        asked for.
+        """
+        x = EVar("x").with_type(INT)
+        ctx = RootCtx(args=(x,), state_vars=())
+        enumerator = Enumerator(
+            examples=[{"x":0}, {"x":1}],
+            cost_model=CostModel())
+        inner_ctx = UnderBinder(
+            ctx,
+            EVar("y").with_type(INT),
+            EBinOp(ESingleton(ZERO).with_type(INT_BAG), "+", ESingleton(ONE).with_type(INT_BAG)).with_type(INT_BAG),
+            RUNTIME_POOL)
+        fingerprint_lens = set()
+        for info in enumerator.enumerate_with_info(inner_ctx, 0, RUNTIME_POOL):
+            fingerprint_lens.add(len(info.fingerprint))
+            print(info)
+        assert len(fingerprint_lens) == 1, fingerprint_lens

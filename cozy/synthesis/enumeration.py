@@ -18,7 +18,6 @@ def fingerprint(e : Exp, examples : [{str:object}]):
 EnumeratedExp = namedtuple("EnumeratedExp", [
     "e",                # The expression
     "fingerprint",      # Its fingerprint
-    "cost",             # Its cost
     ])
 
 LITERALS = [(e, pool)
@@ -101,6 +100,8 @@ class Enumerator(object):
         if check_wf is None:
             check_wf = lambda e, ctx, pool: True
         self.check_wf = check_wf
+        if hints is None:
+            hints = ()
         self.hints = OrderedSet((e, ctx.generalize(free_vars(e)), p) for (e, ctx, p) in hints)
         if heuristics is None:
             heuristics = lambda e, ctx, pool: ()
@@ -370,8 +371,13 @@ class Enumerator(object):
                 yield info._replace(e=context.adapt(info.e, canonical_context))
             return
 
+        examples = context.instantiate_examples(self.examples)
         if context.parent() is not None:
-            yield from self.enumerate_with_info(context.parent(), size, pool)
+            for info in self.enumerate_with_info(context.parent(), size, pool):
+                e = info.e
+                yield EnumeratedExp(
+                    e=e,
+                    fingerprint=fingerprint(e, examples))
 
         k = (pool, size, context)
         res = self.cache.get(k)
@@ -379,7 +385,6 @@ class Enumerator(object):
             for e in res:
                 yield e
         else:
-            examples = context.instantiate_examples(self.examples)
             assert k not in self.in_progress, "recursive enumeration?? {}".format(k)
             self.in_progress.add(k)
             res = []
@@ -457,8 +462,7 @@ class Enumerator(object):
                     self.seen[seen_key].append(e)
                     info = EnumeratedExp(
                         e=e,
-                        fingerprint=fp,
-                        cost=None)
+                        fingerprint=fp)
                     res.append(info)
                     yield info
 
