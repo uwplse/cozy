@@ -16,6 +16,7 @@ import json
 import functools
 from enum import Enum
 
+from cozy.common import typechecked
 from cozy import common
 from cozy import syntax
 from cozy import target_syntax
@@ -649,7 +650,7 @@ class FragmentEnumerator(common.Visitor):
         self.bound_vars = old_bound
 
     @contextmanager
-    @common.typechecked
+    @typechecked
     def push_assumptions(self, new_assumptions : [syntax.Exp] = []):
         self.assumptions.extend(new_assumptions)
         yield
@@ -896,7 +897,7 @@ def subst_lval(lval, replacements):
     # Neither requires attention during substitution.
     return lval
 
-@common.typechecked
+@typechecked
 def tease_apart(exp : syntax.Exp, avoid : {syntax.EVar} = set()) -> ([(syntax.EVar, syntax.Exp)], syntax.Exp):
     new_state = []
     omit = set(free_vars(exp) | avoid)
@@ -919,7 +920,7 @@ def tease_apart(exp : syntax.Exp, avoid : {syntax.EVar} = set()) -> ([(syntax.EV
     new_exp = V().visit(exp)
     return (new_state, new_exp)
 
-@common.typechecked
+@typechecked
 def purify(exp : syntax.Exp) -> syntax.Exp:
     st, exp = tease_apart(exp)
     for v, e in st:
@@ -1063,7 +1064,7 @@ def subst(exp, replacements, tease=True):
 
     return Subst().visit(exp)
 
-@common.typechecked
+@typechecked
 def qsubst(
         haystack : syntax.Exp,
         needle   : syntax.EVar,
@@ -1075,7 +1076,7 @@ def qsubst(
         e = e.with_type(haystack.type)
     return e
 
-@common.typechecked
+@typechecked
 def alpha_equivalent(e1 : syntax.Exp, e2 : syntax.Exp) -> bool:
     """
     Equality on expression ASTs is syntactic equality; even variable names are
@@ -1091,7 +1092,7 @@ def alpha_equivalent(e1 : syntax.Exp, e2 : syntax.Exp) -> bool:
             self.remap_r = { } # maps e2 varnames ---> ids
 
         @contextmanager
-        @common.typechecked
+        @typechecked
         def unify(self, vs : [(syntax.EVar, syntax.EVar)], i : int = 0):
             if i >= len(vs):
                 yield
@@ -1182,7 +1183,7 @@ def implies(e1, e2):
 def equal(e1, e2):
     return syntax.EEq(e1, e2)
 
-@common.typechecked
+@typechecked
 def nnf(e : syntax.Exp, negate=False) -> syntax.Exp:
     """Convert a boolean expression to negation-normal-form (NNF)."""
     assert e.type == BOOL
@@ -1210,7 +1211,7 @@ def nnf(e : syntax.Exp, negate=False) -> syntax.Exp:
         return syntax.EBinOp(e.e1, ">", e.e2).with_type(BOOL)
     return syntax.ENot(e) if negate else e
 
-@common.typechecked
+@typechecked
 def dnf(e : syntax.Exp) -> [[syntax.Exp]]:
     """
     Convert a boolean expression to disjunction-normal-form (DNF). The input

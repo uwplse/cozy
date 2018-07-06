@@ -1,4 +1,4 @@
-"""Helper method to do a little simplification on expressions.
+"""Helper methods to simplify expressions.
 
 This is useful both to make expressions visually simpler for presentation and
 to make them simpler for the synthesis backend.

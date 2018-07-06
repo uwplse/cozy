@@ -9,6 +9,8 @@ import igraph
 def _safe_feedback_arc_set(g, method="ip"):
     """
     Compute the feedback arc set for directed graph `g`.
+    This is a set of edges that, when removed, break cycles and
+    convert the graph `g` into a DAG.
 
     This function works around a potential segfault in igraph:
     https://github.com/igraph/igraph/issues/858
@@ -54,6 +56,11 @@ class DirectedGraph(object):
         return self.nodes.index(label)
 
     def minimum_feedback_arc_set(self):
+        """
+        Compute the feedback arc set for directed graph `g`.
+        This is a set of edges that, when removed, break cycles and
+        convert the graph `g` into a DAG.
+        """
         return _safe_feedback_arc_set(self.g)
 
     def delete_edges(self, edge_ids):

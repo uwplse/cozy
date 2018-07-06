@@ -3,12 +3,12 @@ Rot1:
     type T = Native "Object"
     state l : List<T>
 
+    query elems()
+        l
+
     op append(x : T)
         l.add_back(x);
 
     op rot1()
         l.add_back(l[0]);
         l.remove_front();
-
-    query elems()
-        l

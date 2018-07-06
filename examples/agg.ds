@@ -2,9 +2,6 @@ Aggr:
 
     state l : Bag<Int>
 
-    op add(i : Int)
-        l.add(i);
-
     query elems()
         l
 
@@ -19,3 +16,6 @@ Aggr:
 
 //    query maximum()
 //        max l
+
+    op add(i : Int)
+        l.add(i);

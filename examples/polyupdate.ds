@@ -3,9 +3,9 @@ Polyupdate:
     state x : Bag<Int>
     state s : Int
 
+    query sm()
+        s + sum x
+
     op a(y : Int)
         x.add(y);
         if (y > 0) { s = s + y; }
-
-    query sm()
-        s + sum x
