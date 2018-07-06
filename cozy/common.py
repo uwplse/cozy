@@ -43,7 +43,7 @@ def check_type(value, ty, value_name="value"):
     The type ty can be:
         str, int, float, or bytes - value must have this type
         [ty]                      - value must be a list of ty
-        {k:ty,...}                - value must be a dict with keys of the given types
+        {k:v}                     - value must be a dict with keys of type k and values of type v
     """
 
     if ty is None:
