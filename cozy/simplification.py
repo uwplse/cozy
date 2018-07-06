@@ -1,4 +1,4 @@
-"""Helper method to do a little simplification on expressions.
+"""Helper methods to simplify expressions.
 
 This is useful both to make expressions visually simpler for presentation and
 to make them simpler for the synthesis backend.
@@ -31,7 +31,7 @@ class _V(BottomUpRewriter):
         self.debug = debug
     def visit_EBinOp(self, e):
         if e.op == BOp.In:
-            if isinstance(e.e2, EBinOp) and e.e2.op == "+":
+            if isinstance(e.e2, EBinOp) and e.e2.op == "+": # collection concatenation
                 return self.visit(EAny([EIn(e.e1, e.e2.e1), EIn(e.e1, e.e2.e2)]))
             elif isinstance(e.e2, EUnaryOp) and e.e2.op == UOp.Distinct:
                 return self.visit(EIn(e.e1, e.e2.e))
