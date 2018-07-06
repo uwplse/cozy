@@ -37,6 +37,8 @@ def check_type(value, ty, value_name="value"):
     Verify that the given value has the given type.
         value      - the value to check
         ty         - the type to check for, or None to do no checking
+                     (for example, if types come from Python type annotations, and
+                     the Python formal variable does not have a type annotation)
         value_name - the variable or expression that evaluates to `value`;
                      printed in diagnostic messages
 
@@ -47,7 +49,6 @@ def check_type(value, ty, value_name="value"):
     """
 
     if ty is None:
-        # The Python formal variable does not have a type annotation
         pass
     elif type(ty) is tuple:
         assert isinstance(value, tuple), "{} has type {}, not {}".format(value_name, type(value).__name__, "tuple")
@@ -73,6 +74,10 @@ def check_type(value, ty, value_name="value"):
         assert isinstance(value, ty), "{} has type {}, not {}".format(value_name, type(value).__name__, ty.__name__)
 
 def typechecked(f):
+    """
+    Use the @typechecked decorator on a function to perform run-time typechecking.
+    The docstring for `check_type` describes how type annotations should look.
+    """
     argspec = inspect.getfullargspec(f)
     annotations = f.__annotations__
     @wraps(f)
@@ -441,7 +446,10 @@ def pick_to_sum(n, total_size):
             yield (size,) + rest
 
 def make_random_access(iter):
-    """Return a list or tuple containing the elements of iter."""
+    """
+    Return a list or tuple containing the elements of iter.
+    If iter is already a list or tuple, it returns iter.
+    """
     if isinstance(iter, list) or isinstance(iter, tuple):
         return iter
     return list(iter)

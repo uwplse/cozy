@@ -45,7 +45,7 @@ def _parent(idx : Exp) -> Exp:
 
 ## TODO: Why isn't this called nth_func, by parallelism with heap_func below?
 ## Both of them return functions.
-def nth(t : TTuple, n : int):
+def nth(t : TTuple, n : int) -> ELambda:
     """
     Returns an expression whose value is a function
     that obtains the nth element of a value of type `t`.
@@ -56,8 +56,7 @@ def nth(t : TTuple, n : int):
 
 def heap_func(e : Exp, concretization_functions : { str : Exp } = None) -> ELambda:
     """
-    Returns an expression whose value is a function
-    that performs a heap operation.
+    Assuming 'e' produces a heap, this returns the function used to sort its elements.
     """
     if isinstance(e, EMakeMinHeap) or isinstance(e, EMakeMaxHeap):
         return e.f

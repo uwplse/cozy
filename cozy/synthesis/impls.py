@@ -237,8 +237,8 @@ class Implementation(object):
                 nodes=concrete_state_vars,
                 successors=state_used_during_update)
 
-            # Find the minimum set of edges we need to break (see "feedback arc
-            # set problem")
+            # Find the minimum set of edges we need to break cycles (see
+            # "feedback arc set problem")
             edges_to_break = g.minimum_feedback_arc_set()
             g.delete_edges(edges_to_break)
             ordered_concrete_state = list(g.toposort())
