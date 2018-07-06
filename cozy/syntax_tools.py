@@ -1514,6 +1514,7 @@ def inline_calls(spec, target=None):
 
         def visit_Spec(self, spec):
             spec = shallow_copy(spec)
+            spec.assumptions = tuple(self.visit(a) for a in spec.assumptions)
             spec.methods = tuple(self.visit(m) for m in spec.methods if not (isinstance(m, syntax.Query) and m.visibility != syntax.Visibility.Public))
             return spec
 
