@@ -71,6 +71,9 @@ def check_type(value, ty, value_name="value"):
         assert isinstance(value, ty), "{} has type {}, not {}".format(value_name, type(value).__name__, ty.__name__)
 
 def typechecked(f):
+    """
+    Use the @typechecked decorator on a function to perform run-time typechecking.
+    """
     argspec = inspect.getfullargspec(f)
     annotations = f.__annotations__
     @wraps(f)
