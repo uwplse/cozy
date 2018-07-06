@@ -208,55 +208,6 @@ class Visitor(object):
             return f(x, *args, **kwargs)
         print("Warning: {} does not implement {}".format(self, first_visit_func), file=sys.stderr)
 
-def ast_find(ast, pred):
-    """Yield all non-collection, non-ADT nodes that satisfy pred."""
-    class V(Visitor):
-        def visit(self, x):
-            if pred(x):
-                yield x
-            yield from super().visit(x)
-        def visit_ADT(self, x):
-            for child in x.children():
-                yield from self.visit(child)
-        def visit_list(self, x):
-            for child in x:
-                yield from self.visit(child)
-        def visit_tuple(self, x):
-            return self.visit_list(x)
-        def visit_object(self, x):
-            return ()
-    return V().visit(ast)
-
-def ast_find_one(ast, pred):
-    for match in ast_find(ast, pred):
-        return match
-    return None
-
-
-## TODO: ast_replace and ast_replace_ref do not seem to be used.  Can they be removed from common.py?
-## TODO: If they are retained, I notice an inefficiency: ast_replace always returns a new object, even if it performs no replacement.  I wonder if it would be better to return the argument if no replacement occurs.  This would make the code a bit more complex, but would avoid allocation and garbage collection.  I don't know how important this is.
-def ast_replace(haystack, pred, repl_func):
-    class V(Visitor):
-        def visit(self, x):
-            if pred(x):
-                return repl_func(x)
-            return super().visit(x)
-        def visit_ADT(self, x):
-            new_children = tuple(self.visit(child) for child in x.children())
-            return type(x)(*new_children)
-        def visit_list(self, x):
-            return [self.visit(child) for child in x]
-        def visit_tuple(self, x):
-            return tuple(self.visit(child) for child in x)
-        def visit_object(self, x):
-            return x
-    return V().visit(haystack)
-
-def ast_replace_ref(haystack, needle, replacement):
-    return ast_replace(haystack,
-        lambda x: x is needle,
-        lambda x: replacement)
-
 ## TODO: Did you submit a bug report for OrderedSet?  It would be good to
 ## do so, and to give a link to it in a comment.
 # Monkey-patch OrderedSet to avoid infinite loops during interpreter shutdown.
