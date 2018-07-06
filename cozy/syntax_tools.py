@@ -1519,13 +1519,14 @@ def inline_calls(spec, target=None):
             return spec
 
         def visit_ECall(self, e):
+            new_args = self.visit(e.args)
             query = queries.get(e.func)
 
             if query is None:
-                return e
+                return syntax.ECall(e.func, new_args).with_type(e.type)
 
             return self.visit(subst(query.ret,
-                {arg: self.visit(expr) for ((arg, argtype), expr) in zip(query.args, e.args)}))
+                {arg: expr for ((arg, argtype), expr) in zip(query.args, new_args)}))
 
     rewriter = CallInliner()
     return rewriter.visit(target)
