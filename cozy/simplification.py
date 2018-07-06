@@ -31,7 +31,7 @@ class _V(BottomUpRewriter):
         self.debug = debug
     def visit_EBinOp(self, e):
         if e.op == BOp.In:
-            if isinstance(e.e2, EBinOp) and e.e2.op == "+": # collection concatenation
+            if isinstance(e.e2, EBinOp) and e.e2.op == "+":
                 return self.visit(EAny([EIn(e.e1, e.e2.e1), EIn(e.e1, e.e2.e2)]))
             elif isinstance(e.e2, EUnaryOp) and e.e2.op == UOp.Distinct:
                 return self.visit(EIn(e.e1, e.e2.e))

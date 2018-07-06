@@ -35,6 +35,8 @@ def check_type(value, ty, value_name="value"):
     Verify that the given value has the given type.
         value      - the value to check
         ty         - the type to check for, or None to do no checking
+                     (for example, if types come from Python type annotations, and
+                     the Python formal variable does not have a type annotation)
         value_name - the variable or expression that evaluates to `value`;
                      printed in diagnostic messages
 
@@ -45,7 +47,6 @@ def check_type(value, ty, value_name="value"):
     """
 
     if ty is None:
-        # The Python formal variable does not have a type annotation
         pass
     elif type(ty) is tuple:
         assert isinstance(value, tuple), "{} has type {}, not {}".format(value_name, type(value).__name__, "tuple")
