@@ -421,7 +421,10 @@ def pick_to_sum(n, total_size):
             yield (size,) + rest
 
 def make_random_access(iter):
-    """Return a list or tuple containing the elements of iter."""
+    """
+    Return a list or tuple containing the elements of iter.
+    If iter is already a list or tuple, it returns iter.
+    """
     if isinstance(iter, list) or isinstance(iter, tuple):
         return iter
     return list(iter)
