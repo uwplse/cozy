@@ -148,6 +148,22 @@ _protect_lock = threading.RLock()
 
 @total_ordering
 class ADT(object):
+    """An algebraic data type (ADT).
+
+    This class is not abstract, but it is not useful on its own; it is a parent
+    for many useful types, especially syntax trees.
+
+    ADTs are comparable (==, <, etc.), hashable (assuming they do not have
+    lists or dictionaries as children), and pickle-able.
+
+    Important methods:
+        - children
+        - size
+
+    See also:
+        - Visitor
+    """
+
     def children(self):
         return ()
     def size(self):
