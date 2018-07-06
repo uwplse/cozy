@@ -98,18 +98,20 @@ _protect_lock = threading.RLock()
 
 def my_caller(up=0):
     """
-    Returns an info object about the caller of the function that called my_caller.
-    You might care about these properties:
+    Returns a FrameInfo object describing the caller of the function that
+    called my_caller.
+
+    You might care about these properties of the FrameInfo object:
         .filename
         .function
         .lineno
+
+    The `up` parameter can be used to look farther up the call stack.  For
+    instance, up=1 returns info about the caller of the caller of the function
+    that called my_caller.
     """
     stack = inspect.stack()
-    ## TODO: frame is reassigned here.  Do both occurrences have the same type?
-    ## Or should you use a different variable name for one of the next two lines?
-    frame = stack[up+2] # caller of caller of this function
-    frame = frame[0]
-    return inspect.getframeinfo(frame)
+    return stack[up+2] # caller of caller of this function
 
 ## TODO: document.  This returns the recursive size of the data structure,
 ## which is approximately the number of heap-allocated nodes/objects that
