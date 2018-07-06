@@ -91,11 +91,6 @@ def typechecked(f):
         return ret
     return g
 
-# _protect helps to help guard against infinite recursion.
-# Since it is global, locking uses seems wise.
-_protect = set()
-_protect_lock = threading.RLock()
-
 def my_caller(up=0):
     """
     Returns a FrameInfo object describing the caller of the function that
@@ -142,6 +137,11 @@ class No(object):
         return "no: {}".format(self.msg)
     def __repr__(self):
         return "No({!r})".format(self.msg)
+
+# _protect helps to help guard against infinite recursion.
+# Since it is global, locking uses seems wise.
+_protect = set()
+_protect_lock = threading.RLock()
 
 @total_ordering
 class ADT(object):
