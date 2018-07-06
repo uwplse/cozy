@@ -30,8 +30,6 @@ import shutil
 from oset import oset as OrderedSet
 from dictionaries import FrozenDict as _FrozenDict
 
-## TODO: What is the type of ty?  The documentation says it's a type, but
-## the code has to call type() on it.  Please clarify.
 def check_type(value, ty, value_name="value"):
     """
     Verify that the given value has the given type.
