@@ -106,10 +106,15 @@ def my_caller(up=0):
     stack = inspect.stack()
     return stack[up+2] # caller of caller of this function
 
-## TODO: document.  This returns the recursive size of the data structure,
-## which is approximately the number of heap-allocated nodes/objects that
-## are reachable or that represent it.
 def _size(x):
+    """Compute the size of an ADT.
+
+    This function uses a work stack rather than recursion, making it safe for
+    use on very large or stick-like trees.
+
+    See ADT.size (the public interface for this function) for more information
+    about exactly what this function returns.
+    """
     wq = [x]
     res = 0
     while wq:
@@ -146,6 +151,13 @@ class ADT(object):
     def children(self):
         return ()
     def size(self):
+        """Compute the size of an ADT.
+
+        The size is 1 + sum(child sizes).  For the purposes of size computation,
+        lists and tuples count as ADTs whose children are their elements.
+        Dictionaries count as ADTs whose children are their items (key-value
+        pairs).  All other types (e.g. strings and ints) are size 1.
+        """
         return _size(self)
     def contains_subtree(self, tree):
         if self == tree:
