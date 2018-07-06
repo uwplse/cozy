@@ -383,16 +383,6 @@ def save_property(x, prop_name):
     yield
     setattr(x, prop_name, old_val)
 
-# TODO: Document
-def group_by(iter, k, v=list):
-    xs = defaultdict(list)
-    for x in iter:
-        xs[k(x)].append(x)
-    res = defaultdict(lambda: v([]))
-    for (key, val) in xs.items():
-        res[key] = v(val)
-    return res
-
 # TODO: Explain the naming; why "case"?  (Maybe because it becomes a new case in switch statements?)
 def declare_case(supertype, name, attrs=()):
     """
