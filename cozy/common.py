@@ -307,8 +307,12 @@ class FrozenDict(_FrozenDict):
     Immutable dictionary that is hashable (suitable for use in sets/maps)
     and orderable (supports <, >, etc).
     """
+
     def __lt__(self, other):
         return tuple(sorted(self.items())) < tuple(sorted(other.items()))
+
+    def __repr__(self):
+        return "FrozenDict({!r})".format(list(self.items()))
 
 _MISSING = object()
 ## TODO: document

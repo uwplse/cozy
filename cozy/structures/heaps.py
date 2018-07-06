@@ -186,9 +186,10 @@ class Heaps(object):
         new_v_key = f2.apply_to(v)
         mod_spec = EFilter(old_elems, ELambda(v, EAll([EIn(v, new_elems), ENot(EEq(new_v_key, old_v_key))]))).with_type(new_elems.type)
         modified = make_subgoal(mod_spec)
+        intermediate_count = make_subgoal(EBinOp(ELen(old_elems), "-", ELen(to_del_spec)).with_type(INT))
         return seq([
             SCall(lval, "remove_all", (initial_count, to_del)),
-            SCall(lval, "add_all",    (EBinOp(initial_count, "-", removed_count).with_type(INT), to_add)),
+            SCall(lval, "add_all",    (intermediate_count, to_add)),
             SForEach(v, modified, SCall(lval, "update", (v, make_subgoal(new_v_key, a=[EIn(v, mod_spec)]))))])
 
     def rep_type(self, t : Type) -> Type:
