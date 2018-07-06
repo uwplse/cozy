@@ -323,16 +323,6 @@ def open_maybe_stdout(f):
         return os.fdopen(os.dup(sys.stdout.fileno()), "w")
     return AtomicWriteableFile(f)
 
-def split(iter, pred):
-    trues = []
-    falses = []
-    for x in iter:
-        if pred(x):
-            trues.append(x)
-        else:
-            falses.append(x)
-    return (trues, falses)
-
 def unique(iter):
     """
     Yields a stream of deduplicated elements.
@@ -340,9 +330,13 @@ def unique(iter):
     """
     yield from OrderedSet(iter)
 
-### TODO: split() and partition() seem to be the same routine.  Remove one of them.
-### Also, document it.
 def partition(iter, pred):
+    """Split iter into two lists based on a test predicate.
+
+    Returns (trues, falses) where "trues" are the elements from iter for
+    which pred returns true, and "falses" are the ones for which pred returns
+    false.
+    """
     trues = []
     falses = []
     for x in iter:
