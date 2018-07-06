@@ -1,3 +1,6 @@
+## TODO: What type of expression?
+## TODO: what is an environment?  Is it related to contexts?
+## TODO: Choose a better name for "eval_bulk".
 """Interpreter for expressions.
 
 Important functions:
@@ -15,6 +18,9 @@ from cozy.common import FrozenDict, OrderedSet, extend
 from cozy.typecheck import is_numeric, is_collection
 from cozy.structures import extension_handler
 
+## TODO: document.  At first I wondered how this was related to Python
+## dictionaries.  Now I wonder how it is related to the language of
+## expressions.
 @total_ordering
 class Map(object):
     def __init__(self, type, default, items=()):
@@ -91,6 +97,7 @@ Handle = namedtuple("Handle", ["address", "value"])
 LT = -1
 EQ =  0
 GT =  1
+## TODO: document.  Is t a type?  A context?
 def cmp(t, v1, v2, deep=False):
     stk = [(t, v1, v2)]
 

@@ -15,6 +15,11 @@ from cozy.opts import Option
 
 checked_simplify = Option("checked-simplification", bool, False)
 
+## TODO: The term "simple" is never used, so this method name is confusing,
+## and "simple" has a different connotation.  I would make it
+## `is_simplified` or `cannot_be_simplified` or `is_canonical` even though
+## that is longer.  I would also rename this file to `simplify.py`, though
+## that is not essential.
 def is_simple(t):
     if is_numeric(t):
         return True
@@ -26,6 +31,9 @@ def is_simple(t):
         return True
     return False
 
+## TODO: Even though this class is internal, I would give it a better name,
+## such as `SimplifyVisitor`.  Especially because it is undocumented, it
+## took effort for me to figure out what it is for and how it does that.
 class _V(BottomUpRewriter):
     def __init__(self, debug=False):
         self.debug = debug
