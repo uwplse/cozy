@@ -1,13 +1,3 @@
-## TODO: What is the reason for the name "shred"?  Can you come up with a
-## more informative name?
-## TODO: From the documentation, it wasn't clear whether shred returns a
-## heterogeneous list of expressions and contexts, or a list of pairs.
-## Actually, shred returns a list of triples.  The last element is a pool
-## (I'm not yet sure what that is.) Please update the documentation, here
-## and at the definition of shred.
-## TODO: Is replace context-aware in that it does alpha-renaming?  Please
-## clarify "context-aware".
-
 """Classes for managing "contexts".
 
 A Context object describes in-scope variables and functions.
@@ -349,6 +339,14 @@ class _Shredder(Visitor):
         return ()
 
 def shred(e : Exp, context : Context, pool : Pool = RUNTIME_POOL) -> [(Exp, Context, Pool)]:
+    """Shred `e` into a list of all its subexpressions.
+
+    This function returns a stream of (exp, context, pool) tuples, where `exp`
+    is a subexpression of `e` described by `context` and `pool`.
+
+    The tuple describing the top-level expression (e, context, pool) is
+    included in the returned stream.
+    """
     return _Shredder(context, pool).visit(e)
 
 def _sametype(e1 : Exp, e2 : Exp):
@@ -410,4 +408,34 @@ def replace(
         haystack : Exp, haystack_context : Context, haystack_pool : Pool,
         needle : Exp, needle_context : Context, needle_pool : Pool,
         replacement : Exp) -> Exp:
+    """Replace an expression `needle` with `replacement` in `haystack`.
+
+    Other parameters:
+        haystack_context - the context describing the haystack
+        haystack_pool - the pool for the haystack
+        needle_context - the context describing the needle and replacement
+        needle_pool - the pool for the needle and replacement
+
+    This function is much smarter and safer than other expression replacement
+    strategies: if `needle` and `replacement` are two different expressions
+    that compute the same output, then the returned expression will compute the
+    same output as `haystack`.
+
+    Suppose we want to replace `x` with 0 in
+
+        Map {x -> x + 1} (xs + [x]).
+
+    Did we mean to replace the bound `x`, or the top-level `x`?  This function
+    resolves the ambiguity by requiring a description of the context for `x`.
+
+    This function also does smart variable renaming.  For instance, suppose
+    we want to replace `x` with `x+1` in the context where `x in xs`.  Given
+    the haystack
+
+        Map {y -> y + 1} xs
+
+    this function will realize that `y` and `x` are alpha equivalent and produce
+
+        Map {y -> (y+1) + 1} xs.
+    """
     return _Replacer(haystack_context, haystack_pool, needle, needle_context, needle_pool, replacement).visit(haystack)
