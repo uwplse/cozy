@@ -249,34 +249,25 @@ class FrozenDict(_FrozenDict):
 
 _name_counter = Value(ctypes.c_uint64, 0)
 
-## TODO: This routine is never used, except by fresh_name which passes n=1.
-## I would remove this routine.
 ## TODO: "hint" is a non-obvious parameter name.  It's not just a hint --
 ## it is always used.  Choose a better name (throughout where "hint" is
 ## used) and document it.  I would use `name` (in which case you need to
 ## rename the local variable `name`) or `base_name`.
-def fresh_names(n : int, hint : str = "name", omit : {str} = None) -> [str]:
+def fresh_name(hint : str = "name", omit : {str} = None) -> [str]:
     ## TODO: why do you do this rather than making the default value of omit be ()?
     if omit is None:
         omit = ()
 
-    res = []
+    name = None
     with _name_counter.get_lock():
         i = _name_counter.value
-        for _ in range(n):
-            name = None
-            while name is None or name in omit:
-                name = "_{}{}".format(hint, i)
-                i += 1
-            ## TODO: This doesn't give a guarantee of freshness.
-            ## That is worth clarifying in the documentation.
-            res.append(name)
+        while name is None or name in omit:
+            name = "_{}{}".format(hint, i)
+            i += 1
+        ## TODO: This doesn't give a guarantee of freshness.
+        ## That is worth clarifying in the documentation.
         _name_counter.value = i
-
-    return res
-
-def fresh_name(hint="name", omit=None):
-    return fresh_names(1, hint=hint, omit=omit)[0]
+    return name
 
 def capitalize(s):
     """Return a new string like s, but with the first letter capitalized."""
