@@ -414,8 +414,16 @@ def declare_case(supertype, name, attrs=()):
     globals()[name] = t
     return t
 
-# TODO: Document
 class extend_multi(object):
+    """
+    Temporarily extend a dictionary with new values.
+    Usage:
+        my_dict = ...
+        with extend_multi(my_dict, [(k1, v1), (k2, v2)]):
+            # use my_dict
+            # ...
+        # values for my_dict[k1] and my_dict[k2] restored on exit
+    """
     def __init__(self, d, items):
         self.things = [extend(d, k, v) for (k, v) in items]
     def __enter__(self, *args, **kwargs):
@@ -433,6 +441,7 @@ class extend(object):
         with extend(my_dict, k, new_val):
             # use my_dict
             # ...
+        # value for my_dict[k] restored on exit
     """
     NO_VAL = object()
     def __init__(self, d, k, v):
