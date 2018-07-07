@@ -389,9 +389,9 @@ def save_property(x, prop_name):
     yield
     setattr(x, prop_name, old_val)
 
-# TODO: Explain the naming; why "case"?  (Maybe because it becomes a new case in switch statements?)
 def declare_case(supertype, name, attrs=()):
-    """
+    """Create a new case for an ADT type.
+
     Usage:
         CaseName = declare_case(SuperType, "CaseName", ["member1", ...])
 
