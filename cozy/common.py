@@ -253,11 +253,7 @@ _name_counter = Value(ctypes.c_uint64, 0)
 ## it is always used.  Choose a better name (throughout where "hint" is
 ## used) and document it.  I would use `name` (in which case you need to
 ## rename the local variable `name`) or `base_name`.
-def fresh_name(hint : str = "name", omit : {str} = None) -> [str]:
-    ## TODO: why do you do this rather than making the default value of omit be ()?
-    if omit is None:
-        omit = ()
-
+def fresh_name(hint : str = "name", omit : {str} = ()) -> [str]:
     name = None
     with _name_counter.get_lock():
         i = _name_counter.value

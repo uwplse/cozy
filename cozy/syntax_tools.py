@@ -29,8 +29,8 @@ def var_name(v):
         return v.id
     raise TypeError(v)
 
-def fresh_var(type, hint="var", omit=None):
-    if omit is not None:
+def fresh_var(type, hint="var", omit=()):
+    if omit:
         omit = { var_name(v) for v in omit }
     return syntax.EVar(common.fresh_name(hint, omit=omit)).with_type(type)
 
