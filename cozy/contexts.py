@@ -161,8 +161,6 @@ class RootCtx(Context):
         self.functions = OrderedDict(funcs or ())
         assert not (self.state_vars & self.args)
     def vars(self):
-        ## Since exactly one of state_vars and args is non-None, I think an
-        ## "if" would be clearer than `chain`.
         return OrderedSet(itertools.chain(
             [(v, STATE_POOL)   for v in self.state_vars],
             [(v, RUNTIME_POOL) for v in self.args]))
