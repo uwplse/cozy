@@ -247,8 +247,7 @@ class FrozenDict(_FrozenDict):
     def __repr__(self):
         return "FrozenDict({!r})".format(list(self.items()))
 
-## TODO: Rename this varable; for example, _fresh_names_counter.
-_i = Value(ctypes.c_uint64, 0)
+_name_counter = Value(ctypes.c_uint64, 0)
 
 ## TODO: This routine is never used, except by fresh_name which passes n=1.
 ## I would remove this routine.
@@ -262,8 +261,8 @@ def fresh_names(n : int, hint : str = "name", omit : {str} = None) -> [str]:
         omit = ()
 
     res = []
-    with _i.get_lock():
-        i = _i.value
+    with _name_counter.get_lock():
+        i = _name_counter.value
         for _ in range(n):
             name = None
             while name is None or name in omit:
@@ -272,7 +271,7 @@ def fresh_names(n : int, hint : str = "name", omit : {str} = None) -> [str]:
             ## TODO: This doesn't give a guarantee of freshness.
             ## That is worth clarifying in the documentation.
             res.append(name)
-        _i.value = i
+        _name_counter.value = i
 
     return res
 
