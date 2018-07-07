@@ -54,7 +54,7 @@ Important functions:
 from collections import OrderedDict
 import itertools
 
-from cozy.common import OrderedSet, unique, Visitor
+from cozy.common import OrderedSet, unique, Visitor, save_property
 from cozy.syntax import TFunc, TBag, Exp, EVar, EAll, ESingleton
 from cozy.target_syntax import EDeepIn
 from cozy.evaluation import eval
@@ -288,24 +288,16 @@ class _Shredder(Visitor):
         self.ctx = ctx
         self.pool = pool
     def visit_ELambda(self, e, bag):
-        ## It's inconsistent that visit_EStateVar uses a code pattern of
-        ## saving the old value and reinstating it, whereas this method
-        ## recomputes the value.  I think it would be more consistent to
-        ## use the old_* pattern consistently.  Even though it will take
-        ## one more line of code, it conveys the intention more clearly.
-        ## The same comment applies to _Replacer.
-        self.ctx = UnderBinder(self.ctx, e.arg, bag, self.pool)
-        yield from self.visit(e.body)
-        self.ctx = self.ctx.parent()
+        with save_property(self, "ctx"):
+            self.ctx = UnderBinder(self.ctx, e.arg, bag, self.pool)
+            yield from self.visit(e.body)
     def visit_EStateVar(self, e):
         yield (e, self.ctx, self.pool)
-        old_pool = self.pool
-        old_ctx = self.ctx
-        self.pool = STATE_POOL
-        self.ctx = self.root_ctx
-        yield from self.visit(e.e)
-        self.pool = old_pool
-        self.ctx = old_ctx
+        with save_property(self, "pool"):
+            with save_property(self, "ctx"):
+                self.pool = STATE_POOL
+                self.ctx = self.root_ctx
+                yield from self.visit(e.e)
     def visit_EMap(self, e):
         yield (e, self.ctx, self.pool)
         yield from self.visit(e.e)
@@ -380,18 +372,16 @@ class _Replacer(BottomUpRewriter):
         self.needle_pool = needle_pool
         self.replacement = replacement
     def visit_ELambda(self, e, bag):
-        self.ctx = UnderBinder(self.ctx, e.arg, bag, self.pool)
-        new_body = self.visit(e.body)
-        self.ctx = self.ctx.parent()
+        with save_property(self, "ctx"):
+            self.ctx = UnderBinder(self.ctx, e.arg, bag, self.pool)
+            new_body = self.visit(e.body)
         return self.join(e, (e.arg, new_body))
     def visit_EStateVar(self, e):
-        old_pool = self.pool
-        old_ctx = self.ctx
-        self.pool = STATE_POOL
-        self.ctx = self.root_ctx
-        ee = self.visit(e.e)
-        self.pool = old_pool
-        self.ctx = old_ctx
+        with save_property(self, "pool"):
+            with save_property(self, "ctx"):
+                self.pool = STATE_POOL
+                self.ctx = self.root_ctx
+                ee = self.visit(e.e)
         return self.join(e, (ee,))
     def visit_EMap(self, e):
         return self.join(e, (self.visit(e.e), self.visit(e.f, e.e)))
