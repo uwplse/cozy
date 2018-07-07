@@ -10,11 +10,9 @@ Important functions and classes:
 Extra collection types:
  - OrderedSet: complements Python's OrderedDict
  - FrozenDict: a hashable immutable dictionary
- - OrderedDefaultDict: a fusion of Python's OrderedDict and defaultdict
 """
 
 # builtins
-from collections import defaultdict, OrderedDict
 from contextlib import contextmanager
 from functools import total_ordering, wraps
 import sys
@@ -267,24 +265,6 @@ class FrozenDict(_FrozenDict):
 
     def __repr__(self):
         return "FrozenDict({!r})".format(list(self.items()))
-
-_MISSING = object()
-## TODO: document
-class OrderedDefaultDict(OrderedDict):
-    def __init__(self, factory):
-        super().__init__()
-        self.factory = factory
-    def __missing__(self, k):
-        v = self.get(k, _MISSING)
-        if v is _MISSING:
-            v = self.factory()
-            self[k] = v
-        return v
-
-def nested_dict(n, t):
-    if n <= 0:
-        return t()
-    return OrderedDefaultDict(lambda: nested_dict(n-1, t))
 
 ## TODO: Rename this varable; for example, _fresh_names_counter.
 _i = Value(ctypes.c_uint64, 0)

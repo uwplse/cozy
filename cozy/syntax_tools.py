@@ -664,7 +664,7 @@ class FragmentEnumerator(common.Visitor):
             facts=self.current_assumptions(),
             replace_e_with=common.identity_func,
             bound_vars=self.currently_bound(),
-            var_sources=common.OrderedDict(self.bound_vars),
+            var_sources=collections.OrderedDict(self.bound_vars),
             pool=self.pool_stack[-1])
 
     def update_repl(self, ctx, new_replace):
