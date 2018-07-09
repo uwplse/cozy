@@ -287,3 +287,9 @@ def min_of(*es, type=None):
     t_bag = TBag(type)
     parts = ESum([ESingleton(e).with_type(t_bag) for e in es], base_case=EEmptyList().with_type(t_bag))
     return EArgMin(parts, ELambda(x, x)).with_type(type)
+
+def nth_func(t : TTuple, n : int) -> ELambda:
+    """Returns a lambda expression that obtains the nth element of a tuple."""
+    ## Hard-coded variable name is OK because no capturing or shadowing is possible.
+    x = EVar("x").with_type(t)
+    return ELambda(x, ETupleGet(x, n).with_type(t.ts[n]))

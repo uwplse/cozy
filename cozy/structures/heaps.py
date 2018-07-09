@@ -42,17 +42,6 @@ def _has_right_child(idx : Exp, size : Exp) -> Exp:
 def _parent(idx : Exp) -> Exp:
     return EBinOp(EBinOp(idx, "-", ONE).with_type(INT), ">>", ONE).with_type(INT)
 
-## TODO: Why isn't this called nth_func, by parallelism with heap_func below?
-## Both of them return functions.
-def nth(t : TTuple, n : int) -> ELambda:
-    """
-    Returns an expression whose value is a function
-    that obtains the nth element of a value of type `t`.
-    """
-    ## Hard-coded variable name is OK because no capturing or shadowing is possible.
-    x = EVar("x").with_type(t)
-    return ELambda(x, ETupleGet(x, n).with_type(t.ts[n]))
-
 def heap_func(e : Exp, concretization_functions : { str : Exp } = None) -> ELambda:
     """
     Assuming 'e' produces a heap, this returns the function used to sort its elements.
@@ -151,12 +140,12 @@ class Heaps(object):
         elif isinstance(e, EHeapPeek):
             tt = TTuple((e.e.type.elem_type, e.e.type.key_type))
             f = EArgMin if isinstance(e.e.type, TMinHeap) else EArgMax
-            return nth(tt, 0).apply_to(f(e.e, nth(tt, 1)).with_type(tt))
+            return nth_func(tt, 0).apply_to(f(e.e, nth_func(tt, 1)).with_type(tt))
         elif isinstance(e, EHeapPeek2):
             tt = TTuple((e.e.type.elem_type, e.e.type.key_type))
             f = EArgMin if isinstance(e.e.type, TMinHeap) else EArgMax
-            best = f(e.e, nth(tt, 1)).with_type(tt)
-            return nth(tt, 0).apply_to(f(EBinOp(e.e, "-", ESingleton(best).with_type(TBag(tt))).with_type(TBag(tt)), nth(tt, 1)).with_type(tt))
+            best = f(e.e, nth_func(tt, 1)).with_type(tt)
+            return nth_func(tt, 0).apply_to(f(EBinOp(e.e, "-", ESingleton(best).with_type(TBag(tt))).with_type(TBag(tt)), nth_func(tt, 1)).with_type(tt))
         else:
             raise NotImplementedError(e)
 
