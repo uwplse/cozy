@@ -12,11 +12,15 @@ from cozy.target_syntax import *
 from cozy.syntax_tools import fresh_var, mk_lambda
 from cozy.typecheck import is_collection
 
-## TODO: Write better documentation.  Merges each element of b into a and returns a.
 @typechecked
 def _merge(a : {THandle:Exp}, b : {THandle:Exp}) -> {THandle:Exp}:
-    """NOTE: assumes ownership of `a`"""
-    ## TODO: Why does the code define a new variable rather than operating on a directly?
+    """Merge the elements of `a` and `b`.
+
+    If a key is present in both inputs, the output will have an expression
+    computing the sum of the two entries for that key.
+
+    NOTE: for efficiency, this procedure mutates and returns `a`.
+    """
     res = a
     for k, vb in b.items():
         va = res.get(k)
