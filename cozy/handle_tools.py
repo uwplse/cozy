@@ -1,8 +1,8 @@
-## TODO: heap-allocated vs. pure is not a dichotomy, but the first sentence treats it as such.
-"""
-Handles (aka heap-allocated objects) require careful treatment since everything
-else in Cozy is relatively pure.  This module defines some useful functions
-that operate on handles.
+"""Utilities for working with "handles".
+
+Handles (mutable heap-allocated objects) require careful treatment since
+everything else in Cozy is relatively pure.  This module defines some useful
+functions that operate on handles.
 """
 
 from collections import OrderedDict
