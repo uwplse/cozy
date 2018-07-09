@@ -78,6 +78,7 @@ class Heaps(object):
         return f(EEmptyList().with_type(TBag(t.elem_type)), ELambda(x, default_value(t.key_type))).with_type(t)
 
     def check_wf(self, e : Exp, is_valid, state_vars : {EVar}, args : {EVar}, pool = RUNTIME_POOL, assumptions : Exp = T):
+        """Return None or a string indicating a well-formedness error."""
         if (isinstance(e, EHeapPeek) or isinstance(e, EHeapPeek2)):
             heap = e.e
             if pool != RUNTIME_POOL:
