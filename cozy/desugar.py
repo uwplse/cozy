@@ -1,12 +1,12 @@
 """Functions to desguar higher-level constructs to lower-level ones."""
 
-from cozy.common import typechecked
+from cozy.common import ADT, typechecked
 from cozy.target_syntax import *
 from cozy.typecheck import retypecheck
 from cozy.syntax_tools import BottomUpRewriter, subst, all_types
 
 @typechecked
-def desugar_list_comprehensions(e : Exp) -> Exp:
+def desugar_list_comprehensions(syntax_tree : ADT) -> ADT:
     """Convert list comprehensions into filters, maps, and flatmaps."""
 
     class V(BottomUpRewriter):
@@ -36,26 +36,34 @@ def desugar_list_comprehensions(e : Exp) -> Exp:
                 return rest, guards + [clause.e], pulls
             else:
                 raise NotImplementedError(clause)
-    return V().visit(e)
+    return V().visit(syntax_tree)
 
 @typechecked
-def desugar(spec : Spec) -> Spec:
+def inline_enum_constants(syntax_tree : ADT) -> ADT:
+    """Convert variables that refer to enum constants into EEnumEntry nodes.
 
-    # rewrite enums
+    Enum types introduce both a type name and a set of constants.  This
+    function replaces variables that refer to those constants with a special
+    kind of AST node representing the constant.  Most other functions in Cozy
+    assume that this transformation has taken place, and that variables are not
+    names for enum constants.
+    """
+
     repl = {
         name : EEnumEntry(name).with_type(t)
-        for t in all_types(spec)
+        for t in all_types(syntax_tree)
         if isinstance(t, TEnum)
         for name in t.cases }
-    spec = subst(spec, repl)
+    return subst(syntax_tree, repl)
 
-    ## TODO: it wasn't clear where the bags are.  A list can have
-    ## duplicates, so it can represent a bag.  Or, maybe this comment
-    ## refers to more than just the very next statement?  If it refers to
-    ## more, then change whitespace to either put a blank line after it or
-    ## to remove all blank lines within the section of the function that
-    ## the comment refers to.
-    # convert all collection types to bags
+@typechecked
+def convert_sets_to_bags(spec : Spec) -> Spec:
+    """Convert set-type state variables to bag-type state variables.
+
+    This function also adds invariants stating that all bags which used to be
+    sets have distinct elements.
+    """
+
     spec = Spec(
         spec.name,
         list(spec.types),
@@ -70,19 +78,27 @@ def desugar(spec : Spec) -> Spec:
     for i in range(len(spec.statevars)):
         v, t = spec.statevars[i]
         if isinstance(t, TSet):
-            # Sets become bags w/ implicit unique assumptions.
             t = TBag(t.t)
             spec.statevars[i] = (v, t)
             v = EVar(v).with_type(t)
             spec.assumptions.append(EUnaryOp(UOp.AreUnique, v).with_type(BOOL))
 
-    assert retypecheck(spec, env={})
+    if not retypecheck(spec, env={}):
+        raise Exception("Set->Bag conversion failed")
 
-    class V(BottomUpRewriter):
-        def visit_Exp(self, e):
-            return desugar_list_comprehensions(e)
-    spec = V().visit(spec)
+    return spec
 
-    assert retypecheck(spec, env={})
+@typechecked
+def desugar(spec : Spec) -> Spec:
+    """Desguar a specification.
 
+    This function applies these transformations:
+        - inline enum constants
+        - convert sets to bags
+        - convert list comprehensions to filter, map, and flatmap expressions
+    """
+
+    spec = inline_enum_constants(spec)
+    spec = convert_sets_to_bags(spec)
+    spec = desugar_list_comprehensions(spec)
     return spec
