@@ -16,7 +16,7 @@ from cozy.syntax_tools import pprint, free_vars, free_funcs, purify
 from cozy.common import FrozenDict, OrderedSet, extend
 from cozy.typecheck import is_numeric, is_collection
 from cozy.structures import extension_handler
-from cozy.value_types import Map, Bag, Handle, eq, cmp, LT, EQ, GT
+from cozy.value_types import Map, Bag, Handle, compare_values, values_equal, LT, EQ, GT
 
 def eval(e, env, *args, **kwargs):
     return eval_bulk(e, (env,), *args, **kwargs)[0]
@@ -156,7 +156,7 @@ def has_key(key_type):
     def _has_key(stk):
         k = stk.pop()
         m = stk.pop()
-        stk.append(any(eq(key_type, k, kk) for kk in m.keys()))
+        stk.append(any(values_equal(key_type, k, kk) for kk in m.keys()))
     return _has_key
 
 def read_map_keys(stk):
@@ -189,7 +189,7 @@ def binaryop_sub_bags(elem_type):
         elems = list(v1)
         for x in v2:
             for i in range(len(elems)):
-                if eq(elem_type, x, elems[i]):
+                if values_equal(elem_type, x, elems[i]):
                     del elems[i]
                     break
         stk.append(Bag(elems))
@@ -202,7 +202,7 @@ def binaryop_sub_lists(elem_type):
         elems = list(v1)
         for x in v2:
             for i in range(len(elems)):
-                if eq(elem_type, x, elems[i]):
+                if values_equal(elem_type, x, elems[i]):
                     del elems[i]
                     break
         stk.append(tuple(elems))
@@ -212,49 +212,49 @@ def binaryop_eq(t, deep=False):
     def binaryop_eq(stk):
         v2 = stk.pop()
         v1 = stk.pop()
-        stk.append(cmp(t, v1, v2, deep=deep) == EQ)
+        stk.append(compare_values(t, v1, v2, deep=deep) == EQ)
     return binaryop_eq
 
 def binaryop_ne(t):
     def binaryop_ne(stk):
         v2 = stk.pop()
         v1 = stk.pop()
-        stk.append(cmp(t, v1, v2) != EQ)
+        stk.append(compare_values(t, v1, v2) != EQ)
     return binaryop_ne
 
 def binaryop_lt(t):
     def binaryop_lt(stk):
         v2 = stk.pop()
         v1 = stk.pop()
-        stk.append(cmp(t, v1, v2) == LT)
+        stk.append(compare_values(t, v1, v2) == LT)
     return binaryop_lt
 
 def binaryop_le(t):
     def binaryop_le(stk):
         v2 = stk.pop()
         v1 = stk.pop()
-        stk.append(cmp(t, v1, v2) != GT)
+        stk.append(compare_values(t, v1, v2) != GT)
     return binaryop_le
 
 def binaryop_gt(t):
     def binaryop_gt(stk):
         v2 = stk.pop()
         v1 = stk.pop()
-        stk.append(cmp(t, v1, v2) == GT)
+        stk.append(compare_values(t, v1, v2) == GT)
     return binaryop_gt
 
 def binaryop_ge(t):
     def binaryop_ge(stk):
         v2 = stk.pop()
         v1 = stk.pop()
-        stk.append(cmp(t, v1, v2) != LT)
+        stk.append(compare_values(t, v1, v2) != LT)
     return binaryop_ge
 
 def binaryop_in(elem_type):
     def binaryop_in(stk):
         v2 = stk.pop()
         v1 = stk.pop()
-        stk.append(any(eq(elem_type, v1, v2elem) for v2elem in v2))
+        stk.append(any(values_equal(elem_type, v1, v2elem) for v2elem in v2))
     return binaryop_in
 
 def unaryop_not(stk):
@@ -279,13 +279,13 @@ def unaryop_neg(stk):
     stk.append(-stk.pop())
 
 def unaryop_areunique(elem_type):
-    keyfunc = cmp_to_key(lambda v1, v2: cmp(elem_type, v1, v2))
+    keyfunc = cmp_to_key(lambda v1, v2: compare_values(elem_type, v1, v2))
     def unaryop_areunique(stk):
         v = stk.pop()
         l = sorted(v, key=keyfunc)
         res = True
         for i in range(len(l) - 1):
-            if eq(elem_type, l[i], l[i+1]):
+            if values_equal(elem_type, l[i], l[i+1]):
                 res = False
                 break
         stk.append(res)
@@ -296,7 +296,7 @@ def unaryop_distinct(elem_type):
         v = stk.pop()
         res = []
         for x in v:
-            if not any(eq(elem_type, x, y) for y in res):
+            if not any(values_equal(elem_type, x, y) for y in res):
                 res.append(x)
         stk.append(Bag(res))
     return unaryop_distinct

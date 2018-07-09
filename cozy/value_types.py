@@ -16,8 +16,7 @@ Important types:
  - Handle
 
 Important functions:
- - cmp: compare two Cozy values
- - eq: determine whether two Cozy values are equal
+ - compare_values: compare two Cozy values
 """
 
 from collections import namedtuple
@@ -39,14 +38,14 @@ class Map(object):
     def __setitem__(self, k, v):
         for i in range(len(self._items)):
             (kk, vv) = self._items[i]
-            if eq(self.type.k, k, kk):
+            if values_equal(self.type.k, k, kk):
                 self._items[i] = (kk, v)
                 return
         self._items.append((k, v))
     def __getitem__(self, k):
         for i in range(len(self._items)):
             (kk, vv) = self._items[i]
-            if eq(self.type.k, k, kk):
+            if values_equal(self.type.k, k, kk):
                 return vv
         return self.default
     def items(self):
@@ -108,7 +107,7 @@ LT = -1
 EQ =  0
 GT =  1
 
-def cmp(t : Type, v1, v2, deep : bool = False) -> int:
+def compare_values(t : Type, v1, v2, deep : bool = False) -> int:
     """Compare two Cozy values, returning LT, EQ, or GT.
 
     Parameters:
@@ -121,7 +120,8 @@ def cmp(t : Type, v1, v2, deep : bool = False) -> int:
     Because the LT, EQ, and GT constants are defined to be the integers -1, 0,
     and 1 respectively, this function can be used as an old-style comparator:
 
-        values.sort(key=functools.cmp_to_key(lambda v1, v2: cmp(t, v1, v2)))
+        values.sort(key=functools.cmp_to_key(
+            lambda v1, v2: compare_values(t, v1, v2)))
     """
 
     # For performance, this function uses a work-stack algorithm rather than
@@ -173,6 +173,6 @@ def cmp(t : Type, v1, v2, deep : bool = False) -> int:
             else:          return GT
     return EQ
 
-def eq(t : Type, v1, v2) -> bool:
-    """Shorthand for `cmp(t, v1, v2) == EQ`."""
-    return cmp(t, v1, v2) == EQ
+def values_equal(t : Type, v1, v2) -> bool:
+    """Shorthand for `compare_values(t, v1, v2) == EQ`."""
+    return compare_values(t, v1, v2) == EQ

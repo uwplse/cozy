@@ -7,7 +7,8 @@ from cozy.syntax_tools import subst, pprint, free_vars, fresh_var, alpha_equival
 from cozy.wf import ExpIsNotWf, exp_wf
 from cozy.common import No, OrderedSet, unique, OrderedSet, StopException
 from cozy.solver import satisfy, valid, IncrementalSolver, ModelCachingSolver
-from cozy.evaluation import construct_value, eq
+from cozy.value_types import values_equal
+from cozy.evaluation import construct_value
 from cozy.cost_model import CostModel, Order, LINEAR_TIME_UOPS
 from cozy.opts import Option
 from cozy.pools import Pool, RUNTIME_POOL, STATE_POOL, pool_name
@@ -155,7 +156,7 @@ class Learner(object):
         if fp[0] != target_fp[0]:
             return False
         t = fp[0]
-        return all(eq(t, fp[i], target_fp[i]) for i in range(1, len(fp)))
+        return all(values_equal(t, fp[i], target_fp[i]) for i in range(1, len(fp)))
 
     def next(self):
         # with task("pre-computing cardinalities"):
