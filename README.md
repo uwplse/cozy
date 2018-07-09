@@ -4,12 +4,14 @@
 )](https://travis-ci.org/CozySynthesizer/cozy)
 
 Cozy is a tool that synthesizes data structure implementations
-from very high-level specifications. It can greatly simplify the task of
-writing software modules with private state since it chooses a good
-representation of your data and efficient method implementations automatically.
+from simple high-level specifications. It automatically chooses a good
+representation of your data and efficient method implementations.
+
+Cozy can greatly simplify the task of
+writing software modules with private state.
 In most cases, Cozy specifications are short and self-documenting, and are
 therefore much easier to maintain than handwritten implementations.
-Occasionally Cozy can discover abstraction-breaking optimizations that human
+Occasionally Cozy can discover deep optimizations that human
 developers shy away from.
 
 Currently, Cozy can generate code for C++ and Java.
@@ -18,8 +20,11 @@ Currently, Cozy can generate code for C++ and Java.
 
 Dependencies:
  - [Python >= 3.5](https://www.python.org/)
- - The Python modules listed in `requirements.txt`
-   (install with `pip3 install -r requirements.txt`)
+ - The Python modules listed in `requirements.txt`;
+   install them with `pip3 install -r requirements.txt`.
+
+   (If you get an error "cannot find -lxml2", then install `libxml2-dev`;
+   for example, on Ubuntu run `sudo apt-get install libxml2-dev`.)
 
 To list all command-line options (and ensure that everything is correctly
 installed):
@@ -39,13 +44,14 @@ in the "Quickstart" section. If you want to install the global executable
 
     $ pip3 install .
 
-## Writing Specifications
+## Cozy Specifications
 
-The `examples` folder has a number of example specifications that you can use
-as templates. The most complete description of the grammar is the parser itself
-(`cozy/parse.py`).
+A Cozy specification contains three parts:
+ 1. `state` declarations declare the private state of the data structure.
+ 2. `query` methods retrieve some information about the private state.
+ 3. `op` methods alter the private state.
 
-Cozy specifications always have this general shape:
+Here is an example:
 
     MyDataStructure:
 
@@ -60,11 +66,8 @@ Cozy specifications always have this general shape:
         op addElement(x : Int)
             elements.add(x);
 
-The `state` declarations declare the private state of the data structure.
-The `query` methods retrieve some information about the private state.
-The `op` methods alter the private state.
-
-From a specification like this, Cozy will produce a much better implementation:
+From a specification like this, Cozy will produce a much better implementation
+that satisfies the same public interface:
 
     MyDataStructure:
 
@@ -80,6 +83,14 @@ From a specification like this, Cozy will produce a much better implementation:
         op addElement(x : Int)
             sz = sz + 1;
             ctz = ctz or (x == 0);
+
+The `examples` folder contains example specifications that you can use
+as templates.
+
+## Grammar of Specifications
+
+A more complete description of the grammar is the parser itself
+([`cozy/parse.py`](cozy/parse.py)).
 
 ### Supported Types
 
@@ -117,7 +128,7 @@ Cozy supports many useful reduction operations on collections as well:
  - Determine whether some element of a boolean collection is true (`any xs`,
    equivalent to `exists [x | x <- xs, x == true]`)
  - Find distinct elements (`distinct xs`)
- - Determine whether a xs's elements are all unique
+ - Determine whether a collection's elements are all unique
    (`unique xs`, equivalent to `xs == distinct xs`)
  - Get the single element from a singleton collection (`the xs`)
  - Determine whether an element is in a collection (`e in xs`, equivalent to
@@ -143,9 +154,22 @@ An update method may perform multiple updates in sequence, as in
         xs.add(y);
         if (y > 0) { s = s + y; }
 
-### Other Useful Features
+## Other Useful Features
 
-#### Typedefs
+### Comments
+
+Cozy supports single- and multi-line comments:
+
+    // Single-line comment.
+    
+    /*
+       Multi-
+       line
+       comment.
+    */
+
+
+### Typedefs
 
 Cozy supports typedefs to make specifications easier to read.
 
@@ -153,15 +177,18 @@ Cozy supports typedefs to make specifications easier to read.
         type MyStruct = { a : Int, b : Int }
         ...
 
-#### Assumptions
+### Assumptions: Method Contracts
 
-Sometimes clients interact with a data structure in more refined ways. For
-instance, it might happen to be true that a client will never add a duplicate
-element to the data structure. Cozy cannot possibly infer these facts during
-synthesis.
+A method's types do not always fully express its contract; for example, a data
+structure might require that its arguments are positive numbers.
+Or, a client may interact with a data structure in specific ways; for example,
+a client might never add a duplicate element to the data structure.
+Cozy cannot possibly infer these facts during synthesis, but if you express
+them, Cozy can take advantage of them.
 
-Assumptions allow specification writers to communicate facts about the client
-to Cozy. They can be added to both update and query methods. Cozy does not
+_Assumptions_ allow the specification to communicate facts about the
+contract or the client
+to Cozy. You can write assumptions on both update and query methods. Cozy does not
 check them; instead, it assumes that they will be true at each call site. That
 means it is up to you, the developer, to ensure that your assumptions are
 correct!
@@ -179,7 +206,7 @@ implementation.
             assume not empty ints;
             empty ints
 
-#### Invariants
+### Invariants
 
 Invariants are properties of the data structure state that will always be true.
 Cozy _does_ check invariants by ensuring that (1) they hold in the initial
@@ -201,15 +228,15 @@ For instance:
             assume i > 0;
             ints.add(i);
 
-#### Handles
+### Handles
 
 (TODO: this is very complicated!)
 
-#### Escaping the Spec Language
+### Integration with Existing Code
 
-To facilitate integration with other code, Cozy gives you several ways to
-"escape" the confines of the specification language. This lets you use types,
-functions, and other features defined outside the specification.
+You can make Cozy output literal code and documentation that you write in the specification.  You can also use types and functions that are declared in your program or in libraries.
+
+#### Literal output
 
 Code enclosed in double-braces at the top or bottom of a specification will be
 copied into the output directly. For example, to put a synthesized class into
@@ -226,7 +253,10 @@ a particular Java package:
     /* here is a footer! */
     }}
 
-To use a type declared elsewhere, you can use `Native "TypeName"`. At code
+#### Externally-Defined Types
+
+To use a type that is not synthesized by Cozy -- that is, a type defined in
+your program or in a library -- you can use `Native "TypeName"`. At code
 generation time, Cozy will simply insert the text `TypeName` wherever that type
 is used. For instance:
 
@@ -234,6 +264,8 @@ is used. For instance:
         type User = Native "User"
         state u : User
         ...
+
+#### Externally-Defined Functions
 
 To use code declared elsewhere, you can use "extern" functions. These are
 snippets of code that Cozy inlines into the final implementation where
@@ -253,16 +285,7 @@ extended:
 
 #### Documentation
 
-Cozy supports single and multi-line comments:
-
-    // Single-line.
-    
-    /*
-       Multi-
-       line.
-    */
-
-Cozy specs also allow Javadoc and Doxygen-style documentation comments.
+Cozy specs allow Javadoc and Doxygen-style documentation comments.
 These may be placed on the top-level data structure definition and on the
 `op` and `query` definitions:
 
@@ -276,14 +299,14 @@ These may be placed on the top-level data structure definition and on the
         /**
          * Adds an item to the collection.
          * @param  i the item to add
-         * @see empty
+         * @see #empty
          */
         op add(i : Int)
             // ...
         
         /**
          * Reveals whether the collection is empty.
-         * @see add
+         * @see #add
          */
         query empty()
             // ...
@@ -291,7 +314,11 @@ These may be placed on the top-level data structure definition and on the
 These documentation comments are emitted verbatim on the corresponding classes and
 methods of the generated code.
 
-## Tests
+## Implementation details
+
+The `cozy/codegen` folder implements source code generation for C++ and Java.
+
+### Tests
 
 The `tests` folder contains a few tests written with Python's
 [unittest](https://docs.python.org/3/library/unittest.html) library. Run them
@@ -302,6 +329,3 @@ with
 (The `-b` flag "buffers" output so that Python only shows output from failing
 tests.)
 
-## Implementation details
-
-The `cozy/codegen` folder implements source code generation for C++ and Java.

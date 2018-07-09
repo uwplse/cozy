@@ -3,8 +3,6 @@ ReadAfterWrite:
     state x : Int
     state l : Bag<Int>
 
-    invariant true;
-
     query getx()
         x
 

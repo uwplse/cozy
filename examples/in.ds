@@ -3,11 +3,11 @@ In:
     state xs : Bag<Int>
     state ys : Bag<Int>
 
+    query a(z : Int)
+        z in ys
+
     op addX(x : Int)
         xs.add(x);
 
     op addY(y : Int)
         ys.add(y);
-
-    query a(z : Int)
-        z in ys

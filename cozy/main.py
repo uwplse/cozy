@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 """
-Main entry point for synthesis. Run with --help for options.
+Main entry point for Cozy synthesis. Run with --help for options.
 """
 
 from collections import defaultdict
@@ -63,6 +63,7 @@ def run():
         input_text = sys.stdin.read() if args.file is None else common.read_file(args.file)
         ast = parse.parse_spec(input_text)
 
+        # Collection of errors in user-provided specification
         errors = typecheck.typecheck(ast)
         if errors:
             for e in errors:

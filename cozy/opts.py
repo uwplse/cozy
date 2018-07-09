@@ -4,10 +4,12 @@ Many Cozy modules have local options like timeouts and tuning parameters.  It
 is convenient for those options to be listed in the module source code, but it
 is inconvenient to write code that collects them across the entire codebase.
 This module addresses the problem by letting each module declare Option
-instances for each of its settings and providing a `setup` to collect all
-Options across all imported modules.
+instances for each of its settings and providing a `setup` to inform a
+command-line parser about all Options that have been defined by the program
+so far.
 """
 
+# All Option objects that have ever been created.
 _OPTS = []
 
 class Option(object):
