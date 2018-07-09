@@ -201,8 +201,6 @@ class Heaps(object):
         if isinstance(e, EMakeMinHeap) or isinstance(e, EMakeMaxHeap):
             out_raw = EVar(out.id).with_type(self.rep_type(e.type))
             l = fresh_var(INT, "alloc_len")
-            ## TODO: x is not used after being defined here.
-            x = fresh_var(e.type.elem_type, "x")
             return seq([
                 SDecl(l.id, ELen(e.e)),
                 SArrayAlloc(out_raw, l),
