@@ -67,9 +67,15 @@ def reachable_handles_by_type(root : Exp) -> {THandle:Exp}:
     else:
         return OrderedDict()
 
-## TODO: Document
 @typechecked
 def reachable_handles_at_method(spec : Spec, m : Method) -> {THandle:Exp}:
+    """
+    Compute a mapping from handle types to bags of all handle objects of that
+    type reachable at entry to some method `m`.
+
+    Note that the bags may contain duplicate handles.  See
+    `reachble_handles_by_type` for information about how this can happen.
+    """
     res = OrderedDict()
     for v, t in spec.statevars:
         res = _merge(res, reachable_handles_by_type(EVar(v).with_type(t)))
