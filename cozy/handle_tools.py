@@ -9,7 +9,7 @@ from collections import OrderedDict
 
 from cozy.common import typechecked
 from cozy.target_syntax import *
-from cozy.syntax_tools import fresh_var, mk_lambda
+from cozy.syntax_tools import fresh_var
 from cozy.typecheck import is_collection
 
 @typechecked
@@ -82,9 +82,6 @@ def reachable_handles_at_method(spec : Spec, m : Method) -> {THandle:Exp}:
     for v, t in m.args:
         res = _merge(res, reachable_handles_by_type(EVar(v).with_type(t)))
     return res
-
-def EForall(e, p):
-    return EUnaryOp(UOp.All, EMap(e, mk_lambda(e.type.t, p)).with_type(type(e.type)(BOOL))).with_type(BOOL)
 
 @typechecked
 def implicit_handle_assumptions(handles : {THandle:Exp}) -> [Exp]:
