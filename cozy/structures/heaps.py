@@ -136,8 +136,8 @@ class Heaps(object):
         # bag of (elem, key(elem)) pairs
         return TBag(TTuple((t.elem_type, t.key_type)))
 
-    # TODO: document.  Is this a lowering?
     def encode(self, e : Exp) -> Exp:
+        """Convert an expression about heaps to one about bags."""
         if isinstance(e, EMakeMinHeap):
             tt = TTuple((e.type.elem_type, e.type.key_type))
             return EMap(e.e, ELambda(e.f.arg, ETuple((e.f.arg, e.f.body)).with_type(tt))).with_type(TBag(tt))
