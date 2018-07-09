@@ -289,6 +289,6 @@ class Heaps(object):
                         # dec. size
                         SAssign(size, size_minus_one)]))])
             else:
-                raise NotImplementedError()
+                raise ValueError("heaps do not support the function {}".format(s.func))
         else:
-            raise NotImplementedError(pprint(s))
+            raise ValueError("the statement {} is not an update to a heap variable".format(pprint(s)))
