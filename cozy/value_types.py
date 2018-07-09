@@ -108,7 +108,21 @@ LT = -1
 EQ =  0
 GT =  1
 
-def cmp(t : Type, v1, v2, deep : bool = False):
+def cmp(t : Type, v1, v2, deep : bool = False) -> int:
+    """Compare two Cozy values, returning LT, EQ, or GT.
+
+    Parameters:
+        t    - the type of the values being compared
+        v1   - the first value
+        v2   - the second value
+        deep - true to do a "deep" comparison that cares about iteration order
+               on collections
+
+    Because the LT, EQ, and GT constants are defined to be the integers -1, 0,
+    and 1 respectively, this function can be used as an old-style comparator:
+
+        values.sort(key=functools.cmp_to_key(lambda v1, v2: cmp(t, v1, v2)))
+    """
     stk = [(t, v1, v2)]
 
     orig_deep = deep
@@ -167,5 +181,6 @@ def cmp(t : Type, v1, v2, deep : bool = False):
             else:          return GT
     return EQ
 
-def eq(t : Type, v1, v2):
+def eq(t : Type, v1, v2) -> bool:
+    """Shorthand for `cmp(t, v1, v2) == EQ`."""
     return cmp(t, v1, v2) == EQ
