@@ -14,9 +14,8 @@ EMakeMinHeap = declare_case(Exp, "EMakeMinHeap", ["e", "f"])
 EMakeMaxHeap = declare_case(Exp, "EMakeMaxHeap", ["e", "f"])
 
 EHeapElems = declare_case(Exp, "EHeapElems", ["e"]) # all elements
-## TODO: the field name "n" is confusing.  Name it "length" instead.
-EHeapPeek  = declare_case(Exp, "EHeapPeek",  ["e", "n"]) # look at min
-EHeapPeek2 = declare_case(Exp, "EHeapPeek2", ["e", "n"]) # look at 2nd min
+EHeapPeek  = declare_case(Exp, "EHeapPeek",  ["e", "heap_length"]) # look at min
+EHeapPeek2 = declare_case(Exp, "EHeapPeek2", ["e", "heap_length"]) # look at 2nd min
 
 def to_heap(e : Exp) -> Exp:
     """Implement expression e as a heap operation."""
@@ -93,7 +92,7 @@ class Heaps(object):
             heap = e.e
             if pool != RUNTIME_POOL:
                 return "heap peek in state position"
-            if not is_valid(EEq(e.n, ELen(EHeapElems(heap).with_type(TBag(heap.type.elem_type))))):
+            if not is_valid(EEq(e.heap_length, ELen(EHeapElems(heap).with_type(TBag(heap.type.elem_type))))):
                 return "invalid `n` parameter"
         return None
 
@@ -107,14 +106,14 @@ class Heaps(object):
             e.type = TMinHeap(e.e.type.t, e.f.body.type)
         elif isinstance(e, EHeapPeek) or isinstance(e, EHeapPeek2):
             typecheck(e.e)
-            typecheck(e.n)
+            typecheck(e.heap_length)
             ok = True
             if not (isinstance(e.e.type, TMinHeap) or isinstance(e.e.type, TMaxHeap)):
                 report_err(e, "cannot peek a non-heap")
                 ## TODO: Why is the `ok` variable needed at all?  Couldn't
                 ## you just return here and at the other assignment to `ok`?
                 ok = False
-            if e.n.type != INT:
+            if e.heap_length.type != INT:
                 report_err(e, "length param is not an int")
                 ok = False
             if ok:
@@ -223,7 +222,7 @@ class Heaps(object):
             from cozy.evaluation import construct_value
             best = EArgMin if isinstance(e.e.type, TMinHeap) else EArgMax
             f = heap_func(e.e, concretization_functions)
-            return SSwitch(e.n, (
+            return SSwitch(e.heap_length, (
                 (ZERO, SAssign(out, construct_value(e.type))),
                 (ONE,  SAssign(out, construct_value(e.type))),
                 (TWO,  SAssign(out, EArrayGet(e.e, ONE).with_type(e.type)))),
