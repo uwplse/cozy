@@ -123,27 +123,21 @@ def cmp(t : Type, v1, v2, deep : bool = False) -> int:
 
         values.sort(key=functools.cmp_to_key(lambda v1, v2: cmp(t, v1, v2)))
     """
-    stk = [(t, v1, v2)]
 
-    orig_deep = deep
-    def cleardeep():
-        nonlocal deep
-        deep = False
-    def resetdeep():
-        nonlocal deep
-        deep = orig_deep
+    # For performance, this function uses a work-stack algorithm rather than
+    # recursive calls to itself.  The stack holds (type, value1, value2, deep)
+    # tuples to compare.  If the values on the head of the stack differ, then
+    # this function can abort immediately with LT or GT.  Otherwise it
+    # continues to the next stack item.
+    stk = [(t, v1, v2, deep)]
 
     while stk:
-        head = stk.pop()
-        if hasattr(head, "__call__"):
-            head()
-            continue
-        (t, v1, v2) = head
+        (t, v1, v2, deep) = stk.pop()
 
         if isinstance(t, THandle):
             if deep:
-                stk.append((t.value_type, v1.value, v2.value))
-            stk.append((INT, v1.address, v2.address))
+                stk.append((t.value_type, v1.value, v2.value, deep))
+            stk.append((INT, v1.address, v2.address, deep))
         elif isinstance(t, TEnum):
             i1 = t.cases.index(v1)
             i2 = t.cases.index(v2)
@@ -159,22 +153,20 @@ def cmp(t : Type, v1, v2, deep : bool = False) -> int:
                 elems2 = list(sorted(v2))
             if len(elems1) < len(elems2): return LT
             if len(elems1) > len(elems2): return GT
-            stk.extend(reversed([(t.t, x, y) for (x, y) in zip(elems1, elems2)]))
+            stk.extend(reversed([(t.t, x, y, deep) for (x, y) in zip(elems1, elems2)]))
         elif isinstance(t, TMap):
             keys1 = Bag(v1.keys())
             keys2 = Bag(v2.keys())
-            stk.extend(reversed([(t.v, v1[k], v2[k]) for k in sorted(keys1)]))
-            stk.append(resetdeep)
-            stk.append((TSet(t.k), keys1, keys2))
-            stk.append(cleardeep)
-            stk.append((t.v, v1.default, v2.default))
+            stk.extend(reversed([(t.v, v1[k], v2[k], deep) for k in sorted(keys1)]))
+            stk.append((TSet(t.k), keys1, keys2, False))
+            stk.append((t.v, v1.default, v2.default, deep))
         elif isinstance(t, TTuple):
-            stk.extend(reversed([(tt, vv1, vv2) for (tt, vv1, vv2) in zip(t.ts, v1, v2)]))
+            stk.extend(reversed([(tt, vv1, vv2, deep) for (tt, vv1, vv2) in zip(t.ts, v1, v2)]))
         elif isinstance(t, TList):
-            stk.extend(reversed([(t.t, vv1, vv2) for (vv1, vv2) in zip(v1, v2)]))
-            stk.append((INT, len(v1), len(v2)))
+            stk.extend(reversed([(t.t, vv1, vv2, deep) for (vv1, vv2) in zip(v1, v2)]))
+            stk.append((INT, len(v1), len(v2), deep))
         elif isinstance(t, TRecord):
-            stk.extend(reversed([(ft, v1[f], v2[f]) for (f, ft) in t.fields]))
+            stk.extend(reversed([(ft, v1[f], v2[f], deep) for (f, ft) in t.fields]))
         else:
             if   v1 == v2: continue
             elif v1 <  v2: return LT
