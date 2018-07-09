@@ -249,16 +249,14 @@ class FrozenDict(_FrozenDict):
 
 _name_counter = Value(ctypes.c_uint64, 0)
 
-## TODO: "hint" is a non-obvious parameter name.  It's not just a hint --
-## it is always used.  Choose a better name (throughout where "hint" is
-## used) and document it.  I would use `name` (in which case you need to
-## rename the local variable `name`) or `base_name`.
 def fresh_name(hint : str = "name", omit : {str} = ()) -> str:
     """Generate a new name.
 
     The returned name is guaranteed to be distinct from all names previously
     returned by `fresh_name` (even across threads and forked processes), and
     is is also guaranteed to be distinct from all names in `omit`.
+
+    The `hint` parameter will be used in the generated name.
     """
     name = None
     with _name_counter.get_lock():
