@@ -253,15 +253,19 @@ _name_counter = Value(ctypes.c_uint64, 0)
 ## it is always used.  Choose a better name (throughout where "hint" is
 ## used) and document it.  I would use `name` (in which case you need to
 ## rename the local variable `name`) or `base_name`.
-def fresh_name(hint : str = "name", omit : {str} = ()) -> [str]:
+def fresh_name(hint : str = "name", omit : {str} = ()) -> str:
+    """Generate a new name.
+
+    The returned name is guaranteed to be distinct from all names previously
+    returned by `fresh_name` (even across threads and forked processes), and
+    is is also guaranteed to be distinct from all names in `omit`.
+    """
     name = None
     with _name_counter.get_lock():
         i = _name_counter.value
         while name is None or name in omit:
             name = "_{}{}".format(hint, i)
             i += 1
-        ## TODO: This doesn't give a guarantee of freshness.
-        ## That is worth clarifying in the documentation.
         _name_counter.value = i
     return name
 
