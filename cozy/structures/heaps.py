@@ -233,8 +233,7 @@ class Heaps(object):
     ## only those two cases?  Why is it OK for this not to handle anything
     ## else?
     def implement_stmt(self, s : Stm, concretization_functions : { str : Exp }) -> Stm:
-        ## I think "cmp" would be a better name than "op"
-        op = "<=" if isinstance(s.target.type, TMinHeap) else ">="
+        comparison_op = "<=" if isinstance(s.target.type, TMinHeap) else ">="
         f = heap_func(s.target, concretization_functions)
         if isinstance(s, SCall):
             elem_type = s.target.type.elem_type
@@ -251,7 +250,7 @@ class Heaps(object):
                         SDecl(i.id, size),
                         SWhile(EAll([
                             EBinOp(i, ">", ZERO).with_type(BOOL),
-                            ENot(EBinOp(f.apply_to(EArrayGet(target_raw, _parent(i))), op, f.apply_to(EArrayGet(target_raw, i))).with_type(BOOL))]),
+                            ENot(EBinOp(f.apply_to(EArrayGet(target_raw, _parent(i))), comparison_op, f.apply_to(EArrayGet(target_raw, i))).with_type(BOOL))]),
                             seq([
                                 SSwap(EArrayGet(target_raw, _parent(i)), EArrayGet(target_raw, i)),
                                 SAssign(i, _parent(i))])),
@@ -273,10 +272,10 @@ class Heaps(object):
                         # bubble down
                         SEscapableBlock(label, SWhile(_has_left_child(i, size_minus_one), seq([
                             SDecl(child_index.id, _left_child(i)),
-                            SIf(EAll([_has_right_child(i, size_minus_one), ENot(EBinOp(f.apply_to(EArrayGet(target_raw, _left_child(i))), op, f.apply_to(EArrayGet(target_raw, _right_child(i)))))]),
+                            SIf(EAll([_has_right_child(i, size_minus_one), ENot(EBinOp(f.apply_to(EArrayGet(target_raw, _left_child(i))), comparison_op, f.apply_to(EArrayGet(target_raw, _right_child(i)))))]),
                                 SAssign(child_index, _right_child(i)),
                                 SNoOp()),
-                            SIf(ENot(EBinOp(f.apply_to(EArrayGet(target_raw, i)), op, f.apply_to(EArrayGet(target_raw, child_index)))),
+                            SIf(ENot(EBinOp(f.apply_to(EArrayGet(target_raw, i)), comparison_op, f.apply_to(EArrayGet(target_raw, child_index)))),
                                 seq([
                                     SSwap(EArrayGet(target_raw, i), EArrayGet(target_raw, child_index)),
                                     SAssign(i, child_index)]),
