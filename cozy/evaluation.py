@@ -1,4 +1,3 @@
-## TODO: Choose a better name for "eval_bulk".
 """Interpreter for Cozy expressions.
 
 Important functions:
