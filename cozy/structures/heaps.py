@@ -99,8 +99,6 @@ class Heaps(object):
             ok = True
             if not (isinstance(e.e.type, TMinHeap) or isinstance(e.e.type, TMaxHeap)):
                 report_err(e, "cannot peek a non-heap")
-                ## TODO: Why is the `ok` variable needed at all?  Couldn't
-                ## you just return here and at the other assignment to `ok`?
                 ok = False
             if e.heap_length.type != INT:
                 report_err(e, "length param is not an int")
