@@ -30,14 +30,17 @@ def _merge(a : {THandle:Exp}, b : {THandle:Exp}) -> {THandle:Exp}:
             res[k] = EBinOp(va, "+", vb).with_type(va.type)
     return res
 
-## TODO: Why are duplicates permitted? Does it mean that the handle is reachable via multiple paths, or something else?
 @typechecked
 def reachable_handles_by_type(root : Exp) -> {THandle:Exp}:
     """
     Compute a mapping from handle types to bags of all handle objects of that
     type reachable from the given root.
 
-    Note that the bags may contain duplicate handles.
+    Note that the bags may contain duplicate handles.  This can happen in two
+    ways:
+     - there is a bag of handles reachable from the root that contains
+       duplicate handles, or
+     - the same handle is reachable from the root via two different paths
     """
     if isinstance(root.type, THandle):
         return _merge(
