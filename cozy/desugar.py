@@ -7,6 +7,8 @@ from cozy.syntax_tools import BottomUpRewriter, subst, all_types
 
 @typechecked
 def desugar_list_comprehensions(e : Exp) -> Exp:
+    """Convert list comprehensions into filters, maps, and flatmaps."""
+
     class V(BottomUpRewriter):
         def visit_EListComprehension(self, e):
             res, _, _ = self.visit_clauses(e.clauses, self.visit(e.e))
