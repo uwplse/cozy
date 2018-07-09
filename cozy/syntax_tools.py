@@ -578,6 +578,13 @@ def free_vars(exp, counts=False):
         res = common.OrderedSet(res.keys())
     return res
 
+def free_vars_and_funcs(e : syntax.Exp):
+    """Iterate over the names of all free variables and functions in `e`."""
+    for v in free_vars(e):
+        yield v.id
+    for f in free_funcs(e):
+        yield f
+
 def all_exps(x):
     q = [x]
     while q:

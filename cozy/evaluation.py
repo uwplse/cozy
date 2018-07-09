@@ -10,7 +10,7 @@ from functools import cmp_to_key, lru_cache
 import itertools
 
 from cozy.target_syntax import *
-from cozy.syntax_tools import pprint, free_vars, free_funcs, purify
+from cozy.syntax_tools import pprint, free_vars, free_vars_and_funcs, purify
 from cozy.common import FrozenDict, OrderedSet, extend
 from cozy.typecheck import is_numeric, is_collection
 from cozy.structures import extension_handler
@@ -715,9 +715,3 @@ def _compile(e, env : {str:int}, out):
             raise NotImplementedError(type(e))
     if hasattr(e, "type") and isinstance(e.type, TList):
         out.append(iterable_to_list)
-
-def free_vars_and_funcs(e):
-    for v in free_vars(e):
-        yield v.id
-    for f in free_funcs(e):
-        yield f
