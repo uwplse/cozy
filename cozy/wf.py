@@ -27,6 +27,14 @@ class ExpIsNotWf(No):
             self.reason)
 
 def exp_wf_nonrecursive(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptions : Exp = T):
+    """Check the well-formedness of `e` but do not recurse into its children.
+
+    Returns True or an instance of No explaining why `e` is not well-formed.
+
+    See `exp_wf` for an explanation of well-formedness and the parameters that
+    this function requires.
+    """
+
     state_vars = OrderedSet(v for v, p in context.vars() if p == STATE_POOL)
     args       = OrderedSet(v for v, p in context.vars() if p == RUNTIME_POOL)
     assumptions = EAll([assumptions, context.path_condition()])
@@ -51,8 +59,23 @@ def exp_wf_nonrecursive(solver, e : Exp, context : Context, pool = RUNTIME_POOL,
 
 @typechecked
 def exp_wf(e : Exp, context : Context, pool = RUNTIME_POOL, assumptions : Exp = T, solver = None):
-    """
-    Returns True or an instance of ExpIsNotWf that indicates why `e` is not well-formed.
+    """Check the well-formedess of `e`.
+
+    Returns True or an instance of ExpIsNotWf that indicates why `e` is not
+    well-formed.
+
+    Parameters:
+        e - an expression to check
+        context - a context describing e's variables
+        pool - what pool e lives in
+        assumptions - facts that are true whenever e begins executing
+            (NOTE: this does NOT need to include the path conditions from the
+            context, but it is fine if it does.)
+        solver - a ModelCachingSolver to use for solving formulas
+
+    This function requires that:
+     - all free variables in `e` are used in the correct pool
+     - EStateVar only occurs in runtime expressions
     """
     if solver is None:
         solver = ModelCachingSolver(vars=[], funcs={})
