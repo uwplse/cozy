@@ -46,7 +46,6 @@ _SCALAR_TYPES = set((
     syntax.THandle,
     syntax.TEnum))
 def is_scalar(t : syntax.Type):
-    from cozy.typecheck import is_numeric
     if is_numeric(t):
         return True
     if type(t) in _SCALAR_TYPES:
