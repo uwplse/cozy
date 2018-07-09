@@ -1,11 +1,10 @@
-## TODO: What type of expression?
 ## TODO: what is an environment?  Is it related to contexts?
 ## TODO: Choose a better name for "eval_bulk".
-"""Interpreter for expressions.
+"""Interpreter for Cozy expressions.
 
 Important functions:
  - eval: execute an expression in an environment
- - eval_bulk: execute the same expression on many different environments
+ - eval_bulk: execute the same expression in many different environments
 """
 
 from functools import cmp_to_key, lru_cache
