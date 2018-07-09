@@ -192,9 +192,12 @@ class Heaps(object):
     def rep_type(self, t : Type) -> Type:
         return TArray(t.elem_type)
 
-    ## TODO: document `out`.  Is it the variable to be set?  The result
-    ## variable?  It is incremented, not set.
     def codegen(self, e : Exp, concretization_functions : { str : Exp }, out : EVar) -> Stm:
+        """Return statements that write the result of `e` to `out`.
+
+        This function also requires the `concretization_functions` that
+        describe the invariants for variables in `e`.
+        """
         if isinstance(e, EMakeMinHeap) or isinstance(e, EMakeMaxHeap):
             out_raw = EVar(out.id).with_type(self.rep_type(e.type))
             l = fresh_var(INT, "alloc_len")
