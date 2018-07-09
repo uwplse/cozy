@@ -87,8 +87,20 @@ def EForall(e, p):
     return EUnaryOp(UOp.All, EMap(e, mk_lambda(e.type.t, p)).with_type(type(e.type)(BOOL))).with_type(BOOL)
 
 @typechecked
-def implicit_handle_assumptions_for_method(handles : {THandle:Exp}, m : Method) -> [Exp]:
-    # for instance: implicit_handle_assumptions_for_method(reachable_handles_at_method(spec, m), m)
+def implicit_handle_assumptions(handles : {THandle:Exp}) -> [Exp]:
+    """
+    Compute a list of expressions that, in conjunction, assert that all handles
+    in the values of the given dictionary satisfy:
+     - any two handles with the same address have the same value
+
+    For example:
+
+        implicit_handle_assumptions(reachable_handles_at_method(spec, m))
+
+    will produce expressions asserting that all handles reachable on entry to
+    `m` satisfy the condition.
+    """
+
     new_assumptions = []
     for t, bag in handles.items():
         new_assumptions.append(
