@@ -1,4 +1,3 @@
-## TODO: what is an environment?  Is it related to contexts?
 ## TODO: Choose a better name for "eval_bulk".
 """Interpreter for Cozy expressions.
 
@@ -17,7 +16,17 @@ from cozy.typecheck import is_numeric, is_collection
 from cozy.structures import extension_handler
 from cozy.value_types import Map, Bag, Handle, compare_values, values_equal, LT, EQ, GT
 
-def eval(e, env, *args, **kwargs):
+def eval(e : Exp, env : {str:object}, *args, **kwargs):
+    """Evaluate an expression in an environment.
+
+    Parameters:
+        e - a Cozy expression
+        env - an environment mapping variable names to values
+        use_default_values_for_undefined_vars - boolean indicating whether to
+            use a default value for any variable missing in the environment.
+            If false, then an error is thrown when a variable has no associated
+            value. Defaults to False.
+    """
     return eval_bulk(e, (env,), *args, **kwargs)[0]
 
 @lru_cache(maxsize=None)
@@ -674,7 +683,27 @@ def free_vars_and_funcs(e):
     for f in free_funcs(e):
         yield f
 
-def eval_bulk(e, envs, use_default_values_for_undefined_vars : bool = False):
+def eval_bulk(
+        e : Exp,
+        envs : [{str:object}],
+        use_default_values_for_undefined_vars : bool = False):
+    """Evaluate an expression in many different environments.
+
+    This function accepts the same arguments as `eval`, but takes a list of
+    environments instead of just one.
+
+    The call
+
+        eval_bulk(e, envs)
+
+    is equivalent to
+
+        [eval(e, env) for env in envs].
+
+    However, using `eval_bulk` is much faster than repeatedly calling `eval` on
+    the same expression.
+    """
+
     e = purify(e)
     if not envs:
         return []
