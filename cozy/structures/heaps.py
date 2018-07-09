@@ -232,10 +232,13 @@ class Heaps(object):
         else:
             raise NotImplementedError(e)
 
-    ## s must be a call to add_all or remove_all.  Why does this handle
-    ## only those two cases?  Why is it OK for this not to handle anything
-    ## else?
     def implement_stmt(self, s : Stm, concretization_functions : { str : Exp }) -> Stm:
+        """Convert a call to a heap function into simpler statements.
+
+        This function also requires the `concretization_functions` that
+        describe the invariants for variables in `e`.
+        """
+
         comparison_op = "<=" if isinstance(s.target.type, TMinHeap) else ">="
         f = heap_func(s.target, concretization_functions)
         if isinstance(s, SCall):
