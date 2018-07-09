@@ -122,10 +122,14 @@ class Heaps(object):
         else:
             raise NotImplementedError(e)
 
-    ## TODO: document k
-    def storage_size(self, e : Exp, k):
+    def storage_size(self, e : Exp, storage_size) -> Exp:
+        """Compute the storage size (in bytes) of the given expression.
+
+        The `storage_size` parameter should be used to recursively compute
+        storage sizes for other expressions.
+        """
         assert type(e.type) in (TMinHeap, TMaxHeap)
-        return k(EHeapElems(e).with_type(TBag(e.type.elem_type)))
+        return storage_size(EHeapElems(e).with_type(TBag(e.type.elem_type)))
 
     def encoding_type(self, t : Type) -> Type:
         assert isinstance(t, TMaxHeap) or isinstance(t, TMinHeap)
