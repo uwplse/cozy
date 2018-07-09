@@ -85,9 +85,15 @@ class Heaps(object):
                 return "invalid `n` parameter"
         return None
 
-    ## TODO: Document.  Returns no value.  May err.  Has side effects (say
-    ## what they are).
     def typecheck(self, e : Exp, typecheck, report_err):
+        """Typecheck expression `e`.
+
+        This function must write a type to `e.type` or call `report_err` to
+        indicate a type error.  It is allowed to do both.
+
+        The `typecheck` parameter should be used to make a recursive call to
+        typecheck child nodes.
+        """
         if isinstance(e, EMakeMaxHeap) or isinstance(e, EMakeMinHeap):
             typecheck(e.e)
             e.f.arg.type = e.e.type.t
