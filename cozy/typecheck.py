@@ -58,6 +58,22 @@ def is_scalar(t : syntax.Type):
         return all(is_scalar(tt) for (f, tt) in t.fields)
     return False
 
+def equality_implies_deep_equality(t : syntax.Type):
+    """For values of type `t`, does "==" always behave the same as "==="?"""
+    if isinstance(t, syntax.THandle):
+        return False
+    if is_numeric(t):
+        return True
+    if type(t) in _NON_NUMERIC_SCALAR_TYPES:
+        return True
+    if isinstance(t, syntax.TTuple):
+        return all(equality_implies_deep_equality(tt) for tt in t.ts)
+    if isinstance(t, syntax.TRecord):
+        return all(equality_implies_deep_equality(tt) for (f, tt) in t.fields)
+    if isinstance(t, syntax.TList):
+        return equality_implies_deep_equality(t.t)
+    return False
+
 COLLECTION_TYPES = (syntax.TBag, syntax.TSet, syntax.TList)
 def is_collection(t):
     return any(isinstance(t, ct) for ct in COLLECTION_TYPES)

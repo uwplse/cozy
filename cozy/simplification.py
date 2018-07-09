@@ -7,29 +7,13 @@ The most important function is `simplify`.
 """
 
 from cozy.target_syntax import *
-from cozy.typecheck import is_collection, is_numeric
+from cozy.typecheck import is_collection, equality_implies_deep_equality
 from cozy.syntax_tools import BottomUpRewriter, alpha_equivalent, compose, pprint, mk_lambda, replace
 from cozy.evaluation import construct_value, eval
 from cozy.solver import valid, satisfy
 from cozy.opts import Option
 
 checked_simplify = Option("checked-simplification", bool, False)
-
-## TODO: The term "simple" is never used, so this method name is confusing,
-## and "simple" has a different connotation.  I would make it
-## `is_simplified` or `cannot_be_simplified` or `is_canonical` even though
-## that is longer.  I would also rename this file to `simplify.py`, though
-## that is not essential.
-def is_simple(t):
-    if is_numeric(t):
-        return True
-    if isinstance(t, TString) or isinstance(t, TEnum) or isinstance(t, TBool) or isinstance(t, TNative):
-        return True
-    if isinstance(t, TTuple) and all(is_simple(tt) for tt in t.ts):
-        return True
-    if isinstance(t, TRecord) and all(is_simple(tt) for f, tt in t.fields):
-        return True
-    return False
 
 ## TODO: Even though this class is internal, I would give it a better name,
 ## such as `SimplifyVisitor`.  Especially because it is undocumented, it
@@ -125,7 +109,7 @@ class _V(BottomUpRewriter):
         m = self.visit(e.map)
         k = self.visit(e.key)
         if isinstance(m, EMakeMap2):
-            if is_simple(k.type):
+            if equality_implies_deep_equality(k.type):
                 return self.visit(ECond(
                     EIn(k, m.e),
                     m.value.apply_to(k),
