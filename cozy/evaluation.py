@@ -29,6 +29,45 @@ def eval(e : Exp, env : {str:object}, *args, **kwargs):
     """
     return eval_bulk(e, (env,), *args, **kwargs)[0]
 
+def eval_bulk(
+        e : Exp,
+        envs : [{str:object}],
+        use_default_values_for_undefined_vars : bool = False):
+    """Evaluate an expression in many different environments.
+
+    This function accepts the same arguments as `eval`, but takes a list of
+    environments instead of just one.
+
+    The call
+
+        eval_bulk(e, envs)
+
+    is equivalent to
+
+        [eval(e, env) for env in envs].
+
+    However, using `eval_bulk` is much faster than repeatedly calling `eval` on
+    the same expression.
+    """
+
+    e = purify(e)
+    if not envs:
+        return []
+    ops = []
+    vars = OrderedSet(free_vars_and_funcs(e))
+    types = { v.id : v.type for v in free_vars(e) }
+    vmap = { v : i for (i, v) in enumerate(vars) }
+    try:
+        envs = [ [(env.get(v, mkval(types[v])) if (use_default_values_for_undefined_vars and v in types) else env[v]) for v in vars] for env in envs ]
+    except KeyError:
+        import sys
+        print("OH NO", file=sys.stderr)
+        print("e = {}".format(pprint(e)), file=sys.stderr)
+        print("eval_bulk({!r}, {!r}, use_default_values_for_undefined_vars={!r})".format(e, envs, use_default_values_for_undefined_vars), file=sys.stderr)
+        raise
+    _compile(e, vmap, ops)
+    return [_eval_compiled(ops, env) for env in envs]
+
 @lru_cache(maxsize=None)
 def mkval(type : Type):
     """
@@ -682,42 +721,3 @@ def free_vars_and_funcs(e):
         yield v.id
     for f in free_funcs(e):
         yield f
-
-def eval_bulk(
-        e : Exp,
-        envs : [{str:object}],
-        use_default_values_for_undefined_vars : bool = False):
-    """Evaluate an expression in many different environments.
-
-    This function accepts the same arguments as `eval`, but takes a list of
-    environments instead of just one.
-
-    The call
-
-        eval_bulk(e, envs)
-
-    is equivalent to
-
-        [eval(e, env) for env in envs].
-
-    However, using `eval_bulk` is much faster than repeatedly calling `eval` on
-    the same expression.
-    """
-
-    e = purify(e)
-    if not envs:
-        return []
-    ops = []
-    vars = OrderedSet(free_vars_and_funcs(e))
-    types = { v.id : v.type for v in free_vars(e) }
-    vmap = { v : i for (i, v) in enumerate(vars) }
-    try:
-        envs = [ [(env.get(v, mkval(types[v])) if (use_default_values_for_undefined_vars and v in types) else env[v]) for v in vars] for env in envs ]
-    except KeyError:
-        import sys
-        print("OH NO", file=sys.stderr)
-        print("e = {}".format(pprint(e)), file=sys.stderr)
-        print("eval_bulk({!r}, {!r}, use_default_values_for_undefined_vars={!r})".format(e, envs, use_default_values_for_undefined_vars), file=sys.stderr)
-        raise
-    _compile(e, vmap, ops)
-    return [_eval_compiled(ops, env) for env in envs]
