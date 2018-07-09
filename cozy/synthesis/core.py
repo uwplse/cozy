@@ -4,7 +4,7 @@ import itertools
 from cozy.target_syntax import *
 from cozy.typecheck import is_collection, is_scalar
 from cozy.syntax_tools import subst, pprint, free_vars, fresh_var, alpha_equivalent, strip_EStateVar, freshen_binders, wrap_naked_statevars, break_conj
-from cozy.wf import ExpIsNotWf, exp_wf
+from cozy.wf import exp_wf
 from cozy.common import No, OrderedSet, unique, OrderedSet, StopException
 from cozy.solver import satisfy, valid, IncrementalSolver, ModelCachingSolver
 from cozy.value_types import values_equal
@@ -165,10 +165,9 @@ class Learner(object):
         root_ctx = self.context
         def check_wf(e, ctx, pool):
             with task("checking well-formedness", size=e.size()):
-                try:
-                    exp_wf(e, pool=pool, context=ctx, assumptions=self.assumptions, solver=self.wf_solver)
-                except ExpIsNotWf as exc:
-                    return No("at {}: {}".format(pprint(exc.offending_subexpression), exc.reason))
+                is_wf = exp_wf(e, pool=pool, context=ctx, assumptions=self.assumptions, solver=self.wf_solver)
+                if not is_wf:
+                    return is_wf
                 for (sub, sub_ctx, sub_pool) in shred(e, ctx, pool):
                     res = good_idea(self.wf_solver, sub, sub_ctx, sub_pool, assumptions=self.assumptions)
                     if not res:
@@ -379,13 +378,11 @@ def improve(
     print("subject to: {}".format(pprint(assumptions)))
     print()
 
-    try:
-        assert exp_wf(target, context=context, assumptions=assumptions)
-    except ExpIsNotWf as ex:
-        print("WARNING: initial target is not well-formed [{}]; this might go poorly...".format(str(ex)))
-        print(pprint(ex.offending_subexpression))
-        print(pprint(ex.offending_subexpression.type))
-        # raise
+    is_wf = exp_wf(target, context=context, assumptions=assumptions)
+    if not is_wf:
+        print("WARNING: initial target is not well-formed [{}]; this might go poorly...".format(is_wf))
+        print(pprint(is_wf.offending_subexpression))
+        print(pprint(is_wf.offending_subexpression.type))
 
     state_vars = [v for (v, p) in context.vars() if p == STATE_POOL]
     if eliminate_vars.value and can_elim_vars(target, assumptions, state_vars):
