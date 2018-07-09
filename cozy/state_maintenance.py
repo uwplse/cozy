@@ -52,8 +52,15 @@ def mutate(e : syntax.Exp, op : syntax.Stm) -> syntax.Exp:
     else:
         raise NotImplementedError(type(op))
 
-## TODO: add documentation.
-def replace_get_value(e : syntax.Exp, ptr : syntax.Exp, new_value : syntax.Exp):
+def replace_get_value(e : syntax.Exp, ptr : syntax.Exp, new_value : syntax.Exp) -> Exp:
+    """
+    Return an expression representing the value of `e` after writing
+    `new_value` to `ptr`.
+
+    This amounts to replacing all instances of `_.val` in `e` with
+
+        (_ == ptr) ? (new_value) : (_.val)
+    """
     t = ptr.type
     fvs = free_vars(ptr) | free_vars(new_value)
     class V(BottomUpRewriter):
