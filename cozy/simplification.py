@@ -15,10 +15,7 @@ from cozy.opts import Option
 
 checked_simplify = Option("checked-simplification", bool, False)
 
-## TODO: Even though this class is internal, I would give it a better name,
-## such as `SimplifyVisitor`.  Especially because it is undocumented, it
-## took effort for me to figure out what it is for and how it does that.
-class _V(BottomUpRewriter):
+class _SimplificationVisitor(BottomUpRewriter):
     def __init__(self, debug=False):
         self.debug = debug
     def visit_EBinOp(self, e):
@@ -175,7 +172,7 @@ def simplify(e, validate=None, debug=False):
     if validate is None:
         validate = checked_simplify.value
     try:
-        visitor = _V(debug)
+        visitor = _SimplificationVisitor(debug)
         orig = e
         e = visitor.visit(e)
         # e = cse(e)
