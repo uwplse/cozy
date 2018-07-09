@@ -119,7 +119,7 @@ TWENTY = ENum(20).with_type(INT)
 def storage_size(e, freebies : [Exp] = []):
     h = extension_handler(type(e.type))
     if h is not None:
-        return h.storage_size(e, k=storage_size)
+        return h.storage_size(e, k=storage_size, freebies=freebies)
     if e in freebies:
         return ZERO
     elif e.type == BOOL:
@@ -218,6 +218,15 @@ def _maintenance_cost(e : Exp, solver : ModelCachingSolver, op : Op, freebies : 
 #    print("e_prime  : {}".format(pprint(e_prime)))
     if solver.valid(EEq(e, e_prime)):
         return ZERO
+
+    h = extension_handler(type(e.type))
+    if h is not None:
+        return h.maintenance_cost(e, 
+                solver=solver,
+                op=op, 
+                freebies=freebies,
+                storage_size=storage_size, 
+                maintenance_cost=_maintenance_cost)
 
     if is_scalar(e.type):
         return storage_size(e, freebies)

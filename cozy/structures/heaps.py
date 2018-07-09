@@ -116,9 +116,54 @@ class Heaps(object):
         else:
             raise NotImplementedError(e)
 
-    def storage_size(self, e : Exp, k):
+    def storage_size(self, e : Exp, k, freebies : [Exp] = []):
         assert type(e.type) in (TMinHeap, TMaxHeap)
-        return k(EHeapElems(e).with_type(TBag(e.type.elem_type)))
+        return k(EHeapElems(e).with_type(TBag(e.type.elem_type)), freebies)
+
+    def maintenance_cost(self, 
+            e                   : Exp, 
+            solver,
+            op                  : Op,
+            storage_size, 
+            maintenance_cost, 
+            freebies            : [Exp] = []):
+        assert type(e.type) in (TMinHeap, TMaxHeap)
+
+        from cozy.state_maintenance import mutate
+
+        old_value = e
+        new_value = mutate(e, op.body)
+
+        # added/removed elements
+        t = TBag(e.type.elem_type)
+        old_elems = EHeapElems(old_value).with_type(t)
+        new_elems = EHeapElems(new_value).with_type(t)
+
+        # Add these 
+        elems_added = storage_size(
+            EBinOp(new_elems, "-", old_elems).with_type(t), freebies).with_type(INT)
+        elems_rmved = storage_size(
+            EBinOp(old_elems, "-", new_elems).with_type(t), freebies).with_type(INT)
+
+        # modified elements
+        f1 = heap_func(old_value)
+        f2 = heap_func(new_value)
+        v = fresh_var(t.t)
+        old_v_key = f1.apply_to(v)
+        new_v_key = f2.apply_to(v)
+
+        modified_elems = EFilter(old_elems, ELambda(v, EAll([EIn(v, new_elems), ENot(EEq(new_v_key, old_v_key))]))).with_type(new_elems.type)
+        
+        modified_cost = EUnaryOp(
+            UOp.Sum,
+            EMap(
+                modified_elems, 
+                ELambda(
+                    v, 
+                    maintenance_cost(
+                        new_v_key, solver, op, freebies)).with_type(INT)).with_type(INT)).with_type(INT_BAG)
+
+        return ESum([elems_added, elems_rmved, modified_cost])
 
     def encoding_type(self, t : Type) -> Type:
         assert isinstance(t, TMaxHeap) or isinstance(t, TMinHeap)
