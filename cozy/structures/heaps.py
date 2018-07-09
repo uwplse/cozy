@@ -66,12 +66,13 @@ class Heaps(object):
     def owned_types(self):
         return (TMinHeap, TMaxHeap, EMakeMinHeap, EMakeMaxHeap, EHeapElems, EHeapPeek, EHeapPeek2)
 
-    ## TODO: I find it confusing to name one of the formal paramters the
-    ## same as the method itself.  I am not sure which one the occurrence
-    ## in the body refers to, but I think it's the formal parameter.  This
-    ## is confusing.  Is this a standard Python idiom?  I see it in
-    ## `typecheck` below as well.
     def default_value(self, t : Type, default_value) -> Exp:
+        """Construct a default value of the given type.
+
+        The `default_value` parameter should be used to recursively construct
+        a default value of a child type.
+        """
+
         f = EMakeMinHeap if isinstance(t, TMinHeap) else EMakeMaxHeap
         x = EVar("x").with_type(t.elem_type)
         return f(EEmptyList().with_type(TBag(t.elem_type)), ELambda(x, default_value(t.key_type))).with_type(t)
