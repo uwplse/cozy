@@ -104,7 +104,7 @@ class CostModel(object):
                     lambda: self._compare(storage_size(e1, self.freebies), storage_size(e2, self.freebies), context),
                     lambda: order_objects(e1.size(), e2.size()))
 
-def card(e):
+def cardinality(e : Exp) -> Exp:
     assert is_collection(e.type)
     return ELen(e)
 
@@ -191,18 +191,18 @@ class DominantTerm(object):
     def __mul__(self, other):
         return DominantTerm(self.multiplier * other.multiplier, self.exponent + other.exponent)
 
-def wc_card(e : Exp) -> DominantTerm:
+def wc_cardinality(e : Exp) -> DominantTerm:
     assert is_collection(e.type)
     while isinstance(e, EFilter) or isinstance(e, EMap) or isinstance(e, EFlatMap) or isinstance(e, EMakeMap2) or isinstance(e, EStateVar) or (isinstance(e, EUnaryOp) and e.op == UOp.Distinct) or isinstance(e, EListSlice):
         e = e.e
     if isinstance(e, EBinOp) and e.op == "-":
-        return wc_card(e.e1)
+        return wc_cardinality(e.e1)
     if isinstance(e, EBinOp) and e.op == "+":
-        return wc_card(e.e1) + wc_card(e.e2)
+        return wc_cardinality(e.e1) + wc_cardinality(e.e2)
     if isinstance(e, EFlatMap):
-        return wc_card(e.e) * wc_card(e.f.body)
+        return wc_cardinality(e.e) * wc_cardinality(e.f.body)
     if isinstance(e, ECond):
-        return max(wc_card(e.then_branch), wc_card(e.else_branch))
+        return max(wc_cardinality(e.then_branch), wc_cardinality(e.else_branch))
     if isinstance(e, EEmptyList):
         return DominantTerm.ZERO
     if isinstance(e, ESingleton):
@@ -234,20 +234,20 @@ def asymptotic_runtime(e : Exp) -> DominantTerm:
         if isinstance(e, ELambda):
             e = e.body
         if isinstance(e, EFilter):
-            res += wc_card(e.e) * asymptotic_runtime(e.p) + asymptotic_runtime(e.e)
+            res += wc_cardinality(e.e) * asymptotic_runtime(e.p) + asymptotic_runtime(e.e)
             continue
         if isinstance(e, EMap) or isinstance(e, EFlatMap) or isinstance(e, EArgMin) or isinstance(e, EArgMax):
-            res += wc_card(e.e) * asymptotic_runtime(e.f) + asymptotic_runtime(e.e)
+            res += wc_cardinality(e.e) * asymptotic_runtime(e.f) + asymptotic_runtime(e.e)
             continue
         res += DominantTerm.ONE
         if isinstance(e, EMakeMap2):
-            res += wc_card(e.e) * asymptotic_runtime(e.value)
+            res += wc_cardinality(e.e) * asymptotic_runtime(e.value)
         if isinstance(e, EBinOp) and e.op == BOp.In:
-            res += wc_card(e.e2)
+            res += wc_cardinality(e.e2)
         if isinstance(e, EBinOp) and e.op == "-" and is_collection(e.type):
-            res += wc_card(e.e1) + wc_card(e.e2) + wc_card(e.e1) * wc_card(e.e2)
+            res += wc_cardinality(e.e1) + wc_cardinality(e.e2) + wc_cardinality(e.e1) * wc_cardinality(e.e2)
         if isinstance(e, EUnaryOp) and e.op in LINEAR_TIME_UOPS:
-            res += wc_card(e.e)
+            res += wc_cardinality(e.e)
         if isinstance(e, ECond):
             res += max(asymptotic_runtime(e.then_branch), asymptotic_runtime(e.else_branch))
             stk.append(e.cond)
@@ -321,12 +321,12 @@ def rt(e, account_for_constant_factors=True):
             terms.append(EUnaryOp(UOp.Sum, EMap(e.e, ELambda(e.value.arg, rt(e.value.body))).with_type(INT_BAG)).with_type(INT))
         elif isinstance(e, EBinOp) and e.op == "-" and is_collection(e.type):
             constant += EXTREME_COST
-            terms.append(card(e.e1))
-            terms.append(card(e.e2))
+            terms.append(cardinality(e.e1))
+            terms.append(cardinality(e.e2))
         elif isinstance(e, EBinOp) and e.op in ("==", "!=", ">", "<", ">=", "<="):
             terms.append(comparison_cost(e.e1, e.e2))
         elif isinstance(e, EUnaryOp) and e.op in LINEAR_TIME_UOPS:
-            terms.append(card(e.e))
+            terms.append(cardinality(e.e))
         elif isinstance(e, EMapGet):
             terms.append(hash_cost(e.key))
             terms.append(comparison_cost(e.key, e.key))
