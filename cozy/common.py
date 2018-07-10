@@ -278,26 +278,24 @@ def product(iter):
         p *= x
     return p
 
-class AtomicWriteableFile(object):
+@contextmanager
+def AtomicWriteableFile(dst, mode="w"):
     """A writeable file handle that does not overwrite until it is closed.
 
-    This helps protect against errors that might happen while writing the file.
-    If this object is closed abnormally, it does not write any output.
+    Usage:
+
+        with AtomicWriteableFile(path) as f:
+            ... f.write(...) ...
+
+    This protects against errors that might happen while writing the file. If
+    this object is closed due to an exception, it does not write any output to
+    the destination path.
     """
-    def __init__(self, dst, mode="w"):
-        self.dst = dst
-        tmp_fd, tmp_path = tempfile.mkstemp(text=True)
-        self.tmp_fd = tmp_fd
-        self.tmp_file = os.fdopen(tmp_fd, mode)
-        self.tmp_path = tmp_path
-    def __enter__(self, *args, **kwargs):
-        return self
-    def __exit__(self, *args, **kwargs):
-        os.fsync(self.tmp_fd)
-        self.tmp_file.close() # also closes self.tmp_fd
-        shutil.move(src=self.tmp_path, dst=self.dst)
-    def write(self, thing):
-        self.tmp_file.write(thing)
+    tmp_fd, tmp_path = tempfile.mkstemp(text=True)
+    with os.fdopen(tmp_fd, mode) as f:
+        yield f
+        os.fsync(tmp_fd)
+    shutil.move(src=tmp_path, dst=dst)
 
 def open_maybe_stdin(f : str, mode="r"):
     """Open file f, or open standard input if f is "-".
