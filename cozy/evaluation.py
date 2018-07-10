@@ -1,160 +1,71 @@
-"""Interpreter for expressions.
+"""Interpreter for Cozy expressions.
 
 Important functions:
  - eval: execute an expression in an environment
- - eval_bulk: execute the same expression on many different environments
+ - eval_bulk: execute the same expression in many different environments
 """
 
-from collections import namedtuple
-from functools import total_ordering, cmp_to_key, lru_cache
+from functools import cmp_to_key, lru_cache
 import itertools
 
 from cozy.target_syntax import *
-from cozy.syntax_tools import pprint, free_vars, free_funcs, purify
+from cozy.syntax_tools import pprint, free_vars, free_vars_and_funcs, purify
 from cozy.common import FrozenDict, OrderedSet, extend
 from cozy.typecheck import is_numeric, is_collection
 from cozy.structures import extension_handler
+from cozy.value_types import Map, Bag, Handle, compare_values, values_equal, LT, EQ, GT
 
-@total_ordering
-class Map(object):
-    def __init__(self, type, default, items=()):
-        self.type = type
-        self._items = []
-        for (k, v) in items:
-            self[k] = v
-        self.default = default
-    def __setitem__(self, k, v):
-        for i in range(len(self._items)):
-            (kk, vv) = self._items[i]
-            if eq(self.type.k, k, kk):
-                self._items[i] = (kk, v)
-                return
-        # if not eq(self.type.v, v, self.default):
-        self._items.append((k, v))
-        # assert all(not eq(self.type.v, v, self.default) for (k, v) in self.items())
-    def __getitem__(self, k):
-        for i in range(len(self._items)):
-            (kk, vv) = self._items[i]
-            if eq(self.type.k, k, kk):
-                return vv
-        return self.default
-    def items(self):
-        yield from self._items
-    def keys(self):
-        for (k, v) in reversed(self._items):
-            yield k
-    def values(self):
-        for (k, v) in self._items:
-            yield v
-    def _hashable(self):
-        return (self.default,) + tuple(sorted(self._items))
-    def __hash__(self):
-        return hash(self._hashable())
-    def __repr__(self):
-        return "Map({}, {}, {})".format(repr(self.type), repr(self.default), repr(self._items))
-    def __str__(self):
-        return repr(self)
-    def __lt__(self, other):
-        return self._hashable() < other._hashable()
-    def __eq__(self, other):
-        return self._hashable() == other._hashable()
+def eval(e : Exp, env : {str:object}, *args, **kwargs):
+    """Evaluate an expression in an environment.
 
-@total_ordering
-class Bag(object):
-    def __init__(self, iterable=()):
-        self.elems = iterable if isinstance(iterable, tuple) else tuple(iterable)
-    def __hash__(self):
-        return hash(self.elems)
-    def __add__(self, other):
-        return Bag(self.elems + other.elems)
-    def __eq__(self, other):
-        return self.elems == other.elems
-    def __lt__(self, other):
-        return self.elems < other.elems
-    def __len__(self):
-        return len(self.elems)
-    def __getitem__(self, i):
-        return self.elems[i]
-    def __bool__(self):
-        return bool(self.elems)
-    def __str__(self):
-        return repr(self)
-    def __repr__(self):
-        return "Bag({})".format(repr(self.elems))
-    def __contains__(self, x):
-        return x in self.elems
-    def __iter__(self):
-        return iter(self.elems)
-
-Handle = namedtuple("Handle", ["address", "value"])
-
-LT = -1
-EQ =  0
-GT =  1
-def cmp(t, v1, v2, deep=False):
-    stk = [(t, v1, v2)]
-
-    orig_deep = deep
-    def cleardeep():
-        nonlocal deep
-        deep = False
-    def resetdeep():
-        nonlocal deep
-        deep = orig_deep
-
-    while stk:
-        head = stk.pop()
-        if hasattr(head, "__call__"):
-            head()
-            continue
-        (t, v1, v2) = head
-
-        if isinstance(t, THandle):
-            if deep:
-                stk.append((t.value_type, v1.value, v2.value))
-            stk.append((INT, v1.address, v2.address))
-        elif isinstance(t, TEnum):
-            i1 = t.cases.index(v1)
-            i2 = t.cases.index(v2)
-            if i1 == i2: continue
-            if i1 <  i2: return LT
-            else:        return GT
-        elif isinstance(t, TBag) or isinstance(t, TSet):
-            if deep:
-                elems1 = list(v1)
-                elems2 = list(v2)
-            else:
-                elems1 = list(sorted(v1))
-                elems2 = list(sorted(v2))
-            if len(elems1) < len(elems2): return LT
-            if len(elems1) > len(elems2): return GT
-            stk.extend(reversed([(t.t, x, y) for (x, y) in zip(elems1, elems2)]))
-        elif isinstance(t, TMap):
-            keys1 = Bag(v1.keys())
-            keys2 = Bag(v2.keys())
-            stk.extend(reversed([(t.v, v1[k], v2[k]) for k in sorted(keys1)]))
-            stk.append(resetdeep)
-            stk.append((TSet(t.k), keys1, keys2))
-            stk.append(cleardeep)
-            stk.append((t.v, v1.default, v2.default))
-        elif isinstance(t, TTuple):
-            stk.extend(reversed([(tt, vv1, vv2) for (tt, vv1, vv2) in zip(t.ts, v1, v2)]))
-        elif isinstance(t, TList):
-            stk.extend(reversed([(t.t, vv1, vv2) for (vv1, vv2) in zip(v1, v2)]))
-            stk.append((INT, len(v1), len(v2)))
-        elif isinstance(t, TRecord):
-            stk.extend(reversed([(ft, v1[f], v2[f]) for (f, ft) in t.fields]))
-        else:
-            if   v1 == v2: continue
-            elif v1 <  v2: return LT
-            else:          return GT
-    return EQ
-
-def eq(t, v1, v2):
-    return cmp(t, v1, v2) == EQ
-
-def eval(e, env, *args, **kwargs):
+    Parameters:
+        e - a Cozy expression
+        env - an environment mapping variable names to values
+        use_default_values_for_undefined_vars - boolean indicating whether to
+            use a default value for any variable missing in the environment.
+            If false, then an error is thrown when a variable has no associated
+            value. Defaults to False.
+    """
     return eval_bulk(e, (env,), *args, **kwargs)[0]
+
+def eval_bulk(
+        e : Exp,
+        envs : [{str:object}],
+        use_default_values_for_undefined_vars : bool = False):
+    """Evaluate an expression in many different environments.
+
+    This function accepts the same arguments as `eval`, but takes a list of
+    environments instead of just one.
+
+    The call
+
+        eval_bulk(e, envs)
+
+    is equivalent to
+
+        [eval(e, env) for env in envs].
+
+    However, using `eval_bulk` is much faster than repeatedly calling `eval` on
+    the same expression.
+    """
+
+    e = purify(e)
+    if not envs:
+        return []
+    ops = []
+    vars = OrderedSet(free_vars_and_funcs(e))
+    types = { v.id : v.type for v in free_vars(e) }
+    vmap = { v : i for (i, v) in enumerate(vars) }
+    try:
+        envs = [ [(env.get(v, mkval(types[v])) if (use_default_values_for_undefined_vars and v in types) else env[v]) for v in vars] for env in envs ]
+    except KeyError:
+        import sys
+        print("OH NO", file=sys.stderr)
+        print("e = {}".format(pprint(e)), file=sys.stderr)
+        print("eval_bulk({!r}, {!r}, use_default_values_for_undefined_vars={!r})".format(e, envs, use_default_values_for_undefined_vars), file=sys.stderr)
+        raise
+    _compile(e, vmap, ops)
+    return [_eval_compiled(ops, env) for env in envs]
 
 @lru_cache(maxsize=None)
 def mkval(type : Type):
@@ -291,7 +202,7 @@ def has_key(key_type):
     def _has_key(stk):
         k = stk.pop()
         m = stk.pop()
-        stk.append(any(eq(key_type, k, kk) for kk in m.keys()))
+        stk.append(any(values_equal(key_type, k, kk) for kk in m.keys()))
     return _has_key
 
 def read_map_keys(stk):
@@ -324,7 +235,7 @@ def binaryop_sub_bags(elem_type):
         elems = list(v1)
         for x in v2:
             for i in range(len(elems)):
-                if eq(elem_type, x, elems[i]):
+                if values_equal(elem_type, x, elems[i]):
                     del elems[i]
                     break
         stk.append(Bag(elems))
@@ -337,7 +248,7 @@ def binaryop_sub_lists(elem_type):
         elems = list(v1)
         for x in v2:
             for i in range(len(elems)):
-                if eq(elem_type, x, elems[i]):
+                if values_equal(elem_type, x, elems[i]):
                     del elems[i]
                     break
         stk.append(tuple(elems))
@@ -347,49 +258,49 @@ def binaryop_eq(t, deep=False):
     def binaryop_eq(stk):
         v2 = stk.pop()
         v1 = stk.pop()
-        stk.append(cmp(t, v1, v2, deep=deep) == EQ)
+        stk.append(compare_values(t, v1, v2, deep=deep) == EQ)
     return binaryop_eq
 
 def binaryop_ne(t):
     def binaryop_ne(stk):
         v2 = stk.pop()
         v1 = stk.pop()
-        stk.append(cmp(t, v1, v2) != EQ)
+        stk.append(compare_values(t, v1, v2) != EQ)
     return binaryop_ne
 
 def binaryop_lt(t):
     def binaryop_lt(stk):
         v2 = stk.pop()
         v1 = stk.pop()
-        stk.append(cmp(t, v1, v2) == LT)
+        stk.append(compare_values(t, v1, v2) == LT)
     return binaryop_lt
 
 def binaryop_le(t):
     def binaryop_le(stk):
         v2 = stk.pop()
         v1 = stk.pop()
-        stk.append(cmp(t, v1, v2) != GT)
+        stk.append(compare_values(t, v1, v2) != GT)
     return binaryop_le
 
 def binaryop_gt(t):
     def binaryop_gt(stk):
         v2 = stk.pop()
         v1 = stk.pop()
-        stk.append(cmp(t, v1, v2) == GT)
+        stk.append(compare_values(t, v1, v2) == GT)
     return binaryop_gt
 
 def binaryop_ge(t):
     def binaryop_ge(stk):
         v2 = stk.pop()
         v1 = stk.pop()
-        stk.append(cmp(t, v1, v2) != LT)
+        stk.append(compare_values(t, v1, v2) != LT)
     return binaryop_ge
 
 def binaryop_in(elem_type):
     def binaryop_in(stk):
         v2 = stk.pop()
         v1 = stk.pop()
-        stk.append(any(eq(elem_type, v1, v2elem) for v2elem in v2))
+        stk.append(any(values_equal(elem_type, v1, v2elem) for v2elem in v2))
     return binaryop_in
 
 def unaryop_not(stk):
@@ -414,13 +325,13 @@ def unaryop_neg(stk):
     stk.append(-stk.pop())
 
 def unaryop_areunique(elem_type):
-    keyfunc = cmp_to_key(lambda v1, v2: cmp(elem_type, v1, v2))
+    keyfunc = cmp_to_key(lambda v1, v2: compare_values(elem_type, v1, v2))
     def unaryop_areunique(stk):
         v = stk.pop()
         l = sorted(v, key=keyfunc)
         res = True
         for i in range(len(l) - 1):
-            if eq(elem_type, l[i], l[i+1]):
+            if values_equal(elem_type, l[i], l[i+1]):
                 res = False
                 break
         stk.append(res)
@@ -431,7 +342,7 @@ def unaryop_distinct(elem_type):
         v = stk.pop()
         res = []
         for x in v:
-            if not any(eq(elem_type, x, y) for y in res):
+            if not any(values_equal(elem_type, x, y) for y in res):
                 res.append(x)
         stk.append(Bag(res))
     return unaryop_distinct
@@ -803,28 +714,3 @@ def _compile(e, env : {str:int}, out):
             raise NotImplementedError(type(e))
     if hasattr(e, "type") and isinstance(e.type, TList):
         out.append(iterable_to_list)
-
-def free_vars_and_funcs(e):
-    for v in free_vars(e):
-        yield v.id
-    for f in free_funcs(e):
-        yield f
-
-def eval_bulk(e, envs, use_default_values_for_undefined_vars : bool = False):
-    e = purify(e)
-    if not envs:
-        return []
-    ops = []
-    vars = OrderedSet(free_vars_and_funcs(e))
-    types = { v.id : v.type for v in free_vars(e) }
-    vmap = { v : i for (i, v) in enumerate(vars) }
-    try:
-        envs = [ [(env.get(v, mkval(types[v])) if (use_default_values_for_undefined_vars and v in types) else env[v]) for v in vars] for env in envs ]
-    except KeyError:
-        import sys
-        print("OH NO", file=sys.stderr)
-        print("e = {}".format(pprint(e)), file=sys.stderr)
-        print("eval_bulk({!r}, {!r}, use_default_values_for_undefined_vars={!r})".format(e, envs, use_default_values_for_undefined_vars), file=sys.stderr)
-        raise
-    _compile(e, vmap, ops)
-    return [_eval_compiled(ops, env) for env in envs]

@@ -29,8 +29,8 @@ def var_name(v):
         return v.id
     raise TypeError(v)
 
-def fresh_var(type, hint="var", omit=None):
-    if omit is not None:
+def fresh_var(type, hint="var", omit=()):
+    if omit:
         omit = { var_name(v) for v in omit }
     return syntax.EVar(common.fresh_name(hint, omit=omit)).with_type(type)
 
@@ -578,6 +578,13 @@ def free_vars(exp, counts=False):
         res = common.OrderedSet(res.keys())
     return res
 
+def free_vars_and_funcs(e : syntax.Exp):
+    """Iterate over the names of all free variables and functions in `e`."""
+    for v in free_vars(e):
+        yield v.id
+    for f in free_funcs(e):
+        yield f
+
 def all_exps(x):
     q = [x]
     while q:
@@ -664,7 +671,7 @@ class FragmentEnumerator(common.Visitor):
             facts=self.current_assumptions(),
             replace_e_with=common.identity_func,
             bound_vars=self.currently_bound(),
-            var_sources=common.OrderedDict(self.bound_vars),
+            var_sources=collections.OrderedDict(self.bound_vars),
             pool=self.pool_stack[-1])
 
     def update_repl(self, ctx, new_replace):

@@ -62,6 +62,10 @@ def EArgDistinct(bag, key):
                 EEq(x, key.apply_to(y)))))))
     return ELet(bag, ELambda(b, res))
 
+def EForall(e, p):
+    from cozy.syntax_tools import mk_lambda
+    return EUnaryOp(UOp.All, EMap(e, mk_lambda(e.type.t, p)).with_type(type(e.type)(BOOL))).with_type(BOOL)
+
 # Fixed-length vectors
 TVector    = declare_case(Type, "TVector", ["t", "n"])
 EVectorGet = declare_case(Exp, "EVectorGet", ["e", "i"])

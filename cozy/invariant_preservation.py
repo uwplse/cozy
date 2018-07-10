@@ -4,7 +4,7 @@ from cozy.common import typechecked
 from cozy.target_syntax import *
 from cozy.solver import valid
 from cozy.syntax_tools import pprint, enumerate_fragments, shallow_copy, inline_calls, subst
-from cozy.handle_tools import reachable_handles_at_method, implicit_handle_assumptions_for_method
+from cozy.handle_tools import reachable_handles_at_method, implicit_handle_assumptions
 from cozy.state_maintenance import mutate
 from cozy.opts import Option
 
@@ -22,7 +22,7 @@ def add_implicit_handle_assumptions(spec : Spec) -> Spec:
     new_methods = []
     for m in spec.methods:
         handles = reachable_handles_at_method(spec, m)
-        new_assumptions = implicit_handle_assumptions_for_method(handles, m)
+        new_assumptions = implicit_handle_assumptions(handles)
         m = shallow_copy(m)
         m.assumptions = list(m.assumptions) + new_assumptions
         new_methods.append(m)

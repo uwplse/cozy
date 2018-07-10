@@ -39,22 +39,39 @@ DEFAULT_TYPE = object()
 def is_numeric(t):
     return t in (INT, LONG, FLOAT)
 
-_SCALAR_TYPES = set((
+_NON_NUMERIC_SCALAR_TYPES = set((
     syntax.TBool,
     syntax.TString,
     syntax.TNative,
     syntax.THandle,
     syntax.TEnum))
+
 def is_scalar(t : syntax.Type):
-    from cozy.typecheck import is_numeric
+    """Are values of type `t` storable in a constant number of bytes?"""
     if is_numeric(t):
         return True
-    if type(t) in _SCALAR_TYPES:
+    if type(t) in _NON_NUMERIC_SCALAR_TYPES:
         return True
     if isinstance(t, syntax.TTuple):
         return all(is_scalar(tt) for tt in t.ts)
     if isinstance(t, syntax.TRecord):
         return all(is_scalar(tt) for (f, tt) in t.fields)
+    return False
+
+def equality_implies_deep_equality(t : syntax.Type):
+    """For values of type `t`, does "==" always behave the same as "==="?"""
+    if isinstance(t, syntax.THandle):
+        return False
+    if is_numeric(t):
+        return True
+    if type(t) in _NON_NUMERIC_SCALAR_TYPES:
+        return True
+    if isinstance(t, syntax.TTuple):
+        return all(equality_implies_deep_equality(tt) for tt in t.ts)
+    if isinstance(t, syntax.TRecord):
+        return all(equality_implies_deep_equality(tt) for (f, tt) in t.fields)
+    if isinstance(t, syntax.TList):
+        return equality_implies_deep_equality(t.t)
     return False
 
 COLLECTION_TYPES = (syntax.TBag, syntax.TSet, syntax.TList)

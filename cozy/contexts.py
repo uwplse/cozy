@@ -1,20 +1,50 @@
 """Classes for managing "contexts".
 
-A Context object describes in-scope variables and functions.  Each variable is
-one of
- - a state variable (part of the data structure state)
- - an argument (provided as an argument to a method call)
- - a binder (a bound variable introduced in a lambda)
+A Context object describes in-scope variables and functions.
+
+Each variable is one of
+ - a "state variable" (part of the data structure state)
+ - an "argument variable" (a formal parameter to a method call)
+ - a "binder" (a bound variable introduced in a lambda)
+
+Each function is uninterpreted; the Context only cares about their type
+signatures, not their definitions.  Functions live in a different namespace from
+variables---that is, a function may have the same name as a variable without
+confusion.  Functions do not have the same state/argument/binder distinction as
+variables; since functions are not first-class objects in Cozy's language, they
+cannot come from formal parameters or bound variables in lambdas.
+
+An example helps illustrate the meaning of a context.  Consider this Cozy
+specification:
+
+    state xs : Bag<Int>
+
+    query q(i : Int)
+        [x+1 | x <- xs, x > i]
+
+The expression `x+1` lives in a context where
+    xs is a state variable
+    i is an argument variable
+    x is a binder and is always an element of xs
+
+Important terminology:
+ - "root context": a context where there are no binders
+ - "legal": an expression is "legal" in a context if all the free variables in
+   the expression are described by the context
+ - "more general": a context A is "more general" than another context B if it
+   describes only a subset of B's variables
 
 Important functions:
- - shred: enumerate subexpressions and contexts from a top-level expression
- - replace: context-aware expression replacement
+ - shred: enumerate all subexpressions (with corresponding context and pool) of
+   a given top-level expression.
+   (See pools.py for a description of pools in Cozy.)
+ - replace: context-aware expression replacement.
 """
 
 from collections import OrderedDict
 import itertools
 
-from cozy.common import OrderedSet, unique, Visitor
+from cozy.common import OrderedSet, unique, Visitor, save_property
 from cozy.syntax import TFunc, TBag, Exp, EVar, EAll, ESingleton
 from cozy.target_syntax import EDeepIn
 from cozy.evaluation import eval
@@ -22,37 +52,110 @@ from cozy.syntax_tools import pprint, alpha_equivalent, free_vars, subst, Bottom
 from cozy.pools import Pool, RUNTIME_POOL, STATE_POOL
 
 class Context(object):
+    """A Context describes "where we are" in an expression.
+
+    A Context is hashable and comparable---but note that equality (==) does not
+    imply alpha equivalence (see `Context.alpha_equivalent`)."""
+
     def vars(self) -> {(EVar, Pool)}:
+        """Return all in-scope variables (and what pools they are legal in)"""
         raise NotImplementedError()
+
     def funcs(self) -> {str:TFunc}:
+        """Return all in-scope functions and their types"""
         raise NotImplementedError()
+
     def parent(self):
+        """
+        If this context is underneath a binder, return the context outside the
+        binder.  Otherwise (if this is a root context) return None.
+        """
         raise NotImplementedError()
+
     def complexity(self):
+        """Return the number of steps to the root context"""
         n = 0
         ctx = self
         while ctx is not None:
             n += 1
             ctx = ctx.parent()
         return n
+
     def legal_for(self, fvs : {EVar}) -> bool:
+        """
+        Determine whether an expression containing the given free variables is
+        legal in this context.
+        """
         vs = {v for (v, pool) in self.vars()}
         return all(v in vs for v in fvs)
+
     def instantiate_examples(self, examples : [dict]) -> [dict]:
+        """
+        Given a set of examples (mappings from variables to values) for the
+        root context, produce a set of examples that include all variables in
+        this context.
+        """
         raise NotImplementedError()
+
     def alpha_equivalent(self, other) -> bool:
+        """Determine whether this context is alpha equivalent to another.
+
+        For instance, consider the context for variable "x" and "y" in each of
+        these larger expressions:
+
+            Map {x -> x+1} xs         (1)
+                      ^
+
+            Map {y -> y+1} xs         (2)
+                      ^
+
+        Those contexts are
+            x in xs
+        and
+            y in xs.
+
+        If we alpha-rename x to y (or vice-versa), these are the same context.
+        """
         raise NotImplementedError()
+
     def adapt(self, e : Exp, ctx) -> Exp:
+        """
+        If expression `e` is legal in context `ctx` and this context is
+        alpha-equivalent to `ctx`, produce an expression equivalent to `e` but
+        legal in this context.
+        """
         raise NotImplementedError()
+
     def path_conditions(self) -> [Exp]:
+        """Return a set of true facts about this context.
+
+        For instance, in the context where x is a binder and always an element
+        of a collection xs, "x in xs" is a path condition.
+        """
         raise NotImplementedError()
-    def path_condition(self):
+
+    def path_condition(self) -> Exp:
+        """Return an expression capturing all of self.path_conditions()"""
         return EAll(self.path_conditions())
-    def generalize(self, fvs):
+
+    def generalize(self, fvs : {EVar}):
+        """
+        Return the most general context that an expression with the given free
+        variables would be legal in.
+        """
         raise NotImplementedError()
 
 class RootCtx(Context):
     def __init__(self, state_vars : [Exp], args : [Exp], funcs : {str:TFunc} = None):
+        """Construct a root context.
+
+        Parameters:
+            state_vars - state variables in scope
+            args - argument variables in scope
+            funcs - functions in scope
+
+        The sets of state variables and arguments must be disjoint.
+        """
         self.state_vars = OrderedSet(state_vars)
         self.args = OrderedSet(args)
         self.functions = OrderedDict(funcs or ())
@@ -88,6 +191,21 @@ class RootCtx(Context):
 
 class UnderBinder(Context):
     def __init__(self, parent : Context, v : EVar, bag : Exp, bag_pool : Pool):
+        """Construct a context under a binder.
+
+        Parameters:
+            parent - the context of the enclosing lambda
+            v - the bound variable
+            bag - the bag that v must be a member of
+            bag_pool - the pool that the bag belongs to
+
+        `v`'s type annotation must be the same as the type of elements
+        in the bag.
+
+        `bag` must be legal in the parent context.
+
+        `v` must not already be described by the parent context.
+        """
         assert v.type == bag.type.t
         assert parent.legal_for(free_vars(bag)), "cannot create context for {} in {}, {}".format(v.id, pprint(bag), parent)
         assert not any(v == vv for vv, p in parent.vars()), "binder {} already free in {}".format(v.id, parent)
@@ -158,18 +276,16 @@ class _Shredder(Visitor):
         self.ctx = ctx
         self.pool = pool
     def visit_ELambda(self, e, bag):
-        self.ctx = UnderBinder(self.ctx, e.arg, bag, self.pool)
-        yield from self.visit(e.body)
-        self.ctx = self.ctx.parent()
+        with save_property(self, "ctx"):
+            self.ctx = UnderBinder(self.ctx, e.arg, bag, self.pool)
+            yield from self.visit(e.body)
     def visit_EStateVar(self, e):
         yield (e, self.ctx, self.pool)
-        old_pool = self.pool
-        old_ctx = self.ctx
-        self.pool = STATE_POOL
-        self.ctx = self.root_ctx
-        yield from self.visit(e.e)
-        self.pool = old_pool
-        self.ctx = old_ctx
+        with save_property(self, "pool"):
+            with save_property(self, "ctx"):
+                self.pool = STATE_POOL
+                self.ctx = self.root_ctx
+                yield from self.visit(e.e)
     def visit_EMap(self, e):
         yield (e, self.ctx, self.pool)
         yield from self.visit(e.e)
@@ -221,6 +337,14 @@ class _Shredder(Visitor):
         return ()
 
 def shred(e : Exp, context : Context, pool : Pool = RUNTIME_POOL) -> [(Exp, Context, Pool)]:
+    """Shred `e` into a list of all its subexpressions.
+
+    This function returns a stream of (exp, context, pool) tuples, where `exp`
+    is a subexpression of `e` described by `context` and `pool`.
+
+    The tuple describing the top-level expression (e, context, pool) is
+    included in the returned stream.
+    """
     return _Shredder(context, pool).visit(e)
 
 def _sametype(e1 : Exp, e2 : Exp):
@@ -244,18 +368,16 @@ class _Replacer(BottomUpRewriter):
         self.needle_pool = needle_pool
         self.replacement = replacement
     def visit_ELambda(self, e, bag):
-        self.ctx = UnderBinder(self.ctx, e.arg, bag, self.pool)
-        new_body = self.visit(e.body)
-        self.ctx = self.ctx.parent()
+        with save_property(self, "ctx"):
+            self.ctx = UnderBinder(self.ctx, e.arg, bag, self.pool)
+            new_body = self.visit(e.body)
         return self.join(e, (e.arg, new_body))
     def visit_EStateVar(self, e):
-        old_pool = self.pool
-        old_ctx = self.ctx
-        self.pool = STATE_POOL
-        self.ctx = self.root_ctx
-        ee = self.visit(e.e)
-        self.pool = old_pool
-        self.ctx = old_ctx
+        with save_property(self, "pool"):
+            with save_property(self, "ctx"):
+                self.pool = STATE_POOL
+                self.ctx = self.root_ctx
+                ee = self.visit(e.e)
         return self.join(e, (ee,))
     def visit_EMap(self, e):
         return self.join(e, (self.visit(e.e), self.visit(e.f, e.e)))
@@ -284,4 +406,34 @@ def replace(
         haystack : Exp, haystack_context : Context, haystack_pool : Pool,
         needle : Exp, needle_context : Context, needle_pool : Pool,
         replacement : Exp) -> Exp:
+    """Replace an expression `needle` with `replacement` in `haystack`.
+
+    Other parameters:
+        haystack_context - the context describing the haystack
+        haystack_pool - the pool for the haystack
+        needle_context - the context describing the needle and replacement
+        needle_pool - the pool for the needle and replacement
+
+    This function is much smarter and safer than other expression replacement
+    strategies: if `needle` and `replacement` are two different expressions
+    that compute the same output, then the returned expression will compute the
+    same output as `haystack`.
+
+    Suppose we want to replace `x` with 0 in
+
+        Map {x -> x + 1} (xs + [x]).
+
+    Did we mean to replace the bound `x`, or the top-level `x`?  This function
+    resolves the ambiguity by requiring a description of the context for `x`.
+
+    This function also does smart variable renaming.  For instance, suppose
+    we want to replace `x` with `x+1` in the context where `x in xs`.  Given
+    the haystack
+
+        Map {y -> y + 1} xs
+
+    this function will realize that `y` and `x` are alpha equivalent and produce
+
+        Map {y -> (y+1) + 1} xs.
+    """
     return _Replacer(haystack_context, haystack_pool, needle, needle_context, needle_pool, replacement).visit(haystack)

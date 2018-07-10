@@ -10,11 +10,9 @@ Important functions and classes:
 Extra collection types:
  - OrderedSet: complements Python's OrderedDict
  - FrozenDict: a hashable immutable dictionary
- - OrderedDefaultDict: a fusion of Python's OrderedDict and defaultdict
 """
 
 # builtins
-from collections import defaultdict, OrderedDict
 from contextlib import contextmanager
 from functools import total_ordering, wraps
 import sys
@@ -27,7 +25,7 @@ import tempfile
 import shutil
 
 # 3rd party
-from oset import oset as OrderedSet
+from ordered_set import OrderedSet
 from dictionaries import FrozenDict as _FrozenDict
 
 def check_type(value, ty, value_name="value"):
@@ -43,7 +41,7 @@ def check_type(value, ty, value_name="value"):
     The type ty can be:
         str, int, float, or bytes - value must have this type
         [ty]                      - value must be a list of ty
-        {k:ty,...}                - value must be a dict with keys of the given types
+        {k:v}                     - value must be a dict with keys of type k and values of type v
     """
 
     if ty is None:
@@ -89,54 +87,32 @@ def typechecked(f):
         return ret
     return g
 
-def match(value, binders):
-
-    def match_into(value, pattern, out):
-        if isinstance(pattern, str):
-            if pattern in out:
-                return out[pattern] == value
-            else:
-                out[pattern] = value
-                return True
-        elif pattern is any:
-            return True
-        elif isinstance(pattern, ADT):
-            if isinstance(value, type(pattern)):
-                for i in range(len(pattern.children())):
-                    if not match_into(value.children()[i], pattern.children()[i], out):
-                        return False
-                return True
-            else:
-                return False
-        else:
-            return value == pattern
-
-    for pattern, callback in binders:
-        out = { }
-        if match_into(value, pattern, out):
-            return callback(**out)
-
-    return None
-
-# _protect helps to help guard against infinite recursion.
-# Since it is global, locking uses seems wise.
-_protect = set()
-_protect_lock = threading.RLock()
-
 def my_caller(up=0):
     """
-    Returns an info object about the caller of the function that called my_caller.
-    You might care about these properties:
+    Returns a FrameInfo object describing the caller of the function that
+    called my_caller.
+
+    You might care about these properties of the FrameInfo object:
         .filename
         .function
         .lineno
+
+    The `up` parameter can be used to look farther up the call stack.  For
+    instance, up=1 returns info about the caller of the caller of the function
+    that called my_caller.
     """
     stack = inspect.stack()
-    frame = stack[up+2] # caller of caller of this function
-    frame = frame[0]
-    return inspect.getframeinfo(frame)
+    return stack[up+2] # caller of caller of this function
 
 def _size(x):
+    """Compute the size of an ADT.
+
+    This function uses a work stack rather than recursion, making it safe for
+    use on very large or stick-like trees.
+
+    See ADT.size (the public interface for this function) for more information
+    about exactly what this function returns.
+    """
     wq = [x]
     res = 0
     while wq:
@@ -163,11 +139,39 @@ class No(object):
     def __repr__(self):
         return "No({!r})".format(self.msg)
 
+# _protect helps to help guard against infinite recursion.
+# Since it is global, locking uses seems wise.
+_protect = set()
+_protect_lock = threading.RLock()
+
 @total_ordering
 class ADT(object):
+    """An algebraic data type (ADT).
+
+    This class is not abstract, but it is not useful on its own; it is a parent
+    for many useful types, especially syntax trees.
+
+    ADTs are comparable (==, <, etc.), hashable (assuming they do not have
+    lists or dictionaries as children), and pickle-able.
+
+    Important methods:
+        - children
+        - size
+
+    See also:
+        - Visitor
+    """
+
     def children(self):
         return ()
     def size(self):
+        """Compute the size of an ADT.
+
+        The size is 1 + sum(child sizes).  For the purposes of size computation,
+        lists and tuples count as ADTs whose children are their elements.
+        Dictionaries count as ADTs whose children are their items (key-value
+        pairs).  All other types (e.g. strings and ints) are size 1.
+        """
         return _size(self)
     def contains_subtree(self, tree):
         if self == tree:
@@ -230,69 +234,6 @@ class Visitor(object):
             return f(x, *args, **kwargs)
         print("Warning: {} does not implement {}".format(self, first_visit_func), file=sys.stderr)
 
-def ast_find(ast, pred):
-    """Yield all non-collection, non-ADT nodes that satisfy pred."""
-    class V(Visitor):
-        def visit(self, x):
-            if pred(x):
-                yield x
-            yield from super().visit(x)
-        def visit_ADT(self, x):
-            for child in x.children():
-                yield from self.visit(child)
-        def visit_list(self, x):
-            for child in x:
-                yield from self.visit(child)
-        def visit_tuple(self, x):
-            return self.visit_list(x)
-        def visit_object(self, x):
-            return ()
-    return V().visit(ast)
-
-def ast_find_one(ast, pred):
-    for match in ast_find(ast, pred):
-        return match
-    return None
-
-def ast_replace(haystack, pred, repl_func):
-    class V(Visitor):
-        def visit(self, x):
-            if pred(x):
-                return repl_func(x)
-            return super().visit(x)
-        def visit_ADT(self, x):
-            new_children = tuple(self.visit(child) for child in x.children())
-            return type(x)(*new_children)
-        def visit_list(self, x):
-            return [self.visit(child) for child in x]
-        def visit_tuple(self, x):
-            return tuple(self.visit(child) for child in x)
-        def visit_object(self, x):
-            return x
-    return V().visit(haystack)
-
-def ast_replace_ref(haystack, needle, replacement):
-    return ast_replace(haystack,
-        lambda x: x is needle,
-        lambda x: replacement)
-
-# Monkey-patch OrderedSet to avoid infinite loops during interpreter shutdown.
-# The implementors of the library implemented __del__, a dangerous magic method
-# that runs when an object is garbage-collected.  This can go horribly awry in
-# the following complex---but possible---set of circumstances:
-#   (1) Several OrderedSets are queued for garbage collection simultaneously
-#   (2) The hash codes of some of the elements of some OrderedSet A depend on
-#       the elements present in a different OrderedSet B (this can be
-#       reasonable: while OrderedSets are mutable, hashing tuple(ordered_set)
-#       really ought to be safe)
-#   (3) The garbage collector decides to invoke __del__ on B first
-#   (4) The change in hash code results in an infinite loop when calling
-#       __del__ on A, which now contains an element that it cannot find via
-#       hash lookup.
-# Removing the __del__ method is perfectly safe: Python's cycle collector will
-# kick in and do the job that this is trying to achieve.
-del OrderedSet.__del__
-
 @total_ordering
 class FrozenDict(_FrozenDict):
     """
@@ -306,43 +247,25 @@ class FrozenDict(_FrozenDict):
     def __repr__(self):
         return "FrozenDict({!r})".format(list(self.items()))
 
-_MISSING = object()
-class OrderedDefaultDict(OrderedDict):
-    def __init__(self, factory):
-        super().__init__()
-        self.factory = factory
-    def __missing__(self, k):
-        v = self.get(k, _MISSING)
-        if v is _MISSING:
-            v = self.factory()
-            self[k] = v
-        return v
+_name_counter = Value(ctypes.c_uint64, 0)
 
-def nested_dict(n, t):
-    if n <= 0:
-        return t()
-    return OrderedDefaultDict(lambda: nested_dict(n-1, t))
+def fresh_name(hint : str = "name", omit : {str} = ()) -> str:
+    """Generate a new name.
 
-_i = Value(ctypes.c_uint64, 0)
-def fresh_names(n : int, hint : str = "name", omit : {str} = None) -> [str]:
-    if omit is None:
-        omit = ()
+    The returned name is guaranteed to be distinct from all names previously
+    returned by `fresh_name` (even across threads and forked processes), and
+    is is also guaranteed to be distinct from all names in `omit`.
 
-    res = []
-    with _i.get_lock():
-        i = _i.value
-        for _ in range(n):
-            name = None
-            while name is None or name in omit:
-                name = "_{}{}".format(hint, i)
-                i += 1
-            res.append(name)
-        _i.value = i
-
-    return res
-
-def fresh_name(hint="name", omit=None):
-    return fresh_names(1, hint=hint, omit=omit)[0]
+    The `hint` parameter will be used in the generated name.
+    """
+    name = None
+    with _name_counter.get_lock():
+        i = _name_counter.value
+        while name is None or name in omit:
+            name = "_{}{}".format(hint, i)
+            i += 1
+        _name_counter.value = i
+    return name
 
 def capitalize(s):
     """Return a new string like s, but with the first letter capitalized."""
@@ -377,16 +300,6 @@ def open_maybe_stdout(f):
         return os.fdopen(os.dup(sys.stdout.fileno()), "w")
     return AtomicWriteableFile(f)
 
-def split(iter, pred):
-    trues = []
-    falses = []
-    for x in iter:
-        if pred(x):
-            trues.append(x)
-        else:
-            falses.append(x)
-    return (trues, falses)
-
 def unique(iter):
     """
     Yields a stream of deduplicated elements.
@@ -394,9 +307,13 @@ def unique(iter):
     """
     yield from OrderedSet(iter)
 
-### TODO: split() and partition() seem to be the same routine.
-### Also, document it.
 def partition(iter, pred):
+    """Split iter into two lists based on a test predicate.
+
+    Returns (trues, falses) where "trues" are the elements from iter for
+    which pred returns true, and "falses" are the ones for which pred returns
+    false.
+    """
     trues = []
     falses = []
     for x in iter:
@@ -441,17 +358,9 @@ def save_property(x, prop_name):
     yield
     setattr(x, prop_name, old_val)
 
-def group_by(iter, k, v=list):
-    xs = defaultdict(list)
-    for x in iter:
-        xs[k(x)].append(x)
-    res = defaultdict(lambda: v([]))
-    for (key, val) in xs.items():
-        res[key] = v(val)
-    return res
-
 def declare_case(supertype, name, attrs=()):
-    """
+    """Create a new case for an ADT type.
+
     Usage:
         CaseName = declare_case(SuperType, "CaseName", ["member1", ...])
 
@@ -475,6 +384,15 @@ def declare_case(supertype, name, attrs=()):
     return t
 
 class extend_multi(object):
+    """
+    Temporarily extend a dictionary with new values.
+    Usage:
+        my_dict = ...
+        with extend_multi(my_dict, [(k1, v1), (k2, v2)]):
+            # use my_dict
+            # ...
+        # values for my_dict[k1] and my_dict[k2] restored on exit
+    """
     def __init__(self, d, items):
         self.things = [extend(d, k, v) for (k, v) in items]
     def __enter__(self, *args, **kwargs):
@@ -492,6 +410,7 @@ class extend(object):
         with extend(my_dict, k, new_val):
             # use my_dict
             # ...
+        # value for my_dict[k] restored on exit
     """
     NO_VAL = object()
     def __init__(self, d, k, v):
@@ -557,32 +476,6 @@ def compare_with_lt(x, y):
         return 1
     else:
         return 0
-
-def collapse_runs(it, split_at):
-    """
-    Collapse runs of elements [x_0, x_1, ...] in `it` such that
-    `split_at(x_0, x_i)` returns false for all i > 1.
-
-    This function returns a list of runs (i.e. a list of lists).
-
-    For instance, to remove duplicates from a sorted list:
-        l = [0, 0, 0, 1, 2, 2]
-        l = collapse_runs(l, split_at=lambda x, y: x != y)
-        # l is now [[0,0,0], [1], [2,2]]
-    """
-    l = make_random_access(it)
-    if not l:
-        return l, []
-    prev = l[0]
-    res = [[prev]]
-    for i in range(1, len(l)):
-        x = l[i]
-        if split_at(prev, x):
-            res.append([x])
-        else:
-            res[-1].append(x)
-        prev = x
-    return res
 
 class StopException(Exception):
     """
