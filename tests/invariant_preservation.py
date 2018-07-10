@@ -80,3 +80,59 @@ class TestRepInference(unittest.TestCase):
                     if (1 < 0) { x = q(); }
         """)
         assert not errs
+
+    def test_update_sequence(self):
+        errs = get_invariant_preservation_errs("""
+            PreserveInvariant:
+
+                state x : Int
+
+                query q()
+                    assume x > 0;
+                    0
+
+                op foo()
+                    x = 1;
+                    x = q();
+        """)
+        assert not errs
+
+    def test_no_update_leakage(self):
+        errs = get_invariant_preservation_errs("""
+            PreserveInvariant:
+
+                state x : Int
+
+                query q()
+                    assume x > 0;
+                    0
+
+                op foo()
+                    x = 1;
+                    x = 2;
+
+                op bar()
+                    x = q();
+        """)
+        assert errs
+        assert "q" in errs[0]
+
+    def test_guarded_update_sequence(self):
+        errs = get_invariant_preservation_errs("""
+            PreserveInvariant:
+
+                state x : Int
+
+                query q()
+                    assume x > 0;
+                    0
+
+                op foo(b : Bool)
+                    if (b) {
+                        x = 1;
+                        x = 2;
+                    }
+                    x = q();
+        """)
+        assert errs
+        assert "q" in errs[0]

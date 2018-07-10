@@ -76,7 +76,7 @@ def check_calls_wf(spec : Spec):
             print("Checking call {}...".format(pprint(e)))
             a = EAll(ctx.facts)
             for precond in q.assumptions:
-                precond = subst(precond, { v : val for (v, t), val in zip(q.args, e.args) })
+                precond = mutate(subst(precond, { v : val for (v, t), val in zip(q.args, e.args) }), ctx.mutations)
                 if not valid(inline_calls(spec, EImplies(a, precond))):
                     res.append("at {}: call may not satisfy precondition {}".format(pprint(e), pprint(precond)))
     return res
