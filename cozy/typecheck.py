@@ -129,11 +129,11 @@ class Typechecker(Visitor):
         for name, t in spec.statevars:
             self.env[name] = self.visit(t)
         spec.statevars = [(name, self.env[name]) for (name, t) in spec.statevars]
+        for op in spec.methods:
+            self.visit(op)
         for e in spec.assumptions:
             self.visit(e)
             self.ensure_type(e, BOOL)
-        for op in spec.methods:
-            self.visit(op)
 
     def visit_ExternFunc(self, f):
         f = syntax.ExternFunc(
