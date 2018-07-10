@@ -279,11 +279,16 @@ def product(iter):
     return p
 
 class AtomicWriteableFile(object):
-    def __init__(self, dst):
+    """A writeable file handle that does not overwrite until it is closed.
+
+    This helps protect against errors that might happen while writing the file.
+    If this object is closed abnormally, it does not write any output.
+    """
+    def __init__(self, dst, mode="w"):
         self.dst = dst
         tmp_fd, tmp_path = tempfile.mkstemp(text=True)
         self.tmp_fd = tmp_fd
-        self.tmp_file = os.fdopen(tmp_fd, "w")
+        self.tmp_file = os.fdopen(tmp_fd, mode)
         self.tmp_path = tmp_path
     def __enter__(self, *args, **kwargs):
         return self
@@ -294,16 +299,34 @@ class AtomicWriteableFile(object):
     def write(self, thing):
         self.tmp_file.write(thing)
 
-def open_maybe_stdin(f, mode="r"):
+def open_maybe_stdin(f : str, mode="r"):
+    """Open file f, or open standard input if f is "-".
+
+    In any case, the caller is responsible for closing the returned handle.
+    The safest usage of this function is
+
+        with open_maybe_stdin(path) as f:
+            ...
+    """
     if f == "-":
         return os.fdopen(os.dup(sys.stdin.fileno()), mode)
     return open(f, mode)
 
-def open_maybe_stdout(f):
-    """Open file f, or open standard output if f is "-"."""
+def open_maybe_stdout(f : str, mode="w"):
+    """Open file f, or open standard output if f is "-".
+
+    If this function would open a regular file for writing, it returns an
+    AtomicWriteableFile for safety.
+
+    In any case, the caller is responsible for closing the returned handle.
+    The safest usage of this function is
+
+        with open_maybe_stdout(path) as f:
+            ...
+    """
     if f == "-":
-        return os.fdopen(os.dup(sys.stdout.fileno()), "w")
-    return AtomicWriteableFile(f)
+        return os.fdopen(os.dup(sys.stdout.fileno()), mode)
+    return AtomicWriteableFile(f, mode)
 
 def unique(iter):
     """
