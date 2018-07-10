@@ -39,7 +39,10 @@ def composite_order(*funcs):
             return o
     return Order.EQUAL
 
-def order_objects(x, y):
+def order_objects(x, y) -> Order:
+    """Compare x and y as regular Python objects and return an Order.
+
+    Note: this function never returns Order.AMBIGUOUS."""
     if x < y: return Order.LT
     if y < x: return Order.GT
     return Order.EQUAL
