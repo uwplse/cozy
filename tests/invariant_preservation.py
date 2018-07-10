@@ -60,3 +60,18 @@ class TestRepInference(unittest.TestCase):
                     q()
         """)
         assert errs
+
+    def test_if_guard(self):
+        errs = get_invariant_preservation_errs("""
+            PreserveInvariant:
+
+                state x : Int
+
+                query q()
+                    assume false;
+                    0
+
+                op foo()
+                    if (1 < 0) { x = q(); }
+        """)
+        assert not errs

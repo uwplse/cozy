@@ -833,6 +833,17 @@ class FragmentEnumerator(common.Visitor):
                 for ctx in self.visit(q.ret):
                     yield self.update_repl(ctx, lambda r: lambda x: syntax.Query(q.name, q.visibility, q.args, q.assumptions, r(x), q.docstring))
 
+    def visit_SIf(self, s):
+        yield self.make_ctx(s)
+        for ctx in self.visit(s.cond):
+            yield self.update_repl(ctx, lambda r: lambda x: syntax.SIf(r(x), s.then_branch, s.else_branch))
+        with self.push_assumptions([s.cond]):
+            for ctx in self.visit(s.then_branch):
+                yield self.update_repl(ctx, lambda r: lambda x: syntax.SIf(s.cond, r(x), s.else_branch))
+        with self.push_assumptions([syntax.ENot(s.cond)]):
+            for ctx in self.visit(s.else_branch):
+                yield self.update_repl(ctx, lambda r: lambda x: syntax.SIf(s.cond, s.then_branch, r(x)))
+
     def visit_ADT(self, obj):
         yield self.make_ctx(obj)
         children = obj.children()
