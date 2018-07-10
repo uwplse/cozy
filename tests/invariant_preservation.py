@@ -18,7 +18,7 @@ def get_invariant_preservation_errs(spec : str):
             print(" - {}".format(e))
     return errs
 
-class TestRepInference(unittest.TestCase):
+class TestInvariantPreservationChecks(unittest.TestCase):
 
     def test_indirect_handle_write(self):
         errs = get_invariant_preservation_errs("""
