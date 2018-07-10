@@ -12,6 +12,10 @@ def get_invariant_preservation_errs(spec : str):
     spec = desugar(spec)
     errs.extend(check_calls_wf(spec))
     errs.extend(check_ops_preserve_invariants(spec))
+    if errs:
+        print("{} errors:".format(len(errs)))
+        for e in errs:
+            print(" - {}".format(e))
     return errs
 
 class TestRepInference(unittest.TestCase):
@@ -60,6 +64,7 @@ class TestRepInference(unittest.TestCase):
                     q()
         """)
         assert errs
+        assert "q" in errs[0]
 
     def test_if_guard(self):
         errs = get_invariant_preservation_errs("""
