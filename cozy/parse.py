@@ -101,11 +101,15 @@ tokens += ["WORD", "NUM", "FLOAT", "STRINGLITERAL", "EXTERNCODETOKEN", "DOCCOMME
 tokens = tuple(tokens) # freeze tokens
 
 def make_lexer():
-    # *sigh*... ply has such a weird interface. There might be a cleaner way to
+
+    # *sigh*... ply has such a weird interface.  It magically discovers your
+    # token rules by looking at all in-scope variables (which are either
+    # functions with regexes for docstring or plain old regex objects).  This
+    # code programmatically sets up some productions by writing directly to
+    # the `locals()` dictionary.  There might be a cleaner way to
     # programmatically produce token productions, but I don't know what it is.
     for kw in _KEYWORDS:
         locals()["t_{}".format(keyword_token_name(kw))] = re.escape(kw)
-
     for opname, op in _OPERATORS:
         locals()["t_{}".format(op_token_name(opname))] = re.escape(op)
 
