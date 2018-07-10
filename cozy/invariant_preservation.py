@@ -54,6 +54,16 @@ def check_the_wf(spec : Spec):
                 res.append("at {}: `the` is illegal since its argument may not be singleton".format(pprint(e)))
     return res
 
+def check_minmax_wf(spec : Spec):
+    res = []
+    for ctx in enumerate_fragments(spec):
+        e = ctx.e
+        if isinstance(e, EArgMin) or isinstance(e, EArgMax):
+            a = ctx.facts
+            if not valid(EImplies(EAll(a), EUnaryOp(UOp.Exists, e.e).with_type(BOOL))):
+                res.append("at {}: result is ambiguous since {} could be empty".format(pprint(e), pprint(e.e)))
+    return res
+
 def check_calls_wf(spec : Spec):
     res = []
     queries = { m.name : m for m in spec.methods if isinstance(m, Query) }

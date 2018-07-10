@@ -81,6 +81,7 @@ def run():
         errors = (
             invariant_preservation.check_ops_preserve_invariants(ast) +
             invariant_preservation.check_the_wf(ast) +
+            invariant_preservation.check_minmax_wf(ast) +
             call_errors)
         if errors:
             for e in errors:
