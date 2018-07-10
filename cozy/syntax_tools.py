@@ -857,6 +857,12 @@ class FragmentEnumerator(common.Visitor):
                 for ctx in self.visit(s.else_branch):
                     yield self.update_repl(ctx, lambda r: lambda x: syntax.SIf(s.cond, s.then_branch, r(x)))
 
+    def visit_SDecl(self, s):
+        yield self.make_ctx(s)
+        for ctx in self.visit(s.val):
+            yield self.update_repl(ctx, lambda r: lambda x: syntax.SDecl(s.id, r(x)))
+        self.assumptions.append(syntax.EEq(syntax.EVar(s.id).with_type(s.val.type), s.val))
+
     def visit_SSeq(self, s):
         yield self.make_ctx(s)
         for ctx in self.visit(s.s1):
@@ -864,6 +870,7 @@ class FragmentEnumerator(common.Visitor):
         self.mutations.append(s.s1)
         for ctx in self.visit(s.s2):
             yield self.update_repl(ctx, lambda r: lambda x: syntax.SSeq(s.s1, r(x)))
+        self.mutations.append(s.s2)
 
     def visit_ADT(self, obj):
         yield self.make_ctx(obj)

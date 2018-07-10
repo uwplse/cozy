@@ -136,3 +136,39 @@ class TestInvariantPreservationChecks(unittest.TestCase):
         """)
         assert errs
         assert "q" in errs[0]
+
+    def test_guard_with_let(self):
+        errs = get_invariant_preservation_errs("""
+            PreserveInvariant:
+
+                state x : Int
+
+                query q()
+                    assume x > 0;
+                    0
+
+                op foo(b : Bool)
+                    let a = false;
+                    if (a) {
+                        x = q();
+                    }
+        """)
+        assert not errs
+
+    def test_guard_after_mutation(self):
+        errs = get_invariant_preservation_errs("""
+            PreserveInvariant:
+
+                state x : Int
+
+                query q()
+                    assume x > 0;
+                    0
+
+                op foo(b : Bool)
+                    x = 1;
+                    if (x < 0) {
+                        x = q();
+                    }
+        """)
+        assert not errs
