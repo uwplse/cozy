@@ -1,7 +1,9 @@
 """Well-formedness tests for Cozy expressions."""
 
 from cozy.common import No, typechecked, OrderedSet
-from cozy.target_syntax import *
+from cozy.syntax import Exp, EVar, EAll, T
+from cozy.target_syntax import EStateVar
+from cozy.syntax_tools import pprint
 from cozy.solver import ModelCachingSolver
 from cozy.pools import RUNTIME_POOL, STATE_POOL
 from cozy.structures import extension_handler
@@ -16,7 +18,7 @@ class ExpIsNotWf(No):
             <e is definitely well-formed>
     """
     def __init__(self, toplevel_expression, offending_subexpression, reason):
-        super().__init__("at {}: {}".format(pprint(exc.offending_subexpression), exc.reason))
+        super().__init__("at {}: {}".format(pprint(offending_subexpression), reason))
         self.toplevel_expression = toplevel_expression
         self.offending_subexpression = offending_subexpression
         self.reason = reason
