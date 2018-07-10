@@ -1,7 +1,9 @@
-"""Parser for Cozy files.
+"""Parser for Cozy syntax.
 
-The only important function here is:
- - parse: str -> Spec
+The important functions are:
+ - parse_spec: str -> Spec
+ - parse_stm:  str -> Stm
+ - parse_exp:  str -> Exp
 """
 
 # builtin
