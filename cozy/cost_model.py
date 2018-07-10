@@ -191,18 +191,18 @@ class DominantTerm(object):
     def __mul__(self, other):
         return DominantTerm(self.multiplier * other.multiplier, self.exponent + other.exponent)
 
-def wc_cardinality(e : Exp) -> DominantTerm:
+def worst_case_cardinality(e : Exp) -> DominantTerm:
     assert is_collection(e.type)
     while isinstance(e, EFilter) or isinstance(e, EMap) or isinstance(e, EFlatMap) or isinstance(e, EMakeMap2) or isinstance(e, EStateVar) or (isinstance(e, EUnaryOp) and e.op == UOp.Distinct) or isinstance(e, EListSlice):
         e = e.e
     if isinstance(e, EBinOp) and e.op == "-":
-        return wc_cardinality(e.e1)
+        return worst_case_cardinality(e.e1)
     if isinstance(e, EBinOp) and e.op == "+":
-        return wc_cardinality(e.e1) + wc_cardinality(e.e2)
+        return worst_case_cardinality(e.e1) + worst_case_cardinality(e.e2)
     if isinstance(e, EFlatMap):
-        return wc_cardinality(e.e) * wc_cardinality(e.f.body)
+        return worst_case_cardinality(e.e) * worst_case_cardinality(e.f.body)
     if isinstance(e, ECond):
-        return max(wc_cardinality(e.then_branch), wc_cardinality(e.else_branch))
+        return max(worst_case_cardinality(e.then_branch), worst_case_cardinality(e.else_branch))
     if isinstance(e, EEmptyList):
         return DominantTerm.ZERO
     if isinstance(e, ESingleton):
@@ -234,20 +234,20 @@ def asymptotic_runtime(e : Exp) -> DominantTerm:
         if isinstance(e, ELambda):
             e = e.body
         if isinstance(e, EFilter):
-            res += wc_cardinality(e.e) * asymptotic_runtime(e.p) + asymptotic_runtime(e.e)
+            res += worst_case_cardinality(e.e) * asymptotic_runtime(e.p) + asymptotic_runtime(e.e)
             continue
         if isinstance(e, EMap) or isinstance(e, EFlatMap) or isinstance(e, EArgMin) or isinstance(e, EArgMax):
-            res += wc_cardinality(e.e) * asymptotic_runtime(e.f) + asymptotic_runtime(e.e)
+            res += worst_case_cardinality(e.e) * asymptotic_runtime(e.f) + asymptotic_runtime(e.e)
             continue
         res += DominantTerm.ONE
         if isinstance(e, EMakeMap2):
-            res += wc_cardinality(e.e) * asymptotic_runtime(e.value)
+            res += worst_case_cardinality(e.e) * asymptotic_runtime(e.value)
         if isinstance(e, EBinOp) and e.op == BOp.In:
-            res += wc_cardinality(e.e2)
+            res += worst_case_cardinality(e.e2)
         if isinstance(e, EBinOp) and e.op == "-" and is_collection(e.type):
-            res += wc_cardinality(e.e1) + wc_cardinality(e.e2) + wc_cardinality(e.e1) * wc_cardinality(e.e2)
+            res += worst_case_cardinality(e.e1) + worst_case_cardinality(e.e2) + worst_case_cardinality(e.e1) * worst_case_cardinality(e.e2)
         if isinstance(e, EUnaryOp) and e.op in LINEAR_TIME_UOPS:
-            res += wc_cardinality(e.e)
+            res += worst_case_cardinality(e.e)
         if isinstance(e, ECond):
             res += max(asymptotic_runtime(e.then_branch), asymptotic_runtime(e.else_branch))
             stk.append(e.cond)
