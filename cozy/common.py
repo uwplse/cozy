@@ -294,6 +294,11 @@ class AtomicWriteableFile(object):
     def write(self, thing):
         self.tmp_file.write(thing)
 
+def open_maybe_stdin(f, mode="r"):
+    if f == "-":
+        return os.fdopen(os.dup(sys.stdin.fileno()), mode)
+    return open(f, mode)
+
 def open_maybe_stdout(f):
     """Open file f, or open standard output if f is "-"."""
     if f == "-":
