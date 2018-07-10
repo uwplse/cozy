@@ -22,6 +22,17 @@ class Order(Enum):
     AMBIGUOUS = 3
 
 def composite_order(*funcs):
+    """Returns the first result that is not Order.EQUAL from calling each func.
+
+    Each argument should be a function that takes no arguments and returns an
+    Order.
+
+    This procedure is useful when
+     - you have several metrics to compare and you know which ones are most
+       important
+     - the metrics are very difficult to compute so you do not want to compute
+       them unless you are certain you need them
+    """
     for f in funcs:
         o = f()
         if o != Order.EQUAL:
