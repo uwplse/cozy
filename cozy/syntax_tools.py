@@ -659,10 +659,9 @@ class FragmentEnumerator(common.Visitor):
     @contextmanager
     @typechecked
     def push_assumptions(self, new_assumptions : [syntax.Exp] = []):
-        self.assumptions.extend(new_assumptions)
-        yield
-        for i in range(len(new_assumptions)):
-            self.assumptions.pop()
+        with common.save_property(self, "assumptions"):
+            self.assumptions = self.assumptions + new_assumptions
+            yield
 
     def make_ctx(self, e):
         return Context(

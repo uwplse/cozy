@@ -3,17 +3,16 @@ import unittest
 from cozy.desugar import desugar
 from cozy.typecheck import typecheck
 from cozy.parse import parse_spec
-from cozy.invariant_preservation import check_ops_preserve_invariants
+from cozy.invariant_preservation import check_ops_preserve_invariants, check_calls_wf
 
 def get_invariant_preservation_errs(spec : str):
     spec = parse_spec(spec)
-    errs = typecheck(spec)
+    errs = list(typecheck(spec))
     assert not errs, str(errs)
     spec = desugar(spec)
-    return check_ops_preserve_invariants(spec)
-    assert errs
-    assert "modX" in errs[0]
-    assert "modY" in errs[1]
+    errs.extend(check_calls_wf(spec))
+    errs.extend(check_ops_preserve_invariants(spec))
+    return errs
 
 class TestRepInference(unittest.TestCase):
 
@@ -46,3 +45,18 @@ class TestRepInference(unittest.TestCase):
         assert errs
         assert "modX" in errs[0]
         assert "modY" in errs[1]
+
+    def test_preconds(self):
+        errs = get_invariant_preservation_errs("""
+            PreserveInvariant:
+
+                state x : Int
+
+                query q()
+                    assume false;
+                    0
+
+                query p()
+                    q()
+        """)
+        assert errs
