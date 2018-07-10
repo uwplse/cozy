@@ -7,7 +7,7 @@ The most important function is `simplify`.
 """
 
 from cozy.target_syntax import *
-from cozy.typecheck import is_collection, is_numeric
+from cozy.typecheck import is_collection, equality_implies_deep_equality
 from cozy.syntax_tools import BottomUpRewriter, alpha_equivalent, compose, pprint, mk_lambda, replace
 from cozy.evaluation import construct_value, eval
 from cozy.solver import valid, satisfy
@@ -15,18 +15,7 @@ from cozy.opts import Option
 
 checked_simplify = Option("checked-simplification", bool, False)
 
-def is_simple(t):
-    if is_numeric(t):
-        return True
-    if isinstance(t, TString) or isinstance(t, TEnum) or isinstance(t, TBool) or isinstance(t, TNative):
-        return True
-    if isinstance(t, TTuple) and all(is_simple(tt) for tt in t.ts):
-        return True
-    if isinstance(t, TRecord) and all(is_simple(tt) for f, tt in t.fields):
-        return True
-    return False
-
-class _V(BottomUpRewriter):
+class _SimplificationVisitor(BottomUpRewriter):
     def __init__(self, debug=False):
         self.debug = debug
     def visit_EBinOp(self, e):
@@ -117,7 +106,7 @@ class _V(BottomUpRewriter):
         m = self.visit(e.map)
         k = self.visit(e.key)
         if isinstance(m, EMakeMap2):
-            if is_simple(k.type):
+            if equality_implies_deep_equality(k.type):
                 return self.visit(ECond(
                     EIn(k, m.e),
                     m.value.apply_to(k),
@@ -183,7 +172,7 @@ def simplify(e, validate=None, debug=False):
     if validate is None:
         validate = checked_simplify.value
     try:
-        visitor = _V(debug)
+        visitor = _SimplificationVisitor(debug)
         orig = e
         e = visitor.visit(e)
         # e = cse(e)

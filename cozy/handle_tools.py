@@ -1,19 +1,26 @@
-"""
-Handles (aka heap-allocated objects) require careful treatment since everything
-else in Cozy is relatively pure.  This module defines some useful functions
-that operate on handles.
+"""Utilities for working with "handles".
+
+Handles (mutable heap-allocated objects) require careful treatment since
+everything else in Cozy is relatively pure.  This module defines some useful
+functions that operate on handles.
 """
 
 from collections import OrderedDict
 
 from cozy.common import typechecked
 from cozy.target_syntax import *
-from cozy.syntax_tools import fresh_var, mk_lambda
+from cozy.syntax_tools import fresh_var
 from cozy.typecheck import is_collection
 
 @typechecked
 def _merge(a : {THandle:Exp}, b : {THandle:Exp}) -> {THandle:Exp}:
-    """NOTE: assumes ownership of `a`"""
+    """Merge the elements of `a` and `b`.
+
+    If a key is present in both inputs, the output will have an expression
+    computing the sum of the two entries for that key.
+
+    NOTE: for efficiency, this procedure mutates and returns `a`.
+    """
     res = a
     for k, vb in b.items():
         va = res.get(k)
@@ -29,7 +36,11 @@ def reachable_handles_by_type(root : Exp) -> {THandle:Exp}:
     Compute a mapping from handle types to bags of all handle objects of that
     type reachable from the given root.
 
-    Note that the bags may contain duplicate handles.
+    Note that the bags may contain duplicate handles.  This can happen in two
+    ways:
+     - there is a bag of handles reachable from the root that contains
+       duplicate handles, or
+     - the same handle is reachable from the root via two different paths
     """
     if isinstance(root.type, THandle):
         return _merge(
@@ -58,6 +69,13 @@ def reachable_handles_by_type(root : Exp) -> {THandle:Exp}:
 
 @typechecked
 def reachable_handles_at_method(spec : Spec, m : Method) -> {THandle:Exp}:
+    """
+    Compute a mapping from handle types to bags of all handle objects of that
+    type reachable at entry to some method `m`.
+
+    Note that the bags may contain duplicate handles.  See
+    `reachble_handles_by_type` for information about how this can happen.
+    """
     res = OrderedDict()
     for v, t in spec.statevars:
         res = _merge(res, reachable_handles_by_type(EVar(v).with_type(t)))
@@ -65,12 +83,21 @@ def reachable_handles_at_method(spec : Spec, m : Method) -> {THandle:Exp}:
         res = _merge(res, reachable_handles_by_type(EVar(v).with_type(t)))
     return res
 
-def EForall(e, p):
-    return EUnaryOp(UOp.All, EMap(e, mk_lambda(e.type.t, p)).with_type(type(e.type)(BOOL))).with_type(BOOL)
-
 @typechecked
-def implicit_handle_assumptions_for_method(handles : {THandle:Exp}, m : Method) -> [Exp]:
-    # for instance: implicit_handle_assumptions_for_method(reachable_handles_at_method(spec, m), m)
+def implicit_handle_assumptions(handles : {THandle:Exp}) -> [Exp]:
+    """
+    Compute a list of expressions that, in conjunction, assert that all handles
+    in the values of the given dictionary satisfy:
+     - any two handles with the same address have the same value
+
+    For example:
+
+        implicit_handle_assumptions(reachable_handles_at_method(spec, m))
+
+    will produce expressions asserting that all handles reachable on entry to
+    `m` satisfy the condition.
+    """
+
     new_assumptions = []
     for t, bag in handles.items():
         new_assumptions.append(

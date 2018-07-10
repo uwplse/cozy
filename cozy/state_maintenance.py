@@ -8,7 +8,7 @@ Important functions:
 from cozy.common import fresh_name
 from cozy import syntax
 from cozy import target_syntax
-from cozy.syntax_tools import free_vars, pprint, fresh_var, mk_lambda, strip_EStateVar, subst, BottomUpRewriter
+from cozy.syntax_tools import free_vars, pprint, fresh_var, strip_EStateVar, subst, BottomUpRewriter
 from cozy.typecheck import is_numeric
 from cozy.solver import valid
 from cozy.opts import Option
@@ -52,7 +52,15 @@ def mutate(e : syntax.Exp, op : syntax.Stm) -> syntax.Exp:
     else:
         raise NotImplementedError(type(op))
 
-def replace_get_value(e : syntax.Exp, ptr : syntax.Exp, new_value : syntax.Exp):
+def replace_get_value(e : syntax.Exp, ptr : syntax.Exp, new_value : syntax.Exp) -> syntax.Exp:
+    """
+    Return an expression representing the value of `e` after writing
+    `new_value` to `ptr`.
+
+    This amounts to replacing all instances of `_.val` in `e` with
+
+        (_ == ptr) ? (new_value) : (_.val)
+    """
     t = ptr.type
     fvs = free_vars(ptr) | free_vars(new_value)
     class V(BottomUpRewriter):
@@ -84,22 +92,6 @@ def _do_assignment(lval : syntax.Exp, new_value : syntax.Exp, e : syntax.Exp) ->
         return _do_assignment(lval.e, _replace_field(lval.e, lval.f, new_value), e)
     else:
         raise Exception("not an lvalue: {}".format(pprint(lval)))
-
-def _fix_map(m : target_syntax.EMap) -> syntax.Exp:
-    return m
-    from cozy.simplification import simplify
-    m = simplify(m)
-    if not isinstance(m, target_syntax.EMap):
-        return m
-    elem_type = m.e.type.t
-    assert m.f.body.type == elem_type
-    changed = target_syntax.EFilter(m.e, mk_lambda(elem_type, lambda x: syntax.ENot(syntax.EBinOp(x, "===", m.f.apply_to(x)).with_type(syntax.BOOL)))).with_type(m.e.type)
-    e = syntax.EBinOp(syntax.EBinOp(m.e, "-", changed).with_type(m.e.type), "+", target_syntax.EMap(changed, m.f).with_type(m.e.type)).with_type(m.e.type)
-    if not valid(syntax.EEq(m, e)):
-        print("WARNING: rewrite failed")
-        print("_fix_map({!r})".format(m))
-        return m
-    return e
 
 def _replace_field(record : syntax.Exp, field : str, new_value : syntax.Exp) -> syntax.Exp:
     return syntax.EMakeRecord(tuple(

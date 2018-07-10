@@ -13,7 +13,7 @@ from cozy.common import fresh_name, find_one, typechecked, OrderedSet
 from cozy.syntax import *
 from cozy.target_syntax import EFilter, EDeepIn
 from cozy.syntax_tools import subst, free_vars, fresh_var, all_exps, BottomUpRewriter, pprint, shallow_copy, tease_apart, wrap_naked_statevars, rewrite_ret
-from cozy.handle_tools import reachable_handles_at_method, implicit_handle_assumptions_for_method
+from cozy.handle_tools import reachable_handles_at_method, implicit_handle_assumptions
 import cozy.state_maintenance as inc
 from cozy.opts import Option
 from cozy.simplification import simplify
@@ -85,9 +85,8 @@ class Implementation(object):
         with task("adding query", query=sub_q.name):
             sub_q = shallow_copy(sub_q)
             with task("checking whether we need more handle assumptions"):
-                new_a = implicit_handle_assumptions_for_method(
-                    reachable_handles_at_method(self.spec, sub_q),
-                    sub_q)
+                new_a = implicit_handle_assumptions(
+                    reachable_handles_at_method(self.spec, sub_q))
                 if not valid(EImplies(EAll(sub_q.assumptions), EAll(new_a))):
                     event("we do!")
                     sub_q.assumptions = list(itertools.chain(sub_q.assumptions, new_a))

@@ -14,8 +14,8 @@ EMakeMinHeap = declare_case(Exp, "EMakeMinHeap", ["e", "f"])
 EMakeMaxHeap = declare_case(Exp, "EMakeMaxHeap", ["e", "f"])
 
 EHeapElems = declare_case(Exp, "EHeapElems", ["e"]) # all elements
-EHeapPeek  = declare_case(Exp, "EHeapPeek",  ["e", "n"]) # look at min
-EHeapPeek2 = declare_case(Exp, "EHeapPeek2", ["e", "n"]) # look at 2nd min
+EHeapPeek  = declare_case(Exp, "EHeapPeek",  ["e", "heap_length"]) # look at min
+EHeapPeek2 = declare_case(Exp, "EHeapPeek2", ["e", "heap_length"]) # look at 2nd min
 
 def to_heap(e : Exp) -> Exp:
     """Implement expression e as a heap operation."""
@@ -42,15 +42,6 @@ def _has_right_child(idx : Exp, size : Exp) -> Exp:
 def _parent(idx : Exp) -> Exp:
     return EBinOp(EBinOp(idx, "-", ONE).with_type(INT), ">>", ONE).with_type(INT)
 
-def nth(t : TTuple, n : int) -> ELambda:
-    """
-    Returns an expression whose value is a function
-    that obtains the nth element of a value of type `t`.
-    """
-    ## Hard-coded variable name is OK because no capturing or shadowing is possible.
-    x = EVar("x").with_type(t)
-    return ELambda(x, ETupleGet(x, n).with_type(t.ts[n]))
-
 def heap_func(e : Exp, concretization_functions : { str : Exp } = None) -> ELambda:
     """
     Assuming 'e' produces a heap, this returns the function used to sort its elements.
@@ -76,20 +67,35 @@ class Heaps(object):
         return (TMinHeap, TMaxHeap, EMakeMinHeap, EMakeMaxHeap, EHeapElems, EHeapPeek, EHeapPeek2)
 
     def default_value(self, t : Type, default_value) -> Exp:
+        """Construct a default value of the given type.
+
+        The `default_value` parameter should be used to recursively construct
+        a default value of a child type.
+        """
+
         f = EMakeMinHeap if isinstance(t, TMinHeap) else EMakeMaxHeap
         x = EVar("x").with_type(t.elem_type)
         return f(EEmptyList().with_type(TBag(t.elem_type)), ELambda(x, default_value(t.key_type))).with_type(t)
 
     def check_wf(self, e : Exp, is_valid, state_vars : {EVar}, args : {EVar}, pool = RUNTIME_POOL, assumptions : Exp = T):
+        """Return None or a string indicating a well-formedness error."""
         if (isinstance(e, EHeapPeek) or isinstance(e, EHeapPeek2)):
             heap = e.e
             if pool != RUNTIME_POOL:
                 return "heap peek in state position"
-            if not is_valid(EEq(e.n, ELen(EHeapElems(heap).with_type(TBag(heap.type.elem_type))))):
+            if not is_valid(EEq(e.heap_length, ELen(EHeapElems(heap).with_type(TBag(heap.type.elem_type))))):
                 return "invalid `n` parameter"
         return None
 
     def typecheck(self, e : Exp, typecheck, report_err):
+        """Typecheck expression `e`.
+
+        This function must write a type to `e.type` or call `report_err` to
+        indicate a type error.  It is allowed to do both.
+
+        The `typecheck` parameter should be used to make a recursive call to
+        typecheck child nodes.
+        """
         if isinstance(e, EMakeMaxHeap) or isinstance(e, EMakeMinHeap):
             typecheck(e.e)
             e.f.arg.type = e.e.type.t
@@ -97,12 +103,12 @@ class Heaps(object):
             e.type = TMinHeap(e.e.type.t, e.f.body.type)
         elif isinstance(e, EHeapPeek) or isinstance(e, EHeapPeek2):
             typecheck(e.e)
-            typecheck(e.n)
+            typecheck(e.heap_length)
             ok = True
             if not (isinstance(e.e.type, TMinHeap) or isinstance(e.e.type, TMaxHeap)):
                 report_err(e, "cannot peek a non-heap")
                 ok = False
-            if e.n.type != INT:
+            if e.heap_length.type != INT:
                 report_err(e, "length param is not an int")
                 ok = False
             if ok:
@@ -116,9 +122,14 @@ class Heaps(object):
         else:
             raise NotImplementedError(e)
 
-    def storage_size(self, e : Exp, k, freebies : [Exp] = []):
+    def storage_size(self, e : Exp, storage_size) -> Exp:
+        """Compute the storage size (in bytes) of the given expression.
+
+        The `storage_size` parameter should be used to recursively compute
+        storage sizes for other expressions.
+        """
         assert type(e.type) in (TMinHeap, TMaxHeap)
-        return k(EHeapElems(e).with_type(TBag(e.type.elem_type)), freebies)
+        return storage_size(EHeapElems(e).with_type(TBag(e.type.elem_type)))
 
     def maintenance_cost(self, 
             e                   : Exp, 
@@ -171,6 +182,7 @@ class Heaps(object):
         return TBag(TTuple((t.elem_type, t.key_type)))
 
     def encode(self, e : Exp) -> Exp:
+        """Convert an expression about heaps to one about bags."""
         if isinstance(e, EMakeMinHeap):
             tt = TTuple((e.type.elem_type, e.type.key_type))
             return EMap(e.e, ELambda(e.f.arg, ETuple((e.f.arg, e.f.body)).with_type(tt))).with_type(TBag(tt))
@@ -183,12 +195,12 @@ class Heaps(object):
         elif isinstance(e, EHeapPeek):
             tt = TTuple((e.e.type.elem_type, e.e.type.key_type))
             f = EArgMin if isinstance(e.e.type, TMinHeap) else EArgMax
-            return nth(tt, 0).apply_to(f(e.e, nth(tt, 1)).with_type(tt))
+            return nth_func(tt, 0).apply_to(f(e.e, nth_func(tt, 1)).with_type(tt))
         elif isinstance(e, EHeapPeek2):
             tt = TTuple((e.e.type.elem_type, e.e.type.key_type))
             f = EArgMin if isinstance(e.e.type, TMinHeap) else EArgMax
-            best = f(e.e, nth(tt, 1)).with_type(tt)
-            return nth(tt, 0).apply_to(f(EBinOp(e.e, "-", ESingleton(best).with_type(TBag(tt))).with_type(TBag(tt)), nth(tt, 1)).with_type(tt))
+            best = f(e.e, nth_func(tt, 1)).with_type(tt)
+            return nth_func(tt, 0).apply_to(f(EBinOp(e.e, "-", ESingleton(best).with_type(TBag(tt))).with_type(TBag(tt)), nth_func(tt, 1)).with_type(tt))
         else:
             raise NotImplementedError(e)
 
@@ -226,10 +238,14 @@ class Heaps(object):
         return TArray(t.elem_type)
 
     def codegen(self, e : Exp, concretization_functions : { str : Exp }, out : EVar) -> Stm:
+        """Return statements that write the result of `e` to `out`.
+
+        This function also requires the `concretization_functions` that
+        describe the invariants for variables in `e`.
+        """
         if isinstance(e, EMakeMinHeap) or isinstance(e, EMakeMaxHeap):
             out_raw = EVar(out.id).with_type(self.rep_type(e.type))
             l = fresh_var(INT, "alloc_len")
-            x = fresh_var(e.type.elem_type, "x")
             return seq([
                 SDecl(l.id, ELen(e.e)),
                 SArrayAlloc(out_raw, l),
@@ -251,7 +267,7 @@ class Heaps(object):
             from cozy.evaluation import construct_value
             best = EArgMin if isinstance(e.e.type, TMinHeap) else EArgMax
             f = heap_func(e.e, concretization_functions)
-            return SSwitch(e.n, (
+            return SSwitch(e.heap_length, (
                 (ZERO, SAssign(out, construct_value(e.type))),
                 (ONE,  SAssign(out, construct_value(e.type))),
                 (TWO,  SAssign(out, EArrayGet(e.e, ONE).with_type(e.type)))),
@@ -260,7 +276,13 @@ class Heaps(object):
             raise NotImplementedError(e)
 
     def implement_stmt(self, s : Stm, concretization_functions : { str : Exp }) -> Stm:
-        op = "<=" if isinstance(s.target.type, TMinHeap) else ">="
+        """Convert a call to a heap function into simpler statements.
+
+        This function also requires the `concretization_functions` that
+        describe the invariants for variables in `e`.
+        """
+
+        comparison_op = "<=" if isinstance(s.target.type, TMinHeap) else ">="
         f = heap_func(s.target, concretization_functions)
         if isinstance(s, SCall):
             elem_type = s.target.type.elem_type
@@ -277,7 +299,7 @@ class Heaps(object):
                         SDecl(i.id, size),
                         SWhile(EAll([
                             EBinOp(i, ">", ZERO).with_type(BOOL),
-                            ENot(EBinOp(f.apply_to(EArrayGet(target_raw, _parent(i))), op, f.apply_to(EArrayGet(target_raw, i))).with_type(BOOL))]),
+                            ENot(EBinOp(f.apply_to(EArrayGet(target_raw, _parent(i))), comparison_op, f.apply_to(EArrayGet(target_raw, i))).with_type(BOOL))]),
                             seq([
                                 SSwap(EArrayGet(target_raw, _parent(i)), EArrayGet(target_raw, i)),
                                 SAssign(i, _parent(i))])),
@@ -299,10 +321,10 @@ class Heaps(object):
                         # bubble down
                         SEscapableBlock(label, SWhile(_has_left_child(i, size_minus_one), seq([
                             SDecl(child_index.id, _left_child(i)),
-                            SIf(EAll([_has_right_child(i, size_minus_one), ENot(EBinOp(f.apply_to(EArrayGet(target_raw, _left_child(i))), op, f.apply_to(EArrayGet(target_raw, _right_child(i)))))]),
+                            SIf(EAll([_has_right_child(i, size_minus_one), ENot(EBinOp(f.apply_to(EArrayGet(target_raw, _left_child(i))), comparison_op, f.apply_to(EArrayGet(target_raw, _right_child(i)))))]),
                                 SAssign(child_index, _right_child(i)),
                                 SNoOp()),
-                            SIf(ENot(EBinOp(f.apply_to(EArrayGet(target_raw, i)), op, f.apply_to(EArrayGet(target_raw, child_index)))),
+                            SIf(ENot(EBinOp(f.apply_to(EArrayGet(target_raw, i)), comparison_op, f.apply_to(EArrayGet(target_raw, child_index)))),
                                 seq([
                                     SSwap(EArrayGet(target_raw, i), EArrayGet(target_raw, child_index)),
                                     SAssign(i, child_index)]),
@@ -310,6 +332,6 @@ class Heaps(object):
                         # dec. size
                         SAssign(size, size_minus_one)]))])
             else:
-                raise NotImplementedError()
+                raise ValueError("heaps do not support the function {}".format(s.func))
         else:
-            raise NotImplementedError(pprint(s))
+            raise ValueError("the statement {} is not an update to a heap variable".format(pprint(s)))

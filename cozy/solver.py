@@ -22,6 +22,7 @@ from cozy import evaluation
 from cozy.opts import Option
 from cozy.structures import extension_handler
 from cozy.logging import task
+from cozy.value_types import Map, Bag, Handle
 from cozy.evaluation import eval_bulk
 
 save_solver_testcases = Option("save-solver-testcases", str, "", metavar="PATH")
@@ -1118,10 +1119,10 @@ class IncrementalSolver(object):
                             real_val.append(reconstruct(model, elems[i], type.t))
                     if isinstance(type, TList):
                         return tuple(real_val)
-                    return evaluation.Bag(real_val)
+                    return Bag(real_val)
                 elif isinstance(type, TMap):
                     default = reconstruct(model, value["default"], type.v)
-                    res = evaluation.Map(type, default)
+                    res = Map(type, default)
                     for (mask, k, v) in value["mapping"]:
                         # K/V pairs appearing earlier in value["mapping"] have precedence
                         if reconstruct(model, mask, BOOL):
@@ -1137,7 +1138,7 @@ class IncrementalSolver(object):
                     id, val = value
                     id = reconstruct(model, id, INT)
                     val = reconstruct(model, val, type.value_type)
-                    return evaluation.Handle(id, val)
+                    return Handle(id, val)
                 elif isinstance(type, TRecord):
                     res = defaultdict(lambda: None)
                     for (field, t) in type.fields:

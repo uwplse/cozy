@@ -4,7 +4,7 @@ from cozy.common import typechecked
 from cozy.target_syntax import *
 from cozy.solver import valid
 from cozy.syntax_tools import pprint, enumerate_fragments, shallow_copy, inline_calls, subst
-from cozy.handle_tools import reachable_handles_at_method, implicit_handle_assumptions_for_method
+from cozy.handle_tools import reachable_handles_at_method, implicit_handle_assumptions
 from cozy.state_maintenance import mutate
 from cozy.opts import Option
 
@@ -22,7 +22,7 @@ def add_implicit_handle_assumptions(spec : Spec) -> Spec:
     new_methods = []
     for m in spec.methods:
         handles = reachable_handles_at_method(spec, m)
-        new_assumptions = implicit_handle_assumptions_for_method(handles, m)
+        new_assumptions = implicit_handle_assumptions(handles)
         m = shallow_copy(m)
         m.assumptions = list(m.assumptions) + new_assumptions
         new_methods.append(m)
@@ -52,6 +52,16 @@ def check_the_wf(spec : Spec):
             a = ctx.facts
             if not valid(EImplies(EAll(a), EAny([EIsSingleton(e.e), EEmpty(e.e)]))):
                 res.append("at {}: `the` is illegal since its argument may not be singleton".format(pprint(e)))
+    return res
+
+def check_minmax_wf(spec : Spec):
+    res = []
+    for ctx in enumerate_fragments(spec):
+        e = ctx.e
+        if isinstance(e, EArgMin) or isinstance(e, EArgMax):
+            a = ctx.facts
+            if not valid(EImplies(EAll(a), EUnaryOp(UOp.Exists, e.e).with_type(BOOL))):
+                res.append("at {}: result is ambiguous since {} could be empty".format(pprint(e), pprint(e.e)))
     return res
 
 def check_calls_wf(spec : Spec):
