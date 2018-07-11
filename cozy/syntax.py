@@ -1,14 +1,17 @@
 """Abstract syntax for Cozy specifications."""
 
+from enum import Enum
+
 from cozy.common import ADT, declare_case, typechecked, partition, make_random_access
 
 Spec                = declare_case(ADT, "Spec", ["name", "types", "extern_funcs", "statevars", "assumptions", "methods", "header", "footer", "docstring"])
 ExternFunc          = declare_case(ADT, "ExternFunc", ["name", "args", "out_type", "body_string"])
 
-class Visibility(object):
+class Visibility(Enum):
+    """Visibilities for queries in Cozy specifications."""
     Public   = "public"   # usable by clients
-    Private  = "private"  # helper used by other queries
-    Internal = "internal" # helper used by op definitions
+    Private  = "private"  # private helper used by other methods
+    Internal = "internal" # helper added by Cozy, not by a human programmer
 
 class Method(ADT): pass
 Op                  = declare_case(Method, "Op",    ["name", "args", "assumptions", "body", "docstring"])
