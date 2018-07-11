@@ -4,8 +4,8 @@ Important functions:
  - pprint: prettyprint a syntax tree
  - free_vars: compute the set of free variables
  - alpha_equivalent: test alpha equivalence of two expressions
- - tease_apart: separate a packed expression into its state and runtime
-    components
+ - unpack_representation: separate a packed expression into its state and
+   runtime components
 """
 
 import collections
@@ -943,9 +943,22 @@ def subst_lval(lval, replacements):
     return lval
 
 @typechecked
-def tease_apart(exp : syntax.Exp, avoid : {syntax.EVar} = set()) -> ([(syntax.EVar, syntax.Exp)], syntax.Exp):
+def unpack_representation(exp : syntax.Exp, names_to_avoid : {syntax.EVar} = set()) -> ([(syntax.EVar, syntax.Exp)], syntax.Exp):
+    """Unpack an expression into its state and runtime components.
+
+    This function replaces each EStateVar in the given expression with a fresh
+    variable.  It returns a mapping from those fresh variables to the state
+    expressions they replaced, along with the new expression.
+
+    The mapping represents invariants that must be true when the returned
+    expression is executed.  The new expression is what should actually run.
+
+    If provided, the names in `names_to_avoid` are not used when picking
+    names for each EStateVar.
+    """
+
     new_state = []
-    omit = set(free_vars(exp) | avoid)
+    omit = set(free_vars(exp) | names_to_avoid)
 
     class V(BottomUpRewriter):
         def visit_ELambda(self, e):
@@ -967,7 +980,7 @@ def tease_apart(exp : syntax.Exp, avoid : {syntax.EVar} = set()) -> ([(syntax.EV
 
 @typechecked
 def purify(exp : syntax.Exp) -> syntax.Exp:
-    st, exp = tease_apart(exp)
+    st, exp = unpack_representation(exp)
     for v, e in st:
         exp = target_syntax.ELet(e, target_syntax.ELambda(v, exp)).with_type(exp.type)
     return exp
@@ -999,7 +1012,7 @@ def subst(exp, replacements, tease=True):
 
     if tease and any(isinstance(e, target_syntax.EStateVar) for e in all_exps(exp)):
         rvars = common.OrderedSet(syntax.EVar(v).with_type(e.type) for v, e in replacements.items())
-        st, exp = tease_apart(exp, avoid=rvars)
+        st, exp = unpack_representation(exp, names_to_avoid=rvars)
         for i in range(len(st)):
             st[i] = (st[i][0], subst(st[i][1], replacements))
         exp = subst(exp, replacements, tease=False)
