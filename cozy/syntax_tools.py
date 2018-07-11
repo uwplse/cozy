@@ -34,9 +34,18 @@ def fresh_var(type, hint="var", omit=()):
         omit = { var_name(v) for v in omit }
     return syntax.EVar(common.fresh_name(hint, omit=omit)).with_type(type)
 
-def mk_lambda(t, l):
+def mk_lambda(t : syntax.Type, f) -> target_syntax.ELambda:
+    """Construct a Cozy lambda-expression from a Python function.
+
+    Parameters:
+        t - the input type for the function
+        f - a function that takes an expression and returns an expression
+
+    Sample usage:
+        plus_one = mk_lambda(INT, lambda x: ESum([x, ONE]))
+    """
     v = fresh_var(t)
-    return target_syntax.ELambda(v, l(v))
+    return target_syntax.ELambda(v, f(v))
 
 def compose(f1 : target_syntax.ELambda, f2 : target_syntax.ELambda) -> target_syntax.ELambda:
     return mk_lambda(f2.arg.type, lambda v: f1.apply_to(f2.apply_to(v)))
