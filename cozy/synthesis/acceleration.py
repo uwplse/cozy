@@ -2,7 +2,7 @@ from functools import lru_cache
 
 from cozy.common import unique, OrderedSet
 from cozy.target_syntax import *
-from cozy.syntax_tools import fresh_var, free_vars, break_conj, pprint, mk_lambda, strip_EStateVar, alpha_equivalent, break_sum, replace, compose
+from cozy.syntax_tools import fresh_var, free_vars, break_conj, pprint, mk_lambda, strip_EStateVar, alpha_equivalent, replace, compose
 from cozy.typecheck import is_collection, retypecheck
 from cozy.pools import RUNTIME_POOL, STATE_POOL
 from cozy.structures.heaps import TMinHeap, TMaxHeap, EMakeMinHeap, EMakeMaxHeap, EHeapPeek2
@@ -278,57 +278,70 @@ def optimized_best(xs, keyfunc, op, args):
             heap_type, make_heap = (TMinHeap, EMakeMinHeap) if op == "<" else (TMaxHeap, EMakeMaxHeap)
             bag = EStateVar(strip_EStateVar(bag)).with_type(bag.type)
             h = make_heap(bag.e, keyfunc).with_type(heap_type(elem_type, key_type))
-            prev_min = EStateVar(optimized_best(bag.e, keyfunc, op, args=args).with_type(elem_type)).with_type(elem_type)
-            heap_peek = EHeapPeek2(EStateVar(h).with_type(h.type), EStateVar(ELen(bag.e)).with_type(INT)).with_type(elem_type)
-            return optimized_cond(
-                EAll([optimized_in(x, bag), optimized_eq(x, prev_min)]),
-                heap_peek,
-                prev_min)
+            for prev_min in optimized_best(bag.e, keyfunc, op, args=args):
+                prev_min = EStateVar(prev_min).with_type(elem_type)
+                heap_peek = EHeapPeek2(EStateVar(h).with_type(h.type), EStateVar(ELen(bag.e)).with_type(INT)).with_type(elem_type)
+                yield optimized_cond(
+                    EAll([optimized_in(x, bag), optimized_eq(x, prev_min)]),
+                    heap_peek,
+                    prev_min)
     if isinstance(xs, EEmptyList):
-        return construct_value(elem_type)
+        yield construct_value(elem_type)
     if isinstance(xs, ESingleton):
-        return xs.e
+        yield xs.e
     if isinstance(xs, EBinOp) and xs.op == "+":
-        if isinstance(xs.e1, EStateVar) or isinstance(xs.e2, EStateVar):
-            sv, other = (xs.e1, xs.e2) if isinstance(xs.e1, EStateVar) else (xs.e2, xs.e1)
-            sv_best = optimized_best(sv, keyfunc, op, args=args)
-            return optimized_cond(
-                optimized_exists(sv),
-                argbest(EBinOp(ESingleton(sv_best).with_type(xs.type), "+", other).with_type(xs.type), keyfunc).with_type(elem_type),
-                optimized_best(other, keyfunc, op, args=args))
-        else:
-            parts = break_sum(xs)
-            found = F
-            best = construct_value(elem_type)
-            for p in parts:
-                ex = optimized_exists(p)
-                best_here = optimized_best(p, keyfunc, op, args=args)
-                best = optimized_cond(found,
-                    optimized_cond(ex,
-                        optimized_cond(EBinOp(keyfunc.apply_to(best_here), op, keyfunc.apply_to(best)).with_type(BOOL),
-                            best_here,
-                            best),
-                        best),
-                    best_here)
-                found = EAny([found, ex])
-            return best
+        a_ex = optimized_exists(xs.e1)
+        b_ex = optimized_exists(xs.e2)
+        bag_type = TBag(xs.type.t)
+        for a in optimized_best(xs.e1, keyfunc, op, args=args):
+            for b in optimized_best(xs.e2, keyfunc, op, args=args):
+                yield optimized_cond(a_ex,
+                    optimized_cond(b_ex,
+                        argbest(EBinOp(ESingleton(a).with_type(bag_type), "+", ESingleton(b).with_type(bag_type)).with_type(bag_type), keyfunc).with_type(elem_type),
+                        a),
+                    optimized_cond(b_ex, b, construct_value(elem_type)))
+        # if isinstance(xs.e1, EStateVar) or isinstance(xs.e2, EStateVar):
+        #     sv, other = (xs.e1, xs.e2) if isinstance(xs.e1, EStateVar) else (xs.e2, xs.e1)
+        #     sv_best = optimized_best(sv, keyfunc, op, args=args)
+        #     yield optimized_cond(
+        #         optimized_exists(sv),
+        #         argbest(EBinOp(ESingleton(sv_best).with_type(xs.type), "+", other).with_type(xs.type), keyfunc).with_type(elem_type),
+        #         optimized_best(other, keyfunc, op, args=args))
+        # else:
+        #     parts = break_sum(xs)
+        #     found = F
+        #     best = construct_value(elem_type)
+        #     for p in parts:
+        #         ex = optimized_exists(p)
+        #         best_here = optimized_best(p, keyfunc, op, args=args)
+        #         best = optimized_cond(found,
+        #             optimized_cond(ex,
+        #                 optimized_cond(EBinOp(keyfunc.apply_to(best_here), op, keyfunc.apply_to(best)).with_type(BOOL),
+        #                     best_here,
+        #                     best),
+        #                 best),
+        #             best_here)
+        #         found = EAny([found, ex])
+        #     yield best
     if isinstance(xs, EMap):
-        return xs.f.apply_to(optimized_best(xs.e, compose(keyfunc, xs.f), op, args))
+        for b in optimized_best(xs.e, compose(keyfunc, xs.f), op, args):
+            yield optimized_cond(optimized_exists(xs.e),
+                xs.f.apply_to(b),
+                construct_value(elem_type))
     if isinstance(xs, EStateVar) and not any(v in args for v in free_vars(keyfunc)):
-        return EStateVar(argbest(xs.e, keyfunc).with_type(elem_type)).with_type(elem_type)
+        yield EStateVar(argbest(xs.e, keyfunc).with_type(elem_type)).with_type(elem_type)
     if isinstance(xs, ECond):
-        return optimized_cond(
-            xs.cond,
-            optimized_best(xs.then_branch, keyfunc, op, args=args),
-            optimized_best(xs.else_branch, keyfunc, op, args=args))
+        for a in optimized_best(xs.then_branch, keyfunc, op, args=args):
+            for b in optimized_best(xs.else_branch, keyfunc, op, args=args):
+                yield optimized_cond(xs.cond, a, b)
     if isinstance(xs, EUnaryOp) and xs.op == UOp.Distinct:
-        return optimized_best(xs.e, keyfunc, op, args=args)
+        yield from optimized_best(xs.e, keyfunc, op, args=args)
     # if isinstance(xs, EFilter):
-    #     return optimized_cond(
+    #     yield optimized_cond(
     #         xs.p.apply_to(optimized_best(xs.e, keyfunc, op, args=args)),
     #         optimized_best(xs.e, keyfunc, op, args=args),
     #         argbest(xs, keyfunc).with_type(elem_type))
-    return argbest(xs, keyfunc).with_type(elem_type)
+    yield argbest(xs, keyfunc).with_type(elem_type)
 
 def optimized_cond(c, a, b):
     if c == T:
@@ -554,8 +567,8 @@ def _try_optimize(e, context, pool):
             yield _check(EUnaryOp(UOp.The, e.e).with_type(e.type), context, RUNTIME_POOL)
 
         if isinstance(e, EArgMin) or isinstance(e, EArgMax):
-            ee = optimized_best(e.e, e.f, "<" if isinstance(e, EArgMin) else ">", args=args)
-            yield _check(ee, context, RUNTIME_POOL)
+            for ee in optimized_best(e.e, e.f, "<" if isinstance(e, EArgMin) else ">", args=args):
+                yield _check(ee, context, RUNTIME_POOL)
 
         if is_collection(e.type) and isinstance(e, EBinOp) and e.op == "-":
             ee = optimized_bag_difference(e.e1, e.e2)
