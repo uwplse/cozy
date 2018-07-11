@@ -51,6 +51,18 @@ def compose(f1 : target_syntax.ELambda, f2 : target_syntax.ELambda) -> target_sy
     return mk_lambda(f2.arg.type, lambda v: f1.apply_to(f2.apply_to(v)))
 
 class BottomUpExplorer(common.Visitor):
+    """Recursively explore nodes of a syntax tree.
+
+    Unlike `Visitor`, where `visit` simply dispatches to the correct handle for
+    the given type, this class recursively visits every node in the tree.
+
+    Subclasses should either
+      (1) Override specific visit_* methods that they are interested in.  Note
+          that these overridden methods need to call `self.visit(_)` on any
+          children they intend to explore as well.
+      (2) Override `join` and branch based on the type of `x`.  In this case
+          recursive exploration will be automatically handled.
+    """
     def visit_ADT(self, x):
         new_children = tuple(self.visit(child) for child in x.children())
         return self.join(x, new_children)
@@ -66,6 +78,15 @@ class BottomUpExplorer(common.Visitor):
         pass
 
 class BottomUpRewriter(BottomUpExplorer):
+    """A BottomUpExplorer that rewrites a syntax tree.
+
+    Subclasses should override specific visit_* methods that they are
+    interested in.  Note that these overridden methods need to call
+    `self.visit(_)` on any children they intend to transform as well.
+
+    This class is smart enough to recognize when returned trees are the exact
+    same object and avoid creating lots of garbage.
+    """
     def join(self, x, new_children):
         if isinstance(x, common.ADT):
             if all(a is b for (a, b) in zip(x.children(), new_children)):
