@@ -604,6 +604,7 @@ Context = collections.namedtuple("Context", [
     "toplevel",
     "e",
     "facts",
+    "mutations",
     "replace_e_with",
     "bound_vars",
     "var_sources",
@@ -621,6 +622,7 @@ class FragmentEnumerator(common.Visitor):
         self.bound_vars = []
         self.assumptions = []
         self.pool_stack = [pool]
+        self.mutations = []
 
     def currently_bound(self) -> {syntax.EVar}:
         return common.OrderedSet(v for v, src in self.bound_vars)
@@ -659,16 +661,23 @@ class FragmentEnumerator(common.Visitor):
     @contextmanager
     @typechecked
     def push_assumptions(self, new_assumptions : [syntax.Exp] = []):
-        self.assumptions.extend(new_assumptions)
-        yield
-        for i in range(len(new_assumptions)):
-            self.assumptions.pop()
+        with common.save_property(self, "assumptions"):
+            self.assumptions = self.assumptions + new_assumptions
+            yield
+
+    @contextmanager
+    @typechecked
+    def push_block(self):
+        with common.save_property(self, "mutations"):
+            self.mutations = list(self.mutations)
+            yield
 
     def make_ctx(self, e):
         return Context(
             toplevel=self.toplevel,
             e=e,
             facts=self.current_assumptions(),
+            mutations=syntax.seq(self.mutations),
             replace_e_with=common.identity_func,
             bound_vars=self.currently_bound(),
             var_sources=collections.OrderedDict(self.bound_vars),
@@ -819,11 +828,12 @@ class FragmentEnumerator(common.Visitor):
     def visit_Op(self, m):
         yield self.make_ctx(m)
         with self.intro_vars([(syntax.EVar(v).with_type(t), Unknown()) for (v, t) in m.args]):
-            with self.push_assumptions():
-                for ctx in self.visit_assumptions_seq(m.assumptions):
-                    yield self.update_repl(ctx, lambda r: lambda x: syntax.Op(m.name, m.args, r(x), m.body, m.docstring))
-                for ctx in self.visit(m.body):
-                    yield self.update_repl(ctx, lambda r: lambda x: syntax.Op(m.name, m.args, m.assumptions, r(x), m.docstring))
+            with self.push_block():
+                with self.push_assumptions():
+                    for ctx in self.visit_assumptions_seq(m.assumptions):
+                        yield self.update_repl(ctx, lambda r: lambda x: syntax.Op(m.name, m.args, r(x), m.body, m.docstring))
+                    for ctx in self.visit(m.body):
+                        yield self.update_repl(ctx, lambda r: lambda x: syntax.Op(m.name, m.args, m.assumptions, r(x), m.docstring))
 
     def visit_Query(self, q):
         yield self.make_ctx(q)
@@ -833,6 +843,34 @@ class FragmentEnumerator(common.Visitor):
                     yield self.update_repl(ctx, lambda r: lambda x: syntax.Query(q.name, q.visibility, q.args, r(x), q.ret, q.docstring))
                 for ctx in self.visit(q.ret):
                     yield self.update_repl(ctx, lambda r: lambda x: syntax.Query(q.name, q.visibility, q.args, q.assumptions, r(x), q.docstring))
+
+    def visit_SIf(self, s):
+        yield self.make_ctx(s)
+        for ctx in self.visit(s.cond):
+            yield self.update_repl(ctx, lambda r: lambda x: syntax.SIf(r(x), s.then_branch, s.else_branch))
+        with self.push_block():
+            with self.push_assumptions([s.cond]):
+                for ctx in self.visit(s.then_branch):
+                    yield self.update_repl(ctx, lambda r: lambda x: syntax.SIf(s.cond, r(x), s.else_branch))
+        with self.push_block():
+            with self.push_assumptions([syntax.ENot(s.cond)]):
+                for ctx in self.visit(s.else_branch):
+                    yield self.update_repl(ctx, lambda r: lambda x: syntax.SIf(s.cond, s.then_branch, r(x)))
+
+    def visit_SDecl(self, s):
+        yield self.make_ctx(s)
+        for ctx in self.visit(s.val):
+            yield self.update_repl(ctx, lambda r: lambda x: syntax.SDecl(s.id, r(x)))
+        self.assumptions.append(syntax.EEq(syntax.EVar(s.id).with_type(s.val.type), s.val))
+
+    def visit_SSeq(self, s):
+        yield self.make_ctx(s)
+        for ctx in self.visit(s.s1):
+            yield self.update_repl(ctx, lambda r: lambda x: syntax.SSeq(r(x), s.s2))
+        self.mutations.append(s.s1)
+        for ctx in self.visit(s.s2):
+            yield self.update_repl(ctx, lambda r: lambda x: syntax.SSeq(s.s1, r(x)))
+        self.mutations.append(s.s2)
 
     def visit_ADT(self, obj):
         yield self.make_ctx(obj)

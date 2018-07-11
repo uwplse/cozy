@@ -119,7 +119,8 @@ TWENTY = ENum(20).with_type(INT)
 def storage_size(e, freebies : [Exp] = []):
     h = extension_handler(type(e.type))
     if h is not None:
-        return h.storage_size(e, k=storage_size, freebies=freebies)
+        return h.storage_size(e, storage_size=storage_size)
+
     if e in freebies:
         return ZERO
     elif e.type == BOOL:

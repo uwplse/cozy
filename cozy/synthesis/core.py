@@ -66,10 +66,13 @@ allow_int_arithmetic_state = Option("allow-int-arith-state", bool, True)
 def good_idea(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptions : Exp = T) -> bool:
     """Heuristic filter to ignore expressions that are almost certainly useless."""
 
-    state_vars = OrderedSet(v for v, p in context.vars() if p == STATE_POOL)
-    args       = OrderedSet(v for v, p in context.vars() if p == RUNTIME_POOL)
+    if hasattr(e, "_good_idea"):
+        return True
+
+    state_vars  = OrderedSet(v for v, p in context.vars() if p == STATE_POOL)
+    args        = OrderedSet(v for v, p in context.vars() if p == RUNTIME_POOL)
     assumptions = EAll([assumptions, context.path_condition()])
-    at_runtime = pool == RUNTIME_POOL
+    at_runtime  = pool == RUNTIME_POOL
 
     if isinstance(e, EStateVar) and not free_vars(e.e):
         return No("constant value in state position")
@@ -127,6 +130,7 @@ def good_idea(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptio
             # return No("non-polynomial-sized map ({}); total_size={}, this_size={}".format(model, eval(total_size, model), eval(my_size, model)))
             return No("non-polynomial-sized map")
 
+    e._good_idea = True
     return True
 
 

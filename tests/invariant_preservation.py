@@ -3,19 +3,22 @@ import unittest
 from cozy.desugar import desugar
 from cozy.typecheck import typecheck
 from cozy.parse import parse_spec
-from cozy.invariant_preservation import check_ops_preserve_invariants
+from cozy.invariant_preservation import check_ops_preserve_invariants, check_calls_wf
 
 def get_invariant_preservation_errs(spec : str):
     spec = parse_spec(spec)
-    errs = typecheck(spec)
+    errs = list(typecheck(spec))
     assert not errs, str(errs)
     spec = desugar(spec)
-    return check_ops_preserve_invariants(spec)
-    assert errs
-    assert "modX" in errs[0]
-    assert "modY" in errs[1]
+    errs.extend(check_calls_wf(spec))
+    errs.extend(check_ops_preserve_invariants(spec))
+    if errs:
+        print("{} errors:".format(len(errs)))
+        for e in errs:
+            print(" - {}".format(e))
+    return errs
 
-class TestRepInference(unittest.TestCase):
+class TestInvariantPreservationChecks(unittest.TestCase):
 
     def test_indirect_handle_write(self):
         errs = get_invariant_preservation_errs("""
@@ -46,3 +49,126 @@ class TestRepInference(unittest.TestCase):
         assert errs
         assert "modX" in errs[0]
         assert "modY" in errs[1]
+
+    def test_preconds(self):
+        errs = get_invariant_preservation_errs("""
+            PreserveInvariant:
+
+                state x : Int
+
+                query q()
+                    assume false;
+                    0
+
+                query p()
+                    q()
+        """)
+        assert errs
+        assert "q" in errs[0]
+
+    def test_if_guard(self):
+        errs = get_invariant_preservation_errs("""
+            PreserveInvariant:
+
+                state x : Int
+
+                query q()
+                    assume false;
+                    0
+
+                op foo()
+                    if (1 < 0) { x = q(); }
+        """)
+        assert not errs
+
+    def test_update_sequence(self):
+        errs = get_invariant_preservation_errs("""
+            PreserveInvariant:
+
+                state x : Int
+
+                query q()
+                    assume x > 0;
+                    0
+
+                op foo()
+                    x = 1;
+                    x = q();
+        """)
+        assert not errs
+
+    def test_no_update_leakage(self):
+        errs = get_invariant_preservation_errs("""
+            PreserveInvariant:
+
+                state x : Int
+
+                query q()
+                    assume x > 0;
+                    0
+
+                op foo()
+                    x = 1;
+                    x = 2;
+
+                op bar()
+                    x = q();
+        """)
+        assert errs
+        assert "q" in errs[0]
+
+    def test_guarded_update_sequence(self):
+        errs = get_invariant_preservation_errs("""
+            PreserveInvariant:
+
+                state x : Int
+
+                query q()
+                    assume x > 0;
+                    0
+
+                op foo(b : Bool)
+                    if (b) {
+                        x = 1;
+                        x = 2;
+                    }
+                    x = q();
+        """)
+        assert errs
+        assert "q" in errs[0]
+
+    def test_guard_with_let(self):
+        errs = get_invariant_preservation_errs("""
+            PreserveInvariant:
+
+                state x : Int
+
+                query q()
+                    assume x > 0;
+                    0
+
+                op foo(b : Bool)
+                    let a = false;
+                    if (a) {
+                        x = q();
+                    }
+        """)
+        assert not errs
+
+    def test_guard_after_mutation(self):
+        errs = get_invariant_preservation_errs("""
+            PreserveInvariant:
+
+                state x : Int
+
+                query q()
+                    assume x > 0;
+                    0
+
+                op foo(b : Bool)
+                    x = 1;
+                    if (x < 0) {
+                        x = q();
+                    }
+        """)
+        assert not errs
