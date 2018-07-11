@@ -1,4 +1,10 @@
-"""Typechecking for Cozy specifications."""
+"""Typechecking for Cozy specifications.
+
+Important functions:
+ - typecheck: find type errors in a specification and add type annotations
+ - retypecheck: add or update type annotations to an internally-produced
+   syntax tree
+"""
 
 from cozy.common import Visitor
 from cozy import syntax
@@ -8,9 +14,12 @@ from cozy.syntax_tools import pprint, all_exps, free_vars
 from cozy.syntax import BOOL, INT, LONG, FLOAT, STRING
 from cozy.structures import extension_handler
 
-def typecheck(ast, env=None, fenv=None):
-    """
-    Typecheck the syntax tree.
+def typecheck(
+        ast,
+        env : {str : syntax.Type} = None,
+        fenv : {str : ([syntax.Type], syntax.Type)} = None):
+    """Typecheck a syntax tree.
+
     This procedure attaches a .type attribute to every expression, and returns
     a list of type errors (or an empty list if everything typechecks properly).
     """
@@ -18,7 +27,17 @@ def typecheck(ast, env=None, fenv=None):
     typechecker.visit(ast)
     return typechecker.errors
 
-def retypecheck(exp, env=None):
+def retypecheck(exp, env : {str : syntax.Type} = None):
+    """Add or fix the .type annotations on the given tree.
+
+    Returns True or False to indicate success or failure.  If it fails, it
+    prints type errors to stdout.
+
+    Unlike `typecheck`, this procedure attempts to guess the types of variables
+    and functions in the expression using their .type annotations.  The `env`
+    dictionary overrides these guesses and forces variables to be annotated with
+    a particular type.
+    """
     if env is None:
         env = { v.id:v.type for v in free_vars(exp) }
     fenv = { }

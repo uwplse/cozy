@@ -53,14 +53,12 @@ def run():
     opts.read(args)
 
     if args.resume:
-        if args.file is None:
-            ast = pickle.load(sys.stdin.buffer)
-        else:
-            with open(args.file, "rb") as f:
-                ast = pickle.load(f)
+        with common.open_maybe_stdin(args.file or "-", mode="rb") as f:
+            ast = pickle.load(f)
         print("Loaded implementation from {}".format("stdin" if args.file is None else "file {}".format(args.file)))
     else:
-        input_text = sys.stdin.read() if args.file is None else common.read_file(args.file)
+        with common.open_maybe_stdin(args.file or "-") as f:
+            input_text = f.read()
         ast = parse.parse_spec(input_text)
 
         # Collection of errors in user-provided specification

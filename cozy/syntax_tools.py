@@ -4,8 +4,8 @@ Important functions:
  - pprint: prettyprint a syntax tree
  - free_vars: compute the set of free variables
  - alpha_equivalent: test alpha equivalence of two expressions
- - tease_apart: separate a packed expression into its state and runtime
-    components
+ - unpack_representation: separate a packed expression into its state and
+   runtime components
 """
 
 import collections
@@ -34,14 +34,35 @@ def fresh_var(type, hint="var", omit=()):
         omit = { var_name(v) for v in omit }
     return syntax.EVar(common.fresh_name(hint, omit=omit)).with_type(type)
 
-def mk_lambda(t, l):
+def mk_lambda(t : syntax.Type, f) -> target_syntax.ELambda:
+    """Construct a Cozy lambda-expression from a Python function.
+
+    Parameters:
+        t - the input type for the function
+        f - a function that takes an expression and returns an expression
+
+    Sample usage:
+        plus_one = mk_lambda(INT, lambda x: ESum([x, ONE]))
+    """
     v = fresh_var(t)
-    return target_syntax.ELambda(v, l(v))
+    return target_syntax.ELambda(v, f(v))
 
 def compose(f1 : target_syntax.ELambda, f2 : target_syntax.ELambda) -> target_syntax.ELambda:
     return mk_lambda(f2.arg.type, lambda v: f1.apply_to(f2.apply_to(v)))
 
 class BottomUpExplorer(common.Visitor):
+    """Recursively explore nodes of a syntax tree.
+
+    Unlike `Visitor`, where `visit` simply dispatches to the correct handle for
+    the given type, this class recursively visits every node in the tree.
+
+    Subclasses should either
+      (1) Override specific visit_* methods that they are interested in.  Note
+          that these overridden methods need to call `self.visit(_)` on any
+          children they intend to explore as well.
+      (2) Override `join` and branch based on the type of `x`.  In this case
+          recursive exploration will be automatically handled.
+    """
     def visit_ADT(self, x):
         new_children = tuple(self.visit(child) for child in x.children())
         return self.join(x, new_children)
@@ -57,6 +78,15 @@ class BottomUpExplorer(common.Visitor):
         pass
 
 class BottomUpRewriter(BottomUpExplorer):
+    """A BottomUpExplorer that rewrites a syntax tree.
+
+    Subclasses should override specific visit_* methods that they are
+    interested in.  Note that these overridden methods need to call
+    `self.visit(_)` on any children they intend to transform as well.
+
+    This class is smart enough to recognize when returned trees are the exact
+    same object and avoid creating lots of garbage.
+    """
     def join(self, x, new_children):
         if isinstance(x, common.ADT):
             if all(a is b for (a, b) in zip(x.children(), new_children)):
@@ -943,9 +973,22 @@ def subst_lval(lval, replacements):
     return lval
 
 @typechecked
-def tease_apart(exp : syntax.Exp, avoid : {syntax.EVar} = set()) -> ([(syntax.EVar, syntax.Exp)], syntax.Exp):
+def unpack_representation(exp : syntax.Exp, names_to_avoid : {syntax.EVar} = set()) -> ([(syntax.EVar, syntax.Exp)], syntax.Exp):
+    """Unpack an expression into its state and runtime components.
+
+    This function replaces each EStateVar in the given expression with a fresh
+    variable.  It returns a mapping from those fresh variables to the state
+    expressions they replaced, along with the new expression.
+
+    The mapping represents invariants that must be true when the returned
+    expression is executed.  The new expression is what should actually run.
+
+    If provided, the names in `names_to_avoid` are not used when picking
+    names for each EStateVar.
+    """
+
     new_state = []
-    omit = set(free_vars(exp) | avoid)
+    omit = set(free_vars(exp) | names_to_avoid)
 
     class V(BottomUpRewriter):
         def visit_ELambda(self, e):
@@ -967,7 +1010,7 @@ def tease_apart(exp : syntax.Exp, avoid : {syntax.EVar} = set()) -> ([(syntax.EV
 
 @typechecked
 def purify(exp : syntax.Exp) -> syntax.Exp:
-    st, exp = tease_apart(exp)
+    st, exp = unpack_representation(exp)
     for v, e in st:
         exp = target_syntax.ELet(e, target_syntax.ELambda(v, exp)).with_type(exp.type)
     return exp
@@ -999,7 +1042,7 @@ def subst(exp, replacements, tease=True):
 
     if tease and any(isinstance(e, target_syntax.EStateVar) for e in all_exps(exp)):
         rvars = common.OrderedSet(syntax.EVar(v).with_type(e.type) for v, e in replacements.items())
-        st, exp = tease_apart(exp, avoid=rvars)
+        st, exp = unpack_representation(exp, names_to_avoid=rvars)
         for i in range(len(st)):
             st[i] = (st[i][0], subst(st[i][1], replacements))
         exp = subst(exp, replacements, tease=False)

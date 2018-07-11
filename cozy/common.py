@@ -278,27 +278,53 @@ def product(iter):
         p *= x
     return p
 
-class AtomicWriteableFile(object):
-    def __init__(self, dst):
-        self.dst = dst
-        tmp_fd, tmp_path = tempfile.mkstemp(text=True)
-        self.tmp_fd = tmp_fd
-        self.tmp_file = os.fdopen(tmp_fd, "w")
-        self.tmp_path = tmp_path
-    def __enter__(self, *args, **kwargs):
-        return self
-    def __exit__(self, *args, **kwargs):
-        os.fsync(self.tmp_fd)
-        self.tmp_file.close() # also closes self.tmp_fd
-        shutil.move(src=self.tmp_path, dst=self.dst)
-    def write(self, thing):
-        self.tmp_file.write(thing)
+@contextmanager
+def AtomicWriteableFile(dst, mode="w"):
+    """A writeable file handle that does not overwrite until it is closed.
 
-def open_maybe_stdout(f):
-    """Open file f, or open standard output if f is "-"."""
+    Usage:
+
+        with AtomicWriteableFile(path) as f:
+            ... f.write(...) ...
+
+    This protects against errors that might happen while writing the file. If
+    this object is closed due to an exception, it does not write any output to
+    the destination path.
+    """
+    tmp_fd, tmp_path = tempfile.mkstemp(text=True)
+    with os.fdopen(tmp_fd, mode) as f:
+        yield f
+        os.fsync(tmp_fd)
+    shutil.move(src=tmp_path, dst=dst)
+
+def open_maybe_stdin(f : str, mode="r"):
+    """Open file f, or open standard input if f is "-".
+
+    In any case, the caller is responsible for closing the returned handle.
+    The safest usage of this function is
+
+        with open_maybe_stdin(path) as f:
+            ...
+    """
     if f == "-":
-        return os.fdopen(os.dup(sys.stdout.fileno()), "w")
-    return AtomicWriteableFile(f)
+        return os.fdopen(os.dup(sys.stdin.fileno()), mode)
+    return open(f, mode)
+
+def open_maybe_stdout(f : str, mode="w"):
+    """Open file f, or open standard output if f is "-".
+
+    If this function would open a regular file for writing, it returns an
+    AtomicWriteableFile for safety.
+
+    In any case, the caller is responsible for closing the returned handle.
+    The safest usage of this function is
+
+        with open_maybe_stdout(path) as f:
+            ...
+    """
+    if f == "-":
+        return os.fdopen(os.dup(sys.stdout.fileno()), mode)
+    return AtomicWriteableFile(f, mode)
 
 def unique(iter):
     """
