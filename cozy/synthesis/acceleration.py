@@ -12,9 +12,6 @@ from cozy.cost_model import is_constant_time
 
 accelerate = Option("acceleration-rules", bool, True)
 
-def EUnion(es, elem_type):
-    return ESum(es, base_case=EEmptyList().with_type(TBag(elem_type)))
-
 def MkFlatMap(bag, f):
     if isinstance(f.body, ESingleton):
         if f.body.e == f.arg:
