@@ -134,6 +134,9 @@ def optimized_exists(xs):
     else:
         return EUnaryOp(UOp.Exists, xs).with_type(BOOL)
 
+def is_lenof(e, xs):
+    return alpha_equivalent(strip_EStateVar(e), ELen(strip_EStateVar(xs)))
+
 def excluded_element(xs, args):
     if isinstance(xs, EFilter):
         arg = xs.p.arg
@@ -149,6 +152,10 @@ def excluded_element(xs, args):
                 return (xs.e, EUnaryOp(UOp.The, _simple_filter(xs.e, ELambda(arg, EEq(e.e1, e.e2)), args=args)).with_type(xs.type.t))
     if isinstance(xs, EBinOp) and xs.op == "-" and isinstance(xs.e2, ESingleton):
         return (xs.e1, xs.e2.e)
+    if isinstance(xs, EBinOp) and xs.op == "+" and isinstance(xs.e1, EListSlice) and isinstance(xs.e2, EListSlice):
+        for e1, e2 in [(xs.e1, xs.e2), (xs.e2, xs.e1)]:
+            if e1.e == e2.e and e1.start == ZERO and e2.start == EBinOp(e1.end, "+", ONE) and is_lenof(e2.end, e2.e):
+                return (e1.e, EListGet(e1.e, e1.end).with_type(xs.type.t))
     return None
 
 def optimized_best(xs, keyfunc, op, args):
