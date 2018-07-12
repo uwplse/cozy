@@ -42,7 +42,10 @@ def composite_order(*funcs):
 
 def unprioritized_order(funcs):
     """Determine the Order between two maintenance cost of two expressions """
-    o = funcs[0]
+    if not funcs:
+        return Order.EQUAL
+
+    o = funcs[0]()
     for f in funcs[1:]: 
         o_next = f()
         if o_next != o:
