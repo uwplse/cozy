@@ -2,8 +2,9 @@ from functools import lru_cache
 
 from cozy.common import unique, OrderedSet
 from cozy.target_syntax import *
-from cozy.syntax_tools import fresh_var, free_vars, break_conj, pprint, mk_lambda, strip_EStateVar, alpha_equivalent, replace, compose
+from cozy.syntax_tools import fresh_var, free_vars, break_conj, pprint, mk_lambda, strip_EStateVar, alpha_equivalent, replace as unsafe_replace, compose
 from cozy.typecheck import is_collection, retypecheck
+from cozy.contexts import shred, replace
 from cozy.pools import RUNTIME_POOL, STATE_POOL
 from cozy.structures.heaps import TMinHeap, TMaxHeap, EMakeMinHeap, EMakeMaxHeap, EHeapPeek2
 from cozy.evaluation import construct_value
@@ -76,7 +77,7 @@ def map_accelerate(e, context):
             if context.legal_for(free_vars(arg)):
                 # all the work happens here
                 binder = make_binder(arg.type)
-                value = replace(e, arg, binder, match=lambda e1, e2: type(e1) == type(e2) and e1.type == e2.type and alpha_equivalent(e1, e2))
+                value = unsafe_replace(e, arg, binder, match=lambda e1, e2: type(e1) == type(e2) and e1.type == e2.type and alpha_equivalent(e1, e2))
                 value = strip_EStateVar(value)
                 # print(" ----> {}".format(pprint(value)))
                 if any(v in args for v in free_vars(value)):
@@ -546,6 +547,30 @@ def _check(e, context, pool):
     """
     return e
 
+def fold_into_map(e, context):
+    fvs = free_vars(e)
+    state_vars = [v for v, p in context.vars() if p == STATE_POOL]
+    for subexp, subcontext, subpool in shred(e, context, RUNTIME_POOL):
+        if isinstance(subexp, EMapGet) and isinstance(subexp.map, EStateVar):
+            map = subexp.map.e
+            key = subexp.key
+            key_type = key.type
+            value_type = subexp.type
+            # e is of the form `... EStateVar(map)[key] ...`
+            arg = fresh_var(subexp.type, omit=fvs)
+            func = ELambda(arg, replace(
+                e, context, RUNTIME_POOL,
+                subexp, subcontext, subpool,
+                arg))
+            if not all(v in state_vars for v in free_vars(func)):
+                continue
+            func = strip_EStateVar(func)
+            key_arg = fresh_var(key_type, omit=fvs)
+            new_map = EMakeMap2(
+                EMapKeys(map).with_type(TSet(key_type)),
+                ELambda(key_arg, func.apply_to(EMapGet(map, key_arg).with_type(value_type)))).with_type(TMap(key_type, e.type))
+            yield EMapGet(EStateVar(new_map).with_type(new_map.type), key).with_type(e.type)
+
 def _try_optimize(e, context, pool):
     if not accelerate.value:
         return
@@ -562,6 +587,9 @@ def _try_optimize(e, context, pool):
         for ee, p in map_accelerate(e, context):
             if p == RUNTIME_POOL:
                 yield _check(ee, context, p)
+
+        for ee in fold_into_map(e, context):
+            yield _check(ee, context, pool)
 
         if isinstance(e, EListGet) and e.index == ZERO:
             yield _check(EUnaryOp(UOp.The, e.e).with_type(e.type), context, RUNTIME_POOL)
