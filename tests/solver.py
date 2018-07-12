@@ -10,9 +10,9 @@ from cozy.syntax_tools import pprint, equal, implies, mk_lambda, free_vars
 zero = ENum(0).with_type(TInt())
 one  = ENum(1).with_type(TInt())
 
-def check_encoding(e, **opts):
+def check_encoding(e, require=T, **opts):
     v = fresh_var(e.type)
-    m = satisfy(EEq(e, v), validate_model=True, **opts)
+    m = satisfy(EAll([require, EEq(e, v)]), validate_model=True, **opts)
     assert m is not None
 
 class TestSolver(unittest.TestCase):
@@ -312,11 +312,11 @@ class TestSolver(unittest.TestCase):
 
     def test_minheap(self):
         e = EVar("h").with_type(TMinHeap(BOOL, INT))
-        check_encoding(e)
+        check_encoding(e, require=EGt(ELen(EHeapElems(e).with_type(BOOL_BAG)), TWO))
 
     def test_maxheap(self):
         e = EVar("h").with_type(TMaxHeap(BOOL, INT))
-        check_encoding(e)
+        check_encoding(e, require=EGt(ELen(EHeapElems(e).with_type(BOOL_BAG)), TWO))
 
     def test_lists1(self):
         satisfy(EUnaryOp('not', EBinOp(EUnaryOp('not', EBool(True).with_type(TBool())).with_type(TBool()), 'or', EBinOp(EVar('l').with_type(TList(TNative('Object'))), '==', EDropFront(EBinOp(EVar('l').with_type(TList(TNative('Object'))), '+', ESingleton(EListGet(EVar('l').with_type(TList(TNative('Object'))), ENum(0).with_type(TInt())).with_type(TNative('Object'))).with_type(TList(TNative('Object')))).with_type(TList(TNative('Object')))).with_type(TList(TNative('Object')))).with_type(TBool())).with_type(TBool())).with_type(TBool()), vars=OrderedSet([EVar('l').with_type(TList(TNative('Object')))]), collection_depth=2, validate_model=True)

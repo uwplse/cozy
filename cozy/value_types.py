@@ -24,6 +24,7 @@ from functools import total_ordering
 
 from cozy.syntax import (
     Type, THandle, INT, TEnum, TBag, TSet, TMap, TTuple, TList, TRecord)
+from cozy.structures import extension_handler
 
 @total_ordering
 class Map(object):
@@ -133,6 +134,11 @@ def compare_values(t : Type, v1, v2, deep : bool = False) -> int:
 
     while stk:
         (t, v1, v2, deep) = stk.pop()
+
+        h = extension_handler(type(t))
+        if h is not None:
+            stk.append((h.encoding_type(t), v1, v2, deep))
+            continue
 
         if isinstance(t, THandle):
             if deep:
