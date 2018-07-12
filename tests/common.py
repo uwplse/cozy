@@ -1,9 +1,11 @@
-import unittest
 import itertools
+import os
+import tempfile
+import unittest
 
 from cozy.common import (
     divide_integers_and_round_up, integer_log2_round_up,
-    FrozenDict)
+    FrozenDict, AtomicWriteableFile, read_file)
 
 class TestCommonUtils(unittest.TestCase):
 
@@ -35,3 +37,25 @@ class TestCommonUtils(unittest.TestCase):
         self.assertEqual(integer_log2_round_up(3), 2)
         self.assertEqual(integer_log2_round_up(4), 2)
         self.assertEqual(integer_log2_round_up(5), 3)
+
+    def test_atomic_writeable_file(self):
+        fd, path = tempfile.mkstemp(text=True)
+        with os.fdopen(fd, "w") as f:
+            f.write("contents0")
+
+        # (1) normal writing works
+        with AtomicWriteableFile(path) as f:
+            f.write("contents1")
+        assert read_file(path) == "contents1"
+
+        # (2) if an error happens, no writing happens
+        class CustomExc(Exception):
+            pass
+        try:
+            with AtomicWriteableFile(path) as f:
+                f.write("con")
+                raise CustomExc()
+                f.write("tents2")
+        except CustomExc:
+            pass
+        assert read_file(path) == "contents1"

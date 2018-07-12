@@ -7,7 +7,7 @@ from queue import Empty
 
 from cozy.common import typechecked, OrderedSet
 from cozy.target_syntax import *
-from cozy.syntax_tools import all_types, free_vars, pprint, tease_apart, shallow_copy, wrap_naked_statevars
+from cozy.syntax_tools import all_types, free_vars, pprint, unpack_representation, shallow_copy, wrap_naked_statevars
 from cozy.typecheck import is_scalar
 from cozy.timeouts import Timeout
 from cozy import jobs
@@ -81,7 +81,7 @@ class ImproveQueryJob(jobs.Job):
                         stop_callback=lambda: self.stop_requested,
                         cost_model=cost_model)):
 
-                    new_rep, new_ret = tease_apart(expr)
+                    new_rep, new_ret = unpack_representation(expr)
                     self.k(new_rep, new_ret)
                 print("PROVED OPTIMALITY FOR {}".format(self.q.name))
             except core.StopException:

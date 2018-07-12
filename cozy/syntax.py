@@ -1,14 +1,17 @@
 """Abstract syntax for Cozy specifications."""
 
+from enum import Enum
+
 from cozy.common import ADT, declare_case, typechecked, partition, make_random_access
 
 Spec                = declare_case(ADT, "Spec", ["name", "types", "extern_funcs", "statevars", "assumptions", "methods", "header", "footer", "docstring"])
 ExternFunc          = declare_case(ADT, "ExternFunc", ["name", "args", "out_type", "body_string"])
 
-class Visibility(object):
+class Visibility(Enum):
+    """Visibilities for queries in Cozy specifications."""
     Public   = "public"   # usable by clients
-    Private  = "private"  # helper used by other queries
-    Internal = "internal" # helper used by op definitions
+    Private  = "private"  # private helper used by other methods
+    Internal = "internal" # helper added by Cozy, not by a human programmer
 
 class Method(ADT): pass
 Op                  = declare_case(Method, "Op",    ["name", "args", "assumptions", "body", "docstring"])
@@ -149,28 +152,42 @@ ONE = ENum(1).with_type(INT)
 TWO = ENum(2).with_type(INT)
 NULL = ENull()
 
-def build_balanced_tree(es, f, st=None, ed=None):
-    """
-    Create a balanced tree out of an associative binary operator.
+def build_balanced_tree(es, f, start=None, end=None):
+    """Create a balanced syntax tree out of an associative binary operator.
 
     Many internal functions do not like deep, stick-shaped trees since those
     functions are recursive and Python has a small-ish maximum stack depth.
+
+    Parameters:
+        es    - a non-empty list of syntax trees
+        f     - a function that takes two syntax trees and returns a new one
+        start - if non-none, only use expressions in es[start:]
+        end   - if non-none, only use expressions in es[:end]
     """
-    if st is None:
-        st = 0
-    if ed is None:
-        ed = len(es)
-    n = ed - st
+    if start is None:
+        start = 0
+    if end is None:
+        end = len(es)
+    n = end - start
     assert n > 0, "cannot create balanced tree out of empty list"
     if n == 1:
-        return es[st]
+        return es[start]
     else:
-        cut = st + (n // 2)
+        cut = start + (n // 2)
         return f(
-            build_balanced_tree(es, f, st=st, ed=cut),
-            build_balanced_tree(es, f, st=cut, ed=ed))
+            build_balanced_tree(es, f, start=start, end=cut),
+            build_balanced_tree(es, f, start=cut, end=end))
 
-def build_balanced_binop_tree(t, op, es : [Exp]):
+def build_balanced_binop_tree(t : Type, op : BOp, es : [Exp]):
+    """Create a balanced expression tree out of an associative binary operator.
+
+    See build_balanced_tree for an explanation of why you would want this.
+
+    Parameters:
+        t     - the type of expressions in `es`
+        op    - a binary operator
+        es    - a non-empty list of expressions
+    """
     es = make_random_access(es)
     return build_balanced_tree(es, lambda e1, e2: EBinOp(e1, op, e2).with_type(t))
 

@@ -12,7 +12,7 @@ from collections import OrderedDict, defaultdict
 from cozy.common import fresh_name, find_one, typechecked, OrderedSet
 from cozy.syntax import *
 from cozy.target_syntax import EFilter, EDeepIn
-from cozy.syntax_tools import subst, free_vars, fresh_var, all_exps, BottomUpRewriter, pprint, shallow_copy, tease_apart, wrap_naked_statevars, rewrite_ret
+from cozy.syntax_tools import subst, free_vars, fresh_var, all_exps, BottomUpRewriter, pprint, shallow_copy, unpack_representation, wrap_naked_statevars, rewrite_ret
 from cozy.handle_tools import reachable_handles_at_method, implicit_handle_assumptions
 import cozy.state_maintenance as inc
 from cozy.opts import Option
@@ -66,7 +66,7 @@ class Implementation(object):
         fvs = free_vars(q)
         # initial rep
         qargs = set(EVar(a).with_type(t) for (a, t) in q.args)
-        rep, ret = tease_apart(wrap_naked_statevars(q.ret, self.abstract_state))
+        rep, ret = unpack_representation(wrap_naked_statevars(q.ret, self.abstract_state))
         self.set_impl(q, rep, ret)
 
     @property

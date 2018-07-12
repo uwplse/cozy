@@ -23,13 +23,27 @@ class Order(Enum):
     AMBIGUOUS = 3
 
 def composite_order(*funcs):
+    """Returns the first result that is not Order.EQUAL from calling each func.
+
+    Each argument should be a function that takes no arguments and returns an
+    Order.
+
+    This procedure is useful when
+     - you have several metrics to compare and you know which ones are most
+       important
+     - the metrics are very difficult to compute so you do not want to compute
+       them unless you are certain you need them
+    """
     for f in funcs:
         o = f()
         if o != Order.EQUAL:
             return o
     return Order.EQUAL
 
-def order_objects(x, y):
+def order_objects(x, y) -> Order:
+    """Compare x and y as regular Python objects and return an Order.
+
+    Note: this function never returns Order.AMBIGUOUS."""
     if x < y: return Order.LT
     if y < x: return Order.GT
     return Order.EQUAL
@@ -108,7 +122,7 @@ class CostModel(object):
                     #lambda: self._compare(storage_size(e1, self.freebies), storage_size(e2, self.freebies), context),
                     lambda: order_objects(e1.size(), e2.size()))
 
-def card(e):
+def cardinality(e : Exp) -> Exp:
     assert is_collection(e.type)
     return ELen(e)
 
@@ -195,18 +209,18 @@ class DominantTerm(object):
     def __mul__(self, other):
         return DominantTerm(self.multiplier * other.multiplier, self.exponent + other.exponent)
 
-def wc_card(e : Exp) -> DominantTerm:
+def worst_case_cardinality(e : Exp) -> DominantTerm:
     assert is_collection(e.type)
     while isinstance(e, EFilter) or isinstance(e, EMap) or isinstance(e, EFlatMap) or isinstance(e, EMakeMap2) or isinstance(e, EStateVar) or (isinstance(e, EUnaryOp) and e.op == UOp.Distinct) or isinstance(e, EListSlice):
         e = e.e
     if isinstance(e, EBinOp) and e.op == "-":
-        return wc_card(e.e1)
+        return worst_case_cardinality(e.e1)
     if isinstance(e, EBinOp) and e.op == "+":
-        return wc_card(e.e1) + wc_card(e.e2)
+        return worst_case_cardinality(e.e1) + worst_case_cardinality(e.e2)
     if isinstance(e, EFlatMap):
-        return wc_card(e.e) * wc_card(e.f.body)
+        return worst_case_cardinality(e.e) * worst_case_cardinality(e.f.body)
     if isinstance(e, ECond):
-        return max(wc_card(e.then_branch), wc_card(e.else_branch))
+        return max(worst_case_cardinality(e.then_branch), worst_case_cardinality(e.else_branch))
     if isinstance(e, EEmptyList):
         return DominantTerm.ZERO
     if isinstance(e, ESingleton):
@@ -312,20 +326,20 @@ def asymptotic_runtime(e : Exp) -> DominantTerm:
         if isinstance(e, ELambda):
             e = e.body
         if isinstance(e, EFilter):
-            res += wc_card(e.e) * asymptotic_runtime(e.p) + asymptotic_runtime(e.e)
+            res += worst_case_cardinality(e.e) * asymptotic_runtime(e.p) + asymptotic_runtime(e.e)
             continue
         if isinstance(e, EMap) or isinstance(e, EFlatMap) or isinstance(e, EArgMin) or isinstance(e, EArgMax):
-            res += wc_card(e.e) * asymptotic_runtime(e.f) + asymptotic_runtime(e.e)
+            res += worst_case_cardinality(e.e) * asymptotic_runtime(e.f) + asymptotic_runtime(e.e)
             continue
         res += DominantTerm.ONE
         if isinstance(e, EMakeMap2):
-            res += wc_card(e.e) * asymptotic_runtime(e.value)
+            res += worst_case_cardinality(e.e) * asymptotic_runtime(e.value)
         if isinstance(e, EBinOp) and e.op == BOp.In:
-            res += wc_card(e.e2)
+            res += worst_case_cardinality(e.e2)
         if isinstance(e, EBinOp) and e.op == "-" and is_collection(e.type):
-            res += wc_card(e.e1) + wc_card(e.e2) + wc_card(e.e1) * wc_card(e.e2)
+            res += worst_case_cardinality(e.e1) + worst_case_cardinality(e.e2) + worst_case_cardinality(e.e1) * worst_case_cardinality(e.e2)
         if isinstance(e, EUnaryOp) and e.op in LINEAR_TIME_UOPS:
-            res += wc_card(e.e)
+            res += worst_case_cardinality(e.e)
         if isinstance(e, ECond):
             res += max(asymptotic_runtime(e.then_branch), asymptotic_runtime(e.else_branch))
             stk.append(e.cond)
@@ -399,12 +413,12 @@ def rt(e, account_for_constant_factors=True):
             terms.append(EUnaryOp(UOp.Sum, EMap(e.e, ELambda(e.value.arg, rt(e.value.body))).with_type(INT_BAG)).with_type(INT))
         elif isinstance(e, EBinOp) and e.op == "-" and is_collection(e.type):
             constant += EXTREME_COST
-            terms.append(card(e.e1))
-            terms.append(card(e.e2))
+            terms.append(cardinality(e.e1))
+            terms.append(cardinality(e.e2))
         elif isinstance(e, EBinOp) and e.op in ("==", "!=", ">", "<", ">=", "<="):
             terms.append(comparison_cost(e.e1, e.e2))
         elif isinstance(e, EUnaryOp) and e.op in LINEAR_TIME_UOPS:
-            terms.append(card(e.e))
+            terms.append(cardinality(e.e))
         elif isinstance(e, EMapGet):
             terms.append(hash_cost(e.key))
             terms.append(comparison_cost(e.key, e.key))

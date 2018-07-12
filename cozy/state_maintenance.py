@@ -8,7 +8,7 @@ Important functions:
 from cozy.common import fresh_name
 from cozy import syntax
 from cozy import target_syntax
-from cozy.syntax_tools import free_vars, pprint, fresh_var, strip_EStateVar, subst, BottomUpRewriter
+from cozy.syntax_tools import free_vars, pprint, fresh_var, strip_EStateVar, subst, BottomUpRewriter, alpha_equivalent
 from cozy.typecheck import is_numeric
 from cozy.solver import valid
 from cozy.opts import Option
@@ -37,9 +37,11 @@ def mutate(e : syntax.Exp, op : syntax.Stm) -> syntax.Exp:
         else:
             raise Exception("Unknown func: {}".format(op.func))
     elif isinstance(op, syntax.SIf):
-        return syntax.ECond(op.cond,
-            mutate(e, op.then_branch),
-            mutate(e, op.else_branch)).with_type(e.type)
+        then_branch = mutate(e, op.then_branch)
+        else_branch = mutate(e, op.else_branch)
+        if alpha_equivalent(then_branch, else_branch):
+            return then_branch
+        return syntax.ECond(op.cond, then_branch, else_branch).with_type(e.type)
     elif isinstance(op, syntax.SSeq):
         if isinstance(op.s1, syntax.SSeq):
             return mutate(e, syntax.SSeq(op.s1.s1, syntax.SSeq(op.s1.s2, op.s2)))

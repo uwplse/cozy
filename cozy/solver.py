@@ -1,4 +1,4 @@
-"""Bounded satisfiability checking using an SMT solver.
+"""Bounded satisfiability and validity solver for Cozy expressions.
 
 Important functions and classes:
  - satisfy: search for a small model for a boolean expression
