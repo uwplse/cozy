@@ -43,6 +43,8 @@ def pull_temps(s : Stm, decls_out : [SDecl], exp_is_bad) -> Stm:
         s1 = pull_temps(s.s1, decls_out, exp_is_bad)
         s2 = pull_temps(s.s2, decls_out, exp_is_bad)
         return SSeq(s1, s2)
+    if isinstance(s, SDecl):
+        return SDecl(s.id, pull(s.val))
     if isinstance(s, SIf):
         cond = pull(s.cond)
         s1 = pull_temps(s.then_branch, decls_out, exp_is_bad)
