@@ -1099,6 +1099,7 @@ class IncrementalSolver(object):
         with _LOCK:
             _tick()
 
+            builtin_type = type
             def reconstruct(model, value, type):
                 if type == INT or type == LONG:
                     return model.eval(value, model_completion=True).as_long()
@@ -1147,6 +1148,9 @@ class IncrementalSolver(object):
                 elif isinstance(type, TTuple):
                     return tuple(reconstruct(model, v, t) for (v, t) in zip(value, type.ts))
                 else:
+                    h = extension_handler(builtin_type(type))
+                    if h is not None:
+                        return reconstruct(model, value, h.encoding_type(type))
                     raise NotImplementedError(type)
 
             a = self._convert(e)
