@@ -40,6 +40,15 @@ def composite_order(*funcs):
             return o
     return Order.EQUAL
 
+def unprioritized_order(funcs):
+    """Determine the Order between two maintenance cost of two expressions """
+    o = funcs[0]
+    for f in funcs[1:]: 
+        o_next = f()
+        if o_next != o:
+            return Order.AMBIGUOUS
+    return o
+
 def order_objects(x, y) -> Order:
     """Compare x and y as regular Python objects and return an Order.
 
@@ -104,21 +113,31 @@ class CostModel(object):
             if pool == RUNTIME_POOL:
                 return composite_order(
                     lambda: order_objects(asymptotic_runtime(e1), asymptotic_runtime(e2)),
-                    lambda: self._compare(
-                        maintenance_cost(
-                            e=e1, solver=self.solver, ops=self.ops, freebies=self.freebies),
-                        maintenance_cost(
-                            e=e2, solver=self.solver, ops=self.ops, freebies=self.freebies), context),
+                    lambda: unprioritized_order([
+                        lambda op=op: self._compare(
+                            maintenance_cost(e1, self.solver, op, self.freebies), 
+                            maintenance_cost(e2, self.solver, op, self.freebies), 
+                            context) for op in self.ops]),
+                    #lambda: self._compare(
+                    #    maintenance_cost(
+                    #        e=e1, solver=self.solver, ops=self.ops, freebies=self.freebies),
+                    #    maintenance_cost(
+                    #        e=e2, solver=self.solver, ops=self.ops, freebies=self.freebies), context),
                     #lambda: self._compare(max_storage_size(e1, self.freebies), max_storage_size(e2, self.freebies), context),
                     #lambda: self._compare(rt(e1), rt(e2), context),
                     lambda: order_objects(e1.size(), e2.size())) # index spec will be wrong if this line is uncommented
             else:
                 return composite_order(
-                    lambda: self._compare(
-                        maintenance_cost(
-                            e=e1, solver=self.solver, ops=self.ops, freebies=self.freebies),
-                        maintenance_cost(
-                            e=e2, solver=self.solver, ops=self.ops, freebies=self.freebies), context),
+                    lambda: unprioritized_order([
+                        lambda op=op: self._compare(
+                            maintenance_cost(e1, self.solver, op, self.freebies), 
+                            maintenance_cost(e2, self.solver, op, self.freebies), 
+                            context) for op in self.ops]),
+                    #lambda: self._compare(
+                    #    maintenance_cost(
+                    #        e=e1, solver=self.solver, ops=self.ops, freebies=self.freebies),
+                    #    maintenance_cost(
+                    #        e=e2, solver=self.solver, ops=self.ops, freebies=self.freebies), context),
                     #lambda: self._compare(storage_size(e1, self.freebies), storage_size(e2, self.freebies), context),
                     lambda: order_objects(e1.size(), e2.size()))
 
@@ -286,18 +305,17 @@ def _maintenance_cost(e : Exp, solver : ModelCachingSolver, op : Op, freebies : 
     else: 
         raise NotImplementedError(repr(e.type))
 
-def maintenance_cost(e : Exp, solver : ModelCachingSolver, ops : [Op] = [], freebies : [Exp] = []):
+def maintenance_cost(e : Exp, solver : ModelCachingSolver, op : Op, freebies : [Exp] = []):
     res = rt(e)
 #    for x in all_exps(e):
 #        if isinstance(x, EStateVar):
 #            print("e: {}".format(pprint(x.e)))
-    for op in ops:
+    for x in all_exps(e):
 #        print(pprint(op))
-        res = ESum([
-            res,
-            ESum([
-                _maintenance_cost(
-                    x.e, solver, op, freebies) for x in all_exps(e) if isinstance(x, EStateVar)])])
+        if isinstance(x, EStateVar):
+            res = ESum([
+                res,
+                _maintenance_cost(e=x.e, solver=solver, op=op, freebies=freebies)])
     return res
 
 
@@ -444,7 +462,7 @@ def debug_comparison(cm : CostModel, e1 : Exp, e2 : Exp, context : Context):
     for o in cm.ops:
         print(pprint(o))
         for ename, e in [("e1", e1), ("e2", e2)]:
-            print("maintenance_cost({e}) = {res}".format(e=ename, res=pprint(maintenance_cost(e, cm.solver, [o]))))
+            print("maintenance_cost({e}) = {res}".format(e=ename, res=pprint(maintenance_cost(e, cm.solver, o))))
 
     print("-" * 20)
     for f in asymptotic_runtime, max_storage_size, rt:
@@ -458,8 +476,8 @@ def debug_comparison(cm : CostModel, e1 : Exp, e2 : Exp, context : Context):
         print("asympto(e1) = {}".format(asymptotic_runtime(e1)))
         print("asympto(e2) = {}".format(asymptotic_runtime(e2)))
 
-        print("maintcost(e1) = {}".format(eval_bulk(maintenance_cost(e1, cm.solver, cm.ops), [x], use_default_values_for_undefined_vars=True)[0]))
-        print("maintcost(e2) = {}".format(eval_bulk(maintenance_cost(e2, cm.solver, cm.ops), [x], use_default_values_for_undefined_vars=True)[0]))
+        #print("maintcost(e1) = {}".format(eval_bulk(maintenance_cost(e1, cm.solver, cm.ops), [x], use_default_values_for_undefined_vars=True)[0]))
+        #print("maintcost(e2) = {}".format(eval_bulk(maintenance_cost(e2, cm.solver, cm.ops), [x], use_default_values_for_undefined_vars=True)[0]))
 
         print("storage(e1) = {}".format(eval_bulk(max_storage_size(e1), [x], use_default_values_for_undefined_vars=True)[0]))
         print("storage(e2) = {}".format(eval_bulk(max_storage_size(e2), [x], use_default_values_for_undefined_vars=True)[0]))
