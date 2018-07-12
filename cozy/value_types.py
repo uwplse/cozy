@@ -70,6 +70,13 @@ class Map(object):
     def __eq__(self, other):
         return self._hashable() == other._hashable()
 
+def _elems(thing):
+    if isinstance(thing, Bag):
+        return thing.elems
+    if isinstance(thing, tuple):
+        return thing
+    raise ValueError(thing)
+
 @total_ordering
 class Bag(object):
     """A collection of Cozy values.
@@ -82,11 +89,11 @@ class Bag(object):
     def __hash__(self):
         return hash(self.elems)
     def __add__(self, other):
-        return Bag(self.elems + other.elems)
+        return Bag(self.elems + _elems(other))
     def __eq__(self, other):
-        return self.elems == other.elems
+        return self.elems == _elems(other)
     def __lt__(self, other):
-        return self.elems < other.elems
+        return self.elems < _elems(other)
     def __len__(self):
         return len(self.elems)
     def __getitem__(self, i):

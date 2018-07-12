@@ -64,3 +64,7 @@ class TestEvaluation(unittest.TestCase):
             "h2": Bag(((False, 13), (False, 13), (False, 7))),
         }
         assert eval(EEq(EVar("h1").with_type(t), EVar("h2").with_type(t)), env)
+
+    def test_bag_equality_with_tuple(self):
+        assert (0, 1, 2) == Bag((0, 1, 2))
+        assert Bag((0, 1, 2)) == (0, 1, 2)
