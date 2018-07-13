@@ -12,8 +12,6 @@ def desugar_list_comprehensions(syntax_tree : ADT) -> ADT:
     class V(BottomUpRewriter):
         def visit_EListComprehension(self, e):
             res, _, _ = self.visit_clauses(e.clauses, self.visit(e.e), e.type)
-            if not retypecheck(res):
-                raise Exception("desugar produced a result that does not typecheck (e={!r})".format(e))
             assert res.type == e.type, "desguar changed the type of an expression: {} ---> {} (e={!r})".format(pprint(e.type), pprint(res.type), e)
             return self.visit(res)
         def visit_clauses(self, clauses, final, res_type, i=0):
@@ -22,17 +20,17 @@ def desugar_list_comprehensions(syntax_tree : ADT) -> ADT:
             clause = clauses[i]
             if isinstance(clause, CPull):
                 bag = clause.e
-                arg = EVar(clause.id)
+                arg = EVar(clause.id).with_type(bag.type.t)
                 rest, guards, pulls = self.visit_clauses(clauses, final, res_type, i + 1)
                 if guards:
                     guard = guards[0]
                     for g in guards[1:]:
-                        guard = EBinOp(guard, "and", g)
-                    bag = EFilter(bag, ELambda(arg, guard))
+                        guard = EBinOp(guard, "and", g).with_type(BOOL)
+                    bag = EFilter(bag, ELambda(arg, guard)).with_type(res_type)
                 if pulls:
-                    res = EFlatMap(bag, ELambda(arg, rest))
+                    res = EFlatMap(bag, ELambda(arg, rest)).with_type(rest.type)
                 else:
-                    res = EMap(bag, ELambda(arg, rest))
+                    res = EMap(bag, ELambda(arg, rest)).with_type(res_type)
                 return res, [], True
             elif isinstance(clause, CCond):
                 rest, guards, pulls = self.visit_clauses(clauses, final, res_type, i + 1)
