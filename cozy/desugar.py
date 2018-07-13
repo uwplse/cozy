@@ -26,7 +26,7 @@ def desugar_list_comprehensions(syntax_tree : ADT) -> ADT:
                     guard = guards[0]
                     for g in guards[1:]:
                         guard = EBinOp(guard, "and", g).with_type(BOOL)
-                    bag = EFilter(bag, ELambda(arg, guard)).with_type(res_type)
+                    bag = EFilter(bag, ELambda(arg, guard)).with_type(bag.type)
                 if pulls:
                     res = EFlatMap(bag, ELambda(arg, rest)).with_type(rest.type)
                 else:
