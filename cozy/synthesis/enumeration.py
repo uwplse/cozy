@@ -7,7 +7,7 @@ from cozy.syntax_tools import pprint, fresh_var, free_vars, freshen_binders, alp
 from cozy.evaluation import eval_bulk, construct_value
 from cozy.typecheck import is_numeric, is_scalar, is_collection
 from cozy.cost_model import CostModel, Order
-from cozy.pools import Pool, ALL_POOLS, RUNTIME_POOL, STATE_POOL, pool_name
+from cozy.pools import Pool, RUNTIME_POOL, STATE_POOL, pool_name
 from cozy.contexts import Context, RootCtx, UnderBinder
 from cozy.logging import task, task_begin, task_end, event, verbose
 from cozy.synthesis.acceleration import histogram
@@ -20,9 +20,7 @@ EnumeratedExp = namedtuple("EnumeratedExp", [
     "fingerprint",      # Its fingerprint
     ])
 
-LITERALS = [(e, pool)
-    for e in (T, F, ZERO, ONE)
-    for pool in ALL_POOLS]
+LITERALS = (T, F, ZERO, ONE)
 
 def of_type(exps, t):
     for e in exps:
@@ -183,19 +181,25 @@ class Enumerator(object):
             return
 
         if size == 0:
-            for (e, p) in LITERALS:
-                if p == pool:
-                    yield e
+            for e in LITERALS:
+                yield e
+
+            all_interesting_types = OrderedSet()
+            for v, _ in context.vars():
+                all_interesting_types |= all_types(v)
+            for h, _, _ in self.hints:
+                all_interesting_types |= all_types(h)
+            for t in all_interesting_types:
+                l = construct_value(t)
+                if l not in LITERALS:
+                    yield l
+
             for (v, p) in context.vars():
                 if p == pool:
                     yield v
-                for t in all_types(v):
-                    yield construct_value(t)
             for (e, ctx, p) in self.hints:
                 if p == pool and ctx.alpha_equivalent(context):
                     yield context.adapt(e, ctx)
-                for t in all_types(e):
-                    yield construct_value(t)
             return
 
         yield from self.heuristic_enumeration(context, size, pool)

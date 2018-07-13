@@ -91,6 +91,10 @@ class Implementation(object):
                     event("we do!")
                     sub_q.assumptions = list(itertools.chain(sub_q.assumptions, new_a))
 
+            with task("repairing state var boundaries"):
+                available_state = self.abstract_state + [e for v, e in self.concrete_state]
+                sub_q.ret = inc.repair_EStateVar(sub_q.ret, available_state)
+
             with task("simplifying"):
                 orig_a = sub_q.assumptions
                 orig_a_size = sum(a.size() for a in sub_q.assumptions)

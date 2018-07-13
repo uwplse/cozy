@@ -1,130 +1,13 @@
-from functools import lru_cache
-
-from cozy.common import unique, OrderedSet
+from cozy.common import unique
 from cozy.target_syntax import *
-from cozy.syntax_tools import fresh_var, free_vars, break_conj, pprint, mk_lambda, strip_EStateVar, alpha_equivalent, replace, compose
+from cozy.syntax_tools import fresh_var, free_vars, break_conj, mk_lambda, strip_EStateVar, alpha_equivalent, compose
 from cozy.typecheck import is_collection, retypecheck
+from cozy.contexts import shred, replace
 from cozy.pools import RUNTIME_POOL, STATE_POOL
 from cozy.structures.heaps import TMinHeap, TMaxHeap, EMakeMinHeap, EMakeMaxHeap, EHeapPeek2
 from cozy.evaluation import construct_value
-from cozy.logging import task, event
-from cozy.cost_model import is_constant_time
 
 accelerate = Option("acceleration-rules", bool, True)
-
-def EUnion(es, elem_type):
-    return ESum(es, base_case=EEmptyList().with_type(TBag(elem_type)))
-
-def MkFlatMap(bag, f):
-    if isinstance(f.body, ESingleton):
-        if f.body.e == f.arg:
-            return bag
-        return EMap(bag, ELambda(f.arg, f.body.e)).with_type(f.body.type)
-    if isinstance(f.body, EEmptyList):
-        return f.body
-    return EFlatMap(bag, f).with_type(f.body.type)
-
-@typechecked
-def reachable_values_of_type(root : Exp, t : Type) -> Exp:
-    """
-    Find all values of the given type reachable from the given root.
-    """
-    if root.type == t:
-        return ESingleton(root).with_type(TBag(t))
-    elif is_collection(root.type):
-        v = fresh_var(root.type.t)
-        res = reachable_values_of_type(v, t)
-        return MkFlatMap(root, ELambda(v, res))
-    elif isinstance(root.type, THandle):
-        return reachable_values_of_type(EGetField(root, "val").with_type(root.type.value_type), t)
-    elif isinstance(root.type, TTuple):
-        sub = [reachable_values_of_type(ETupleGet(root, i).with_type(tt), t) for (i, tt) in enumerate(root.type.ts)]
-        return EUnion(sub, t)
-    elif isinstance(root.type, TRecord):
-        sub = [reachable_values_of_type(EGetField(root, f).with_type(ft), t) for (f, ft) in root.type.fields]
-        return EUnion(sub, t)
-    elif isinstance(root.type, TMap):
-        raise NotImplementedError()
-    else:
-        return EEmptyList().with_type(TBag(t))
-
-def map_accelerate(e, context):
-    with task("map_accelerate", size=e.size()):
-        if is_constant_time(e):
-            event("skipping map lookup inference for constant-time exp: {}".format(pprint(e)))
-            return
-
-        @lru_cache()
-        def make_binder(t):
-            return fresh_var(t, hint="key")
-
-        args = OrderedSet(v for (v, p) in context.vars() if p == RUNTIME_POOL)
-        possible_keys = { } # type -> [exp]
-        i = 0
-
-        stk = [e]
-        while stk:
-            event("exp {} / {}".format(i, e.size()))
-            i += 1
-            arg = stk.pop()
-            if isinstance(arg, tuple):
-                stk.extend(arg)
-                continue
-            if not isinstance(arg, Exp):
-                continue
-            if isinstance(arg, ELambda):
-                stk.append(arg.body)
-                continue
-
-            if context.legal_for(free_vars(arg)):
-                # all the work happens here
-                binder = make_binder(arg.type)
-                value = replace(e, arg, binder, match=lambda e1, e2: type(e1) == type(e2) and e1.type == e2.type and alpha_equivalent(e1, e2))
-                value = strip_EStateVar(value)
-                # print(" ----> {}".format(pprint(value)))
-                if any(v in args for v in free_vars(value)):
-                    event("not all args were eliminated")
-                else:
-                    if arg.type not in possible_keys:
-                        l = [reachable_values_of_type(sv, arg.type)
-                            for (sv, p) in context.vars() if p == STATE_POOL]
-                        l = OrderedSet(x for x in l if not isinstance(x, EEmptyList))
-                        possible_keys[arg.type] = l
-                    for keys in possible_keys[arg.type]:
-                        # print("reachable values of type {}: {}".format(pprint(arg.type), pprint(keys)))
-                        # for v in state_vars:
-                        #     print("  {} : {}".format(pprint(v), pprint(v.type)))
-                        m = EMakeMap2(keys,
-                            ELambda(binder, value)).with_type(TMap(arg.type, e.type))
-                        assert not any(v in args for v in free_vars(m)), "oops! {}; args={}".format(pprint(m), ", ".join(pprint(a) for a in args))
-                        yield (m, STATE_POOL)
-                        mg = EMapGet(EStateVar(m).with_type(m.type), arg).with_type(e.type)
-                        # print(pprint(mg))
-                        # mg._tag = True
-                        yield (mg, RUNTIME_POOL)
-
-            if isinstance(arg, EStateVar):
-                # do not visit state expressions
-                continue
-
-            num_with_args = 0
-            stk2 = list(arg.children())
-            while stk2:
-                child = stk2.pop()
-                if isinstance(child, tuple):
-                    stk.extend(child)
-                    continue
-                if not isinstance(child, Exp):
-                    continue
-                fvs = free_vars(child)
-                if fvs & args:
-                    num_with_args += 1
-                    if num_with_args >= 2:
-                        break
-            if num_with_args < 2:
-                stk.extend(arg.children())
-            else:
-                event("refusing to visit children of {}".format(pprint(arg)))
 
 def histogram(xs : Exp) -> Exp:
     elem_type = xs.type.t
@@ -251,6 +134,9 @@ def optimized_exists(xs):
     else:
         return EUnaryOp(UOp.Exists, xs).with_type(BOOL)
 
+def is_lenof(e, xs):
+    return alpha_equivalent(strip_EStateVar(e), ELen(strip_EStateVar(xs)))
+
 def excluded_element(xs, args):
     if isinstance(xs, EFilter):
         arg = xs.p.arg
@@ -266,6 +152,10 @@ def excluded_element(xs, args):
                 return (xs.e, EUnaryOp(UOp.The, _simple_filter(xs.e, ELambda(arg, EEq(e.e1, e.e2)), args=args)).with_type(xs.type.t))
     if isinstance(xs, EBinOp) and xs.op == "-" and isinstance(xs.e2, ESingleton):
         return (xs.e1, xs.e2.e)
+    if isinstance(xs, EBinOp) and xs.op == "+" and isinstance(xs.e1, EListSlice) and isinstance(xs.e2, EListSlice):
+        for e1, e2 in [(xs.e1, xs.e2), (xs.e2, xs.e1)]:
+            if e1.e == e2.e and e1.start == ZERO and e2.start == EBinOp(e1.end, "+", ONE) and is_lenof(e2.end, e2.e):
+                return (e1.e, EListGet(e1.e, e1.end).with_type(xs.type.t))
     return None
 
 def optimized_best(xs, keyfunc, op, args):
@@ -397,11 +287,6 @@ def _simple_filter(xs, p, args):
         return EBinOp(_simple_filter(xs.e1, p, args), "+", _simple_filter(xs.e2, p, args)).with_type(xs.type)
     if isinstance(p.body, EBinOp) and p.body.op == "==":
         fvs2 = free_vars(p.body.e2)
-        if p.body.e1 == p.arg and p.arg not in fvs2:
-            return optimized_cond(
-                optimized_in(p.body.e2, xs),
-                ESingleton(p.body.e2).with_type(xs.type),
-                EEmptyList().with_type(xs.type)).with_type(xs.type)
         fvs1 = free_vars(p.body.e1)
         if p.arg in fvs1 and not any(a in fvs1 for a in args) and p.arg not in fvs2 and isinstance(xs, EStateVar):
             k = fresh_var(p.body.e1.type)
@@ -510,6 +395,11 @@ def optimized_sum(xs, args):
         for a in optimized_sum(xs.e1, args=args):
             for b in optimized_sum(_simple_filter(xs.e2, ELambda(arg, optimized_in(arg, xs.e1)), args).with_type(xs.type), args=args):
                 yield EBinOp(a, "-", b).with_type(elem_type)
+    x = excluded_element(xs, args)
+    if x is not None:
+        bag, x = x
+        for s in optimized_sum(bag, args):
+            yield EBinOp(s, "-", x).with_type(x.type)
     if isinstance(xs, ESingleton):
         yield xs.e
     yield sum_of(xs)
@@ -549,6 +439,30 @@ def _check(e, context, pool):
     """
     return e
 
+def fold_into_map(e, context):
+    fvs = free_vars(e)
+    state_vars = [v for v, p in context.vars() if p == STATE_POOL]
+    for subexp, subcontext, subpool in shred(e, context, RUNTIME_POOL):
+        if isinstance(subexp, EMapGet) and isinstance(subexp.map, EStateVar):
+            map = subexp.map.e
+            key = subexp.key
+            key_type = key.type
+            value_type = subexp.type
+            # e is of the form `... EStateVar(map)[key] ...`
+            arg = fresh_var(subexp.type, omit=fvs)
+            func = ELambda(arg, replace(
+                e, context, RUNTIME_POOL,
+                subexp, subcontext, subpool,
+                arg))
+            if not all(v in state_vars for v in free_vars(func)):
+                continue
+            func = strip_EStateVar(func)
+            key_arg = fresh_var(key_type, omit=fvs)
+            new_map = EMakeMap2(
+                EMapKeys(map).with_type(TSet(key_type)),
+                ELambda(key_arg, func.apply_to(EMapGet(map, key_arg).with_type(value_type)))).with_type(TMap(key_type, e.type))
+            yield EMapGet(EStateVar(new_map).with_type(new_map.type), key).with_type(e.type)
+
 def _try_optimize(e, context, pool):
     if not accelerate.value:
         return
@@ -562,9 +476,8 @@ def _try_optimize(e, context, pool):
             sv = EStateVar(nsv).with_type(e.type)
             yield _check(sv, context, RUNTIME_POOL)
 
-        for ee, p in map_accelerate(e, context):
-            if p == RUNTIME_POOL:
-                yield _check(ee, context, p)
+        for ee in fold_into_map(e, context):
+            yield _check(ee, context, pool)
 
         if isinstance(e, EListGet) and e.index == ZERO:
             yield _check(EUnaryOp(UOp.The, e.e).with_type(e.type), context, RUNTIME_POOL)

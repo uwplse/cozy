@@ -2,6 +2,7 @@ import unittest
 
 from cozy.target_syntax import *
 from cozy.structures.heaps import *
+from cozy.typecheck import retypecheck
 from cozy.syntax_tools import pprint
 from cozy.solver import valid
 import cozy.state_maintenance as inc
@@ -66,3 +67,14 @@ class TestStateMaintenance(unittest.TestCase):
         e2 = inc.mutate(e1, SAssign(EGetField(y, "val").with_type(t.value_type), ZERO))
         assert not valid(EEq(e1, e2))
         assert valid(EImplies(ENot(EEq(x, y)), EEq(e1, e2)))
+
+    def test_mutate_preserves_statevar(self):
+        x = EVar("x").with_type(INT)
+        e = EBinOp(EStateVar(x), "+", ONE)
+        assert retypecheck(e)
+        s = SAssign(x, EBinOp(x, "+", ONE).with_type(INT))
+        e2 = inc.mutate(e, s)
+        e2 = inc.repair_EStateVar(e2, [x])
+        print(pprint(e))
+        print(pprint(e2))
+        assert e2 == EBinOp(EBinOp(EStateVar(x), "+", ONE), "+", ONE)

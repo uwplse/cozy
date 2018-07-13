@@ -3,7 +3,7 @@
 from cozy.common import ADT, typechecked
 from cozy.target_syntax import *
 from cozy.typecheck import retypecheck
-from cozy.syntax_tools import BottomUpRewriter, subst, all_types
+from cozy.syntax_tools import BottomUpRewriter, subst, all_types, pprint
 
 @typechecked
 def desugar_list_comprehensions(syntax_tree : ADT) -> ADT:
@@ -11,16 +11,17 @@ def desugar_list_comprehensions(syntax_tree : ADT) -> ADT:
 
     class V(BottomUpRewriter):
         def visit_EListComprehension(self, e):
-            res, _, _ = self.visit_clauses(e.clauses, self.visit(e.e))
+            res, _, _ = self.visit_clauses(e.clauses, self.visit(e.e), e.type)
+            assert res.type == e.type, "desguar changed the type of an expression: {} ---> {} (e={!r})".format(pprint(e.type), pprint(res.type), e)
             return self.visit(res)
-        def visit_clauses(self, clauses, final, i=0):
+        def visit_clauses(self, clauses, final, res_type, i=0):
             if i >= len(clauses):
                 return final, [], False
             clause = clauses[i]
             if isinstance(clause, CPull):
                 bag = clause.e
                 arg = EVar(clause.id).with_type(bag.type.t)
-                rest, guards, pulls = self.visit_clauses(clauses, final, i + 1)
+                rest, guards, pulls = self.visit_clauses(clauses, final, res_type, i + 1)
                 if guards:
                     guard = guards[0]
                     for g in guards[1:]:
@@ -29,10 +30,10 @@ def desugar_list_comprehensions(syntax_tree : ADT) -> ADT:
                 if pulls:
                     res = EFlatMap(bag, ELambda(arg, rest)).with_type(rest.type)
                 else:
-                    res = EMap(bag, ELambda(arg, rest)).with_type(TBag(rest.type))
+                    res = EMap(bag, ELambda(arg, rest)).with_type(res_type)
                 return res, [], True
             elif isinstance(clause, CCond):
-                rest, guards, pulls = self.visit_clauses(clauses, final, i + 1)
+                rest, guards, pulls = self.visit_clauses(clauses, final, res_type, i + 1)
                 return rest, guards + [clause.e], pulls
             else:
                 raise NotImplementedError(clause)

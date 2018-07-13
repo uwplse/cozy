@@ -3,6 +3,7 @@ import unittest
 from cozy.target_syntax import *
 from cozy.syntax_tools import *
 from cozy.value_types import Bag, Map, Handle, compare_values, values_equal, EQ
+from cozy.structures.heaps import TMinHeap
 from cozy.evaluation import eval
 from cozy.typecheck import retypecheck
 
@@ -10,6 +11,11 @@ zero = ENum(0).with_type(INT)
 one  = ENum(1).with_type(INT)
 
 class TestEvaluation(unittest.TestCase):
+
+    def test_bag_equality(self):
+        b1 = Bag(((False, 10), (False, 12), (False, 6)))
+        b2 = Bag(((False, 6), (False, 12), (False, 10)))
+        assert b1 != b2
 
     def test_let(self):
         x = EVar("x").with_type(INT)
@@ -50,3 +56,15 @@ class TestEvaluation(unittest.TestCase):
         e = EEq(EBinOp(EVar("s1").with_type(t), "-", EVar("s2").with_type(t)), EEmptyList().with_type(t))
         assert retypecheck(e)
         assert eval(e, {"s1": s1, "s2": s2}) is True
+
+    def test_heap_equality(self):
+        t = TMinHeap(BOOL, INT)
+        env = {
+            "h1": Bag(((False, 7), (False, 13), (False, 13))),
+            "h2": Bag(((False, 13), (False, 13), (False, 7))),
+        }
+        assert eval(EEq(EVar("h1").with_type(t), EVar("h2").with_type(t)), env)
+
+    def test_bag_equality_with_tuple(self):
+        assert (0, 1, 2) == Bag((0, 1, 2))
+        assert Bag((0, 1, 2)) == (0, 1, 2)

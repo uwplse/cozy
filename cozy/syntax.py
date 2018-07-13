@@ -267,6 +267,9 @@ def ESum(es, base_case=ZERO):
         es.append(ENum(sum(n.val for n in nums)).with_type(base_case.type))
     return build_balanced_binop_tree(base_case.type, "+", es)
 
+def EUnion(es, elem_type):
+    return ESum(es, base_case=EEmptyList().with_type(TBag(elem_type)))
+
 def max_of(*es, type=None):
     if not es:
         if type is None:
