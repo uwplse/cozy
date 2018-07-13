@@ -41,16 +41,35 @@ def composite_order(*funcs):
     return Order.EQUAL
 
 def unprioritized_order(funcs):
-    """Determine the Order between two maintenance cost of two expressions """
-    if not funcs:
-        return Order.EQUAL
+    """Determine the Order between two maintenance cost of two expressions or 
+    AMBIGUOUS at the first ambiguous result
 
-    o = funcs[0]()
-    for f in funcs[1:]: 
-        o_next = f()
-        if o_next != o:
+    Each argument should be a function that takes no argument and returns an 
+    Order. 
+    """
+    def flip(order):
+        """ Flips the direction of the Order """
+        if order == Order.LT: 
+            return Order.GT
+        if order == Order.GT: 
+            return Order.LT
+        return order
+
+    # This set should only be 1 big
+    orders_seen = set()
+    for f in funcs:
+        o = f()
+        if o == Order.EQUAL:        # Ignores equals
+            continue
+        # Immediately returns ambiguous, change to `continue` if want to ignore
+        if o == Order.AMBIGUOUS:    
+            return Order.AMBIGUOUS 
+        # Check if we've seen both < and > 
+        if flip(o) in orders_seen:
             return Order.AMBIGUOUS
-    return o
+        orders_seen.add(o)
+    
+    return orders_seen.pop() if orders_seen else Order.EQUAL
 
 def order_objects(x, y) -> Order:
     """Compare x and y as regular Python objects and return an Order.
@@ -116,8 +135,8 @@ class CostModel(object):
             if pool == RUNTIME_POOL:
                 return composite_order(
                     lambda: order_objects(asymptotic_runtime(e1), asymptotic_runtime(e2)),
-                    lambda: unprioritized_order([
-                        lambda op=op: self._compare(
+                    lambda: unprioritized_order(
+                        [lambda op=op: self._compare(
                             maintenance_cost(e1, self.solver, op, self.freebies), 
                             maintenance_cost(e2, self.solver, op, self.freebies), 
                             context) for op in self.ops]),
@@ -136,12 +155,6 @@ class CostModel(object):
                             maintenance_cost(e1, self.solver, op, self.freebies), 
                             maintenance_cost(e2, self.solver, op, self.freebies), 
                             context) for op in self.ops]),
-                    #lambda: self._compare(
-                    #    maintenance_cost(
-                    #        e=e1, solver=self.solver, ops=self.ops, freebies=self.freebies),
-                    #    maintenance_cost(
-                    #        e=e2, solver=self.solver, ops=self.ops, freebies=self.freebies), context),
-                    #lambda: self._compare(storage_size(e1, self.freebies), storage_size(e2, self.freebies), context),
                     lambda: order_objects(e1.size(), e2.size()))
 
 def cardinality(e : Exp) -> Exp:
