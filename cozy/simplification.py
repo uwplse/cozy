@@ -175,6 +175,7 @@ def simplify(e, validate=None, debug=False):
         visitor = _SimplificationVisitor(debug)
         orig = e
         e = visitor.visit(e)
+        # assert orig.type == e.type, "simplification changed the expression's type: {} --> {}".format(pprint(orig.type), pprint(e.type))
         # e = cse(e)
         if validate and not valid(EBinOp(orig, "===", e).with_type(BOOL)):
             import sys
