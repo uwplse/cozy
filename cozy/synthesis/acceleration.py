@@ -395,6 +395,11 @@ def optimized_sum(xs, args):
         for a in optimized_sum(xs.e1, args=args):
             for b in optimized_sum(_simple_filter(xs.e2, ELambda(arg, optimized_in(arg, xs.e1)), args).with_type(xs.type), args=args):
                 yield EBinOp(a, "-", b).with_type(elem_type)
+    x = excluded_element(xs, args)
+    if x is not None:
+        bag, x = x
+        for s in optimized_sum(bag, args):
+            yield EBinOp(s, "-", x).with_type(x.type)
     if isinstance(xs, ESingleton):
         yield xs.e
     yield sum_of(xs)
