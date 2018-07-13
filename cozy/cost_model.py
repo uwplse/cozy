@@ -136,6 +136,7 @@ class CostModel(object):
                 return composite_order(
                     lambda: order_objects(asymptotic_runtime(e1), asymptotic_runtime(e2)),
                     lambda: unprioritized_order(
+                        [lambda: self._compare(rt(e1), rt(e2), context)] + 
                         [lambda op=op: self._compare(
                             maintenance_cost(e1, self.solver, op, self.freebies), 
                             maintenance_cost(e2, self.solver, op, self.freebies), 
@@ -322,7 +323,7 @@ def _maintenance_cost(e : Exp, solver : ModelCachingSolver, op : Op, freebies : 
         raise NotImplementedError(repr(e.type))
 
 def maintenance_cost(e : Exp, solver : ModelCachingSolver, op : Op, freebies : [Exp] = []):
-    res = rt(e)
+    res = ZERO
 #    for x in all_exps(e):
 #        if isinstance(x, EStateVar):
 #            print("e: {}".format(pprint(x.e)))
