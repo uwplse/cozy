@@ -7,6 +7,7 @@ Important functions:
 
 from functools import cmp_to_key, lru_cache
 import itertools
+from fractions import Fraction
 
 from cozy.target_syntax import *
 from cozy.syntax_tools import pprint, free_vars, free_vars_and_funcs, purify
@@ -419,6 +420,8 @@ def _compile(e, env : {str:int}, out):
         out.append(push_true if e.val else push_false)
     elif isinstance(e, ENum):
         s = e.val
+        if e.type == FLOAT:
+            s = Fraction(s)
         def push_num(stk):
             stk.append(s)
         out.append(push_num)
