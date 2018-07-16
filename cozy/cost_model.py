@@ -136,7 +136,11 @@ class CostModel(object):
                 return composite_order(
                     lambda: order_objects(asymptotic_runtime(e1), asymptotic_runtime(e2)),
                     lambda: unprioritized_order(
-                        [lambda: self._compare(rt(e1), rt(e2), context)] + 
+                        [lambda: composite_order(
+                            lambda: self._compare(
+                                max_storage_size(e1, self.freebies), 
+                                max_storage_size(e2, self.freebies), context),
+                            lambda: self._compare(rt(e1), rt(e2), context))] + 
                         [lambda op=op: self._compare(
                             maintenance_cost(e1, self.solver, op, self.freebies), 
                             maintenance_cost(e2, self.solver, op, self.freebies), 
@@ -493,8 +497,10 @@ def debug_comparison(cm : CostModel, e1 : Exp, e2 : Exp, context : Context):
         print("asympto(e1) = {}".format(asymptotic_runtime(e1)))
         print("asympto(e2) = {}".format(asymptotic_runtime(e2)))
 
-        #print("maintcost(e1) = {}".format(eval_bulk(maintenance_cost(e1, cm.solver, cm.ops), [x], use_default_values_for_undefined_vars=True)[0]))
-        #print("maintcost(e2) = {}".format(eval_bulk(maintenance_cost(e2, cm.solver, cm.ops), [x], use_default_values_for_undefined_vars=True)[0]))
+        for op in cm.ops:
+            print(pprint(op))
+            print("maintcost(e1) = {}".format(eval_bulk(maintenance_cost(e1, cm.solver, op), [x], use_default_values_for_undefined_vars=True)[0]))
+            print("maintcost(e2) = {}".format(eval_bulk(maintenance_cost(e2, cm.solver, op), [x], use_default_values_for_undefined_vars=True)[0]))
 
         print("storage(e1) = {}".format(eval_bulk(max_storage_size(e1), [x], use_default_values_for_undefined_vars=True)[0]))
         print("storage(e2) = {}".format(eval_bulk(max_storage_size(e2), [x], use_default_values_for_undefined_vars=True)[0]))
