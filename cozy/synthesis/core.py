@@ -287,6 +287,7 @@ class Learner(object):
                                     yield from consider_new_target(target, watched_e, ctx, pool, replacement)
 
             if check_all_substitutions.value:
+                print("Guessing at substitutions...")
                 for target, e, ctx, pool in exploration_order(self.targets, root_ctx):
                     with task("checking substitutions",
                             target=pprint(replace(target, root_ctx, RUNTIME_POOL, e, ctx, pool, EVar("___"))),
