@@ -22,7 +22,7 @@ class Order(Enum):
     GT        = 2
     AMBIGUOUS = 3
 
-def composite_order(*funcs):
+def prioritized_order(*funcs):
     """Returns the first result that is not Order.EQUAL from calling each func.
 
     Each argument should be a function that takes no arguments and returns an
@@ -58,16 +58,16 @@ def unprioritized_order(funcs):
     # This set should only be 1 big
     orders_seen = set()
     for f in funcs:
-        o = f()
-        if o == Order.EQUAL:        # Ignores equals
+        op = f()
+        if op == Order.EQUAL:        # Ignores equals
             continue
         # Immediately returns ambiguous, change to `continue` if want to ignore
-        if o == Order.AMBIGUOUS:    
+        if op == Order.AMBIGUOUS:    
             return Order.AMBIGUOUS 
         # Check if we've seen both < and > 
-        if flip(o) in orders_seen:
+        if flip(op) in orders_seen:
             return Order.AMBIGUOUS
-        orders_seen.add(o)
+        orders_seen.add(op)
     
     return orders_seen.pop() if orders_seen else Order.EQUAL
 
@@ -133,10 +133,10 @@ class CostModel(object):
     def compare(self, e1 : Exp, e2 : Exp, context : Context, pool : Pool) -> Order:
         with task("compare costs", context=context):
             if pool == RUNTIME_POOL:
-                return composite_order(
+                return prioritized_order(
                     lambda: order_objects(asymptotic_runtime(e1), asymptotic_runtime(e2)),
                     lambda: unprioritized_order(
-                        [lambda: composite_order(
+                        [lambda: prioritized_order(
                             lambda: self._compare(
                                 max_storage_size(e1, self.freebies), 
                                 max_storage_size(e2, self.freebies), context),
@@ -154,9 +154,14 @@ class CostModel(object):
                     #lambda: self._compare(rt(e1), rt(e2), context),
                     lambda: order_objects(e1.size(), e2.size())) # index spec will be wrong if this line is uncommented
             else:
-                return composite_order(
-                    lambda: unprioritized_order([
-                        lambda op=op: self._compare(
+                return prioritized_order(
+                    lambda: unprioritized_order(
+                        [lambda: prioritized_order(
+                            lambda: self._compare(
+                                max_storage_size(e1, self.freebies), 
+                                max_storage_size(e2, self.freebies), context),
+                            lambda: self._compare(rt(e1), rt(e2), context))] + 
+                        [lambda op=op: self._compare(
                             maintenance_cost(e1, self.solver, op, self.freebies), 
                             maintenance_cost(e2, self.solver, op, self.freebies), 
                             context) for op in self.ops]),
