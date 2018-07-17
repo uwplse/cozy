@@ -15,6 +15,9 @@ from cozy.evaluation import eval, eval_bulk
 from cozy.structures import extension_handler
 from cozy.logging import task, event
 from cozy.state_maintenance import mutate
+from cozy.opts import Option
+
+consider_maintenance_cost = Option("consider-maintenance-cost", bool, False, description="Experimental option that lets Cozy use ops for the cost model.")
 
 class Order(Enum):
     EQUAL     = 0
@@ -132,33 +135,45 @@ class CostModel(object):
 
     def compare(self, e1 : Exp, e2 : Exp, context : Context, pool : Pool) -> Order:
         with task("compare costs", context=context):
-            if pool == RUNTIME_POOL:
-                return prioritized_order(
-                    lambda: order_objects(asymptotic_runtime(e1), asymptotic_runtime(e2)),
-                    lambda: unprioritized_order(
-                        [lambda: prioritized_order(
-                            lambda: self._compare(
-                                max_storage_size(e1, self.freebies), 
-                                max_storage_size(e2, self.freebies), context),
-                            lambda: self._compare(rt(e1), rt(e2), context))] + 
-                        [lambda op=op: self._compare(
-                            maintenance_cost(e1, self.solver, op, self.freebies), 
-                            maintenance_cost(e2, self.solver, op, self.freebies), 
-                            context) for op in self.ops]),
-                    lambda: order_objects(e1.size(), e2.size())) 
-            else:
-                return prioritized_order(
-                    lambda: unprioritized_order(
-                        [lambda: prioritized_order(
-                            lambda: self._compare(
-                                max_storage_size(e1, self.freebies), 
-                                max_storage_size(e2, self.freebies), context),
-                            lambda: self._compare(rt(e1), rt(e2), context))] + 
-                        [lambda op=op: self._compare(
-                            maintenance_cost(e1, self.solver, op, self.freebies), 
-                            maintenance_cost(e2, self.solver, op, self.freebies), 
-                            context) for op in self.ops]),
-                    lambda: order_objects(e1.size(), e2.size()))
+            if consider_maintenance_cost.value:
+                if pool == RUNTIME_POOL:
+                    return prioritized_order(
+                        lambda: order_objects(asymptotic_runtime(e1), asymptotic_runtime(e2)),
+                        lambda: unprioritized_order(
+                            [lambda: prioritized_order(
+                                lambda: self._compare(
+                                    max_storage_size(e1, self.freebies), 
+                                    max_storage_size(e2, self.freebies), context),
+                                lambda: self._compare(rt(e1), rt(e2), context))] + 
+                            [lambda op=op: self._compare(
+                                maintenance_cost(e1, self.solver, op, self.freebies), 
+                                maintenance_cost(e2, self.solver, op, self.freebies), 
+                                context) for op in self.ops]),
+                        lambda: order_objects(e1.size(), e2.size())) 
+                else:
+                    return prioritized_order(
+                        lambda: unprioritized_order(
+                            [lambda: prioritized_order(
+                                lambda: self._compare(
+                                    max_storage_size(e1, self.freebies), 
+                                    max_storage_size(e2, self.freebies), context),
+                                lambda: self._compare(rt(e1), rt(e2), context))] + 
+                            [lambda op=op: self._compare(
+                                maintenance_cost(e1, self.solver, op, self.freebies), 
+                                maintenance_cost(e2, self.solver, op, self.freebies), 
+                                context) for op in self.ops]),
+                        lambda: order_objects(e1.size(), e2.size()))
+            else: 
+                if pool == RUNTIME_POOL:
+                    return prioritized_order(
+                        lambda: order_objects(asymptotic_runtime(e1), asymptotic_runtime(e2)),
+                        lambda: self._compare(max_storage_size(e1, self.freebies), max_storage_size(e2, self.freebies), context),
+                        lambda: self._compare(rt(e1), rt(e2), context),
+                        lambda: order_objects(e1.size(), e2.size()))
+                else:
+                    return prioritized_order(
+                        lambda: self._compare(storage_size(e1, self.freebies), storage_size(e2, self.freebies), context),
+                        lambda: order_objects(e1.size(), e2.size()))
 
 def cardinality(e : Exp) -> Exp:
     assert is_collection(e.type)
