@@ -131,12 +131,12 @@ class Heaps(object):
         assert type(e.type) in (TMinHeap, TMaxHeap)
         return storage_size(EHeapElems(e).with_type(TBag(e.type.elem_type)))
 
-    def maintenance_cost(self, 
-            e                   : Exp, 
+    def maintenance_cost(self,
+            e                   : Exp,
             solver,
             op                  : Op,
-            storage_size, 
-            maintenance_cost, 
+            storage_size,
+            maintenance_cost,
             freebies            : [Exp] = []):
         assert type(e.type) in (TMinHeap, TMaxHeap)
 
@@ -150,7 +150,7 @@ class Heaps(object):
         old_elems = EHeapElems(old_value).with_type(t)
         new_elems = EHeapElems(new_value).with_type(t)
 
-        # Add these 
+        # Add these
         elems_added = storage_size(
             EBinOp(new_elems, "-", old_elems).with_type(t), freebies).with_type(INT)
         elems_rmved = storage_size(
@@ -164,13 +164,13 @@ class Heaps(object):
         new_v_key = f2.apply_to(v)
 
         modified_elems = EFilter(old_elems, ELambda(v, EAll([EIn(v, new_elems), ENot(EEq(new_v_key, old_v_key))]))).with_type(new_elems.type)
-        
+
         modified_cost = EUnaryOp(
             UOp.Sum,
             EMap(
-                modified_elems, 
+                modified_elems,
                 ELambda(
-                    v, 
+                    v,
                     maintenance_cost(
                         new_v_key, solver, op, freebies)).with_type(INT)).with_type(INT)).with_type(INT_BAG)
 

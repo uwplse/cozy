@@ -251,7 +251,7 @@ class TestCostModel(unittest.TestCase):
                 state x : Int
 
                 op o()
-                    x = x + 1;       
+                    x = x + 1;
             """
         )
         s1 = EBinOp(EVar("x").with_type(INT), "+", ONE)
@@ -272,7 +272,7 @@ class TestCostModel(unittest.TestCase):
                 state xs : List<Int>
 
                 op o(xs : List <Int>, i : Int)
-                    xs = xs[:i] + xs[i+1:];       
+                    xs = xs[:i] + xs[i+1:];
             """
         )
         xs1 = EVar("xs").with_type(TBag(INT))
@@ -285,7 +285,7 @@ class TestCostModel(unittest.TestCase):
         cost2 = cost_of(e2)
         assert_cmp(e1, cost1, e2, cost2, Cost.BETTER)
         assert_cmp(e1, cost1, e2, cost2, Cost.BETTER, ops=ops)
-        
+
     def test_state_list_vs_int(self):
         ops = get_ops(
             """
@@ -313,7 +313,7 @@ class TestCostModel(unittest.TestCase):
                 state xs : List<Int>
 
                 op o(xs : List <Int>, i : Int)
-                    xs = xs[:i] + xs[i+1:];       
+                    xs = xs[:i] + xs[i+1:];
             """
         )
         for op in ops:

@@ -44,17 +44,17 @@ def prioritized_order(*funcs):
     return Order.EQUAL
 
 def unprioritized_order(funcs):
-    """Determine the Order between two maintenance cost of two expressions or 
+    """Determine the Order between two maintenance cost of two expressions or
     AMBIGUOUS at the first ambiguous result
 
-    Each argument should be a function that takes no argument and returns an 
-    Order. 
+    Each argument should be a function that takes no argument and returns an
+    Order.
     """
     def flip(order):
         """ Flips the direction of the Order """
-        if order == Order.LT: 
+        if order == Order.LT:
             return Order.GT
-        if order == Order.GT: 
+        if order == Order.GT:
             return Order.LT
         return order
 
@@ -65,13 +65,13 @@ def unprioritized_order(funcs):
         if op == Order.EQUAL:        # Ignores equals
             continue
         # Immediately returns ambiguous, change to `continue` if want to ignore
-        if op == Order.AMBIGUOUS:    
-            return Order.AMBIGUOUS 
-        # Check if we've seen both < and > 
+        if op == Order.AMBIGUOUS:
+            return Order.AMBIGUOUS
+        # Check if we've seen both < and >
         if flip(op) in orders_seen:
             return Order.AMBIGUOUS
         orders_seen.add(op)
-    
+
     return orders_seen.pop() if orders_seen else Order.EQUAL
 
 def order_objects(x, y) -> Order:
@@ -84,11 +84,11 @@ def order_objects(x, y) -> Order:
 
 class CostModel(object):
 
-    def __init__(self, 
-            assumptions     : Exp   = T, 
-            examples                = (), 
-            funcs                   = (), 
-            freebies        : [Exp] = [], 
+    def __init__(self,
+            assumptions     : Exp   = T,
+            examples                = (),
+            funcs                   = (),
+            freebies        : [Exp] = [],
             ops             : [Op]  = []):
         self.solver = ModelCachingSolver(vars=(), funcs=funcs, examples=examples, assumptions=assumptions)
         self.assumptions = assumptions
@@ -142,28 +142,28 @@ class CostModel(object):
                         lambda: unprioritized_order(
                             [lambda: prioritized_order(
                                 lambda: self._compare(
-                                    max_storage_size(e1, self.freebies), 
+                                    max_storage_size(e1, self.freebies),
                                     max_storage_size(e2, self.freebies), context),
-                                lambda: self._compare(rt(e1), rt(e2), context))] + 
+                                lambda: self._compare(rt(e1), rt(e2), context))] +
                             [lambda op=op: self._compare(
-                                maintenance_cost(e1, self.solver, op, self.freebies), 
-                                maintenance_cost(e2, self.solver, op, self.freebies), 
+                                maintenance_cost(e1, self.solver, op, self.freebies),
+                                maintenance_cost(e2, self.solver, op, self.freebies),
                                 context) for op in self.ops]),
-                        lambda: order_objects(e1.size(), e2.size())) 
+                        lambda: order_objects(e1.size(), e2.size()))
                 else:
                     return prioritized_order(
                         lambda: unprioritized_order(
                             [lambda: prioritized_order(
                                 lambda: self._compare(
-                                    max_storage_size(e1, self.freebies), 
+                                    max_storage_size(e1, self.freebies),
                                     max_storage_size(e2, self.freebies), context),
-                                lambda: self._compare(rt(e1), rt(e2), context))] + 
+                                lambda: self._compare(rt(e1), rt(e2), context))] +
                             [lambda op=op: self._compare(
-                                maintenance_cost(e1, self.solver, op, self.freebies), 
-                                maintenance_cost(e2, self.solver, op, self.freebies), 
+                                maintenance_cost(e1, self.solver, op, self.freebies),
+                                maintenance_cost(e2, self.solver, op, self.freebies),
                                 context) for op in self.ops]),
                         lambda: order_objects(e1.size(), e2.size()))
-            else: 
+            else:
                 if pool == RUNTIME_POOL:
                     return prioritized_order(
                         lambda: order_objects(asymptotic_runtime(e1), asymptotic_runtime(e2)),
@@ -289,11 +289,11 @@ def _maintenance_cost(e : Exp, solver : ModelCachingSolver, op : Op, freebies : 
 
     h = extension_handler(type(e.type))
     if h is not None:
-        return h.maintenance_cost(e, 
+        return h.maintenance_cost(e,
                 solver=solver,
-                op=op, 
+                op=op,
                 freebies=freebies,
-                storage_size=storage_size, 
+                storage_size=storage_size,
                 maintenance_cost=_maintenance_cost)
 
     if is_scalar(e.type):
@@ -310,33 +310,33 @@ def _maintenance_cost(e : Exp, solver : ModelCachingSolver, op : Op, freebies : 
     elif isinstance(e.type, TMap):
         keys = EMapKeys(e).with_type(TBag(e.type.k))
         vals = EMap(
-            keys, 
+            keys,
             mk_lambda(
-                e.type.k, 
+                e.type.k,
                 lambda k: EMapGet(e, k).with_type(e.type.v))).with_type(TBag(e.type.v))
-        
+
         keys_prime = EMapKeys(e_prime).with_type(TBag(e_prime.type.k))
         vals_prime = EMap(
-            keys_prime, 
+            keys_prime,
             mk_lambda(
-                e_prime.type.k, 
+                e_prime.type.k,
                 lambda k: EMapGet(e_prime, k).with_type(e_prime.type.v))).with_type(TBag(e_prime.type.v))
 
         keys_added = storage_size(
-            EBinOp(keys_prime, "-", keys).with_type(keys.type), freebies).with_type(INT) 
+            EBinOp(keys_prime, "-", keys).with_type(keys.type), freebies).with_type(INT)
         keys_rmved = storage_size(
-            EBinOp(keys, "-", keys_prime).with_type(keys.type), freebies).with_type(INT) 
+            EBinOp(keys, "-", keys_prime).with_type(keys.type), freebies).with_type(INT)
 
         vals_added = storage_size(
-            EBinOp(vals_prime, "-", vals).with_type(vals.type), freebies).with_type(INT) 
+            EBinOp(vals_prime, "-", vals).with_type(vals.type), freebies).with_type(INT)
         vals_rmved = storage_size(
-            EBinOp(vals, "-", vals_prime).with_type(vals.type), freebies).with_type(INT) 
+            EBinOp(vals, "-", vals_prime).with_type(vals.type), freebies).with_type(INT)
 
         keys_difference = ESum([keys_added, keys_rmved])
         vals_difference = ESum([vals_added, vals_rmved])
         return EBinOp(keys_difference, "*", vals_difference).with_type(INT)
 
-    else: 
+    else:
         raise NotImplementedError(repr(e.type))
 
 def maintenance_cost(e : Exp, solver : ModelCachingSolver, op : Op, freebies : [Exp] = []):
