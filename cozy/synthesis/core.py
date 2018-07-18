@@ -78,8 +78,8 @@ def good_idea(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptio
         return No("constant value in state position")
     if (isinstance(e, EDropFront) or isinstance(e, EDropBack)) and not at_runtime:
         return No("EDrop* in state position")
-    if not allow_big_sets.value and isinstance(e, EFlatMap) and not at_runtime:
-        return No("EFlatMap in state position")
+    #if not allow_big_sets.value and isinstance(e, EFlatMap) and not at_runtime:
+    #    return No("EFlatMap in state position")
     if not allow_int_arithmetic_state.value and not at_runtime and isinstance(e, EBinOp) and e.type == INT:
         return No("integer arithmetic in state position")
     if is_collection(e.type) and not is_scalar(e.type.t):
