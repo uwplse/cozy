@@ -281,9 +281,13 @@ def worst_case_cardinality(e : Exp) -> DominantTerm:
     return DominantTerm.N
 
 def _maintenance_cost(e : Exp, solver : ModelCachingSolver, op : Op, freebies : [Exp] = []):
+    """Determines the maintenance cost of an expression with regards to its
+    freebies and ops.
+
+    The cost is the result of mutating the expression and getting the storage
+    size of the difference between the mutated expression and the original.
+    """
     e_prime = mutate(e, op.body)
-#    print("e        : {}".format(pprint(e)))
-#    print("e_prime  : {}".format(pprint(e_prime)))
     if solver.valid(EEq(e, e_prime)):
         return ZERO
 
@@ -340,12 +344,9 @@ def _maintenance_cost(e : Exp, solver : ModelCachingSolver, op : Op, freebies : 
         raise NotImplementedError(repr(e.type))
 
 def maintenance_cost(e : Exp, solver : ModelCachingSolver, op : Op, freebies : [Exp] = []):
+    """This method calulates the result over all expressions that are EStateVar """
     res = ZERO
-#    for x in all_exps(e):
-#        if isinstance(x, EStateVar):
-#            print("e: {}".format(pprint(x.e)))
     for x in all_exps(e):
-#        print(pprint(op))
         if isinstance(x, EStateVar):
             res = ESum([
                 res,
