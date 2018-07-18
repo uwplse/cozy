@@ -505,10 +505,7 @@ def fold_into_map(e, context):
             if not all(v in state_vars for v in free_vars(func)):
                 continue
             func = strip_EStateVar(func)
-            key_arg = fresh_var(key_type, omit=fvs)
-            new_map = EMakeMap2(
-                EMapKeys(map).with_type(TSet(key_type)),
-                ELambda(key_arg, func.apply_to(EMapGet(map, key_arg).with_type(value_type)))).with_type(TMap(key_type, e.type))
+            new_map = map_values(map, func.apply_to)
             yield EMapGet(EStateVar(new_map).with_type(new_map.type), key).with_type(e.type)
 
 def _try_optimize(e, context, pool):
