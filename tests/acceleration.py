@@ -1,31 +1,42 @@
 from collections import OrderedDict
 import unittest
+import sys
 
 from cozy.common import OrderedSet
 from cozy.target_syntax import *
-from cozy.syntax_tools import pprint
+from cozy.syntax_tools import pprint, pprint_unpacked
 from cozy.contexts import RootCtx
 from cozy.pools import Pool, RUNTIME_POOL
 from cozy.synthesis.acceleration import try_optimize
-from cozy.solver import satisfy
+from cozy.synthesis.core import good_idea_recursive
+from cozy.solver import ModelCachingSolver
 from cozy.evaluation import eval
 from cozy.cost_model import CostModel, Order, debug_comparison
-from cozy.wf import exp_wf, ExpIsNotWf
+from cozy.wf import exp_wf
 
 def can_improve(e, context, assumptions : Exp = T, pool : Pool = RUNTIME_POOL):
-    print("Optimizing {}...".format(pprint(e)))
+    print("Optimizing:")
+    pprint_unpacked(e, out=sys.stdout)
     cm = CostModel(assumptions=assumptions, funcs=context.funcs())
     for ee in try_optimize(e, context, pool):
-        print(" --> trying {}...".format(pprint(ee)))
-        try:
-            exp_wf(ee, context=context, pool=pool, assumptions=assumptions)
-        except ExpIsNotWf as exc:
-            print("    NOT WELL-FORMED: {}".format(exc))
+        print(" --> trying...")
+        pprint_unpacked(ee, out=sys.stdout)
+        wf = exp_wf(ee, context=context, pool=pool, assumptions=assumptions)
+        if not wf:
+            print("    NOT WELL-FORMED: {}".format(wf))
+            continue
+        solver = ModelCachingSolver(
+            vars=[v for v, p in context.vars()],
+            funcs=context.funcs(),
+            assumptions=assumptions)
+        gi = good_idea_recursive(solver, ee, context, pool)
+        if not gi:
+            print("    NOT A GOOD IDEA: {}".format(gi))
             continue
         if ee.type != e.type:
             print("    DIFFERENT TYPE: is {}, should be {}".format(pprint(ee.type), pprint(e.type)))
             continue
-        model = satisfy(ENot(EImplies(assumptions, EEq(e, ee))))
+        model = solver.satisfy(ENot(EImplies(assumptions, EEq(e, ee))))
         if model is not None:
             print("    INVALID")
             print("    model = {!r}".format(model))

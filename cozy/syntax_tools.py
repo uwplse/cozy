@@ -471,6 +471,18 @@ def pprint(ast, format="plain"):
     _PRETTYPRINTER.format = format
     return _PRETTYPRINTER.visit(ast)
 
+def pprint_unpacked(e, out=None):
+    if out is None:
+        from io import StringIO
+        with StringIO() as f:
+            pprint_unpacked(e, out=f)
+            return f.value()
+    out = out.write
+    rep, ret = unpack_representation(e)
+    for v, e in rep:
+        out("{} = {}\n".format(pprint(v), pprint(e)))
+    out("return {}\n".format(pprint(ret)))
+
 def free_funcs(e : syntax.Exp) -> { str : syntax.TFunc }:
     res = collections.OrderedDict()
     for x in all_exps(e):
