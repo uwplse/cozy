@@ -281,6 +281,21 @@ def optimized_addr(e):
 def optimized_val(e):
     return EGetField(e, "val").with_type(e.type.value_type)
 
+def optimized_get_field(e, f, args):
+    if isinstance(e.type, THandle) and f == "val":
+        yield optimized_val(e, f)
+    if isinstance(e, EStateVar):
+        for gf in optimized_get_field(e.e, f, args):
+            yield EStateVar(gf).with_type(gf.type)
+    if isinstance(e, EMakeRecord):
+        yield dict(e.fields)[f]
+    if isinstance(e, ECond):
+        for then_case in optimized_get_field(e.then_branch, f, args):
+            for else_case in optimized_get_field(e.else_branch, f, args):
+                yield optimized_cond(e.cond, then_case, else_case)
+    if isinstance(e.type, TRecord):
+        yield EGetField(e, f).with_type(dict(e.type.fields)[f])
+
 def mapkeys(m):
     if isinstance(m, EMakeMap2):
         return m.keys
@@ -525,6 +540,10 @@ def _try_optimize(e, context, pool):
             yield _check(EAll([
                 optimized_eq(optimized_addr(e.e1), optimized_addr(e.e2)),
                 optimized_eq(optimized_val(e.e1),  optimized_val(e.e2)).with_type(BOOL)]), context, RUNTIME_POOL)
+
+        if isinstance(e, EGetField):
+            for ee in optimized_get_field(e.e, e.f, args):
+                yield _check(ee, context, RUNTIME_POOL)
 
         if isinstance(e, EBinOp) and e.op == BOp.In:
             ee = optimized_in(e.e1, e.e2)
