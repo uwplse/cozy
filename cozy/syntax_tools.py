@@ -1434,17 +1434,55 @@ class ExpMap(object):
             yield v
 
 _ReduceOp = collections.namedtuple("_ReduceOp", ("x", "n"))
-_UnbindOp = collections.namedtuple("_UnbindOp", ("v",))
+_OnExitOp = collections.namedtuple("_OnExitOp", ("x",))
 
 class IterativeReducer(object):
+    """Abstract class to help write iterative forms of recursive traversals.
+
+    Implementors should override `reduce`.  For instance, to implement a naive
+    replacement algorithm:
+
+        class Replacer(IterativeReducer):
+
+            def __init__(self, needle, replacement):
+                super().__init__()
+                self.needle = needle
+                self.replacement = replacement
+
+            def children(self, x):
+                # no need to visit children of something we are replacing!
+                if x == self.needle:
+                    return ()
+                return super().children(x)
+
+            def reduce(self, x, new_children):
+                if x == self.needle:
+                    return self.replacement
+                return super().reduce(x, new_children)
+    """
+
+    def current_parent(self):
+        for x in reversed(self.work_stack):
+            if isinstance(x, _ReduceOp):
+                return x.x
+        raise ValueError("no current parent, sadly")
+
     def bind(self, v : syntax.EVar):
         pass
 
     def unbind(self, v : syntax.EVar):
         pass
 
+    def on_enter(self, x):
+        if isinstance(x, syntax.ELambda):
+            self.bind(x.arg)
+
+    def on_exit(self, x):
+        if isinstance(x, syntax.ELambda):
+            self.unbind(x.arg)
+
     def visit(self, x):
-        work_stack = [x]
+        self.work_stack = work_stack = [x]
         done_stack = []
         while work_stack:
             # print("TODO: {}; DONE: {}".format(work_stack, done_stack))
@@ -1454,13 +1492,12 @@ class IterativeReducer(object):
                 args.reverse()
                 done_stack.append(self.reduce(top.x, tuple(args)))
                 continue
-            if isinstance(top, _UnbindOp):
-                self.unbind(top.v)
+            if isinstance(top, _OnExitOp):
+                self.on_exit(top.x)
                 continue
             children = self.children(top)
-            if isinstance(top, syntax.ELambda):
-                self.bind(top.arg)
-                work_stack.append(_UnbindOp(top.arg))
+            self.on_enter(top)
+            work_stack.append(_OnExitOp(top))
             work_stack.append(_ReduceOp(top, len(children)))
             work_stack.extend(reversed(children))
         assert len(done_stack) == 1
