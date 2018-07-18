@@ -1,11 +1,11 @@
 from cozy.common import unique
 from cozy.target_syntax import *
-from cozy.syntax_tools import fresh_var, free_vars, break_conj, mk_lambda, strip_EStateVar, alpha_equivalent, compose
+from cozy.syntax_tools import fresh_var, free_vars, free_funcs, break_conj, mk_lambda, strip_EStateVar, alpha_equivalent, compose
 from cozy.typecheck import is_collection, retypecheck
 from cozy.contexts import shred, replace
 from cozy.pools import RUNTIME_POOL, STATE_POOL
 from cozy.structures.heaps import TMinHeap, TMaxHeap, EMakeMinHeap, EMakeMaxHeap, EHeapPeek2
-from cozy.evaluation import construct_value
+from cozy.evaluation import construct_value, uneval, eval
 
 accelerate = Option("acceleration-rules", bool, True)
 
@@ -471,6 +471,9 @@ def _try_optimize(e, context, pool):
     args = [v for v, p in context.vars() if p == RUNTIME_POOL]
 
     if pool == RUNTIME_POOL:
+        if not free_vars(e) and not free_funcs(e):
+            yield _check(uneval(e.type, eval(e, {})), context, RUNTIME_POOL)
+
         if all(v in state_vars for v in free_vars(e)):
             nsv = strip_EStateVar(e)
             sv = EStateVar(nsv).with_type(e.type)
