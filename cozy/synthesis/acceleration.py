@@ -408,6 +408,8 @@ def optimize_filter_as_if_distinct(xs, p, args, dnf=True):
 
 def optimize_map(xs, f, args):
     res_type = type(xs.type)(f.body.type)
+    if f.arg == f.body:
+        yield xs
     if isinstance(xs, ESingleton):
         yield ESingleton(f.apply_to(xs.e)).with_type(res_type)
     if isinstance(xs, EEmptyList):
