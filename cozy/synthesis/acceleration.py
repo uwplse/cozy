@@ -528,7 +528,8 @@ def _try_optimize(e, context, pool):
             yield _check(ee, context, pool)
 
         if isinstance(e, EListGet) and e.index == ZERO:
-            yield _check(EUnaryOp(UOp.The, e.e).with_type(e.type), context, RUNTIME_POOL)
+            for res in optimize_the(e.e, args):
+                yield _check(res, context, RUNTIME_POOL)
 
         if isinstance(e, EArgMin) or isinstance(e, EArgMax):
             for ee in optimized_best(e.e, e.f, "<" if isinstance(e, EArgMin) else ">", args=args):
@@ -542,6 +543,9 @@ def _try_optimize(e, context, pool):
             yield _check(EAll([
                 optimized_eq(optimized_addr(e.e1), optimized_addr(e.e2)),
                 optimized_eq(optimized_val(e.e1),  optimized_val(e.e2)).with_type(BOOL)]), context, RUNTIME_POOL)
+
+        if isinstance(e, ECond):
+            yield _check(optimized_cond(e.cond, e.then_branch, e.else_branch), context, RUNTIME_POOL)
 
         if isinstance(e, EGetField):
             for ee in optimized_get_field(e.e, e.f, args):
