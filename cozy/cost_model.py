@@ -138,17 +138,21 @@ class CostModel(object):
             if consider_maintenance_cost.value:
                 if pool == RUNTIME_POOL:
                     return prioritized_order(
+                        lambda: self._compare(
+                            frequency_cost(e1, self.solver, self.ops, self.freebies),
+                            frequency_cost(e2, self.solver, self.ops, self.freebies),
+                            context),
+                        #lambda: unprioritized_order(
+                        #    [lambda: prioritized_order(
+                        #        lambda: self._compare(
+                        #            max_storage_size(e1, self.freebies),
+                        #            max_storage_size(e2, self.freebies), context),
+                        #        lambda: self._compare(rt(e1), rt(e2), context))] +
+                        #    [lambda op=op: self._compare(
+                        #        maintenance_cost(e1, self.solver, op, self.freebies),
+                        #        maintenance_cost(e2, self.solver, op, self.freebies),
+                        #        context) for op in self.ops]),
                         lambda: order_objects(asymptotic_runtime(e1), asymptotic_runtime(e2)),
-                        lambda: unprioritized_order(
-                            [lambda: prioritized_order(
-                                lambda: self._compare(
-                                    max_storage_size(e1, self.freebies),
-                                    max_storage_size(e2, self.freebies), context),
-                                lambda: self._compare(rt(e1), rt(e2), context))] +
-                            [lambda op=op: self._compare(
-                                maintenance_cost(e1, self.solver, op, self.freebies),
-                                maintenance_cost(e2, self.solver, op, self.freebies),
-                                context) for op in self.ops]),
                         lambda: order_objects(e1.size(), e2.size()))
                 else:
                     return prioritized_order(
@@ -353,6 +357,21 @@ def maintenance_cost(e : Exp, solver : ModelCachingSolver, op : Op, freebies : [
                 _maintenance_cost(e=x.e, solver=solver, op=op, freebies=freebies)])
     return res
 
+query_freq = ENum(1).with_type(INT)
+op_freq = ENum(0).with_type(INT)
+def frequency_cost(e            : Exp,
+                   solver       : ModelCachingSolver,
+                   ops          : [Op] = [],
+                   freebies     : [Exp] = []):
+    """This method takes in account the frequency of a specific op and the
+    query being considered
+    """
+    res = EBinOp(query_freq, "*", rt(e)).with_type(INT)
+    for op in ops:
+        res = ESum([
+            res,
+            EBinOp(op_freq, "*", maintenance_cost(e, solver, op, freebies)).with_type(INT)])
+    return res
 
 # These require walking over the entire collection.
 # Some others (e.g. "exists" or "empty") just look at the first item.
@@ -498,6 +517,7 @@ def debug_comparison(cm : CostModel, e1 : Exp, e2 : Exp, context : Context):
         print(pprint(o))
         for ename, e in [("e1", e1), ("e2", e2)]:
             print("maintenance_cost({e}) = {res}".format(e=ename, res=pprint(maintenance_cost(e, cm.solver, o))))
+            print("frequency_cost({e}) = {res}".format(e=ename, res=pprint(frequency_cost(e, cm.solver, [o]))))
 
     print("-" * 20)
     for f in asymptotic_runtime, max_storage_size, rt:
@@ -515,6 +535,8 @@ def debug_comparison(cm : CostModel, e1 : Exp, e2 : Exp, context : Context):
             print(pprint(op))
             print("maintcost(e1) = {}".format(eval_bulk(maintenance_cost(e1, cm.solver, op), [x], use_default_values_for_undefined_vars=True)[0]))
             print("maintcost(e2) = {}".format(eval_bulk(maintenance_cost(e2, cm.solver, op), [x], use_default_values_for_undefined_vars=True)[0]))
+            print("frequency_cost(e1) = {}".format(eval_bulk(frequency_cost(e1, cm.solver, [op]), [x], use_default_values_for_undefined_vars=True)[0]))
+            print("frequency_cost(e2) = {}".format(eval_bulk(frequency_cost(e2, cm.solver, [op]), [x], use_default_values_for_undefined_vars=True)[0]))
 
         print("storage(e1) = {}".format(eval_bulk(max_storage_size(e1), [x], use_default_values_for_undefined_vars=True)[0]))
         print("storage(e2) = {}".format(eval_bulk(max_storage_size(e2), [x], use_default_values_for_undefined_vars=True)[0]))
