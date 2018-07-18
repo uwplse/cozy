@@ -310,6 +310,7 @@ def map_values(m, f):
             m.cond,
             map_values(m.then_branch, f),
             map_values(m.else_branch, f))
+    raise NotImplementedError(m)
 
 def _simple_filter(xs, p, args):
     if p.body == T:
