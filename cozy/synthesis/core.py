@@ -133,6 +133,12 @@ def good_idea(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptio
     e._good_idea = True
     return True
 
+def good_idea_recursive(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptions : Exp = T) -> bool:
+    for (sub, sub_ctx, sub_pool) in shred(e, context, pool):
+        res = good_idea(solver, sub, sub_ctx, sub_pool, assumptions=assumptions)
+        if not res:
+            return res
+    return True
 
 class Learner(object):
     def __init__(self, targets, assumptions, context, examples, cost_model, stop_callback, hints):
@@ -172,10 +178,9 @@ class Learner(object):
                 is_wf = exp_wf(e, pool=pool, context=ctx, assumptions=self.assumptions, solver=self.wf_solver)
                 if not is_wf:
                     return is_wf
-                for (sub, sub_ctx, sub_pool) in shred(e, ctx, pool):
-                    res = good_idea(self.wf_solver, sub, sub_ctx, sub_pool, assumptions=self.assumptions)
-                    if not res:
-                        return res
+                res = good_idea_recursive(self.wf_solver, e, ctx, pool, assumptions=self.assumptions)
+                if not res:
+                    return res
                 if pool == RUNTIME_POOL and self.cost_model.compare(e, self.targets[0], ctx, pool) == Order.GT:
                     # from cozy.cost_model import debug_comparison
                     # debug_comparison(self.cost_model, e, self.target, ctx)
