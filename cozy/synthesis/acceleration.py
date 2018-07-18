@@ -32,20 +32,39 @@ def optimized_count(x, xs):
 def optimized_any_matches(xs, p):
     if isinstance(xs, EEmptyList):
         return F
-    elif isinstance(xs, ESingleton):
+    if isinstance(xs, ESingleton):
         return p.apply_to(xs.e)
-    elif isinstance(xs, EMap):
+    if isinstance(xs, EMap):
         return optimized_any_matches(xs.e, compose(p, xs.f))
-    elif isinstance(xs, EFilter):
+
+
+    # exists filter (not-in xs) ys
+    if isinstance(p.body, EUnaryOp) and p.body.op == UOp.Not and isinstance(p.body.e, EBinOp) and p.body.e.op == BOp.In:
+        if p.arg not in free_vars(p.body.e.e2):
+            # er, this only works when xs is a subset of ys
+            return EGt(
+                optimized_len(xs),
+                optimized_len(p.body.e.e2))
+
+    if isinstance(p.body, EBinOp) and p.body.op == BOp.Or:
+        return EAny([
+            optimized_any_matches(xs, ELambda(p.arg, p.body.e1)).with_type(xs.type),
+            optimized_any_matches(xs, ELambda(p.arg, p.body.e2)).with_type(xs.type)])
+
+    if isinstance(xs, EFilter):
         return optimized_any_matches(xs.e, ELambda(p.arg, EAll([p.body, xs.p.apply_to(p.arg)])))
-    elif isinstance(xs, EBinOp) and xs.op == "+":
+    if isinstance(xs, EBinOp) and xs.op == "+":
         return EAny([optimized_any_matches(xs.e1, p), optimized_any_matches(xs.e2, p)])
-    elif isinstance(xs, ECond):
+    if isinstance(xs, EBinOp) and xs.op == "-":
+        return EAll([
+            optimized_any_matches(xs.e1, p),
+            ENot(optimized_any_matches(xs.e2, p))])
+    if isinstance(xs, ECond):
         return optimized_cond(xs.cond,
             optimized_any_matches(xs.then_branch, p),
             optimized_any_matches(xs.else_branch, p)).with_type(BOOL)
-    else:
-        return EUnaryOp(UOp.Exists, EFilter(xs, p).with_type(xs.type)).with_type(BOOL)
+
+    return EUnaryOp(UOp.Exists, EFilter(xs, p).with_type(xs.type)).with_type(BOOL)
 
 def optimized_in(x, xs):
     if isinstance(xs, EStateVar):
@@ -104,12 +123,10 @@ def optimized_empty(xs):
     return optimized_eq(l, ZERO)
 
 def optimized_exists(xs):
-    if isinstance(xs, EFilter) and isinstance(xs.p.body, EBinOp) and xs.p.body.op == BOp.Or:
-        return EAny([
-            optimized_exists(EFilter(xs.e, ELambda(xs.p.arg, xs.p.body.e1)).with_type(xs.type)),
-            optimized_exists(EFilter(xs.e, ELambda(xs.p.arg, xs.p.body.e2)).with_type(xs.type))])
+    if isinstance(xs, EFilter):
+        return optimized_any_matches(xs.e, xs.p)
     elif isinstance(xs, EStateVar):
-        return EStateVar(optimized_exists(xs.e)).with_type(BOOL)
+        return EStateVar(EUnaryOp(UOp.Exists, xs.e).with_type(BOOL)).with_type(BOOL)
     elif isinstance(xs, EBinOp) and xs.op == "+":
         return EAny([
             optimized_exists(xs.e1),
