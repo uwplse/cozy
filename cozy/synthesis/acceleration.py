@@ -325,6 +325,8 @@ def _simple_filter(xs, p, args):
         return EMapGet(EStateVar(m).with_type(m.type), xs.key).with_type(xs.type)
     if isinstance(xs, EBinOp) and xs.op == "+":
         return EBinOp(_simple_filter(xs.e1, p, args), "+", _simple_filter(xs.e2, p, args)).with_type(xs.type)
+    if isinstance(xs, EBinOp) and xs.op == "-":
+        return EBinOp(_simple_filter(xs.e1, p, args), "-", _simple_filter(xs.e2, p, args)).with_type(xs.type)
     if isinstance(p.body, EBinOp) and p.body.op == "==":
         fvs2 = free_vars(p.body.e2)
         fvs1 = free_vars(p.body.e1)
