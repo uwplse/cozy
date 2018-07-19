@@ -157,16 +157,7 @@ class CostModel(object):
                         lambda: order_objects(e1.size(), e2.size()))
                 else:
                     return prioritized_order(
-                        lambda: unprioritized_order(
-                            [lambda: prioritized_order(
-                                lambda: self._compare(
-                                    max_storage_size(e1, self.freebies),
-                                    max_storage_size(e2, self.freebies), context),
-                                lambda: self._compare(rt(e1), rt(e2), context))] +
-                            [lambda op=op: self._compare(
-                                maintenance_cost(e1, self.solver, op, self.freebies),
-                                maintenance_cost(e2, self.solver, op, self.freebies),
-                                context) for op in self.ops]),
+                        lambda: self._compare(storage_size(e1, self.freebies), storage_size(e2, self.freebies), context),
                         lambda: order_objects(e1.size(), e2.size()))
             else:
                 if pool == RUNTIME_POOL:
