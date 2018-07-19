@@ -25,6 +25,14 @@ class Order(Enum):
     GT        = 2
     AMBIGUOUS = 3
 
+    def flip(order):
+        """ Flips the direction of the Order """
+        if order == Order.LT:
+            return Order.GT
+        if order == Order.GT:
+            return Order.LT
+        return order
+
 def prioritized_order(*funcs):
     """Returns the first result that is not Order.EQUAL from calling each func.
 
@@ -50,14 +58,6 @@ def unprioritized_order(funcs):
     Each argument should be a function that takes no argument and returns an
     Order.
     """
-    def flip(order):
-        """ Flips the direction of the Order """
-        if order == Order.LT:
-            return Order.GT
-        if order == Order.GT:
-            return Order.LT
-        return order
-
     # This set should only be 1 big
     orders_seen = set()
     for f in funcs:
@@ -68,7 +68,7 @@ def unprioritized_order(funcs):
         if op == Order.AMBIGUOUS:
             return Order.AMBIGUOUS
         # Check if we've seen both < and >
-        if flip(op) in orders_seen:
+        if op.flip() in orders_seen:
             return Order.AMBIGUOUS
         orders_seen.add(op)
 
@@ -90,6 +90,11 @@ class CostModel(object):
             funcs                   = (),
             freebies        : [Exp] = [],
             ops             : [Op]  = []):
+        """
+        Freebies: state variables that Cozy is allowed to use for free.
+        Ops     : mutators which are used to determine how expensive a state
+                  variable will be if it is mutated.
+        """
         self.solver = ModelCachingSolver(vars=(), funcs=funcs, examples=examples, assumptions=assumptions)
         self.assumptions = assumptions
         # self.examples = list(examples)
@@ -156,16 +161,7 @@ class CostModel(object):
                         lambda: order_objects(e1.size(), e2.size()))
                 else:
                     return prioritized_order(
-                        lambda: unprioritized_order(
-                            [lambda: prioritized_order(
-                                lambda: self._compare(
-                                    max_storage_size(e1, self.freebies),
-                                    max_storage_size(e2, self.freebies), context),
-                                lambda: self._compare(rt(e1), rt(e2), context))] +
-                            [lambda op=op: self._compare(
-                                maintenance_cost(e1, self.solver, op, self.freebies),
-                                maintenance_cost(e2, self.solver, op, self.freebies),
-                                context) for op in self.ops]),
+                        lambda: self._compare(storage_size(e1, self.freebies), storage_size(e2, self.freebies), context),
                         lambda: order_objects(e1.size(), e2.size()))
             else:
                 if pool == RUNTIME_POOL:
@@ -285,36 +281,38 @@ def worst_case_cardinality(e : Exp) -> DominantTerm:
     return DominantTerm.N
 
 def _maintenance_cost(e : Exp, solver : ModelCachingSolver, op : Op, freebies : [Exp] = []):
-    """Determines the maintenance cost of an expression with regards to its
-    freebies and ops.
+    """Determines the cost of maintaining the expression when there are
+    freebies and ops being considered.
 
     The cost is the result of mutating the expression and getting the storage
     size of the difference between the mutated expression and the original.
     """
     e_prime = mutate(e, op.body)
-    if solver.valid(EEq(e, e_prime)):
+    if alpha_equivalent(e, e_prime):
         return ZERO
 
     h = extension_handler(type(e.type))
     if h is not None:
-        return h.maintenance_cost(e,
-                solver=solver,
-                op=op,
-                freebies=freebies,
-                storage_size=storage_size,
-                maintenance_cost=_maintenance_cost)
+        return h.maintenance_cost(
+            old_value=e,
+            new_value=e_prime,
+            solver=solver,
+            op=op,
+            freebies=freebies,
+            storage_size=storage_size,
+            maintenance_cost=_maintenance_cost)
 
     if is_scalar(e.type):
         return storage_size(e, freebies)
     elif isinstance(e.type, TBag) or isinstance(e.type, TSet):
         things_added = storage_size(
-                EBinOp(e_prime, "-", e).with_type(e.type), freebies).with_type(INT)
+            EBinOp(e_prime, "-", e).with_type(e.type), freebies).with_type(INT)
         things_remov = storage_size(
-                EBinOp(e, "-", e_prime).with_type(e.type), freebies).with_type(INT)
+            EBinOp(e, "-", e_prime).with_type(e.type), freebies).with_type(INT)
 
         return ESum([things_added, things_remov])
     elif isinstance(e.type, TList):
-            return storage_size(e_prime, freebies)
+        return storage_size(e_prime, freebies)
     elif isinstance(e.type, TMap):
         keys = EMapKeys(e).with_type(TBag(e.type.k))
         vals = EMap(
@@ -349,13 +347,7 @@ def _maintenance_cost(e : Exp, solver : ModelCachingSolver, op : Op, freebies : 
 
 def maintenance_cost(e : Exp, solver : ModelCachingSolver, op : Op, freebies : [Exp] = []):
     """This method calulates the result over all expressions that are EStateVar """
-    res = ZERO
-    for x in all_exps(e):
-        if isinstance(x, EStateVar):
-            res = ESum([
-                res,
-                _maintenance_cost(e=x.e, solver=solver, op=op, freebies=freebies)])
-    return res
+    return ESum([_maintenance_cost(e=x.e, solver=solver, op=op, freebies=freebies) for x in all_exps(e) if isinstance(x, EStateVar)])
 
 # -------------------------- Experimental Method ------------------------------
 # Use spec to see the difference:
