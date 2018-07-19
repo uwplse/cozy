@@ -341,13 +341,7 @@ def _maintenance_cost(e : Exp, solver : ModelCachingSolver, op : Op, freebies : 
 
 def maintenance_cost(e : Exp, solver : ModelCachingSolver, op : Op, freebies : [Exp] = []):
     """This method calulates the result over all expressions that are EStateVar """
-    res = ZERO
-    for x in all_exps(e):
-        if isinstance(x, EStateVar):
-            res = ESum([
-                res,
-                _maintenance_cost(e=x.e, solver=solver, op=op, freebies=freebies)])
-    return res
+    return ESum([_maintenance_cost(e=x.e, solver=solver, op=op, freebies=freebies) for x in all_exps(e) if isinstance(x, EStateVar)])
 
 
 # These require walking over the entire collection.
