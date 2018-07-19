@@ -233,6 +233,9 @@ def EExists(e):
 def EEq(e1, e2):
     return EBinOp(e1, "==", e2).with_type(BOOL)
 
+def ENe(e1, e2):
+    return EBinOp(e1, "!=", e2).with_type(BOOL)
+
 def EGt(e1, e2):
     return EBinOp(e1, ">", e2).with_type(BOOL)
 
@@ -313,3 +316,6 @@ def nth_func(t : TTuple, n : int) -> ELambda:
     ## Hard-coded variable name is OK because no capturing or shadowing is possible.
     x = EVar("x").with_type(t)
     return ELambda(x, ETupleGet(x, n).with_type(t.ts[n]))
+
+Exp.__add__ = lambda self, e: EBinOp(self, "+", e).with_type(self.type)
+Exp.__sub__ = lambda self, e: EBinOp(self, "-", e).with_type(self.type)

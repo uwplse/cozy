@@ -8,12 +8,15 @@ The most important function is `simplify`.
 
 from cozy.target_syntax import *
 from cozy.typecheck import is_collection, equality_implies_deep_equality
-from cozy.syntax_tools import BottomUpRewriter, alpha_equivalent, compose, pprint, mk_lambda, replace
-from cozy.evaluation import construct_value, eval
+from cozy.syntax_tools import BottomUpRewriter, alpha_equivalent, compose, pprint, mk_lambda, replace, free_vars, free_funcs
+from cozy.evaluation import construct_value, eval, uneval
 from cozy.solver import valid, satisfy
 from cozy.opts import Option
 
 checked_simplify = Option("checked-simplification", bool, False)
+
+def is_literal(e):
+    return not free_vars(e) and not free_funcs(e)
 
 class _SimplificationVisitor(BottomUpRewriter):
     def __init__(self, debug=False):
@@ -33,7 +36,17 @@ class _SimplificationVisitor(BottomUpRewriter):
                 return T
             if isinstance(e2, ECond) and alpha_equivalent(e1, e2.else_branch):
                 return self.visit(EBinOp(ENot(e2.cond), BOp.Or, EBinOp(e1, e.op, e2.then_branch).with_type(BOOL)).with_type(BOOL))
+            if is_literal(e1) and is_literal(e2):
+                return uneval(e.type, eval(EBinOp(e1, e.op, e2).with_type(e.type), {}))
             e = EBinOp(e1, e.op, e2).with_type(e.type)
+        elif e.op == BOp.And:
+            e1 = self.visit(e.e1)
+            e2 = self.visit(e.e2)
+            return EAll([e1, e2])
+        elif e.op == BOp.Or:
+            e1 = self.visit(e.e1)
+            e2 = self.visit(e.e2)
+            return EAny([e1, e2])
         if isinstance(e.e1, ECond):
             return self.visit(ECond(e.e1.cond,
                 EBinOp(e.e1.then_branch, e.op, e.e2).with_type(e.type),
