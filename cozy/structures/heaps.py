@@ -134,7 +134,6 @@ class Heaps(object):
     def maintenance_cost(self,
             old_value           : Exp,
             new_value           : Exp,
-            solver,
             op                  : Op,
             storage_size,
             maintenance_cost,
@@ -168,7 +167,7 @@ class Heaps(object):
                 ELambda(
                     v,
                     maintenance_cost(
-                        new_v_key, solver, op, freebies)).with_type(INT)).with_type(INT)).with_type(INT_BAG)
+                        new_v_key, op, freebies)).with_type(INT)).with_type(INT)).with_type(INT_BAG)
 
         return ESum([elems_added, elems_rmved, modified_cost])
 

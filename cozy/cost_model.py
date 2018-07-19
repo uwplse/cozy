@@ -91,6 +91,8 @@ class CostModel(object):
             freebies        : [Exp] = [],
             ops             : [Op]  = []):
         """
+        Assumptions, examples, and funcs are all used by the solver to compare
+        two expressions
         Freebies: state variables that Cozy is allowed to use for free.
         Ops     : mutators which are used to determine how expensive a state
                   variable will be if it is mutated.
@@ -280,7 +282,7 @@ def worst_case_cardinality(e : Exp) -> DominantTerm:
         return DominantTerm.ONE
     return DominantTerm.N
 
-def _maintenance_cost(e : Exp, solver : ModelCachingSolver, op : Op, freebies : [Exp] = []):
+def _maintenance_cost(e : Exp, op : Op, freebies : [Exp] = []):
     """Determines the cost of maintaining the expression when there are
     freebies and ops being considered.
 
@@ -296,7 +298,6 @@ def _maintenance_cost(e : Exp, solver : ModelCachingSolver, op : Op, freebies : 
         return h.maintenance_cost(
             old_value=e,
             new_value=e_prime,
-            solver=solver,
             op=op,
             freebies=freebies,
             storage_size=storage_size,
@@ -345,9 +346,9 @@ def _maintenance_cost(e : Exp, solver : ModelCachingSolver, op : Op, freebies : 
     else:
         raise NotImplementedError(repr(e.type))
 
-def maintenance_cost(e : Exp, solver : ModelCachingSolver, op : Op, freebies : [Exp] = []):
+def maintenance_cost(e : Exp, op : Op, freebies : [Exp] = []):
     """This method calulates the result over all expressions that are EStateVar """
-    return ESum([_maintenance_cost(e=x.e, solver=solver, op=op, freebies=freebies) for x in all_exps(e) if isinstance(x, EStateVar)])
+    return ESum([_maintenance_cost(e=x.e, op=op, freebies=freebies) for x in all_exps(e) if isinstance(x, EStateVar)])
 
 # -------------------------- Experimental Method ------------------------------
 # Use spec to see the difference:
@@ -521,7 +522,7 @@ def debug_comparison(cm : CostModel, e1 : Exp, e2 : Exp, context : Context):
     for o in cm.ops:
         print(pprint(o))
         for ename, e in [("e1", e1), ("e2", e2)]:
-            print("maintenance_cost({e}) = {res}".format(e=ename, res=pprint(maintenance_cost(e, cm.solver, o))))
+            print("maintenance_cost({e}) = {res}".format(e=ename, res=pprint(maintenance_cost(e, o))))
             print("frequency_cost({e}) = {res}".format(e=ename, res=pprint(frequency_cost(e, cm.solver, [o]))))
 
     print("-" * 20)
@@ -538,8 +539,8 @@ def debug_comparison(cm : CostModel, e1 : Exp, e2 : Exp, context : Context):
 
         for op in cm.ops:
             print(pprint(op))
-            print("maintcost(e1) = {}".format(eval_bulk(maintenance_cost(e1, cm.solver, op), [x], use_default_values_for_undefined_vars=True)[0]))
-            print("maintcost(e2) = {}".format(eval_bulk(maintenance_cost(e2, cm.solver, op), [x], use_default_values_for_undefined_vars=True)[0]))
+            print("maintcost(e1) = {}".format(eval_bulk(maintenance_cost(e1, op), [x], use_default_values_for_undefined_vars=True)[0]))
+            print("maintcost(e2) = {}".format(eval_bulk(maintenance_cost(e2, op), [x], use_default_values_for_undefined_vars=True)[0]))
             print("frequency_cost(e1) = {}".format(eval_bulk(frequency_cost(e1, cm.solver, [op]), [x], use_default_values_for_undefined_vars=True)[0]))
             print("frequency_cost(e2) = {}".format(eval_bulk(frequency_cost(e2, cm.solver, [op]), [x], use_default_values_for_undefined_vars=True)[0]))
 
