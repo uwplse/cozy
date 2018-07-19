@@ -373,16 +373,9 @@ def frequency_cost(e            : Exp,
     """This method takes in account the frequency of a specific op and the
     query being considered
     """
-    asymptotic = asymptotic_runtime(e)
-    if asymptotic.exponent == 0:
-        res = EBinOp(query_freq, "*", rt(e)).with_type(INT)
-    else:
-        res = EBinOp(query_freq, "*", ENum(asymptotic.exponent).with_type(INT)).with_type(INT)
-    for op in ops:
-        res = ESum([
-            res,
-            EBinOp(op_freq, "*", maintenance_cost(e, solver, op, freebies)).with_type(INT)])
-    return res
+    return ESum(
+        [EBinOp(query_freq, "*", rt(e)).with_type(INT)] +
+        [EBinOp(op_freq, "*", maintenance_cost(e, solver, op, freebies)).with_type(INT) for op in ops])
 # -----------------------------------------------------------------------------
 
 # These require walking over the entire collection.
