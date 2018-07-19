@@ -284,7 +284,7 @@ def _maintenance_cost(e : Exp, solver : ModelCachingSolver, op : Op, freebies : 
     size of the difference between the mutated expression and the original.
     """
     e_prime = mutate(e, op.body)
-    if solver.valid(EEq(e, e_prime)):
+    if alpha_equivalent(e, e_prime):
         return ZERO
 
     h = extension_handler(type(e.type))
