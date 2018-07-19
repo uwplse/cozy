@@ -132,18 +132,14 @@ class Heaps(object):
         return storage_size(EHeapElems(e).with_type(TBag(e.type.elem_type)))
 
     def maintenance_cost(self,
-            e                   : Exp,
+            old_value           : Exp,
+            new_value           : Exp,
             solver,
             op                  : Op,
             storage_size,
             maintenance_cost,
             freebies            : [Exp] = []):
         assert type(e.type) in (TMinHeap, TMaxHeap)
-
-        from cozy.state_maintenance import mutate
-
-        old_value = e
-        new_value = mutate(e, op.body)
 
         # added/removed elements
         t = TBag(e.type.elem_type)

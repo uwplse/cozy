@@ -289,7 +289,9 @@ def _maintenance_cost(e : Exp, solver : ModelCachingSolver, op : Op, freebies : 
 
     h = extension_handler(type(e.type))
     if h is not None:
-        return h.maintenance_cost(e,
+        return h.maintenance_cost(
+            old_value=e,
+            new_value=e_prime,
             solver=solver,
             op=op,
             freebies=freebies,
