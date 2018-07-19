@@ -290,23 +290,23 @@ def _maintenance_cost(e : Exp, solver : ModelCachingSolver, op : Op, freebies : 
     h = extension_handler(type(e.type))
     if h is not None:
         return h.maintenance_cost(e,
-                solver=solver,
-                op=op,
-                freebies=freebies,
-                storage_size=storage_size,
-                maintenance_cost=_maintenance_cost)
+            solver=solver,
+            op=op,
+            freebies=freebies,
+            storage_size=storage_size,
+            maintenance_cost=_maintenance_cost)
 
     if is_scalar(e.type):
         return storage_size(e, freebies)
     elif isinstance(e.type, TBag) or isinstance(e.type, TSet):
         things_added = storage_size(
-                EBinOp(e_prime, "-", e).with_type(e.type), freebies).with_type(INT)
+            EBinOp(e_prime, "-", e).with_type(e.type), freebies).with_type(INT)
         things_remov = storage_size(
-                EBinOp(e, "-", e_prime).with_type(e.type), freebies).with_type(INT)
+            EBinOp(e, "-", e_prime).with_type(e.type), freebies).with_type(INT)
 
         return ESum([things_added, things_remov])
     elif isinstance(e.type, TList):
-            return storage_size(e_prime, freebies)
+        return storage_size(e_prime, freebies)
     elif isinstance(e.type, TMap):
         keys = EMapKeys(e).with_type(TBag(e.type.k))
         vals = EMap(
