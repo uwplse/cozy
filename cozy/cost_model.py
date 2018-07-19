@@ -143,6 +143,7 @@ class CostModel(object):
             if consider_maintenance_cost.value:
                 if pool == RUNTIME_POOL:
                     return prioritized_order(
+                        lambda: order_objects(asymptotic_runtime(e1), asymptotic_runtime(e2)),
                         lambda: self._compare(
                             frequency_cost(e1, self.solver, self.ops, self.freebies),
                             frequency_cost(e2, self.solver, self.ops, self.freebies),
@@ -157,7 +158,6 @@ class CostModel(object):
                         #        maintenance_cost(e1, self.solver, op, self.freebies),
                         #        maintenance_cost(e2, self.solver, op, self.freebies),
                         #        context) for op in self.ops]),
-                        lambda: order_objects(asymptotic_runtime(e1), asymptotic_runtime(e2)),
                         lambda: order_objects(e1.size(), e2.size()))
                 else:
                     return prioritized_order(
@@ -375,7 +375,7 @@ def frequency_cost(e            : Exp,
     """
     return ESum(
         [EBinOp(query_freq, "*", rt(e)).with_type(INT)] +
-        [EBinOp(op_freq, "*", maintenance_cost(e, solver, op, freebies)).with_type(INT) for op in ops])
+        [EBinOp(op_freq, "*", maintenance_cost(e, op, freebies)).with_type(INT) for op in ops])
 # -----------------------------------------------------------------------------
 
 # These require walking over the entire collection.
