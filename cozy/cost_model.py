@@ -277,8 +277,8 @@ def worst_case_cardinality(e : Exp) -> DominantTerm:
     return DominantTerm.N
 
 def _maintenance_cost(e : Exp, solver : ModelCachingSolver, op : Op, freebies : [Exp] = []):
-    """Determines the maintenance cost of an expression with regards to its
-    freebies and ops.
+    """Determines the cost of maintaining the expression when there are
+    freebies and ops being considered.
 
     The cost is the result of mutating the expression and getting the storage
     size of the difference between the mutated expression and the original.
