@@ -25,6 +25,14 @@ class Order(Enum):
     GT        = 2
     AMBIGUOUS = 3
 
+    def flip(order):
+        """ Flips the direction of the Order """
+        if order == Order.LT:
+            return Order.GT
+        if order == Order.GT:
+            return Order.LT
+        return order
+
 def prioritized_order(*funcs):
     """Returns the first result that is not Order.EQUAL from calling each func.
 
@@ -50,14 +58,6 @@ def unprioritized_order(funcs):
     Each argument should be a function that takes no argument and returns an
     Order.
     """
-    def flip(order):
-        """ Flips the direction of the Order """
-        if order == Order.LT:
-            return Order.GT
-        if order == Order.GT:
-            return Order.LT
-        return order
-
     # This set should only be 1 big
     orders_seen = set()
     for f in funcs:
@@ -68,7 +68,7 @@ def unprioritized_order(funcs):
         if op == Order.AMBIGUOUS:
             return Order.AMBIGUOUS
         # Check if we've seen both < and >
-        if flip(op) in orders_seen:
+        if op.flip() in orders_seen:
             return Order.AMBIGUOUS
         orders_seen.add(op)
 
