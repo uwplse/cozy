@@ -357,8 +357,23 @@ def maintenance_cost(e : Exp, solver : ModelCachingSolver, op : Op, freebies : [
                 _maintenance_cost(e=x.e, solver=solver, op=op, freebies=freebies)])
     return res
 
+# -------------------------- Experimental Method ------------------------------
+# Use spec to see the difference:
+#   Product:
+#       state xs : Bag<Int>
+#       state ys : Bag<Int>
+#
+#       query product()
+#           [(x, y) | x <- xs, y <- ys]
+#
+#       op add_x(x : Int)
+#           xs.add(x);
+# The implementation will produce the wrong result if query_freq = 25
+# and op_freq = 1
+# The correct result will always happen if query_freq is not significantly
+# larger than op_freq
 query_freq = ENum(1).with_type(INT)
-op_freq = ENum(0).with_type(INT)
+op_freq = ENum(1).with_type(INT)
 def frequency_cost(e            : Exp,
                    solver       : ModelCachingSolver,
                    ops          : [Op] = [],
@@ -366,12 +381,17 @@ def frequency_cost(e            : Exp,
     """This method takes in account the frequency of a specific op and the
     query being considered
     """
-    res = EBinOp(query_freq, "*", rt(e)).with_type(INT)
+    asymptotic = asymptotic_runtime(e)
+    if asymptotic.exponent == 0:
+        res = EBinOp(query_freq, "*", rt(e)).with_type(INT)
+    else:
+        res = EBinOp(query_freq, "*", ENum(asymptotic.exponent).with_type(INT)).with_type(INT)
     for op in ops:
         res = ESum([
             res,
             EBinOp(op_freq, "*", maintenance_cost(e, solver, op, freebies)).with_type(INT)])
     return res
+# -----------------------------------------------------------------------------
 
 # These require walking over the entire collection.
 # Some others (e.g. "exists" or "empty") just look at the first item.
