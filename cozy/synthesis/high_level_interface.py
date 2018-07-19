@@ -79,7 +79,8 @@ class ImproveQueryJob(jobs.Job):
                         context=ctx,
                         hints=self.hints,
                         stop_callback=lambda: self.stop_requested,
-                        cost_model=cost_model)):
+                        cost_model=cost_model,
+                        ops=self.ops)):
 
                     new_rep, new_ret = unpack_representation(expr)
                     self.k(new_rep, new_ret)
