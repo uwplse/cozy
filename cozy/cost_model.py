@@ -153,8 +153,8 @@ class CostModel(object):
                                     max_storage_size(e2, self.freebies), context),
                                 lambda: self._compare(rt(e1), rt(e2), context))] +
                             [lambda op=op: self._compare(
-                                maintenance_cost(e1, self.solver, op, self.freebies),
-                                maintenance_cost(e2, self.solver, op, self.freebies),
+                                maintenance_cost(e1, op, self.freebies),
+                                maintenance_cost(e2, op, self.freebies),
                                 context) for op in self.ops]),
                         lambda: order_objects(e1.size(), e2.size()))
                 else:
@@ -278,7 +278,7 @@ def worst_case_cardinality(e : Exp) -> DominantTerm:
         return DominantTerm.ONE
     return DominantTerm.N
 
-def _maintenance_cost(e : Exp, solver : ModelCachingSolver, op : Op, freebies : [Exp] = []):
+def _maintenance_cost(e : Exp, op : Op, freebies : [Exp] = []):
     """Determines the cost of maintaining the expression when there are
     freebies and ops being considered.
 
@@ -294,7 +294,6 @@ def _maintenance_cost(e : Exp, solver : ModelCachingSolver, op : Op, freebies : 
         return h.maintenance_cost(
             old_value=e,
             new_value=e_prime,
-            solver=solver,
             op=op,
             freebies=freebies,
             storage_size=storage_size,
@@ -343,9 +342,9 @@ def _maintenance_cost(e : Exp, solver : ModelCachingSolver, op : Op, freebies : 
     else:
         raise NotImplementedError(repr(e.type))
 
-def maintenance_cost(e : Exp, solver : ModelCachingSolver, op : Op, freebies : [Exp] = []):
+def maintenance_cost(e : Exp, op : Op, freebies : [Exp] = []):
     """This method calulates the result over all expressions that are EStateVar """
-    return ESum([_maintenance_cost(e=x.e, solver=solver, op=op, freebies=freebies) for x in all_exps(e) if isinstance(x, EStateVar)])
+    return ESum([_maintenance_cost(e=x.e, op=op, freebies=freebies) for x in all_exps(e) if isinstance(x, EStateVar)])
 
 
 # These require walking over the entire collection.
@@ -491,7 +490,7 @@ def debug_comparison(cm : CostModel, e1 : Exp, e2 : Exp, context : Context):
     for o in cm.ops:
         print(pprint(o))
         for ename, e in [("e1", e1), ("e2", e2)]:
-            print("maintenance_cost({e}) = {res}".format(e=ename, res=pprint(maintenance_cost(e, cm.solver, o))))
+            print("maintenance_cost({e}) = {res}".format(e=ename, res=pprint(maintenance_cost(e, o))))
 
     print("-" * 20)
     for f in asymptotic_runtime, max_storage_size, rt:
@@ -507,8 +506,8 @@ def debug_comparison(cm : CostModel, e1 : Exp, e2 : Exp, context : Context):
 
         for op in cm.ops:
             print(pprint(op))
-            print("maintcost(e1) = {}".format(eval_bulk(maintenance_cost(e1, cm.solver, op), [x], use_default_values_for_undefined_vars=True)[0]))
-            print("maintcost(e2) = {}".format(eval_bulk(maintenance_cost(e2, cm.solver, op), [x], use_default_values_for_undefined_vars=True)[0]))
+            print("maintcost(e1) = {}".format(eval_bulk(maintenance_cost(e1, op), [x], use_default_values_for_undefined_vars=True)[0]))
+            print("maintcost(e2) = {}".format(eval_bulk(maintenance_cost(e2, op), [x], use_default_values_for_undefined_vars=True)[0]))
 
         print("storage(e1) = {}".format(eval_bulk(max_storage_size(e1), [x], use_default_values_for_undefined_vars=True)[0]))
         print("storage(e2) = {}".format(eval_bulk(max_storage_size(e2), [x], use_default_values_for_undefined_vars=True)[0]))
