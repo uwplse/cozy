@@ -239,8 +239,6 @@ class TestCostModel(unittest.TestCase):
         assert retypecheck(e2)
         cost1 = cost_of(e1)
         cost2 = cost_of(e2)
-        print("cost( {} ) = {}".format(pprint(e1), cost1))
-        print("cost( {} ) = {}".format(pprint(e2), cost2))
         assumptions = EIn(x, xs)
         assert_cmp(e1, cost1, e2, cost2, Cost.BETTER, assumptions=assumptions)
 
