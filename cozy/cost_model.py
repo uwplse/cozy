@@ -90,6 +90,11 @@ class CostModel(object):
             funcs                   = (),
             freebies        : [Exp] = [],
             ops             : [Op]  = []):
+        """
+        Freebies: state variables that Cozy is allowed to use for free.
+        Ops     : mutators which are used to determine how expensive a state
+                  variable will be if it is mutated.
+        """
         self.solver = ModelCachingSolver(vars=(), funcs=funcs, examples=examples, assumptions=assumptions)
         self.assumptions = assumptions
         # self.examples = list(examples)
