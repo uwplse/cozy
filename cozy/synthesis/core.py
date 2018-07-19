@@ -109,6 +109,16 @@ def good_idea(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptio
         return No("trivially empty map")
     if isinstance(e, EMakeMap2) and isinstance(e.e, ESingleton):
         return No("really tiny map")
+    if not at_runtime and (isinstance(e, EArgMin) or isinstance(e, EArgMax)):
+        # Cozy has no way to efficiently implement mins/maxes when more than
+        # one element may leave the collection.
+        from cozy.state_maintenance import mutate
+        for op in ops:
+            elems = e.e
+            elems_prime = mutate(elems, op.body)
+            formula = EAll([assumptions] + list(op.assumptions) + [EGt(ELen(EBinOp(elems, "-", elems_prime).with_type(elems.type)), ONE)])
+            if solver.satisfiable(formula):
+                return No("more than one element might be removed during {}".format(op.name))
     if not allow_peels.value and not at_runtime and isinstance(e, EFilter):
         # catch "peels": removal of zero or one elements
         if solver.valid(EImplies(assumptions, ELe(ELen(EFilter(e.e, ELambda(e.p.arg, ENot(e.p.body))).with_type(e.type)), ONE))):
