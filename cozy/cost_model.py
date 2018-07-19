@@ -91,6 +91,8 @@ class CostModel(object):
             freebies        : [Exp] = [],
             ops             : [Op]  = []):
         """
+        Assumptions, examples, and funcs are all used by the solver to compare
+        two expressions
         Freebies: state variables that Cozy is allowed to use for free.
         Ops     : mutators which are used to determine how expensive a state
                   variable will be if it is mutated.
