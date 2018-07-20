@@ -17,7 +17,7 @@ from cozy.logging import task, event
 from cozy.state_maintenance import mutate
 from cozy.opts import Option
 
-consider_maintenance_cost = Option("consider-maintenance-cost", bool, True, description="Experimental option that lets Cozy use ops for the cost model.")
+consider_maintenance_cost = Option("consider-maintenance-cost", bool, True, description="Experimental option that lets Cozy use ops for the cost model. Note that Cozy will become much slower with this option on.")
 
 class Order(Enum):
     EQUAL     = 0
