@@ -516,8 +516,12 @@ def _try_optimize(e, context, pool):
     args = [v for v, p in context.vars() if p == RUNTIME_POOL]
 
     if pool == RUNTIME_POOL:
+
         if not free_vars(e) and not free_funcs(e):
-            yield _check(uneval(e.type, eval(e, {})), context, RUNTIME_POOL)
+            try:
+                yield _check(uneval(e.type, eval(e, {})), context, RUNTIME_POOL)
+            except NotImplementedError:
+                print("Unable to evaluate {!r}".format(e))
 
         if all(v in state_vars for v in free_vars(e)):
             nsv = strip_EStateVar(e)
