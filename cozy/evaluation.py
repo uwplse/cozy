@@ -11,7 +11,7 @@ from fractions import Fraction
 
 from cozy.target_syntax import *
 from cozy.syntax_tools import pprint, free_vars, free_vars_and_funcs, purify
-from cozy.common import FrozenDict, OrderedSet, extend
+from cozy.common import FrozenDict, OrderedSet, extend, unique
 from cozy.typecheck import is_numeric, is_collection
 from cozy.structures import extension_handler
 from cozy.value_types import Map, Bag, Handle, compare_values, values_equal, LT, EQ, GT
@@ -218,6 +218,11 @@ def binaryop_add_collections(stk):
     v2 = stk.pop()
     v1 = stk.pop()
     stk.append(Bag(itertools.chain(v1, v2)))
+
+def binaryop_add_sets(stk):
+    v2 = stk.pop()
+    v1 = stk.pop()
+    stk.append(Bag(unique(itertools.chain(v1, v2))))
 
 def binaryop_mul(stk):
     v2 = stk.pop()
@@ -535,7 +540,7 @@ def _compile(e, env : {str:int}, out):
         e1type = e.e1.type
         if e.op == "+":
             if is_collection(e.type):
-                out.append(binaryop_add_collections)
+                out.append(binaryop_add_sets if isinstance(e.type, TSet) else binaryop_add_collections)
             else:
                 out.append(binaryop_add_numbers)
         elif e.op == "*":
