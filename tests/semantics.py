@@ -195,3 +195,13 @@ class SemanticsTests(unittest.TestCase):
         e2 = EListSlice(xs, EBinOp(max_of(st2, ZERO), "+", max_of(st1, ZERO)), min_of(ed1, ESum([max_of(st1, ZERO), ed2])))
         assert retypecheck(e2)
         self.assert_same(e1, e2, assumptions=EUnaryOp(UOp.AreUnique, xs).with_type(BOOL))
+
+    def test_sub_self(self):
+        xs = EVar("xs").with_type(TBag(INT))
+        removed = EVar("removed").with_type(TBag(INT))
+        added = EVar("added").with_type(TBag(INT))
+        e = EBinOp(EBinOp(EBinOp(xs, "-", removed), "+", added), "-", xs)
+        assert retypecheck(e)
+        self.assert_same(e, added, assumptions=EAll([
+            # EIsSubset(removed, xs),
+            EDisjoint(added, removed)]))
