@@ -10,13 +10,15 @@ import itertools
 from cozy.common import fresh_name, typechecked
 from cozy import syntax
 from cozy import target_syntax
-from cozy.syntax_tools import free_vars, pprint, fresh_var, strip_EStateVar, subst, BottomUpRewriter, alpha_equivalent, break_seq
-from cozy.typecheck import is_numeric
-from cozy.solver import valid
+from cozy.syntax_tools import free_vars, pprint, fresh_var, strip_EStateVar, subst, BottomUpRewriter, alpha_equivalent, break_seq, mk_lambda
+from cozy.typecheck import is_numeric, is_collection
+from cozy.solver import valid, ModelCachingSolver
 from cozy.opts import Option
 from cozy.structures import extension_handler
-from cozy.evaluation import construct_value
-from cozy.contexts import Context
+from cozy.evaluation import construct_value, eval
+from cozy.contexts import Context, UnderBinder
+from cozy.pools import RUNTIME_POOL
+from cozy.simplification import simplify, simplify_cond as cond
 
 skip_stateless_synthesis = Option("skip-stateless-synthesis", bool, False,
     description="Do not waste time optimizing expressions that do not depend on the data structure state")
@@ -129,6 +131,9 @@ def assert_eq(e1 : syntax.Exp, e2 : syntax.Exp, context : Context, assumptions :
 
         raise AssertionError()
 
+def statevar(e):
+    return target_syntax.EStateVar(e).with_type(e.type)
+
 @typechecked
 def better_mutate(
         e           : target_syntax.EStateVar,
@@ -150,22 +155,41 @@ def better_mutate(
     e = e.e
 
     if isinstance(e.type, syntax.TBag) or isinstance(e.type, syntax.TSet):
-        add, remove = checked_bag_delta(e, context, op)
+        add, remove = checked_bag_delta(e, context, op, assumptions)
         print("{} x {} ---> +{}, -{}".format(pprint(e), pprint(op), pprint(add), pprint(remove)))
         return bag_union(bag_subtract(e, remove), add)
 
     if isinstance(e, syntax.EUnaryOp):
         if e.op == syntax.UOp.Exists:
-            add, remove = checked_bag_delta(e.e, context, op)
+            add, remove = checked_bag_delta(e.e, context, op, assumptions)
             return syntax.EGt(
                 target_syntax.EStateVar(len_of(e.e)).with_type(syntax.INT) + len_of(add),
                 len_of(remove))
+        if e.op == syntax.UOp.Not:
+            new_val = better_mutate(statevar(e.e), context, op, assumptions)
+            return syntax.ENot(new_val)
+
+    if isinstance(e, syntax.EBinOp):
+        return syntax.EBinOp(
+            better_mutate(statevar(e.e1), context, op, assumptions), e.op,
+            better_mutate(statevar(e.e2), context, op, assumptions)).with_type(e.type)
+
+    if isinstance(e, syntax.ECall):
+        return syntax.ECall(e.func,
+            tuple(better_mutate(statevar(x), context, op, assumptions) for x in e.args)).with_type(e.type)
+
+    if isinstance(e, syntax.ECond):
+        then_branch = better_mutate(statevar(e.then_branch), context, op, assumptions)
+        else_branch = better_mutate(statevar(e.else_branch), context, op, assumptions)
+        return cond(e.cond,
+            cond(became_false(e.cond, context, op, assumptions), else_branch, then_branch),
+            cond(became_true (e.cond, context, op, assumptions), then_branch, else_branch))
 
     # if bag:
     #     added+removed
     if isinstance(e, syntax.EArgMin) or isinstance(e, syntax.EArgMax):
         if alpha_equivalent(e.f, mutate(e.f, op)):
-            to_add, to_del = checked_bag_delta(target_syntax.EStateVar(e.e).with_type(e.e.type), context, op)
+            to_add, to_del = checked_bag_delta(target_syntax.EStateVar(e.e).with_type(e.e.type), context, op, assumptions)
             from cozy.structures.heaps import to_heap, EHeapPeek2
             h = to_heap(e)
             h = target_syntax.EStateVar(h).with_type(h.type)
@@ -247,9 +271,11 @@ def emap(e, f):
         return bag_union(emap(e.e1, f), emap(e.e2, f))
     if isinstance(e, target_syntax.EMap):
         return emap(e.e, compose(f, e.f))
+    if isinstance(e, syntax.ECond):
+        return cond(e.cond,
+            emap(e.then_branch, f),
+            emap(e.else_branch, f))
     return target_syntax.EMap(e, f).with_type(out_type)
-
-from cozy.simplification import simplify
 
 def efilter(e, f):
     if f.body == syntax.T:
@@ -268,6 +294,21 @@ def efilter(e, f):
             syntax.EEmptyList().with_type(e.type))
     return target_syntax.EFilter(e, f).with_type(out_type)
 
+def flatmap(e, f):
+    if isinstance(f.body, syntax.ESingleton) and f.body.e == f.arg:
+        return e
+    if isinstance(e, syntax.EEmptyList) or isinstance(f.body, syntax.EEmptyList):
+        return syntax.EEmptyList().with_type(f.body.type)
+    if isinstance(e, syntax.ESingleton):
+        return simplify(f.apply_to(e.e))
+    if isinstance(e, syntax.EBinOp) and e.op == "+":
+        return bag_union(flatmap(e.e1, f), flatmap(e.e2, f))
+    if isinstance(e, syntax.ECond):
+        return cond(e.cond,
+            flatmap(e.then_branch, f),
+            flatmap(e.else_branch, f))
+    return target_syntax.EFlatMap(e, f).with_type(f.body.type)
+
 def bag_union(e1, e2):
     if isinstance(e1, syntax.EEmptyList):
         return e2
@@ -283,6 +324,12 @@ class NotEfficient(Exception):
 def bag_contains(bag, x):
     if definitely(element_of(x, bag)):
         return syntax.T
+    if isinstance(bag, target_syntax.EFilter):
+        return syntax.EAll([
+            bag_contains(bag.e, x),
+            bag.p.apply_to(x)])
+    if isinstance(bag, syntax.ESingleton):
+        return equal(bag.e, x)
     return syntax.EIn(x, bag)
 
 def bag_subtract(e1, e2):
@@ -323,20 +370,6 @@ def bag_subtract(e1, e2):
     #     return syntax.EBinOp(e1, "-", e2).with_type(e1.type)
     # raise NotEfficient(syntax.EBinOp(e1, "-", e2).with_type(e1.type))
     return syntax.EBinOp(e1, "-", e2).with_type(e1.type)
-
-def cond(c, t, e):
-    if c == syntax.T:
-        return t
-    if c == syntax.F:
-        return e
-    if alpha_equivalent(t, e):
-        return t
-    if t.type == syntax.BOOL:
-        if t == syntax.T:
-            return syntax.EAny([c, e])
-        if e == syntax.F:
-            return syntax.EAll([c, t])
-    return syntax.ECond(c, t, e).with_type(t.type)
 
 # from collections import namedtuple
 # SimpleAssignment = namedtuple("SimpleAssignment", ["lval", "rhs"])
@@ -385,8 +418,16 @@ def as_bag(e):
         return target_syntax.EFilter(e, syntax.ELambda(syntax.EVar("x").with_type(elem_type), syntax.T)).with_type(syntax.TBag(elem_type))
     return e
 
-def checked_bag_delta(e, context, s):
-    tup = bag_delta(e, context, s)
+def checked_bag_delta(e, context, s, assumptions : syntax.Exp = syntax.T):
+    tup = bag_delta(e, context, s, assumptions)
+    added, removed = tup
+    if not definitely(singleton_or_empty(added)):
+        raise ValueError()
+    if not definitely(singleton_or_empty(removed)):
+        raise ValueError()
+    if not isinstance(added, syntax.EEmptyList) and alpha_equivalent(added, removed):
+        empty = syntax.EEmptyList().with_type(tup[0].type)
+        return (empty, empty)
     return tup
     from cozy.contexts import RootCtx
     n, d = tup
@@ -427,6 +468,14 @@ def singleton_or_empty(e):
         return singleton_or_empty(e.e)
     if isinstance(e, syntax.EUnaryOp) and e.op == syntax.UOp.Distinct:
         return singleton_or_empty(e.e)
+    if isinstance(e, syntax.ECond):
+        then_case = singleton_or_empty(e.then_branch)
+        else_case = singleton_or_empty(e.else_branch)
+        if definitely(then_case) and definitely(else_case):
+            return True
+        if possibly(then_case) or possibly(else_case):
+            return MAYBE
+        return False
     return MAYBE
 
 def is_singleton(e):
@@ -469,6 +518,10 @@ def exists(e):
         return syntax.F
     if definitely(is_singleton(e)):
         return syntax.T
+    if isinstance(e, syntax.EBinOp) and e.op == "+":
+        return syntax.EAny([
+            exists(e.e1),
+            exists(e.e2)])
     return syntax.EExists(e)
 
 def len_of(e):
@@ -502,20 +555,20 @@ def changed(e, context, s):
         #         is_zero(len_of(e.e) - len_of(d) + len_of(n)),
         #         syntax.EUnaryOp(syntax.UOp.Exists, n))
 
-    if isinstance(e, syntax.EBinOp):
-        if e.op == syntax.BOp.Or:
-            return changed(syntax.ECond(e.e1, syntax.T, e.e2).with_type(syntax.BOOL), context, s)
-        if e.op == syntax.BOp.And:
-            return changed(syntax.ECond(e.e1, e.e2, syntax.F).with_type(syntax.BOOL), context, s)
+    # if isinstance(e, syntax.EBinOp):
+    #     if e.op == syntax.BOp.Or:
+    #         return changed(syntax.ECond(e.e1, syntax.T, e.e2).with_type(syntax.BOOL), context, s)
+    #     if e.op == syntax.BOp.And:
+    #         return changed(syntax.ECond(e.e1, e.e2, syntax.F).with_type(syntax.BOOL), context, s)
 
-    if isinstance(e, syntax.ECond):
-        return cond(changed(e.cond, context, s),
-            cond(e.cond,
-                not_equal(e.then_branch, mutate(e.else_branch, s)),  # transition T -> F
-                not_equal(e.else_branch, mutate(e.then_branch, s))), # transition F -> T
-            cond(e.cond,
-                changed(e.then_branch, context, s),
-                changed(e.else_branch, context, s)))
+    # if isinstance(e, syntax.ECond):
+    #     return cond(changed(e.cond, context, s),
+    #         cond(e.cond,
+    #             not_equal(e.then_branch, mutate(e.else_branch, s)),  # transition T -> F
+    #             not_equal(e.else_branch, mutate(e.then_branch, s))), # transition F -> T
+    #         cond(e.cond,
+    #             changed(e.then_branch, context, s),
+    #             changed(e.else_branch, context, s)))
 
     return syntax.ENe(e, better_mutate(target_syntax.EStateVar(e).with_type(e.type), context, s))
     raise NotImplementedError(pprint(e))
@@ -532,6 +585,18 @@ def element_of(x, xs):
 def subset_of(xs, ys):
     if alpha_equivalent(xs, ys):
         return True
+    if isinstance(xs, syntax.EEmptyList):
+        return True
+    if isinstance(xs, syntax.ECond):
+        s1 = subset_of(xs.then_branch, ys)
+        s2 = subset_of(xs.else_branch, ys)
+        if definitely(s1) and definitely(s2):
+            return True
+        if possibly(s1) and possibly(s2):
+            return MAYBE
+        return False
+    if isinstance(xs, target_syntax.ESingleton):
+        return element_of(xs.e, ys)
     if isinstance(xs, target_syntax.EFilter):
         return subset_of(xs.e, ys)
     if isinstance(xs, target_syntax.EMap) and xs.f.arg == xs.f.body:
@@ -540,62 +605,271 @@ def subset_of(xs, ys):
         return subset_of(xs, ys.e)
     return MAYBE
 
+def to_bag(e):
+    x = syntax.EVar("x").with_type(e.type.t)
+    return target_syntax.EMap(e, syntax.ELambda(x, x)).with_type(syntax.TBag(e.type.t))
+
 def dbg(f):
-    def g(e, context, s):
-        res = f(e, context, s)
+    def g(e, context, s, assumptions : syntax.Exp = syntax.T):
+        res = f(e, context, s, assumptions)
         n, d = res
         print("delta {}: +{}, -{}".format(
             pprint(e), pprint(n), pprint(d)))
+        e_prime = mutate(e, s)
+        interp = e - d + n
+        model = solver_for(context).satisfy(syntax.EAll([assumptions, syntax.ENot(syntax.EEq(
+            to_bag(e_prime),
+            to_bag(interp)))]))
+        if model is not None:
+            print("Ooops!")
+            print("  assuming {}".format(pprint(assumptions)))
+            print("  e.type is {}".format(pprint(e.type)))
+            print("  e  = {}".format(pprint(e)))
+            print("  e' = {}".format(pprint(e_prime)))
+            print("  d  = {}".format(pprint(d)))
+            print("  n  = {}".format(pprint(n)))
+            print("start       : {}".format(eval(e, model)))
+            print("real answer : {}".format(eval(e_prime, model)))
+            print("del         : {}".format(eval(d, model)))
+            print("add         : {}".format(eval(n, model)))
+            print("got         : {}".format(eval(interp, model)))
+            raise AssertionError()
         return res
     return g
 
+def became_true(e, context, s, assumptions):
+    return became_bool(e, context, s, True, assumptions)
+
+def became_false(e, context, s, assumptions):
+    return became_bool(e, context, s, False, assumptions)
+
+def check_valid(context, formula):
+    model = solver_for(context).satisfy(syntax.ENot(formula))
+    if model is not None:
+        print("{} is not valid".format(pprint(formula)))
+        print("in model {}".format(model))
+        raise AssertionError()
+
+def checked_become_bool(f):
+    def g(e, context, s, val, assumptions):
+        res = f(e, context, s, val, assumptions)
+        check_valid(context, syntax.EImplies(assumptions,
+            syntax.EImplies(syntax.EEq(e, syntax.EBool(not val).with_type(syntax.BOOL)),
+                syntax.EEq(
+                    res,
+                    syntax.EEq(mutate(e, s), syntax.EBool(val).with_type(syntax.BOOL))))))
+        return res
+    return g
+
+@checked_become_bool
+def became_bool(e, context, s, val, assumptions):
+    """
+    Assuming that boolean expression `e` evaluates to (not val),
+    does it evaluate to (val) after executing s?
+    """
+    if alpha_equivalent(e, mutate(e, s)):
+        return syntax.F
+
+    if isinstance(e, syntax.EUnaryOp):
+        if e.op == syntax.UOp.Not:
+            return became_bool(e.e, context, s, not val, assumptions)
+        if e.op == syntax.UOp.Exists:
+            added, removed = bag_delta(e.e, context, s, assumptions)
+            if val:
+                return exists(added)
+            else:
+                return syntax.EGe(
+                    len_of(removed),
+                    len_of(added) + len_of(e.e))
+    if isinstance(e, syntax.EBinOp):
+        if e.op == syntax.BOp.And:
+            if val:
+                raise NotImplementedError(pprint(e))
+                return syntax.EAll([
+                    became_bool(e.e1, context, s, val, assumptions),
+                    became_bool(e.e2, context, s, val, assumptions)])
+            else:
+                return syntax.EAny([
+                    became_bool(e.e1, context, s, val, assumptions),
+                    became_bool(e.e2, context, s, val, assumptions)])
+        if e.op == syntax.BOp.Or:
+            if val:
+                return syntax.EAny([
+                    became_bool(e.e1, context, s, val, assumptions),
+                    became_bool(e.e2, context, s, val, assumptions)])
+            else:
+                # one (both?) of these are true...
+                return cond(e.e1,
+                    cond(e.e2,
+                        syntax.EAll([
+                            became_bool(e.e1, context, s, val, assumptions),
+                            became_bool(e.e2, context, s, val, assumptions)]),
+                        became_bool(e.e1, context, s, val, assumptions)),
+                    became_bool(e.e2, context, s, val, assumptions))
+    raise NotImplementedError(pprint(e))
+
+def implies(e1, e2):
+    if e1 == syntax.T:
+        return e2
+    if e1 == syntax.F:
+        return syntax.T
+    if e2 == syntax.T:
+        return syntax.T
+    if e2 == syntax.F:
+        return syntax.ENot(e1)
+    return syntax.EImplies(e1, e2)
+
 @dbg
-def bag_delta(e, context, s):
+def bag_delta(e, context, s, assumptions : syntax.Exp = syntax.T):
     # print("-" * 20)
     # print("{}.....{}".format(pprint(e), pprint(s)))
 
     empty = syntax.EEmptyList().with_type(e.type)
 
     if isinstance(e, target_syntax.EStateVar):
-        return checked_bag_delta(e.e, context, s)
+        return checked_bag_delta(e.e, context, s, assumptions)
 
     if isinstance(e, target_syntax.EMap):
-        n, d = checked_bag_delta(e.e, context, s)
-        if alpha_equivalent(e.f, mutate(e.f, s)):
-            return (
-                emap(n, e.f).with_type(e.type),
-                emap(d, e.f).with_type(e.type))
-        else:
-            print("maintaining {}".format(pprint(e)))
-            print("need to find {} in {}".format(e.f.arg.id, pprint(e.e)))
-            print("not in {}".format(pprint(d)))
-            print("where {}".format(pprint(changed(e.f.body, context, s))))
-            raise NotImplementedError()
+        t = e.type
+        e = target_syntax.EFlatMap(e.e, syntax.ELambda(e.f.arg,
+            syntax.ESingleton(e.f.body).with_type(t))).with_type(t)
+    #     n, d = checked_bag_delt, assumptionsa(e.e, context, s)
+
+    #     if not definitely(subset_of(d, e.e)):
+    #         print("Uh-oh! cannot distribute map over {}".format(pprint(e.e)))
+    #         print("Removed: {}".format(pprint(d)))
+    #         raise NotEfficient(e)
+
+    #     if alpha_equivalent(e.f, mutate(e.f, s)):
+    #         return (
+    #             emap(n, e.f).with_type(e.type),
+    #             emap(d, e.f).with_type(e.type))
+    #     else:
+    #         print("-" * 20)
+    #         print("maintaining {}".format(pprint(e)))
+    #         print("need to find {} in {}".format(e.f.arg.id, pprint(e.e)))
+    #         print("not in {}".format(pprint(d)))
+    #         print("where {}".format(pprint(changed(e.f.body, context, s))))
+    #         raise NotImplementedError()
 
     if isinstance(e, target_syntax.EFilter):
-        n, d = checked_bag_delta(e.e, context, s)
-        if alpha_equivalent(e.p, mutate(e.p, s)):
-            return (
-                efilter(n, e.p).with_type(e.type),
-                efilter(d, e.p).with_type(e.type))
-        else:
-            print("maintaining {}".format(pprint(e)))
-            print("need to find {} in {}".format(e.p.arg.id, pprint(e.e)))
-            print("not in {}".format(pprint(d)))
-            print("where {}".format(pprint(changed(nnf(e.p.body), context, s))))
-            raise NotImplementedError()
+        t = e.type
+        e = target_syntax.EFlatMap(e.e, syntax.ELambda(e.p.arg,
+            cond(e.p.body,
+                syntax.ESingleton(e.p.arg).with_type(t),
+                syntax.EEmptyList().with_type(t)))).with_type(t)
+    #     n, d = checked_bag_delt, assumptionsa(e.e, context, s)
+    #     n_filtered = efilter(n, e.p).with_type(e.type)
+    #     d_filtered = efilter(d, e.p).with_type(e.type)
+    #     if alpha_equivalent(e.p, mutate(e.p, s)):
+    #         return (n_filtered, d_filtered)
+    #     else:
+    #         arg = e.p.arg
+
+    #         inner_context = UnderBinder(context, arg, e.e, RUNTIME_POOL)
+
+    #         # bonus added elements due to predicate change
+    #         #  (1) did NOT satisfy the predicate before and
+    #         #  (2) DO satisfy the predicate now and
+    #         #  (3) were not removed from the underlying bag
+    #         bonus_added = efilter(e.e,
+    #             syntax.ELambda(arg,
+    #                 syntax.EAll([
+    #                     syntax.ENot(e.p.body),
+    #                     syntax.ENot(bag_contains(d, arg)),
+    #                     changed(e.p.body, inner_context, s)])))
+
+    #         # bonus removed elements due to predicate change
+    #         #  (1) DID satisfy the predicate before and
+    #         #  (2) do NOT satisfy the predicate now and
+    #         #  (3) were not added to the underlying set
+    #         bonus_removed = efilter(e,
+    #             syntax.ELambda(arg,
+    #                 syntax.EAll([
+    #                     syntax.ENot(bag_contains(n, arg)),
+    #                     syntax.ENot(changed(e.p.body, inner_context, s))])))
+
+    #         print("-" * 20)
+    #         print("maintaining {}".format(pprint(e)))
+    #         print(" * need to efficiently find + {}".format(pprint(bonus_added)))
+    #         print(" * need to efficiently find - {}".format(pprint(bonus_removed)))
+    #         # print("need to find {} in {}".format(e.p.arg.id, pprint(e.e)))
+    #         # print("not in {}".format(pprint(d)))
+    #         # print("where {}".format(pprint(changed(nnf(e.p.body), context, s))))
+    #         # raise NotImplementedError()
+    #         return (
+    #             n + bonus_added,
+    #             d + bonus_removed)
+
+    if isinstance(e, target_syntax.EFlatMap):
+        arg = fresh_var(e.f.arg.type)
+        func_body = e.f.apply_to(arg)
+
+        xs = e.e
+        added_xs, removed_xs = checked_bag_delta(xs, context, s, assumptions)
+        inner_context = UnderBinder(context, arg, xs, RUNTIME_POOL)
+        added_ys, removed_ys = checked_bag_delta(func_body, inner_context, s, assumptions)
+        # print("D_{{xs}} = {}".format(pprint(removed_xs)))
+        # print("A_{{xs}} = {}".format(pprint(added_xs)))
+        # print("D_{{f}}  = {}".format(pprint(removed_ys)))
+        # print("A_{{f}}  = {}".format(pprint(added_ys)))
+
+        new_body = mutate(func_body, s)
+
+        post_remove = bag_subtract(xs, removed_xs)
+        removed = bag_union(
+            flatmap(removed_xs, e.f),
+            flatmap(post_remove, syntax.ELambda(arg, removed_ys)))
+        added = bag_union(
+            flatmap(added_xs, syntax.ELambda(arg, new_body)),
+            flatmap(post_remove, syntax.ELambda(arg, added_ys)))
+
+        return (added, removed)
 
     if isinstance(e, syntax.EBinOp) and e.op == "+":
-        n1, d1 = checked_bag_delta(e.e1, context, s)
-        n2, d2 = checked_bag_delta(e.e2, context, s)
+        n1, d1 = checked_bag_delta(e.e1, context, s, assumptions)
+        n2, d2 = checked_bag_delta(e.e2, context, s, assumptions)
         return (bag_union(n1, n2), bag_union(d1, d2))
 
     if isinstance(e, syntax.EUnaryOp) and e.op == syntax.UOp.Distinct:
-        n, d = checked_bag_delta(e.e, context, s)
+        # TODO: not quite right
+        n, d = checked_bag_delta(e.e, context, s, assumptions)
         x = fresh_var(e.type.t)
         d = edistinct(d).with_type(e.type)
-        n = edistinct(efilter(n, syntax.ELambda(x, syntax.EImplies(bag_contains(e, x), bag_contains(d, x))))).with_type(e.type)
+        n = edistinct(efilter(n, syntax.ELambda(x, implies(bag_contains(e, x), bag_contains(d, x))))).with_type(e.type)
         return (n, d)
+
+    if isinstance(e, syntax.ESingleton):
+        new_e = mutate(e.e, s)
+        if alpha_equivalent(new_e, e.e):
+            return (empty, empty)
+        else:
+            return (syntax.ESingleton(new_e).with_type(e.type), e)
+
+    if isinstance(e, syntax.EEmptyList):
+        return (empty, empty)
+
+    if isinstance(e, syntax.ECond):
+        new_cond = mutate(e.cond, s)
+        if alpha_equivalent(new_cond, e.cond):
+            n1, d1 = checked_bag_delta(e.then_branch, context, s, assumptions)
+            n2, d2 = checked_bag_delta(e.else_branch, context, s, assumptions)
+            return (
+                cond(e.cond, n1, n2),
+                cond(e.cond, d1, d2))
+        else:
+
+            # print(" -> {}".format(pprint(e.cond)))
+            # print(" becomes T: {}".format(pprint(became_true (e.cond, context, s, assumptions))))
+            # print(" becomes F: {}".format(pprint(became_false(e.cond, context, s, assumptions))))
+
+            case1 = cond(became_false(e.cond, context, s, assumptions), bag_subtract(e.else_branch, e.then_branch), empty)
+            case2 = cond(became_true (e.cond, context, s, assumptions), bag_subtract(e.then_branch, e.else_branch), empty)
+            case3 = cond(became_false(e.cond, context, s, assumptions), bag_subtract(e.then_branch, e.else_branch), empty)
+            case4 = cond(became_true (e.cond, context, s, assumptions), bag_subtract(e.else_branch, e.then_branch), empty)
+            added = cond(e.cond, case1, case2)
+            removed = cond(e.cond, case3, case4)
+            return (added, removed)
 
     # if isinstance(e, syntax.EVar):
     #     n = d = syntax.EEmptyList().with_type(e.type)
@@ -626,6 +900,9 @@ def bag_delta(e, context, s):
         raise NotImplementedError(e)
 
     new_e = mutate(e, s)
+
+    if isinstance(new_e, syntax.EBinOp) and new_e.op == "+" and isinstance(new_e.e1, syntax.EBinOp) and new_e.e1.op == "-" and alpha_equivalent(new_e.e1.e1, e):
+        return (new_e.e2, new_e.e1.e2)
 
     try:
         return (
@@ -1016,6 +1293,122 @@ def sketch_update(
 
     return (stm, subgoals)
 
+
+_SOLVERS = { }
+def solver_for(context):
+    s = _SOLVERS.get(context)
+    if s is None:
+        s = ModelCachingSolver(
+            vars=[v for v, p in context.vars()],
+            funcs=context.funcs())
+        _SOLVERS[context] = s
+    return s
+
+def optimize_lambda(f, bag, context, pc):
+    context = UnderBinder(context, f.arg, bag, RUNTIME_POOL)
+    return syntax.ELambda(f.arg,
+        optimize(f.body, context, syntax.EAll([pc, syntax.EIn(f.arg, bag)])))
+
+def optimize(e, context, pc = syntax.T):
+
+    if isinstance(e, int) or isinstance(e, float) or isinstance(e, str):
+        return e
+
+    if isinstance(e, tuple):
+        return tuple(optimize(x, context, pc) for x in e)
+
+    if isinstance(e, target_syntax.EStateVar):
+        return e
+
+    solver = solver_for(context)
+    if e.type == syntax.BOOL:
+        if solver.valid(syntax.EImplies(pc, e)):
+            return syntax.T
+        if solver.valid(syntax.EImplies(pc, syntax.ENot(e))):
+            return syntax.F
+    if is_collection(e.type):
+        if solver.valid(syntax.EImplies(pc, syntax.EEmpty(e))):
+            return syntax.EEmptyList().with_type(e.type)
+
+    if not isinstance(e, syntax.Exp):
+        raise NotImplementedError(repr(e))
+
+    # (1) recurse
+    if isinstance(e, target_syntax.EFilter):
+        new_children = [
+            optimize(e.e, context, pc),
+            optimize_lambda(e.p, e.e, context, pc)]
+    elif isinstance(e, target_syntax.EMap) or isinstance(e, target_syntax.EFlatMap) or isinstance(e, syntax.EArgMin) or isinstance(e, syntax.EArgMax):
+        new_children = [
+            optimize(e.e, context, pc),
+            optimize_lambda(e.f, e.e, context, pc)]
+    elif isinstance(e, syntax.ECond):
+        new_children = [
+            optimize(e.cond, context, pc),
+            optimize(e.then_branch, context, syntax.EAll([pc, e.cond])),
+            optimize(e.then_branch, context, syntax.EAll([pc, syntax.ENot(e.cond)]))]
+    elif isinstance(e, syntax.EBinOp) and e.op == syntax.BOp.And:
+        new_children = [
+            optimize(e.e1, context, pc),
+            e.op,
+            optimize(e.e2, context, syntax.EAll([pc, e.e1]))]
+    elif isinstance(e, syntax.EBinOp) and e.op == syntax.BOp.Or:
+        new_children = [
+            optimize(e.e1, context, pc),
+            e.op,
+            optimize(e.e2, context, syntax.EAll([pc, syntax.ENot(e.e1)]))]
+    else:
+        assert not any(isinstance(x, target_syntax.ELambda) for x in e.children()), pprint(e)
+        new_children = [optimize(c, context, pc) for c in e.children()]
+
+    # (2) optimize
+    if isinstance(e, target_syntax.EMap):
+        bag, func = new_children
+        if func.arg == func.body:
+            return bag
+        if isinstance(bag, syntax.ESingleton):
+            return syntax.ESingleton(optimize(func.apply_to(bag.e), context, pc)).with_type(e.type)
+        if isinstance(bag, syntax.EBinOp) and bag.op == "+":
+            return optimize(syntax.EBinOp(
+                target_syntax.EMap(bag.e1, func).with_type(e.type), bag.op,
+                target_syntax.EMap(bag.e2, func).with_type(e.type)).with_type(e.type), context, pc)
+        if isinstance(bag, syntax.EBinOp) and bag.op == "-" and solver.valid(target_syntax.EIsSubset(bag.e2, bag.e1)):
+            return optimize(syntax.EBinOp(
+                target_syntax.EMap(bag.e1, func).with_type(e.type), bag.op,
+                target_syntax.EMap(bag.e2, func).with_type(e.type)).with_type(e.type), context, pc)
+    if isinstance(e, target_syntax.EFilter):
+        bag, pred = new_children
+        if e.p.body == syntax.T:
+            return bag
+        if e.p.body == syntax.F:
+            return syntax.EEmptyList().with_type(e.type)
+        if isinstance(bag, syntax.EBinOp) and bag.op in ("+", "-"):
+            return optimize(syntax.EBinOp(
+                target_syntax.EFilter(bag.e1, pred).with_type(e.type), bag.op,
+                target_syntax.EFilter(bag.e2, pred).with_type(e.type)).with_type(e.type), context, pc)
+        if isinstance(bag, syntax.ESingleton):
+            return cond(
+                optimize(pred.apply_to(bag.e), context, pc),
+                bag,
+                syntax.EEmptyList().with_type(e.type))
+    if isinstance(e, syntax.EBinOp):
+        if e.op == syntax.BOp.And:
+            return syntax.EAll([new_children[0], new_children[2]])
+        if e.op == syntax.BOp.Or:
+            return syntax.EAny([new_children[0], new_children[2]])
+    if isinstance(e, syntax.EGetField):
+        record, field_name = new_children
+        if isinstance(record, syntax.EMakeRecord):
+            return dict(record.fields)[field_name]
+    if isinstance(e, syntax.EBinOp) and e.op == "+":
+        e1, _, e2 = new_children
+        if isinstance(e1, syntax.EEmptyList) or e1 == syntax.ZERO:
+            return e2
+        if isinstance(e2, syntax.EEmptyList) or e2 == syntax.ZERO:
+            return e1
+
+    return type(e)(*new_children).with_type(e.type)
+
 def run():
 
     from cozy.syntax import EVar, SNoOp, TNative, TEnum, EGetField, TRecord, TInt, ELambda, EBinOp, TBool, TBag, SAssign, SSeq, SIf, TMap, SCall, ESingleton, EMakeRecord, TList, EUnaryOp, ECall, EArgMin, EArgMax, ENum, SDecl, EEnumEntry, EAll
@@ -1031,10 +1424,10 @@ def run():
     # e = EArgMin(EMap(EVar('_idleHosts').with_type(TBag(TRecord((('host_id', TNative('mongo::HostAndPort')), ('host_timeout', TNative('mongo::Date_t')))))), ELambda(EVar('h').with_type(TRecord((('host_id', TNative('mongo::HostAndPort')), ('host_timeout', TNative('mongo::Date_t'))))), EGetField(EVar('h').with_type(TRecord((('host_id', TNative('mongo::HostAndPort')), ('host_timeout', TNative('mongo::Date_t'))))), 'host_timeout').with_type(TNative('mongo::Date_t')))).with_type(TList(TNative('mongo::Date_t'))), ELambda(EVar('x').with_type(TNative('mongo::Date_t')), EVar('x').with_type(TNative('mongo::Date_t')))).with_type(TNative('mongo::Date_t'))
 
     # nextEvent
-    # e = EArgMin(EBinOp(EBinOp(EMap(EVar('reqs').with_type(TBag(TRecord((('rq_callback', TNative('mongo::executor::ConnectionPool::GetConnectionCallback*')), ('rq_expiration', TNative('mongo::Date_t')), ('rq_host', TNative('mongo::HostAndPort')))))), ELambda(EVar('r').with_type(TRecord((('rq_callback', TNative('mongo::executor::ConnectionPool::GetConnectionCallback*')), ('rq_expiration', TNative('mongo::Date_t')), ('rq_host', TNative('mongo::HostAndPort'))))), EGetField(EVar('r').with_type(TRecord((('rq_callback', TNative('mongo::executor::ConnectionPool::GetConnectionCallback*')), ('rq_expiration', TNative('mongo::Date_t')), ('rq_host', TNative('mongo::HostAndPort'))))), 'rq_expiration').with_type(TNative('mongo::Date_t')))).with_type(TList(TNative('mongo::Date_t'))), '+', EMap(EFilter(EVar('conns').with_type(TBag(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool()))))), ELambda(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), EBinOp(EGetField(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), 'conn_state').with_type(TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), '==', EEnumEntry('READY').with_type(TEnum(('READY', 'PROCESSING', 'CHECKED_OUT')))).with_type(TBool()))).with_type(TBag(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool()))))), ELambda(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), EGetField(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), 'conn_next_refresh').with_type(TNative('mongo::Date_t')))).with_type(TList(TNative('mongo::Date_t')))).with_type(TList(TNative('mongo::Date_t'))), '+', EMap(EMap(EFilter(EUnaryOp('distinct', EMap(EVar('conns').with_type(TBag(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool()))))), ELambda(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), EGetField(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), 'conn_host').with_type(TNative('mongo::HostAndPort')))).with_type(TList(TNative('mongo::HostAndPort')))).with_type(TList(TNative('mongo::HostAndPort'))), ELambda(EVar('p').with_type(TNative('mongo::HostAndPort')), EUnaryOp('not', EBinOp(EUnaryOp('exists', EMap(EFilter(EVar('reqs').with_type(TBag(TRecord((('rq_callback', TNative('mongo::executor::ConnectionPool::GetConnectionCallback*')), ('rq_expiration', TNative('mongo::Date_t')), ('rq_host', TNative('mongo::HostAndPort')))))), ELambda(EVar('r').with_type(TRecord((('rq_callback', TNative('mongo::executor::ConnectionPool::GetConnectionCallback*')), ('rq_expiration', TNative('mongo::Date_t')), ('rq_host', TNative('mongo::HostAndPort'))))), EBinOp(EGetField(EVar('r').with_type(TRecord((('rq_callback', TNative('mongo::executor::ConnectionPool::GetConnectionCallback*')), ('rq_expiration', TNative('mongo::Date_t')), ('rq_host', TNative('mongo::HostAndPort'))))), 'rq_host').with_type(TNative('mongo::HostAndPort')), '==', EVar('p').with_type(TNative('mongo::HostAndPort'))).with_type(TBool()))).with_type(TBag(TRecord((('rq_callback', TNative('mongo::executor::ConnectionPool::GetConnectionCallback*')), ('rq_expiration', TNative('mongo::Date_t')), ('rq_host', TNative('mongo::HostAndPort')))))), ELambda(EVar('r').with_type(TRecord((('rq_callback', TNative('mongo::executor::ConnectionPool::GetConnectionCallback*')), ('rq_expiration', TNative('mongo::Date_t')), ('rq_host', TNative('mongo::HostAndPort'))))), EVar('r').with_type(TRecord((('rq_callback', TNative('mongo::executor::ConnectionPool::GetConnectionCallback*')), ('rq_expiration', TNative('mongo::Date_t')), ('rq_host', TNative('mongo::HostAndPort'))))))).with_type(TList(TRecord((('rq_callback', TNative('mongo::executor::ConnectionPool::GetConnectionCallback*')), ('rq_expiration', TNative('mongo::Date_t')), ('rq_host', TNative('mongo::HostAndPort'))))))).with_type(TBool()), 'or', EUnaryOp('exists', EMap(EFilter(EVar('conns').with_type(TBag(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool()))))), ELambda(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), EBinOp(EBinOp(EGetField(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), 'conn_host').with_type(TNative('mongo::HostAndPort')), '==', EVar('p').with_type(TNative('mongo::HostAndPort'))).with_type(TBool()), 'and', EBinOp(EGetField(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), 'conn_state').with_type(TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), '==', EEnumEntry('CHECKED_OUT').with_type(TEnum(('READY', 'PROCESSING', 'CHECKED_OUT')))).with_type(TBool())).with_type(TBool()))).with_type(TBag(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool()))))), ELambda(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))))).with_type(TList(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))))).with_type(TBool())).with_type(TBool())).with_type(TBool()))).with_type(TList(TNative('mongo::HostAndPort'))), ELambda(EVar('p').with_type(TNative('mongo::HostAndPort')), EVar('p').with_type(TNative('mongo::HostAndPort')))).with_type(TList(TNative('mongo::HostAndPort'))), ELambda(EVar('p').with_type(TNative('mongo::HostAndPort')), ECall('after', (EArgMax(EMap(EMap(EFilter(EVar('conns').with_type(TBag(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool()))))), ELambda(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), EBinOp(EBinOp(EGetField(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), 'conn_host').with_type(TNative('mongo::HostAndPort')), '==', EVar('p').with_type(TNative('mongo::HostAndPort'))).with_type(TBool()), 'and', EBinOp(EGetField(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), 'conn_state').with_type(TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), '!=', EEnumEntry('CHECKED_OUT').with_type(TEnum(('READY', 'PROCESSING', 'CHECKED_OUT')))).with_type(TBool())).with_type(TBool()))).with_type(TBag(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool()))))), ELambda(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))))).with_type(TList(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool()))))), ELambda(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), EGetField(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), 'conn_returned').with_type(TNative('mongo::Date_t')))).with_type(TList(TNative('mongo::Date_t'))), ELambda(EVar('x').with_type(TNative('mongo::Date_t')), EVar('x').with_type(TNative('mongo::Date_t')))).with_type(TNative('mongo::Date_t')), EVar('hostTimeout').with_type(TNative('mongo::Milliseconds')))).with_type(TNative('mongo::Date_t')))).with_type(TList(TNative('mongo::Date_t')))).with_type(TList(TNative('mongo::Date_t'))), ELambda(EVar('x').with_type(TNative('mongo::Date_t')), EVar('x').with_type(TNative('mongo::Date_t')))).with_type(TNative('mongo::Date_t'))
+    e = EArgMin(EBinOp(EBinOp(EMap(EVar('reqs').with_type(TBag(TRecord((('rq_callback', TNative('mongo::executor::ConnectionPool::GetConnectionCallback*')), ('rq_expiration', TNative('mongo::Date_t')), ('rq_host', TNative('mongo::HostAndPort')))))), ELambda(EVar('r').with_type(TRecord((('rq_callback', TNative('mongo::executor::ConnectionPool::GetConnectionCallback*')), ('rq_expiration', TNative('mongo::Date_t')), ('rq_host', TNative('mongo::HostAndPort'))))), EGetField(EVar('r').with_type(TRecord((('rq_callback', TNative('mongo::executor::ConnectionPool::GetConnectionCallback*')), ('rq_expiration', TNative('mongo::Date_t')), ('rq_host', TNative('mongo::HostAndPort'))))), 'rq_expiration').with_type(TNative('mongo::Date_t')))).with_type(TList(TNative('mongo::Date_t'))), '+', EMap(EFilter(EVar('conns').with_type(TBag(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool()))))), ELambda(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), EBinOp(EGetField(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), 'conn_state').with_type(TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), '==', EEnumEntry('READY').with_type(TEnum(('READY', 'PROCESSING', 'CHECKED_OUT')))).with_type(TBool()))).with_type(TBag(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool()))))), ELambda(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), EGetField(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), 'conn_next_refresh').with_type(TNative('mongo::Date_t')))).with_type(TList(TNative('mongo::Date_t')))).with_type(TList(TNative('mongo::Date_t'))), '+', EMap(EMap(EFilter(EUnaryOp('distinct', EMap(EVar('conns').with_type(TBag(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool()))))), ELambda(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), EGetField(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), 'conn_host').with_type(TNative('mongo::HostAndPort')))).with_type(TList(TNative('mongo::HostAndPort')))).with_type(TList(TNative('mongo::HostAndPort'))), ELambda(EVar('p').with_type(TNative('mongo::HostAndPort')), EUnaryOp('not', EBinOp(EUnaryOp('exists', EMap(EFilter(EVar('reqs').with_type(TBag(TRecord((('rq_callback', TNative('mongo::executor::ConnectionPool::GetConnectionCallback*')), ('rq_expiration', TNative('mongo::Date_t')), ('rq_host', TNative('mongo::HostAndPort')))))), ELambda(EVar('r').with_type(TRecord((('rq_callback', TNative('mongo::executor::ConnectionPool::GetConnectionCallback*')), ('rq_expiration', TNative('mongo::Date_t')), ('rq_host', TNative('mongo::HostAndPort'))))), EBinOp(EGetField(EVar('r').with_type(TRecord((('rq_callback', TNative('mongo::executor::ConnectionPool::GetConnectionCallback*')), ('rq_expiration', TNative('mongo::Date_t')), ('rq_host', TNative('mongo::HostAndPort'))))), 'rq_host').with_type(TNative('mongo::HostAndPort')), '==', EVar('p').with_type(TNative('mongo::HostAndPort'))).with_type(TBool()))).with_type(TBag(TRecord((('rq_callback', TNative('mongo::executor::ConnectionPool::GetConnectionCallback*')), ('rq_expiration', TNative('mongo::Date_t')), ('rq_host', TNative('mongo::HostAndPort')))))), ELambda(EVar('r').with_type(TRecord((('rq_callback', TNative('mongo::executor::ConnectionPool::GetConnectionCallback*')), ('rq_expiration', TNative('mongo::Date_t')), ('rq_host', TNative('mongo::HostAndPort'))))), EVar('r').with_type(TRecord((('rq_callback', TNative('mongo::executor::ConnectionPool::GetConnectionCallback*')), ('rq_expiration', TNative('mongo::Date_t')), ('rq_host', TNative('mongo::HostAndPort'))))))).with_type(TList(TRecord((('rq_callback', TNative('mongo::executor::ConnectionPool::GetConnectionCallback*')), ('rq_expiration', TNative('mongo::Date_t')), ('rq_host', TNative('mongo::HostAndPort'))))))).with_type(TBool()), 'or', EUnaryOp('exists', EMap(EFilter(EVar('conns').with_type(TBag(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool()))))), ELambda(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), EBinOp(EBinOp(EGetField(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), 'conn_host').with_type(TNative('mongo::HostAndPort')), '==', EVar('p').with_type(TNative('mongo::HostAndPort'))).with_type(TBool()), 'and', EBinOp(EGetField(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), 'conn_state').with_type(TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), '==', EEnumEntry('CHECKED_OUT').with_type(TEnum(('READY', 'PROCESSING', 'CHECKED_OUT')))).with_type(TBool())).with_type(TBool()))).with_type(TBag(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool()))))), ELambda(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))))).with_type(TList(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))))).with_type(TBool())).with_type(TBool())).with_type(TBool()))).with_type(TList(TNative('mongo::HostAndPort'))), ELambda(EVar('p').with_type(TNative('mongo::HostAndPort')), EVar('p').with_type(TNative('mongo::HostAndPort')))).with_type(TList(TNative('mongo::HostAndPort'))), ELambda(EVar('p').with_type(TNative('mongo::HostAndPort')), ECall('after', (EArgMax(EMap(EMap(EFilter(EVar('conns').with_type(TBag(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool()))))), ELambda(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), EBinOp(EBinOp(EGetField(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), 'conn_host').with_type(TNative('mongo::HostAndPort')), '==', EVar('p').with_type(TNative('mongo::HostAndPort'))).with_type(TBool()), 'and', EBinOp(EGetField(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), 'conn_state').with_type(TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), '!=', EEnumEntry('CHECKED_OUT').with_type(TEnum(('READY', 'PROCESSING', 'CHECKED_OUT')))).with_type(TBool())).with_type(TBool()))).with_type(TBag(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool()))))), ELambda(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))))).with_type(TList(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool()))))), ELambda(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), EGetField(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), 'conn_returned').with_type(TNative('mongo::Date_t')))).with_type(TList(TNative('mongo::Date_t'))), ELambda(EVar('x').with_type(TNative('mongo::Date_t')), EVar('x').with_type(TNative('mongo::Date_t')))).with_type(TNative('mongo::Date_t')), EVar('hostTimeout').with_type(TNative('mongo::Milliseconds')))).with_type(TNative('mongo::Date_t')))).with_type(TList(TNative('mongo::Date_t')))).with_type(TList(TNative('mongo::Date_t'))), ELambda(EVar('x').with_type(TNative('mongo::Date_t')), EVar('x').with_type(TNative('mongo::Date_t')))).with_type(TNative('mongo::Date_t'))
 
     # nextEvent using _idleHosts
-    e = EArgMin(EBinOp(EBinOp(EMap(EVar('reqs').with_type(TBag(TRecord((('rq_callback', TNative('mongo::executor::ConnectionPool::GetConnectionCallback*')), ('rq_expiration', TNative('mongo::Date_t')), ('rq_host', TNative('mongo::HostAndPort')))))), ELambda(EVar('r').with_type(TRecord((('rq_callback', TNative('mongo::executor::ConnectionPool::GetConnectionCallback*')), ('rq_expiration', TNative('mongo::Date_t')), ('rq_host', TNative('mongo::HostAndPort'))))), EGetField(EVar('r').with_type(TRecord((('rq_callback', TNative('mongo::executor::ConnectionPool::GetConnectionCallback*')), ('rq_expiration', TNative('mongo::Date_t')), ('rq_host', TNative('mongo::HostAndPort'))))), 'rq_expiration').with_type(TNative('mongo::Date_t')))).with_type(TList(TNative('mongo::Date_t'))), '+', EMap(EFilter(EVar('conns').with_type(TBag(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool()))))), ELambda(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), EBinOp(EGetField(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), 'conn_state').with_type(TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), '==', EEnumEntry('READY').with_type(TEnum(('READY', 'PROCESSING', 'CHECKED_OUT')))).with_type(TBool()))).with_type(TBag(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool()))))), ELambda(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), EGetField(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), 'conn_next_refresh').with_type(TNative('mongo::Date_t')))).with_type(TList(TNative('mongo::Date_t')))).with_type(TList(TNative('mongo::Date_t'))), '+', EMap(EVar('_idleHosts').with_type(TBag(TRecord((('host_id', TNative('mongo::HostAndPort')), ('host_timeout', TNative('mongo::Date_t')))))), ELambda(EVar('h').with_type(TRecord((('host_id', TNative('mongo::HostAndPort')), ('host_timeout', TNative('mongo::Date_t'))))), EGetField(EVar('h').with_type(TRecord((('host_id', TNative('mongo::HostAndPort')), ('host_timeout', TNative('mongo::Date_t'))))), 'host_timeout').with_type(TNative('mongo::Date_t')))).with_type(TList(TNative('mongo::Date_t')))).with_type(TList(TNative('mongo::Date_t'))), ELambda(EVar('x').with_type(TNative('mongo::Date_t')), EVar('x').with_type(TNative('mongo::Date_t')))).with_type(TNative('mongo::Date_t'))
+    # e = EArgMin(EBinOp(EBinOp(EMap(EVar('reqs').with_type(TBag(TRecord((('rq_callback', TNative('mongo::executor::ConnectionPool::GetConnectionCallback*')), ('rq_expiration', TNative('mongo::Date_t')), ('rq_host', TNative('mongo::HostAndPort')))))), ELambda(EVar('r').with_type(TRecord((('rq_callback', TNative('mongo::executor::ConnectionPool::GetConnectionCallback*')), ('rq_expiration', TNative('mongo::Date_t')), ('rq_host', TNative('mongo::HostAndPort'))))), EGetField(EVar('r').with_type(TRecord((('rq_callback', TNative('mongo::executor::ConnectionPool::GetConnectionCallback*')), ('rq_expiration', TNative('mongo::Date_t')), ('rq_host', TNative('mongo::HostAndPort'))))), 'rq_expiration').with_type(TNative('mongo::Date_t')))).with_type(TList(TNative('mongo::Date_t'))), '+', EMap(EFilter(EVar('conns').with_type(TBag(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool()))))), ELambda(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), EBinOp(EGetField(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), 'conn_state').with_type(TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), '==', EEnumEntry('READY').with_type(TEnum(('READY', 'PROCESSING', 'CHECKED_OUT')))).with_type(TBool()))).with_type(TBag(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool()))))), ELambda(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), EGetField(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), 'conn_next_refresh').with_type(TNative('mongo::Date_t')))).with_type(TList(TNative('mongo::Date_t')))).with_type(TList(TNative('mongo::Date_t'))), '+', EMap(EVar('_idleHosts').with_type(TBag(TRecord((('host_id', TNative('mongo::HostAndPort')), ('host_timeout', TNative('mongo::Date_t')))))), ELambda(EVar('h').with_type(TRecord((('host_id', TNative('mongo::HostAndPort')), ('host_timeout', TNative('mongo::Date_t'))))), EGetField(EVar('h').with_type(TRecord((('host_id', TNative('mongo::HostAndPort')), ('host_timeout', TNative('mongo::Date_t'))))), 'host_timeout').with_type(TNative('mongo::Date_t')))).with_type(TList(TNative('mongo::Date_t')))).with_type(TList(TNative('mongo::Date_t'))), ELambda(EVar('x').with_type(TNative('mongo::Date_t')), EVar('x').with_type(TNative('mongo::Date_t')))).with_type(TNative('mongo::Date_t'))
 
     s = SSeq(SDecl('c', EUnaryOp('the', EMap(EFilter(EVar('conns').with_type(TBag(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool()))))), ELambda(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), EBinOp(EGetField(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), 'conn_iface').with_type(TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), '==', EVar('i').with_type(TNative('mongo::executor::ConnectionPool::ConnectionInterface*'))).with_type(TBool()))).with_type(TBag(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool()))))), ELambda(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))))).with_type(TList(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))))).with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool()))))), SSeq(SCall(EVar('_idleHosts').with_type(TBag(TRecord((('host_id', TNative('mongo::HostAndPort')), ('host_timeout', TNative('mongo::Date_t')))))), 'remove_all', (EMap(EFilter(EVar('_idleHosts').with_type(TBag(TRecord((('host_id', TNative('mongo::HostAndPort')), ('host_timeout', TNative('mongo::Date_t')))))), ELambda(EVar('h').with_type(TRecord((('host_id', TNative('mongo::HostAndPort')), ('host_timeout', TNative('mongo::Date_t'))))), EBinOp(EGetField(EVar('h').with_type(TRecord((('host_id', TNative('mongo::HostAndPort')), ('host_timeout', TNative('mongo::Date_t'))))), 'host_id').with_type(TNative('mongo::HostAndPort')), '==', EGetField(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), 'conn_host').with_type(TNative('mongo::HostAndPort'))).with_type(TBool()))).with_type(TBag(TRecord((('host_id', TNative('mongo::HostAndPort')), ('host_timeout', TNative('mongo::Date_t')))))), ELambda(EVar('h').with_type(TRecord((('host_id', TNative('mongo::HostAndPort')), ('host_timeout', TNative('mongo::Date_t'))))), EVar('h').with_type(TRecord((('host_id', TNative('mongo::HostAndPort')), ('host_timeout', TNative('mongo::Date_t'))))))).with_type(TList(TRecord((('host_id', TNative('mongo::HostAndPort')), ('host_timeout', TNative('mongo::Date_t')))))),)), SSeq(SCall(EVar('conns').with_type(TBag(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool()))))), 'remove', (EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))),)), SSeq(SCall(EVar('conns').with_type(TBag(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool()))))), 'add', (EMakeRecord((('conn_state', EEnumEntry('READY').with_type(TEnum(('READY', 'PROCESSING', 'CHECKED_OUT')))), ('conn_host', EGetField(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), 'conn_host').with_type(TNative('mongo::HostAndPort'))), ('conn_iface', EGetField(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), 'conn_iface').with_type(TNative('mongo::executor::ConnectionPool::ConnectionInterface*'))), ('conn_next_refresh', ECall('after', (EVar('lastUsed').with_type(TNative('mongo::Date_t')), EVar('refreshRequirement').with_type(TNative('mongo::Milliseconds')))).with_type(TNative('mongo::Date_t'))), ('conn_returned', EVar('now').with_type(TNative('mongo::Date_t'))), ('conn_last_used', EVar('retId').with_type(TInt())), ('conn_dropped', EGetField(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), 'conn_dropped').with_type(TBool())))).with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))),)), SSeq(SIf(EUnaryOp('not', EBinOp(EUnaryOp('exists', EMap(EFilter(EVar('reqs').with_type(TBag(TRecord((('rq_callback', TNative('mongo::executor::ConnectionPool::GetConnectionCallback*')), ('rq_expiration', TNative('mongo::Date_t')), ('rq_host', TNative('mongo::HostAndPort')))))), ELambda(EVar('r').with_type(TRecord((('rq_callback', TNative('mongo::executor::ConnectionPool::GetConnectionCallback*')), ('rq_expiration', TNative('mongo::Date_t')), ('rq_host', TNative('mongo::HostAndPort'))))), EBinOp(EGetField(EVar('r').with_type(TRecord((('rq_callback', TNative('mongo::executor::ConnectionPool::GetConnectionCallback*')), ('rq_expiration', TNative('mongo::Date_t')), ('rq_host', TNative('mongo::HostAndPort'))))), 'rq_host').with_type(TNative('mongo::HostAndPort')), '==', EGetField(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), 'conn_host').with_type(TNative('mongo::HostAndPort'))).with_type(TBool()))).with_type(TBag(TRecord((('rq_callback', TNative('mongo::executor::ConnectionPool::GetConnectionCallback*')), ('rq_expiration', TNative('mongo::Date_t')), ('rq_host', TNative('mongo::HostAndPort')))))), ELambda(EVar('r').with_type(TRecord((('rq_callback', TNative('mongo::executor::ConnectionPool::GetConnectionCallback*')), ('rq_expiration', TNative('mongo::Date_t')), ('rq_host', TNative('mongo::HostAndPort'))))), EVar('r').with_type(TRecord((('rq_callback', TNative('mongo::executor::ConnectionPool::GetConnectionCallback*')), ('rq_expiration', TNative('mongo::Date_t')), ('rq_host', TNative('mongo::HostAndPort'))))))).with_type(TList(TRecord((('rq_callback', TNative('mongo::executor::ConnectionPool::GetConnectionCallback*')), ('rq_expiration', TNative('mongo::Date_t')), ('rq_host', TNative('mongo::HostAndPort'))))))).with_type(TBool()), 'or', EUnaryOp('exists', EMap(EFilter(EVar('conns').with_type(TBag(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool()))))), ELambda(EVar('_var6546').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), EBinOp(EBinOp(EGetField(EVar('_var6546').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), 'conn_host').with_type(TNative('mongo::HostAndPort')), '==', EGetField(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), 'conn_host').with_type(TNative('mongo::HostAndPort'))).with_type(TBool()), 'and', EBinOp(EGetField(EVar('_var6546').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), 'conn_state').with_type(TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), '==', EEnumEntry('CHECKED_OUT').with_type(TEnum(('READY', 'PROCESSING', 'CHECKED_OUT')))).with_type(TBool())).with_type(TBool()))).with_type(TBag(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool()))))), ELambda(EVar('_var6547').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), EVar('_var6547').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))))).with_type(TList(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))))).with_type(TBool())).with_type(TBool())).with_type(TBool()), SCall(EVar('_idleHosts').with_type(TBag(TRecord((('host_id', TNative('mongo::HostAndPort')), ('host_timeout', TNative('mongo::Date_t')))))), 'add', (EMakeRecord((('host_id', EGetField(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), 'conn_host').with_type(TNative('mongo::HostAndPort'))), ('host_timeout', ECall('after', (EArgMax(EMap(EMap(EFilter(EVar('conns').with_type(TBag(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool()))))), ELambda(EVar('_var6549').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), EBinOp(EBinOp(EGetField(EVar('_var6549').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), 'conn_host').with_type(TNative('mongo::HostAndPort')), '==', EGetField(EVar('c').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), 'conn_host').with_type(TNative('mongo::HostAndPort'))).with_type(TBool()), 'and', EBinOp(EGetField(EVar('_var6549').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), 'conn_state').with_type(TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), '!=', EEnumEntry('CHECKED_OUT').with_type(TEnum(('READY', 'PROCESSING', 'CHECKED_OUT')))).with_type(TBool())).with_type(TBool()))).with_type(TBag(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool()))))), ELambda(EVar('_var6550').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), EVar('_var6550').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))))).with_type(TList(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool()))))), ELambda(EVar('_var6548').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), EGetField(EVar('_var6548').with_type(TRecord((('conn_state', TEnum(('READY', 'PROCESSING', 'CHECKED_OUT'))), ('conn_host', TNative('mongo::HostAndPort')), ('conn_iface', TNative('mongo::executor::ConnectionPool::ConnectionInterface*')), ('conn_next_refresh', TNative('mongo::Date_t')), ('conn_returned', TNative('mongo::Date_t')), ('conn_last_used', TInt()), ('conn_dropped', TBool())))), 'conn_returned').with_type(TNative('mongo::Date_t')))).with_type(TList(TNative('mongo::Date_t'))), ELambda(EVar('x').with_type(TNative('mongo::Date_t')), EVar('x').with_type(TNative('mongo::Date_t')))).with_type(TNative('mongo::Date_t')), EVar('hostTimeout').with_type(TNative('mongo::Milliseconds')))).with_type(TNative('mongo::Date_t'))))).with_type(TRecord((('host_id', TNative('mongo::HostAndPort')), ('host_timeout', TNative('mongo::Date_t'))))),)), SNoOp()), SAssign(EVar('retId').with_type(TInt()), EBinOp(EVar('retId').with_type(TInt()), '+', ENum(1).with_type(TInt())).with_type(TInt())))))))
     assumptions = [
@@ -1074,15 +1467,38 @@ def run():
     print(pprint(s))
     print("-"*40)
 
-    print(pprint(simplify(mutate(e, s))))
+    print(pprint(mutate(e, s)))
 
     print("-"*40)
 
-    print(pprint(better_mutate(
+    from cozy.syntax_tools import cse
+    from cozy.solver import break_let
+
+    print("Mutating...")
+    e_prime = better_mutate(
         e=EStateVar(e).with_type(e.type),
         context=context,
         op=s,
-        assumptions=EAll(assumptions))))
+        assumptions=EAll(assumptions))
+
+    print("Optimizing...")
+    e_prime_opt = optimize(e_prime, context=context, pc=EAll(assumptions))
+
+    print("Eliminating common subexpressions...")
+    e_prime_opt_cse = cse(e_prime)
+
+    for part in break_let(e_prime_opt_cse):
+        if isinstance(part, syntax.Exp):
+            print("return {}".format(pprint(part)))
+        else:
+            var, val = part
+            print("{} = {}".format(var.id, pprint(val)))
+
+    # print(pprint(better_mutate(
+    #     e=EStateVar(e).with_type(e.type),
+    #     context=context,
+    #     op=s,
+    #     assumptions=EAll(assumptions))))
 
     return
 

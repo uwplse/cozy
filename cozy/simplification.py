@@ -18,6 +18,20 @@ checked_simplify = Option("checked-simplification", bool, False)
 def is_literal(e):
     return not free_vars(e) and not free_funcs(e)
 
+def simplify_cond(c, t, e):
+    if c == T:
+        return t
+    if c == F:
+        return e
+    if alpha_equivalent(t, e):
+        return t
+    if t.type == BOOL:
+        if t == T:
+            return EAny([c, e])
+        if e == F:
+            return EAll([c, t])
+    return ECond(c, t, e).with_type(t.type)
+
 class _SimplificationVisitor(BottomUpRewriter):
     def __init__(self, debug=False):
         self.debug = debug
@@ -47,6 +61,18 @@ class _SimplificationVisitor(BottomUpRewriter):
             e1 = self.visit(e.e1)
             e2 = self.visit(e.e2)
             return EAny([e1, e2])
+        elif e.op == "=>":
+            e1 = self.visit(e.e1)
+            e2 = self.visit(e.e2)
+            if e1 == T:
+                return e2
+            if e1 == F:
+                return T
+            if e2 == T:
+                return T
+            if e2 == F:
+                return ENot(e1)
+            return EImplies(e1, e2)
         if isinstance(e.e1, ECond):
             return self.visit(ECond(e.e1.cond,
                 EBinOp(e.e1.then_branch, e.op, e.e2).with_type(e.type),
@@ -66,7 +92,7 @@ class _SimplificationVisitor(BottomUpRewriter):
             return self.visit(e.then_branch)
         tb = replace(e.then_branch, cond, T)
         eb = replace(e.else_branch, cond, F)
-        return ECond(cond, self.visit(tb), self.visit(eb)).with_type(e.type)
+        return simplify_cond(cond, self.visit(tb), self.visit(eb)).with_type(e.type)
     def visit_EGetField(self, e):
         record = self.visit(e.e)
         if isinstance(record, ECond):
