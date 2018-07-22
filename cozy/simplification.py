@@ -8,7 +8,7 @@ The most important function is `simplify`.
 
 from cozy.target_syntax import *
 from cozy.typecheck import is_collection, equality_implies_deep_equality
-from cozy.syntax_tools import BottomUpRewriter, alpha_equivalent, compose, pprint, mk_lambda, replace, free_vars, free_funcs
+from cozy.syntax_tools import BottomUpRewriter, alpha_equivalent, compose, pprint, mk_lambda, replace, free_vars, free_funcs, nnf, break_conj
 from cozy.evaluation import construct_value, eval, uneval
 from cozy.solver import valid, satisfy
 from cozy.opts import Option
@@ -90,8 +90,11 @@ class _SimplificationVisitor(BottomUpRewriter):
             return self.visit(e.else_branch)
         elif alpha_equivalent(self.visit(e.then_branch), self.visit(e.else_branch)):
             return self.visit(e.then_branch)
-        tb = replace(e.then_branch, cond, T)
-        eb = replace(e.else_branch, cond, F)
+        tb = e.then_branch
+        eb = e.else_branch
+        for c in break_conj(nnf(cond)):
+            tb = replace(tb, c, T)
+            eb = replace(eb, c, F)
         return simplify_cond(cond, self.visit(tb), self.visit(eb)).with_type(e.type)
     def visit_EGetField(self, e):
         record = self.visit(e.e)
