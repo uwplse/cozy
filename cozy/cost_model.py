@@ -58,7 +58,7 @@ def prioritized_order(*funcs):
             return o
     return Order.EQUAL
 
-def unprioritized_order(funcs):
+def unprioritized_order(*funcs):
     """Combine several Orders where it is unclear which are more important.
 
     Each argument should be a function that takes no argument and returns an
@@ -168,12 +168,12 @@ class CostModel(object):
                     return prioritized_order(
                         lambda: order_objects(asymptotic_runtime(e1), asymptotic_runtime(e2)),
                         lambda: unprioritized_order(
-                            [lambda: prioritized_order(
+                            lambda: prioritized_order(
                                 lambda: self._compare(
                                     max_storage_size(e1, self.freebies),
                                     max_storage_size(e2, self.freebies), context),
-                                lambda: self._compare(rt(e1), rt(e2), context))] +
-                            [lambda op=op: self._compare(
+                                lambda: self._compare(rt(e1), rt(e2), context)),
+                            *[lambda op=op: self._compare(
                                 maintenance_cost(e1, op, self.freebies),
                                 maintenance_cost(e2, op, self.freebies),
                                 context) for op in self.ops]),
