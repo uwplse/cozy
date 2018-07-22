@@ -252,9 +252,6 @@ def EIn(e1, e2):
     return EBinOp(e1, BOp.In, e2).with_type(BOOL)
 
 def EImplies(e1, e2):
-    if isinstance(e1, EBool) or isinstance(e2, EBool):
-        print("wtf you dong")
-        raise ValueError()
     return EBinOp(e1, "=>", e2).with_type(BOOL)
 
 def ELen(e):
