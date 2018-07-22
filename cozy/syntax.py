@@ -219,9 +219,7 @@ def ENot(e):
     return EUnaryOp("not", e).with_type(BOOL)
 
 def EIsSubset(e1, e2):
-    return EBinOp(
-        EBinOp(e1, "-", e2).with_type(e1.type), "==",
-        EEmptyList().with_type(e1.type)).with_type(BOOL)
+    return EEmpty(EBinOp(e1, "-", e2).with_type(e1.type))
 
 def EIsSingleton(e):
     return EEq(EUnaryOp(UOp.Length, e).with_type(INT), ONE)
