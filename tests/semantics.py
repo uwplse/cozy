@@ -13,7 +13,7 @@ class SemanticsTests(unittest.TestCase):
     Tests for a few equivalences we expect to be true.
     """
 
-    def assert_same(self, e1, e2, assumptions : Exp = T):
+    def assert_same(self, e1, e2, assumptions : Exp = T, op = "==="):
         assert e1.type == e2.type, "{} | {}".format(pprint(e1.type), pprint(e2.type))
         def dbg(model):
             print("model: {!r}".format(model))
@@ -25,7 +25,7 @@ class SemanticsTests(unittest.TestCase):
             print(" ---> {!r}".format(r2))
         assert satisfy(EAll([
             assumptions,
-            ENot(EBinOp(e1, "===", e2).with_type(BOOL))]), model_callback=dbg) is None
+            ENot(EBinOp(e1, op, e2).with_type(BOOL))]), model_callback=dbg) is None
 
     def test_distinct_mapkeys(self):
         xs = EVar("xs").with_type(INT_BAG)
@@ -205,3 +205,12 @@ class SemanticsTests(unittest.TestCase):
         self.assert_same(e, added, assumptions=EAll([
             # EIsSubset(removed, xs),
             EDisjoint(added, removed)]))
+
+    def test_intersect(self):
+        a = EVar("a").with_type(INT_BAG)
+        b = EVar("b").with_type(INT_BAG)
+        e = EBinOp(
+            EIntersect(a, b), "+",
+            EBinOp(a, "-", b))
+        assert retypecheck(e)
+        self.assert_same(a, e, op="==")
