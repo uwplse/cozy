@@ -1299,6 +1299,10 @@ def nnf(e : syntax.Exp, negate=False) -> syntax.Exp:
             return syntax.EBinOp(nnf(e.e1, negate), "and", nnf(e.e2, negate)).with_type(BOOL)
         else:
             return syntax.EBinOp(nnf(e.e1), "or", nnf(e.e2)).with_type(BOOL)
+    if isinstance(e, syntax.ECond):
+        return syntax.EAny([
+            syntax.EAll([nnf(e.cond, negate=False), nnf(e.then_branch, negate=negate)]),
+            syntax.EAll([nnf(e.cond, negate=True),  nnf(e.else_branch, negate=negate)])])
     if isinstance(e, syntax.EBool):
         return syntax.EBool((not e.val) if negate else e.val).with_type(BOOL)
     if isinstance(e, syntax.EBinOp) and e.op == ">" and negate:
@@ -1309,6 +1313,10 @@ def nnf(e : syntax.Exp, negate=False) -> syntax.Exp:
         return syntax.EBinOp(e.e1, ">=", e.e2).with_type(BOOL)
     if isinstance(e, syntax.EBinOp) and e.op == "<=" and negate:
         return syntax.EBinOp(e.e1, ">", e.e2).with_type(BOOL)
+    if isinstance(e, syntax.EBinOp) and e.op == "==" and negate:
+        return syntax.EBinOp(e.e1, "!=", e.e2).with_type(BOOL)
+    if isinstance(e, syntax.EBinOp) and e.op == "!=" and negate:
+        return syntax.EBinOp(e.e1, "==", e.e2).with_type(BOOL)
     return syntax.ENot(e) if negate else e
 
 @typechecked
