@@ -6,14 +6,18 @@ import functools
 
 from cozy.common import OrderedSet
 from cozy.target_syntax import *
-from cozy.syntax_tools import pprint, fresh_var, free_vars, free_funcs, all_exps, alpha_equivalent
+from cozy.syntax_tools import pprint, fresh_var, free_vars, free_funcs, all_exps, alpha_equivalent, mk_lambda
 from cozy.contexts import Context
-from cozy.typecheck import is_collection, is_numeric
+from cozy.typecheck import is_collection, is_numeric, is_scalar
 from cozy.pools import Pool, RUNTIME_POOL
 from cozy.solver import ModelCachingSolver
 from cozy.evaluation import eval, eval_bulk
 from cozy.structures import extension_handler
 from cozy.logging import task, event
+from cozy.state_maintenance import mutate
+from cozy.opts import Option
+
+consider_maintenance_cost = Option("consider-maintenance-cost", bool, False, description="Experimental option that lets Cozy use ops for the cost model. Note that Cozy will become much slower with this option on.")
 
 class Order(Enum):
     EQUAL     = 0
@@ -21,11 +25,26 @@ class Order(Enum):
     GT        = 2
     AMBIGUOUS = 3
 
-def composite_order(*funcs):
-    """Returns the first result that is not Order.EQUAL from calling each func.
+    def flip(order):
+        """Flips the direction of the Order.
+
+        Less than becomes greater than (and vice versa).  Equals and ambiguous
+        are unchanged.
+        """
+        if order == Order.LT:
+            return Order.GT
+        if order == Order.GT:
+            return Order.LT
+        return order
+
+def prioritized_order(*funcs):
+    """Combine several Orders where you know which ones are more important.
 
     Each argument should be a function that takes no arguments and returns an
     Order.
+
+    Returns the first result that is not Order.EQUAL from calling each func in
+    sequence.
 
     This procedure is useful when
      - you have several metrics to compare and you know which ones are most
@@ -39,6 +58,40 @@ def composite_order(*funcs):
             return o
     return Order.EQUAL
 
+def unprioritized_order(*funcs):
+    """Combine several Orders where it is unclear which are more important.
+
+    Each argument should be a function that takes no argument and returns an
+    Order.
+
+    This function behaves according to these rules:
+     - if any input is ambiguous, the result is ambiguous
+     - if both > and < are present, the result is ambiguous
+     - if only one of > or < is present, the result is that order
+     - otherwise all inputs are equal and the result is equal
+
+    This procedure is useful when
+     - you have several metrics to compare and you do NOT know which ones are
+       most important
+     - the metrics are very difficult to compute so you do not want to compute
+       them unless you are certain you need them
+    """
+    # This set should only be 1 big
+    orders_seen = set()
+    for f in funcs:
+        op = f()
+        if op == Order.EQUAL:        # Ignores equals
+            continue
+        # Immediately returns ambiguous, change to `continue` if want to ignore
+        if op == Order.AMBIGUOUS:
+            return Order.AMBIGUOUS
+        # Check if we've seen both < and >
+        if op.flip() in orders_seen:
+            return Order.AMBIGUOUS
+        orders_seen.add(op)
+
+    return orders_seen.pop() if orders_seen else Order.EQUAL
+
 def order_objects(x, y) -> Order:
     """Compare x and y as regular Python objects and return an Order.
 
@@ -49,19 +102,36 @@ def order_objects(x, y) -> Order:
 
 class CostModel(object):
 
-    def __init__(self, assumptions : Exp = T, examples=(), funcs=(), freebies : [Exp] = []):
+    def __init__(self,
+            assumptions     : Exp   = T,
+            examples                = (),
+            funcs                   = (),
+            freebies        : [Exp] = [],
+            ops             : [Op]  = []):
+        """
+        assumptions : assumed to be true when comparing expressions
+        examples    : initial examples (the right set of examples can speed up
+                      some cost comparisons; it is always safe to leave this
+                      set empty)
+        funcs       : in-scope functions
+        freebies    : state variables that can be used for free
+        ops         : mutators which are used to determine how expensive it is
+                      to maintain a state variable
+        """
         self.solver = ModelCachingSolver(vars=(), funcs=funcs, examples=examples, assumptions=assumptions)
         self.assumptions = assumptions
         # self.examples = list(examples)
         self.funcs = OrderedDict(funcs)
+        self.ops = ops
         self.freebies = freebies
 
     def __repr__(self):
-        return "CostModel(assumptions={!r}, examples={!r}, funcs={!r}, freebies={!r})".format(
+        return "CostModel(assumptions={!r}, examples={!r}, funcs={!r}, freebies={!r}, ops={!r})".format(
             self.assumptions,
             self.examples,
             self.funcs,
-            self.freebies)
+            self.freebies,
+            self.ops)
 
     @property
     def examples(self):
@@ -93,16 +163,36 @@ class CostModel(object):
 
     def compare(self, e1 : Exp, e2 : Exp, context : Context, pool : Pool) -> Order:
         with task("compare costs", context=context):
-            if pool == RUNTIME_POOL:
-                return composite_order(
-                    lambda: order_objects(asymptotic_runtime(e1), asymptotic_runtime(e2)),
-                    lambda: self._compare(max_storage_size(e1, self.freebies), max_storage_size(e2, self.freebies), context),
-                    lambda: self._compare(rt(e1), rt(e2), context),
-                    lambda: order_objects(e1.size(), e2.size()))
+            if consider_maintenance_cost.value:
+                if pool == RUNTIME_POOL:
+                    return prioritized_order(
+                        lambda: order_objects(asymptotic_runtime(e1), asymptotic_runtime(e2)),
+                        lambda: unprioritized_order(
+                            lambda: prioritized_order(
+                                lambda: self._compare(
+                                    max_storage_size(e1, self.freebies),
+                                    max_storage_size(e2, self.freebies), context),
+                                lambda: self._compare(rt(e1), rt(e2), context)),
+                            *[lambda op=op: self._compare(
+                                maintenance_cost(e1, op, self.freebies),
+                                maintenance_cost(e2, op, self.freebies),
+                                context) for op in self.ops]),
+                        lambda: order_objects(e1.size(), e2.size()))
+                else:
+                    return prioritized_order(
+                        lambda: self._compare(storage_size(e1, self.freebies), storage_size(e2, self.freebies), context),
+                        lambda: order_objects(e1.size(), e2.size()))
             else:
-                return composite_order(
-                    lambda: self._compare(storage_size(e1, self.freebies), storage_size(e2, self.freebies), context),
-                    lambda: order_objects(e1.size(), e2.size()))
+                if pool == RUNTIME_POOL:
+                    return prioritized_order(
+                        lambda: order_objects(asymptotic_runtime(e1), asymptotic_runtime(e2)),
+                        lambda: self._compare(max_storage_size(e1, self.freebies), max_storage_size(e2, self.freebies), context),
+                        lambda: self._compare(rt(e1), rt(e2), context),
+                        lambda: order_objects(e1.size(), e2.size()))
+                else:
+                    return prioritized_order(
+                        lambda: self._compare(storage_size(e1, self.freebies), storage_size(e2, self.freebies), context),
+                        lambda: order_objects(e1.size(), e2.size()))
 
 def cardinality(e : Exp) -> Exp:
     assert is_collection(e.type)
@@ -208,6 +298,75 @@ def worst_case_cardinality(e : Exp) -> DominantTerm:
     if isinstance(e, ESingleton):
         return DominantTerm.ONE
     return DominantTerm.N
+
+def _maintenance_cost(e : Exp, op : Op, freebies : [Exp] = []):
+    """Determines the cost of maintaining the expression when there are
+    freebies and ops being considered.
+
+    The cost is the result of mutating the expression and getting the storage
+    size of the difference between the mutated expression and the original.
+    """
+    e_prime = mutate(e, op.body)
+    if alpha_equivalent(e, e_prime):
+        return ZERO
+
+    h = extension_handler(type(e.type))
+    if h is not None:
+        return h.maintenance_cost(
+            old_value=e,
+            new_value=e_prime,
+            op=op,
+            freebies=freebies,
+            storage_size=storage_size,
+            maintenance_cost=_maintenance_cost)
+
+    if is_scalar(e.type):
+        return storage_size(e, freebies)
+    elif isinstance(e.type, TBag) or isinstance(e.type, TSet):
+        things_added = storage_size(
+            EBinOp(e_prime, "-", e).with_type(e.type), freebies).with_type(INT)
+        things_remov = storage_size(
+            EBinOp(e, "-", e_prime).with_type(e.type), freebies).with_type(INT)
+
+        return ESum([things_added, things_remov])
+    elif isinstance(e.type, TList):
+        return storage_size(e_prime, freebies)
+    elif isinstance(e.type, TMap):
+        keys = EMapKeys(e).with_type(TBag(e.type.k))
+        vals = EMap(
+            keys,
+            mk_lambda(
+                e.type.k,
+                lambda k: EMapGet(e, k).with_type(e.type.v))).with_type(TBag(e.type.v))
+
+        keys_prime = EMapKeys(e_prime).with_type(TBag(e_prime.type.k))
+        vals_prime = EMap(
+            keys_prime,
+            mk_lambda(
+                e_prime.type.k,
+                lambda k: EMapGet(e_prime, k).with_type(e_prime.type.v))).with_type(TBag(e_prime.type.v))
+
+        keys_added = storage_size(
+            EBinOp(keys_prime, "-", keys).with_type(keys.type), freebies).with_type(INT)
+        keys_rmved = storage_size(
+            EBinOp(keys, "-", keys_prime).with_type(keys.type), freebies).with_type(INT)
+
+        vals_added = storage_size(
+            EBinOp(vals_prime, "-", vals).with_type(vals.type), freebies).with_type(INT)
+        vals_rmved = storage_size(
+            EBinOp(vals, "-", vals_prime).with_type(vals.type), freebies).with_type(INT)
+
+        keys_difference = ESum([keys_added, keys_rmved])
+        vals_difference = ESum([vals_added, vals_rmved])
+        return EBinOp(keys_difference, "*", vals_difference).with_type(INT)
+
+    else:
+        raise NotImplementedError(repr(e.type))
+
+def maintenance_cost(e : Exp, op : Op, freebies : [Exp] = []):
+    """This method calulates the result over all expressions that are EStateVar """
+    return ESum([_maintenance_cost(e=x.e, op=op, freebies=freebies) for x in all_exps(e) if isinstance(x, EStateVar)])
+
 
 # These require walking over the entire collection.
 # Some others (e.g. "exists" or "empty") just look at the first item.
@@ -347,17 +506,32 @@ def debug_comparison(cm : CostModel, e1 : Exp, e2 : Exp, context : Context):
     print("Comparing")
     print("  e1 = {}".format(pprint(e1)))
     print("  e2 = {}".format(pprint(e2)))
-    print("-" * 20 + " {} examples...".format(len(cm.examples)))
+    print("  res = {}".format(cm.compare(e1, e2, context=context, pool=RUNTIME_POOL)))
+    print("-" * 20 + " {} ops...".format(len(cm.ops)))
+    for o in cm.ops:
+        print(pprint(o))
+        for ename, e in [("e1", e1), ("e2", e2)]:
+            print("maintenance_cost({e}) = {res}".format(e=ename, res=pprint(maintenance_cost(e, o))))
+
+    print("-" * 20)
     for f in asymptotic_runtime, max_storage_size, rt:
         for ename, e in [("e1", e1), ("e2", e2)]:
-            print("{f}({e}) = {res}".format(f=f.__name__, e=ename, res=pprint(f(e))))
+            res = f(e)
+            print("{f}({e}) = {res}".format(f=f.__name__, e=ename, res=(pprint(res) if isinstance(res, Exp) else res)))
+
+    print("-" * 20 + " {} examples...".format(len(cm.examples)))
     for x in cm.examples:
-        print("-" * 20)
         print(x)
         print("asympto(e1) = {}".format(asymptotic_runtime(e1)))
         print("asympto(e2) = {}".format(asymptotic_runtime(e2)))
+
+        for op in cm.ops:
+            print(pprint(op))
+            print("maintcost(e1) = {}".format(eval_bulk(maintenance_cost(e1, op), [x], use_default_values_for_undefined_vars=True)[0]))
+            print("maintcost(e2) = {}".format(eval_bulk(maintenance_cost(e2, op), [x], use_default_values_for_undefined_vars=True)[0]))
+
         print("storage(e1) = {}".format(eval_bulk(max_storage_size(e1), [x], use_default_values_for_undefined_vars=True)[0]))
         print("storage(e2) = {}".format(eval_bulk(max_storage_size(e2), [x], use_default_values_for_undefined_vars=True)[0]))
         print("runtime(e1) = {}".format(eval_bulk(rt(e1), [x], use_default_values_for_undefined_vars=True)[0]))
         print("runtime(e2) = {}".format(eval_bulk(rt(e2), [x], use_default_values_for_undefined_vars=True)[0]))
-    print("-" * 20)
+        print("-" * 20)
