@@ -14,8 +14,8 @@ class Visibility(Enum):
     Internal = "internal" # helper added by Cozy, not by a human programmer
 
 class Method(ADT): pass
-Op                  = declare_case(Method, "Op",    ["name", "args", "assumptions", "body", "docstring"])
-Query               = declare_case(Method, "Query", ["name", "visibility", "args", "assumptions", "ret", "docstring"])
+Op                  = declare_case(Method, "Op",    ["name", "args", "assumptions", "body", "docstring", "frequency"])
+Query               = declare_case(Method, "Query", ["name", "visibility", "args", "assumptions", "ret", "docstring", "frequency"])
 
 class Type(ADT): pass
 TInt                = declare_case(Type, "TInt")

@@ -444,15 +444,42 @@ def make_parser():
         else:
             p[0] = syntax.Visibility.Public
 
-    def p_method(p):
-        """method : doccomment            KW_OP    WORD OP_OPEN_PAREN typednames OP_CLOSE_PAREN assumes stm
-                  | doccomment visibility KW_QUERY WORD OP_OPEN_PAREN typednames OP_CLOSE_PAREN assumes exp
-                  | doccomment frequency             KW_OP    WORD OP_OPEN_PAREN typednames OP_CLOSE_PAREN assumes stm
-                  | doccomment frequency  visibility KW_QUERY WORD OP_OPEN_PAREN typednames OP_CLOSE_PAREN assumes exp"""
-        if p[2] == "op":
-            p[0] = syntax.Op(p[3], p[5], p[7], p[8], p[1])
+    def p_frequency(p):
+        """frequency :
+                     | KW_FREQUENCY OP_ASSIGN NUM"""
+        if len(p) > 1:
+            p[0] = p[3]
         else:
-            p[0] = syntax.Query(p[4], p[2], p[6], p[8], p[9], p[1])
+            p[0] = syntax.ENum(1).with_type(syntax.TInt())
+
+    def p_modifier(p):
+        """modifier : frequency
+                    | visibility"""
+        p[0] = p[1]
+
+    parsetools.multi(locals(), "modifiers", "modifier")
+
+    def p_methodcore(p):
+        """methodcore : KW_OP    WORD OP_OPEN_PAREN typednames OP_CLOSE_PAREN assumes stm
+                      | KW_QUERY WORD OP_OPEN_PAREN typednames OP_CLOSE_PAREN assumes exp"""
+        p[0] = (p[1], p[2], p[3], p[4], p[5], p[6], p[7])
+
+    def p_method(p):
+        """method : doccomment modifiers methodcore"""
+        vis = None
+        freq = None
+        for modifier in p[2]:
+            if type(modifier) is syntax.Visibility:
+                vis = modifier
+            if type(modifier) is syntax.ENum:
+                freq = modifier
+
+        core = p[3]
+        if core[0] == "op":
+            p[0] = syntax.Op(core[1], core[3], core[5], core[6], p[1], freq)
+        else:
+            p[0] = syntax.Query(core[1], vis, core[3], core[5], core[6], p[1], freq)
+
 
     parsetools.multi(locals(), "methods", "method")
 
