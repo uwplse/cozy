@@ -137,11 +137,6 @@ def good_idea(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptio
             assumptions,
             EBinOp(total_size, ">=", my_size).with_type(BOOL))
         if not solver.valid(s):
-            # from cozy.evaluation import eval
-            # from cozy.solver import satisfy
-            # model = satisfy(EAll([assumptions, EBinOp(total_size, "<", my_size).with_type(BOOL)]), collection_depth=3, validate_model=True)
-            # assert model is not None
-            # return No("non-polynomial-sized map ({}); total_size={}, this_size={}".format(model, eval(total_size, model), eval(my_size, model)))
             return No("non-polynomial-sized map")
 
     e._good_idea = True
@@ -184,8 +179,6 @@ class Learner(object):
         return all(values_equal(t, fp[i], target_fp[i]) for i in range(1, len(fp)))
 
     def next(self):
-        # with task("pre-computing cardinalities"):
-        #     cards = [self.cost_model.cardinality(ctx.e) for ctx in enumerate_fragments(self.target) if is_collection(ctx.e.type)]
 
         root_ctx = self.context
         def check_wf(e, ctx, pool):
@@ -197,14 +190,7 @@ class Learner(object):
                 if not res:
                     return res
                 if pool == RUNTIME_POOL and self.cost_model.compare(e, self.targets[0], ctx, pool) == Order.GT:
-                    # from cozy.cost_model import debug_comparison
-                    # debug_comparison(self.cost_model, e, self.target, ctx)
                     return No("too expensive")
-                # if isinstance(e.type, TBag):
-                #     c = self.cost_model.cardinality(e)
-                #     if all(cc < c for cc in cards):
-                #         # print("too big: {}".format(pprint(e)))
-                #         return No("too big")
                 return True
 
         frags = list(unique(itertools.chain(
@@ -220,7 +206,6 @@ class Learner(object):
             stop_callback=self.stop_callback)
 
         size = 0
-        # target_cost = self.cost_model.cost(self.target, RUNTIME_POOL)
         target_fp = fingerprint(self.targets[0], self.examples)
 
         if not hasattr(self, "blacklist"):
@@ -231,7 +216,6 @@ class Learner(object):
             for e, ctx, pool in unique(shred(target, context=root_ctx, pool=RUNTIME_POOL)):
                 exs = ctx.instantiate_examples(self.examples)
                 fp = fingerprint(e, exs)
-                # print("watch {}: {}".format(fp, pprint(e)))
                 k = (fp, ctx, pool)
                 l = watches.get(k)
                 if l is None:
