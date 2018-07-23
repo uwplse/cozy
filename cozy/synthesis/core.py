@@ -447,7 +447,7 @@ def improve(
 
             # 2. check
             with task("verifying candidate"):
-                formula = EAll([assumptions, ENot(EBinOp(target, "==", new_target).with_type(BOOL))])
+                formula = EAll([assumptions, ENot(EEq(target, new_target))])
                 counterexample = _sat(formula)
 
             if counterexample is not None:
