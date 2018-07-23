@@ -450,7 +450,7 @@ def make_parser():
         if len(p) > 1:
             p[0] = p[3]
         else:
-            p[0] = syntax.ENum(1).with_type(syntax.TInt())
+            p[0] = syntax.ONE
 
     def p_modifier(p):
         """modifier : frequency
@@ -466,8 +466,8 @@ def make_parser():
 
     def p_method(p):
         """method : doccomment modifiers methodcore"""
-        vis = None
-        freq = None
+        vis = syntax.Visibility.Public
+        freq = syntax.ONE
         for modifier in p[2]:
             if type(modifier) is syntax.Visibility:
                 vis = modifier
