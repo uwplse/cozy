@@ -1,7 +1,15 @@
 from collections import OrderedDict
 import itertools
 
-from cozy.target_syntax import *
+from cozy.syntax import (
+    Type, INT, BOOL, TMap,
+    Op,
+    Exp, T, ONE, EVar, ENum, EStr, EBool, EEmptyList, ESingleton, ELen, ENull,
+    EAll, ENot, EImplies, EEq, EGt, ELe, ECond, EEnumEntry, EGetField,
+    EBinOp, EUnaryOp, UOp, EArgMin, EArgMax, ELambda)
+from cozy.target_syntax import (
+    EFlatMap, EFilter, EMakeMap2, EStateVar,
+    EDropFront, EDropBack)
 from cozy.typecheck import is_collection, is_scalar
 from cozy.syntax_tools import subst, pprint, free_vars, fresh_var, alpha_equivalent, strip_EStateVar, freshen_binders, wrap_naked_statevars, break_conj
 from cozy.wf import exp_wf
