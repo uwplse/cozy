@@ -14,7 +14,7 @@ from cozy.typecheck import is_collection, is_scalar
 from cozy.syntax_tools import subst, pprint, free_vars, fresh_var, alpha_equivalent, strip_EStateVar, freshen_binders, wrap_naked_statevars, break_conj
 from cozy.wf import exp_wf
 from cozy.common import No, OrderedSet, unique, OrderedSet, StopException
-from cozy.solver import satisfy, valid, IncrementalSolver, ModelCachingSolver
+from cozy.solver import satisfy, valid, ModelCachingSolver
 from cozy.value_types import values_equal
 from cozy.evaluation import construct_value
 from cozy.cost_model import CostModel, Order, LINEAR_TIME_UOPS
@@ -27,7 +27,6 @@ from .acceleration import try_optimize
 from .enumeration import Enumerator, fingerprint, eviction_policy
 
 eliminate_vars = Option("eliminate-vars", bool, False)
-incremental = Option("incremental", bool, False, description="Experimental option that can greatly improve performance.")
 enable_blacklist = Option("enable-blacklist", bool, False)
 check_all_substitutions = Option("check-all-substitutions", bool, True)
 
@@ -426,12 +425,7 @@ def improve(
     funcs = context.funcs()
 
     solver = None
-    if incremental.value:
-        solver = IncrementalSolver(vars=vars, funcs=funcs)
-        solver.add_assumption(assumptions)
-        _sat = solver.satisfy
-    else:
-        _sat = lambda e: satisfy(e, vars=vars, funcs=funcs)
+    _sat = lambda e: satisfy(e, vars=vars, funcs=funcs)
 
     if _sat(assumptions) is None:
         print("assumptions are unsat; this query will never be called")
@@ -453,13 +447,9 @@ def improve(
 
                 # 2. check
                 with task("verifying candidate"):
-                    if incremental.value:
-                        solver.push()
-                        solver.add_assumption(ENot(EBinOp(target, "==", new_target).with_type(BOOL)))
-                        counterexample = _sat(T)
-                    else:
-                        formula = EAll([assumptions, ENot(EBinOp(target, "==", new_target).with_type(BOOL))])
-                        counterexample = _sat(formula)
+                    formula = EAll([assumptions, ENot(EBinOp(target, "==", new_target).with_type(BOOL))])
+                    counterexample = _sat(formula)
+
                 if counterexample is not None:
                     if counterexample in examples:
                         print("assumptions = {!r}".format(assumptions))
@@ -511,7 +501,5 @@ def improve(
                     learner.watch(watched_targets)
                     break
 
-                if incremental.value:
-                    solver.pop()
     except KeyboardInterrupt:
         raise
