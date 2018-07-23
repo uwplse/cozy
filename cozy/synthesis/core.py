@@ -158,6 +158,7 @@ class Learner(object):
         self.hints = list(hints)
         self.wf_solver = solver
         self.ops = ops
+        self.blacklist = {}
         self.reset(examples)
         self.watch(targets)
 
@@ -206,9 +207,6 @@ class Learner(object):
 
         size = 0
         target_fp = fingerprint(self.targets[0], self.examples)
-
-        if not hasattr(self, "blacklist"):
-            self.blacklist = {}
 
         watches = OrderedDict()
         for target in self.targets:
