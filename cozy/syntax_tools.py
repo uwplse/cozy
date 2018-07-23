@@ -292,6 +292,8 @@ class PrettyPrinter(common.Visitor):
         s = "\n"
         if q.docstring:
             s += "  {}\n".format(self.format_comment("/** {} */".format(q.docstring)))
+        if q.frequency:
+            s += "  frequency = {}\n".format(pprint(q.frequency))
         s += "  {} {}({}):\n".format(self.format_keyword("query"), q.name, ", ".join("{} : {}".format(name, self.visit(t)) for name, t in q.args))
         for e in q.assumptions:
             s += "    {} {};\n".format(self.format_keyword("assume"), self.visit(e))
@@ -300,6 +302,8 @@ class PrettyPrinter(common.Visitor):
 
     def visit_Op(self, q):
         s = "\n"
+        if q.frequency:
+            s += "  frequency = {}\n".format(pprint(q.frequency))
         s += "  {} {}({}):\n".format(self.format_keyword("op"), q.name, ", ".join("{} : {}".format(name, self.visit(t)) for name, t in q.args))
         for e in q.assumptions:
             s += "    {} {};\n".format(self.format_keyword("assume"), self.visit(e))
@@ -1122,7 +1126,8 @@ def subst(exp, replacements, tease=True):
                 q.args,
                 [subst(a, m) for a in q.assumptions],
                 subst(q.ret, m),
-                q.docstring)
+                q.docstring,
+                q.frequency)
         def visit_Op(self, o):
             m = { name: repl for (name, repl) in replacements.items() if not any(n == name for (n, t) in o.args) }
             for (a, t) in o.args:
@@ -1134,7 +1139,8 @@ def subst(exp, replacements, tease=True):
                 o.args,
                 [subst(a, m) for a in o.assumptions],
                 subst(o.body, m),
-                o.docstring)
+                o.docstring,
+                o.frequency)
         def visit_SAssign(self, s):
             return syntax.SAssign(
                 subst_lval(s.lhs, replacements),

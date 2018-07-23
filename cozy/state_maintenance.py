@@ -116,6 +116,7 @@ def mutate_in_place(
         op             : syntax.Stm,
         abstract_state : [syntax.EVar],
         assumptions    : [syntax.Exp] = None,
+        frequency      : syntax.ENum = syntax.ONE,
         subgoals_out   : [syntax.Query] = None) -> syntax.Stm:
     """
     Produce code to update `lval` that tracks derived value `e` when `op` is
@@ -128,11 +129,11 @@ def mutate_in_place(
     if subgoals_out is None:
         subgoals_out = []
 
-    def make_subgoal(e, a=[], docstring=None):
+    def make_subgoal(e, a=[], docstring=None, frequency=syntax.ONE):
         if skip_stateless_synthesis.value and not any(v in abstract_state for v in free_vars(e)):
             return e
         query_name = fresh_name("query")
-        query = syntax.Query(query_name, syntax.Visibility.Internal, [], assumptions + a, e, docstring)
+        query = syntax.Query(query_name, syntax.Visibility.Internal, [], assumptions + a, e, docstring, frequency)
         query_vars = [v for v in free_vars(query) if v not in abstract_state]
         query.args = [(arg.id, arg.type) for arg in query_vars]
         subgoals_out.append(query)
@@ -149,7 +150,7 @@ def mutate_in_place(
 
     # fallback: use an update sketch
     new_e = mutate(e, op)
-    s, sgs = sketch_update(lval, e, new_e, ctx=abstract_state, assumptions=assumptions)
+    s, sgs = sketch_update(lval, e, new_e, ctx=abstract_state, assumptions=assumptions, frequency=frequency)
     subgoals_out.extend(sgs)
     return s
 
@@ -172,7 +173,8 @@ def sketch_update(
         old_value   : syntax.Exp,
         new_value   : syntax.Exp,
         ctx         : [syntax.EVar],
-        assumptions : [syntax.Exp] = []) -> (syntax.Stm, [syntax.Query]):
+        assumptions : [syntax.Exp] = [],
+        frequency   : syntax.ENum = syntax.ONE) -> (syntax.Stm, [syntax.Query]):
     """
     Write code to update `lval` when it changes from `old_value` to `new_value`.
     Variables in `ctx` are assumed to be part of the data structure abstract
@@ -188,11 +190,11 @@ def sketch_update(
     subgoals = []
     new_value = strip_EStateVar(new_value)
 
-    def make_subgoal(e, a=[], docstring=None):
+    def make_subgoal(e, a=[], docstring=None, frequency=syntax.ONE):
         if skip_stateless_synthesis.value and not any(v in ctx for v in free_vars(e)):
             return e
         query_name = fresh_name("query")
-        query = syntax.Query(query_name, syntax.Visibility.Internal, [], assumptions + a, e, docstring)
+        query = syntax.Query(query_name, syntax.Visibility.Internal, [], assumptions + a, e, docstring, frequency)
         query_vars = [v for v in free_vars(query) if v not in ctx]
         query.args = [(arg.id, arg.type) for arg in query_vars]
         subgoals.append(query)
@@ -205,14 +207,14 @@ def sketch_update(
 
     t = lval.type
     if isinstance(t, syntax.TBag) or isinstance(t, syntax.TSet):
-        to_add = make_subgoal(syntax.EBinOp(new_value, "-", old_value).with_type(t), docstring="additions to {}".format(pprint(lval)))
-        to_del = make_subgoal(syntax.EBinOp(old_value, "-", new_value).with_type(t), docstring="deletions from {}".format(pprint(lval)))
+        to_add = make_subgoal(syntax.EBinOp(new_value, "-", old_value).with_type(t), docstring="additions to {}".format(pprint(lval)), frequency=frequency)
+        to_del = make_subgoal(syntax.EBinOp(old_value, "-", new_value).with_type(t), docstring="deletions from {}".format(pprint(lval)), frequency=frequency)
         v = fresh_var(t.t)
         stm = syntax.seq([
             syntax.SForEach(v, to_del, syntax.SCall(lval, "remove", [v])),
             syntax.SForEach(v, to_add, syntax.SCall(lval, "add", [v]))])
     elif is_numeric(t) and update_numbers_with_deltas.value:
-        change = make_subgoal(syntax.EBinOp(new_value, "-", old_value).with_type(t), docstring="delta for {}".format(pprint(lval)))
+        change = make_subgoal(syntax.EBinOp(new_value, "-", old_value).with_type(t), docstring="delta for {}".format(pprint(lval)), frequency=frequency)
         stm = syntax.SAssign(lval, syntax.EBinOp(lval, "+", change).with_type(t))
     elif isinstance(t, syntax.TTuple):
         get = lambda val, i: syntax.ETupleGet(val, i).with_type(t.ts[i])
@@ -234,7 +236,7 @@ def sketch_update(
 
         # (1) exit set
         deleted_keys = syntax.EBinOp(old_keys, "-", new_keys).with_type(key_bag)
-        s1 = syntax.SForEach(k, make_subgoal(deleted_keys, docstring="keys removed from {}".format(pprint(lval))),
+        s1 = syntax.SForEach(k, make_subgoal(deleted_keys, docstring="keys removed from {}".format(pprint(lval)), frequency=frequency),
             target_syntax.SMapDel(lval, k))
 
         # (2) enter/mod set
@@ -246,12 +248,12 @@ def sketch_update(
             value_at(new_value, k),
             ctx = ctx,
             assumptions = assumptions + [syntax.EIn(k, new_or_modified), syntax.EEq(v, value_at(old_value, k))])
-        s2 = syntax.SForEach(k, make_subgoal(new_or_modified, docstring="new or modified keys from {}".format(pprint(lval))),
+        s2 = syntax.SForEach(k, make_subgoal(new_or_modified, docstring="new or modified keys from {}".format(pprint(lval)), frequency=frequency),
             target_syntax.SMapUpdate(lval, k, v, update_value))
 
         stm = syntax.SSeq(s1, s2)
     else:
         # Fallback rule: just compute a new value from scratch
-        stm = syntax.SAssign(lval, make_subgoal(new_value, docstring="new value for {}".format(pprint(lval))))
+        stm = syntax.SAssign(lval, make_subgoal(new_value, docstring="new value for {}".format(pprint(lval)), frequency=frequency))
 
     return (stm, subgoals)

@@ -155,7 +155,8 @@ class Implementation(object):
                     fresh_name("modified_handles"),
                     Visibility.Internal, [], op.assumptions,
                     EFilter(EUnaryOp(UOp.Distinct, bag).with_type(bag.type), ELambda(h, ENot(EEq(lval, new_val)))).with_type(bag.type),
-                    "[{}] modified handles of type {}".format(op.name, pprint(t)))
+                    "[{}] modified handles of type {}".format(op.name, pprint(t)),
+                    op.frequency)
                 query_vars = [v for v in free_vars(modified_handles) if v not in self.abstract_state]
                 modified_handles.args = [(arg.id, arg.type) for arg in query_vars]
 
@@ -167,6 +168,7 @@ class Implementation(object):
                     op.body,
                     abstract_state=self.abstract_state,
                     assumptions=list(op.assumptions) + [EDeepIn(h, bag), EIn(h, modified_handles.ret)],
+                    frequency=op.frequency,
                     subgoals_out=subqueries)
                 for sub_q in subqueries:
                     sub_q.docstring = "[{}] {}".format(op.name, sub_q.docstring)
@@ -202,6 +204,7 @@ class Implementation(object):
                             op.body,
                             abstract_state=self.abstract_state,
                             assumptions=op.assumptions,
+                            frequency=op.frequency,
                             subgoals_out=subqueries)
                         for sub_q in subqueries:
                             sub_q.docstring = "[{}] {}".format(op.name, sub_q.docstring)
@@ -275,7 +278,8 @@ class Implementation(object):
                 op.args,
                 [],
                 new_stms,
-                op.docstring))
+                op.docstring,
+                op.frequency))
 
         # assemble final result
         return Spec(
