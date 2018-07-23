@@ -865,18 +865,18 @@ class FragmentEnumerator(common.Visitor):
             with self.push_block():
                 with self.push_assumptions():
                     for ctx in self.visit_assumptions_seq(m.assumptions):
-                        yield self.update_repl(ctx, lambda r: lambda x: syntax.Op(m.name, m.args, r(x), m.body, m.docstring))
+                        yield self.update_repl(ctx, lambda r: lambda x: syntax.Op(m.name, m.args, r(x), m.body, m.docstring, m.frequency))
                     for ctx in self.visit(m.body):
-                        yield self.update_repl(ctx, lambda r: lambda x: syntax.Op(m.name, m.args, m.assumptions, r(x), m.docstring))
+                        yield self.update_repl(ctx, lambda r: lambda x: syntax.Op(m.name, m.args, m.assumptions, r(x), m.docstring, m.frequency))
 
     def visit_Query(self, q):
         yield self.make_ctx(q)
         with self.intro_vars([(syntax.EVar(v).with_type(t), Unknown()) for (v, t) in q.args]):
             with self.push_assumptions():
                 for ctx in self.visit_assumptions_seq(q.assumptions):
-                    yield self.update_repl(ctx, lambda r: lambda x: syntax.Query(q.name, q.visibility, q.args, r(x), q.ret, q.docstring))
+                    yield self.update_repl(ctx, lambda r: lambda x: syntax.Query(q.name, q.visibility, q.args, r(x), q.ret, q.docstring, q.frequency))
                 for ctx in self.visit(q.ret):
-                    yield self.update_repl(ctx, lambda r: lambda x: syntax.Query(q.name, q.visibility, q.args, q.assumptions, r(x), q.docstring))
+                    yield self.update_repl(ctx, lambda r: lambda x: syntax.Query(q.name, q.visibility, q.args, q.assumptions, r(x), q.docstring, q.frequency))
 
     def visit_SIf(self, s):
         yield self.make_ctx(s)
