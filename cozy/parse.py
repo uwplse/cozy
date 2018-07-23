@@ -446,7 +446,9 @@ def make_parser():
 
     def p_method(p):
         """method : doccomment            KW_OP    WORD OP_OPEN_PAREN typednames OP_CLOSE_PAREN assumes stm
-                  | doccomment visibility KW_QUERY WORD OP_OPEN_PAREN typednames OP_CLOSE_PAREN assumes exp"""
+                  | doccomment visibility KW_QUERY WORD OP_OPEN_PAREN typednames OP_CLOSE_PAREN assumes exp
+                  | doccomment frequency             KW_OP    WORD OP_OPEN_PAREN typednames OP_CLOSE_PAREN assumes stm
+                  | doccomment frequency  visibility KW_QUERY WORD OP_OPEN_PAREN typednames OP_CLOSE_PAREN assumes exp"""
         if p[2] == "op":
             p[0] = syntax.Op(p[3], p[5], p[7], p[8], p[1])
         else:
