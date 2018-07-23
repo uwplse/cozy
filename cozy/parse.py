@@ -23,6 +23,7 @@ from cozy.syntax_tools import pprint
 # Each keyword becomes a KW_* token for the lexer. So, e.g. "and" becomes
 # KW_AND.
 _KEYWORDS = ([
+    "frequency",
     "extern",
     "type",
     "handletype",
