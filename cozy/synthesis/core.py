@@ -166,8 +166,8 @@ class Learner(object):
         self.examples = list(examples)
 
     def watch(self, new_targets):
-        assert new_targets
         self.targets = list(new_targets)
+        assert self.targets
 
     def matches(self, fp, target_fp):
         assert isinstance(fp[0], Type)
@@ -253,7 +253,9 @@ class Learner(object):
                 self.blacklist[k] = msg
                 return
             print("FOUND A GUESS AFTER {} CONSIDERED".format(n))
-            print("In {}, replacing {} ----> {}".format(pprint(old_target), pprint(e), pprint(replacement)))
+            print(" * in {}".format(pprint(old_target), pprint(e), pprint(replacement)))
+            print(" * replacing {}".format(pprint(e)))
+            print(" * with {}".format(pprint(replacement)))
             yield new_target
 
         while True:
