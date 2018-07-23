@@ -31,9 +31,6 @@ incremental = Option("incremental", bool, False, description="Experimental optio
 enable_blacklist = Option("enable-blacklist", bool, False)
 check_all_substitutions = Option("check-all-substitutions", bool, True)
 
-class NoMoreImprovements(Exception):
-    pass
-
 def exploration_order(targets : [Exp], context : Context, pool : Pool = RUNTIME_POOL):
     """
     What order should subexpressions of the given targets be explored for
@@ -333,8 +330,6 @@ class Learner(object):
             print("CONSIDERED {}".format(n))
             size += 1
 
-        raise NoMoreImprovements()
-
 def can_elim_vars(spec : Exp, assumptions : Exp, vs : [EVar]):
     spec = strip_EStateVar(spec)
     sub = { v.id : fresh_var(v.type) for v in vs }
@@ -506,7 +501,7 @@ def improve(
                             yield new_target
                             if heuristic_done(new_target):
                                 print("target now matches doneness heuristic")
-                                raise NoMoreImprovements()
+                                return
                             target = new_target
                         else:
                             print("Nope, it isn't substantially better!")
@@ -518,7 +513,5 @@ def improve(
 
                 if incremental.value:
                     solver.pop()
-    except NoMoreImprovements:
-        return
     except KeyboardInterrupt:
         raise
