@@ -170,8 +170,8 @@ class CostModel(object):
                 if pool == RUNTIME_POOL:
                     return prioritized_order(
                         lambda: self._compare(
-                            frequency_cost(e1, self.ops, self.freebies),
-                            frequency_cost(e2, self.ops, self.freebies),
+                            frequency_cost(e1, self.ops, self.freebies, self.q_frequency),
+                            frequency_cost(e2, self.ops, self.freebies, self.q_frequency),
                             context),
                         lambda: order_objects(asymptotic_runtime(e1), asymptotic_runtime(e2)),
                         lambda: unprioritized_order(
