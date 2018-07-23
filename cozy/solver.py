@@ -615,22 +615,21 @@ class ToZ3(Visitor):
             return val
         else:
             return r[e.f]
-    def remove_one(self, bag_type, bag, elem, env):
+    def remove_one(self, elem_type, bag, elem, mask):
         masks, elems = bag
         if not masks:
             return bag
-        rest_masks, rest_elems = self.remove_one(bag_type, (masks[1:], elems[1:]), elem, env)
-        return ite(bag_type, self.all(masks[0], self.eq(bag_type.t, elems[0], elem)),
-            (masks[1:], elems[1:]),
-            ([masks[0]] + rest_masks, [elems[0]] + rest_elems))
+        m = masks[0]
+        e = elems[0]
+        removed = self.all(m, mask, self.eq(elem_type, elem, e))
+        m = self.all(m, self.neg(removed))
+        mrest, erest = self.remove_one(elem_type, (masks[1:], elems[1:]), elem, self.all(mask, self.neg(removed)))
+        return ([m] + mrest, [e] + erest)
     def remove_all(self, bag_type, bag, to_remove, env):
-        masks, elems = to_remove
-        if not masks:
-            return bag
-        rest = masks[1:], elems[1:]
-        return ite(bag_type, masks[0],
-            self.remove_all(bag_type, self.remove_one(bag_type, bag, elems[0], env), rest, env),
-            self.remove_all(bag_type, bag, rest, env))
+        elem_type = bag_type.t
+        for m, e in zip(*to_remove):
+            bag = self.remove_one(elem_type, bag, e, m)
+        return bag
     def visit_EBinOp(self, e, env):
         # optimization: x in (distinct y) --> x in y
         # ("distinct" is very expensive for the solver)

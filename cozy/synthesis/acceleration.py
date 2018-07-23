@@ -1,11 +1,11 @@
 from cozy.common import unique
 from cozy.target_syntax import *
-from cozy.syntax_tools import fresh_var, free_vars, break_conj, mk_lambda, strip_EStateVar, alpha_equivalent, compose
+from cozy.syntax_tools import fresh_var, free_vars, free_funcs, break_conj, mk_lambda, strip_EStateVar, alpha_equivalent, compose
 from cozy.typecheck import is_collection, retypecheck
 from cozy.contexts import shred, replace
 from cozy.pools import RUNTIME_POOL, STATE_POOL
 from cozy.structures.heaps import TMinHeap, TMaxHeap, EMakeMinHeap, EMakeMaxHeap, EHeapPeek2
-from cozy.evaluation import construct_value
+from cozy.evaluation import construct_value, uneval, eval
 
 accelerate = Option("acceleration-rules", bool, True)
 
@@ -32,20 +32,39 @@ def optimized_count(x, xs):
 def optimized_any_matches(xs, p):
     if isinstance(xs, EEmptyList):
         return F
-    elif isinstance(xs, ESingleton):
+    if isinstance(xs, ESingleton):
         return p.apply_to(xs.e)
-    elif isinstance(xs, EMap):
+    if isinstance(xs, EMap):
         return optimized_any_matches(xs.e, compose(p, xs.f))
-    elif isinstance(xs, EFilter):
+
+
+    # exists filter (not-in xs) ys
+    if isinstance(p.body, EUnaryOp) and p.body.op == UOp.Not and isinstance(p.body.e, EBinOp) and p.body.e.op == BOp.In:
+        if p.arg not in free_vars(p.body.e.e2):
+            # er, this only works when xs is a subset of ys
+            return EGt(
+                optimized_len(xs),
+                optimized_len(p.body.e.e2))
+
+    if isinstance(p.body, EBinOp) and p.body.op == BOp.Or:
+        return EAny([
+            optimized_any_matches(xs, ELambda(p.arg, p.body.e1)).with_type(xs.type),
+            optimized_any_matches(xs, ELambda(p.arg, p.body.e2)).with_type(xs.type)])
+
+    if isinstance(xs, EFilter):
         return optimized_any_matches(xs.e, ELambda(p.arg, EAll([p.body, xs.p.apply_to(p.arg)])))
-    elif isinstance(xs, EBinOp) and xs.op == "+":
+    if isinstance(xs, EBinOp) and xs.op == "+":
         return EAny([optimized_any_matches(xs.e1, p), optimized_any_matches(xs.e2, p)])
-    elif isinstance(xs, ECond):
+    if isinstance(xs, EBinOp) and xs.op == "-":
+        return EAll([
+            optimized_any_matches(xs.e1, p),
+            ENot(optimized_any_matches(xs.e2, p))])
+    if isinstance(xs, ECond):
         return optimized_cond(xs.cond,
             optimized_any_matches(xs.then_branch, p),
             optimized_any_matches(xs.else_branch, p)).with_type(BOOL)
-    else:
-        return EUnaryOp(UOp.Exists, EFilter(xs, p).with_type(xs.type)).with_type(BOOL)
+
+    return EUnaryOp(UOp.Exists, EFilter(xs, p).with_type(xs.type)).with_type(BOOL)
 
 def optimized_in(x, xs):
     if isinstance(xs, EStateVar):
@@ -104,12 +123,10 @@ def optimized_empty(xs):
     return optimized_eq(l, ZERO)
 
 def optimized_exists(xs):
-    if isinstance(xs, EFilter) and isinstance(xs.p.body, EBinOp) and xs.p.body.op == BOp.Or:
-        return EAny([
-            optimized_exists(EFilter(xs.e, ELambda(xs.p.arg, xs.p.body.e1)).with_type(xs.type)),
-            optimized_exists(EFilter(xs.e, ELambda(xs.p.arg, xs.p.body.e2)).with_type(xs.type))])
+    if isinstance(xs, EFilter):
+        return optimized_any_matches(xs.e, xs.p)
     elif isinstance(xs, EStateVar):
-        return EStateVar(optimized_exists(xs.e)).with_type(BOOL)
+        return EStateVar(EUnaryOp(UOp.Exists, xs.e).with_type(BOOL)).with_type(BOOL)
     elif isinstance(xs, EBinOp) and xs.op == "+":
         return EAny([
             optimized_exists(xs.e1),
@@ -138,6 +155,11 @@ def is_lenof(e, xs):
     return alpha_equivalent(strip_EStateVar(e), ELen(strip_EStateVar(xs)))
 
 def excluded_element(xs, args):
+    if isinstance(xs, EMap):
+        res = excluded_element(xs.e, args)
+        if res is not None:
+            bag, x = res
+            return (EMap(bag, xs.f).with_type(xs.type), xs.f.apply_to(x))
     if isinstance(xs, EFilter):
         arg = xs.p.arg
         e = xs.p.body
@@ -150,8 +172,11 @@ def excluded_element(xs, args):
                 return (xs.e, EUnaryOp(UOp.The, _simple_filter(xs.e, ELambda(arg, EEq(e.e1, e.e2)), args=args)).with_type(xs.type.t))
             if arg_right and not arg_left:
                 return (xs.e, EUnaryOp(UOp.The, _simple_filter(xs.e, ELambda(arg, EEq(e.e1, e.e2)), args=args)).with_type(xs.type.t))
+        return (xs.e, optimized_the(_simple_filter(xs.e, ELambda(xs.p.arg, ENot(xs.p.body)), args), args))
     if isinstance(xs, EBinOp) and xs.op == "-" and isinstance(xs.e2, ESingleton):
         return (xs.e1, xs.e2.e)
+    if isinstance(xs, EBinOp) and xs.op == "-":
+        return (xs.e1, optimized_the(xs.e2, args))
     if isinstance(xs, EBinOp) and xs.op == "+" and isinstance(xs.e1, EListSlice) and isinstance(xs.e2, EListSlice):
         for e1, e2 in [(xs.e1, xs.e2), (xs.e2, xs.e1)]:
             if e1.e == e2.e and e1.start == ZERO and e2.start == EBinOp(e1.end, "+", ONE) and is_lenof(e2.end, e2.e):
@@ -256,6 +281,21 @@ def optimized_addr(e):
 def optimized_val(e):
     return EGetField(e, "val").with_type(e.type.value_type)
 
+def optimized_get_field(e, f, args):
+    if isinstance(e.type, THandle) and f == "val":
+        yield optimized_val(e, f)
+    if isinstance(e, EStateVar):
+        for gf in optimized_get_field(e.e, f, args):
+            yield EStateVar(gf).with_type(gf.type)
+    if isinstance(e, EMakeRecord):
+        yield dict(e.fields)[f]
+    if isinstance(e, ECond):
+        for then_case in optimized_get_field(e.then_branch, f, args):
+            for else_case in optimized_get_field(e.else_branch, f, args):
+                yield optimized_cond(e.cond, then_case, else_case)
+    if isinstance(e.type, TRecord):
+        yield EGetField(e, f).with_type(dict(e.type.fields)[f])
+
 def mapkeys(m):
     if isinstance(m, EMakeMap2):
         return m.keys
@@ -270,6 +310,7 @@ def map_values(m, f):
             m.cond,
             map_values(m.then_branch, f),
             map_values(m.else_branch, f))
+    raise NotImplementedError(m)
 
 def _simple_filter(xs, p, args):
     if p.body == T:
@@ -285,6 +326,8 @@ def _simple_filter(xs, p, args):
         return EMapGet(EStateVar(m).with_type(m.type), xs.key).with_type(xs.type)
     if isinstance(xs, EBinOp) and xs.op == "+":
         return EBinOp(_simple_filter(xs.e1, p, args), "+", _simple_filter(xs.e2, p, args)).with_type(xs.type)
+    if isinstance(xs, EBinOp) and xs.op == "-":
+        return EBinOp(_simple_filter(xs.e1, p, args), "-", _simple_filter(xs.e2, p, args)).with_type(xs.type)
     if isinstance(p.body, EBinOp) and p.body.op == "==":
         fvs2 = free_vars(p.body.e2)
         fvs1 = free_vars(p.body.e1)
@@ -365,6 +408,8 @@ def optimize_filter_as_if_distinct(xs, p, args, dnf=True):
 
 def optimize_map(xs, f, args):
     res_type = type(xs.type)(f.body.type)
+    if f.arg == f.body:
+        yield xs
     if isinstance(xs, ESingleton):
         yield ESingleton(f.apply_to(xs.e)).with_type(res_type)
     if isinstance(xs, EEmptyList):
@@ -403,6 +448,9 @@ def optimized_sum(xs, args):
     if isinstance(xs, ESingleton):
         yield xs.e
     yield sum_of(xs)
+
+def optimized_the(xs, args):
+    return EUnaryOp(UOp.The, xs).with_type(xs.type.t)
 
 def optimize_the(xs, args):
     t = xs.type.t
@@ -457,10 +505,7 @@ def fold_into_map(e, context):
             if not all(v in state_vars for v in free_vars(func)):
                 continue
             func = strip_EStateVar(func)
-            key_arg = fresh_var(key_type, omit=fvs)
-            new_map = EMakeMap2(
-                EMapKeys(map).with_type(TSet(key_type)),
-                ELambda(key_arg, func.apply_to(EMapGet(map, key_arg).with_type(value_type)))).with_type(TMap(key_type, e.type))
+            new_map = map_values(map, func.apply_to)
             yield EMapGet(EStateVar(new_map).with_type(new_map.type), key).with_type(e.type)
 
 def _try_optimize(e, context, pool):
@@ -471,6 +516,13 @@ def _try_optimize(e, context, pool):
     args = [v for v, p in context.vars() if p == RUNTIME_POOL]
 
     if pool == RUNTIME_POOL:
+
+        if not free_vars(e) and not free_funcs(e):
+            try:
+                yield _check(uneval(e.type, eval(e, {})), context, RUNTIME_POOL)
+            except NotImplementedError:
+                print("Unable to evaluate {!r}".format(e))
+
         if all(v in state_vars for v in free_vars(e)):
             nsv = strip_EStateVar(e)
             sv = EStateVar(nsv).with_type(e.type)
@@ -480,7 +532,8 @@ def _try_optimize(e, context, pool):
             yield _check(ee, context, pool)
 
         if isinstance(e, EListGet) and e.index == ZERO:
-            yield _check(EUnaryOp(UOp.The, e.e).with_type(e.type), context, RUNTIME_POOL)
+            for res in optimize_the(e.e, args):
+                yield _check(res, context, RUNTIME_POOL)
 
         if isinstance(e, EArgMin) or isinstance(e, EArgMax):
             for ee in optimized_best(e.e, e.f, "<" if isinstance(e, EArgMin) else ">", args=args):
@@ -494,6 +547,13 @@ def _try_optimize(e, context, pool):
             yield _check(EAll([
                 optimized_eq(optimized_addr(e.e1), optimized_addr(e.e2)),
                 optimized_eq(optimized_val(e.e1),  optimized_val(e.e2)).with_type(BOOL)]), context, RUNTIME_POOL)
+
+        if isinstance(e, ECond):
+            yield _check(optimized_cond(e.cond, e.then_branch, e.else_branch), context, RUNTIME_POOL)
+
+        if isinstance(e, EGetField):
+            for ee in optimized_get_field(e.e, e.f, args):
+                yield _check(ee, context, RUNTIME_POOL)
 
         if isinstance(e, EBinOp) and e.op == BOp.In:
             ee = optimized_in(e.e1, e.e2)

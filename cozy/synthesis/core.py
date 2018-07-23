@@ -63,7 +63,7 @@ allow_big_sets = Option("allow-big-sets", bool, False)
 allow_big_maps = Option("allow-big-maps", bool, False)
 allow_int_arithmetic_state = Option("allow-int-arith-state", bool, True)
 
-def good_idea(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptions : Exp = T) -> bool:
+def good_idea(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptions : Exp = T, ops : [Op] = ()) -> bool:
     """Heuristic filter to ignore expressions that are almost certainly useless."""
 
     if hasattr(e, "_good_idea"):
@@ -102,13 +102,23 @@ def good_idea(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptio
     # if not at_runtime and isinstance(e, ENum) and e.val != 0 and e.type == INT:
     #     return No("nonzero integer constant in state position")
     if at_runtime and isinstance(e, EStateVar) and isinstance(e.e, EBinOp) and is_scalar(e.e.e1.type) and is_scalar(e.e.e2.type):
-        return No("constant-time binary operator in state position")
+        return No("constant-time binary operator {!r} in state position".format(e.e.op))
     if not allow_conditional_state.value and not at_runtime and isinstance(e, ECond):
         return No("conditional in state position")
     if isinstance(e, EMakeMap2) and isinstance(e.e, EEmptyList):
         return No("trivially empty map")
     if isinstance(e, EMakeMap2) and isinstance(e.e, ESingleton):
         return No("really tiny map")
+    if not at_runtime and (isinstance(e, EArgMin) or isinstance(e, EArgMax)):
+        # Cozy has no way to efficiently implement mins/maxes when more than
+        # one element may leave the collection.
+        from cozy.state_maintenance import mutate
+        for op in ops:
+            elems = e.e
+            elems_prime = mutate(elems, op.body)
+            formula = EAll([assumptions] + list(op.assumptions) + [EGt(ELen(EBinOp(elems, "-", elems_prime).with_type(elems.type)), ONE)])
+            if solver.satisfiable(formula):
+                return No("more than one element might be removed during {}".format(op.name))
     if not allow_peels.value and not at_runtime and isinstance(e, EFilter):
         # catch "peels": removal of zero or one elements
         if solver.valid(EImplies(assumptions, ELe(ELen(EFilter(e.e, ELambda(e.p.arg, ENot(e.p.body))).with_type(e.type)), ONE))):
@@ -133,9 +143,15 @@ def good_idea(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptio
     e._good_idea = True
     return True
 
+def good_idea_recursive(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptions : Exp = T, ops : [Op] = ()) -> bool:
+    for (sub, sub_ctx, sub_pool) in shred(e, context, pool):
+        res = good_idea(solver, sub, sub_ctx, sub_pool, assumptions=assumptions, ops=ops)
+        if not res:
+            return res
+    return True
 
 class Learner(object):
-    def __init__(self, targets, assumptions, context, examples, cost_model, stop_callback, hints):
+    def __init__(self, targets, assumptions, context, examples, cost_model, stop_callback, hints, ops):
         self.context = context
         self.stop_callback = stop_callback
         self.cost_model = cost_model
@@ -146,6 +162,7 @@ class Learner(object):
         self.wf_solver = ModelCachingSolver(
             vars=[v for (v, p) in context.vars()],
             funcs=context.funcs())
+        self.ops = ops
 
     def reset(self, examples):
         self.examples = list(examples)
@@ -172,10 +189,9 @@ class Learner(object):
                 is_wf = exp_wf(e, pool=pool, context=ctx, assumptions=self.assumptions, solver=self.wf_solver)
                 if not is_wf:
                     return is_wf
-                for (sub, sub_ctx, sub_pool) in shred(e, ctx, pool):
-                    res = good_idea(self.wf_solver, sub, sub_ctx, sub_pool, assumptions=self.assumptions)
-                    if not res:
-                        return res
+                res = good_idea_recursive(self.wf_solver, e, ctx, pool, assumptions=self.assumptions, ops=self.ops)
+                if not res:
+                    return res
                 if pool == RUNTIME_POOL and self.cost_model.compare(e, self.targets[0], ctx, pool) == Order.GT:
                     # from cozy.cost_model import debug_comparison
                     # debug_comparison(self.cost_model, e, self.target, ctx)
@@ -338,7 +354,8 @@ def improve(
         stop_callback                  = never_stop,
         hints         : [Exp]          = (),
         examples      : [{str:object}] = (),
-        cost_model    : CostModel      = None):
+        cost_model    : CostModel      = None,
+        ops           : [Op]           = ()):
     """
     Improve the target expression using enumerative synthesis.
     This function is a generator that yields increasingly better and better
@@ -366,14 +383,16 @@ def improve(
         stop_callback={stop_callback!r},
         hints={hints!r},
         examples={examples!r},
-        cost_model={cost_model!r})""".format(
+        cost_model={cost_model!r},
+        ops={ops!r})""".format(
             target=target,
             context=context,
             assumptions=assumptions,
             stop_callback=stop_callback,
             hints=hints,
             examples=examples,
-            cost_model=cost_model))
+            cost_model=cost_model,
+            ops=ops))
 
     target = freshen_binders(target, context)
     assumptions = freshen_binders(assumptions, context)
@@ -422,7 +441,7 @@ def improve(
         cost_model = CostModel(funcs=funcs, assumptions=assumptions)
 
     watched_targets = [target]
-    learner = Learner(watched_targets, assumptions, context, examples, cost_model, stop_callback, hints)
+    learner = Learner(watched_targets, assumptions, context, examples, cost_model, stop_callback, hints, ops=ops)
     try:
         while True:
             # 1. find any potential improvement to any sub-exp of target

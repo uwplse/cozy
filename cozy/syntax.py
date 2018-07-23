@@ -219,15 +219,16 @@ def ENot(e):
     return EUnaryOp("not", e).with_type(BOOL)
 
 def EIsSubset(e1, e2):
-    return EBinOp(
-        EBinOp(e1, "-", e2).with_type(e1.type), "==",
-        EEmptyList().with_type(e1.type)).with_type(BOOL)
+    return EEmpty(EBinOp(e1, "-", e2).with_type(e1.type))
 
 def EIsSingleton(e):
     return EEq(EUnaryOp(UOp.Length, e).with_type(INT), ONE)
 
 def EEmpty(e):
     return EUnaryOp(UOp.Empty, e).with_type(BOOL)
+
+def EExists(e):
+    return EUnaryOp(UOp.Exists, e).with_type(BOOL)
 
 def EEq(e1, e2):
     return EBinOp(e1, "==", e2).with_type(BOOL)
@@ -269,6 +270,11 @@ def ESum(es, base_case=ZERO):
 
 def EUnion(es, elem_type):
     return ESum(es, base_case=EEmptyList().with_type(TBag(elem_type)))
+
+def EIntersect(xs, ys):
+    a = EBinOp(xs, "-", ys).with_type(xs.type) # xs - (xs intersect ys)
+    b = EBinOp(xs, "-", a).with_type(xs.type)  # xs intersect ys
+    return b
 
 def max_of(*es, type=None):
     if not es:

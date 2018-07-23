@@ -66,6 +66,10 @@ def EForall(e, p):
     from cozy.syntax_tools import mk_lambda
     return EUnaryOp(UOp.All, EMap(e, mk_lambda(e.type.t, p)).with_type(type(e.type)(BOOL))).with_type(BOOL)
 
+def EDisjoint(xs, ys):
+    return EForall(xs, lambda x:
+        ENot(EIn(x, ys)))
+
 # Fixed-length vectors
 TVector    = declare_case(Type, "TVector", ["t", "n"])
 EVectorGet = declare_case(Exp, "EVectorGet", ["e", "i"])

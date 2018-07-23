@@ -280,6 +280,18 @@ class DominantTerm(object):
     def __mul__(self, other):
         return DominantTerm(self.multiplier * other.multiplier, self.exponent + other.exponent)
 
+def map_value_func(e : Exp):
+    assert isinstance(e.type, TMap)
+    if isinstance(e, EMakeMap2):
+        return e.value
+    if isinstance(e, EStateVar):
+        return map_value_func(e.e)
+    if isinstance(e, ECond):
+        f1 = map_value_func(e.then_branch)
+        return ELambda(f1.arg,
+            ECond(e.cond, f1.body, map_value_func(e.else_branch).apply_to(f1.arg)))
+    raise NotImplementedError(repr(e))
+
 def worst_case_cardinality(e : Exp) -> DominantTerm:
     assert is_collection(e.type)
     while isinstance(e, EFilter) or isinstance(e, EMap) or isinstance(e, EFlatMap) or isinstance(e, EMakeMap2) or isinstance(e, EStateVar) or (isinstance(e, EUnaryOp) and e.op == UOp.Distinct) or isinstance(e, EListSlice):
@@ -296,6 +308,8 @@ def worst_case_cardinality(e : Exp) -> DominantTerm:
         return DominantTerm.ZERO
     if isinstance(e, ESingleton):
         return DominantTerm.ONE
+    if isinstance(e, EMapGet):
+        return worst_case_cardinality(map_value_func(e.map).body)
     return DominantTerm.N
 
 def _maintenance_cost(e : Exp, op : Op, freebies : [Exp] = []):
