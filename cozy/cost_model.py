@@ -26,7 +26,11 @@ class Order(Enum):
     AMBIGUOUS = 3
 
     def flip(order):
-        """ Flips the direction of the Order """
+        """Flips the direction of the Order.
+
+        Less than becomes greater than (and vice versa).  Equals and ambiguous
+        are unchanged.
+        """
         if order == Order.LT:
             return Order.GT
         if order == Order.GT:
@@ -34,10 +38,13 @@ class Order(Enum):
         return order
 
 def prioritized_order(*funcs):
-    """Returns the first result that is not Order.EQUAL from calling each func.
+    """Combine several Orders where you know which ones are more important.
 
     Each argument should be a function that takes no arguments and returns an
     Order.
+
+    Returns the first result that is not Order.EQUAL from calling each func in
+    sequence.
 
     This procedure is useful when
      - you have several metrics to compare and you know which ones are most
@@ -51,12 +58,23 @@ def prioritized_order(*funcs):
             return o
     return Order.EQUAL
 
-def unprioritized_order(funcs):
-    """Determine the Order between two maintenance cost of two expressions or
-    AMBIGUOUS at the first ambiguous result
+def unprioritized_order(*funcs):
+    """Combine several Orders where it is unclear which are more important.
 
     Each argument should be a function that takes no argument and returns an
     Order.
+
+    This function behaves according to these rules:
+     - if any input is ambiguous, the result is ambiguous
+     - if both > and < are present, the result is ambiguous
+     - if only one of > or < is present, the result is that order
+     - otherwise all inputs are equal and the result is equal
+
+    This procedure is useful when
+     - you have several metrics to compare and you do NOT know which ones are
+       most important
+     - the metrics are very difficult to compute so you do not want to compute
+       them unless you are certain you need them
     """
     # This set should only be 1 big
     orders_seen = set()
@@ -91,11 +109,14 @@ class CostModel(object):
             freebies        : [Exp] = [],
             ops             : [Op]  = []):
         """
-        Assumptions, examples, and funcs are all used by the solver to compare
-        two expressions
-        Freebies: state variables that Cozy is allowed to use for free.
-        Ops     : mutators which are used to determine how expensive a state
-                  variable will be if it is mutated.
+        assumptions : assumed to be true when comparing expressions
+        examples    : initial examples (the right set of examples can speed up
+                      some cost comparisons; it is always safe to leave this
+                      set empty)
+        funcs       : in-scope functions
+        freebies    : state variables that can be used for free
+        ops         : mutators which are used to determine how expensive it is
+                      to maintain a state variable
         """
         self.solver = ModelCachingSolver(vars=(), funcs=funcs, examples=examples, assumptions=assumptions)
         self.assumptions = assumptions
@@ -151,12 +172,12 @@ class CostModel(object):
                             context),
                         lambda: order_objects(asymptotic_runtime(e1), asymptotic_runtime(e2)),
                         lambda: unprioritized_order(
-                            [lambda: prioritized_order(
+                            lambda: prioritized_order(
                                 lambda: self._compare(
                                     max_storage_size(e1, self.freebies),
                                     max_storage_size(e2, self.freebies), context),
-                                lambda: self._compare(rt(e1), rt(e2), context))] +
-                            [lambda op=op: self._compare(
+                                lambda: self._compare(rt(e1), rt(e2), context)),
+                            *[lambda op=op: self._compare(
                                 maintenance_cost(e1, op, self.freebies),
                                 maintenance_cost(e2, op, self.freebies),
                                 context) for op in self.ops]),
