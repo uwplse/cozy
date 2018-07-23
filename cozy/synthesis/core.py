@@ -14,7 +14,7 @@ from cozy.typecheck import is_collection, is_scalar
 from cozy.syntax_tools import subst, pprint, free_vars, fresh_var, alpha_equivalent, strip_EStateVar, freshen_binders, wrap_naked_statevars, break_conj
 from cozy.wf import exp_wf
 from cozy.common import No, OrderedSet, unique, OrderedSet, StopException
-from cozy.solver import satisfy, valid, ModelCachingSolver
+from cozy.solver import valid, solver_for_context
 from cozy.value_types import values_equal
 from cozy.evaluation import construct_value
 from cozy.cost_model import CostModel, Order, LINEAR_TIME_UOPS
@@ -150,18 +150,15 @@ def good_idea_recursive(solver, e : Exp, context : Context, pool = RUNTIME_POOL,
     return True
 
 class Learner(object):
-    def __init__(self, targets, assumptions, context, examples, cost_model, stop_callback, hints, ops):
+    def __init__(self, targets, solver, context, examples, cost_model, stop_callback, hints, ops):
         self.context = context
         self.stop_callback = stop_callback
         self.cost_model = cost_model
-        self.assumptions = assumptions
         self.hints = list(hints)
+        self.wf_solver = solver
+        self.ops = ops
         self.reset(examples)
         self.watch(targets)
-        self.wf_solver = ModelCachingSolver(
-            vars=[v for (v, p) in context.vars()],
-            funcs=context.funcs())
-        self.ops = ops
 
     def reset(self, examples):
         self.examples = list(examples)
@@ -183,10 +180,10 @@ class Learner(object):
         root_ctx = self.context
         def check_wf(e, ctx, pool):
             with task("checking well-formedness", size=e.size()):
-                is_wf = exp_wf(e, pool=pool, context=ctx, assumptions=self.assumptions, solver=self.wf_solver)
+                is_wf = exp_wf(e, pool=pool, context=ctx, solver=self.wf_solver)
                 if not is_wf:
                     return is_wf
-                res = good_idea_recursive(self.wf_solver, e, ctx, pool, assumptions=self.assumptions, ops=self.ops)
+                res = good_idea_recursive(self.wf_solver, e, ctx, pool, ops=self.ops)
                 if not res:
                     return res
                 if pool == RUNTIME_POOL and self.cost_model.compare(e, self.targets[0], ctx, pool) == Order.GT:
@@ -408,10 +405,9 @@ def improve(
     vars = list(v for (v, p) in context.vars())
     funcs = context.funcs()
 
-    solver = None
-    _sat = lambda e: satisfy(e, vars=vars, funcs=funcs)
+    solver = solver_for_context(context, assumptions=assumptions)
 
-    if _sat(assumptions) is None:
+    if not solver.satisfiable(T):
         print("assumptions are unsat; this query will never be called")
         yield construct_value(target.type)
         return
@@ -422,7 +418,7 @@ def improve(
         cost_model = CostModel(funcs=funcs, assumptions=assumptions)
 
     watched_targets = [target]
-    learner = Learner(watched_targets, assumptions, context, examples, cost_model, stop_callback, hints, ops=ops)
+    learner = Learner(watched_targets, solver, context, examples, cost_model, stop_callback, hints, ops=ops)
 
     while True:
         # 1. find any potential improvement to any sub-exp of target
@@ -431,8 +427,7 @@ def improve(
 
             # 2. check
             with task("verifying candidate"):
-                formula = EAll([assumptions, ENot(EEq(target, new_target))])
-                counterexample = _sat(formula)
+                counterexample = solver.satisfy(ENot(EEq(target, new_target)))
 
             if counterexample is not None:
                 if counterexample in examples:
