@@ -107,16 +107,18 @@ class CostModel(object):
             examples                = (),
             funcs                   = (),
             freebies        : [Exp] = [],
-            ops             : [Op]  = []):
+            ops             : [Op]  = [],
+            query_frequency : ENum  = ONE):
         """
-        assumptions : assumed to be true when comparing expressions
-        examples    : initial examples (the right set of examples can speed up
-                      some cost comparisons; it is always safe to leave this
-                      set empty)
-        funcs       : in-scope functions
-        freebies    : state variables that can be used for free
-        ops         : mutators which are used to determine how expensive it is
-                      to maintain a state variable
+        assumptions     : assumed to be true when comparing expressions
+        examples        : initial examples (the right set of examples can speed up
+                          some cost comparisons; it is always safe to leave this
+                          set empty)
+        funcs           : in-scope functions
+        freebies        : state variables that can be used for free
+        ops             : mutators which are used to determine how expensive it is
+                          to maintain a state variable
+        query_frequency : the frequency of the query currently being improved
         """
         self.solver = ModelCachingSolver(vars=(), funcs=funcs, examples=examples, assumptions=assumptions)
         self.assumptions = assumptions
@@ -124,6 +126,7 @@ class CostModel(object):
         self.funcs = OrderedDict(funcs)
         self.ops = ops
         self.freebies = freebies
+        self.q_frequency = query_frequency
 
     def __repr__(self):
         return "CostModel(assumptions={!r}, examples={!r}, funcs={!r}, freebies={!r}, ops={!r})".format(
@@ -386,18 +389,17 @@ def maintenance_cost(e : Exp, op : Op, freebies : [Exp] = []):
 # and op_freq = 1
 # The correct result will always happen if query_freq is not significantly
 # larger than op_freq
-query_freq = ENum(1).with_type(INT)
-op_freq = ENum(10000).with_type(INT)
 def frequency_cost(e            : Exp,
                    ops          : [Op] = [],
-                   freebies     : [Exp] = []):
+                   freebies     : [Exp] = [],
+                   q_frequency  : ENum = ONE):
     """This method takes in account the frequency of a specific op and the
     query being considered
     """
     if ops:
         return ESum(
-            [EBinOp(query_freq, "*", rt(e)).with_type(INT)] +
-            [EBinOp(op_freq, "*", maintenance_cost(e, op, freebies)).with_type(INT) for op in ops])
+            [EBinOp(q_frequency, "*", rt(e)).with_type(INT)] +
+            [EBinOp(op.frequency, "*", maintenance_cost(e, op, freebies)).with_type(INT) for op in ops])
     return ZERO
 # -----------------------------------------------------------------------------
 

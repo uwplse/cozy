@@ -70,7 +70,8 @@ class ImproveQueryJob(jobs.Job):
                     funcs=ctx.funcs(),
                     assumptions=EAll(self.assumptions),
                     freebies=self.freebies,
-                    ops=self.ops)
+                    ops=self.ops,
+                    query_frequency=self.q.frequency)
 
             try:
                 for expr in itertools.chain((self.q.ret,), core.improve(
