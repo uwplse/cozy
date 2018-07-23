@@ -439,67 +439,64 @@ def improve(
 
     watched_targets = [target]
     learner = Learner(watched_targets, assumptions, context, examples, cost_model, stop_callback, hints, ops=ops)
-    try:
-        while True:
-            # 1. find any potential improvement to any sub-exp of target
-            for new_target in learner.next():
-                print("Found candidate improvement: {}".format(pprint(new_target)))
 
-                # 2. check
-                with task("verifying candidate"):
-                    formula = EAll([assumptions, ENot(EBinOp(target, "==", new_target).with_type(BOOL))])
-                    counterexample = _sat(formula)
+    while True:
+        # 1. find any potential improvement to any sub-exp of target
+        for new_target in learner.next():
+            print("Found candidate improvement: {}".format(pprint(new_target)))
 
-                if counterexample is not None:
-                    if counterexample in examples:
-                        print("assumptions = {!r}".format(assumptions))
-                        print("duplicate example: {!r}".format(counterexample))
-                        print("old target = {!r}".format(target))
-                        print("new target = {!r}".format(new_target))
-                        raise Exception("got a duplicate example")
-                    # a. if incorrect: add example, reset the learner
-                    examples.append(counterexample)
-                    event("new example: {!r}".format(counterexample))
-                    print("wrong; restarting with {} examples".format(len(examples)))
-                    learner.reset(examples)
-                    break
-                else:
-                    # b. if correct: yield it, watch the new target, goto 1
-                    print("The candidate is valid!")
-                    print(repr(new_target))
-                    print("Determining whether to yield it...")
-                    with task("updating frontier"):
-                        to_evict = []
-                        keep = True
-                        old_better = None
-                        for old_target in watched_targets:
-                            evc = eviction_policy(new_target, context, old_target, context, RUNTIME_POOL, cost_model)
-                            if old_target not in evc:
-                                to_evict.append(old_target)
-                            if new_target not in evc:
-                                old_better = old_target
-                                keep = False
-                                break
-                        for t in to_evict:
-                            watched_targets.remove(t)
-                        if not keep:
-                            print("Whoops! Looks like we already found something better.")
-                            print(" --> {}".format(pprint(old_better)))
-                            continue
-                        if target in to_evict:
-                            print("Yep, it's an improvement!")
-                            yield new_target
-                            if heuristic_done(new_target):
-                                print("target now matches doneness heuristic")
-                                return
-                            target = new_target
-                        else:
-                            print("Nope, it isn't substantially better!")
+            # 2. check
+            with task("verifying candidate"):
+                formula = EAll([assumptions, ENot(EBinOp(target, "==", new_target).with_type(BOOL))])
+                counterexample = _sat(formula)
 
-                    watched_targets.append(new_target)
-                    print("Now watching {} targets".format(len(watched_targets)))
-                    learner.watch(watched_targets)
-                    break
+            if counterexample is not None:
+                if counterexample in examples:
+                    print("assumptions = {!r}".format(assumptions))
+                    print("duplicate example: {!r}".format(counterexample))
+                    print("old target = {!r}".format(target))
+                    print("new target = {!r}".format(new_target))
+                    raise Exception("got a duplicate example")
+                # a. if incorrect: add example, reset the learner
+                examples.append(counterexample)
+                event("new example: {!r}".format(counterexample))
+                print("wrong; restarting with {} examples".format(len(examples)))
+                learner.reset(examples)
+                break
+            else:
+                # b. if correct: yield it, watch the new target, goto 1
+                print("The candidate is valid!")
+                print(repr(new_target))
+                print("Determining whether to yield it...")
+                with task("updating frontier"):
+                    to_evict = []
+                    keep = True
+                    old_better = None
+                    for old_target in watched_targets:
+                        evc = eviction_policy(new_target, context, old_target, context, RUNTIME_POOL, cost_model)
+                        if old_target not in evc:
+                            to_evict.append(old_target)
+                        if new_target not in evc:
+                            old_better = old_target
+                            keep = False
+                            break
+                    for t in to_evict:
+                        watched_targets.remove(t)
+                    if not keep:
+                        print("Whoops! Looks like we already found something better.")
+                        print(" --> {}".format(pprint(old_better)))
+                        continue
+                    if target in to_evict:
+                        print("Yep, it's an improvement!")
+                        yield new_target
+                        if heuristic_done(new_target):
+                            print("target now matches doneness heuristic")
+                            return
+                        target = new_target
+                    else:
+                        print("Nope, it isn't substantially better!")
 
-    except KeyboardInterrupt:
-        raise
+                watched_targets.append(new_target)
+                print("Now watching {} targets".format(len(watched_targets)))
+                learner.watch(watched_targets)
+                break
