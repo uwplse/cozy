@@ -29,6 +29,7 @@ from .enumeration import Enumerator, fingerprint, eviction_policy
 eliminate_vars = Option("eliminate-vars", bool, False)
 enable_blacklist = Option("enable-blacklist", bool, False)
 check_all_substitutions = Option("check-all-substitutions", bool, True)
+enable_eviction = Option("eviction", bool, True)
 
 def exploration_order(targets : [Exp], context : Context, pool : Pool = RUNTIME_POOL):
     """
@@ -200,7 +201,8 @@ class Learner(object):
             check_wf=check_wf,
             hints=frags,
             heuristics=try_optimize,
-            stop_callback=self.stop_callback)
+            stop_callback=self.stop_callback,
+            do_eviction=enable_eviction.value)
 
         size = 0
         target_fp = fingerprint(self.targets[0], self.examples)

@@ -89,7 +89,7 @@ def eviction_policy(new_exp : Exp, new_ctx : Context, old_exp : Exp, old_ctx : C
     raise ValueError(ordering)
 
 class Enumerator(object):
-    def __init__(self, examples, cost_model : CostModel, check_wf=None, hints=None, heuristics=None, stop_callback=None):
+    def __init__(self, examples, cost_model : CostModel, check_wf=None, hints=None, heuristics=None, stop_callback=None, do_eviction=True):
         self.examples = list(examples)
         self.cost_model = cost_model
         self.cache = { } # keys -> [exp]
@@ -107,6 +107,7 @@ class Enumerator(object):
         if stop_callback is None:
             stop_callback = lambda: False
         self.stop_callback = stop_callback
+        self.do_eviction = do_eviction
 
     def cache_size(self):
         return sum(len(v) for v in self.cache.values())
@@ -442,22 +443,23 @@ class Enumerator(object):
 
                 if should_keep:
 
-                    with task("evicting"):
-                        to_evict = []
-                        for (key, exps) in self.cache.items():
-                            (p, s, c) = key
-                            if p == pool and c == context:
-                                for ee in exps:
-                                    if ee.fingerprint == fp:
-                                        event("considering eviction of {}".format(pprint(ee.e)))
-                                        to_keep = eviction_policy(e, context, ee.e, c, pool, cost_model)
-                                        if ee.e not in to_keep:
-                                            to_evict.append((key, ee))
-                        for key, ee in to_evict:
-                            (p, s, c) = key
-                            _evict(ee.e, s, c, pool, e)
-                            self.cache[key].remove(ee)
-                            self.seen[(c, p, fp)].remove(ee.e)
+                    if self.do_eviction:
+                        with task("evicting"):
+                            to_evict = []
+                            for (key, exps) in self.cache.items():
+                                (p, s, c) = key
+                                if p == pool and c == context:
+                                    for ee in exps:
+                                        if ee.fingerprint == fp:
+                                            event("considering eviction of {}".format(pprint(ee.e)))
+                                            to_keep = eviction_policy(e, context, ee.e, c, pool, cost_model)
+                                            if ee.e not in to_keep:
+                                                to_evict.append((key, ee))
+                            for key, ee in to_evict:
+                                (p, s, c) = key
+                                _evict(ee.e, s, c, pool, e)
+                                self.cache[key].remove(ee)
+                                self.seen[(c, p, fp)].remove(ee.e)
 
                     _accept(e, size, context, pool)
                     seen_key = (context, pool, fp)
