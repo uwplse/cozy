@@ -27,7 +27,7 @@ def typecheck(
     typechecker.visit(ast)
     return typechecker.errors
 
-def retypecheck(exp, env : {str : syntax.Type} = None, fenv = None):
+def retypecheck(exp, env : {str : syntax.Type} = None):
     """Add or fix the .type annotations on the given tree.
 
     Returns True or False to indicate success or failure.  If it fails, it
@@ -40,16 +40,12 @@ def retypecheck(exp, env : {str : syntax.Type} = None, fenv = None):
     """
     if env is None:
         env = { v.id:v.type for v in free_vars(exp) }
-    if fenv is not None:
-        fenv = { f : (tuple(ty.arg_types), ty.ret_type) for f, ty in fenv.items() }
-    else:
-        fenv = { }
+    fenv = { }
     for e in all_exps(exp):
         if isinstance(e, syntax.EEnumEntry):
             env[e.name] = e.type
         if isinstance(e, syntax.ECall):
-            if e.func not in fenv:
-                fenv[e.func] = (tuple(arg.type for arg in e.args), e.type)
+            fenv[e.func] = (tuple(arg.type for arg in e.args), e.type)
     errs = typecheck(exp, env=env, fenv=fenv)
     if errs:
         print("errors")

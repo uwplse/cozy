@@ -25,8 +25,6 @@ def simplify_cond(c, t, e):
         return e
     if alpha_equivalent(t, e):
         return t
-    t = replace(t, c, T)
-    e = replace(e, c, F)
     if t.type == BOOL:
         if t == T:
             return EAny([c, e])
