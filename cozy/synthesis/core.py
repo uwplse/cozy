@@ -1,12 +1,33 @@
+"""Core synthesis algorithm for expressions.
+
+The main function here is `improve`, which takes an expression and yields
+increasingly better and better versions of it.
+
+There are a number of heuristics here that affect how `improve` functions.
+See their docstrings for more information.
+ - exploration_order
+ - hint_order
+ - good_idea
+ - heuristic_done
+"""
+
 from collections import OrderedDict
 import itertools
 
-from cozy.target_syntax import *
+from cozy.syntax import (
+    Type, INT, BOOL, TMap,
+    Op,
+    Exp, T, ONE, EVar, ENum, EStr, EBool, EEmptyList, ESingleton, ELen, ENull,
+    EAll, ENot, EImplies, EEq, EGt, ELe, ECond, EEnumEntry, EGetField,
+    EBinOp, EUnaryOp, UOp, EArgMin, EArgMax, ELambda)
+from cozy.target_syntax import (
+    EFlatMap, EFilter, EMakeMap2, EStateVar,
+    EDropFront, EDropBack)
 from cozy.typecheck import is_collection, is_scalar
 from cozy.syntax_tools import subst, pprint, free_vars, fresh_var, alpha_equivalent, strip_EStateVar, freshen_binders, wrap_naked_statevars, break_conj
 from cozy.wf import exp_wf
 from cozy.common import No, OrderedSet, unique, OrderedSet, StopException
-from cozy.solver import satisfy, valid, IncrementalSolver, ModelCachingSolver
+from cozy.solver import valid, solver_for_context
 from cozy.value_types import values_equal
 from cozy.evaluation import construct_value
 from cozy.cost_model import CostModel, Order, LINEAR_TIME_UOPS
@@ -19,12 +40,9 @@ from .acceleration import try_optimize
 from .enumeration import Enumerator, fingerprint, eviction_policy
 
 eliminate_vars = Option("eliminate-vars", bool, False)
-incremental = Option("incremental", bool, False, description="Experimental option that can greatly improve performance.")
 enable_blacklist = Option("enable-blacklist", bool, False)
 check_all_substitutions = Option("check-all-substitutions", bool, True)
-
-class NoMoreImprovements(Exception):
-    pass
+enable_eviction = Option("eviction", bool, True)
 
 def exploration_order(targets : [Exp], context : Context, pool : Pool = RUNTIME_POOL):
     """
@@ -133,11 +151,6 @@ def good_idea(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptio
             assumptions,
             EBinOp(total_size, ">=", my_size).with_type(BOOL))
         if not solver.valid(s):
-            # from cozy.evaluation import eval
-            # from cozy.solver import satisfy
-            # model = satisfy(EAll([assumptions, EBinOp(total_size, "<", my_size).with_type(BOOL)]), collection_depth=3, validate_model=True)
-            # assert model is not None
-            # return No("non-polynomial-sized map ({}); total_size={}, this_size={}".format(model, eval(total_size, model), eval(my_size, model)))
             return No("non-polynomial-sized map")
 
     e._good_idea = True
@@ -151,25 +164,23 @@ def good_idea_recursive(solver, e : Exp, context : Context, pool = RUNTIME_POOL,
     return True
 
 class Learner(object):
-    def __init__(self, targets, assumptions, context, examples, cost_model, stop_callback, hints, ops):
+    def __init__(self, targets, solver, context, examples, cost_model, stop_callback, hints, ops):
         self.context = context
         self.stop_callback = stop_callback
         self.cost_model = cost_model
-        self.assumptions = assumptions
         self.hints = list(hints)
+        self.wf_solver = solver
+        self.ops = ops
+        self.blacklist = {}
         self.reset(examples)
         self.watch(targets)
-        self.wf_solver = ModelCachingSolver(
-            vars=[v for (v, p) in context.vars()],
-            funcs=context.funcs())
-        self.ops = ops
 
     def reset(self, examples):
         self.examples = list(examples)
 
     def watch(self, new_targets):
-        assert new_targets
         self.targets = list(new_targets)
+        assert self.targets
 
     def matches(self, fp, target_fp):
         assert isinstance(fp[0], Type)
@@ -180,27 +191,18 @@ class Learner(object):
         return all(values_equal(t, fp[i], target_fp[i]) for i in range(1, len(fp)))
 
     def next(self):
-        # with task("pre-computing cardinalities"):
-        #     cards = [self.cost_model.cardinality(ctx.e) for ctx in enumerate_fragments(self.target) if is_collection(ctx.e.type)]
 
         root_ctx = self.context
         def check_wf(e, ctx, pool):
             with task("checking well-formedness", size=e.size()):
-                is_wf = exp_wf(e, pool=pool, context=ctx, assumptions=self.assumptions, solver=self.wf_solver)
+                is_wf = exp_wf(e, pool=pool, context=ctx, solver=self.wf_solver)
                 if not is_wf:
                     return is_wf
-                res = good_idea_recursive(self.wf_solver, e, ctx, pool, assumptions=self.assumptions, ops=self.ops)
+                res = good_idea_recursive(self.wf_solver, e, ctx, pool, ops=self.ops)
                 if not res:
                     return res
                 if pool == RUNTIME_POOL and self.cost_model.compare(e, self.targets[0], ctx, pool) == Order.GT:
-                    # from cozy.cost_model import debug_comparison
-                    # debug_comparison(self.cost_model, e, self.target, ctx)
                     return No("too expensive")
-                # if isinstance(e.type, TBag):
-                #     c = self.cost_model.cardinality(e)
-                #     if all(cc < c for cc in cards):
-                #         # print("too big: {}".format(pprint(e)))
-                #         return No("too big")
                 return True
 
         frags = list(unique(itertools.chain(
@@ -213,21 +215,17 @@ class Learner(object):
             check_wf=check_wf,
             hints=frags,
             heuristics=try_optimize,
-            stop_callback=self.stop_callback)
+            stop_callback=self.stop_callback,
+            do_eviction=enable_eviction.value)
 
         size = 0
-        # target_cost = self.cost_model.cost(self.target, RUNTIME_POOL)
         target_fp = fingerprint(self.targets[0], self.examples)
-
-        if not hasattr(self, "blacklist"):
-            self.blacklist = {}
 
         watches = OrderedDict()
         for target in self.targets:
             for e, ctx, pool in unique(shred(target, context=root_ctx, pool=RUNTIME_POOL)):
                 exs = ctx.instantiate_examples(self.examples)
                 fp = fingerprint(e, exs)
-                # print("watch {}: {}".format(fp, pprint(e)))
                 k = (fp, ctx, pool)
                 l = watches.get(k)
                 if l is None:
@@ -268,7 +266,9 @@ class Learner(object):
                 self.blacklist[k] = msg
                 return
             print("FOUND A GUESS AFTER {} CONSIDERED".format(n))
-            print("In {}, replacing {} ----> {}".format(pprint(old_target), pprint(e), pprint(replacement)))
+            print(" * in {}".format(pprint(old_target), pprint(e), pprint(replacement)))
+            print(" * replacing {}".format(pprint(e)))
+            print(" * with {}".format(pprint(replacement)))
             yield new_target
 
         while True:
@@ -324,8 +324,6 @@ class Learner(object):
 
             print("CONSIDERED {}".format(n))
             size += 1
-
-        raise NoMoreImprovements()
 
 def can_elim_vars(spec : Exp, assumptions : Exp, vs : [EVar]):
     spec = strip_EStateVar(spec)
@@ -422,15 +420,9 @@ def improve(
     vars = list(v for (v, p) in context.vars())
     funcs = context.funcs()
 
-    solver = None
-    if incremental.value:
-        solver = IncrementalSolver(vars=vars, funcs=funcs)
-        solver.add_assumption(assumptions)
-        _sat = solver.satisfy
-    else:
-        _sat = lambda e: satisfy(e, vars=vars, funcs=funcs)
+    solver = solver_for_context(context, assumptions=assumptions)
 
-    if _sat(assumptions) is None:
+    if not solver.satisfiable(T):
         print("assumptions are unsat; this query will never be called")
         yield construct_value(target.type)
         return
@@ -441,76 +433,64 @@ def improve(
         cost_model = CostModel(funcs=funcs, assumptions=assumptions)
 
     watched_targets = [target]
-    learner = Learner(watched_targets, assumptions, context, examples, cost_model, stop_callback, hints, ops=ops)
-    try:
-        while True:
-            # 1. find any potential improvement to any sub-exp of target
-            for new_target in learner.next():
-                print("Found candidate improvement: {}".format(pprint(new_target)))
+    learner = Learner(watched_targets, solver, context, examples, cost_model, stop_callback, hints, ops=ops)
 
-                # 2. check
-                with task("verifying candidate"):
-                    if incremental.value:
-                        solver.push()
-                        solver.add_assumption(ENot(EBinOp(target, "==", new_target).with_type(BOOL)))
-                        counterexample = _sat(T)
+    while True:
+        # 1. find any potential improvement to any sub-exp of target
+        for new_target in learner.next():
+            print("Found candidate improvement: {}".format(pprint(new_target)))
+
+            # 2. check
+            with task("verifying candidate"):
+                counterexample = solver.satisfy(ENot(EEq(target, new_target)))
+
+            if counterexample is not None:
+                if counterexample in examples:
+                    print("assumptions = {!r}".format(assumptions))
+                    print("duplicate example: {!r}".format(counterexample))
+                    print("old target = {!r}".format(target))
+                    print("new target = {!r}".format(new_target))
+                    raise Exception("got a duplicate example")
+                # a. if incorrect: add example, reset the learner
+                examples.append(counterexample)
+                event("new example: {!r}".format(counterexample))
+                print("wrong; restarting with {} examples".format(len(examples)))
+                learner.reset(examples)
+                break
+            else:
+                # b. if correct: yield it, watch the new target, goto 1
+                print("The candidate is valid!")
+                print(repr(new_target))
+                print("Determining whether to yield it...")
+                with task("updating frontier"):
+                    to_evict = []
+                    keep = True
+                    old_better = None
+                    for old_target in watched_targets:
+                        evc = eviction_policy(new_target, context, old_target, context, RUNTIME_POOL, cost_model)
+                        if old_target not in evc:
+                            to_evict.append(old_target)
+                        if new_target not in evc:
+                            old_better = old_target
+                            keep = False
+                            break
+                    for t in to_evict:
+                        watched_targets.remove(t)
+                    if not keep:
+                        print("Whoops! Looks like we already found something better.")
+                        print(" --> {}".format(pprint(old_better)))
+                        continue
+                    if target in to_evict:
+                        print("Yep, it's an improvement!")
+                        yield new_target
+                        if heuristic_done(new_target):
+                            print("target now matches doneness heuristic")
+                            return
+                        target = new_target
                     else:
-                        formula = EAll([assumptions, ENot(EBinOp(target, "==", new_target).with_type(BOOL))])
-                        counterexample = _sat(formula)
-                if counterexample is not None:
-                    if counterexample in examples:
-                        print("assumptions = {!r}".format(assumptions))
-                        print("duplicate example: {!r}".format(counterexample))
-                        print("old target = {!r}".format(target))
-                        print("new target = {!r}".format(new_target))
-                        raise Exception("got a duplicate example")
-                    # a. if incorrect: add example, reset the learner
-                    examples.append(counterexample)
-                    event("new example: {!r}".format(counterexample))
-                    print("wrong; restarting with {} examples".format(len(examples)))
-                    learner.reset(examples)
-                    break
-                else:
-                    # b. if correct: yield it, watch the new target, goto 1
-                    print("The candidate is valid!")
-                    print(repr(new_target))
-                    print("Determining whether to yield it...")
-                    with task("updating frontier"):
-                        to_evict = []
-                        keep = True
-                        old_better = None
-                        for old_target in watched_targets:
-                            evc = eviction_policy(new_target, context, old_target, context, RUNTIME_POOL, cost_model)
-                            if old_target not in evc:
-                                to_evict.append(old_target)
-                            if new_target not in evc:
-                                old_better = old_target
-                                keep = False
-                                break
-                        for t in to_evict:
-                            watched_targets.remove(t)
-                        if not keep:
-                            print("Whoops! Looks like we already found something better.")
-                            print(" --> {}".format(pprint(old_better)))
-                            continue
-                        if target in to_evict:
-                            print("Yep, it's an improvement!")
-                            yield new_target
-                            if heuristic_done(new_target):
-                                print("target now matches doneness heuristic")
-                                raise NoMoreImprovements()
-                            target = new_target
-                        else:
-                            print("Nope, it isn't substantially better!")
+                        print("Nope, it isn't substantially better!")
 
-                    watched_targets.append(new_target)
-                    print("Now watching {} targets".format(len(watched_targets)))
-                    learner.watch(watched_targets)
-                    break
-
-                if incremental.value:
-                    solver.pop()
-    except NoMoreImprovements:
-        return
-    except KeyboardInterrupt:
-        raise
+                watched_targets.append(new_target)
+                print("Now watching {} targets".format(len(watched_targets)))
+                learner.watch(watched_targets)
+                break

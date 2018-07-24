@@ -24,6 +24,7 @@ from cozy.structures import extension_handler
 from cozy.logging import task
 from cozy.value_types import Map, Bag, Handle
 from cozy.evaluation import eval_bulk
+from cozy.contexts import Context
 
 save_solver_testcases = Option("save-solver-testcases", str, "", metavar="PATH")
 collection_depth_opt = Option("collection-depth", int, 4, metavar="N", description="Bound for bounded verification")
@@ -1308,3 +1309,9 @@ class ModelCachingSolver(object):
 
     def valid(self, e):
         return not self.satisfiable(ENot(e))
+
+def solver_for_context(context : Context, assumptions : Exp = T):
+    return ModelCachingSolver(
+        vars        = [v for v, _ in context.vars()],
+        funcs       = context.funcs(),
+        assumptions = assumptions)
