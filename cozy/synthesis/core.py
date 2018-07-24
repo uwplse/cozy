@@ -1,3 +1,16 @@
+"""Core synthesis algorithm for expressions.
+
+The main function here is `improve`, which takes an expression and yields
+increasingly better and better versions of it.
+
+There are a number of heuristics here that affect how `improve` functions.
+See their docstrings for more information.
+ - exploration_order
+ - hint_order
+ - good_idea
+ - heuristic_done
+"""
+
 from collections import OrderedDict
 import itertools
 
