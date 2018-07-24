@@ -63,6 +63,35 @@ def exploration_order(targets : [Exp], context : Context, pool : Pool = RUNTIME_
         for e, ctx, p in sorted(unique(shred(target, context, pool=pool)), key=sort_key):
             yield (target, e, ctx, p)
 
+def should_consider_replacement(
+        target         : Exp,
+        target_context : Context,
+        subexp         : Exp,
+        subexp_context : Context,
+        subexp_pool    : Pool,
+        subexp_fp      : Fingerprint,
+        replacement    : Exp,
+        replacement_fp : Fingerprint) -> bool:
+    """Heuristic that controls "blind" replacements.
+
+    Besides replacing subexpressions with improved versions, Cozy also attempts
+    "blind" replacements where the subexpression and the replacement do not
+    behave exactly the same.  In some cases this can actually make a huge
+    difference, for instance by replacing a collection with a singleton.
+
+    However, not all blind replacements are worth trying.  This function
+    controls which ones Cozy actually attempts.
+
+    Preconditions:
+     - subexp and replacement are both legal in (subexp_context, subexp_pool)
+     - subexp and replacement have the same type
+    """
+
+    if not is_collection(subexp.type):
+        return No("only collections matter")
+
+    return True
+
 def hint_order(tup):
     """What order should the enumerator see hints?
 
@@ -309,6 +338,13 @@ class Learner(object):
                                     continue
                                 if alpha_equivalent(replacement, e):
                                     event("no change")
+                                    continue
+                                should_consider = should_consider_replacement(
+                                    target, root_ctx,
+                                    e, ctx, pool, fingerprint(e, ctx.instantiate_examples(self.examples)),
+                                    info.e, info.fingerprint)
+                                if not should_consider:
+                                    event("skipped; `should_consider_replacement` returned {}".format(should_consider))
                                     continue
 
                                 yield from consider_new_target(target, e, ctx, pool, replacement)
