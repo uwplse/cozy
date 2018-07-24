@@ -4,7 +4,7 @@ import itertools
 from cozy.common import pick_to_sum, OrderedSet, unique, make_random_access, StopException
 from cozy.target_syntax import *
 from cozy.syntax_tools import pprint, fresh_var, free_vars, freshen_binders, alpha_equivalent, all_types
-from cozy.evaluation import eval_bulk, construct_value
+from cozy.evaluation import eval_bulk, construct_value, values_equal
 from cozy.typecheck import is_numeric, is_scalar, is_collection
 from cozy.cost_model import CostModel, Order
 from cozy.pools import Pool, RUNTIME_POOL, STATE_POOL, pool_name
@@ -14,6 +14,14 @@ from cozy.synthesis.acceleration import histogram
 
 def fingerprint(e : Exp, examples : [{str:object}]):
     return (e.type,) + tuple(eval_bulk(e, examples))
+
+def fingerprints_match(fp1, fp2):
+    assert isinstance(fp1[0], Type)
+    assert isinstance(fp2[0], Type)
+    if fp1[0] != fp2[0]:
+        return False
+    t = fp1[0]
+    return all(values_equal(t, fp1[i], fp2[i]) for i in range(1, len(fp1)))
 
 EnumeratedExp = namedtuple("EnumeratedExp", [
     "e",                # The expression

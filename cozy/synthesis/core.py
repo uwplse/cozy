@@ -15,7 +15,7 @@ from collections import OrderedDict
 import itertools
 
 from cozy.syntax import (
-    Type, INT, BOOL, TMap,
+    INT, BOOL, TMap,
     Op,
     Exp, T, ONE, EVar, ENum, EStr, EBool, EEmptyList, ESingleton, ELen, ENull,
     EAll, ENot, EImplies, EEq, EGt, ELe, ECond, EEnumEntry, EGetField,
@@ -28,7 +28,6 @@ from cozy.syntax_tools import subst, pprint, free_vars, fresh_var, alpha_equival
 from cozy.wf import exp_wf
 from cozy.common import No, OrderedSet, unique, OrderedSet, StopException
 from cozy.solver import valid, solver_for_context
-from cozy.value_types import values_equal
 from cozy.evaluation import construct_value
 from cozy.cost_model import CostModel, Order, LINEAR_TIME_UOPS
 from cozy.opts import Option
@@ -37,7 +36,7 @@ from cozy.contexts import Context, shred, replace
 from cozy.logging import task, event
 
 from .acceleration import try_optimize
-from .enumeration import Enumerator, fingerprint, eviction_policy
+from .enumeration import Enumerator, fingerprint, fingerprints_match, eviction_policy
 
 eliminate_vars = Option("eliminate-vars", bool, False)
 enable_blacklist = Option("enable-blacklist", bool, False)
@@ -182,14 +181,6 @@ class Learner(object):
         self.targets = list(new_targets)
         assert self.targets
 
-    def matches(self, fp, target_fp):
-        assert isinstance(fp[0], Type)
-        assert isinstance(target_fp[0], Type)
-        if fp[0] != target_fp[0]:
-            return False
-        t = fp[0]
-        return all(values_equal(t, fp[i], target_fp[i]) for i in range(1, len(fp)))
-
     def search(self):
 
         root_ctx = self.context
@@ -255,7 +246,7 @@ class Learner(object):
                 event(msg)
                 self.blacklist[k] = msg
                 return
-            if not self.matches(fingerprint(new_target, self.examples), target_fp):
+            if not fingerprints_match(fingerprint(new_target, self.examples), target_fp):
                 msg = "not correct"
                 event(msg)
                 self.blacklist[k] = msg
@@ -288,7 +279,7 @@ class Learner(object):
                                 if cc != ctx or pp != pool:
                                     continue
 
-                                if not self.matches(fpx, fp):
+                                if not fingerprints_match(fpx, fp):
                                     continue
 
                                 for target, watched_e in reses:
