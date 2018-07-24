@@ -190,7 +190,7 @@ class Learner(object):
         t = fp[0]
         return all(values_equal(t, fp[i], target_fp[i]) for i in range(1, len(fp)))
 
-    def next(self):
+    def search(self):
 
         root_ctx = self.context
         def check_wf(e, ctx, pool):
@@ -437,7 +437,7 @@ def improve(
 
     while True:
         # 1. find any potential improvement to any sub-exp of target
-        for new_target in learner.next():
+        for new_target in learner.search():
             print("Found candidate improvement: {}".format(pprint(new_target)))
 
             # 2. check
