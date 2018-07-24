@@ -12,7 +12,10 @@ from cozy.contexts import Context, RootCtx, UnderBinder
 from cozy.logging import task, task_begin, task_end, event, verbose
 from cozy.synthesis.acceleration import histogram
 
-def fingerprint(e : Exp, examples : [{str:object}]):
+# TODO: someday, turn this into a full-fledged type
+Fingerprint = tuple
+
+def fingerprint(e : Exp, examples : [{str:object}]) -> Fingerprint:
     return (e.type,) + tuple(eval_bulk(e, examples))
 
 def fingerprints_match(fp1, fp2):

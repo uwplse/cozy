@@ -36,7 +36,7 @@ from cozy.contexts import Context, shred, replace
 from cozy.logging import task, event
 
 from .acceleration import try_optimize
-from .enumeration import Enumerator, fingerprint, fingerprints_match, eviction_policy
+from .enumeration import Enumerator, Fingerprint, fingerprint, fingerprints_match, eviction_policy
 
 eliminate_vars = Option("eliminate-vars", bool, False)
 enable_blacklist = Option("enable-blacklist", bool, False)
