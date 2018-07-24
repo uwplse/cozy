@@ -23,8 +23,8 @@ Dependencies:
  - The Python modules listed in `requirements.txt`;
    install them with `pip3 install -r requirements.txt`.
 
-   (If you get an error "cannot find -lxml2", then install `libxml2-dev`;
-   for example, on Ubuntu run `sudo apt-get install libxml2-dev`.)
+If you run into trouble, consult the wiki page on [troubleshooting
+setup and installation](https://github.com/CozySynthesizer/cozy/wiki/Troubleshooting-setup-and-installation).
 
 To list all command-line options (and ensure that everything is correctly
 installed):
