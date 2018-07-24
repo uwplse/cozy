@@ -46,5 +46,5 @@ in the "Quickstart" section. If you want to install the global executable
 
 ## More Information
 
- - [User Manual](https://github.com/CozySynthesizer/cozy/wiki/User-Manual)
+ - [User manual](https://github.com/CozySynthesizer/cozy/wiki/User-Manual)
  - [Information for developers](https://github.com/CozySynthesizer/cozy/wiki/Information-for-Developers)
