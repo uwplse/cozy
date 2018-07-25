@@ -37,7 +37,7 @@ class JavaPrinter(CxxPrinter):
             self.write(spec.header.strip() + "\n\n")
 
         if spec.docstring:
-            self.write(spec.docstring + "\n")
+            self.write("/**\n{}\n*/".format(spec.docstring) + "\n")
 
         self.write("public class {} implements java.io.Serializable ".format(spec.name))
         with self.block():
@@ -93,7 +93,7 @@ class JavaPrinter(CxxPrinter):
 
     def visit_Op(self, q):
         if q.docstring:
-            self.write(indent_lines(q.docstring, self.get_indent()), "\n")
+            self.write(indent_lines("/**\n{}\n*/".format(q.docstring), self.get_indent()), "\n")
         self.begin_statement()
         self.write("public void ", q.name, "(")
         self.visit_args(q.args)
@@ -111,7 +111,7 @@ class JavaPrinter(CxxPrinter):
             def body(x):
                 return SEscape("{indent}_callback.accept({x});\n", ["x"], [x])
             if q.docstring:
-                self.write(indent_lines(q.docstring, self.get_indent()), "\n")
+                self.write(indent_lines("/**\n{}\n*/".format(q.docstring), self.get_indent()), "\n")
             self.begin_statement()
             self.write("public ", self.visit(ret_type, q.name), "(")
             self.visit_args(itertools.chain(q.args, [("_callback", TNative("java.util.function.Consumer<{t}>".format(t=self.visit(ret_type.t, ""))))]))
@@ -120,7 +120,7 @@ class JavaPrinter(CxxPrinter):
                 self.visit(SForEach(x, q.ret, SEscape("{indent}_callback({x});\n", ["x"], [x])))
         else:
             if q.docstring:
-                self.write(indent_lines(q.docstring, self.get_indent()), "\n")
+                self.write(indent_lines("/**\n{}\n*/".format(q.docstring), self.get_indent()), "\n")
             self.begin_statement()
             self.write("public ", self.visit(ret_type, q.name), "(")
             self.visit_args(q.args)

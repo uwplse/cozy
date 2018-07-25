@@ -126,9 +126,9 @@ def make_lexer():
         pass
 
     def t_DOCCOMMENT(t):
-        r"/\*\*(?:(?!\*/)(.|\n))*\*/"
+        r"/\*\*(?P<comment_text>(?:(?!\*/)(.|\n))*)\*/"
         # Normalize the doc comment, removing leading indentation/etc.
-        t.value = inspect.cleandoc(t.value)
+        t.value = inspect.cleandoc(t.lexer.lexmatch.group('comment_text'))
         return t
 
     def t_MULTILINECOMMENT(t):

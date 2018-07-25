@@ -179,7 +179,7 @@ class CxxPrinter(CodeGenerator):
         if is_collection(ret_type):
             x = self.fv(ret_type.t, "x")
             if q.docstring:
-                self.write(indent_lines(q.docstring, self.get_indent()), "\n")
+                self.write(indent_lines("/**\n{}\n*/".format(q.docstring), self.get_indent()), "\n")
             self.begin_statement()
             self.write("template <class F>")
             self.end_statement()
@@ -192,7 +192,7 @@ class CxxPrinter(CodeGenerator):
             self.end_statement()
         else:
             if q.docstring:
-                self.write(indent_lines(q.docstring, self.get_indent()), "\n")
+                self.write(indent_lines("/**\n{}\n*/".format(q.docstring), self.get_indent()), "\n")
             self.begin_statement()
             self.write("inline ", self.visit(ret_type, ""), " ", q.name, "(")
             self.visit_args(q.args)
@@ -206,7 +206,7 @@ class CxxPrinter(CodeGenerator):
 
     def visit_Op(self, q):
         if q.docstring:
-            self.write(indent_lines(q.docstring, self.get_indent()), "\n")
+            self.write(indent_lines("/**\n{}\n*/".format(q.docstring), self.get_indent()), "\n")
         self.begin_statement()
         self.write("inline void ", q.name, " (")
         self.visit_args(q.args)
@@ -1034,7 +1034,7 @@ class CxxPrinter(CodeGenerator):
             self.write("\n" + spec.header.strip() + "\n")
 
         self.write("{}\nclass {} {{\n".format(
-            ("\n" + spec.docstring) if spec.docstring else "",
+            ("\n" + "/**\n{}\n*/".format(spec.docstring)) if spec.docstring else "",
             spec.name))
 
         self.write("public:\n")
