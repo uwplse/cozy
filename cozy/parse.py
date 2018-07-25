@@ -452,33 +452,51 @@ def make_parser():
         else:
             p[0] = syntax.ONE
 
-    def p_modifier(p):
-        """modifier : frequency
-                    | visibility"""
-        p[0] = p[1]
-
-    parsetools.multi(locals(), "modifiers", "modifier")
-
     def p_methodcore(p):
         """methodcore : KW_OP    WORD OP_OPEN_PAREN typednames OP_CLOSE_PAREN assumes stm
                       | KW_QUERY WORD OP_OPEN_PAREN typednames OP_CLOSE_PAREN assumes exp"""
         p[0] = (p[1], p[2], p[3], p[4], p[5], p[6], p[7])
 
     def p_method(p):
-        """method : doccomment modifiers methodcore"""
+        """method : doccomment frequency visibility methodcore"""
+        fields = len(p)
         vis = syntax.Visibility.Public
         freq = syntax.ONE
-        for modifier in p[2]:
-            if type(modifier) is syntax.Visibility:
-                vis = modifier
-            if type(modifier) is syntax.ENum:
-                freq = modifier
+        docs = ""
 
-        core = p[3]
+        if fields < 3:          # no docs, freq, or vis
+            core = p[1]
+        elif fields < 4:        # one of doc, freq, or vis
+            core = p[2]
+            if isinstance(type(p[1]), syntax.Visibility):
+                vis = p[1]
+            elif isinstance(type(p[1]), syntax.ENum):
+                freq = p[1]
+            else:
+                docs = p[1]
+        elif fields < 5:        # one of doc, freq, or vis x2
+            core = p[3]
+            if isinstance(type(p[1]), syntax.ENum):
+                freq = p[1]
+                vis = [2]
+            else: 
+                docs = p[1]
+                if isinstance(type(p[2]), syntax.Visibility):
+                    vis = p[2]
+                else:
+                    freq = p[2]
+        else:                   # all of the optionals
+            core = p[4]
+            docs = p[1]
+            freq = p[2]
+            vis = p[3]
+
         if core[0] == "op":
-            p[0] = syntax.Op(core[1], core[3], core[5], core[6], p[1], freq)
+            if vis is syntax.Visibility.Private:
+                report_parse_error(vis, "Private mutators are not yet supported")
+            p[0] = syntax.Op(core[1], core[3], core[5], core[6], docs, freq)
         else:
-            p[0] = syntax.Query(core[1], vis, core[3], core[5], core[6], p[1], freq)
+            p[0] = syntax.Query(core[1], vis, core[3], core[5], core[6], docs, freq)
 
 
     parsetools.multi(locals(), "methods", "method")
