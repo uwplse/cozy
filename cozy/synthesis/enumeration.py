@@ -4,7 +4,7 @@ import itertools
 from cozy.common import pick_to_sum, OrderedSet, unique, make_random_access, StopException
 from cozy.target_syntax import *
 from cozy.syntax_tools import pprint, fresh_var, free_vars, freshen_binders, alpha_equivalent, all_types
-from cozy.evaluation import eval_bulk, construct_value, values_equal
+from cozy.evaluation import eval, eval_bulk, construct_value, values_equal
 from cozy.typecheck import is_numeric, is_scalar, is_collection
 from cozy.cost_model import CostModel, Order
 from cozy.pools import Pool, RUNTIME_POOL, STATE_POOL, pool_name
@@ -25,6 +25,15 @@ def fingerprints_match(fp1, fp2):
         return False
     t = fp1[0]
     return all(values_equal(t, fp1[i], fp2[i]) for i in range(1, len(fp1)))
+
+def fingerprint_is_subset(fp1, fp2):
+    """Are all cases of fp1 a subset of fp2?"""
+    assert is_collection(fp1[0])
+    assert is_collection(fp2[0])
+    x = EVar("x").with_type(fp1[0])
+    y = EVar("y").with_type(fp2[0])
+    is_subset = EIsSubset(x, y)
+    return all(eval(is_subset, { "x": a, "y": b }) for (a, b) in zip(fp1[1:], fp2[1:]))
 
 EnumeratedExp = namedtuple("EnumeratedExp", [
     "e",                # The expression

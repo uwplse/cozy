@@ -36,7 +36,7 @@ from cozy.contexts import Context, shred, replace
 from cozy.logging import task, event
 
 from .acceleration import try_optimize
-from .enumeration import Enumerator, Fingerprint, fingerprint, fingerprints_match, eviction_policy
+from .enumeration import Enumerator, Fingerprint, fingerprint, fingerprints_match, fingerprint_is_subset, eviction_policy
 
 eliminate_vars = Option("eliminate-vars", bool, False)
 enable_blacklist = Option("enable-blacklist", bool, False)
@@ -89,6 +89,9 @@ def should_consider_replacement(
 
     if not is_collection(subexp.type):
         return No("only collections matter")
+
+    if not fingerprint_is_subset(replacement_fp, subexp_fp):
+        return No("not a subset")
 
     return True
 
