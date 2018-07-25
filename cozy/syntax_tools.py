@@ -291,7 +291,7 @@ class PrettyPrinter(common.Visitor):
     def visit_Query(self, q):
         s = "\n"
         if q.docstring:
-            s += "  {}\n".format(self.format_comment("/** {} */".format(q.docstring)))
+            s += "  {}\n".format(self.format_comment("{}".format(q.docstring)))
         if q.frequency:
             s += "  frequency = {}\n".format(pprint(q.frequency))
         s += "  {} {}({}):\n".format(self.format_keyword("query"), q.name, ", ".join("{} : {}".format(name, self.visit(t)) for name, t in q.args))
@@ -302,6 +302,8 @@ class PrettyPrinter(common.Visitor):
 
     def visit_Op(self, q):
         s = "\n"
+        if q.docstring:
+            s += "  {}\n".format(self.format_comment("{}".format(q.docstring)))
         if q.frequency:
             s += "  frequency = {}\n".format(pprint(q.frequency))
         s += "  {} {}({}):\n".format(self.format_keyword("op"), q.name, ", ".join("{} : {}".format(name, self.visit(t)) for name, t in q.args))
