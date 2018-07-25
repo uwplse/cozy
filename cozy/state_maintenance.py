@@ -207,14 +207,14 @@ def sketch_update(
 
     t = lval.type
     if isinstance(t, syntax.TBag) or isinstance(t, syntax.TSet):
-        to_add = make_subgoal(syntax.EBinOp(new_value, "-", old_value).with_type(t), docstring="additions to {}".format(pprint(lval)), frequency=frequency)
-        to_del = make_subgoal(syntax.EBinOp(old_value, "-", new_value).with_type(t), docstring="deletions from {}".format(pprint(lval)), frequency=frequency)
+        to_add = make_subgoal(syntax.EBinOp(new_value, "-", old_value).with_type(t), docstring="/** additions to {} */".format(pprint(lval)), frequency=frequency)
+        to_del = make_subgoal(syntax.EBinOp(old_value, "-", new_value).with_type(t), docstring="/** deletions from {} */".format(pprint(lval)), frequency=frequency)
         v = fresh_var(t.t)
         stm = syntax.seq([
             syntax.SForEach(v, to_del, syntax.SCall(lval, "remove", [v])),
             syntax.SForEach(v, to_add, syntax.SCall(lval, "add", [v]))])
     elif is_numeric(t) and update_numbers_with_deltas.value:
-        change = make_subgoal(syntax.EBinOp(new_value, "-", old_value).with_type(t), docstring="delta for {}".format(pprint(lval)), frequency=frequency)
+        change = make_subgoal(syntax.EBinOp(new_value, "-", old_value).with_type(t), docstring="/** delta for {} */".format(pprint(lval)), frequency=frequency)
         stm = syntax.SAssign(lval, syntax.EBinOp(lval, "+", change).with_type(t))
     elif isinstance(t, syntax.TTuple):
         get = lambda val, i: syntax.ETupleGet(val, i).with_type(t.ts[i])
@@ -236,7 +236,7 @@ def sketch_update(
 
         # (1) exit set
         deleted_keys = syntax.EBinOp(old_keys, "-", new_keys).with_type(key_bag)
-        s1 = syntax.SForEach(k, make_subgoal(deleted_keys, docstring="keys removed from {}".format(pprint(lval)), frequency=frequency),
+        s1 = syntax.SForEach(k, make_subgoal(deleted_keys, docstring="/** keys removed from {} */".format(pprint(lval)), frequency=frequency),
             target_syntax.SMapDel(lval, k))
 
         # (2) enter/mod set
@@ -248,12 +248,12 @@ def sketch_update(
             value_at(new_value, k),
             ctx = ctx,
             assumptions = assumptions + [syntax.EIn(k, new_or_modified), syntax.EEq(v, value_at(old_value, k))])
-        s2 = syntax.SForEach(k, make_subgoal(new_or_modified, docstring="new or modified keys from {}".format(pprint(lval)), frequency=frequency),
+        s2 = syntax.SForEach(k, make_subgoal(new_or_modified, docstring="/** new or modified keys from {} */".format(pprint(lval)), frequency=frequency),
             target_syntax.SMapUpdate(lval, k, v, update_value))
 
         stm = syntax.SSeq(s1, s2)
     else:
         # Fallback rule: just compute a new value from scratch
-        stm = syntax.SAssign(lval, make_subgoal(new_value, docstring="new value for {}".format(pprint(lval)), frequency=frequency))
+        stm = syntax.SAssign(lval, make_subgoal(new_value, docstring="/** new value for {} */".format(pprint(lval)), frequency=frequency))
 
     return (stm, subgoals)
