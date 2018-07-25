@@ -210,10 +210,10 @@ class Heaps(object):
         old_elems = EHeapElems(old_value).with_type(t)
         new_elems = EHeapElems(new_value).with_type(t)
         initial_count = make_subgoal(ELen(old_elems))
-        to_add = make_subgoal(EBinOp(new_elems, "-", old_elems).with_type(t), docstring="additions to {}".format(pprint(lval)))
+        to_add = make_subgoal(EBinOp(new_elems, "-", old_elems).with_type(t), docstring="/** additions to {} */".format(pprint(lval)))
         to_del_spec = EBinOp(old_elems, "-", new_elems).with_type(t)
         removed_count = make_subgoal(ELen(to_del_spec))
-        to_del = make_subgoal(to_del_spec, docstring="deletions from {}".format(pprint(lval)))
+        to_del = make_subgoal(to_del_spec, docstring="/** deletions from {} */".format(pprint(lval)))
 
         # modified elements
         f1 = heap_func(old_value)
