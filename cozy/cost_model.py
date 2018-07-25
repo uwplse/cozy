@@ -301,6 +301,8 @@ def worst_case_cardinality(e : Exp) -> DominantTerm:
         return worst_case_cardinality(e.e1)
     if isinstance(e, EBinOp) and e.op == "+":
         return worst_case_cardinality(e.e1) + worst_case_cardinality(e.e2)
+    if isinstance(e, EBinOp) and e.op == "intersect":
+        return min(worst_case_cardinality(e.e1), worst_case_cardinality(e.e2))
     if isinstance(e, EFlatMap):
         return worst_case_cardinality(e.e) * worst_case_cardinality(e.f.body)
     if isinstance(e, ECond):

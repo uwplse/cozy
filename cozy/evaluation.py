@@ -538,6 +538,8 @@ def _compile(e, env : {str:int}, out):
         _compile(e.e1, env, out)
         _compile(e.e2, env, out)
         e1type = e.e1.type
+        if e.op == "intersect":
+            e = intersection_in_terms_of_subtraction(e.e1, e.e2)
         if e.op == "+":
             if is_collection(e.type):
                 out.append(binaryop_add_sets if isinstance(e.type, TSet) else binaryop_add_collections)

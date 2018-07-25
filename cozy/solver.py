@@ -636,6 +636,8 @@ class ToZ3(Visitor):
         # ("distinct" is very expensive for the solver)
         if e.op == BOp.In and isinstance(e.e2, EUnaryOp) and e.e2.op == UOp.Distinct:
             return self.visit(EIn(e.e1, e.e2.e), env)
+        if e.op == "intersect":
+            e = intersection_in_terms_of_subtraction(e.e1, e.e2)
 
         # normal path
         v1 = self.visit(e.e1, env)

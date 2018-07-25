@@ -275,6 +275,9 @@ def EUnion(es, elem_type):
     return ESum(es, base_case=EEmptyList().with_type(TBag(elem_type)))
 
 def EIntersect(xs, ys):
+    return EBinOp(xs, "intersect", ys).with_type(xs.type)
+
+def intersection_in_terms_of_subtraction(xs, ys):
     a = EBinOp(xs, "-", ys).with_type(xs.type) # xs - (xs intersect ys)
     b = EBinOp(xs, "-", a).with_type(xs.type)  # xs intersect ys
     return b
