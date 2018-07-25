@@ -15,7 +15,7 @@ from collections import OrderedDict
 import itertools
 
 from cozy.syntax import (
-    Type, INT, BOOL, TMap,
+    INT, BOOL, TMap,
     Op,
     Exp, T, ONE, EVar, ENum, EStr, EBool, EEmptyList, ESingleton, ELen, ENull,
     EAll, ENot, EImplies, EEq, EGt, ELe, ECond, EEnumEntry, EGetField,
@@ -28,7 +28,6 @@ from cozy.syntax_tools import subst, pprint, free_vars, fresh_var, alpha_equival
 from cozy.wf import exp_wf
 from cozy.common import No, OrderedSet, unique, OrderedSet, StopException
 from cozy.solver import valid, solver_for_context
-from cozy.value_types import values_equal
 from cozy.evaluation import construct_value
 from cozy.cost_model import CostModel, Order, LINEAR_TIME_UOPS
 from cozy.opts import Option
@@ -37,7 +36,7 @@ from cozy.contexts import Context, shred, replace
 from cozy.logging import task, event
 
 from .acceleration import try_optimize
-from .enumeration import Enumerator, fingerprint, eviction_policy
+from .enumeration import Enumerator, Fingerprint, fingerprint, fingerprints_match, eviction_policy
 
 eliminate_vars = Option("eliminate-vars", bool, False)
 enable_blacklist = Option("enable-blacklist", bool, False)
@@ -63,6 +62,35 @@ def exploration_order(targets : [Exp], context : Context, pool : Pool = RUNTIME_
     for target in targets:
         for e, ctx, p in sorted(unique(shred(target, context, pool=pool)), key=sort_key):
             yield (target, e, ctx, p)
+
+def should_consider_replacement(
+        target         : Exp,
+        target_context : Context,
+        subexp         : Exp,
+        subexp_context : Context,
+        subexp_pool    : Pool,
+        subexp_fp      : Fingerprint,
+        replacement    : Exp,
+        replacement_fp : Fingerprint) -> bool:
+    """Heuristic that controls "blind" replacements.
+
+    Besides replacing subexpressions with improved versions, Cozy also attempts
+    "blind" replacements where the subexpression and the replacement do not
+    behave exactly the same.  In some cases this can actually make a huge
+    difference, for instance by replacing a collection with a singleton.
+
+    However, not all blind replacements are worth trying.  This function
+    controls which ones Cozy actually attempts.
+
+    Preconditions:
+     - subexp and replacement are both legal in (subexp_context, subexp_pool)
+     - subexp and replacement have the same type
+    """
+
+    if not is_collection(subexp.type):
+        return No("only collections matter")
+
+    return True
 
 def hint_order(tup):
     """What order should the enumerator see hints?
@@ -182,15 +210,7 @@ class Learner(object):
         self.targets = list(new_targets)
         assert self.targets
 
-    def matches(self, fp, target_fp):
-        assert isinstance(fp[0], Type)
-        assert isinstance(target_fp[0], Type)
-        if fp[0] != target_fp[0]:
-            return False
-        t = fp[0]
-        return all(values_equal(t, fp[i], target_fp[i]) for i in range(1, len(fp)))
-
-    def next(self):
+    def search(self):
 
         root_ctx = self.context
         def check_wf(e, ctx, pool):
@@ -255,7 +275,7 @@ class Learner(object):
                 event(msg)
                 self.blacklist[k] = msg
                 return
-            if not self.matches(fingerprint(new_target, self.examples), target_fp):
+            if not fingerprints_match(fingerprint(new_target, self.examples), target_fp):
                 msg = "not correct"
                 event(msg)
                 self.blacklist[k] = msg
@@ -288,7 +308,7 @@ class Learner(object):
                                 if cc != ctx or pp != pool:
                                     continue
 
-                                if not self.matches(fpx, fp):
+                                if not fingerprints_match(fpx, fp):
                                     continue
 
                                 for target, watched_e in reses:
@@ -318,6 +338,13 @@ class Learner(object):
                                     continue
                                 if alpha_equivalent(replacement, e):
                                     event("no change")
+                                    continue
+                                should_consider = should_consider_replacement(
+                                    target, root_ctx,
+                                    e, ctx, pool, fingerprint(e, ctx.instantiate_examples(self.examples)),
+                                    info.e, info.fingerprint)
+                                if not should_consider:
+                                    event("skipped; `should_consider_replacement` returned {}".format(should_consider))
                                     continue
 
                                 yield from consider_new_target(target, e, ctx, pool, replacement)
@@ -437,7 +464,7 @@ def improve(
 
     while True:
         # 1. find any potential improvement to any sub-exp of target
-        for new_target in learner.next():
+        for new_target in learner.search():
             print("Found candidate improvement: {}".format(pprint(new_target)))
 
             # 2. check
