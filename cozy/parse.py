@@ -479,7 +479,7 @@ def make_parser():
             if isinstance(type(p[1]), syntax.ENum):
                 freq = p[1]
                 vis = [2]
-            else: 
+            else:
                 docs = p[1]
                 if isinstance(type(p[2]), syntax.Visibility):
                     vis = p[2]
