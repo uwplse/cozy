@@ -9,18 +9,19 @@ import itertools
 from collections import OrderedDict
 import functools
 
-from cozy.common import fresh_name, typechecked
+from cozy.common import fresh_name, typechecked, find_one
 from cozy import syntax
 from cozy import target_syntax
-from cozy.syntax_tools import free_vars, free_funcs, pprint, fresh_var, strip_EStateVar, subst, BottomUpRewriter, alpha_equivalent, break_seq, mk_lambda
+from cozy.syntax_tools import free_vars, free_funcs, pprint, fresh_var, strip_EStateVar, subst, BottomUpRewriter, alpha_equivalent, break_seq, break_sum, mk_lambda
 from cozy.syntax_tools import break_conj
+from cozy.syntax_tools import cse
 from cozy.typecheck import is_numeric, is_collection
 from cozy.solver import valid, ModelCachingSolver
 from cozy.opts import Option
 from cozy.structures import extension_handler
 from cozy.evaluation import construct_value, eval, uneval
 from cozy.contexts import Context, UnderBinder
-from cozy.pools import RUNTIME_POOL
+from cozy.pools import STATE_POOL, RUNTIME_POOL
 from cozy.simplification import simplify, simplify_cond as cond
 
 skip_stateless_synthesis = Option("skip-stateless-synthesis", bool, False,
@@ -160,7 +161,7 @@ def better_mutate(
     if isinstance(e.type, syntax.TBag) or isinstance(e.type, syntax.TSet):
         add, remove = bag_delta(e, context, op, assumptions)
         print("{} x {} ---> +{}, -{}".format(pprint(e), pprint(op), pprint(add), pprint(remove)))
-        return bag_union(bag_subtract(e, remove), add)
+        return bag_union(bag_subtract(esv, remove), add)
 
     if isinstance(e, syntax.EUnaryOp):
         if e.op == syntax.UOp.Exists:
@@ -197,7 +198,7 @@ def better_mutate(
     if isinstance(e, syntax.EArgMin) or isinstance(e, syntax.EArgMax):
         if alpha_equivalent(e.f, mutate(e.f, op)):
 
-            to_add, to_del = bag_delta(target_syntax.EStateVar(e.e).with_type(e.e.type), context, op, assumptions)
+            to_add, to_del = bag_delta(e.e, context, op, assumptions)
             to_del, to_add = (
                 bag_subtract(to_del, to_add),
                 bag_subtract(to_add, to_del))
@@ -222,7 +223,9 @@ def better_mutate(
             # elif valid(syntax.EImplies(assumptions, syntax.EEq(syntax.ELen(to_del), syntax.ONE))):
             #     min_after_del = second_min
             print("Checking for efficient removal...")
-            if valid(syntax.EImplies(assumptions, syntax.ELe(syntax.ELen(to_del), syntax.ONE))):
+            if valid(syntax.EImplies(assumptions, syntax.EEmpty(to_del))):
+                min_after_del = syntax.ESingleton(esv).with_type(e.e.type)
+            elif valid(syntax.EImplies(assumptions, syntax.ELe(syntax.ELen(to_del), syntax.ONE))):
                 min_after_del = syntax.ECond(
                     syntax.ELet(
                         to_del,
@@ -254,10 +257,15 @@ def better_mutate(
                 raise NotEfficient(e)
                 return mutate(e, op)
 
+            add_min = type(e)(to_add, e.f).with_type(e.type)
 
             res = type(e)(bag_union(
                 min_after_del,
                 to_add), e.f).with_type(e.type)
+
+            res = cond(statevar(exists(e.e)),
+                res,
+                add_min)
 
             # from cozy.typecheck import retypecheck
             # assert retypecheck(res)
@@ -292,6 +300,28 @@ def better_mutate(
 
 from cozy.syntax_tools import compose
 
+def require_equal(spec):
+    def wrapper(f):
+
+        @functools.wraps(f)
+        def wrapped(*args, **kwargs):
+            return spec(*args, **kwargs)
+
+            res = f(*args, **kwargs)
+            x = spec(*args, **kwargs).with_type(res.type)
+            model = minimal_model(syntax.ENot(syntax.EEq(res, x)))
+            if model is not None:
+                print("{} misbehaved!".format(f))
+                print("input: {}".format("; ".join(pprint(e) for e in args)))
+                print("output: {}".format(pprint(res)))
+                print(" - expected: {}".format(eval(x, model)))
+                print(" - got: {}".format(eval(res, model)))
+            return res
+
+        return wrapped
+    return wrapper
+
+@require_equal(lambda e, f: target_syntax.EMap(e, f).with_type(type(e.type)(f.body.type)))
 def emap(e, f):
     if f.body == f.arg:
         return e
@@ -310,6 +340,7 @@ def emap(e, f):
             emap(e.else_branch, f))
     return target_syntax.EMap(e, f).with_type(out_type)
 
+@require_equal(lambda e, f: target_syntax.EFilter(e, f).with_type(e.type))
 def efilter(e, f):
     if f.body == syntax.T:
         return e
@@ -378,6 +409,7 @@ def are_unique(xs):
         return True
     return MAYBE
 
+@require_equal(lambda e, f: target_syntax.EFlatMap(e, f).with_type(f.body.type))
 def flatmap(e, f):
     if isinstance(f.body, syntax.ESingleton) and f.body.e == f.arg:
         return e
@@ -407,6 +439,7 @@ class NotEfficient(Exception):
         super().__init__(pprint(e))
         self.expression = e
 
+@require_equal(lambda bag, x: syntax.EIn(x, bag))
 def bag_contains(bag, x):
     if definitely(element_of(x, bag)):
         return syntax.T
@@ -418,13 +451,17 @@ def bag_contains(bag, x):
         return equal(bag.e, x)
     return syntax.EIn(x, bag)
 
+@require_equal(lambda e1, e2: syntax.EBinOp(e1, "-", e2).with_type(e1.type))
 def bag_subtract(e1, e2):
     if isinstance(e1, syntax.EEmptyList):
         return e1
     if isinstance(e2, syntax.EEmptyList):
         return e1
-    if alpha_equivalent(e1, e2):
-        return syntax.EEmptyList().with_type(e1.type)
+    l = list(break_sum(e1))
+    dup = find_one(l, lambda x: alpha_equivalent(x, e2))
+    if dup is not None:
+        l.remove(dup)
+        return syntax.EUnion(l, elem_type=e1.type.t)
     if isinstance(e2, syntax.ECond):
         return syntax.ECond(e2.cond,
             bag_subtract(e1, e2.then_branch),
@@ -457,6 +494,7 @@ def bag_subtract(e1, e2):
     # raise NotEfficient(syntax.EBinOp(e1, "-", e2).with_type(e1.type))
     return syntax.EBinOp(e1, "-", e2).with_type(e1.type)
 
+@require_equal(lambda e1, e2: syntax.EBinOp(e1, "+", e2).with_type(e1.type))
 def bag_union(e1, e2):
     if isinstance(e1, syntax.EEmptyList):
         return e2
@@ -464,6 +502,7 @@ def bag_union(e1, e2):
         return e1
     return syntax.EBinOp(e1, "+", e2).with_type(e1.type)
 
+# @require_equal(syntax.EIntersect)
 def bag_intersection(e1, e2):
     if isinstance(e1, syntax.EEmptyList):
         return e1
@@ -475,7 +514,18 @@ def bag_intersection(e1, e2):
         return cond(bag_contains(e2, e1.e), e1, syntax.EEmptyList().with_type(e1.type))
     if isinstance(e2, syntax.ESingleton):
         return cond(bag_contains(e1, e2.e), e2, syntax.EEmptyList().with_type(e2.type))
-    return bag_subtract(e1, bag_subtract(e1, e2))
+    # if isinstance(e1, syntax.ECond):
+    #     return cond(e1.cond, bag_intersection(e1.then_branch, e2), bag_intersection(e1.else_branch, e2))
+    # if isinstance(e2, syntax.ECond):
+    #     return bag_intersection(e2, e1)
+    # if isinstance(e1, syntax.EBinOp) and e1.op == "+":
+    #     i1 = bag_intersection(e1.e1, e2)
+    #     return bag_union(
+    #         i1,
+    #         bag_intersection(e1.e2, bag_subtract(e2, i1)))
+    # raise NotEfficient(syntax.ECall("intersection", (e1, e2)))
+    # return bag_subtract(e1, bag_subtract(e1, e2))
+    return syntax.EIntersect(e1, e2)
 
 # from collections import namedtuple
 # SimpleAssignment = namedtuple("SimpleAssignment", ["lval", "rhs"])
@@ -537,7 +587,7 @@ def temporarily_extend(l, x):
 @typechecked
 def partial_eval(e : syntax.Exp, assumptions : syntax.Exp = syntax.T) -> syntax.Exp:
 
-    assumptions = list(break_conj(assumptions))
+    assumptions = list(break_conj(nnf(assumptions)))
 
     @contextmanager
     def extend_assumptions(cond):
@@ -560,6 +610,23 @@ def partial_eval(e : syntax.Exp, assumptions : syntax.Exp = syntax.T) -> syntax.
             else:
                 e1 = self.visit(e.e1)
                 e2 = self.visit(e.e2)
+
+                if e.op == "-":
+                    if alpha_equivalent(e1, e2):
+                        return syntax.EEmptyList().with_type(e1.type) if is_collection(e1.type) else syntax.ENum(0).with_type(e1.type)
+                    if isinstance(e1, syntax.EEmptyList) or isinstance(e2, syntax.EEmptyList):
+                        return e1
+                if e.op == "+":
+                    if isinstance(e1, syntax.EEmptyList):
+                        return e2
+                    if isinstance(e2, syntax.EEmptyList):
+                        return e1
+                if e.op == "intersect":
+                    if isinstance(e1, syntax.EEmptyList):
+                        return e1
+                    if isinstance(e2, syntax.EEmptyList):
+                        return e2
+
                 return syntax.EBinOp(e1, e.op, e2).with_type(e.type)
 
         def visit_EGetField(self, e):
@@ -584,16 +651,44 @@ def partial_eval(e : syntax.Exp, assumptions : syntax.Exp = syntax.T) -> syntax.
 
             return syntax.ECond(cond, then_branch, else_branch).with_type(e.type)
 
+        def visit_EFlatMap(self, e):
+            bag = self.visit(e.e)
+            with extend_assumptions(syntax.EIn(e.f.arg, bag)):
+                f_body = self.visit(e.f.body)
+            if isinstance(bag, syntax.EEmptyList) or isinstance(f_body, syntax.EEmptyList):
+                return syntax.EEmptyList().with_type(e.type)
+            if isinstance(bag, syntax.ESingleton):
+                return syntax.ELambda(e.f.arg, f_body).apply_to(bag.e)
+            return target_syntax.EFlatMap(bag, syntax.ELambda(e.f.arg, f_body)).with_type(e.type)
+
+        def visit_EFilter(self, e):
+            bag = self.visit(e.e)
+            with extend_assumptions(syntax.EIn(e.p.arg, bag)):
+                f_body = self.visit(e.p.body)
+            if isinstance(bag, syntax.EEmptyList):
+                return syntax.EEmptyList().with_type(e.type)
+            return target_syntax.EFilter(bag, syntax.ELambda(e.p.arg, f_body)).with_type(e.type)
+
+        def visit_EMap(self, e):
+            bag = self.visit(e.e)
+            with extend_assumptions(syntax.EIn(e.f.arg, bag)):
+                f_body = self.visit(e.f.body)
+            if isinstance(bag, syntax.EEmptyList):
+                return syntax.EEmptyList().with_type(e.type)
+            return target_syntax.EMap(bag, syntax.ELambda(e.f.arg, f_body)).with_type(e.type)
+
         def visit(self, e):
             if isinstance(e, syntax.Exp) and not isinstance(e, syntax.ELambda):
-                if not free_vars(e) and not free_funcs(e):
-                    return uneval(e.type, eval(e, {}))
                 if e.type == syntax.BOOL:
-                    if any(alpha_equivalent(a, e) for a in assumptions):
+                    if any(alpha_equivalent(a, nnf(e)) for a in assumptions):
                         return syntax.T
-                    if any(alpha_equivalent(a, syntax.ENot(e)) for a in assumptions):
+                    if any(alpha_equivalent(a, nnf(syntax.ENot(e))) for a in assumptions):
                         return syntax.F
-            return super().visit(e)
+            e = super().visit(e)
+            if isinstance(e, syntax.Exp) and not isinstance(e, syntax.ELambda):
+                if not free_vars(e) and not free_funcs(e):
+                    e = uneval(e.type, eval(e, {}))
+            return e
 
     return V().visit(e)
 
@@ -645,6 +740,13 @@ def both(x, y):
         return MAYBE
     return False
 
+def either(x, y):
+    if definitely(x) or definitely(y):
+        return True
+    if possibly(x) or possibly(y):
+        return MAYBE
+    return False
+
 def invert(x):
     if definitely(x):
         return False
@@ -673,6 +775,9 @@ def singleton_or_empty(e):
         if possibly(then_case) or possibly(else_case):
             return MAYBE
         return False
+    if isinstance(e, syntax.EBinOp):
+        if e.op == "intersect":
+            return either(singleton_or_empty(e.e1), singleton_or_empty(e.e2))
     return MAYBE
 
 def is_singleton(e):
@@ -712,6 +817,8 @@ def not_equal(e1, e2):
 
 def exists(e):
     assert is_collection(e.type)
+    if isinstance(e, target_syntax.EMap):
+        return exists(e.e)
     if definitely(is_empty(e)):
         return syntax.F
     if definitely(is_singleton(e)):
@@ -817,12 +924,30 @@ def to_bag(e):
 def dbg(f):
 
     @functools.wraps(f)
-    def g(e, context, s, assumptions : syntax.Exp = syntax.T):
+    def dbg_wrapper(e, context, s, assumptions : syntax.Exp = syntax.T):
+
+        # from cozy.wf import exp_wf
+        # assert exp_wf(e, context, STATE_POOL), "input not wf: {} in {}".format(pprint(e), context)
 
         res = f(e, context, s, assumptions)
         n, d = res
+        n = partial_eval(n)
+        d = partial_eval(d)
+
+        # assert exp_wf(n, context, RUNTIME_POOL), "output [added] not wf: {} ----> {} in {}".format(pprint(e), pprint(n), context)
+        # assert exp_wf(d, context, RUNTIME_POOL), "output [removed] not wf: {} ----> {} in {}".format(pprint(e), pprint(d), context)
+
+        interp = e - d + n
         print("delta {}: +{}, -{}".format(
             pprint(e), pprint(n), pprint(d)))
+        # # print("delta {}: {}".format(pprint(e), pprint(interp)))
+        # interp = partial_eval(interp)
+        # # print("delta {}: {}".format(pprint(e), pprint(interp)))
+        # interp = cse(interp)
+        # print("delta {}: {}".format(pprint(e), pprint(interp)))
+
+        # assert definitely(singleton_or_empty(d))
+        # assert definitely(singleton_or_empty(n))
 
         if alpha_equivalent(n, d):
             n = d = syntax.EEmptyList().with_type(e.type)
@@ -851,21 +976,23 @@ def dbg(f):
         #     "added": n,
         #     })
 
-        e_prime = mutate(e, s)
-        interp = e - d + n
-        check_valid(context, syntax.EImplies(
-            assumptions_to_use,
-            syntax.EEq(to_bag(e_prime), to_bag(interp))),
-            debug={
-                "e": e,
-                "e'": e_prime,
-                "d": d,
-                "n": n,
-                "e - d + n": interp,
-            })
+        if False:
+            print("checking delta valid...")
+            e_prime = mutate(e, s)
+            check_valid(context, syntax.EImplies(
+                assumptions_to_use,
+                syntax.EEq(to_bag(e_prime), to_bag(interp))),
+                debug={
+                    "e": e,
+                    "e'": e_prime,
+                    "d": d,
+                    "n": n,
+                    "e - d + n": interp,
+                })
+            print("done!")
 
         return res
-    return g
+    return dbg_wrapper
 
 def became_true(e, context, s, assumptions):
     return became_bool(e, context, s, True, assumptions)
@@ -1013,6 +1140,43 @@ def implies(e1, e2):
 
 #     raise NotImplementedError(e)
 
+class NotPossible(Exception):
+    pass
+
+@typechecked
+def infer_partition(f : syntax.ELambda) -> (syntax.Exp, syntax.ELambda, syntax.ELambda, syntax.ELambda):
+    e = f.body
+    if isinstance(e, syntax.EUnaryOp):
+        domain, proj, g, res = infer_partition(syntax.ELambda(f.arg, e.e))
+        res = syntax.ELambda(res.arg, syntax.EUnaryOp(e.op, res.body).with_type(e.type))
+        return (domain, proj, g, res)
+    if isinstance(e, syntax.ESingleton):
+        domain, proj, g, res = infer_partition(syntax.ELambda(f.arg, e.e))
+        res = syntax.ELambda(res.arg, syntax.ESingleton(res.body).with_type(e.type))
+        return (domain, proj, g, res)
+    if isinstance(e, syntax.EGetField):
+        domain, proj, g, res = infer_partition(syntax.ELambda(f.arg, e.e))
+        res = syntax.ELambda(res.arg, syntax.EGetField(res.body, e.f).with_type(e.type))
+        return (domain, proj, g, res)
+    if isinstance(e, target_syntax.EFilter):
+        if f.arg not in free_vars(e.e):
+            for cond in break_conj(nnf(e.p.body)):
+                if isinstance(cond, syntax.EBinOp) and cond.op in ("==", "==="):
+                    for x, y in [(cond.e1, cond.e2), (cond.e2, cond.e1)]:
+                        if e.p.arg in free_vars(x) and e.p.arg not in free_vars(y):
+                            domain = e.e
+                            proj = syntax.ELambda(e.p.arg, x)
+                            g = syntax.ELambda(e.p.arg, y)
+                            res = mk_lambda(e.type, lambda x: x)
+                            return (domain, proj, g, res)
+    if isinstance(e, syntax.EArgMin) or isinstance(e, syntax.EArgMax) or isinstance(e, target_syntax.EMap) or isinstance(e, target_syntax.EFlatMap):
+        if f.arg not in free_vars(e.f):
+            domain, proj, g, res = infer_partition(syntax.ELambda(f.arg, e.e))
+            res = syntax.ELambda(res.arg, type(e)(res.body, e.f).with_type(e.type))
+            return (domain, proj, g, res)
+
+    raise NotPossible(pprint(e))
+
 @functools.lru_cache()
 @dbg
 def bag_delta(e, context, s, assumptions : syntax.Exp = syntax.T):
@@ -1022,7 +1186,8 @@ def bag_delta(e, context, s, assumptions : syntax.Exp = syntax.T):
     empty = syntax.EEmptyList().with_type(e.type)
 
     if isinstance(e, target_syntax.EStateVar):
-        return bag_delta(e.e, context, s, assumptions)
+        raise ValueError(e)
+        # return bag_delta(e.e, context, s, assumptions)
 
     if isinstance(e, target_syntax.EMap):
         t = e.type
@@ -1042,7 +1207,7 @@ def bag_delta(e, context, s, assumptions : syntax.Exp = syntax.T):
 
         xs = e.e
         added_xs, removed_xs = bag_delta(xs, context, s, assumptions)
-        inner_context = UnderBinder(context, arg, xs, RUNTIME_POOL)
+        inner_context = UnderBinder(context, arg, xs, STATE_POOL)
         added_ys, removed_ys = bag_delta(func_body, inner_context, s, assumptions)
 
         # print("*** {}".format(pprint(e)))
@@ -1060,6 +1225,38 @@ def bag_delta(e, context, s, assumptions : syntax.Exp = syntax.T):
         # new_body = mutate(func_body, s)
 
         post_remove = bag_subtract(xs, removed_xs)
+
+        if not definitely(singleton_or_empty(post_remove)):
+            try:
+                f = syntax.ELambda(arg, func_body)
+                print("need to infer partition for {}".format(pprint(f)))
+                domain, proj, g, res = infer_partition(f)
+                print(pprint(domain))
+                print(pprint(proj))
+                print(pprint(g))
+                print(pprint(res))
+                print("--")
+                domain_n, domain_d = bag_delta(emap(domain, proj), context, s, assumptions)
+                possible_changes = bag_union(domain_n, domain_d)
+                print(pprint(possible_changes))
+
+                f_prime = syntax.ELambda(arg, mutate(func_body, s))
+                check_valid(context, target_syntax.EForall(post_remove,
+                    lambda x: syntax.EImplies(
+                        syntax.ENot(syntax.EIn(x, possible_changes)),
+                        syntax.EEq(f.apply_to(x), f_prime.apply_to(x)))))
+
+                print("the partition is valid!")
+                post_remove = bag_intersection(possible_changes, post_remove)
+                # print("For what values {} in {} is".format(arg.id, pprint(post_remove)))
+                # print(" - " + pprint(removed_ys))
+                # print(" + " + pprint(added_ys))
+                # print("not empty?")
+                # raise NotImplementedError()
+            except NotPossible:
+                if not definitely(is_empty(added_ys)) or not definitely(is_empty(removed_ys)):
+                    print("warning: unable to infer partition for {}".format(pprint(f)))
+
         removed = bag_union(
             flatmap(bag_intersection(xs, removed_xs), e.f),
             flatmap(post_remove, syntax.ELambda(arg, removed_ys)))
@@ -1133,7 +1330,6 @@ def bag_delta(e, context, s, assumptions : syntax.Exp = syntax.T):
                 cond(e.cond, n1, n2),
                 cond(e.cond, d1, d2))
         else:
-
             # print(" -> {}".format(pprint(e.cond)))
             # print(" becomes T: {}".format(pprint(became_true (e.cond, context, s, assumptions))))
             # print(" becomes F: {}".format(pprint(became_false(e.cond, context, s, assumptions))))
@@ -1175,6 +1371,8 @@ def bag_delta(e, context, s, assumptions : syntax.Exp = syntax.T):
         raise NotImplementedError(e)
 
     new_e = mutate(e, s)
+    # new_e = repair_EStateVar_in_context(new_e, context)
+    # print(new_e)
 
     if isinstance(new_e, syntax.EBinOp) and new_e.op == "+" and isinstance(new_e.e1, syntax.EBinOp) and new_e.e1.op == "-" and alpha_equivalent(new_e.e1.e1, e):
         return (new_e.e2, new_e.e1.e2)
@@ -1253,6 +1451,9 @@ def repair_EStateVar(e : syntax.Exp, available_state : [syntax.Exp]) -> syntax.E
                 return target_syntax.EStateVar(e).with_type(e.type)
             return super().visit_ADT(e)
     return V().visit(strip_EStateVar(e))
+
+def repair_EStateVar_in_context(e : syntax.Exp, context : Context) -> syntax.Exp:
+    return repair_EStateVar(e, available_state=[v for v, p in context.vars() if p == STATE_POOL])
 
 def replace_get_value(e : syntax.Exp, ptr : syntax.Exp, new_value : syntax.Exp) -> syntax.Exp:
     """
@@ -1681,6 +1882,87 @@ def optimize(e, context, pc = syntax.T):
 
     return type(e)(*new_children).with_type(e.type)
 
+def test():
+    return
+
+    import sys
+    from cozy.parse import parse_exp, parse_stm
+    from cozy.desugar import desugar_list_comprehensions
+    from cozy.contexts import RootCtx
+    from cozy.syntax import EVar, INT, INT_BAG, TFunc
+    from cozy.typecheck import retypecheck
+    from cozy.cost_model import asymptotic_runtime
+
+    context = RootCtx(
+        state_vars=[EVar("xs").with_type(INT_BAG), EVar("ys").with_type(INT_BAG)],
+        args=[EVar("arg").with_type(INT), EVar("arg2").with_type(INT)],
+        funcs={
+            "f": TFunc((INT,), INT),
+            "g": TFunc((INT,), INT),
+        })
+
+    type_env = { v.id : v.type for v, p in context.vars() }
+
+    def read_exp(s):
+        e = parse_exp(s)
+        assert retypecheck(e, env=type_env, fenv=context.funcs())
+        return desugar_list_comprehensions(e)
+
+    def read_stm(s):
+        s = parse_stm(s)
+        assert retypecheck(s, env=type_env, fenv=context.funcs())
+        return desugar_list_comprehensions(s)
+
+        e = to_bag(read_exp("[ x | x <- xs, x == 0 ]"))
+        s = read_stm("xs.add(arg);")
+
+    cases = [
+        # (to_bag(read_exp("[ x | x <- xs, x != 0 ]")),
+        #     read_stm("xs.add(arg);")),
+        # (read_exp("min [ x | x <- xs, x != 0 ]"),
+        #     read_stm("xs.add(arg);")),
+        # (read_exp("min xs"),
+        #     read_stm("xs.remove(arg);")),
+        # (read_exp("min [ x | x <- xs, x != 0 ]"),
+        #     read_stm("xs.remove(arg);")),
+        # (read_exp("min [ x | x <- xs, x != 0 ]"),
+        #     read_stm("xs.remove(arg); xs.add(arg2);")),
+        # (read_exp("min [ x | x <- xs, g(x) == arg2 ]"),
+        #     read_stm("xs.remove(g(arg));")),
+        (read_exp("min [ max [f(y) | y <- ys, g(y) == x] | x <- distinct xs ]"),
+            read_stm("ys.remove(arg); ys.add(arg2);"),
+            read_exp("g(arg) == g(arg2)")),
+        ]
+
+    reses = []
+    for e, s, *a in cases:
+        try:
+            reses.append(better_mutate(
+                e=statevar(e),
+                context=context,
+                op=s,
+                assumptions=syntax.EAll(a)))
+        except NotEfficient as exc:
+            reses.append("(not efficient: {})".format(pprint(exc.expression)))
+
+    print("=" * 40 + " report")
+    for i, ((e, s, *a), res) in enumerate(zip(cases, reses)):
+        print("-" * 20 + " case {}/{}".format(i+1, len(cases)))
+        print(pprint(e))
+        print(pprint(s))
+        print(pprint(res))
+        if isinstance(res, syntax.Exp):
+            m = mutate(e, s)
+            # print(pprint(partial_eval(mutate(e, s))))
+            print("runtime: {}".format(asymptotic_runtime(res)))
+            print("    (vs: {})".format(asymptotic_runtime(m)))
+            check_valid(context, syntax.EImplies(syntax.EAll(a), syntax.EEq(m, res)), debug={
+                "mutated": m,
+                "'better'": res,
+                })
+
+    sys.exit(0)
+
 def run():
 
     from cozy.syntax import EVar, SNoOp, TNative, TEnum, EGetField, TRecord, TInt, ELambda, EBinOp, TBool, TBag, SAssign, SSeq, SIf, TMap, SCall, ESingleton, EMakeRecord, TList, EUnaryOp, ECall, EArgMin, EArgMax, ENum, SDecl, EEnumEntry, EAll, TSet, TFunc
@@ -1753,7 +2035,6 @@ def run():
 
     print("-"*40)
 
-    from cozy.syntax_tools import cse
     from cozy.solver import break_let
 
     print("Mutating...")
@@ -1803,4 +2084,5 @@ def run():
         print(" ---> {}".format(pprint(ret)))
 
 if __name__ == "__main__":
+    test()
     run()
