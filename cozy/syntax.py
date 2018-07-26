@@ -103,7 +103,7 @@ EEmptyList          = declare_case(Exp, "EEmptyList")
 ESingleton          = declare_case(Exp, "ESingleton",         ["e"])
 ECall               = declare_case(Exp, "ECall",              ["func", "args"])
 ETuple              = declare_case(Exp, "ETuple",             ["es"])
-ETupleGet           = declare_case(Exp, "ETupleGet",          ["e", "n"])
+ETupleGet           = declare_case(Exp, "ETupleGet",          ["e", "index"])
 ELet                = declare_case(Exp, "ELet",               ["e", "f"])
 
 # Lambdas

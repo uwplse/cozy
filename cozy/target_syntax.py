@@ -57,7 +57,7 @@ def EDisjoint(xs, ys):
         ENot(EIn(x, ys)))
 
 # Fixed-length vectors
-TVector    = declare_case(Type, "TVector", ["elem_type", "n"])
+TVector    = declare_case(Type, "TVector", ["elem_type", "index"])
 EVectorGet = declare_case(Exp, "EVectorGet", ["e", "i"])
 
 # Misc

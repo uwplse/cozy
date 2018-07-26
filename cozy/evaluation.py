@@ -491,7 +491,7 @@ def _compile(e, env : {str:int}, out):
     elif isinstance(e, ETupleGet):
         _compile(e.e, env, out)
         def tuple_get(stk):
-            stk.append(stk.pop()[e.n])
+            stk.append(stk.pop()[e.index])
         out.append(tuple_get)
     elif isinstance(e, EStateVar):
         _compile(e.e, env, out)

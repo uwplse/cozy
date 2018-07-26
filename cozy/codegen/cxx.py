@@ -124,7 +124,7 @@ class CxxPrinter(CodeGenerator):
         return self.visit(e.f.apply_to(v))
 
     def visit_TVector(self, t, name):
-        return "{}[{}]".format(self.visit(t.elem_type, name), t.n)
+        return "{}[{}]".format(self.visit(t.elem_type, name), t.index)
 
     def visit_EVectorGet(self, e):
         v = self.visit(e.e)
@@ -738,8 +738,8 @@ class CxxPrinter(CodeGenerator):
 
     def visit_ETupleGet(self, e):
         if isinstance(e.e, ETuple):
-            return self.visit(e.e.es[e.n])
-        return self.visit_EGetField(EGetField(e.e, "_{}".format(e.n)))
+            return self.visit(e.e.es[e.index])
+        return self.visit_EGetField(EGetField(e.e, "_{}".format(e.index)))
 
     def visit_ECall(self, e):
         args = [self.visit(a) for a in e.args]

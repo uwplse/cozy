@@ -581,10 +581,10 @@ class Typechecker(Visitor):
         self.visit(e.e)
         t = e.e.type
         if isinstance(t, syntax.TTuple):
-            if e.n >= 0 and e.n < len(t.ts):
-                e.type = t.ts[e.n]
+            if e.index >= 0 and e.index < len(t.ts):
+                e.type = t.ts[e.index]
             else:
-                self.report_err(e, "cannot get element {} from tuple of size {}".format(e.n, len(t.ts)))
+                self.report_err(e, "cannot get element {} from tuple of size {}".format(e.index, len(t.ts)))
                 e.type = DEFAULT_TYPE
         elif t is DEFAULT_TYPE:
             e.type = DEFAULT_TYPE

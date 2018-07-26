@@ -392,7 +392,7 @@ class PrettyPrinter(common.Visitor):
         return "({})".format(", ".join(self.visit(e) for e in e.es))
 
     def visit_ETupleGet(self, e):
-        return "({}).{}".format(self.visit(e.e), e.n)
+        return "({}).{}".format(self.visit(e.e), e.index)
 
     def visit_ELet(self, e):
         return "{} {} = {} in {}".format(self.format_keyword("let"), e.f.arg.id, self.visit(e.e), self.visit(e.f.body))
@@ -1464,7 +1464,7 @@ class ExpMap(object):
         for k, v in self.items():
             yield v
 
-_ReduceOp = collections.namedtuple("_ReduceOp", ("x", "n"))
+_ReduceOp = collections.namedtuple("_ReduceOp", ("x", "index"))
 _OnExitOp = collections.namedtuple("_OnExitOp", ("x",))
 
 class IterativeReducer(object):
@@ -1519,7 +1519,7 @@ class IterativeReducer(object):
             # print("TODO: {}; DONE: {}".format(work_stack, done_stack))
             top = work_stack.pop()
             if isinstance(top, _ReduceOp):
-                args = [done_stack.pop() for i in range(top.n)]
+                args = [done_stack.pop() for i in range(top.index)]
                 args.reverse()
                 done_stack.append(self.reduce(top.x, tuple(args)))
                 continue
