@@ -56,10 +56,6 @@ def EDisjoint(xs, ys):
     return EForall(xs, lambda x:
         ENot(EIn(x, ys)))
 
-# Fixed-length vectors
-TVector    = declare_case(Type, "TVector", ["elem_type", "index"])
-EVectorGet = declare_case(Exp, "EVectorGet", ["e", "i"])
-
 # Misc
 SWhile   = declare_case(Stm, "SWhile",  ["e", "body"])
 SSwap    = declare_case(Stm, "SSwap",   ["lval1", "lval2"])
