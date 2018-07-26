@@ -121,7 +121,7 @@ class Implementation(object):
 
             state_vars = self.abstract_state
             funcs = self.extern_funcs
-            qq = find_one(self.query_specs, lambda qq: dedup_queries.value and queries_equivalent(qq, sub_q, state_vars=state_vars, extern_funcs=funcs))
+            qq = find_one(self.query_specs, lambda qq: dedup_queries.value and queries_equivalent(qq, sub_q, state_vars=state_vars, extern_funcs=funcs, assumptions=EAll(self.abstract_invariants)))
             if qq is not None:
                 event("subgoal {} is equivalent to {}".format(sub_q.name, qq.name))
                 arg_reorder = [[x[0] for x in sub_q.args].index(a) for (a, t) in qq.args]

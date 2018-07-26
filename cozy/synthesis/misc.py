@@ -1,7 +1,7 @@
 import itertools
 
 from cozy.common import FrozenDict, partition
-from cozy.syntax import Exp, Query, TFunc, EVar, EAll, EImplies, EEq, ELambda, Stm, SNoOp, SDecl, SAssign, SSeq, SIf, SForEach, SCall
+from cozy.syntax import T, Exp, Query, TFunc, EVar, EAll, EImplies, EEq, ELambda, Stm, SNoOp, SDecl, SAssign, SSeq, SIf, SForEach, SCall
 from cozy.target_syntax import TMap, EMakeMap2, EMapGet, SMapPut, SMapDel, SMapUpdate
 from cozy.syntax_tools import fresh_var, free_vars, subst
 from cozy.solver import ModelCachingSolver
@@ -9,7 +9,7 @@ from cozy.logging import task
 
 _qe_cache = { }
 
-def queries_equivalent(q1 : Query, q2 : Query, state_vars : [EVar], extern_funcs : { str : TFunc }):
+def queries_equivalent(q1 : Query, q2 : Query, state_vars : [EVar], extern_funcs : { str : TFunc }, assumptions : Exp = T):
     with task("checking query equivalence", q1=q1.name, q2=q2.name):
         if q1.ret.type != q2.ret.type:
             return False
@@ -19,12 +19,14 @@ def queries_equivalent(q1 : Query, q2 : Query, state_vars : [EVar], extern_funcs
             return False
         args = FrozenDict(q1args)
 
-        checker = _qe_cache.get(args)
+        key = (args, assumptions)
+        checker = _qe_cache.get(key)
         if checker is None:
             checker = ModelCachingSolver(
                 vars = list(itertools.chain(state_vars, (EVar(v).with_type(t) for v, t in args.items()))),
-                funcs = extern_funcs)
-            _qe_cache[args] = checker
+                funcs = extern_funcs,
+                assumptions = assumptions)
+            _qe_cache[key] = checker
 
         q1a = EAll(q1.assumptions)
         q2a = EAll(q2.assumptions)
