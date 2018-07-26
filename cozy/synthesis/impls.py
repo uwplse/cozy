@@ -167,6 +167,7 @@ class Implementation(object):
                     op.body,
                     abstract_state=self.abstract_state,
                     assumptions=list(op.assumptions) + [EDeepIn(h, bag), EIn(h, modified_handles.ret)],
+                    invariants=self.abstract_invariants,
                     subgoals_out=subqueries)
                 for sub_q in subqueries:
                     sub_q.docstring = "[{}] {}".format(op.name, sub_q.docstring)
@@ -202,6 +203,7 @@ class Implementation(object):
                             op.body,
                             abstract_state=self.abstract_state,
                             assumptions=op.assumptions,
+                            invariants=self.abstract_invariants,
                             subgoals_out=subqueries)
                         for sub_q in subqueries:
                             sub_q.docstring = "[{}] {}".format(op.name, sub_q.docstring)
@@ -288,6 +290,10 @@ class Implementation(object):
             self.spec.header,
             self.spec.footer,
             self.spec.docstring)
+
+    @property
+    def abstract_invariants(self) -> [Exp]:
+        return list(self.spec.assumptions)
 
     @property
     def concretization_functions(self) -> { str : Exp }:

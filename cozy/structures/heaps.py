@@ -199,7 +199,7 @@ class Heaps(object):
         else:
             raise NotImplementedError(e)
 
-    def mutate_in_place(self, lval, e, op, assumptions, make_subgoal):
+    def mutate_in_place(self, lval, e, op, assumptions, invariants, make_subgoal):
         from cozy.state_maintenance import mutate
 
         old_value = e

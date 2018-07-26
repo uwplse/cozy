@@ -5,6 +5,8 @@ Important functions:
  - mutate_in_place: write code to keep a derived value in sync with its inputs
 """
 
+import itertools
+
 from cozy.common import fresh_name
 from cozy import syntax
 from cozy import target_syntax
@@ -116,6 +118,7 @@ def mutate_in_place(
         op             : syntax.Stm,
         abstract_state : [syntax.EVar],
         assumptions    : [syntax.Exp] = None,
+        invariants     : [syntax.Exp] = None,
         subgoals_out   : [syntax.Query] = None) -> syntax.Stm:
     """
     Produce code to update `lval` that tracks derived value `e` when `op` is
@@ -124,6 +127,9 @@ def mutate_in_place(
 
     if assumptions is None:
         assumptions = []
+
+    if invariants is None:
+        invariants = []
 
     if subgoals_out is None:
         subgoals_out = []
@@ -145,11 +151,12 @@ def mutate_in_place(
             e=e,
             op=op,
             assumptions=assumptions,
+            invariants=invariants,
             make_subgoal=make_subgoal)
 
     # fallback: use an update sketch
     new_e = mutate(e, op)
-    s, sgs = sketch_update(lval, e, new_e, ctx=abstract_state, assumptions=assumptions)
+    s, sgs = sketch_update(lval, e, new_e, ctx=abstract_state, assumptions=assumptions, invariants=invariants)
     subgoals_out.extend(sgs)
     return s
 
@@ -172,7 +179,8 @@ def sketch_update(
         old_value   : syntax.Exp,
         new_value   : syntax.Exp,
         ctx         : [syntax.EVar],
-        assumptions : [syntax.Exp] = []) -> (syntax.Stm, [syntax.Query]):
+        assumptions : [syntax.Exp] = [],
+        invariants  : [syntax.Exp] = []) -> (syntax.Stm, [syntax.Query]):
     """
     Write code to update `lval` when it changes from `old_value` to `new_value`.
     Variables in `ctx` are assumed to be part of the data structure abstract
@@ -182,7 +190,9 @@ def sketch_update(
     subgoals (new queries that appear in the code).
     """
 
-    if valid(syntax.EImplies(syntax.EAll(assumptions), syntax.EEq(old_value, new_value))):
+    if valid(syntax.EImplies(
+            syntax.EAll(itertools.chain(assumptions, invariants)),
+            syntax.EEq(old_value, new_value))):
         return (syntax.SNoOp(), [])
 
     subgoals = []
@@ -217,12 +227,14 @@ def sketch_update(
     elif isinstance(t, syntax.TTuple):
         get = lambda val, i: syntax.ETupleGet(val, i).with_type(t.ts[i])
         stm = syntax.seq([
-            recurse(get(lval, i), get(old_value, i), get(new_value, i), ctx, assumptions)
+            recurse(get(lval, i), get(old_value, i), get(new_value, i), ctx, assumptions,
+                invariants=invariants)
             for i in range(len(t.ts))])
     elif isinstance(t, syntax.TRecord):
         get = lambda val, i: syntax.EGetField(val, t.fields[i][0]).with_type(t.fields[i][1])
         stm = syntax.seq([
-            recurse(get(lval, i), get(old_value, i), get(new_value, i), ctx, assumptions)
+            recurse(get(lval, i), get(old_value, i), get(new_value, i), ctx, assumptions,
+                invariants=invariants)
             for i in range(len(t.fields))])
     elif isinstance(t, syntax.TMap):
         k = fresh_var(lval.type.k)
@@ -245,7 +257,8 @@ def sketch_update(
             value_at(old_value, k),
             value_at(new_value, k),
             ctx = ctx,
-            assumptions = assumptions + [syntax.EIn(k, new_or_modified), syntax.EEq(v, value_at(old_value, k))])
+            assumptions = assumptions + [syntax.EIn(k, new_or_modified), syntax.EEq(v, value_at(old_value, k))],
+            invariants = invariants)
         s2 = syntax.SForEach(k, make_subgoal(new_or_modified, docstring="new or modified keys from {}".format(pprint(lval))),
             target_syntax.SMapUpdate(lval, k, v, update_value))
 
