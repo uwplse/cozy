@@ -45,7 +45,10 @@ class Implementation(object):
         self.query_impls = query_impls
         self.updates = updates # maps (concrete_var_name, op_name) to stm
         self.handle_updates = handle_updates # maps (handle_type, op_name) to stm
-        self.state_solver = ModelCachingSolver(vars=self.abstract_state, funcs=self.extern_funcs)
+        self.state_solver = ModelCachingSolver(
+            vars=self.abstract_state,
+            funcs=self.extern_funcs,
+            assumptions=EAll(spec.assumptions))
 
     def __getstate__(self):
         d = dict(self.__dict__)
@@ -182,7 +185,7 @@ class Implementation(object):
             with task("finding duplicated state vars"):
                 to_remove = set()
                 for (v, e) in rep:
-                    aeq = find_one(vv for (vv, ee) in self.concrete_state if e.type == ee.type and self.state_solver.valid(EImplies(EAll(self.spec.assumptions), EEq(e, ee))))
+                    aeq = find_one(vv for (vv, ee) in self.concrete_state if e.type == ee.type and self.state_solver.valid(EEq(e, ee)))
                     # aeq = find_one(vv for (vv, ee) in self.concrete_state if e.type == ee.type and alpha_equivalent(e, ee))
                     if aeq is not None:
                         event("state var {} is equivalent to {}".format(v.id, aeq.id))
