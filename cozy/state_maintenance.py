@@ -75,8 +75,8 @@ def replace_get_value(e : syntax.Exp, ptr : syntax.Exp, new_value : syntax.Exp) 
             return syntax.ELambda(e.arg, self.visit(e.body))
         def visit_EGetField(self, e):
             ee = self.visit(e.e)
-            res = syntax.EGetField(ee, e.f).with_type(e.type)
-            if e.e.type == t and e.f == "val":
+            res = syntax.EGetField(ee, e.field_name).with_type(e.type)
+            if e.e.type == t and e.field_name == "val":
                 res = syntax.ECond(syntax.EEq(ee, ptr), new_value, res).with_type(e.type)
             return res
     return V().visit(e)
@@ -89,11 +89,11 @@ def _do_assignment(lval : syntax.Exp, new_value : syntax.Exp, e : syntax.Exp) ->
         return lightweight_subst(e, lval, new_value)
     elif isinstance(lval, syntax.EGetField):
         if isinstance(lval.e.type, syntax.THandle):
-            assert lval.f == "val"
+            assert lval.field_name == "val"
             # Because any two handles might alias, we need to rewrite all
             # reachable handles in `e`.
             return replace_get_value(e, lval.e, new_value)
-        return _do_assignment(lval.e, _replace_field(lval.e, lval.f, new_value), e)
+        return _do_assignment(lval.e, _replace_field(lval.e, lval.field_name, new_value), e)
     else:
         raise Exception("not an lvalue: {}".format(pprint(lval)))
 

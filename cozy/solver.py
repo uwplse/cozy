@@ -611,11 +611,11 @@ class ToZ3(Visitor):
     def visit_EGetField(self, e, env):
         r = self.visit(e.e, env)
         if isinstance(e.e.type, THandle):
-            assert e.f == "val"
+            assert e.field_name == "val"
             h, val = r
             return val
         else:
-            return r[e.f]
+            return r[e.field_name]
     def remove_one(self, elem_type, bag, elem, mask):
         masks, elems = bag
         if not masks:

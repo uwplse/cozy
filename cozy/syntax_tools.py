@@ -368,7 +368,7 @@ class PrettyPrinter(common.Visitor):
             return "{} {{{}}} {}".format(self.format_builtin("argmax"), self.visit(e.f), self.visit(e.e))
 
     def visit_EGetField(self, e):
-        return "({}).{}".format(self.visit(e.e), e.f)
+        return "({}).{}".format(self.visit(e.e), e.field_name)
 
     def visit_EMakeRecord(self, e):
         return "{{ {} }}".format(", ".join("{} : {}".format(name, self.visit(val)) for name, val in e.fields))
@@ -1720,7 +1720,7 @@ def get_modified_var(stm):
         elif isinstance(e, syntax.ETupleGet):
             return find_lvalue_target(e.e)[0], None
         elif isinstance(e, syntax.EGetField):
-            if isinstance(e.e.type, syntax.THandle) and e.f == "val":
+            if isinstance(e.e.type, syntax.THandle) and e.field_name == "val":
                 handle_type = e.e.type
             else:
                 handle_type = None

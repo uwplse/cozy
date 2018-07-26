@@ -472,11 +472,11 @@ def _compile(e, env : {str:int}, out):
     elif isinstance(e, EGetField):
         _compile(e.e, env, out)
         if isinstance(e.e.type, THandle):
-            assert e.f == "val"
+            assert e.field_name == "val"
             out.append(get_handle_value)
         else:
             assert isinstance(e.e.type, TRecord)
-            f = e.f
+            f = e.field_name
             def get_field(stk):
                 stk.append(stk.pop()[f])
             out.append(get_field)

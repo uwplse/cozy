@@ -58,11 +58,11 @@ class _SimplificationVisitor(BottomUpRewriter):
         record = self.visit(e.e)
         if isinstance(record, ECond):
             return self.visit(ECond(record.cond,
-                EGetField(record.then_branch, e.f).with_type(e.type),
-                EGetField(record.else_branch, e.f).with_type(e.type)).with_type(e.type))
+                EGetField(record.then_branch, e.field_name).with_type(e.type),
+                EGetField(record.else_branch, e.field_name).with_type(e.type)).with_type(e.type))
         if isinstance(record, EMakeRecord):
             return dict(record.fields)[e.f]
-        return EGetField(record, e.f).with_type(e.type)
+        return EGetField(record, e.field_name).with_type(e.type)
     def visit_EFilter(self, e):
         ee = self.visit(e.e)
         f = self.visit(e.p)

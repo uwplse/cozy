@@ -526,16 +526,16 @@ class Typechecker(Visitor):
             return
         if isinstance(e.e.type, syntax.TRecord):
             fields = dict(e.e.type.fields)
-            if e.f in fields:
-                e.type = fields[e.f]
+            if e.field_name in fields:
+                e.type = fields[e.field_name]
             else:
-                self.report_err(e, "no field {} on type {}".format(e.f, e.e.type))
+                self.report_err(e, "no field {} on type {}".format(e.field_name, e.e.type))
                 e.type = DEFAULT_TYPE
         elif isinstance(e.e.type, syntax.THandle):
-            if e.f == "val":
+            if e.field_name == "val":
                 e.type = e.e.type.value_type
             else:
-                self.report_err(e, "no field {} on type {}".format(e.f, e.e.type))
+                self.report_err(e, "no field {} on type {}".format(e.field_name, e.e.type))
                 e.type = DEFAULT_TYPE
         else:
             self.report_err(e, "cannot get field {} from non-record {}".format(e.f, e.e.type))
