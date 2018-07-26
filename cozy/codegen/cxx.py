@@ -60,7 +60,7 @@ class CxxPrinter(CodeGenerator):
         return "bool {}".format(name)
 
     def visit_TRef(self, t, name):
-        return self.visit(t.t, "&{}".format(name))
+        return self.visit(t.elem_type, "&{}".format(name))
 
     def visit_THandle(self, t, name):
         return "{} *{}".format(self.typename(t), name)
@@ -93,13 +93,13 @@ class CxxPrinter(CodeGenerator):
         return self.visit_TNativeSet(t, name)
 
     def visit_TNativeList(self, t, name):
-        return "std::vector< {} > {}".format(self.visit(t.t, ""), name)
+        return "std::vector< {} > {}".format(self.visit(t.elem_type, ""), name)
 
     def visit_TNativeSet(self, t, name):
-        return "std::unordered_set< {}, {} > {}".format(self.visit(t.t, ""), self._hasher(t.t), name)
+        return "std::unordered_set< {}, {} > {}".format(self.visit(t.elem_type, ""), self._hasher(t.elem_type), name)
 
     def visit_TArray(self, t, name):
-        return "std::vector< {} > {}".format(self.visit(t.t, ""), name)
+        return "std::vector< {} > {}".format(self.visit(t.elem_type, ""), name)
 
     def visit_Type(self, t, name):
         h = extension_handler(type(t))
@@ -124,7 +124,7 @@ class CxxPrinter(CodeGenerator):
         return self.visit(e.f.apply_to(v))
 
     def visit_TVector(self, t, name):
-        return "{}[{}]".format(self.visit(t.t, name), t.n)
+        return "{}[{}]".format(self.visit(t.elem_type, name), t.n)
 
     def visit_EVectorGet(self, e):
         v = self.visit(e.e)
@@ -177,7 +177,7 @@ class CxxPrinter(CodeGenerator):
         ret_exp = q.ret
         ret_type = ret_exp.type
         if is_collection(ret_type):
-            x = self.fv(ret_type.t, "x")
+            x = self.fv(ret_type.elem_type, "x")
             if q.docstring:
                 self.write(indent_lines(q.docstring, self.get_indent()), "\n")
             self.begin_statement()
@@ -255,14 +255,14 @@ class CxxPrinter(CodeGenerator):
             return t.construct_concrete(e, out)
         elif isinstance(t, TBag) or isinstance(t, TList):
             assert out not in free_vars(e)
-            x = self.fv(t.t, "x")
+            x = self.fv(t.elem_type, "x")
             return SSeq(
                 self.initialize_native_list(out),
                 SForEach(x, e, SCall(out, "add", [x])))
         elif isinstance(t, TSet):
             if isinstance(e, EUnaryOp) and e.op == UOp.Distinct:
                 return self.construct_concrete(t, e.e, out)
-            x = self.fv(t.t, "x")
+            x = self.fv(t.elem_type, "x")
             return SSeq(
                 self.initialize_native_set(out),
                 SForEach(x, e, SCall(out, "add", [x])))
@@ -305,7 +305,7 @@ class CxxPrinter(CodeGenerator):
 
     # def visit_EListGet(self, e, indent):
     #     assert type(e.e.type) is TList
-    #     return self.visit(EEscape("{l}[{i}]", ["l", "i"], [e.e, e.index]).with_type(e.e.type.t))
+    #     return self.visit(EEscape("{l}[{i}]", ["l", "i"], [e.e, e.index]).with_type(e.e.type.elem_type))
 
     def visit_ENative(self, e):
         assert e.e == ENum(0)
@@ -451,9 +451,9 @@ class CxxPrinter(CodeGenerator):
     #     return True
 
     def histogram(self, e) -> EVar:
-        t = TMap(e.type.t, INT)
+        t = TMap(e.type.elem_type, INT)
         hist = self.fv(t, "hist")
-        x = self.fv(e.type.t)
+        x = self.fv(e.type.elem_type)
         val = self.fv(INT, "val")
         self.declare(hist)
         self.visit(self.initialize_native_map(hist))
@@ -483,7 +483,7 @@ class CxxPrinter(CodeGenerator):
         elif op == "-" and is_collection(e.type):
             t = e.type
             v = self.fv(t, "v")
-            x = self.fv(t.t, "x")
+            x = self.fv(t.elem_type, "x")
             self.declare(v, e.e1)
             self.visit(SForEach(x, e.e2, SCall(v, "remove", [x])))
             return v.id
@@ -521,7 +521,7 @@ class CxxPrinter(CodeGenerator):
         elif isinstance(iterable, ESingleton):
             return self.visit(SScoped(body(iterable.e)))
         elif isinstance(iterable, ECond):
-            v = self.fv(iterable.type.t, "v")
+            v = self.fv(iterable.type.elem_type, "v")
             new_body = body(v)
             assert isinstance(new_body, Stm)
             return self.visit(SIf(iterable.cond,
@@ -532,7 +532,7 @@ class CxxPrinter(CodeGenerator):
                 iterable.e,
                 lambda v: body(iterable.f.apply_to(v)))
         elif isinstance(iterable, EUnaryOp) and iterable.op == UOp.Distinct:
-            tmp = self.fv(TSet(iterable.type.t), "tmp")
+            tmp = self.fv(TSet(iterable.type.elem_type), "tmp")
             self.declare(tmp)
             self.visit(self.initialize_native_set(tmp))
             self.for_each(iterable.e, lambda x: SIf(
@@ -545,11 +545,11 @@ class CxxPrinter(CodeGenerator):
             self.for_each(iterable.e1, body)
             self.for_each(iterable.e2, body)
         elif isinstance(iterable, EBinOp) and iterable.op == "-":
-            t = TList(iterable.type.t)
+            t = TList(iterable.type.elem_type)
             e = self.visit(EBinOp(iterable.e1, "-", iterable.e2).with_type(t))
             return self.for_each(EEscape(e, (), ()).with_type(t), body)
         elif isinstance(iterable, EFlatMap):
-            v = self.fv(iterable.type.t)
+            v = self.fv(iterable.type.elem_type)
             new_body = body(v)
             assert isinstance(new_body, Stm)
             return self.for_each(iterable.e,
@@ -561,7 +561,7 @@ class CxxPrinter(CodeGenerator):
             self.declare(s, iterable.start)
             self.declare(e, iterable.end)
             return self.visit(SWhile(ELt(s, e), SSeq(
-                body(EEscape("{l}[{i}]", ("l", "i"), (iterable.e, s)).with_type(iterable.type.t)),
+                body(EEscape("{l}[{i}]", ("l", "i"), (iterable.e, s)).with_type(iterable.type.elem_type)),
                 SAssign(s, EBinOp(s, "+", ONE).with_type(INT)))))
         elif isinstance(iterable, ECall) and iterable.func in self.queries:
             q = self.queries[iterable.func]
@@ -570,7 +570,7 @@ class CxxPrinter(CodeGenerator):
             return self.for_each(iterable.f.apply_to(iterable.e), body)
         else:
             assert is_collection(iterable.type), repr(iterable)
-            x = self.fv(iterable.type.t, "x")
+            x = self.fv(iterable.type.elem_type, "x")
             return self.for_each_native(x, iterable, body(x))
 
     def for_each_native(self, x : EVar, iterable, body):
@@ -599,9 +599,9 @@ class CxxPrinter(CodeGenerator):
         self.for_each(iter, lambda x: SSeq(SDecl(id.id, x), body))
 
     def find_one(self, iterable):
-        v = self.fv(iterable.type.t, "v")
+        v = self.fv(iterable.type.elem_type, "v")
         label = fresh_name("label")
-        x = self.fv(iterable.type.t, "x")
+        x = self.fv(iterable.type.elem_type, "x")
         decl = SDecl(v.id, evaluation.construct_value(v.type))
         find = SEscapableBlock(label,
             SForEach(x, iterable, seq([
@@ -617,9 +617,9 @@ class CxxPrinter(CodeGenerator):
                 EBinOp(f.apply_to(e.e1.e), op, f.apply_to(e.e2.e)).with_type(BOOL),
                 e.e1.e,
                 e.e2.e).with_type(e.e1.e.type))
-        out = self.fv(e.type.t, "min" if op == "<" else "max")
+        out = self.fv(e.type.elem_type, "min" if op == "<" else "max")
         first = self.fv(BOOL, "first")
-        x = self.fv(e.type.t, "x")
+        x = self.fv(e.type.elem_type, "x")
         decl1 = SDecl(out.id, evaluation.construct_value(out.type))
         decl2 = SDecl(first.id, T)
         find = SForEach(x, e,
@@ -656,7 +656,7 @@ class CxxPrinter(CodeGenerator):
         if op == UOp.The:
             return self.find_one(e.e)
         elif op == UOp.Sum:
-            type = e.e.type.t
+            type = e.e.type.elem_type
             res = self.fv(type, "sum")
             x = self.fv(type, "x")
             self.visit(seq([
@@ -664,19 +664,19 @@ class CxxPrinter(CodeGenerator):
                 SForEach(x, e.e, SAssign(res, EBinOp(res, "+", x).with_type(type)))]))
             return res.id
         elif op == UOp.Length:
-            arg = EVar("x").with_type(e.e.type.t)
+            arg = EVar("x").with_type(e.e.type.elem_type)
             return self.visit(EUnaryOp(UOp.Sum, EMap(e.e, ELambda(arg, ONE)).with_type(INT_BAG)).with_type(INT))
         elif op == UOp.All:
-            arg = EVar("x").with_type(e.e.type.t)
+            arg = EVar("x").with_type(e.e.type.elem_type)
             return self.visit(EUnaryOp(UOp.Empty, EFilter(e.e, ELambda(arg, ENot(arg))).with_type(INT_BAG)).with_type(INT))
         elif op == UOp.Any:
-            arg = EVar("x").with_type(e.e.type.t)
+            arg = EVar("x").with_type(e.e.type.elem_type)
             return self.visit(EUnaryOp(UOp.Exists, EFilter(e.e, ELambda(arg, arg)).with_type(INT_BAG)).with_type(INT))
         elif op == UOp.Empty:
             iterable = e.e
             v = self.fv(BOOL, "v")
             label = fresh_name("label")
-            x = self.fv(iterable.type.t, "x")
+            x = self.fv(iterable.type.elem_type, "x")
             decl = SDecl(v.id, T)
             find = SEscapableBlock(label,
                 SForEach(x, iterable, seq([
@@ -695,9 +695,9 @@ class CxxPrinter(CodeGenerator):
             self.declare(v, e)
             return v.id
         elif op == UOp.AreUnique:
-            s = self.fv(TSet(e.e.type.t), "unique_elems")
+            s = self.fv(TSet(e.e.type.elem_type), "unique_elems")
             u = self.fv(BOOL, "is_unique")
-            x = self.fv(e.e.type.t)
+            x = self.fv(e.e.type.elem_type)
             label = fresh_name("label")
             self.visit(seq([
                 SDecl(s.id, EEmptyList().with_type(s.type)),
@@ -787,7 +787,7 @@ class CxxPrinter(CodeGenerator):
     # def copy_to(self, lhs, rhs):
     #     if isinstance(lhs.type, TBag):
     #         cl, el = self.visit(lhs, indent)
-    #         x = self.fv(lhs.type.t, "x")
+    #         x = self.fv(lhs.type.elem_type, "x")
     #         # TODO: hacky use of EVar ahead! We need an EEscape, like SEscape
     #         return cl + self.visit(SForEach(x, rhs, SCall(EVar(el).with_type(lhs.type), "add", [x])), indent=indent)
     #     else:

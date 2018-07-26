@@ -1,8 +1,6 @@
 """Miscellaneous procedures used during synthesis."""
 
-import itertools
-
-from cozy.common import FrozenDict, partition
+from cozy.common import partition
 from cozy.syntax import T, Exp, Query, TFunc, EVar, EAll, EImplies, EEq, ELambda, Stm, SNoOp, SDecl, SAssign, SSeq, SIf, SForEach, SCall
 from cozy.target_syntax import TMap, EMakeMap2, EMapGet, SMapPut, SMapDel, SMapUpdate
 from cozy.syntax_tools import fresh_var, free_vars, subst

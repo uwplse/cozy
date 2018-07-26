@@ -119,7 +119,7 @@ def _uneval(t, value):
     elif is_collection(t):
         e = EEmptyList().with_type(t)
         for x in value:
-            e = EBinOp(e, "+", ESingleton(uneval(t.t, x)).with_type(t)).with_type(t)
+            e = EBinOp(e, "+", ESingleton(uneval(t.elem_type, x)).with_type(t)).with_type(t)
         return e
     elif isinstance(t, TString):
         return EStr(value).with_type(t)
@@ -517,9 +517,9 @@ def _compile(e, env : {str:int}, out):
         elif e.op == UOp.Length:
             out.append(unaryop_len)
         elif e.op == UOp.AreUnique:
-            out.append(unaryop_areunique(e.e.type.t))
+            out.append(unaryop_areunique(e.e.type.elem_type))
         elif e.op == UOp.Distinct:
-            out.append(unaryop_distinct(e.e.type.t))
+            out.append(unaryop_distinct(e.e.type.elem_type))
         elif e.op == UOp.The:
             out.append(unaryop_the(default=mkval(e.type)))
         elif e.op == UOp.Reversed:
@@ -547,9 +547,9 @@ def _compile(e, env : {str:int}, out):
             out.append(binaryop_mul)
         elif e.op == "-":
             if isinstance(e.type, TBag) or isinstance(e.type, TSet):
-                out.append(binaryop_sub_bags(e.type.t))
+                out.append(binaryop_sub_bags(e.type.elem_type))
             elif isinstance(e.type, TList):
-                out.append(binaryop_sub_lists(e.type.t))
+                out.append(binaryop_sub_lists(e.type.elem_type))
             else:
                 out.append(binaryop_sub)
         elif e.op == "==":

@@ -61,7 +61,7 @@ class TestStateMaintenance(unittest.TestCase):
         print("---")
 
     def test_handle_writes(self):
-        t = THandle("T", INT)
+        t = THandle("elem_type", INT)
         x = EVar("x").with_type(t)
         y = EVar("y").with_type(t)
         z = EVar("z").with_type(t)

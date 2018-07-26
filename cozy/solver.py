@@ -85,7 +85,7 @@ def flatten(t, x):
         yield len(x[0])
         for mask, elem in zip(*x):
             yield from flatten(BOOL, mask)
-            yield from flatten(t.t, elem)
+            yield from flatten(t.elem_type, elem)
     elif isinstance(t, TMap):
         yield len(x["mapping"])
         yield from flatten(t.v, x["default"])
@@ -117,7 +117,7 @@ def pack(t, it):
             elems = []
             for i in range(n):
                 mask.append(pack(BOOL, it))
-                elems.append(pack(t.t, it))
+                elems.append(pack(t.elem_type, it))
             return (mask, elems)
         elif isinstance(t, TMap):
             n = next(it)
@@ -170,7 +170,7 @@ def ite(ty : Type, cond : z3.AstRef, then_branch, else_branch):
         for i in range(maxlen):
             if i < len(then_mask) and i < len(else_mask):
                 mask.append(z3.If(cond, then_mask[i], else_mask[i], ctx))
-                elems.append(ite(ty.t, cond, then_elems[i], else_elems[i]))
+                elems.append(ite(ty.elem_type, cond, then_elems[i], else_elems[i]))
             elif i < len(then_mask):
                 mask.append(z3.And(cond, then_mask[i], ctx))
                 elems.append(then_elems[i])
@@ -298,7 +298,7 @@ class ToZ3(Visitor):
             assert isinstance(e2, z3.AstRef), "{}".format(repr(e2))
             return e1 == e2
         elif isinstance(t, TList) or (is_collection(t) and deep):
-            elem_type = t.t
+            elem_type = t.elem_type
             lhs_mask, lhs_elems = e1
             rhs_mask, rhs_elems = e2
 
@@ -343,7 +343,7 @@ class ToZ3(Visitor):
             return res[0][0]
 
         elif isinstance(t, TBag) or isinstance(t, TSet):
-            elem_type = t.t
+            elem_type = t.elem_type
             lhs_mask, lhs_elems = e1
             rhs_mask, rhs_elems = e2
 
@@ -465,7 +465,7 @@ class ToZ3(Visitor):
     def visit_EHandle(self, e, env):
         return (self.visit(e.addr, env), self.visit(e.value, env))
     def visit_ENull(self, e, env):
-        return (self.false, self.mkval(e.type.t))
+        return (self.false, self.mkval(e.type.elem_type))
     def visit_ECall(self, call, env):
         args = [self.visit(x, env) for x in call.args]
         return env[call.func](*args)
@@ -512,7 +512,7 @@ class ToZ3(Visitor):
                 sum = ite(INT, bag_mask[i], bag_elems[i], self.int_zero) + sum
             return sum
         elif e.op == UOp.Length:
-            v = EVar("v").with_type(e.e.type.t)
+            v = EVar("v").with_type(e.e.type.elem_type)
             return self.visit(EUnaryOp(UOp.Sum, EMap(e.e, ELambda(v, ONE)).with_type(TBag(INT))).with_type(e.type), env)
         elif e.op == UOp.AreUnique:
             def is_unique(bag):
@@ -520,7 +520,7 @@ class ToZ3(Visitor):
                 rest = (bag_mask[1:], bag_elems[1:])
                 if bag_elems:
                     return self.all(
-                        self.implies(bag_mask[0], self.neg(self.is_in(e.e.type.t, rest, bag_elems[0], env))),
+                        self.implies(bag_mask[0], self.neg(self.is_in(e.e.type.elem_type, rest, bag_elems[0], env))),
                         is_unique(rest))
                 else:
                     return self.true
@@ -538,7 +538,7 @@ class ToZ3(Visitor):
             mask, elems = self.visit(e.e, env)
             return self.any(*[self.all(m, e) for (m, e) in zip(mask, elems)])
         elif e.op == UOp.Distinct:
-            elem_type = e.type.t
+            elem_type = e.type.elem_type
             return self.distinct_bag_elems(self.visit(e.e, env), elem_type)
         elif e.op == UOp.Length:
             return self.len_of(self.visit(e.e, env))
@@ -627,7 +627,7 @@ class ToZ3(Visitor):
         mrest, erest = self.remove_one(elem_type, (masks[1:], elems[1:]), elem, self.all(mask, self.neg(removed)))
         return ([m] + mrest, [e] + erest)
     def remove_all(self, bag_type, bag, to_remove, env):
-        elem_type = bag_type.t
+        elem_type = bag_type.elem_type
         for m, e in zip(*to_remove):
             bag = self.remove_one(elem_type, bag, e, m)
         return bag
@@ -666,7 +666,7 @@ class ToZ3(Visitor):
             if isinstance(e.type, TBag) or isinstance(e.type, TList):
                 return (v1[0] + v2[0], v1[1] + v2[1])
             elif isinstance(e.type, TSet):
-                return self.visit(EUnaryOp(UOp.Distinct, EBinOp(e.e1, "+", e.e2).with_type(TBag(e.type.t))).with_type(TBag(e.type.t)), env)
+                return self.visit(EUnaryOp(UOp.Distinct, EBinOp(e.e1, "+", e.e2).with_type(TBag(e.type.elem_type))).with_type(TBag(e.type.elem_type)), env)
             elif is_numeric(e.type):
                 return v1 + v2
             else:
@@ -750,7 +750,7 @@ class ToZ3(Visitor):
         m = m["mapping"]
         bag_mask = [mask for (mask, k, v) in m]
         bag_elems = [k for (mask, k, v) in m]
-        return self.distinct_bag_elems((bag_mask, bag_elems), e.type.t)
+        return self.distinct_bag_elems((bag_mask, bag_elems), e.type.elem_type)
     def _map_get(self, map_type, map, key):
         res = map["default"]
         for (mask, k, v) in reversed(map["mapping"]):
@@ -867,7 +867,7 @@ class ToZ3(Visitor):
             return self.true if value else self.false
         elif is_collection(ty):
             masks = [self.true] * len(value)
-            values = [self.unreconstruct(v, ty.t) for v in value]
+            values = [self.unreconstruct(v, ty.elem_type) for v in value]
             return (masks, values)
         elif isinstance(ty, TMap):
             return {
@@ -922,17 +922,17 @@ class ToZ3(Visitor):
             on_z3_assertion(n < ncases)
             return n
         elif isinstance(ty, TSet):
-            res = self.mkvar(collection_depth, TBag(ty.t), min_collection_depth, on_z3_var, on_z3_assertion)
+            res = self.mkvar(collection_depth, TBag(ty.elem_type), min_collection_depth, on_z3_var, on_z3_assertion)
             mask, elems = res
             for i in range(1, len(mask)):
-                on_z3_assertion(self.implies(mask[i], self.distinct(ty.t, *(elems[:(i+1)]))))
+                on_z3_assertion(self.implies(mask[i], self.distinct(ty.elem_type, *(elems[:(i+1)]))))
             return res
         elif isinstance(ty, TBag) or isinstance(ty, TList):
             size = max(collection_depth, min_collection_depth)
             true_masks = [self.true for i in range(min_collection_depth)]
             symb_masks = [self.mkvar(collection_depth, BOOL, min_collection_depth, on_z3_var, on_z3_assertion) for i in range(size - min_collection_depth)]
             mask  = symb_masks + true_masks
-            elems = [self.mkvar(collection_depth, ty.t, min_collection_depth, on_z3_var, on_z3_assertion) for i in range(collection_depth)]
+            elems = [self.mkvar(collection_depth, ty.elem_type, min_collection_depth, on_z3_var, on_z3_assertion) for i in range(collection_depth)]
             # symmetry breaking
             for i in range(len(mask) - 1):
                 on_z3_assertion(self.implies(mask[i], mask[i+1]))
@@ -1120,7 +1120,7 @@ class IncrementalSolver(object):
                     real_val = []
                     for i in range(len(elems)):
                         if reconstruct(model, mask[i], BOOL):
-                            real_val.append(reconstruct(model, elems[i], type.t))
+                            real_val.append(reconstruct(model, elems[i], type.elem_type))
                     if isinstance(type, TList):
                         return tuple(real_val)
                     return Bag(real_val)
@@ -1238,7 +1238,7 @@ class IncrementalSolver(object):
                                                         senv = dict(solver_env)
                                                         eenv = dict(eval_env)
                                                         senv[x.p.arg.id] = elem
-                                                        eenv[x.p.arg.id] = reconstruct(model, elem, x.type.t)
+                                                        eenv[x.p.arg.id] = reconstruct(model, elem, x.type.elem_type)
                                                         wq.append((x.p.body, senv, eenv))
                                             elif isinstance(x, ELet):
                                                 z = visitor.visit(x.e, solver_env)

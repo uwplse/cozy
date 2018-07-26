@@ -209,7 +209,7 @@ def sketch_update(
     if isinstance(t, syntax.TBag) or isinstance(t, syntax.TSet):
         to_add = make_subgoal(syntax.EBinOp(new_value, "-", old_value).with_type(t), docstring="additions to {}".format(pprint(lval)))
         to_del = make_subgoal(syntax.EBinOp(old_value, "-", new_value).with_type(t), docstring="deletions from {}".format(pprint(lval)))
-        v = fresh_var(t.t)
+        v = fresh_var(t.elem_type)
         stm = syntax.seq([
             syntax.SForEach(v, to_del, syntax.SCall(lval, "remove", [v])),
             syntax.SForEach(v, to_add, syntax.SCall(lval, "add", [v]))])

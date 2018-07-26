@@ -224,7 +224,7 @@ def storage_size(e, freebies : [Exp] = []):
     elif isinstance(e.type, TRecord):
         return ESum([storage_size(EGetField(e, f).with_type(t)) for (f, t) in e.type.fields])
     elif is_collection(e.type):
-        v = fresh_var(e.type.t, omit=free_vars(e))
+        v = fresh_var(e.type.elem_type, omit=free_vars(e))
         return ESum([
             FOUR,
             EUnaryOp(UOp.Sum, EMap(e, ELambda(v, storage_size(v))).with_type(INT_BAG)).with_type(INT)])

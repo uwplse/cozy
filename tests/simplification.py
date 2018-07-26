@@ -25,7 +25,7 @@ class SimplificationTests(unittest.TestCase):
         simplify(e, validate=True)
 
     def test_mapget(self):
-        t = THandle("T", INT)
+        t = THandle("elem_type", INT)
         xs = EVar("xs").with_type(TBag(t))
         x = EVar("x").with_type(t)
         y = EVar("y").with_type(t)

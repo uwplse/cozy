@@ -232,31 +232,31 @@ class PrettyPrinter(common.Visitor):
         return t.name
 
     def visit_TApp(self, app):
-        return "{}{lt}{}{gt}".format(app.t, self.visit(app.args), lt=self.format_lt(), gt=self.format_gt())
+        return "{}{lt}{}{gt}".format(app.elem_type, self.visit(app.args), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_TBag(self, s):
-        return "Bag{lt}{}{gt}".format(self.visit(s.t), lt=self.format_lt(), gt=self.format_gt())
+        return "Bag{lt}{}{gt}".format(self.visit(s.elem_type), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_TSet(self, s):
-        return "Set{lt}{}{gt}".format(self.visit(s.t), lt=self.format_lt(), gt=self.format_gt())
+        return "Set{lt}{}{gt}".format(self.visit(s.elem_type), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_TList(self, s):
-        return "List{lt}{}{gt}".format(self.visit(s.t), lt=self.format_lt(), gt=self.format_gt())
+        return "List{lt}{}{gt}".format(self.visit(s.elem_type), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_TMap(self, m):
         return "Map{lt}{}, {}{gt}".format(self.visit(m.k), self.visit(m.v), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_THeap(self, h):
-        return "Heap{lt}{}{gt}".format(self.visit(h.t), lt=self.format_lt(), gt=self.format_gt())
+        return "Heap{lt}{}{gt}".format(self.visit(h.elem_type), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_TIntrusiveLinkedList(self, h):
-        return "IntrusiveLinkedList{lt}{}{gt}".format(self.visit(h.t), lt=self.format_lt(), gt=self.format_gt())
+        return "IntrusiveLinkedList{lt}{}{gt}".format(self.visit(h.elem_type), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_TNativeSet(self, h):
-        return "NativeSet{lt}{}{gt}".format(self.visit(h.t), lt=self.format_lt(), gt=self.format_gt())
+        return "NativeSet{lt}{}{gt}".format(self.visit(h.elem_type), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_TNativeList(self, h):
-        return "NativeList{lt}{}{gt}".format(self.visit(h.t), lt=self.format_lt(), gt=self.format_gt())
+        return "NativeList{lt}{}{gt}".format(self.visit(h.elem_type), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_THashMap(self, h):
         return "HashMap{lt}{}, {}{gt}".format(self.visit(h.k), self.visit(h.v), lt=self.format_lt(), gt=self.format_gt())
@@ -383,7 +383,7 @@ class PrettyPrinter(common.Visitor):
         return "[{} | {}]".format(self.visit(e.e), ", ".join(self.visit(clause) for clause in e.clauses))
 
     def visit_EAlloc(self, e):
-        return "{} {}({})".format(self.format_keyword("new"), self.visit(e.t), ", ".join(self.visit(arg) for arg in e.args))
+        return "{} {}({})".format(self.format_keyword("new"), self.visit(e.elem_type), ", ".join(self.visit(arg) for arg in e.args))
 
     def visit_ECall(self, e):
         return "{}({})".format(e.func, ", ".join(self.visit(arg) for arg in e.args))

@@ -126,7 +126,7 @@ def _check(e, context, pool):
     return e
 
 def histogram(xs : Exp) -> Exp:
-    elem_type = xs.type.t
+    elem_type = xs.type.elem_type
     return EMakeMap2(xs,
         mk_lambda(elem_type, lambda x:
             ELen(EFilter(xs,
@@ -285,9 +285,9 @@ def excluded_element(xs, args):
             arg_left = arg in free_vars(e.e1)
             arg_right = arg in free_vars(e.e2)
             if arg_left and not arg_right:
-                return (xs.e, EUnaryOp(UOp.The, _simple_filter(xs.e, ELambda(arg, EEq(e.e1, e.e2)), args=args)).with_type(xs.type.t))
+                return (xs.e, EUnaryOp(UOp.The, _simple_filter(xs.e, ELambda(arg, EEq(e.e1, e.e2)), args=args)).with_type(xs.type.elem_type))
             if arg_right and not arg_left:
-                return (xs.e, EUnaryOp(UOp.The, _simple_filter(xs.e, ELambda(arg, EEq(e.e1, e.e2)), args=args)).with_type(xs.type.t))
+                return (xs.e, EUnaryOp(UOp.The, _simple_filter(xs.e, ELambda(arg, EEq(e.e1, e.e2)), args=args)).with_type(xs.type.elem_type))
         return (xs.e, optimized_the(_simple_filter(xs.e, ELambda(xs.p.arg, ENot(xs.p.body)), args), args))
     if isinstance(xs, EBinOp) and xs.op == "-" and isinstance(xs.e2, ESingleton):
         return (xs.e1, xs.e2.e)
@@ -296,12 +296,12 @@ def excluded_element(xs, args):
     if isinstance(xs, EBinOp) and xs.op == "+" and isinstance(xs.e1, EListSlice) and isinstance(xs.e2, EListSlice):
         for e1, e2 in [(xs.e1, xs.e2), (xs.e2, xs.e1)]:
             if e1.e == e2.e and e1.start == ZERO and e2.start == EBinOp(e1.end, "+", ONE) and is_lenof(e2.end, e2.e):
-                return (e1.e, EListGet(e1.e, e1.end).with_type(xs.type.t))
+                return (e1.e, EListGet(e1.e, e1.end).with_type(xs.type.elem_type))
     return None
 
 def optimized_best(xs, keyfunc, op, args):
     argbest = EArgMin if op == "<" else EArgMax
-    elem_type = xs.type.t
+    elem_type = xs.type.elem_type
     key_type = keyfunc.body.type
     if excluded_element(xs, args) is not None:
         bag, x = excluded_element(xs, args)
@@ -326,7 +326,7 @@ def optimized_best(xs, keyfunc, op, args):
     if isinstance(xs, EBinOp) and xs.op == "+":
         a_ex = optimized_exists(xs.e1)
         b_ex = optimized_exists(xs.e2)
-        bag_type = TBag(xs.type.t)
+        bag_type = TBag(xs.type.elem_type)
         for a in optimized_best(xs.e1, keyfunc, op, args=args):
             for b in optimized_best(xs.e2, keyfunc, op, args=args):
                 yield optimized_cond(a_ex,
@@ -470,7 +470,7 @@ def optimized_bag_difference(xs, ys):
             alpha_equivalent(xs.e.e, ys.e1.e)):
         distinct_elems = xs.e
         elems = distinct_elems.e
-        elem_type = elems.type.t
+        elem_type = elems.type.elem_type
         m = histogram(elems)
         m_rt = EStateVar(m).with_type(m.type)
         count = EMapGet(m_rt, ys.e2.e).with_type(INT)
@@ -494,7 +494,7 @@ def optimized_bag_difference(xs, ys):
             xs)
 
     # only legal if xs are distinct, but we'll give it a go...
-    return EFilter(xs, mk_lambda(xs.type.t, lambda x: ENot(optimized_in(x, ys)))).with_type(xs.type)
+    return EFilter(xs, mk_lambda(xs.type.elem_type, lambda x: ENot(optimized_in(x, ys)))).with_type(xs.type)
 
 def optimize_filter_as_if_distinct(xs, p, args, dnf=True):
     if isinstance(xs, EBinOp) and xs.op == "-":
@@ -541,10 +541,10 @@ def optimize_map(xs, f, args):
                 yield EBinOp(a, "+", b).with_type(res_type)
     yield EMap(xs, f).with_type(res_type)
 
-sum_of = lambda xs: EUnaryOp(UOp.Sum, xs).with_type(xs.type.t)
+sum_of = lambda xs: EUnaryOp(UOp.Sum, xs).with_type(xs.type.elem_type)
 
 def optimized_sum(xs, args):
-    elem_type = xs.type.t
+    elem_type = xs.type.elem_type
     if isinstance(xs, EStateVar):
         yield EStateVar(sum_of(xs)).with_type(elem_type)
     if isinstance(xs, EBinOp) and xs.op == "+":
@@ -566,10 +566,10 @@ def optimized_sum(xs, args):
     yield sum_of(xs)
 
 def optimized_the(xs, args):
-    return EUnaryOp(UOp.The, xs).with_type(xs.type.t)
+    return EUnaryOp(UOp.The, xs).with_type(xs.type.elem_type)
 
 def optimize_the(xs, args):
-    t = xs.type.t
+    t = xs.type.elem_type
     if isinstance(xs, ECond):
         for e1 in optimize_the(xs.then_branch, args):
             for e2 in optimize_the(xs.else_branch, args):

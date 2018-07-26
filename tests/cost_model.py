@@ -211,7 +211,7 @@ class TestCostModel(unittest.TestCase):
         assert_cmp(e1, cost1, e2, cost2, Cost.BETTER)
 
     def test_tuples(self):
-        sv = EVar("sv").with_type(THandle("T", INT))
+        sv = EVar("sv").with_type(THandle("elem_type", INT))
         x = EVar("x").with_type(sv.type)
         e = ETupleGet(ETuple((sv, x)), 1)
         assert retypecheck(e)
@@ -227,7 +227,7 @@ class TestCostModel(unittest.TestCase):
     def test_pointless_filter(self):
         Enum = TEnum(("A", "B", "C"))
         A, B, C = [EEnumEntry(case).with_type(Enum) for case in Enum.cases]
-        Type = THandle("T", TRecord((("st", Enum),)))
+        Type = THandle("elem_type", TRecord((("st", Enum),)))
         entries = EVar("xs").with_type(TBag(Type))
         entry = ESingleton(EVar("q").with_type(Type))
         zero = ENum(0).with_type(INT)
@@ -245,7 +245,7 @@ class TestCostModel(unittest.TestCase):
         assert_cmp(e1, cost_of(e1), e2, cost_of(e2), Cost.BETTER)
 
     def test_flatmap(self):
-        t = THandle("T", INT)
+        t = THandle("elem_type", INT)
         x = EVar("x").with_type(t)
         y = EVar("y").with_type(t)
         z = EVar("z").with_type(t)
@@ -678,7 +678,7 @@ class TestCostModel(unittest.TestCase):
         assert_cmp(e1, cost_of(e1), e2, cost_of(e2), Cost.BETTER)
 
     def test_map_singleton(self):
-        t = THandle("T", INT)
+        t = THandle("elem_type", INT)
         x = EVar("x").with_type(t)
         e1 = ESingleton(EGetField(x, "val").with_type(INT)).with_type(INT_BAG)
         e2 = EMap(ESingleton(x).with_type(TBag(t)), mk_lambda(t, lambda x: EGetField(x, "val").with_type(INT))).with_type(INT_BAG)

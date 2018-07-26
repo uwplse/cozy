@@ -26,8 +26,8 @@ class TestAlphaEquivalent(unittest.TestCase):
 
     def test_lambdas(self):
         employers = EVar("employers").with_type(TBag(TInt()))
-        e1 = mk_lambda(employers.type.t, lambda employer: EGetField(EGetField(employer, "val"), "employer_name"))
-        e2 = mk_lambda(employers.type.t, lambda employer: EGetField(EGetField(employer, "val"), "employer_name"))
+        e1 = mk_lambda(employers.type.elem_type, lambda employer: EGetField(EGetField(employer, "val"), "employer_name"))
+        e2 = mk_lambda(employers.type.elem_type, lambda employer: EGetField(EGetField(employer, "val"), "employer_name"))
         assert alpha_equivalent(e1, e2)
 
     def test_tuples(self):

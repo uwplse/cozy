@@ -213,7 +213,7 @@ class UnderBinder(Context):
 
         `v` must not already be described by the parent context.
         """
-        assert v.type == bag.type.t
+        assert v.type == bag.type.elem_type
         assert parent.legal_for(free_vars(bag)), "cannot create context for {} in {}, {}".format(v.id, pprint(bag), parent)
         assert not any(v == vv for vv, p in parent.vars()), "binder {} already free in {}".format(v.id, parent)
         self._parent = parent

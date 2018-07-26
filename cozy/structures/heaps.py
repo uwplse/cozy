@@ -108,9 +108,9 @@ class Heaps(object):
         """
         if isinstance(e, EMakeMaxHeap) or isinstance(e, EMakeMinHeap):
             typecheck(e.e)
-            e.f.arg.type = e.e.type.t
+            e.f.arg.type = e.e.type.elem_type
             typecheck(e.f)
-            e.type = TMinHeap(e.e.type.t, e.f.body.type)
+            e.type = TMinHeap(e.e.type.elem_type, e.f.body.type)
         elif isinstance(e, EHeapPeek) or isinstance(e, EHeapPeek2):
             typecheck(e.e)
             typecheck(e.heap_length)
@@ -164,7 +164,7 @@ class Heaps(object):
         # modified elements
         f1 = heap_func(old_value)
         f2 = heap_func(new_value)
-        v = fresh_var(t.t)
+        v = fresh_var(t.elem_type)
         old_v_key = f1.apply_to(v)
         new_v_key = f2.apply_to(v)
 
@@ -196,7 +196,7 @@ class Heaps(object):
             return EMap(e.e, ELambda(e.f.arg, ETuple((e.f.arg, e.f.body)).with_type(tt))).with_type(TBag(tt))
         elif isinstance(e, EHeapElems):
             tt = TTuple((e.e.type.elem_type, e.e.type.key_type))
-            return EMap(e.e, mk_lambda(tt, lambda arg: ETupleGet(arg, 0).with_type(e.type.t))).with_type(e.type)
+            return EMap(e.e, mk_lambda(tt, lambda arg: ETupleGet(arg, 0).with_type(e.type.elem_type))).with_type(e.type)
         elif isinstance(e, EHeapPeek):
             tt = TTuple((e.e.type.elem_type, e.e.type.key_type))
             f = EArgMin if isinstance(e.e.type, TMinHeap) else EArgMax
@@ -228,7 +228,7 @@ class Heaps(object):
         # modified elements
         f1 = heap_func(old_value)
         f2 = heap_func(new_value)
-        v = fresh_var(t.t)
+        v = fresh_var(t.elem_type)
         old_v_key = f1.apply_to(v)
         new_v_key = f2.apply_to(v)
         mod_spec = EFilter(old_elems, ELambda(v, EAll([EIn(v, new_elems), ENot(EEq(new_v_key, old_v_key))]))).with_type(new_elems.type)
@@ -256,7 +256,7 @@ class Heaps(object):
                 SArrayAlloc(out_raw, l),
                 SCall(out, "add_all", (ZERO, e.e))])
         elif isinstance(e, EHeapElems):
-            elem_type = e.type.t
+            elem_type = e.type.elem_type
             if isinstance(e.e, EMakeMinHeap) or isinstance(e.e, EMakeMaxHeap):
                 x = fresh_var(elem_type, "x")
                 return SForEach(x, e.e.e, SCall(out, "add", (x,)))

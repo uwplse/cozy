@@ -519,7 +519,7 @@ def good_idea(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptio
         return No("EFlatMap in state position")
     if not allow_int_arithmetic_state.value and not at_runtime and isinstance(e, EBinOp) and e.type == INT:
         return No("integer arithmetic in state position")
-    if is_collection(e.type) and not is_scalar(e.type.t):
+    if is_collection(e.type) and not is_scalar(e.type.elem_type):
         return No("collection of nonscalar")
     if isinstance(e.type, TMap) and not is_scalar(e.type.k):
         return No("bad key type {}".format(pprint(e.type.k)))

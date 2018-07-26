@@ -79,9 +79,9 @@ class TestSolver(unittest.TestCase):
 
     def test_filter_true(self):
         xs = EVar("xs").with_type(TBag(THandle("X", INT)))
-        e1 = EFilter(xs, mk_lambda(xs.type.t, lambda x: equal(EGetField(x, "val"), ENum(0).with_type(INT))))
+        e1 = EFilter(xs, mk_lambda(xs.type.elem_type, lambda x: equal(EGetField(x, "val"), ENum(0).with_type(INT))))
         assert retypecheck(e1)
-        e2 = EFilter(e1, mk_lambda(xs.type.t, lambda x: EBool(True)))
+        e2 = EFilter(e1, mk_lambda(xs.type.elem_type, lambda x: EBool(True)))
         assert retypecheck(e2)
         assert valid(equal(e1, e2))
 
@@ -133,7 +133,7 @@ class TestSolver(unittest.TestCase):
 
     def test_distinct_filter(self):
         a = EVar("a").with_type(TBag(INT))
-        e = ENot(equal(EUnaryOp(UOp.Distinct, EFilter(a, mk_lambda(a.type.t, lambda x: equal(x, zero)))), EEmptyList().with_type(a.type)))
+        e = ENot(equal(EUnaryOp(UOp.Distinct, EFilter(a, mk_lambda(a.type.elem_type, lambda x: equal(x, zero)))), EEmptyList().with_type(a.type)))
         assert retypecheck(e)
         check_encoding(e)
 
@@ -353,7 +353,7 @@ class TestSolver(unittest.TestCase):
         a = EVar("a").with_type(TList(TString()))
         b = EVar("b").with_type(a.type)
         i = EVar("i").with_type(INT)
-        f = EEq(EListGet(a, i).with_type(a.type.t), EListGet(b, i).with_type(a.type.t))
+        f = EEq(EListGet(a, i).with_type(a.type.elem_type), EListGet(b, i).with_type(a.type.elem_type))
         for d in range(0, 6):
             d = 2**d
             print("depth={}...".format(d))
@@ -430,7 +430,7 @@ class TestSolver(unittest.TestCase):
 
     def test_regression21(self):
         e = EBinOp(EMakeMinHeap(EVar('xs'), ELambda(EVar('x'), EVar('x'))), '==', EMakeMinHeap(EBinOp(EVar('xs'), '+', ESingleton(EVar('i'))), ELambda(EVar('x'), EVar('x'))))
-        assert retypecheck(e, env={"xs": TBag(TNative("T")), "i": TNative("T")})
+        assert retypecheck(e, env={"xs": TBag(TNative("elem_type")), "i": TNative("elem_type")})
         assert not satisfiable(e, validate_model=True)
 
     def test_regression22(self):
@@ -477,7 +477,7 @@ class TestSolver(unittest.TestCase):
 
     def test_heap_2ndmin(self):
         xs = EVar("xs").with_type(INT_BAG)
-        x = EVar("x").with_type(xs.type.t)
+        x = EVar("x").with_type(xs.type.elem_type)
         f = ELambda(x, x)
         for mkh in (EMakeMinHeap, EMakeMaxHeap):
             h = mkh(xs, f)
@@ -488,7 +488,7 @@ class TestSolver(unittest.TestCase):
     def test_to_heap(self):
         for f in (EArgMin, EArgMax):
             xs = EVar("xs").with_type(INT_BAG)
-            x = EVar("x").with_type(xs.type.t)
+            x = EVar("x").with_type(xs.type.elem_type)
             e = f(xs, ELambda(x, EUnaryOp("-", x)))
             assert retypecheck(e)
             assert valid(EEq(e, EHeapPeek(to_heap(e), ELen(e)).with_type(INT)))
