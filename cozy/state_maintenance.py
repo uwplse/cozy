@@ -157,7 +157,7 @@ def value_at(m, k):
     if isinstance(m, target_syntax.EMakeMap2):
         return syntax.ECond(
             syntax.EIn(k, m.e),
-            m.value.apply_to(k),
+            m.value_function.apply_to(k),
             construct_value(m.type.v)).with_type(m.type.v)
     if isinstance(m, syntax.ECond):
         return syntax.ECond(

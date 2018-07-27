@@ -50,8 +50,8 @@ class SemanticsTests(unittest.TestCase):
         e2 = EUnaryOp(UOp.The,
             EMap(
                 EFilter(e1.map.e,
-                    mk_lambda(e1.map.value.arg.type, lambda foo: EEq(foo, e1.key))).with_type(e1.map.e.type),
-                e1.map.value).with_type(e1.map.e.type)).with_type(e1.map.e.type.elem_type)
+                    mk_lambda(e1.map.value_function.arg.type, lambda foo: EEq(foo, e1.key))).with_type(e1.map.e.type),
+                e1.map.value_function).with_type(e1.map.e.type)).with_type(e1.map.e.type.elem_type)
         assert retypecheck(e1)
         assert retypecheck(e2)
         self.assert_same(e1, e2)
@@ -69,7 +69,7 @@ class SemanticsTests(unittest.TestCase):
             y).with_type(mt)
         e2 = ECond(
             EIn(e1.key, e1.map.e),
-            e1.map.value.apply_to(EUnaryOp(UOp.The, EFilter(e1.map.e, mk_lambda(e1.map.value.arg.type, lambda foo: EEq(foo, e1.key))).with_type(e1.map.e.type)).with_type(e1.map.e.type.elem_type)),
+            e1.map.value_function.apply_to(EUnaryOp(UOp.The, EFilter(e1.map.e, mk_lambda(e1.map.value_function.arg.type, lambda foo: EEq(foo, e1.key))).with_type(e1.map.e.type)).with_type(e1.map.e.type.elem_type)),
             construct_value(e1.type)).with_type(e1.type)
         self.assert_same(e1, e2)
 

@@ -419,8 +419,8 @@ def mapkeys(m):
 
 def map_values(m, f):
     if isinstance(m, EMakeMap2):
-        new_body = f(m.value.body)
-        return EMakeMap2(m.e, ELambda(m.value.arg, new_body)).with_type(TMap(m.type.k, new_body.type))
+        new_body = f(m.value_function.body)
+        return EMakeMap2(m.e, ELambda(m.value_function.arg, new_body)).with_type(TMap(m.type.k, new_body.type))
     if isinstance(m, ECond):
         return optimized_cond(
             m.cond,

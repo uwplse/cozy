@@ -795,8 +795,8 @@ class FragmentEnumerator(common.Visitor):
         yield self.make_ctx(e)
         t = e.type
         for ctx in self.visit(e.e):
-            yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EMakeMap2(r(x), e.value).with_type(t))
-        for ctx in self.recurse_with_assumptions_about_bound_var(e.value, ElemOf(e.e)):
+            yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EMakeMap2(r(x), e.value_function).with_type(t))
+        for ctx in self.recurse_with_assumptions_about_bound_var(e.value_function, ElemOf(e.e)):
             yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EMakeMap2(e.e, r(x)).with_type(t))
 
     def visit_EArgMin(self, e):

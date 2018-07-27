@@ -740,7 +740,7 @@ class ToZ3(Visitor):
     def visit_EMakeMap2(self, e, env):
         bag_mask, bag_elems = self.visit(e.e, env)
         keys = zip(bag_mask, bag_elems)
-        proj = self.visit(e.value, env)
+        proj = self.visit(e.value_function, env)
         return {
             "mapping": [(mask, key, proj(key)) for (mask, key) in keys],
             "default": self.mkval(e.type.v) }

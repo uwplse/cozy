@@ -290,7 +290,7 @@ class CxxPrinter(CodeGenerator):
             v = self.fv(t.v, "v")
             return SForEach(k, e.e,
                 SMapUpdate(out, k, v,
-                    self.construct_concrete(t.v, e.value.apply_to(k), v)))
+                    self.construct_concrete(t.v, e.value_function.apply_to(k), v)))
         else:
             raise NotImplementedError(e)
 

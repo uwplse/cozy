@@ -109,14 +109,14 @@ class _SimplificationVisitor(BottomUpRewriter):
             if equality_implies_deep_equality(k.type):
                 return self.visit(ECond(
                     EIn(k, m.e),
-                    m.value.apply_to(k),
+                    m.value_function.apply_to(k),
                     construct_value(m.type.v)).with_type(m.type.v))
             else:
                 return self.visit(EUnaryOp(UOp.The,
                         EMap(
                             EFilter(m.e,
                                 mk_lambda(m.type.k, lambda kk: EEq(kk, k))).with_type(TBag(m.type.k)),
-                            m.value).with_type(TBag(m.type.v))).with_type(m.type.v))
+                            m.value_function).with_type(TBag(m.type.v))).with_type(m.type.v))
         return EMapGet(m, k).with_type(e.type)
     def visit_EUnaryOp(self, e):
         if isinstance(e.e, ECond):

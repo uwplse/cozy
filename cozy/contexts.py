@@ -317,7 +317,7 @@ class _Shredder(Visitor):
     def visit_EMakeMap2(self, e):
         yield (e, self.ctx, self.pool)
         yield from self.visit(e.e)
-        yield from self.visit(e.value, e.e)
+        yield from self.visit(e.value_function, e.e)
     def visit_EMakeMinHeap(self, e):
         yield (e, self.ctx, self.pool)
         yield from self.visit(e.e)
@@ -398,7 +398,7 @@ class _Replacer(BottomUpRewriter):
     def visit_EArgMax(self, e):
         return self.join(e, (self.visit(e.e), self.visit(e.key_function, e.e)))
     def visit_EMakeMap2(self, e):
-        return self.join(e, (self.visit(e.e), self.visit(e.value, e.e)))
+        return self.join(e, (self.visit(e.e), self.visit(e.value_function, e.e)))
     def visit_EMakeMinHeap(self, e):
         return self.join(e, (self.visit(e.e), self.visit(e.f, e.e)))
     def visit_EMakeMaxHeap(self, e):

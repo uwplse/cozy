@@ -284,7 +284,7 @@ class DominantTerm(object):
 def map_value_func(e : Exp):
     assert isinstance(e.type, TMap)
     if isinstance(e, EMakeMap2):
-        return e.value
+        return e.value_function
     if isinstance(e, EStateVar):
         return map_value_func(e.e)
     if isinstance(e, ECond):
@@ -418,7 +418,7 @@ def asymptotic_runtime(e : Exp) -> DominantTerm:
             continue
         res += DominantTerm.ONE
         if isinstance(e, EMakeMap2):
-            res += worst_case_cardinality(e.e) * asymptotic_runtime(e.value)
+            res += worst_case_cardinality(e.e) * asymptotic_runtime(e.value_function)
         if isinstance(e, EBinOp) and e.op == BOp.In:
             res += worst_case_cardinality(e.e2)
         if isinstance(e, EBinOp) and e.op == "-" and is_collection(e.type):
@@ -495,7 +495,7 @@ def rt(e, account_for_constant_factors=True):
             terms.append(max_of(ZERO, EBinOp(e.end, "-", e.start).with_type(INT)))
         elif isinstance(e, EMakeMap2):
             constant += EXTREME_COST
-            terms.append(EUnaryOp(UOp.Sum, EMap(e.e, ELambda(e.value.arg, rt(e.value.body))).with_type(INT_BAG)).with_type(INT))
+            terms.append(EUnaryOp(UOp.Sum, EMap(e.e, ELambda(e.value_function.arg, rt(e.value_function.body))).with_type(INT_BAG)).with_type(INT))
         elif isinstance(e, EBinOp) and e.op == "-" and is_collection(e.type):
             constant += EXTREME_COST
             terms.append(cardinality(e.e1))
