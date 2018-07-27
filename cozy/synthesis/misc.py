@@ -64,17 +64,17 @@ def pull_temps(s : Stm, decls_out : [SDecl], exp_is_bad) -> Stm:
         bag = pull(s.iter)
         d_tmp = []
         body = pull_temps(s.body, d_tmp, exp_is_bad)
-        to_fix, ok = partition(d_tmp, lambda d: s.id in free_vars(d.val))
+        to_fix, ok = partition(d_tmp, lambda d: s.loop_var in free_vars(d.val))
         decls_out.extend(ok)
         for d in to_fix:
             v = EVar(d.id).with_type(d.val.type)
-            mt = TMap(s.id.type, v.type)
-            m = EMakeMap2(bag, ELambda(s.id, d.val)).with_type(mt)
+            mt = TMap(s.loop_var.type, v.type)
+            m = EMakeMap2(bag, ELambda(s.loop_var, d.val)).with_type(mt)
             mv = fresh_var(m.type)
             md = SDecl(mv, m)
             decls_out.append(md)
-            body = subst(body, { v.id : EMapGet(mv, s.id).with_type(v.type) })
-        return SForEach(s.id, bag, body)
+            body = subst(body, { v.id : EMapGet(mv, s.loop_var).with_type(v.type) })
+        return SForEach(s.loop_var, bag, body)
     if isinstance(s, SAssign):
         return SAssign(s.lhs, pull(s.rhs))
     if isinstance(s, SCall):

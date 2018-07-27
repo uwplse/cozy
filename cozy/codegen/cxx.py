@@ -593,10 +593,10 @@ class CxxPrinter(CodeGenerator):
         self.end_statement()
 
     def visit_SForEach(self, for_each):
-        id = for_each.id
+        loop_var = for_each.loop_var
         iter = for_each.iter
         body = for_each.body
-        self.for_each(iter, lambda x: SSeq(SDecl(id, x), body))
+        self.for_each(iter, lambda x: SSeq(SDecl(loop_var, x), body))
 
     def find_one(self, iterable):
         v = self.fv(iterable.type.elem_type, "v")

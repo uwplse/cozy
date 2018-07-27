@@ -772,11 +772,11 @@ class Typechecker(Visitor):
         self.check_assignment(s, s.lhs.type, s.rhs.type)
 
     def visit_SForEach(self, s):
-        assert isinstance(s.id, syntax.EVar)
+        assert isinstance(s.loop_var, syntax.EVar)
         with self.scope():
             self.visit(s.iter)
             t = self.get_collection_type(s.iter)
-            self.env[s.id.id] = t
+            self.env[s.loop_var.id] = t
             self.visit(s.body)
 
     def visit_SDecl(self, s):

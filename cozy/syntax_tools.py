@@ -449,7 +449,7 @@ class PrettyPrinter(common.Visitor):
     def visit_SForEach(self, s, indent=""):
         return "{}{For} {} {In} {}:\n{}".format(
             indent,
-            s.id.id,
+            s.loop_var.id,
             self.visit(s.iter),
             self.visit(s.body, indent + "  "),
             For=self.format_keyword("for"),
@@ -588,7 +588,7 @@ def free_vars(exp, counts=False):
         elif isinstance(x, syntax.SForEach):
             stk.append(PopScope())
             stk.append(x.body)
-            stk.append(Bind(x.id))
+            stk.append(Bind(x.loop_var))
             stk.append(PushScope())
             stk.append(x.iter)
         elif isinstance(x, target_syntax.SWhile):
@@ -1899,9 +1899,9 @@ def cse_scan(e):
             self.visit(s.iter, path + (1,), entries, capture_point)
             # Capture point changes with SForEach. (The body is the child 2,
             # zero-indexed.)
-            submap = entries.unbind(s.id)
+            submap = entries.unbind(s.loop_var)
             self.visit(s.body, path + (2,), submap, s.body)
-            self.filter_captured_vars(entries, submap, path + (2,), s.id)
+            self.filter_captured_vars(entries, submap, path + (2,), s.loop_var)
             return s, set(), set()
 
         def visit_Exp(self, e, path, entries, capture_point):
