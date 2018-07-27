@@ -613,8 +613,8 @@ def _compile(e, env : {str:int}, out):
         _compile(e.e, env, out)
         box = [None]
         body = []
-        with extend(env, e.f.arg.id, lambda: box[0]):
-            _compile(e.f.body, env, body)
+        with extend(env, e.key_function.arg.id, lambda: box[0]):
+            _compile(e.key_function.body, env, body)
         def set_arg(v):
             def set_arg(stk):
                 box[0] = v
@@ -634,7 +634,7 @@ def _compile(e, env : {str:int}, out):
         out.append(do_map)
         out.append(iterable_to_bag)
     elif isinstance(e, EFlatMap):
-        _compile(EMap(e.e, e.f).with_type(TBag(e.type)), env, out)
+        _compile(EMap(e.e, e.key_function).with_type(TBag(e.type)), env, out)
         out.append(do_concat)
     elif isinstance(e, EArgMin) or isinstance(e, EArgMax):
         # stack layout:

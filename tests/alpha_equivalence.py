@@ -9,7 +9,7 @@ class TestAlphaEquivalent(unittest.TestCase):
         v1 = EVar("foo")
         e1 = EMap(v1, mk_lambda(TInt(), lambda arg: v1))
         e2 = EMap(v1, mk_lambda(TInt(), lambda arg: v1))
-        assert e1.f.arg.id != e2.f.arg.id
+        assert e1.key_function.arg.id != e2.key_function.arg.id
         assert alpha_equivalent(e1, e2)
 
     def test_free_vars_not_equivalent(self):

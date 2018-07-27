@@ -337,13 +337,13 @@ class PrettyPrinter(common.Visitor):
         return "{}[{}:{}]".format(self.visit(e.e), self.visit(e.start), self.visit(e.end))
 
     def visit_EMap(self, e):
-        return "{} {{{}}} ({})".format(self.format_builtin("Map"), self.visit(e.f), self.visit(e.e))
+        return "{} {{{}}} ({})".format(self.format_builtin("Map"), self.visit(e.key_function), self.visit(e.e))
 
     def visit_EFilter(self, e):
         return "{} {{{}}} ({})".format(self.format_builtin("Filter"), self.visit(e.p), self.visit(e.e))
 
     def visit_EFlatMap(self, e):
-        return "{} {{{}}} ({})".format(self.format_builtin("FlatMap"), self.visit(e.f), self.visit(e.e))
+        return "{} {{{}}} ({})".format(self.format_builtin("FlatMap"), self.visit(e.key_function), self.visit(e.e))
 
     def visit_EBinOp(self, e):
         op = e.op.replace("<", self.format_lt()).replace(">", self.format_gt())
@@ -779,16 +779,16 @@ class FragmentEnumerator(common.Visitor):
         yield self.make_ctx(e)
         t = e.type
         for ctx in self.visit(e.e):
-            yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EMap(r(x), e.f).with_type(t))
-        for ctx in self.recurse_with_assumptions_about_bound_var(e.f, ElemOf(e.e)):
+            yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EMap(r(x), e.key_function).with_type(t))
+        for ctx in self.recurse_with_assumptions_about_bound_var(e.key_function, ElemOf(e.e)):
             yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EMap(e.e, r(x)).with_type(t))
 
     def visit_EFlatMap(self, e):
         yield self.make_ctx(e)
         t = e.type
         for ctx in self.visit(e.e):
-            yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EFlatMap(r(x), e.f).with_type(t))
-        for ctx in self.recurse_with_assumptions_about_bound_var(e.f, ElemOf(e.e)):
+            yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EFlatMap(r(x), e.key_function).with_type(t))
+        for ctx in self.recurse_with_assumptions_about_bound_var(e.key_function, ElemOf(e.e)):
             yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EFlatMap(e.e, r(x)).with_type(t))
 
     def visit_EMakeMap2(self, e):

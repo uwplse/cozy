@@ -275,7 +275,7 @@ def excluded_element(xs, args):
         res = excluded_element(xs.e, args)
         if res is not None:
             bag, x = res
-            return (EMap(bag, xs.f).with_type(xs.type), xs.f.apply_to(x))
+            return (EMap(bag, xs.key_function).with_type(xs.type), xs.key_function.apply_to(x))
     if isinstance(xs, EFilter):
         arg = xs.p.arg
         e = xs.p.body
@@ -358,9 +358,9 @@ def optimized_best(xs, keyfunc, op, args):
         #         found = EAny([found, ex])
         #     yield best
     if isinstance(xs, EMap):
-        for b in optimized_best(xs.e, compose(keyfunc, xs.f), op, args):
+        for b in optimized_best(xs.e, compose(keyfunc, xs.key_function), op, args):
             yield optimized_cond(optimized_exists(xs.e),
-                xs.f.apply_to(b),
+                xs.key_function.apply_to(b),
                 construct_value(elem_type))
     if isinstance(xs, EStateVar) and not any(v in args for v in free_vars(keyfunc)):
         yield EStateVar(argbest(xs.e, keyfunc).with_type(elem_type)).with_type(elem_type)
@@ -585,7 +585,7 @@ def optimize_the(xs, args):
     if isinstance(xs, EMap):
         exists = optimized_exists(xs.e)
         for x in optimize_the(xs.e, args):
-            yield optimized_cond(exists, xs.f.apply_to(x), construct_value(t))
+            yield optimized_cond(exists, xs.key_function.apply_to(x), construct_value(t))
     if isinstance(xs, EBinOp) and xs.op == "+":
         e1_exists = optimized_exists(xs.e1)
         for x in optimize_the(xs.e1, args):

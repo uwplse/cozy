@@ -478,7 +478,7 @@ class ToZ3(Visitor):
     def visit_ETupleGet(self, e, env):
         return self.visit(e.e, env)[e.index]
     def visit_EFlatMap(self, e, env):
-        mask, elems = self.visit(EMap(e.e, e.f).with_type(TBag(e.f.body.type)), env)
+        mask, elems = self.visit(EMap(e.e, e.key_function).with_type(TBag(e.key_function.body.type)), env)
         res_mask = []
         res_elems = []
         for m, es in zip(mask, elems):
@@ -719,7 +719,7 @@ class ToZ3(Visitor):
             return ite(e.type, m, (mask, elems), drop1(mask, elems))
         return drop1(*self.visit(e.e, env))
     def visit_EMap(self, e, env):
-        f = self.visit(e.f, env)
+        f = self.visit(e.key_function, env)
         bag_mask, bag_elems = self.visit(e.e, env)
         res_elems = []
         for x in bag_elems:

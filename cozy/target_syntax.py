@@ -67,8 +67,8 @@ SEscapeBlock    = declare_case(Stm, "SEscapeBlock", ["label"])
 
 # Bag transformations
 EFilter  = declare_case(Exp, "EFilter",  ["e", "p"])
-EMap     = declare_case(Exp, "EMap",     ["e", "f"])
-EFlatMap = declare_case(Exp, "EFlatMap", ["e", "f"])
+EMap     = declare_case(Exp, "EMap",     ["e", "key_function"])
+EFlatMap = declare_case(Exp, "EFlatMap", ["e", "key_function"])
 
 # List transformations
 EDropFront = declare_case(Exp, "EDropFront", ["e"])

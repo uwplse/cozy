@@ -302,7 +302,7 @@ def worst_case_cardinality(e : Exp) -> DominantTerm:
     if isinstance(e, EBinOp) and e.op == "+":
         return worst_case_cardinality(e.e1) + worst_case_cardinality(e.e2)
     if isinstance(e, EFlatMap):
-        return worst_case_cardinality(e.e) * worst_case_cardinality(e.f.body)
+        return worst_case_cardinality(e.e) * worst_case_cardinality(e.key_function.body)
     if isinstance(e, ECond):
         return max(worst_case_cardinality(e.then_branch), worst_case_cardinality(e.else_branch))
     if isinstance(e, EEmptyList):

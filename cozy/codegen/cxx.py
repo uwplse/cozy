@@ -530,7 +530,7 @@ class CxxPrinter(CodeGenerator):
         elif isinstance(iterable, EMap):
             return self.for_each(
                 iterable.e,
-                lambda v: body(iterable.f.apply_to(v)))
+                lambda v: body(iterable.key_function.apply_to(v)))
         elif isinstance(iterable, EUnaryOp) and iterable.op == UOp.Distinct:
             tmp = self.fv(TSet(iterable.type.elem_type), "tmp")
             self.declare(tmp)
@@ -553,7 +553,7 @@ class CxxPrinter(CodeGenerator):
             new_body = body(v)
             assert isinstance(new_body, Stm)
             return self.for_each(iterable.e,
-                body=lambda bag: SForEach(v, iterable.f.apply_to(bag), new_body))
+                body=lambda bag: SForEach(v, iterable.key_function.apply_to(bag), new_body))
         elif isinstance(iterable, EListSlice):
             s = self.fv(INT, "start")
             e = self.fv(INT, "end")

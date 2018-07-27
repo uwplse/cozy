@@ -179,7 +179,7 @@ class SemanticsTests(unittest.TestCase):
         assert retypecheck(e1)
         e2 = ECond(
             EUnaryOp(UOp.Exists, xs),
-            e1.e.f.apply_to(EUnaryOp(UOp.The, xs)),
+            e1.e.key_function.apply_to(EUnaryOp(UOp.The, xs)),
             EUnaryOp(UOp.The, EEmptyList().with_type(xs.type)))
         assert retypecheck(e2)
         self.assert_same(e1, e2)

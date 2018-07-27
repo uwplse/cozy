@@ -435,10 +435,10 @@ class Typechecker(Visitor):
     def visit_EFlatMap(self, e):
         self.visit(e.e)
         t1 = self.get_collection_type(e.e)
-        self.visit(e.f)
-        self.ensure_type(e.f.arg, t1)
-        t2 = self.get_collection_type(e.f.body)
-        e.type = e.f.body.type
+        self.visit(e.key_function)
+        self.ensure_type(e.key_function.arg, t1)
+        t2 = self.get_collection_type(e.key_function.body)
+        e.type = e.key_function.body.type
 
     def visit_ECall(self, e):
         fname = e.func
@@ -595,14 +595,14 @@ class Typechecker(Visitor):
     def visit_EMap(self, e):
         self.visit(e.e)
         elem_type = self.get_collection_type(e.e)
-        e.f.arg.type = elem_type
-        self.visit(e.f)
+        e.key_function.arg.type = elem_type
+        self.visit(e.key_function)
         if isinstance(e.e.type, syntax.TSet):
             # Sets might not have distinct elements after the map transform.
             # Consider e.g. `map {\x -> 1} my_set`.
-            e.type = syntax.TBag(e.f.body.type)
+            e.type = syntax.TBag(e.key_function.body.type)
         elif is_collection(e.e.type):
-            e.type = type(to_abstract(e.e.type))(e.f.body.type)
+            e.type = type(to_abstract(e.e.type))(e.key_function.body.type)
         elif e.e.type is DEFAULT_TYPE:
             e.type = DEFAULT_TYPE
         else:
