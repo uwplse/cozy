@@ -559,7 +559,7 @@ class ToZ3(Visitor):
         else:
             raise NotImplementedError(e.op)
     def _optimal(self, e, env, cmp):
-        keytype = e.f.body.type
+        keytype = e.key_function.body.type
         mask, elems = self.visit(e.e, env)
 
         if not elems:
@@ -571,7 +571,7 @@ class ToZ3(Visitor):
         first = True
         bestkey = None
         legal = self.false
-        f = self.visit(e.f, env)
+        f = self.visit(e.key_function, env)
         keyelems = [f(x) for x in elems]
         for m, key in reversed(list(zip(mask, keyelems))):
             if first:

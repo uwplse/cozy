@@ -356,16 +356,16 @@ class Typechecker(Visitor):
 
     def visit_EArgMin(self, e):
         self.visit(e.e)
-        e.f.arg.type = self.get_collection_type(e.e)
-        self.visit(e.f)
-        e.type = e.f.arg.type
+        e.key_function.arg.type = self.get_collection_type(e.e)
+        self.visit(e.key_function)
+        e.type = e.key_function.arg.type
         # todo: ensure sortable (e.f.arg.type)
 
     def visit_EArgMax(self, e):
         self.visit(e.e)
-        e.f.arg.type = self.get_collection_type(e.e)
-        self.visit(e.f)
-        e.type = e.f.arg.type
+        e.key_function.arg.type = self.get_collection_type(e.e)
+        self.visit(e.key_function)
+        e.type = e.key_function.arg.type
         # todo: ensure sortable (e.f.arg.type)
 
     def visit_EBool(self, e):

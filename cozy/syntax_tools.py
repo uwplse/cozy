@@ -356,16 +356,16 @@ class PrettyPrinter(common.Visitor):
         return "({} {})".format(e.op, self.visit(e.e))
 
     def visit_EArgMin(self, e):
-        if e.f.body == e.f.arg:
+        if e.key_function.body == e.key_function.arg:
             return "{} {}".format(self.format_builtin("min"), self.visit(e.e))
         else:
-            return "{} {{{}}} {}".format(self.format_builtin("argmin"), self.visit(e.f), self.visit(e.e))
+            return "{} {{{}}} {}".format(self.format_builtin("argmin"), self.visit(e.key_function), self.visit(e.e))
 
     def visit_EArgMax(self, e):
-        if e.f.body == e.f.arg:
+        if e.key_function.body == e.key_function.arg:
             return "{} {}".format(self.format_builtin("max"), self.visit(e.e))
         else:
-            return "{} {{{}}} {}".format(self.format_builtin("argmax"), self.visit(e.f), self.visit(e.e))
+            return "{} {{{}}} {}".format(self.format_builtin("argmax"), self.visit(e.key_function), self.visit(e.e))
 
     def visit_EGetField(self, e):
         return "({}).{}".format(self.visit(e.e), e.field_name)
@@ -803,16 +803,16 @@ class FragmentEnumerator(common.Visitor):
         yield self.make_ctx(e)
         t = e.type
         for ctx in self.visit(e.e):
-            yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EArgMin(r(x), e.f).with_type(t))
-        for ctx in self.recurse_with_assumptions_about_bound_var(e.f, ElemOf(e.e)):
+            yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EArgMin(r(x), e.key_function).with_type(t))
+        for ctx in self.recurse_with_assumptions_about_bound_var(e.key_function, ElemOf(e.e)):
             yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EArgMin(e.e, r(x)).with_type(t))
 
     def visit_EArgMax(self, e):
         yield self.make_ctx(e)
         t = e.type
         for ctx in self.visit(e.e):
-            yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EArgMax(r(x), e.f).with_type(t))
-        for ctx in self.recurse_with_assumptions_about_bound_var(e.f, ElemOf(e.e)):
+            yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EArgMax(r(x), e.key_function).with_type(t))
+        for ctx in self.recurse_with_assumptions_about_bound_var(e.key_function, ElemOf(e.e)):
             yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EArgMax(e.e, r(x)).with_type(t))
 
     def visit_EMakeMinHeap(self, e):

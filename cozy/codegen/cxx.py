@@ -633,10 +633,10 @@ class CxxPrinter(CodeGenerator):
         return out.id
 
     def visit_EArgMin(self, e):
-        return self.min_or_max("<", e.e, e.f)
+        return self.min_or_max("<", e.e, e.key_function)
 
     def visit_EArgMax(self, e):
-        return self.min_or_max(">", e.e, e.f)
+        return self.min_or_max(">", e.e, e.key_function)
 
     def visit_EMap(self, e):
         return self.visit(self.to_lvalue(e))

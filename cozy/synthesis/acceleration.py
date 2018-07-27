@@ -60,7 +60,7 @@ def _try_optimize(e, context, pool):
                 yield _check(res, context, RUNTIME_POOL)
 
         if isinstance(e, EArgMin) or isinstance(e, EArgMax):
-            for ee in optimized_best(e.e, e.f, "<" if isinstance(e, EArgMin) else ">", args=args):
+            for ee in optimized_best(e.e, e.key_function, "<" if isinstance(e, EArgMin) else ">", args=args):
                 yield _check(ee, context, RUNTIME_POOL)
 
         if is_collection(e.type) and isinstance(e, EBinOp) and e.op == "-":

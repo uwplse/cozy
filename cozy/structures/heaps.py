@@ -21,12 +21,12 @@ def to_heap(e : Exp) -> Exp:
     """Implement expression e as a heap operation."""
     if isinstance(e, EArgMin):
         elem_type = e.type
-        key_type = e.f.body.type
-        return EMakeMinHeap(e.e, e.f).with_type(TMinHeap(elem_type, key_type))
+        key_type = e.key_function.body.type
+        return EMakeMinHeap(e.e, e.key_function).with_type(TMinHeap(elem_type, key_type))
     if isinstance(e, EArgMax):
         elem_type = e.type
-        key_type = e.f.body.type
-        return EMakeMaxHeap(e.e, e.f).with_type(TMaxHeap(elem_type, key_type))
+        key_type = e.key_function.body.type
+        return EMakeMaxHeap(e.e, e.key_function).with_type(TMaxHeap(elem_type, key_type))
     raise ValueError(e)
 
 # Binary heap-index utilities.  Each takes an index and returns an index,

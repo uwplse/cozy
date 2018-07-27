@@ -646,10 +646,10 @@ def _compile(e, env : {str:int}, out):
         def set_arg(stk):
             box[0] = stk[-1]
         body = [set_arg]
-        with extend(env, e.f.arg.id, lambda: box[0]):
-            _compile(e.f.body, env, body)
+        with extend(env, e.key_function.arg.id, lambda: box[0]):
+            _compile(e.key_function.body, env, body)
 
-        keytype = e.f.body.type
+        keytype = e.key_function.body.type
 
         def initialize(stk):
             bag = stk.pop()
