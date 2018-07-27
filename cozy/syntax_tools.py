@@ -420,7 +420,7 @@ class PrettyPrinter(common.Visitor):
         return "{}{} = {};".format(indent, self.visit(s.lhs), self.visit(s.rhs))
 
     def visit_SDecl(self, s, indent=""):
-        return "{}{} {} = {};".format(indent, self.format_keyword("let"), s.id, self.visit(s.val))
+        return "{}{} {} = {};".format(indent, self.format_keyword("let"), self.visit(s.var), self.visit(s.val))
 
     def visit_SSeq(self, s, indent=""):
         return "{}\n{}".format(self.visit(s.s1, indent), self.visit(s.s2, indent))
@@ -574,7 +574,7 @@ def free_vars(exp, counts=False):
             else:
                 raise NotImplementedError()
         elif isinstance(x, syntax.SDecl):
-            v = syntax.EVar(x.id)
+            v = x.var
             if hasattr(x.val, "type"):
                 v = v.with_type(x.val.type)
             stk.append(Bind(v))
@@ -902,8 +902,8 @@ class FragmentEnumerator(common.Visitor):
     def visit_SDecl(self, s):
         yield self.make_ctx(s)
         for ctx in self.visit(s.val):
-            yield self.update_repl(ctx, lambda r: lambda x: syntax.SDecl(s.id, r(x)))
-        self.assumptions.append(syntax.EEq(syntax.EVar(s.id).with_type(s.val.type), s.val))
+            yield self.update_repl(ctx, lambda r: lambda x: syntax.SDecl(s.var, r(x)))
+        self.assumptions.append(syntax.EEq(s.var.with_type(s.val.type), s.val))
 
     def visit_SSeq(self, s):
         yield self.make_ctx(s)
@@ -2013,7 +2013,7 @@ class CSERewriter(PathAwareRewriter):
         s = visit_default(s)
 
         for temp, expr in reversed(self.capture_map.get(path, ())):
-            s = syntax.SSeq(syntax.SDecl(temp.id, expr), s)
+            s = syntax.SSeq(syntax.SDecl(temp, expr), s)
             self.did_alter_tree = True
 
         return s
@@ -2027,7 +2027,7 @@ class CSERewriter(PathAwareRewriter):
         [s1, s2, s3] -> [tmp1 = x+1, s1, tmp2=y+1, s2, s3]
         """
 
-        output = [syntax.SDecl(temp.id, expr)
+        output = [syntax.SDecl(temp, expr)
             for temp, expr in reversed(self.capture_map.get(path, ()))]
 
         # i is the original index of the child at scan time.
@@ -2041,7 +2041,7 @@ class CSERewriter(PathAwareRewriter):
             # Emit the original expression *before* any capture rewrites.
             output.append(stm)
 
-            output.extend(syntax.SDecl(temp.id, expr)
+            output.extend(syntax.SDecl(temp, expr)
                 for temp, expr in reversed(self.capture_map.get(child_path, ())))
 
         if len(s.statements) < len(output):
@@ -2139,7 +2139,7 @@ class ConditionalUseFinder(BottomUpExplorer):
 
 def introduce_decl(var : syntax.EVar, value : syntax.Exp, thing):
     if isinstance(thing, syntax.Stm):
-        return syntax.SSeq(syntax.SDecl(var.id, value), thing)
+        return syntax.SSeq(syntax.SDecl(var, value), thing)
     if isinstance(thing, syntax.Exp):
         return syntax.ELet(value, syntax.ELambda(var, thing)).with_type(thing.type)
     raise ValueError(thing)
@@ -2182,7 +2182,7 @@ class BindingRewriter(BottomUpRewriter):
         for i in reversed(range(len(parts) - 1)):
             p = parts[i]
             if isinstance(p, syntax.SDecl):
-                decl_var = syntax.EVar(p.id).with_type(p.val.type)
+                decl_var = p.var.with_type(p.val.type)
                 res = push_decl(decl_var, p.val, res)
             else:
                 res = syntax.SSeq(p, res)

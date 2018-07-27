@@ -252,7 +252,7 @@ class Heaps(object):
             out_raw = EVar(out.id).with_type(self.rep_type(e.type))
             l = fresh_var(INT, "alloc_len")
             return seq([
-                SDecl(l.id, ELen(e.e)),
+                SDecl(l, ELen(e.e)),
                 SArrayAlloc(out_raw, l),
                 SCall(out, "add_all", (ZERO, e.e))])
         elif isinstance(e, EHeapElems):
@@ -262,7 +262,7 @@ class Heaps(object):
                 return SForEach(x, e.e.e, SCall(out, "add", (x,)))
             i = fresh_var(INT, "i") # the array index
             return seq([
-                SDecl(i.id, ZERO),
+                SDecl(i, ZERO),
                 SWhile(ELt(i, EArrayLen(e.e).with_type(INT)), seq([
                     SCall(out, "add", (EArrayGet(e.e, i).with_type(elem_type),)),
                     SAssign(i, EBinOp(i, "+", ONE).with_type(INT))]))])
@@ -297,11 +297,11 @@ class Heaps(object):
                 i = fresh_var(INT, "i")
                 x = fresh_var(elem_type, "x")
                 return seq([
-                    SDecl(size.id, s.args[0]),
+                    SDecl(size, s.args[0]),
                     SEnsureCapacity(target_raw, EBinOp(size, "+", ELen(s.args[1])).with_type(INT)),
                     SForEach(x, s.args[1], seq([
                         SAssign(EArrayGet(target_raw, size).with_type(elem_type), x),
-                        SDecl(i.id, size),
+                        SDecl(i, size),
                         SWhile(EAll([
                             EBinOp(i, ">", ZERO).with_type(BOOL),
                             ENot(EBinOp(f.apply_to(EArrayGet(target_raw, _parent(i)).with_type(elem_type)), comparison_op, f.apply_to(EArrayGet(target_raw, i).with_type(elem_type))).with_type(BOOL))]),
@@ -317,15 +317,15 @@ class Heaps(object):
                 label = fresh_name("stop_bubble_down")
                 child_index = fresh_var(INT, "child_index")
                 return seq([
-                    SDecl(size.id, s.args[0]),
+                    SDecl(size, s.args[0]),
                     SForEach(x, s.args[1], seq([
                         # find the element to remove
-                        SDecl(i.id, EArrayIndexOf(target_raw, x).with_type(INT)),
+                        SDecl(i, EArrayIndexOf(target_raw, x).with_type(INT)),
                         # swap with last element in heap
                         SSwap(EArrayGet(target_raw, i).with_type(elem_type), EArrayGet(target_raw, size_minus_one).with_type(elem_type)),
                         # bubble down
                         SEscapableBlock(label, SWhile(_has_left_child(i, size_minus_one), seq([
-                            SDecl(child_index.id, _left_child(i)),
+                            SDecl(child_index, _left_child(i)),
                             SIf(EAll([_has_right_child(i, size_minus_one), ENot(EBinOp(f.apply_to(EArrayGet(target_raw, _left_child(i)).with_type(elem_type)), comparison_op, f.apply_to(EArrayGet(target_raw, _right_child(i)).with_type(elem_type))))]),
                                 SAssign(child_index, _right_child(i)),
                                 SNoOp()),

@@ -552,7 +552,7 @@ class JavaPrinter(CxxPrinter):
     def visit_SSwap(self, s):
         tmp = self.fv(s.lval1.type, "swap_tmp")
         return self.visit(seq([
-            SDecl(tmp.id, s.lval1),
+            SDecl(tmp, s.lval1),
             SAssign(s.lval1, s.lval2),
             SAssign(s.lval2, tmp)]))
 
@@ -654,7 +654,7 @@ class JavaPrinter(CxxPrinter):
                 ekey = self.visit(e.key)
                 v = self.fv(e.map.type.v, hint="v")
                 with self.boxed_mode():
-                    decl = self.visit(SDecl(v.id, EEscape("{emap}.get({ekey})".format(emap=emap, ekey=ekey), [], []).with_type(e.type)))
+                    decl = self.visit(SDecl(v, EEscape("{emap}.get({ekey})".format(emap=emap, ekey=ekey), [], []).with_type(e.type)))
                 s, e = self.visit(ECond(EEq(v, ENull().with_type(v.type)), evaluation.construct_value(e.map.type.v), v).with_type(e.type))
                 return (smap + skey + decl + s, e)
             else:

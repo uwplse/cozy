@@ -49,7 +49,7 @@ def mutate(e : syntax.Exp, op : syntax.Stm) -> syntax.Exp:
             return mutate(e, syntax.SSeq(op.s1.s1, syntax.SSeq(op.s1.s2, op.s2)))
         e2 = mutate(mutate(e, op.s2), op.s1)
         if isinstance(op.s1, syntax.SDecl):
-            e2 = lightweight_subst(e2, syntax.EVar(op.s1.id).with_type(op.s1.val.type), op.s1.val)
+            e2 = lightweight_subst(e2, op.s1.var, op.s1.val)
         return e2
     elif isinstance(op, syntax.SDecl):
         return e

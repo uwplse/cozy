@@ -344,8 +344,8 @@ class CxxPrinter(CodeGenerator):
         it = self.fv(TNative("{}::const_iterator".format(self.visit(e.a.type, "").strip())), "cursor")
         res = self.fv(INT, "index")
         self.visit(seq([
-            SDecl(it.id, EEscape("std::find({a}.begin(), {a}.end(), {x})", ("a", "x"), (e.a, e.x)).with_type(it.type)),
-            SDecl(res.id, ECond(
+            SDecl(it, EEscape("std::find({a}.begin(), {a}.end(), {x})", ("a", "x"), (e.a, e.x)).with_type(it.type)),
+            SDecl(res, ECond(
                 EEq(it, EEscape("{a}.end()", ("a",), (e.a,)).with_type(it.type)),
                 ENum(-1).with_type(INT),
                 EEscape("({it} - {a}.begin())", ("it", "a",), (it, e.a,)).with_type(INT)).with_type(INT))]))
@@ -496,7 +496,7 @@ class CxxPrinter(CodeGenerator):
                 x = self.fv(e.e1.type, "x")
                 label = fresh_name("label")
                 self.visit(seq([
-                    SDecl(res.id, F),
+                    SDecl(res, F),
                     SEscapableBlock(label,
                         SForEach(x, e.e2, SIf(
                             EBinOp(x, "==", e.e1).with_type(BOOL),
@@ -581,7 +581,7 @@ class CxxPrinter(CodeGenerator):
             self.write("for (", self.visit(pair.type, pair.id), " : ", map, ") ")
             with self.block():
                 self.visit(SSeq(
-                    SDecl(x.id, EEscape("{p}.first", ("p",), (pair,)).with_type(x.type)),
+                    SDecl(x, EEscape("{p}.first", ("p",), (pair,)).with_type(x.type)),
                     body))
             self.end_statement()
             return
@@ -596,13 +596,13 @@ class CxxPrinter(CodeGenerator):
         id = for_each.id
         iter = for_each.iter
         body = for_each.body
-        self.for_each(iter, lambda x: SSeq(SDecl(id.id, x), body))
+        self.for_each(iter, lambda x: SSeq(SDecl(id, x), body))
 
     def find_one(self, iterable):
         v = self.fv(iterable.type.elem_type, "v")
         label = fresh_name("label")
         x = self.fv(iterable.type.elem_type, "x")
-        decl = SDecl(v.id, evaluation.construct_value(v.type))
+        decl = SDecl(v, evaluation.construct_value(v.type))
         find = SEscapableBlock(label,
             SForEach(x, iterable, seq([
                 SAssign(v, x),
@@ -620,8 +620,8 @@ class CxxPrinter(CodeGenerator):
         out = self.fv(e.type.elem_type, "min" if op == "<" else "max")
         first = self.fv(BOOL, "first")
         x = self.fv(e.type.elem_type, "x")
-        decl1 = SDecl(out.id, evaluation.construct_value(out.type))
-        decl2 = SDecl(first.id, T)
+        decl1 = SDecl(out, evaluation.construct_value(out.type))
+        decl2 = SDecl(first, T)
         find = SForEach(x, e,
             SIf(EBinOp(
                     first,
@@ -660,7 +660,7 @@ class CxxPrinter(CodeGenerator):
             res = self.fv(type, "sum")
             x = self.fv(type, "x")
             self.visit(seq([
-                SDecl(res.id, ENum(0).with_type(type)),
+                SDecl(res, ENum(0).with_type(type)),
                 SForEach(x, e.e, SAssign(res, EBinOp(res, "+", x).with_type(type)))]))
             return res.id
         elif op == UOp.Length:
@@ -677,7 +677,7 @@ class CxxPrinter(CodeGenerator):
             v = self.fv(BOOL, "v")
             label = fresh_name("label")
             x = self.fv(iterable.type.elem_type, "x")
-            decl = SDecl(v.id, T)
+            decl = SDecl(v, T)
             find = SEscapableBlock(label,
                 SForEach(x, iterable, seq([
                     SAssign(v, F),
@@ -700,8 +700,8 @@ class CxxPrinter(CodeGenerator):
             x = self.fv(e.e.type.elem_type)
             label = fresh_name("label")
             self.visit(seq([
-                SDecl(s.id, EEmptyList().with_type(s.type)),
-                SDecl(u.id, T),
+                SDecl(s, EEmptyList().with_type(s.type)),
+                SDecl(u, T),
                 SEscapableBlock(label,
                     SForEach(x, e.e,
                         SIf(EEscape("{s}.find({x}) != {s}.end()", ("s", "x"), (s, x)).with_type(BOOL),
@@ -814,9 +814,9 @@ class CxxPrinter(CodeGenerator):
             self.write_stmt(self.visit(s.lhs), " = ", self.visit(EMove(v).with_type(v.type)), ";")
 
     def visit_SDecl(self, s):
-        assert isinstance(s.id, str)
+        assert isinstance(s.var, EVar)
         t = s.val.type
-        return self.declare(EVar(s.id).with_type(t), s.val)
+        return self.declare(s.var.with_type(t), s.val)
 
     def visit_SSeq(self, s):
         for ss in break_seq(s):
@@ -1001,7 +1001,7 @@ class CxxPrinter(CodeGenerator):
 
     def compute_hash(self, fields : [Exp]) -> Stm:
         hc = self.fv(TNative("std::size_t"), "hash_code")
-        s = SDecl(hc.id, ENum(0).with_type(hc.type))
+        s = SDecl(hc, ENum(0).with_type(hc.type))
         for f in fields:
                     # return SAssign(out, )
             s = SSeq(s, SAssign(hc,
