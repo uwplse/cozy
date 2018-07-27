@@ -67,7 +67,7 @@ EnumeratedExp = namedtuple("EnumeratedExp", [
     "fingerprint",      # Its fingerprint
     ])
 
-LITERALS = (T, F, ZERO, ONE)
+LITERALS = (ETRUE, EFALSE, ZERO, ONE)
 
 def of_type(exps : [Exp], t : Type):
     """Filter `exps` to expressions of the given type."""

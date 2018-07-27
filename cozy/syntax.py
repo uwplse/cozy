@@ -145,8 +145,8 @@ STRING = TString()
 BOOL_BAG = TBag(BOOL)
 INT_BAG = TBag(INT)
 
-T = EBool(True) .with_type(BOOL)
-F = EBool(False).with_type(BOOL)
+ETRUE = EBool(True) .with_type(BOOL)
+EFALSE = EBool(False).with_type(BOOL)
 ZERO = ENum(0).with_type(INT)
 ONE = ENum(1).with_type(INT)
 TWO = ENum(2).with_type(INT)
@@ -198,19 +198,19 @@ def seq(stms):
     return build_balanced_tree(stms, SSeq)
 
 def EAll(exps):
-    exps = [ e for e in exps if e != T ]
-    if any(e == F for e in exps):
-        return F
+    exps = [ e for e in exps if e != ETRUE ]
+    if any(e == EFALSE for e in exps):
+        return EFALSE
     if not exps:
-        return T
+        return ETRUE
     return build_balanced_binop_tree(BOOL, BOp.And, exps)
 
 def EAny(exps):
-    exps = [ e for e in exps if e != F ]
-    if any(e == T for e in exps):
-        return T
+    exps = [ e for e in exps if e != EFALSE ]
+    if any(e == ETRUE for e in exps):
+        return ETRUE
     if not exps:
-        return F
+        return EFALSE
     return build_balanced_binop_tree(BOOL, BOp.Or, exps)
 
 def ENot(e):

@@ -40,9 +40,9 @@ TReal = declare_case(Type, "TReal", [])
 REAL = TReal()
 
 # Encoding Cozy-types for Z3.
-#   mkvar:   T -> [z3var]
-#   flatten: T -> obj -> [z3exp]
-#   pack:    T -> [z3exp] -> obj
+#   mkvar:   ETRUE -> [z3var]
+#   flatten: ETRUE -> obj -> [z3exp]
+#   pack:    ETRUE -> [z3exp] -> obj
 
 def break_let(e):
     while isinstance(e, ELet):
@@ -313,7 +313,7 @@ class ToZ3(Visitor):
             # . . . v
             # . . . v
             # . . . v
-            # > > > T
+            # > > > ETRUE
             res[len(lhs_mask)][len(rhs_mask)] = self.true
             for row in reversed(range(len(lhs_mask))):
                 res[row][len(rhs_mask)] = self.all(
@@ -1278,7 +1278,7 @@ class ModelCachingSolver(object):
     calls can often be avoided using a counterexample found on a previous call.
     """
 
-    def __init__(self, vars : [EVar], funcs : { str : TFunc }, examples : [dict] = (), assumptions : Exp = T):
+    def __init__(self, vars : [EVar], funcs : { str : TFunc }, examples : [dict] = (), assumptions : Exp = ETRUE):
         self.vars = list(vars)
         self.funcs = OrderedDict(funcs)
         self.calls = 0
@@ -1306,7 +1306,7 @@ class ModelCachingSolver(object):
         return not self.satisfiable(ENot(e))
 
 @lru_cache()
-def solver_for_context(context : Context, assumptions : Exp = T):
+def solver_for_context(context : Context, assumptions : Exp = ETRUE):
     return ModelCachingSolver(
         vars        = [v for v, _ in context.vars()],
         funcs       = context.funcs(),

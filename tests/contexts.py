@@ -80,9 +80,9 @@ class TestContexts(unittest.TestCase):
         e = replace(
             e, ctx, RUNTIME_POOL,
             y, ctx, STATE_POOL,
-            T)
+            ETRUE)
 
-        assert e == EMap(xs, ELambda(x, EStateVar(T))), pprint(e)
+        assert e == EMap(xs, ELambda(x, EStateVar(ETRUE))), pprint(e)
 
     def test_pool_affects_alpha_equivalence(self):
         e = EMap(EEmptyList().with_type(INT_BAG), ELambda(x, ONE))

@@ -181,11 +181,11 @@ class CxxPrinter(CodeGenerator):
             if q.docstring:
                 self.write(indent_lines(q.docstring, self.get_indent()), "\n")
             self.begin_statement()
-            self.write("template <class F>")
+            self.write("template <class EFALSE>")
             self.end_statement()
             self.begin_statement()
             self.write("inline void ", q.name, "(")
-            self.visit_args(itertools.chain(q.args, [("_callback", TNative("const F&"))]))
+            self.visit_args(itertools.chain(q.args, [("_callback", TNative("const EFALSE&"))]))
             self.write(") ")
             with self.block():
                 self.visit(SForEach(x, ret_exp, SEscape("{indent}_callback({x});\n", ["x"], [x])))
@@ -477,9 +477,9 @@ class CxxPrinter(CodeGenerator):
         elif op == "!=":
             return self.visit(ENot(EEq(e.e1, e.e2)))
         elif op == BOp.Or:
-            return self.visit(ECond(e.e1, T, e.e2).with_type(BOOL))
+            return self.visit(ECond(e.e1, ETRUE, e.e2).with_type(BOOL))
         elif op == BOp.And:
-            return self.visit(ECond(e.e1, e.e2, F).with_type(BOOL))
+            return self.visit(ECond(e.e1, e.e2, EFALSE).with_type(BOOL))
         elif op == "-" and is_collection(e.type):
             t = e.type
             v = self.fv(t, "v")
@@ -496,11 +496,11 @@ class CxxPrinter(CodeGenerator):
                 x = self.fv(e.e1.type, "x")
                 label = fresh_name("label")
                 self.visit(seq([
-                    SDecl(res, F),
+                    SDecl(res, EFALSE),
                     SEscapableBlock(label,
                         SForEach(x, e.e2, SIf(
                             EBinOp(x, "==", e.e1).with_type(BOOL),
-                            seq([SAssign(res, T), SEscapeBlock(label)]),
+                            seq([SAssign(res, ETRUE), SEscapeBlock(label)]),
                             SNoOp())))]))
                 return res.id
         return "({e1} {op} {e2})".format(e1=self.visit(e.e1), op=op, e2=self.visit(e.e2))
@@ -621,13 +621,13 @@ class CxxPrinter(CodeGenerator):
         first = self.fv(BOOL, "first")
         x = self.fv(e.type.elem_type, "x")
         decl1 = SDecl(out, evaluation.construct_value(out.type))
-        decl2 = SDecl(first, T)
+        decl2 = SDecl(first, ETRUE)
         find = SForEach(x, e,
             SIf(EBinOp(
                     first,
                     BOp.Or,
                     EBinOp(f.apply_to(x), op, f.apply_to(out)).with_type(BOOL)).with_type(BOOL),
-                seq([SAssign(first, F), SAssign(out, x)]),
+                seq([SAssign(first, EFALSE), SAssign(out, x)]),
                 SNoOp()))
         self.visit(seq([decl1, decl2, find]))
         return out.id
@@ -677,10 +677,10 @@ class CxxPrinter(CodeGenerator):
             v = self.fv(BOOL, "v")
             label = fresh_name("label")
             x = self.fv(iterable.type.elem_type, "x")
-            decl = SDecl(v, T)
+            decl = SDecl(v, ETRUE)
             find = SEscapableBlock(label,
                 SForEach(x, iterable, seq([
-                    SAssign(v, F),
+                    SAssign(v, EFALSE),
                     SEscapeBlock(label)])))
             self.visit(seq([decl, find]))
             return v.id
@@ -701,11 +701,11 @@ class CxxPrinter(CodeGenerator):
             label = fresh_name("label")
             self.visit(seq([
                 SDecl(s, EEmptyList().with_type(s.type)),
-                SDecl(u, T),
+                SDecl(u, ETRUE),
                 SEscapableBlock(label,
                     SForEach(x, e.e,
                         SIf(EEscape("{s}.find({x}) != {s}.end()", ("s", "x"), (s, x)).with_type(BOOL),
-                            seq([SAssign(u, F), SEscapeBlock(label)]),
+                            seq([SAssign(u, EFALSE), SEscapeBlock(label)]),
                             SEscape("{indent}{s}.insert({x});\n", ("s", "x"), (s, x)))))]))
             return u.id
         elif op == UOp.Reversed:
@@ -835,9 +835,9 @@ class CxxPrinter(CodeGenerator):
         self.end_statement()
 
     def visit_ECond(self, e):
-        if e.cond == T:
+        if e.cond == ETRUE:
             return self.visit(e.then_branch)
-        elif e.cond == F:
+        elif e.cond == EFALSE:
             return self.visit(e.else_branch)
         v = self.fv(e.type, "v")
         self.declare(v)

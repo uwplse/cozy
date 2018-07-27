@@ -42,23 +42,23 @@ class TestAlphaEquivalent(unittest.TestCase):
 
     def test_make_record_other(self):
         assert not alpha_equivalent(
-            EMakeRecord((("x", ENum(0)), ("y", T))),
-            T)
+            EMakeRecord((("x", ENum(0)), ("y", ETRUE))),
+            ETRUE)
         assert not alpha_equivalent(
-            T,
-            EMakeRecord((("x", ENum(0)), ("y", T))))
+            ETRUE,
+            EMakeRecord((("x", ENum(0)), ("y", ETRUE))))
 
     def test_make_record_yes(self):
         assert alpha_equivalent(
-            EMakeRecord((("x", ENum(0)), ("y", T))),
-            EMakeRecord((("x", ENum(0)), ("y", T))))
+            EMakeRecord((("x", ENum(0)), ("y", ETRUE))),
+            EMakeRecord((("x", ENum(0)), ("y", ETRUE))))
 
     def test_make_record_no(self):
         assert not alpha_equivalent(
-            EMakeRecord((("x", ENum(0)), ("y", T))),
-            EMakeRecord((("z", ENum(0)), ("y", T))))
+            EMakeRecord((("x", ENum(0)), ("y", ETRUE))),
+            EMakeRecord((("z", ENum(0)), ("y", ETRUE))))
 
     def test_make_record_order_dependent(self):
         assert not alpha_equivalent(
-            EMakeRecord((("x", ENum(0)), ("y", T))),
-            EMakeRecord((("y", T), ("x", ENum(0)))))
+            EMakeRecord((("x", ENum(0)), ("y", ETRUE))),
+            EMakeRecord((("y", ETRUE), ("x", ENum(0)))))

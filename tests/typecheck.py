@@ -47,7 +47,7 @@ class TestTypechecking(unittest.TestCase):
         assert not retypecheck(ECond(x, x, x))
 
     def test_lambda_arg_inference(self):
-        s = ESingleton(T)
+        s = ESingleton(ETRUE)
         x = EVar("x")
         assert retypecheck(EFilter(s, ELambda(x, x)))
         assert retypecheck(EMap(s, ELambda(x, x)))

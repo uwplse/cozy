@@ -350,7 +350,7 @@ def pick_to_sum(n, total_size):
     """
     Enumerate all the ways to pick N positive integers that sum to total_size.
 
-    Formally: yields all tuples T where len(T) = N and sum(T) = total_size.
+    Formally: yields all tuples ETRUE where len(ETRUE) = N and sum(ETRUE) = total_size.
     """
     if n == 0:
         if total_size == 0:

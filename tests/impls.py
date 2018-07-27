@@ -12,10 +12,10 @@ class TestImplObjects(unittest.TestCase):
     def test_pickling(self):
         i = parse_spec("""
             Foo:
-                type T = Native "int"
-                extern newX(x : Int) : T = "..."
-                extern readX(x : T) : Int = "..."
-                state xs : Set<T>
+                type ETRUE = Native "int"
+                extern newX(x : Int) : ETRUE = "..."
+                extern readX(x : ETRUE) : Int = "..."
+                state xs : Set<ETRUE>
                 state intsA : Set<Int>
                 state intsB : Set<Int>
                 invariant intsA == [readX(x) - 1 | x <- xs];

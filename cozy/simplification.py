@@ -30,7 +30,7 @@ class _SimplificationVisitor(BottomUpRewriter):
             e1 = self.visit(e.e1)
             e2 = self.visit(e.e2)
             if alpha_equivalent(e1, e2):
-                return T
+                return ETRUE
             if isinstance(e2, ECond) and alpha_equivalent(e1, e2.else_branch):
                 return self.visit(EBinOp(ENot(e2.cond), BOp.Or, EBinOp(e1, e.op, e2.then_branch).with_type(BOOL)).with_type(BOOL))
             e = EBinOp(e1, e.op, e2).with_type(e.type)
@@ -45,14 +45,14 @@ class _SimplificationVisitor(BottomUpRewriter):
         return EBinOp(self.visit(e.e1), e.op, self.visit(e.e2)).with_type(e.type)
     def visit_ECond(self, e):
         cond = self.visit(e.cond)
-        if cond == T:
+        if cond == ETRUE:
             return self.visit(e.then_branch)
-        elif cond == F:
+        elif cond == EFALSE:
             return self.visit(e.else_branch)
         elif alpha_equivalent(self.visit(e.then_branch), self.visit(e.else_branch)):
             return self.visit(e.then_branch)
-        tb = replace(e.then_branch, cond, T)
-        eb = replace(e.else_branch, cond, F)
+        tb = replace(e.then_branch, cond, ETRUE)
+        eb = replace(e.else_branch, cond, EFALSE)
         return ECond(cond, self.visit(tb), self.visit(eb)).with_type(e.type)
     def visit_EGetField(self, e):
         record = self.visit(e.e)
@@ -66,9 +66,9 @@ class _SimplificationVisitor(BottomUpRewriter):
     def visit_EFilter(self, e):
         ee = self.visit(e.e)
         f = self.visit(e.p)
-        if f.body == T:
+        if f.body == ETRUE:
             return ee
-        elif f.body == F:
+        elif f.body == EFALSE:
             return EEmptyList().with_type(e.type)
         elif isinstance(ee, EBinOp) and ee.op == "+":
             return self.visit(EBinOp(EFilter(ee.e1, f).with_type(ee.e1.type), ee.op, EFilter(ee.e2, f).with_type(ee.e2.type)).with_type(e.type))
@@ -127,7 +127,7 @@ class _SimplificationVisitor(BottomUpRewriter):
         ee = self.visit(e.e)
         if e.op == UOp.Not:
             if isinstance(ee, EBool):
-                return F if ee.val else T
+                return EFALSE if ee.val else ETRUE
         elif e.op in (UOp.Length, UOp.Sum):
             if isinstance(ee, EBinOp) and ee.op == "+":
                 return self.visit(EBinOp(EUnaryOp(e.op, ee.e1).with_type(e.type), "+", EUnaryOp(e.op, ee.e2).with_type(e.type)).with_type(e.type))
@@ -153,9 +153,9 @@ class _SimplificationVisitor(BottomUpRewriter):
                         EUnaryOp(e.op, ee.e1).with_type(BOOL),
                         EUnaryOp(e.op, ee.e2).with_type(BOOL)]))
             elif isinstance(ee, EEmptyList):
-                return T if e.op == UOp.Empty else F
+                return ETRUE if e.op == UOp.Empty else EFALSE
             elif isinstance(ee, ESingleton):
-                return T if e.op == UOp.Exists else F
+                return ETRUE if e.op == UOp.Exists else EFALSE
         return EUnaryOp(e.op, ee).with_type(e.type)
     def visit(self, e):
         if hasattr(e, "_nosimpl"): return e

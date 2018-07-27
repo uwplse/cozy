@@ -103,7 +103,7 @@ def order_objects(x, y) -> Order:
 class CostModel(object):
 
     def __init__(self,
-            assumptions     : Exp   = T,
+            assumptions     : Exp   = ETRUE,
             examples                = (),
             funcs                   = (),
             freebies        : [Exp] = [],

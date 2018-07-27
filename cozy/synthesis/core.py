@@ -19,7 +19,7 @@ from typing import Callable
 from cozy.syntax import (
     INT, BOOL, TMap,
     Op,
-    Exp, T, ONE, EVar, ENum, EStr, EBool, EEmptyList, ESingleton, ELen, ENull,
+    Exp, ETRUE, ONE, EVar, ENum, EStr, EBool, EEmptyList, ESingleton, ELen, ENull,
     EAll, ENot, EImplies, EEq, EGt, ELe, ECond, EEnumEntry, EGetField,
     EBinOp, EUnaryOp, UOp, EArgMin, EArgMax, ELambda)
 from cozy.target_syntax import (
@@ -69,7 +69,7 @@ def never_stop():
 def improve(
         target        : Exp,
         context       : Context,
-        assumptions   : Exp                = T,
+        assumptions   : Exp                = ETRUE,
         stop_callback : Callable[[], bool] = never_stop,
         hints         : [Exp]              = (),
         examples      : [{str:object}]     = (),
@@ -141,7 +141,7 @@ def improve(
 
     solver = solver_for_context(context, assumptions=assumptions)
 
-    if not solver.satisfiable(T):
+    if not solver.satisfiable(ETRUE):
         print("assumptions are unsat; this query will never be called")
         yield construct_value(target.type)
         return
@@ -494,7 +494,7 @@ def hint_order(tup):
     e, ctx, pool = tup
     return e.size()
 
-def good_idea(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptions : Exp = T, ops : [Op] = ()) -> bool:
+def good_idea(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptions : Exp = ETRUE, ops : [Op] = ()) -> bool:
     """Heuristic filter to ignore expressions that are almost certainly useless."""
 
     if hasattr(e, "_good_idea"):
@@ -575,7 +575,7 @@ def good_idea(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptio
     e._good_idea = True
     return True
 
-def good_idea_recursive(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptions : Exp = T, ops : [Op] = ()) -> bool:
+def good_idea_recursive(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptions : Exp = ETRUE, ops : [Op] = ()) -> bool:
     """Ensure that every subexpression of `e` passes the `good_idea` check."""
     for (sub, sub_ctx, sub_pool) in shred(e, context, pool):
         res = good_idea(solver, sub, sub_ctx, sub_pool, assumptions=assumptions, ops=ops)

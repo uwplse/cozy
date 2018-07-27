@@ -13,7 +13,7 @@ class SemanticsTests(unittest.TestCase):
     Tests for a few equivalences we expect to be true.
     """
 
-    def assert_same(self, e1, e2, assumptions : Exp = T, op = "==="):
+    def assert_same(self, e1, e2, assumptions : Exp = ETRUE, op = "==="):
         assert e1.type == e2.type, "{} | {}".format(pprint(e1.type), pprint(e2.type))
         def dbg(model):
             print("model: {!r}".format(model))
@@ -31,7 +31,7 @@ class SemanticsTests(unittest.TestCase):
         xs = EVar("xs").with_type(INT_BAG)
         x = EVar("x").with_type(INT)
         e1 = EUnaryOp(UOp.Distinct, xs)
-        e2 = EMapKeys(EMakeMap2(xs, ELambda(x, T)))
+        e2 = EMapKeys(EMakeMap2(xs, ELambda(x, ETRUE)))
         assert retypecheck(e1)
         assert retypecheck(e2)
         self.assert_same(e1, e2)

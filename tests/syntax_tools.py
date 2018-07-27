@@ -45,13 +45,13 @@ class TestSyntaxTools(unittest.TestCase):
         xs_eq_zero = EFilter(xs, ELambda(x, equal(x, ZERO)))
         e = EFilter(xs_eq_zero, ELambda(x,
             equal(
-                EFilter(xs, ELambda(x, T)),
+                EFilter(xs, ELambda(x, ETRUE)),
                 EEmptyList().with_type(xs.type))))
         assert retypecheck(e)
         for ctx in enumerate_fragments(e):
             e = ctx.e
             a = ctx.facts
-            if e == T:
+            if e == ETRUE:
                 assert not valid(implies(EAll(a), equal(x, ZERO)), validate_model=True), "assumptions at {}: {}".format(pprint(e), "; ".join(pprint(aa) for aa in a))
 
     def test_enumerate_fragments_bound(self):
@@ -221,15 +221,15 @@ class TestSyntaxTools(unittest.TestCase):
         assert list(free_vars(SSeq(
             SDecl(EVar("x"), ONE),
             use_x))) == []
-        assert list(free_vars(SIf(T, SDecl(EVar("x"), ONE), SNoOp()))) == []
+        assert list(free_vars(SIf(ETRUE, SDecl(EVar("x"), ONE), SNoOp()))) == []
         assert list(free_vars(SSeq(
-            SIf(T, SDecl(EVar("x"), ONE), SNoOp()),
+            SIf(ETRUE, SDecl(EVar("x"), ONE), SNoOp()),
             use_x))) == [EVar("x")]
         assert list(free_vars(SForEach(EVar("x"), EEmptyList(), use_x))) == []
         assert list(free_vars(SSeq(SForEach(EVar("x"), EEmptyList(), use_x), use_x))) == [EVar("x")]
         assert list(free_vars(SEscapableBlock("label", SDecl(EVar("x"), ONE)))) == []
-        assert list(free_vars(SWhile(T, SDecl(EVar("x"), ONE)))) == []
-        assert list(free_vars(SMapUpdate(T, T, EVar("x"), SSeq(SDecl(EVar("y"), ONE), use_x)))) == []
+        assert list(free_vars(SWhile(ETRUE, SDecl(EVar("x"), ONE)))) == []
+        assert list(free_vars(SMapUpdate(ETRUE, ETRUE, EVar("x"), SSeq(SDecl(EVar("y"), ONE), use_x)))) == []
 
     def test_deep_copy(self):
         e1 = ETuple((EVar("x"), EBinOp(EVar("x"), "+", EVar("y"))))
@@ -302,8 +302,8 @@ class TestSyntaxTools(unittest.TestCase):
             pass
 
     def test_all_exps_on_stm(self):
-        s = SIf(T, SNoOp(), SNoOp())
-        assert list(all_exps(s)) == [T]
+        s = SIf(ETRUE, SNoOp(), SNoOp())
+        assert list(all_exps(s)) == [ETRUE]
 
     def test_get_modified_var(self):
         htype = THandle("IntPtr", INT)

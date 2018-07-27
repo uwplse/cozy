@@ -22,7 +22,7 @@ handle2 = (2, mkval(INT))
 handle3 = (3, mkval(INT))
 zero = ENum(0).with_type(INT)
 
-def check_discovery(spec, expected, state_vars=[], args=[], examples=[], assumptions=T):
+def check_discovery(spec, expected, state_vars=[], args=[], examples=[], assumptions=ETRUE):
     ctx = RootCtx(state_vars=state_vars, args=args)
     for r in improve(spec,
             assumptions=assumptions,

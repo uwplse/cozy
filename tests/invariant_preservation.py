@@ -24,20 +24,20 @@ class TestInvariantPreservationChecks(unittest.TestCase):
         errs = get_invariant_preservation_errs("""
             PreserveInvariant:
 
-                handletype T = Int
+                handletype ETRUE = Int
                 handletype U = { score : Int }
 
-                state xs : Bag<(T, U)>
+                state xs : Bag<(ETRUE, U)>
 
                 invariant all [x.0.val > 0 | x <- xs];
                 invariant all [x.1.val.score > 0 | x <- xs];
 
-                op add(x : T, y : U)
+                op add(x : ETRUE, y : U)
                     assume x.val > 0;
                     assume y.val.score > 0;
                     xs.add((x, y));
 
-                op modX(x : T, newVal: Int)
+                op modX(x : ETRUE, newVal: Int)
                     x.val = newVal;
 
                 op modY(y : U, newVal: Int)

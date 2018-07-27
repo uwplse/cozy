@@ -10,7 +10,7 @@ from cozy.syntax_tools import pprint, equal, implies, mk_lambda, free_vars
 zero = ENum(0).with_type(TInt())
 one  = ENum(1).with_type(TInt())
 
-def check_encoding(e, require=T, **opts):
+def check_encoding(e, require=ETRUE, **opts):
     v = fresh_var(e.type)
     m = satisfy(EAll([require, EEq(e, v)]), validate_model=True, **opts)
     assert m is not None
@@ -148,21 +148,21 @@ class TestSolver(unittest.TestCase):
         check_encoding(a)
 
     def test_symbolic_enum_left(self):
-        T = TEnum(("A", "B"))
-        x = EVar("x").with_type(T)
-        e = equal(x, EEnumEntry("B").with_type(T))
+        ETRUE = TEnum(("A", "B"))
+        x = EVar("x").with_type(ETRUE)
+        e = equal(x, EEnumEntry("B").with_type(ETRUE))
         check_encoding(e)
 
     def test_symbolic_enum_right(self):
-        T = TEnum(("A", "B"))
-        x = EVar("x").with_type(T)
-        e = equal(EEnumEntry("B").with_type(T), x)
+        ETRUE = TEnum(("A", "B"))
+        x = EVar("x").with_type(ETRUE)
+        e = equal(EEnumEntry("B").with_type(ETRUE), x)
         check_encoding(e)
 
     def test_enum_order(self):
-        T = TEnum(("B", "A"))
-        x = EVar("x").with_type(T)
-        y = EVar("y").with_type(T)
+        ETRUE = TEnum(("B", "A"))
+        x = EVar("x").with_type(ETRUE)
+        y = EVar("y").with_type(ETRUE)
         check_encoding(EBinOp(x, "<", y).with_type(BOOL))
 
     def test_bag_deep_equals(self):
@@ -173,7 +173,7 @@ class TestSolver(unittest.TestCase):
             ENot(EBinOp(x, "===", y).with_type(BOOL)))), collection_depth=3, validate_model=True)
 
     def test_useless_let(self):
-        e = ELet(EVar("x"), ELambda(EVar("y"), T))
+        e = ELet(EVar("x"), ELambda(EVar("y"), ETRUE))
         assert retypecheck(e, env={"x": INT})
         assert satisfiable(e, validate_model=True)
 
@@ -384,7 +384,7 @@ class TestSolver(unittest.TestCase):
         assert model is not None
 
     def test_regression18(self):
-        satisfy(ELet(EMakeMap2(EVar('xs').with_type(TBag(THandle('T', TNative('X')))), ELambda(EVar('_var1022').with_type(THandle('T', TNative('X'))), EUnaryOp('distinct', EMap(EVar('xs').with_type(TBag(THandle('T', TNative('X')))), ELambda(EVar('_var1021').with_type(THandle('T', TNative('X'))), EGetField(EVar('_var1022').with_type(THandle('T', TNative('X'))), 'val').with_type(TNative('X')))).with_type(TBag(TNative('X')))).with_type(TBag(TNative('X'))))).with_type(TMap(THandle('T', TNative('X')), TBag(TNative('X')))), ELambda(EVar('_var4063977').with_type(TMap(THandle('T', TNative('X')), TBag(TNative('X')))), ELet(EVar('xs').with_type(TBag(THandle('T', TNative('X')))), ELambda(EVar('_var4063972').with_type(TBag(THandle('T', TNative('X')))), EUnaryOp('not', EBinOp(EUnaryOp('not', EBool(True).with_type(TBool())).with_type(TBool()), 'or', EUnaryOp('not', EBinOp(EUnaryOp('len', EFilter(EFlatMap(EVar('_var4063972').with_type(TBag(THandle('T', TNative('X')))), ELambda(EVar('_var1022').with_type(THandle('T', TNative('X'))), EMapGet(EVar('_var4063977').with_type(TMap(THandle('T', TNative('X')), TBag(TNative('X')))), EVar('_var1021').with_type(THandle('T', TNative('X')))).with_type(TBag(TNative('X'))))).with_type(TBag(TNative('X'))), ELambda(EVar('_var0').with_type(TNative('X')), EBinOp(EVar('_var0').with_type(TNative('X')), '==', EVar('_var4063963').with_type(TNative('X'))).with_type(TBool()))).with_type(TBag(TNative('X')))).with_type(TInt()), '>', EUnaryOp('len', EFilter(EUnaryOp('distinct', EMap(EVar('xs').with_type(TBag(THandle('T', TNative('X')))), ELambda(EVar('_var1021').with_type(THandle('T', TNative('X'))), EGetField(EVar('_var1021').with_type(THandle('T', TNative('X'))), 'val').with_type(TNative('X')))).with_type(TBag(TNative('X')))).with_type(TBag(TNative('X'))), ELambda(EVar('_var0').with_type(TNative('X')), EBinOp(EVar('_var0').with_type(TNative('X')), '==', EVar('_var4063963').with_type(TNative('X'))).with_type(TBool()))).with_type(TBag(TNative('X')))).with_type(TInt())).with_type(TBool())).with_type(TBool())).with_type(TBool())).with_type(TBool()))).with_type(TBool()))).with_type(TBool()), vars=OrderedSet([EVar('xs').with_type(TBag(THandle('T', TNative('X')))), EVar('_var1021').with_type(THandle('T', TNative('X'))), EVar('_var4063963').with_type(TNative('X'))]), collection_depth=3, validate_model=True)
+        satisfy(ELet(EMakeMap2(EVar('xs').with_type(TBag(THandle('ETRUE', TNative('X')))), ELambda(EVar('_var1022').with_type(THandle('ETRUE', TNative('X'))), EUnaryOp('distinct', EMap(EVar('xs').with_type(TBag(THandle('ETRUE', TNative('X')))), ELambda(EVar('_var1021').with_type(THandle('ETRUE', TNative('X'))), EGetField(EVar('_var1022').with_type(THandle('ETRUE', TNative('X'))), 'val').with_type(TNative('X')))).with_type(TBag(TNative('X')))).with_type(TBag(TNative('X'))))).with_type(TMap(THandle('ETRUE', TNative('X')), TBag(TNative('X')))), ELambda(EVar('_var4063977').with_type(TMap(THandle('ETRUE', TNative('X')), TBag(TNative('X')))), ELet(EVar('xs').with_type(TBag(THandle('ETRUE', TNative('X')))), ELambda(EVar('_var4063972').with_type(TBag(THandle('ETRUE', TNative('X')))), EUnaryOp('not', EBinOp(EUnaryOp('not', EBool(True).with_type(TBool())).with_type(TBool()), 'or', EUnaryOp('not', EBinOp(EUnaryOp('len', EFilter(EFlatMap(EVar('_var4063972').with_type(TBag(THandle('ETRUE', TNative('X')))), ELambda(EVar('_var1022').with_type(THandle('ETRUE', TNative('X'))), EMapGet(EVar('_var4063977').with_type(TMap(THandle('ETRUE', TNative('X')), TBag(TNative('X')))), EVar('_var1021').with_type(THandle('ETRUE', TNative('X')))).with_type(TBag(TNative('X'))))).with_type(TBag(TNative('X'))), ELambda(EVar('_var0').with_type(TNative('X')), EBinOp(EVar('_var0').with_type(TNative('X')), '==', EVar('_var4063963').with_type(TNative('X'))).with_type(TBool()))).with_type(TBag(TNative('X')))).with_type(TInt()), '>', EUnaryOp('len', EFilter(EUnaryOp('distinct', EMap(EVar('xs').with_type(TBag(THandle('ETRUE', TNative('X')))), ELambda(EVar('_var1021').with_type(THandle('ETRUE', TNative('X'))), EGetField(EVar('_var1021').with_type(THandle('ETRUE', TNative('X'))), 'val').with_type(TNative('X')))).with_type(TBag(TNative('X')))).with_type(TBag(TNative('X'))), ELambda(EVar('_var0').with_type(TNative('X')), EBinOp(EVar('_var0').with_type(TNative('X')), '==', EVar('_var4063963').with_type(TNative('X'))).with_type(TBool()))).with_type(TBag(TNative('X')))).with_type(TInt())).with_type(TBool())).with_type(TBool())).with_type(TBool())).with_type(TBool()))).with_type(TBool()))).with_type(TBool()), vars=OrderedSet([EVar('xs').with_type(TBag(THandle('ETRUE', TNative('X')))), EVar('_var1021').with_type(THandle('ETRUE', TNative('X'))), EVar('_var4063963').with_type(TNative('X'))]), collection_depth=3, validate_model=True)
 
     def test_floats(self):
         x = EVar("x").with_type(FLOAT)

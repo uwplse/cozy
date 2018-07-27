@@ -147,7 +147,7 @@ def optimized_count(x, xs):
 
 def optimized_any_matches(xs, p):
     if isinstance(xs, EEmptyList):
-        return F
+        return EFALSE
     if isinstance(xs, ESingleton):
         return p.apply_to(xs.e)
     if isinstance(xs, EMap):
@@ -184,7 +184,7 @@ def optimized_any_matches(xs, p):
 
 def optimized_in(x, xs):
     if isinstance(xs, EStateVar):
-        m = EMakeMap2(xs.e, mk_lambda(x.type, lambda x: T)).with_type(TMap(x.type, BOOL))
+        m = EMakeMap2(xs.e, mk_lambda(x.type, lambda x: ETRUE)).with_type(TMap(x.type, BOOL))
         m = EStateVar(m).with_type(m.type)
         return EHasKey(m, x).with_type(BOOL)
     elif isinstance(xs, EBinOp) and xs.op == "-" and isinstance(xs.e1, EStateVar) and isinstance(xs.e2, ESingleton):
@@ -208,7 +208,7 @@ def optimized_in(x, xs):
     elif isinstance(xs, ESingleton):
         return optimized_eq(x, xs.e)
     elif isinstance(xs, EEmptyList):
-        return F
+        return EFALSE
     else:
         return EBinOp(x, BOp.In, xs).with_type(BOOL)
 
@@ -235,7 +235,7 @@ def optimized_len(xs):
 def optimized_empty(xs):
     l = optimized_len(xs)
     if isinstance(l, ENum):
-        return T if l.val == 0 else F
+        return ETRUE if l.val == 0 else EFALSE
     return optimized_eq(l, ZERO)
 
 def optimized_exists(xs):
@@ -250,12 +250,12 @@ def optimized_exists(xs):
     elif isinstance(xs, EBinOp) and xs.op == "-":
         l = optimized_len(xs)
         if isinstance(l, ENum):
-            return F if l.val == 0 else T
+            return EFALSE if l.val == 0 else ETRUE
         return EGt(l, ZERO)
     elif isinstance(xs, ESingleton):
-        return T
+        return ETRUE
     elif isinstance(xs, EEmptyList):
-        return F
+        return EFALSE
     elif isinstance(xs, EMap):
         return optimized_exists(xs.e)
     elif isinstance(xs, EListSlice):
@@ -343,7 +343,7 @@ def optimized_best(xs, keyfunc, op, args):
         #         optimized_best(other, keyfunc, op, args=args))
         # else:
         #     parts = break_sum(xs)
-        #     found = F
+        #     found = EFALSE
         #     best = construct_value(elem_type)
         #     for p in parts:
         #         ex = optimized_exists(p)
@@ -378,16 +378,16 @@ def optimized_best(xs, keyfunc, op, args):
     yield argbest(xs, keyfunc).with_type(elem_type)
 
 def optimized_cond(c, a, b):
-    if c == T:
+    if c == ETRUE:
         return a
-    elif c == F:
+    elif c == EFALSE:
         return b
     else:
         return ECond(c, a, b).with_type(a.type)
 
 def optimized_eq(a, b):
     if alpha_equivalent(a, b):
-        return T
+        return ETRUE
     else:
         return EEq(a, b)
 
@@ -429,9 +429,9 @@ def map_values(m, f):
     raise NotImplementedError(m)
 
 def _simple_filter(xs, p, args):
-    if p.body == T:
+    if p.body == ETRUE:
         return xs
-    if p.body == F:
+    if p.body == EFALSE:
         return EEmptyList().with_type(xs.type)
     if isinstance(xs, EEmptyList):
         return xs

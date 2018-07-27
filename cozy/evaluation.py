@@ -85,7 +85,7 @@ def construct_value(t : Type) -> Exp:
     if is_numeric(t):
         e = ENum(0)
     elif t == BOOL:
-        e = F
+        e = EFALSE
     elif t == STRING:
         e = EStr("")
     elif is_collection(t):
@@ -530,11 +530,11 @@ def _compile(e, env : {str:int}, out):
             raise NotImplementedError(e.op)
     elif isinstance(e, EBinOp):
         if e.op == BOp.And:
-            return _compile(ECond(e.e1, e.e2, F).with_type(BOOL), env, out)
+            return _compile(ECond(e.e1, e.e2, EFALSE).with_type(BOOL), env, out)
         elif e.op == BOp.Or:
-            return _compile(ECond(e.e1, T, e.e2).with_type(BOOL), env, out)
+            return _compile(ECond(e.e1, ETRUE, e.e2).with_type(BOOL), env, out)
         elif e.op == "=>":
-            return _compile(ECond(e.e1, e.e2, T).with_type(BOOL), env, out)
+            return _compile(ECond(e.e1, e.e2, ETRUE).with_type(BOOL), env, out)
         _compile(e.e1, env, out)
         _compile(e.e2, env, out)
         e1type = e.e1.type

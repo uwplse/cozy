@@ -538,11 +538,11 @@ class JavaPrinter(CxxPrinter):
         if not self.boxed and self.troveargs(x.type) is None:
             setup, iterable_src = self.visit(iterable)
             itname = fresh_name("iterator")
-            return "{setup}{indent}gnu.trove.iterator.elem_type{T}Iterator {it} = {iterable}.iterator();\n{indent}while ({it}.hasNext()) {{\n{indent2}{decl} = {it}.next();\n{body}{indent}}}\n".format(
+            return "{setup}{indent}gnu.trove.iterator.elem_type{ETRUE}Iterator {it} = {iterable}.iterator();\n{indent}while ({it}.hasNext()) {{\n{indent2}{decl} = {it}.next();\n{body}{indent}}}\n".format(
                 setup=setup,
                 iterable=iterable_src,
                 it=itname,
-                T=self.trovename(x.type),
+                ETRUE=self.trovename(x.type),
                 decl=self.visit(x.type, name=x.id),
                 body=self.visit(body, indent+INDENT),
                 indent=indent,
