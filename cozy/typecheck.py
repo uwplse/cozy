@@ -311,9 +311,9 @@ class Typechecker(Visitor):
 
     def visit_ELet(self, e):
         self.visit(e.e)
-        e.f.arg.type = e.e.type
-        self.visit(e.f)
-        e.type = e.f.body.type
+        e.body_function.arg.type = e.e.type
+        self.visit(e.body_function)
+        e.type = e.body_function.body.type
 
     def visit_EUnaryOp(self, e):
         self.visit(e.e)

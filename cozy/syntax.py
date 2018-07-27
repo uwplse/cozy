@@ -104,7 +104,7 @@ ESingleton          = declare_case(Exp, "ESingleton",         ["e"])
 ECall               = declare_case(Exp, "ECall",              ["func", "args"])
 ETuple              = declare_case(Exp, "ETuple",             ["es"])
 ETupleGet           = declare_case(Exp, "ETupleGet",          ["e", "index"])
-ELet                = declare_case(Exp, "ELet",               ["e", "f"])
+ELet                = declare_case(Exp, "ELet",               ["e", "body_function"])
 
 # Lambdas
 TFunc = declare_case(Type, "TFunc", ["arg_types", "ret_type"])

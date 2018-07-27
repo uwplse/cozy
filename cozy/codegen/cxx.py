@@ -118,10 +118,10 @@ class CxxPrinter(CodeGenerator):
 
     def visit_ELet(self, e):
         if isinstance(e.e, EVar):
-            return self.visit(e.f.apply_to(e.e))
+            return self.visit(e.body_function.apply_to(e.e))
         v = self.fv(e.e.type)
         self.declare(v, e.e)
-        return self.visit(e.f.apply_to(v))
+        return self.visit(e.body_function.apply_to(v))
 
     def visit_TVector(self, t, name):
         return "{}[{}]".format(self.visit(t.elem_type, name), t.index)
@@ -567,7 +567,7 @@ class CxxPrinter(CodeGenerator):
             q = self.queries[iterable.func]
             return self.for_each(subst(q.ret, { a : v for ((a, t), v) in zip(q.args, iterable.args) }), body)
         elif isinstance(iterable, ELet):
-            return self.for_each(iterable.f.apply_to(iterable.e), body)
+            return self.for_each(iterable.body_function.apply_to(iterable.e), body)
         else:
             assert is_collection(iterable.type), repr(iterable)
             x = self.fv(iterable.type.elem_type, "x")

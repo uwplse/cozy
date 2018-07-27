@@ -46,8 +46,8 @@ REAL = TReal()
 
 def break_let(e):
     while isinstance(e, ELet):
-        yield (e.f.arg, e.e)
-        e = e.f.body
+        yield (e.body_function.arg, e.e)
+        e = e.body_function.body
     yield e
 
 class DetFlatVis(BottomUpExplorer):
@@ -1244,9 +1244,9 @@ class IncrementalSolver(object):
                                                 z = visitor.visit(x.e, solver_env)
                                                 senv = dict(solver_env)
                                                 eenv = dict(eval_env)
-                                                senv[x.f.arg.id] = z
-                                                eenv[x.f.arg.id] = reconstruct(model, z, x.e.type)
-                                                wq.append((x.f.body, senv, eenv))
+                                                senv[x.body_function.arg.id] = z
+                                                eenv[x.body_function.arg.id] = reconstruct(model, z, x.e.type)
+                                                wq.append((x.body_function.body, senv, eenv))
                                             break
                             raise ModelValidationError("model validation failed")
                     _tock(e, "extract model")

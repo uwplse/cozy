@@ -712,8 +712,8 @@ def _compile(e, env : {str:int}, out):
         def do_bind(stk):
             return [set_arg(stk.pop())]
         out.append(do_bind)
-        with extend(env, e.f.arg.id, lambda: box[0]):
-            _compile(e.f.body, env, out)
+        with extend(env, e.body_function.arg.id, lambda: box[0]):
+            _compile(e.body_function.body, env, out)
     else:
         h = extension_handler(type(e))
         if h is not None:

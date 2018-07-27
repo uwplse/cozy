@@ -62,7 +62,7 @@ class TestSyntaxTools(unittest.TestCase):
             x = ctx.e
             bound = ctx.bound_vars
             if x == b:
-                assert bound == { e.f.arg }, "got {}".format(bound)
+                assert bound == { e.body_function.arg }, "got {}".format(bound)
             elif x == ZERO:
                 assert bound == set(), "got {}".format(bound)
 
@@ -584,7 +584,7 @@ class TestElimination(unittest.TestCase):
         assert retypecheck(e)
         e = cse_replace(e)
 
-        assert isinstance(e1.f, ELambda)
+        assert isinstance(e1.body_function, ELambda)
 
         for t in (EMap, EArgMax, EArgMin):
             e1 = t(ESingleton(ONE), ELambda(EVar("x").with_type(INT), EBinOp(EVar("x"), "+", ENum(2).with_type(INT))))

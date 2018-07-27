@@ -476,7 +476,7 @@ def rt(e, account_for_constant_factors=True):
             continue
         if isinstance(e, ELet):
             stk.append(e.e)
-            terms.append(ELet(e.e, ELambda(e.f.arg, rt(e.f.body))).with_type(INT))
+            terms.append(ELet(e.e, ELambda(e.body_function.arg, rt(e.body_function.body))).with_type(INT))
             continue
 
         constant += 1
