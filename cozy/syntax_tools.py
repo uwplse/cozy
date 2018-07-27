@@ -820,8 +820,8 @@ class FragmentEnumerator(common.Visitor):
         yield self.make_ctx(e)
         t = e.type
         for ctx in self.visit(e.e):
-            yield self.update_repl(ctx, lambda r: lambda x: EMakeMinHeap(r(x), e.f).with_type(t))
-        for ctx in self.recurse_with_assumptions_about_bound_var(e.f, ElemOf(e.e)):
+            yield self.update_repl(ctx, lambda r: lambda x: EMakeMinHeap(r(x), e.key_function).with_type(t))
+        for ctx in self.recurse_with_assumptions_about_bound_var(e.key_function, ElemOf(e.e)):
             yield self.update_repl(ctx, lambda r: lambda x: EMakeMinHeap(e.e, r(x)).with_type(t))
 
     def visit_EMakeMaxHeap(self, e):
@@ -829,8 +829,8 @@ class FragmentEnumerator(common.Visitor):
         yield self.make_ctx(e)
         t = e.type
         for ctx in self.visit(e.e):
-            yield self.update_repl(ctx, lambda r: lambda x: EMakeMaxHeap(r(x), e.f).with_type(t))
-        for ctx in self.recurse_with_assumptions_about_bound_var(e.f, ElemOf(e.e)):
+            yield self.update_repl(ctx, lambda r: lambda x: EMakeMaxHeap(r(x), e.key_function).with_type(t))
+        for ctx in self.recurse_with_assumptions_about_bound_var(e.key_function, ElemOf(e.e)):
             yield self.update_repl(ctx, lambda r: lambda x: EMakeMaxHeap(e.e, r(x)).with_type(t))
 
     def visit_ELet(self, e):

@@ -10,8 +10,8 @@ TMinHeap = declare_case(Type, "TMinHeap", ["elem_type", "key_type"])
 TMaxHeap = declare_case(Type, "TMaxHeap", ["elem_type", "key_type"])
 
 # Like EArgMin: bag, keyfunc
-EMakeMinHeap = declare_case(Exp, "EMakeMinHeap", ["e", "f"])
-EMakeMaxHeap = declare_case(Exp, "EMakeMaxHeap", ["e", "f"])
+EMakeMinHeap = declare_case(Exp, "EMakeMinHeap", ["e", "key_function"])
+EMakeMaxHeap = declare_case(Exp, "EMakeMaxHeap", ["e", "key_function"])
 
 EHeapElems = declare_case(Exp, "EHeapElems", ["e"]) # all elements
 EHeapPeek  = declare_case(Exp, "EHeapPeek",  ["e", "heap_length"]) # look at min
@@ -47,7 +47,7 @@ def heap_func(e : Exp, concretization_functions : { str : Exp } = None) -> ELamb
     Assuming 'e' produces a heap, this returns the function used to sort its elements.
     """
     if isinstance(e, EMakeMinHeap) or isinstance(e, EMakeMaxHeap):
-        return e.f
+        return e.key_function
     if isinstance(e, EVar) and concretization_functions:
         ee = concretization_functions.get(e.id)
         if ee is not None:
@@ -108,9 +108,9 @@ class Heaps(object):
         """
         if isinstance(e, EMakeMaxHeap) or isinstance(e, EMakeMinHeap):
             typecheck(e.e)
-            e.f.arg.type = e.e.type.elem_type
-            typecheck(e.f)
-            e.type = TMinHeap(e.e.type.elem_type, e.f.body.type)
+            e.key_function.arg.type = e.e.type.elem_type
+            typecheck(e.key_function)
+            e.type = TMinHeap(e.e.type.elem_type, e.key_function.body.type)
         elif isinstance(e, EHeapPeek) or isinstance(e, EHeapPeek2):
             typecheck(e.e)
             typecheck(e.heap_length)
@@ -190,10 +190,10 @@ class Heaps(object):
         """Convert an expression about heaps to one about bags."""
         if isinstance(e, EMakeMinHeap):
             tt = TTuple((e.type.elem_type, e.type.key_type))
-            return EMap(e.e, ELambda(e.f.arg, ETuple((e.f.arg, e.f.body)).with_type(tt))).with_type(TBag(tt))
+            return EMap(e.e, ELambda(e.key_function.arg, ETuple((e.key_function.arg, e.key_function.body)).with_type(tt))).with_type(TBag(tt))
         elif isinstance(e, EMakeMaxHeap):
             tt = TTuple((e.type.elem_type, e.type.key_type))
-            return EMap(e.e, ELambda(e.f.arg, ETuple((e.f.arg, e.f.body)).with_type(tt))).with_type(TBag(tt))
+            return EMap(e.e, ELambda(e.key_function.arg, ETuple((e.key_function.arg, e.key_function.body)).with_type(tt))).with_type(TBag(tt))
         elif isinstance(e, EHeapElems):
             tt = TTuple((e.e.type.elem_type, e.e.type.key_type))
             return EMap(e.e, mk_lambda(tt, lambda arg: ETupleGet(arg, 0).with_type(e.type.elem_type))).with_type(e.type)
