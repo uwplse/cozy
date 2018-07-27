@@ -421,6 +421,12 @@ class Typechecker(Visitor):
                 if t1 != t2:
                     self.report_err(e, "cannot concat {} and {}".format(pprint(e.e1.type), pprint(e.e2.type)))
                 e.type = to_abstract(e.e1.type)
+        elif e.op == "intersect":
+            t1 = self.get_collection_type(e.e1)
+            t2 = self.get_collection_type(e.e2)
+            if t1 != t2:
+                self.report_err(e, "cannot intersect {} and {}".format(pprint(e.e1.type), pprint(e.e2.type)))
+            e.type = to_abstract(e.e1.type)
         elif e.op in ["*"]:
             if is_numeric(e.e1.type):
                 e.type = self.numeric_lub(e, e.e1.type, e.e2.type)
