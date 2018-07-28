@@ -54,6 +54,10 @@ class CodeGenerator(Visitor):
 
     @contextmanager
     def block(self):
+        """
+        Write a block delimited by curly braces.
+        """
+
         self.write("{")
         self.end_statement()
         with self.indented():
