@@ -5,13 +5,16 @@ The generated code will depend on rlib.
 """
 
 from contextlib import contextmanager
+from collections import defaultdict
 
 from cozy.codegen.misc import CodeGenerator
-from cozy.syntax import UOp
 
 class RPythonPrinter(CodeGenerator):
 
-    needsSum = False
+    def __init__(self, *args, **kwargs):
+        super(RPythonPrinter, self).__init__(*args, **kwargs)
+
+        self.needs = defaultdict(bool)
 
     @contextmanager
     def python_block(self, *args):
@@ -27,13 +30,15 @@ class RPythonPrinter(CodeGenerator):
 
     @contextmanager
     def parens(self):
-        """
-        Parenthesize something.
-        """
-
         self.write("(")
         yield
         self.write(")")
+
+    @contextmanager
+    def stmt(self):
+        self.begin_statement()
+        yield
+        self.end_statement()
 
     def visit_ENum(self, node):
         self.write(str(node.val))
@@ -52,11 +57,21 @@ class RPythonPrinter(CodeGenerator):
     def visit_EVar(self, node):
         self.write(node.id)
 
+    def emit_unary(self, op, e):
+        self.needs[op] = True
+        self.write("_", op, "(")
+        self.visit(e)
+        self.write(")")
+
     def visit_EUnaryOp(self, node):
         op = node.op
-        if op == UOp.Sum:
-            self.needsSum = True
-            self.write("_sum(")
+        if op in ("distinct", "sum"):
+            self.emit_unary(op, node.e)
+        elif op == "not":
+            self.write("not ")
+            self.visit(node.e)
+        elif op == "empty":
+            self.write("not bool(")
             self.visit(node.e)
             self.write(")")
         else:
@@ -65,10 +80,11 @@ class RPythonPrinter(CodeGenerator):
 
     def visit_EBinOp(self, node):
         op = node.op
-        if op in (">", "+"):
-            self.visit(node.e1)
-            self.write(" ", op, " ")
-            self.visit(node.e2)
+        if op in (">", "<", "+", "-", "==", "in", "and", "or"):
+            with self.parens():
+                self.visit(node.e1)
+                self.write(" ", op, " ")
+                self.visit(node.e2)
         else:
             import pdb; pdb.set_trace()
             assert False, "Unhandled binary operation while writing RPython"
@@ -105,6 +121,24 @@ class RPythonPrinter(CodeGenerator):
         self.visit(p.body)
         self.write("]")
 
+    def visit_EMakeMap2(self, node):
+        f = node.value
+        self.write("[(")
+        self.visit(f.arg)
+        self.write(", ")
+        self.visit(f.body)
+        self.write(") for ")
+        self.visit(f.arg)
+        self.write(" in ")
+        self.visit(node.e)
+        self.write("]")
+
+    def visit_EMapGet(self, node):
+        self.visit(node.map)
+        self.write("[")
+        self.visit(node.key)
+        self.write("]")
+
     def visit_SNoOp(self, _):
         self.write_stmt("pass")
 
@@ -113,38 +147,59 @@ class RPythonPrinter(CodeGenerator):
         self.visit(node.s2)
 
     def visit_SDecl(self, node):
-        self.begin_statement()
-        self.write(node.id, " = ")
-        self.visit(node.val)
-        self.end_statement()
+        with self.stmt():
+            self.write(node.id, " = ")
+            self.visit(node.val)
 
     def visit_SForEach(self, node):
-        self.begin_statement()
-        self.write("for ")
-        self.visit(node.id)
-        self.write(" in ")
-        self.visit(node.iter)
-        self.write(":")
-        self.end_statement()
+        with self.stmt():
+            self.write("for ")
+            self.visit(node.id)
+            self.write(" in ")
+            self.visit(node.iter)
+            self.write(":")
         with self.indented():
             self.visit(node.body)
 
     def visit_SAssign(self, node):
-        self.begin_statement()
-        self.visit(node.lhs)
-        self.write(" = ")
-        self.visit(node.rhs)
-        self.end_statement()
+        with self.stmt():
+            self.visit(node.lhs)
+            self.write(" = ")
+            self.visit(node.rhs)
 
     def visit_SCall(self, node):
-        self.begin_statement()
-        self.visit(node.target)
-        self.write(".", node.func)
-        with self.parens():
-            for arg in node.args:
-                self.visit(arg)
-                self.write(", ")
-        self.end_statement()
+        with self.stmt():
+            self.visit(node.target)
+            self.write(".", node.func)
+            with self.parens():
+                for arg in node.args:
+                    self.visit(arg)
+                    self.write(", ")
+
+    def visit_SMapDel(self, node):
+        with self.stmt():
+            self.write("del ")
+            self.visit(node.map)
+            self.write("[")
+            self.visit(node.key)
+            self.write("]")
+
+    def visit_SMapUpdate(self, node):
+        with self.stmt():
+            self.visit(node.val_var)
+            self.write(" = ")
+            self.visit(node.map)
+            self.write("[")
+            self.visit(node.key)
+            self.write("]")
+        self.visit(node.change)
+        # Writeback.
+        with self.stmt():
+            self.visit(node.map)
+            self.write("[")
+            self.visit(node.key)
+            self.write("] = ")
+            self.visit(node.val_var)
 
     def visit_Op(self, node):
         if node.assumptions:
@@ -160,29 +215,49 @@ class RPythonPrinter(CodeGenerator):
             import pdb; pdb.set_trace()
         args = ", ".join([name for name, _ in node.args])
         with self.python_block("def ", node.name, "(self, ", args, ")"):
-            self.begin_statement()
-            self.write("return ")
-            self.visit(node.ret)
-            self.end_statement()
+            with self.stmt():
+                self.write("return ")
+                self.visit(node.ret)
 
     def visit_Spec(self, spec, state_exps, sharing, abstract_state=()):
-        self.write_stmt("from rpython.rlib.rbigint import BigInt")
+        self.write_stmt("from rpython.rlib.objectmodel import specialize")
 
         with self.python_block("class ", spec.name, "(object)"):
             init_args = ", ".join([name for name, _ in abstract_state])
             with self.python_block("def __init__(self, ", init_args, ")"):
                 for name, exp in state_exps.items():
-                    self.begin_statement()
-                    self.write("self.", name, " = ")
-                    self.visit(exp)
-                    self.end_statement()
+                    with self.stmt():
+                        self.write("self.", name, " = ")
+                        self.visit(exp)
 
             for meth in spec.methods:
                 self.visit(meth)
 
-        if self.needsSum:
-            with self.python_block("def _sum(it)"):
-                self.write_stmt("def rv = 0")
-                with self.python_block("for x in it"):
-                    self.write_stmt("rv += x")
-                self.write_stmt("return rv")
+        for op, b in self.needs.items():
+            if not b:
+                continue
+            # Suddenly, globals()! These helpers are textually defined at the
+            # end of the module. ~ C.
+            self.write(globals()[op.upper()])
+
+DISTINCT = """
+@specialize.call_location()
+def _distinct(it):
+    # Use a dict to simulate a set in RPython. ~ C.
+    s = {}
+    rv = []
+    for x in it:
+        if x not in s:
+            rv.append(x)
+            s[x] = None
+    return rv
+"""
+
+SUM = """
+@specialize.call_location()
+def _sum(it):
+    rv = 0
+    for x in it:
+        rv += x
+    return rv
+"""
