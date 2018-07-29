@@ -8,6 +8,7 @@ from contextlib import contextmanager
 from collections import defaultdict
 
 from cozy.codegen.misc import CodeGenerator
+from cozy.target_syntax import EEmptyList, ESingleton
 
 class RPythonPrinter(CodeGenerator):
 
@@ -122,8 +123,9 @@ class RPythonPrinter(CodeGenerator):
         self.write("]")
 
     def visit_EMakeMap2(self, node):
+        self.needs["makeMap"] = True
         f = node.value
-        self.write("[(")
+        self.write("_makeMap([(")
         self.visit(f.arg)
         self.write(", ")
         self.visit(f.body)
@@ -131,7 +133,7 @@ class RPythonPrinter(CodeGenerator):
         self.visit(f.arg)
         self.write(" in ")
         self.visit(node.e)
-        self.write("]")
+        self.write("])")
 
     def visit_EMapGet(self, node):
         self.visit(node.map)
@@ -139,8 +141,39 @@ class RPythonPrinter(CodeGenerator):
         self.visit(node.key)
         self.write("]")
 
+    def visit_EHasKey(self, node):
+        with self.parens():
+            self.visit(node.key)
+            self.write(" in ")
+            self.visit(node.map)
+
+    def visit_ETuple(self, node):
+        with self.parens():
+            for e in node.es:
+                self.visit(e)
+                self.write(", ")
+
+    def visit_ETupleGet(self, node):
+        # Quirk: Accesses to x.0 are phrased as x.val.0 for some reason.
+        if node.n == "val":
+            return
+
+        self.visit(node.e)
+        self.write("[")
+        self.visit(node.n)
+        self.write("]")
+
+    def visit_EGetField(self, node):
+        self.visit(node.e)
+
+        # Quirk: Accesses to x.f are phrased as x.val.f for some reason.
+        if node.f == "val":
+            return
+
+        self.write(".", node.f)
+
     def visit_SNoOp(self, _):
-        self.write_stmt("pass")
+        pass
 
     def visit_SSeq(self, node):
         self.visit(node.s1)
@@ -152,6 +185,20 @@ class RPythonPrinter(CodeGenerator):
             self.visit(node.val)
 
     def visit_SForEach(self, node):
+        # Empty iterable? Just pass.
+        if isinstance(node.iter, EEmptyList):
+            return
+
+        # Singleton iterable? Perform a single assignment and execute the
+        # inner statement once.
+        elif isinstance(node.iter, ESingleton):
+            with self.stmt():
+                self.visit(node.id)
+                self.write(" = ")
+                self.visit(node.iter.e)
+            self.visit(node.body)
+            return
+
         with self.stmt():
             self.write("for ")
             self.visit(node.id)
@@ -209,6 +256,8 @@ class RPythonPrinter(CodeGenerator):
             # Since the body is a statement, we don't need to start the
             # statement right here. Just go straight to the visitor. ~ C.
             self.visit(node.body)
+            # And pass, in case nothing happened in the body.
+            self.write_stmt("pass")
 
     def visit_Query(self, node):
         if node.assumptions:
@@ -250,6 +299,15 @@ def _distinct(it):
         if x not in s:
             rv.append(x)
             s[x] = None
+    return rv
+"""
+
+MAKEMAP = """
+@specialize.call_location()
+def _makeMap(pairs):
+    rv = {}
+    for (k, v) in pairs:
+        rv[k] = v
     return rv
 """
 
