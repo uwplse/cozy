@@ -8,6 +8,7 @@ from contextlib import contextmanager
 from collections import defaultdict
 
 from cozy.codegen.misc import CodeGenerator
+from cozy.syntax_tools import subst
 from cozy.target_syntax import EBool, EEmptyList, ESingleton
 
 class RPythonPrinter(CodeGenerator):
@@ -254,14 +255,10 @@ class RPythonPrinter(CodeGenerator):
         if isinstance(node.iter, EEmptyList):
             return
 
-        # Singleton iterable? Perform a single assignment and execute the
-        # inner statement once.
+        # Singleton iterable? Substitute the lone expression into the loop
+        # body and use that instead.
         elif isinstance(node.iter, ESingleton):
-            with self.stmt():
-                self.visit(node.id)
-                self.write(" = ")
-                self.visit(node.iter.e)
-            self.visit(node.body)
+            self.visit(subst(node.body, { node.id.id: node.iter.e }))
             return
 
         with self.stmt():
