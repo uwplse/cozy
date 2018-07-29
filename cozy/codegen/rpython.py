@@ -71,7 +71,7 @@ class RPythonPrinter(CodeGenerator):
 
     def visit_EUnaryOp(self, node):
         op = node.op
-        if op in ("distinct", "sum"):
+        if op in ("distinct", "reversed", "sum"):
             self.emit_unary(op, node.e)
         elif op == "len":
             self.write("len(")
@@ -82,6 +82,10 @@ class RPythonPrinter(CodeGenerator):
             self.visit(node.e)
         elif op == "empty":
             self.write("not bool(")
+            self.visit(node.e)
+            self.write(")")
+        elif op == "exists":
+            self.write("bool(")
             self.visit(node.e)
             self.write(")")
         else:
@@ -212,6 +216,27 @@ class RPythonPrinter(CodeGenerator):
 
         self.write(".", node.f)
 
+    def visit_EListSlice(self, node):
+        self.visit(node.e)
+        self.write("[")
+        self.visit(node.start)
+        self.write(":")
+        self.visit(node.end)
+        self.write("]")
+
+    def visit_EListGet(self, node):
+        self.visit(node.e)
+        self.write("[")
+        self.visit(node.index)
+        self.write("]")
+
+    def visit_ECall(self, node):
+        self.write(node.func)
+        with self.parens():
+            for arg in node.args:
+                self.visit(arg)
+                self.write(", ")
+
     def visit_SNoOp(self, _):
         pass
 
@@ -311,6 +336,14 @@ class RPythonPrinter(CodeGenerator):
     def visit_Spec(self, spec, state_exps, sharing, abstract_state=()):
         self.write_stmt("from rpython.rlib.objectmodel import specialize")
 
+        for func in spec.extern_funcs:
+            func_args = ", ".join([name for name, _ in func.args])
+            d = {n: n for n, _ in func.args}
+            with self.python_block("def ", func.name, "(", func_args, ")"):
+                # This is the style, so just go with it. ~ C.
+                body = func.body_string.format(**d)
+                self.write_stmt("return ", body)
+
         with self.python_block("class ", spec.name, "(object)"):
             init_args = ", ".join([name for name, _ in abstract_state])
             with self.python_block("def __init__(self, ", init_args, ")"):
@@ -369,6 +402,14 @@ def _makeMap(pairs):
     rv = {}
     for (k, v) in pairs:
         rv[k] = v
+    return rv
+"""
+
+REVERSED = """
+@specialize.call_location()
+def _reversed(it):
+    rv = list(it)
+    rv.reverse()
     return rv
 """
 
