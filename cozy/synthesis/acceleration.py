@@ -283,7 +283,7 @@ def optimized_val(e):
 
 def optimized_get_field(e, f, args):
     if isinstance(e.type, THandle) and f == "val":
-        yield optimized_val(e, f)
+        yield optimized_val(e)
     if isinstance(e, EStateVar):
         for gf in optimized_get_field(e.e, f, args):
             yield EStateVar(gf).with_type(gf.type)
