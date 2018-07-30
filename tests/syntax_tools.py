@@ -591,7 +591,10 @@ class TestElimination(unittest.TestCase):
             e = ECond(EBinOp(EVar("x").with_type(INT), "<", EVar("y").with_type(INT)), e1, e1)
             assert retypecheck(e)
             e = cse_replace(e)
-            assert isinstance(e1.key_function, ELambda)
+            if isinstance(t, EMap):
+                assert isinstance(e1.transform_function, ELambda)
+            if isinstance(t, EArgMax) or isinstance(t, EArgMin):
+                assert isinstance(e1.key_function, ELambda)
 
     def test_cse_2_stm_simple(self):
         s = parse_stm(

@@ -112,7 +112,7 @@ def _try_optimize(e, context, pool):
                 yield _check(ee, context, RUNTIME_POOL)
 
         if isinstance(e, EMap):
-            for ee in optimize_map(e.e, e.f, args=args):
+            for ee in optimize_map(e.e, e.transform_function, args=args):
                 yield _check(ee, context, RUNTIME_POOL)
 
 def _check(e, context, pool):
@@ -151,7 +151,7 @@ def optimized_any_matches(xs, p):
     if isinstance(xs, ESingleton):
         return p.apply_to(xs.e)
     if isinstance(xs, EMap):
-        return optimized_any_matches(xs.e, compose(p, xs.f))
+        return optimized_any_matches(xs.e, compose(p, xs.transform_function))
 
 
     # exists filter (not-in xs) ys
@@ -204,7 +204,7 @@ def optimized_in(x, xs):
     elif isinstance(xs, EFilter):
         return EAll([xs.predicate.apply_to(x), optimized_in(x, xs.e)])
     elif isinstance(xs, EMap) and xs.f.arg not in free_vars(x):
-        return optimized_any_matches(xs.e, ELambda(xs.f.arg, optimized_eq(xs.f.body, x)))
+        return optimized_any_matches(xs.e, ELambda(xs.transform_function.arg, optimized_eq(xs.transform_function.body, x)))
     elif isinstance(xs, ESingleton):
         return optimized_eq(x, xs.e)
     elif isinstance(xs, EEmptyList):
@@ -275,7 +275,7 @@ def excluded_element(xs, args):
         res = excluded_element(xs.e, args)
         if res is not None:
             bag, x = res
-            return (EMap(bag, xs.key_function).with_type(xs.type), xs.key_function.apply_to(x))
+            return (EMap(bag, xs.transform_function).with_type(xs.type), xs.transform_function.apply_to(x))
     if isinstance(xs, EFilter):
         arg = xs.predicate.arg
         e = xs.predicate.body
@@ -358,9 +358,9 @@ def optimized_best(xs, keyfunc, op, args):
         #         found = EAny([found, ex])
         #     yield best
     if isinstance(xs, EMap):
-        for b in optimized_best(xs.e, compose(keyfunc, xs.key_function), op, args):
+        for b in optimized_best(xs.e, compose(keyfunc, xs.transform_function), op, args):
             yield optimized_cond(optimized_exists(xs.e),
-                xs.key_function.apply_to(b),
+                xs.transform_function.apply_to(b),
                 construct_value(elem_type))
     if isinstance(xs, EStateVar) and not any(v in args for v in free_vars(keyfunc)):
         yield EStateVar(argbest(xs.e, keyfunc).with_type(elem_type)).with_type(elem_type)
@@ -585,7 +585,7 @@ def optimize_the(xs, args):
     if isinstance(xs, EMap):
         exists = optimized_exists(xs.e)
         for x in optimize_the(xs.e, args):
-            yield optimized_cond(exists, xs.key_function.apply_to(x), construct_value(t))
+            yield optimized_cond(exists, xs.transform_function.apply_to(x), construct_value(t))
     if isinstance(xs, EBinOp) and xs.op == "+":
         e1_exists = optimized_exists(xs.e1)
         for x in optimize_the(xs.e1, args):
