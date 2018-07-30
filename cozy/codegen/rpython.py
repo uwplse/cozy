@@ -9,7 +9,8 @@ from collections import defaultdict
 
 from cozy.codegen.misc import CodeGenerator
 from cozy.syntax_tools import subst
-from cozy.target_syntax import EBool, EEmptyList, ESingleton
+from cozy.target_syntax import (TBool, TInt,
+        EBool, EEmptyList, ESingleton)
 
 class RPythonPrinter(CodeGenerator):
 
@@ -94,11 +95,12 @@ class RPythonPrinter(CodeGenerator):
             assert False, "Unhandled unary operation while writing RPython"
 
     def visit_EBinOp(self, node):
-        op = node.op
-        if op in (">", "<", "+", "-", "==", "!=", "in", "and", "or"):
+        # Rather than dispatching on op, it turns out to be simpler for us to
+        # dispatch by type!
+        if isinstance(node.type, (TInt, TBool)):
             with self.parens():
                 self.visit(node.e1)
-                self.write(" ", op, " ")
+                self.write(" ", node.op, " ")
                 self.visit(node.e2)
         else:
             import pdb; pdb.set_trace()
