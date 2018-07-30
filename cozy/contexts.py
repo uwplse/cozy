@@ -301,7 +301,7 @@ class _Shredder(Visitor):
     def visit_EFilter(self, e):
         yield (e, self.ctx, self.pool)
         yield from self.visit(e.e)
-        yield from self.visit(e.p, e.e)
+        yield from self.visit(e.predicate, e.e)
     def visit_EFlatMap(self, e):
         yield (e, self.ctx, self.pool)
         yield from self.visit(e.e)
@@ -390,7 +390,7 @@ class _Replacer(BottomUpRewriter):
     def visit_EMap(self, e):
         return self.join(e, (self.visit(e.e), self.visit(e.key_function, e.e)))
     def visit_EFilter(self, e):
-        return self.join(e, (self.visit(e.e), self.visit(e.p, e.e)))
+        return self.join(e, (self.visit(e.e), self.visit(e.predicate, e.e)))
     def visit_EFlatMap(self, e):
         return self.join(e, (self.visit(e.e), self.visit(e.key_function, e.e)))
     def visit_EArgMin(self, e):

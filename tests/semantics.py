@@ -168,7 +168,7 @@ class SemanticsTests(unittest.TestCase):
         x = EVar("x").with_type(INT)
         e1 = EFilter(EBinOp(xs, "-", ys), ELambda(x, ECall("f", (x,)).with_type(BOOL)))
         assert retypecheck(e1)
-        e2 = EBinOp(EFilter(xs, e1.p), "-", EFilter(ys, e1.p))
+        e2 = EBinOp(EFilter(xs, e1.predicate), "-", EFilter(ys, e1.predicate))
         assert retypecheck(e2)
         self.assert_same(e1, e2)
 

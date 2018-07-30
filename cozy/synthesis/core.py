@@ -558,7 +558,7 @@ def good_idea(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptio
                 return No("more than one element might be removed during {}".format(op.name))
     if not allow_peels.value and not at_runtime and isinstance(e, EFilter):
         # catch "peels": removal of zero or one elements
-        if solver.valid(EImplies(assumptions, ELe(ELen(EFilter(e.e, ELambda(e.p.arg, ENot(e.p.body))).with_type(e.type)), ONE))):
+        if solver.valid(EImplies(assumptions, ELe(ELen(EFilter(e.e, ELambda(e.predicate.arg, ENot(e.predicate.body))).with_type(e.type)), ONE))):
             return No("filter is a peel")
     if not allow_big_maps.value and not at_runtime and isinstance(e, EMakeMap2) and is_collection(e.type.v):
         all_collections = [sv for sv in state_vars if is_collection(sv.type)]

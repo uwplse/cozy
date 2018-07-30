@@ -612,9 +612,9 @@ class Typechecker(Visitor):
     def visit_EFilter(self, e):
         self.visit(e.e)
         elem_type = self.get_collection_type(e.e)
-        e.p.arg.type = elem_type
-        self.visit(e.p)
-        self.ensure_type(e.p.body, BOOL)
+        e.predicate.arg.type = elem_type
+        self.visit(e.predicate)
+        self.ensure_type(e.predicate.body, BOOL)
         e.type = to_abstract(e.e.type)
 
     def visit_EMakeMap2(self, e):

@@ -540,7 +540,7 @@ class CxxPrinter(CodeGenerator):
                 seq([body(x), SCall(tmp, "add", [x])]),
                 SNoOp()))
         elif isinstance(iterable, EFilter):
-            return self.for_each(iterable.e, lambda x: SIf(iterable.p.apply_to(x), body(x), SNoOp()))
+            return self.for_each(iterable.e, lambda x: SIf(iterable.predicate.apply_to(x), body(x), SNoOp()))
         elif isinstance(iterable, EBinOp) and iterable.op == "+":
             self.for_each(iterable.e1, body)
             self.for_each(iterable.e2, body)

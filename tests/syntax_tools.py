@@ -577,7 +577,7 @@ class TestElimination(unittest.TestCase):
         print(pprint(s))
         assert False
         """
-        assert isinstance(e1.p, ELambda)
+        assert isinstance(e1.predicate, ELambda)
 
         e1 = ELet(EVar("y").with_type(INT), ELambda(EVar("x").with_type(INT), EBinOp(EVar("x"), "+", ENum(2).with_type(INT))))
         e = ECond(EBinOp(EVar("x").with_type(INT), "<", EVar("y").with_type(INT)), e1, e1)

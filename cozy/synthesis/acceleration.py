@@ -104,11 +104,11 @@ def _try_optimize(e, context, pool):
                 yield _check(ee, context, RUNTIME_POOL)
 
         if isinstance(e, EFilter):
-            ee = optimize_filter_as_if_distinct(e.e, e.p, args=args)
+            ee = optimize_filter_as_if_distinct(e.e, e.predicate, args=args)
             yield _check(ee, context, RUNTIME_POOL)
             if isinstance(e.e, EFilter):
                 # try swizzle
-                ee = EFilter(_simple_filter(e.e.e, e.p, args=args), e.e.p).with_type(e.type)
+                ee = EFilter(_simple_filter(e.e.e, e.predicate, args=args), e.e.predicate).with_type(e.type)
                 yield _check(ee, context, RUNTIME_POOL)
 
         if isinstance(e, EMap):
@@ -168,7 +168,7 @@ def optimized_any_matches(xs, p):
             optimized_any_matches(xs, ELambda(p.arg, p.body.e2)).with_type(xs.type)])
 
     if isinstance(xs, EFilter):
-        return optimized_any_matches(xs.e, ELambda(p.arg, EAll([p.body, xs.p.apply_to(p.arg)])))
+        return optimized_any_matches(xs.e, ELambda(p.arg, EAll([p.body, xs.predicate.apply_to(p.arg)])))
     if isinstance(xs, EBinOp) and xs.op == "+":
         return EAny([optimized_any_matches(xs.e1, p), optimized_any_matches(xs.e2, p)])
     if isinstance(xs, EBinOp) and xs.op == "-":
@@ -202,7 +202,7 @@ def optimized_in(x, xs):
             optimized_in(x, xs.then_branch),
             optimized_in(x, xs.else_branch)).with_type(BOOL)
     elif isinstance(xs, EFilter):
-        return EAll([xs.p.apply_to(x), optimized_in(x, xs.e)])
+        return EAll([xs.predicate.apply_to(x), optimized_in(x, xs.e)])
     elif isinstance(xs, EMap) and xs.f.arg not in free_vars(x):
         return optimized_any_matches(xs.e, ELambda(xs.f.arg, optimized_eq(xs.f.body, x)))
     elif isinstance(xs, ESingleton):
@@ -240,7 +240,7 @@ def optimized_empty(xs):
 
 def optimized_exists(xs):
     if isinstance(xs, EFilter):
-        return optimized_any_matches(xs.e, xs.p)
+        return optimized_any_matches(xs.e, xs.predicate)
     elif isinstance(xs, EStateVar):
         return EStateVar(EUnaryOp(UOp.Exists, xs.e).with_type(BOOL)).with_type(BOOL)
     elif isinstance(xs, EBinOp) and xs.op == "+":
@@ -277,8 +277,8 @@ def excluded_element(xs, args):
             bag, x = res
             return (EMap(bag, xs.key_function).with_type(xs.type), xs.key_function.apply_to(x))
     if isinstance(xs, EFilter):
-        arg = xs.p.arg
-        e = xs.p.body
+        arg = xs.predicate.arg
+        e = xs.predicate.body
         if isinstance(e, EUnaryOp) and e.op == UOp.Not and isinstance(e.e, EBinOp) and e.e.op == "==":
             e = EBinOp(e.e.e1, "!=", e.e.e2).with_type(BOOL)
         if isinstance(e, EBinOp) and e.op == "!=":
@@ -288,7 +288,7 @@ def excluded_element(xs, args):
                 return (xs.e, EUnaryOp(UOp.The, _simple_filter(xs.e, ELambda(arg, EEq(e.e1, e.e2)), args=args)).with_type(xs.type.elem_type))
             if arg_right and not arg_left:
                 return (xs.e, EUnaryOp(UOp.The, _simple_filter(xs.e, ELambda(arg, EEq(e.e1, e.e2)), args=args)).with_type(xs.type.elem_type))
-        return (xs.e, optimized_the(_simple_filter(xs.e, ELambda(xs.p.arg, ENot(xs.p.body)), args), args))
+        return (xs.e, optimized_the(_simple_filter(xs.e, ELambda(xs.predicate.arg, ENot(xs.predicate.body)), args), args))
     if isinstance(xs, EBinOp) and xs.op == "-" and isinstance(xs.e2, ESingleton):
         return (xs.e1, xs.e2.e)
     if isinstance(xs, EBinOp) and xs.op == "-":
@@ -372,7 +372,7 @@ def optimized_best(xs, keyfunc, op, args):
         yield from optimized_best(xs.e, keyfunc, op, args=args)
     # if isinstance(xs, EFilter):
     #     yield optimized_cond(
-    #         xs.p.apply_to(optimized_best(xs.e, keyfunc, op, args=args)),
+    #         xs.predicate.apply_to(optimized_best(xs.e, keyfunc, op, args=args)),
     #         optimized_best(xs.e, keyfunc, op, args=args),
     #         argbest(xs, keyfunc).with_type(elem_type))
     yield argbest(xs, keyfunc).with_type(elem_type)

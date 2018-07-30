@@ -734,7 +734,7 @@ class ToZ3(Visitor):
             res_mask.append(self.all(mask, p(x)))
         return res_mask, bag_elems
     def visit_EFilter(self, e, env):
-        return self.do_filter(self.visit(e.e, env), e.p, env)
+        return self.do_filter(self.visit(e.e, env), e.predicate, env)
     def visit_EMakeRecord(self, e, env):
         return { f:self.visit(v, env) for (f, v) in e.fields }
     def visit_EMakeMap2(self, e, env):
@@ -1237,9 +1237,9 @@ class IncrementalSolver(object):
                                                     if reconstruct(model, mask, BOOL):
                                                         senv = dict(solver_env)
                                                         eenv = dict(eval_env)
-                                                        senv[x.p.arg.id] = elem
-                                                        eenv[x.p.arg.id] = reconstruct(model, elem, x.type.elem_type)
-                                                        wq.append((x.p.body, senv, eenv))
+                                                        senv[x.predicate.arg.id] = elem
+                                                        eenv[x.predicate.arg.id] = reconstruct(model, elem, x.type.elem_type)
+                                                        wq.append((x.predicate.body, senv, eenv))
                                             elif isinstance(x, ELet):
                                                 z = visitor.visit(x.e, solver_env)
                                                 senv = dict(solver_env)

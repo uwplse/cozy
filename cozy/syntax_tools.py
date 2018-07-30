@@ -340,7 +340,7 @@ class PrettyPrinter(common.Visitor):
         return "{} {{{}}} ({})".format(self.format_builtin("Map"), self.visit(e.key_function), self.visit(e.e))
 
     def visit_EFilter(self, e):
-        return "{} {{{}}} ({})".format(self.format_builtin("Filter"), self.visit(e.p), self.visit(e.e))
+        return "{} {{{}}} ({})".format(self.format_builtin("Filter"), self.visit(e.predicate), self.visit(e.e))
 
     def visit_EFlatMap(self, e):
         return "{} {{{}}} ({})".format(self.format_builtin("FlatMap"), self.visit(e.key_function), self.visit(e.e))
@@ -771,8 +771,8 @@ class FragmentEnumerator(common.Visitor):
         yield self.make_ctx(e)
         t = e.type
         for ctx in self.visit(e.e):
-            yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EFilter(r(x), e.p).with_type(t))
-        for ctx in self.recurse_with_assumptions_about_bound_var(e.p, ElemOf(e.e)):
+            yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EFilter(r(x), e.predicate).with_type(t))
+        for ctx in self.recurse_with_assumptions_about_bound_var(e.predicate, ElemOf(e.e)):
             yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EFilter(e.e, r(x)).with_type(t))
 
     def visit_EMap(self, e):

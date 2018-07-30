@@ -65,7 +65,7 @@ class _SimplificationVisitor(BottomUpRewriter):
         return EGetField(record, e.field_name).with_type(e.type)
     def visit_EFilter(self, e):
         ee = self.visit(e.e)
-        f = self.visit(e.p)
+        f = self.visit(e.predicate)
         if f.body == ETRUE:
             return ee
         elif f.body == EFALSE:

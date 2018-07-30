@@ -589,8 +589,8 @@ def _compile(e, env : {str:int}, out):
         _compile(e.e, env, out)
         box = [None]
         body = []
-        with extend(env, e.p.arg.id, lambda: box[0]):
-            _compile(e.p.body, env, body)
+        with extend(env, e.predicate.arg.id, lambda: box[0]):
+            _compile(e.predicate.body, env, body)
         def set_arg(v):
             def set_arg(stk):
                 box[0] = v
