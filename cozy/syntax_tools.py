@@ -1590,8 +1590,9 @@ def cse(e, verify=False):
         def __init__(self):
             super().__init__()
             self.avail = ExpMap() # maps expressions --> variables
+            self.env = { } # maps var IDs --> visited expressions
         def visit_EVar(self, e):
-            return e
+            return self.env.get(e.id, e)
         def visit_ENum(self, e):
             return e
         def visit_EEnumEntry(self, e):
@@ -1614,6 +1615,13 @@ def cse(e, verify=False):
             v = fresh_var(e.type, hint="tmp")
             self.avail[ee] = v
             return v
+        def visit_ELet(self, e):
+            saved_value = self.visit(e.e)
+            with common.extend(self.env, e.f.arg.id, saved_value):
+                return self.visit(e.f.body)
+            # assert e.f.arg not in self.avail.values()
+            # self.avail[saved_value] = e.f.arg
+            # return self.visit(e.f.body)
         def visit_EListComprehension(self, e):
             raise NotImplementedError()
         def _fvs(self, e):
