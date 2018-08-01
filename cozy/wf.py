@@ -37,6 +37,9 @@ def exp_wf_nonrecursive(solver, e : Exp, context : Context, pool = RUNTIME_POOL,
     this function requires.
     """
 
+    if hasattr(e, "_wf"):
+        return True
+
     state_vars = OrderedSet(v for v, p in context.vars() if p == STATE_POOL)
     args       = OrderedSet(v for v, p in context.vars() if p == RUNTIME_POOL)
 
@@ -46,6 +49,7 @@ def exp_wf_nonrecursive(solver, e : Exp, context : Context, pool = RUNTIME_POOL,
         msg = h.check_wf(e, state_vars=state_vars, args=args, pool=pool, assumptions=assumptions, is_valid=solver.valid)
         if msg is not None:
             return No(msg)
+        e._wf = True
         return True
 
     at_runtime = pool == RUNTIME_POOL
@@ -57,6 +61,7 @@ def exp_wf_nonrecursive(solver, e : Exp, context : Context, pool = RUNTIME_POOL,
         elif not at_runtime and e in args:
             return No("arg in state exp")
 
+    e._wf = True
     return True
 
 @typechecked
