@@ -228,34 +228,46 @@ class Learner(object):
                     return No("too expensive")
                 return True
 
-        frags = list(unique(itertools.chain(
-            *[shred(t, root_ctx) for t in self.targets],
-            *[shred(h, root_ctx) for h in self.hints])))
-        frags.sort(key=hint_order)
-        enum = Enumerator(
-            examples=self.examples,
-            cost_model=self.cost_model,
-            check_wf=check_wf,
-            hints=frags,
-            heuristics=try_optimize,
-            stop_callback=self.stop_callback,
-            do_eviction=enable_eviction.value)
+        with task("setting up hints"):
+            frags = list(unique(itertools.chain(
+                *[shred(t, root_ctx) for t in self.targets],
+                *[shred(h, root_ctx) for h in self.hints])))
+            frags.sort(key=hint_order)
+            enum = Enumerator(
+                examples=self.examples,
+                cost_model=self.cost_model,
+                check_wf=check_wf,
+                hints=frags,
+                heuristics=try_optimize,
+                stop_callback=self.stop_callback,
+                do_eviction=enable_eviction.value)
 
-        size = 0
         target_fp = fingerprint(self.targets[0], self.examples)
 
-        watches = OrderedDict()
-        for target in self.targets:
-            for e, ctx, pool in unique(shred(target, context=root_ctx, pool=RUNTIME_POOL)):
+        with task("setting up watches"):
+            watches_by_context = OrderedDict()
+            for target in self.targets:
+                for e, ctx, pool in unique(shred(target, context=root_ctx, pool=RUNTIME_POOL)):
+                    l = watches_by_context.get(ctx)
+                    if l is None:
+                        l = []
+                        watches_by_context[ctx] = l
+                    l.append((target, e, pool))
+
+            watches = OrderedDict()
+            for ctx, exprs in watches_by_context.items():
                 exs = ctx.instantiate_examples(self.examples)
-                fp = fingerprint(e, exs)
-                k = (fp, ctx, pool)
-                l = watches.get(k)
-                if l is None:
-                    l = []
-                    watches[k] = l
-                l.append((target, e))
-        watched_ctxs = list(unique((ctx, pool) for fp, ctx, pool in watches.keys()))
+                for target, e, pool in exprs:
+                    fp = fingerprint(e, exs)
+                    k = (fp, ctx, pool)
+                    l = watches.get(k)
+                    if l is None:
+                        l = []
+                        watches[k] = l
+                    l.append((target, e))
+
+            # watched_ctxs = list(unique((ctx, pool) for fp, ctx, pool in watches.keys()))
+            watched_ctxs = list(unique((ctx, pool) for _, _, ctx, pool in exploration_order(self.targets, root_ctx)))
 
         def consider_new_target(old_target, e, ctx, pool, replacement):
             nonlocal n
@@ -294,6 +306,7 @@ class Learner(object):
             print(" * with {}".format(pprint(replacement)))
             yield new_target
 
+        size = 0
         while True:
 
             print("starting minor iteration {} with |cache|={}".format(size, enum.cache_size()))
@@ -431,10 +444,7 @@ def improve(
     print()
 
     is_wf = exp_wf(target, context=context, assumptions=assumptions)
-    if not is_wf:
-        print("WARNING: initial target is not well-formed [{}]; this might go poorly...".format(is_wf))
-        print(pprint(is_wf.offending_subexpression))
-        print(pprint(is_wf.offending_subexpression.type))
+    assert is_wf, "initial target is not well-formed: {}".format(is_wf)
 
     state_vars = [v for (v, p) in context.vars() if p == STATE_POOL]
     if eliminate_vars.value and can_elim_vars(target, assumptions, state_vars):
@@ -456,6 +466,12 @@ def improve(
         print("assumptions are unsat; this query will never be called")
         yield construct_value(target.type)
         return
+
+    is_good = good_idea_recursive(solver, target, context)
+    if not is_good:
+        print("WARNING: this target is already a bad idea")
+        print("is_good = {}".format(is_good))
+        assert False
 
     examples = list(examples)
 
