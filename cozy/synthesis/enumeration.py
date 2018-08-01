@@ -133,6 +133,8 @@ class Enumerator(object):
         return sum(len(v) for v in self.cache.values())
 
     def heuristic_enumeration(self, context : Context, size : int, pool : Pool) -> [Exp]:
+        return
+
         # lambda-instantiation
         for sz1, sz2 in pick_to_sum(2, size-1):
             for e in self.enumerate(context, sz1, pool):

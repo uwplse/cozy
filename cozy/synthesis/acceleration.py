@@ -592,6 +592,7 @@ def _try_optimize(e, context, pool):
                 yield _check(ee, context, RUNTIME_POOL)
 
 def try_optimize(e, context, pool):
+    return
     for ee in _try_optimize(e, context, pool):
         if not alpha_equivalent(e, ee):
             yield ee

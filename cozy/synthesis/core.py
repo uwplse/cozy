@@ -318,6 +318,7 @@ class Learner(object):
             for ctx, pool in watched_ctxs:
                 with task("searching for obvious substitutions", ctx=ctx, pool=pool_name(pool)):
                     for info in enum.enumerate_with_info(size=size, context=ctx, pool=pool):
+                        print("in context {}/{}; exploring {}".format(ctx, pool, pprint(info.e)))
                         with task("searching for obvious substitution", expression=pprint(info.e)):
                             fp = info.fingerprint
                             for ((fpx, cc, pp), reses) in watches.items():

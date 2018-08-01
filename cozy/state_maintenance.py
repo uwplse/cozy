@@ -2489,15 +2489,23 @@ def run():
     sqs = []
 
     print(pprint(e))
-    print("-"*40)
+    print("-"*40 + " partial_eval'd")
     e = partial_eval(e)
     print(pprint(e))
-    print("-"*40)
+    print("-"*40 + " statement")
     print("// IN: {}".format(", ".join(v.id for v, p in context.vars() if p == RUNTIME_POOL)))
     print(pprint(s))
-    print("-"*40)
+    print("-"*40 + " mutated")
 
     print(pprint(mutate(e, s)))
+
+    # from cozy.synthesis.core import improve
+    # import datetime
+    # verbose.value = False
+    # start = datetime.datetime.now()
+    # e_prime = repair_EStateVar_in_context(mutate(e, s), context, available_state=[e])
+    # for res in improve(e_prime, context=context, assumptions=EAll(assumptions)):
+    #     print("at {}, got {}".format(datetime.datetime.now() - start, pprint(res)))
 
     print("-"*40)
 
