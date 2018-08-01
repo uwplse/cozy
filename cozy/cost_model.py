@@ -186,8 +186,8 @@ class CostModel(object):
                 if pool == RUNTIME_POOL:
                     return prioritized_order(
                         lambda: order_objects(asymptotic_runtime(e1), asymptotic_runtime(e2)),
-                        lambda: self._compare(max_storage_size(e1, self.freebies), max_storage_size(e2, self.freebies), context),
-                        lambda: self._compare(rt(e1), rt(e2), context),
+                        # lambda: self._compare(max_storage_size(e1, self.freebies), max_storage_size(e2, self.freebies), context),
+                        # lambda: self._compare(rt(e1), rt(e2), context),
                         lambda: order_objects(e1.size(), e2.size()))
                 else:
                     return prioritized_order(

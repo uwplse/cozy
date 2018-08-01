@@ -150,8 +150,8 @@ def good_idea(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptio
     #     return No("singleton in state position")
     # if not at_runtime and isinstance(e, ENum) and e.val != 0 and e.type == INT:
     #     return No("nonzero integer constant in state position")
-    if at_runtime and isinstance(e, EStateVar) and isinstance(e.e, EBinOp) and is_scalar(e.e.e1.type) and is_scalar(e.e.e2.type):
-        return No("constant-time binary operator {!r} in state position".format(e.e.op))
+    # if at_runtime and isinstance(e, EStateVar) and isinstance(e.e, EBinOp) and is_scalar(e.e.e1.type) and is_scalar(e.e.e2.type):
+    #     return No("constant-time binary operator {!r} in state position".format(e.e.op))
     if not allow_conditional_state.value and not at_runtime and isinstance(e, ECond):
         return No("conditional in state position")
     if isinstance(e, EMakeMap2) and isinstance(e.e, EEmptyList):

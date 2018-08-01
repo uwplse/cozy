@@ -11,6 +11,9 @@ from cozy.target_syntax import *
 from cozy.wf import exp_wf
 from cozy.pools import STATE_POOL, RUNTIME_POOL
 
+from cozy.logging import verbose
+verbose.value = True
+
 print("Setting up assumptions...")
 
 assumptions = [
@@ -45,11 +48,10 @@ with open("exp.pickle", "rb") as f:
 # print(pprint(e))
 print(" -> size={}".format(e.size()))
 
-from cozy.state_maintenance import partial_eval
-
-print("Partial evaluate...")
-e = partial_eval(e, EAll(assumptions))
-print(" -> size={}".format(e.size()))
+# from cozy.state_maintenance import partial_eval
+# print("Partial evaluate...")
+# e = partial_eval(e, EAll(assumptions))
+# print(" -> size={}".format(e.size()))
 
 # print("CSE...")
 # e = cse(e)
@@ -57,7 +59,7 @@ print(" -> size={}".format(e.size()))
 
 print(pprint(e))
 
-sys.exit(0)
+# sys.exit(0)
 
 # print("Purify...")
 # e = purify(e)

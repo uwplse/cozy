@@ -1,9 +1,10 @@
+SHELL=bash
 
 .SUFFIXES:
 .PHONY: all
 
 all: exp.pickle
-	time python3 synth.py
+	time python3 synth.py | tee synthesis-log
 
 exp.pickle: cozy/state_maintenance.py
-	time python3 -m cozy.state_maintenance
+	time python3 -m cozy.state_maintenance | tee maintenance-log
