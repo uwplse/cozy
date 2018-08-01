@@ -142,6 +142,228 @@ def assert_eq(e1 : syntax.Exp, e2 : syntax.Exp, context : Context, assumptions :
 def statevar(e):
     return target_syntax.EStateVar(e).with_type(e.type)
 
+def set_union(e1, e2):
+    if definitely(subset_of(e1, e2)):
+        return e2
+    if definitely(subset_of(e2, e1)):
+        return e1
+    return bag_union(e1, e2)
+
+class BagDelta(object):
+    def __init__(self, domain, cardinality_func):
+        self.domain = domain
+        self.cardinality_func = cardinality_func
+
+        if isinstance(self.domain, syntax.EEmptyList):
+            self.cardinality_func = lambda x: syntax.ZERO
+        else:
+            cf = cardinality_func(syntax.EVar("?").with_type(domain.type.t))
+            if not free_vars(cf) and not free_funcs(cf):
+                val = eval(cf, {})
+                if val == 0:
+                    empty = BagDelta.empty(domain.type.t)
+                    self.domain = empty.domain
+                    self.cardinality_func = empty.cardinality_func
+                else:
+                    self.cardinality_func = lambda x: syntax.ENum(val).with_type(syntax.INT)
+
+    def __add__(self, other):
+        return BagDelta(
+            set_union(self.domain, other.domain),
+            lambda x: self.cardinality_func(x) + other.cardinality_func(x))
+
+    def __sub__(self, other):
+        return BagDelta(
+            set_union(self.domain, other.domain),
+            lambda x: self.cardinality_func(x) - other.cardinality_func(x))
+
+    def __str__(self):
+        return "[domain={},\n cardiality(x)={}]".format(pprint(self.domain), pprint(self.cardinality_func(syntax.EVar("x"))))
+
+    @staticmethod
+    def empty(element_type):
+        return BagDelta(
+            domain=syntax.EEmptyList().with_type(syntax.TBag(element_type)),
+            cardinality_func=lambda x: syntax.ZERO)
+
+    @staticmethod
+    def of_bag(e):
+        assert is_collection(e.type)
+        return BagDelta(
+            domain=e,
+            cardinality_func=lambda x: len_of(efilter(e, mk_lambda(e.type.t, lambda y: equal(x, y)))))
+
+NEG_ONE = syntax.ENum(-1).with_type(syntax.INT)
+
+def bag_delta2(e, context, s, assumptions : syntax.Exp = syntax.T) -> BagDelta:
+
+    if isinstance(e, syntax.EBinOp) and e.op == "+":
+        d1 = bag_delta2(e.e1, context, s, assumptions)
+        d2 = bag_delta2(e.e2, context, s, assumptions)
+        return d1 + d2
+
+    if isinstance(e, syntax.ESingleton):
+        return BagDelta(e, lambda x: NEG_ONE) + BagDelta(mutate(e, s), lambda x: syntax.ONE)
+
+    if isinstance(e, syntax.EEmptyList):
+        return (empty, empty)
+
+    if isinstance(e, target_syntax.EMap):
+        t = e.type
+        e = target_syntax.EFlatMap(e.e, syntax.ELambda(e.f.arg,
+            syntax.ESingleton(e.f.body).with_type(t))).with_type(t)
+
+    if isinstance(e, target_syntax.EFilter):
+        t = e.type
+        e = target_syntax.EFlatMap(e.e, syntax.ELambda(e.p.arg,
+            cond(e.p.body,
+                syntax.ESingleton(e.p.arg).with_type(t),
+                syntax.EEmptyList().with_type(t)))).with_type(t)
+
+    if isinstance(e, target_syntax.EFlatMap):
+        arg = fresh_var(e.f.arg.type)
+        func_body = apply(e.f, arg)
+
+        xs = e.e
+        d_xs = bag_delta2(xs, context, s, assumptions)
+        inner_context = UnderBinder(context, arg, xs, STATE_POOL)
+        d_ys = bag_delta2(func_body, inner_context, s, assumptions)
+
+        print("*** {}".format(pprint(e)))
+        print("D_{{xs}} = {}".format(d_xs))
+        print("D_{{f}}  = {}".format(d_ys))
+
+        # TODO: flatmapish something with bag deltas...
+
+    """
+    if isinstance(e, target_syntax.EFlatMap):
+        arg = fresh_var(e.f.arg.type)
+        func_body = apply(e.f, arg)
+
+        xs = e.e
+        added_xs, removed_xs = bag_delta(xs, context, s, assumptions)
+        inner_context = UnderBinder(context, arg, xs, STATE_POOL)
+        added_ys, removed_ys = bag_delta(func_body, inner_context, s, assumptions)
+
+        # print("*** {}".format(pprint(e)))
+        # print("D_{{xs}} = {}".format(pprint(removed_xs)))
+        # print("A_{{xs}} = {}".format(pprint(added_xs)))
+        # print("D_{{f}}  = {}".format(pprint(removed_ys)))
+        # print("A_{{f}}  = {}".format(pprint(added_ys)))
+        # if not (definitely(is_empty(added_ys)) and definitely(is_empty(removed_ys))):
+        #     changed_subset = find_changed_subset(func_body, inner_context, s, arg, xs)
+        #     print(" ---> {} changes only for {}".format(pprint(func_body), pprint(changed_subset)))
+        #     domain = infer_partition(func_body)
+        #     print(" ---> {} paritions {}".format(pprint(func_body), pprint(domain)))
+
+        new_body = strip_EStateVar(better_mutate(statevar(func_body), inner_context, s, assumptions))
+        # new_body = mutate(func_body, s)
+
+        post_remove = bag_subtract(xs, removed_xs)
+
+        if not definitely(singleton_or_empty(post_remove)):
+            f = syntax.ELambda(arg, func_body)
+            print("-" * 20)
+            print("need to infer changes for {}".format(pprint(f)))
+            print("post_remove: {}".format(pprint(post_remove)))
+            changes = analyze_changes(f, context, s, assumptions)
+            print("changes: {}".format(pprint(changes)))
+            orig_post_remove = post_remove
+            post_remove = bag_set_intersection(post_remove, changes)
+            print("post_remove': {}".format(pprint(post_remove)))
+            print("-" * 20)
+
+            assert context.legal_for(free_vars(changes))
+
+            # lb, ub = size_analysis(post_remove)
+            # if ub == INFINITY:
+            #     lb, ub = size_analysis(post_remove)
+            #     print("size in [{}, {}]".format(lb, ub))
+            #     print("unique? {}".format(are_unique(orig_post_remove)))
+            #     raise NotEfficient(e)
+
+            # raise NotImplementedError()
+
+            # try:
+            #     f = syntax.ELambda(arg, func_body)
+            #     print("need to infer partition for {}".format(pprint(f)))
+            #     domain, proj, g, res = infer_partition(f)
+            #     print(pprint(domain))
+            #     print(pprint(proj))
+            #     print(pprint(g))
+            #     print(pprint(res))
+            #     print("--")
+            #     domain_n, domain_d = bag_delta(emap(domain, proj), context, s, assumptions)
+            #     possible_changes = bag_union(domain_n, domain_d)
+            #     print(pprint(possible_changes))
+
+            #     f_prime = syntax.ELambda(arg, mutate(func_body, s))
+            #     check_valid(context, target_syntax.EForall(post_remove,
+            #         lambda x: syntax.EImplies(
+            #             syntax.ENot(syntax.EIn(x, possible_changes)),
+            #             syntax.EEq(f.apply_to(x), f_prime.apply_to(x)))))
+
+            #     print("the partition is valid!")
+            #     post_remove = bag_intersection(possible_changes, post_remove)
+            #     # print("For what values {} in {} is".format(arg.id, pprint(post_remove)))
+            #     # print(" - " + pprint(removed_ys))
+            #     # print(" + " + pprint(added_ys))
+            #     # print("not empty?")
+            #     # raise NotImplementedError()
+            # except NotPossible:
+            #     if not definitely(is_empty(added_ys)) or not definitely(is_empty(removed_ys)):
+            #         print("warning: unable to infer partition for {}".format(pprint(f)))
+            #         print(repr(f))
+            #         print(repr(post_remove))
+
+        removed = bag_union(
+            flatmap(bag_intersection(xs, removed_xs), e.f),
+            flatmap(post_remove, syntax.ELambda(arg, removed_ys)))
+        added = bag_union(
+            flatmap(added_xs, syntax.ELambda(arg, new_body)),
+            flatmap(post_remove, syntax.ELambda(arg, added_ys)))
+
+        # e_prime = mutate(e, s)
+        # interp = e - removed + added
+        # check_valid(context, syntax.EEq(to_bag(e_prime), to_bag(interp)),
+        #     debug={
+        #         "e": e,
+        #         "e'": e_prime,
+        #         "d": removed,
+        #         "n": added,
+        #         "d[xs]": removed_xs,
+        #         "n[xs]": added_xs,
+        #         "e - d + n": interp,
+        #     })
+
+        # if alpha_equivalent(added, removed):
+        #     return (empty, empty)
+        return (added, removed)
+    """
+
+    if not isinstance(e, syntax.EVar):
+        raise NotImplementedError(pprint(e))
+
+    @typechecked
+    def infer_delta(old : syntax.EVar, new : syntax.Exp) -> BagDelta:
+        if new == old:
+            return BagDelta.empty(old.type.t)
+        # if isinstance(new, syntax.ELet):
+        #     assert old != new.f.arg
+        #     n, d = infer_delta(old, new.f.body)
+        #     return (
+        #         qsubst(n, new.f.arg, new.e),
+        #         qsubst(d, new.f.arg, new.e))
+        if isinstance(new, syntax.EBinOp) and new.op == "+":
+            d = infer_delta(old, new.e1)
+            return (bag_union(n, new.e2), d)
+        if isinstance(new, syntax.EBinOp) and new.op == "-" and new.e1 == old:
+            return (empty, bag_intersection(old, new.e2))
+        raise NotImplementedError("{} -----> {}".format(pprint(old), pprint(new)))
+
+    new_e = mutate(e, s)
+    return infer_delta(e, new_e)
+
 @typechecked
 def better_mutate(
         e           : target_syntax.EStateVar,
@@ -200,6 +422,17 @@ def better_mutate(
     # if bag:
     #     added+removed
     if isinstance(e, syntax.EArgMin) or isinstance(e, syntax.EArgMax):
+
+        if True:
+            from cozy.synthesis.acceleration import histogram
+            m = histogram(e.e)
+            mm = syntax.EVar("m").with_type(m.type)
+            c1 = BagDelta(m.e, lambda k: target_syntax.EMapGet(mm, k).with_type(syntax.INT))
+            print(c1)
+            c2 = bag_delta2(e.e, context, op, assumptions)
+            print(c2)
+            raise NotImplementedError()
+
         if alpha_equivalent(e.f, mutate(e.f, op)):
 
             to_add, to_del = bag_delta(e.e, context, op, assumptions)
@@ -358,7 +591,7 @@ def require_equal(spec):
 @typechecked
 def apply(f : syntax.ELambda, arg : syntax.Exp) -> syntax.Exp:
     assert arg.type == f.arg.type
-    return qsubst(f.body, f.arg, arg)
+    return partial_eval(qsubst(f.body, f.arg, arg))
 
 @require_equal(lambda e, f: target_syntax.EMap(e, f).with_type(type(e.type)(f.body.type)))
 def emap(e, f):
