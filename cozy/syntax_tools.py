@@ -1021,6 +1021,13 @@ def unpack_representation(exp : syntax.Exp, names_to_avoid : {syntax.EVar} = set
     return (new_state, new_exp)
 
 @typechecked
+def pack_representation(rep : [(syntax.EVar, syntax.Exp)], ret : syntax.Exp) -> syntax.Exp:
+    """Inverse of unpack_representation."""
+    for v, e in rep:
+        ret = qsubst(ret, v, target_syntax.EStateVar(e).with_type(e.type))
+    return ret
+
+@typechecked
 def purify(exp : syntax.Exp) -> syntax.Exp:
     st, exp = unpack_representation(exp)
     for v, e in st:
