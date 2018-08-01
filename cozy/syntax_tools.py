@@ -1614,6 +1614,9 @@ def cse(e, verify=False):
             v = fresh_var(e.type, hint="tmp")
             self.avail[ee] = v
             return v
+        def visit_ELet(self, e):
+            # slow, but correct
+            return self.visit(subst(e.f.body, {e.f.arg.id:e.e}))
         def visit_EListComprehension(self, e):
             raise NotImplementedError()
         def _fvs(self, e):
