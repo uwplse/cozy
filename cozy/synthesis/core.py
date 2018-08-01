@@ -217,7 +217,7 @@ class Learner(object):
 
         root_ctx = self.context
         def check_wf(e, ctx, pool):
-            with task("checking well-formedness", size=e.size()):
+            with task("pruning", size=e.size()):
                 is_wf = exp_wf(e, pool=pool, context=ctx, solver=self.wf_solver)
                 if not is_wf:
                     return is_wf
