@@ -419,7 +419,7 @@ def asymptotic_runtime(e : Exp) -> DominantTerm:
             res += worst_case_cardinality(e.e) * asymptotic_runtime(e.value)
         if isinstance(e, EBinOp) and e.op == BOp.In:
             res += worst_case_cardinality(e.e2)
-        if isinstance(e, EBinOp) and e.op == "-" and is_collection(e.type):
+        if isinstance(e, EBinOp) and e.op in ("-", "intersect") and is_collection(e.type):
             res += worst_case_cardinality(e.e1) + worst_case_cardinality(e.e2) + worst_case_cardinality(e.e1) * worst_case_cardinality(e.e2)
         if isinstance(e, EUnaryOp) and e.op in LINEAR_TIME_UOPS:
             res += worst_case_cardinality(e.e)
