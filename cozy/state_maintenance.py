@@ -375,10 +375,10 @@ def emap(e, f):
     #     return bag_union(emap(e.e1, f), emap(e.e2, f))
     # if isinstance(e, target_syntax.EMap):
     #     return emap(e.e, compose(f, e.f))
-    if isinstance(e, syntax.ECond):
-        return cond(e.cond,
-            emap(e.then_branch, f),
-            emap(e.else_branch, f))
+    # if isinstance(e, syntax.ECond):
+    #     return cond(e.cond,
+    #         emap(e.then_branch, f),
+    #         emap(e.else_branch, f))
     return target_syntax.EMap(e, f).with_type(out_type)
 
 @require_equal(lambda e, f: target_syntax.EFilter(e, f).with_type(e.type))
@@ -405,11 +405,11 @@ def efilter(e, f):
             apply(f, e.e),
             e,
             syntax.EEmptyList().with_type(e.type))
-    if isinstance(e, syntax.ECond):
-        return cond(
-            e.cond,
-            efilter(e.then_branch, f),
-            efilter(e.else_branch, f))
+    # if isinstance(e, syntax.ECond):
+    #     return cond(
+    #         e.cond,
+    #         efilter(e.then_branch, f),
+    #         efilter(e.else_branch, f))
     return target_syntax.EFilter(e, f).with_type(out_type)
 
 def countin(x, bag):
@@ -482,10 +482,10 @@ def flatmap(e, f):
         return apply(f, e.e)
     # if isinstance(e, syntax.EBinOp) and e.op == "+":
     #     return bag_union(flatmap(e.e1, f), flatmap(e.e2, f))
-    if isinstance(e, syntax.ECond):
-        return cond(e.cond,
-            flatmap(e.then_branch, f),
-            flatmap(e.else_branch, f))
+    # if isinstance(e, syntax.ECond):
+    #     return cond(e.cond,
+    #         flatmap(e.then_branch, f),
+    #         flatmap(e.else_branch, f))
     # if definitely(is_filter(f.arg, f.body)):
     #     print("FILTER: {}".format(pprint(f.body)))
     #     if definitely(are_unique(e)):
@@ -528,14 +528,14 @@ def bag_subtract(e1, e2):
     if dup is not None:
         l.remove(dup)
         return syntax.EUnion(l, elem_type=e1.type.t)
-    if isinstance(e2, syntax.ECond):
-        return cond(e2.cond,
-            bag_subtract(e1, e2.then_branch),
-            bag_subtract(e1, e2.else_branch)).with_type(e1.type)
-    if isinstance(e1, syntax.ECond):
-        return cond(e1.cond,
-            bag_subtract(e1.then_branch, e2),
-            bag_subtract(e1.else_branch, e2)).with_type(e1.type)
+    # if isinstance(e2, syntax.ECond):
+    #     return cond(e2.cond,
+    #         bag_subtract(e1, e2.then_branch),
+    #         bag_subtract(e1, e2.else_branch)).with_type(e1.type)
+    # if isinstance(e1, syntax.ECond):
+    #     return cond(e1.cond,
+    #         bag_subtract(e1.then_branch, e2),
+    #         bag_subtract(e1.else_branch, e2)).with_type(e1.type)
     # if isinstance(e1, syntax.EBinOp) and e1.op == "+" and alpha_equivalent(e1.e1, e2):
     #     return e1.e2
     # if isinstance(e2, syntax.EBinOp) and e2.op == "+" and alpha_equivalent(e1, e2.e1):
@@ -1164,9 +1164,25 @@ def dbg(f):
         # assert exp_wf(n, context, RUNTIME_POOL), "output [added] not wf: {} ----> {} in {}".format(pprint(e), pprint(n), context)
         # assert exp_wf(d, context, RUNTIME_POOL), "output [removed] not wf: {} ----> {} in {}".format(pprint(e), pprint(d), context)
 
+        # if alpha_equivalent(n, d):
+        formula = syntax.EImplies(assumptions, syntax.EEq(n, d))
+        if solver_for(context).valid(formula):
+            n = d = syntax.EEmptyList().with_type(e.type)
+
+        if isinstance(e, syntax.EUnaryOp) and e.op == syntax.UOp.Distinct:
+            check_valid(context,
+                formula,
+                debug={
+                "e": e,
+                "n": n,
+                "d": d,
+                })
+
         interp = e - d + n
-        print("delta {}: +{}, -{}".format(
-            pprint(e), pprint(n), pprint(d)))
+        print("delta {}:".format(pprint(e)))
+        print(" - {}".format(pprint(d)))
+        print(" + {}".format(pprint(n)))
+
         # # print("delta {}: {}".format(pprint(e), pprint(interp)))
         # interp = partial_eval(interp)
         # # print("delta {}: {}".format(pprint(e), pprint(interp)))
@@ -1178,15 +1194,17 @@ def dbg(f):
         assert context.legal_for(free_vars(n)), free_vars(n)
         assert context.legal_for(free_vars(d)), free_vars(d)
 
-        if alpha_equivalent(n, d):
-            n = d = syntax.EEmptyList().with_type(e.type)
+        lb1, ub1 = size_analysis(n)
+        lb2, ub2 = size_analysis(d)
+        print("|n| in [{}, {}]".format(lb1, ub1))
+        print("|d| in [{}, {}]".format(lb2, ub2))
+        if not (ub1 < INFINITY and ub2 < INFINITY):
+            raise NotEfficient(e)
 
-        # lb1, ub1 = size_analysis(n)
-        # lb2, ub2 = size_analysis(d)
-        # if not (ub1 < INFINITY and ub2 < INFINITY):
-        #     print("|n| in [{}, {}]".format(lb1, ub1))
-        #     print("|d| in [{}, {}]".format(lb2, ub2))
-        #     raise NotEfficient(e)
+        # from cozy.cost_model import asymptotic_runtime, is_constant_time
+        # for x in (d, n):
+        #     if not is_constant_time(x):
+        #         raise NotEfficient(x)
 
         assumptions_to_use = syntax.T
 
@@ -1976,7 +1994,6 @@ def mutate_in_place(
 
             raise Exception("wtf")
 
-        from cozy.cost_model import asymptotic_runtime, is_constant_time
         print("asymptotic cost: {}".format(asymptotic_runtime(new_e_prime)))
         if not is_constant_time(new_e_prime):
             raise NotEfficient(new_e_prime)
