@@ -1616,12 +1616,8 @@ def cse(e, verify=False):
             self.avail[ee] = v
             return v
         def visit_ELet(self, e):
-            saved_value = self.visit(e.e)
-            with common.extend(self.env, e.f.arg.id, saved_value):
-                return self.visit(e.f.body)
-            # assert e.f.arg not in self.avail.values()
-            # self.avail[saved_value] = e.f.arg
-            # return self.visit(e.f.body)
+            # slow, but correct
+            return self.visit(subst(e.f.body, {e.f.arg.id:e.e}))
         def visit_EListComprehension(self, e):
             raise NotImplementedError()
         def _fvs(self, e):
