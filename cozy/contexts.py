@@ -247,7 +247,8 @@ class UnderBinder(Context):
             return subst(e, { ctx.var.id : self.var })
         return self._parent.adapt(e, ctx)
     def path_conditions(self):
-        pcs = [pc for pc in self._parent.path_conditions() if self.var not in free_vars(pc)]
+        pcs = self._parent.path_conditions()
+        # pcs = [pc for pc in self._parent.path_conditions() if self.var not in free_vars(pc)]
         pcs.append(EDeepIn(self.var, self.bag))
         return pcs
     def generalize(self, fvs):
