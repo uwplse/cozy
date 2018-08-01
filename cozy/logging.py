@@ -32,7 +32,7 @@ def task_begin(name, **kwargs):
         name   = name,
         maybe_kwargs = (" [" + ", ".join("{}={}".format(k, v) for k, v in kwargs.items()) + "]") if kwargs else ""))
 
-def task_end():
+def task_end(success=True):
     end = datetime.datetime.now()
     key = tuple(name for name, start in _task_stack)
     name, start = _task_stack.pop()
@@ -41,14 +41,17 @@ def task_end():
     if not verbose.value:
         return
     indent = "  " * len(_task_stack)
-    log("{indent}Finished {name} [duration={duration:.3}s]".format(indent=indent, name=name, duration=duration))
+    message = "Finished" if success else "FAILED"
+    log("{indent}{msg} {name} [duration={duration:.3}s]".format(indent=indent, msg=message, name=name, duration=duration))
 
 @contextmanager
 def task(name, **kwargs):
     try:
         yield task_begin(name, **kwargs)
-    finally:
-        task_end()
+    except:
+        task_end(success=False)
+        raise
+    task_end()
 
 def event(name):
     if not verbose.value:
