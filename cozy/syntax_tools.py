@@ -1176,7 +1176,7 @@ def qsubst(
         haystack : syntax.Exp,
         needle   : syntax.EVar,
         repl     : syntax.Exp):
-    if repl.size() <= 1 or free_vars(haystack, counts=True).get(needle, 0) <= 1:
+    if repl.size() <= 2 or free_vars(haystack, counts=True).get(needle, 0) <= 1:
         return subst(haystack, { needle.id : repl })
     e = syntax.ELet(repl, target_syntax.ELambda(needle, haystack))
     if hasattr(haystack, "type"):
