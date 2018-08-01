@@ -423,7 +423,7 @@ def better_mutate(
     #     added+removed
     if isinstance(e, syntax.EArgMin) or isinstance(e, syntax.EArgMax):
 
-        if True:
+        if False:
             from cozy.synthesis.acceleration import histogram
             m = histogram(e.e)
             mm = syntax.EVar("m").with_type(m.type)
@@ -434,6 +434,24 @@ def better_mutate(
             raise NotImplementedError()
 
         if alpha_equivalent(e.f, mutate(e.f, op)):
+
+            del_elems = e.e - mutate(e.e, op)
+            debug={
+                "e": e.e,
+                "del": del_elems,
+                "conns": {v.id: v for v, p in context.vars()}["conns"],
+                "conns'": mutate({v.id: v for v, p in context.vars()}["conns"], op),
+                "i": {v.id: v for v, p in context.vars()}["i"],
+                "now": {v.id: v for v, p in context.vars()}["now"],
+                "lastUsed": {v.id: v for v, p in context.vars()}["lastUsed"],
+                }
+            for i, x in enumerate(break_sum(e.e)):
+                debug["e_{}".format(i)] = x
+            check_valid(
+                context,
+                syntax.EImplies(assumptions, syntax.EEmpty(del_elems)),
+                debug=debug)
+            raise NotImplementedError()
 
             to_add, to_del = bag_delta(e.e, context, op, assumptions)
             # to_del, to_add = (
