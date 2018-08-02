@@ -1024,7 +1024,7 @@ def unpack_representation(exp : syntax.Exp, names_to_avoid : {syntax.EVar} = set
 def pack_representation(rep : [(syntax.EVar, syntax.Exp)], ret : syntax.Exp) -> syntax.Exp:
     """Inverse of unpack_representation."""
     for v, e in rep:
-        ret = qsubst(ret, v, target_syntax.EStateVar(e).with_type(e.type))
+        ret = lightweight_subst(ret, v, target_syntax.EStateVar(e).with_type(e.type))
     return ret
 
 @typechecked
@@ -1172,10 +1172,26 @@ def subst(exp, replacements, tease=True):
     return Subst().visit(exp)
 
 @typechecked
-def qsubst(
+def lightweight_subst(
         haystack : syntax.Exp,
         needle   : syntax.EVar,
-        repl     : syntax.Exp):
+        repl     : syntax.Exp) -> syntax.Exp:
+    """Substitution procedure that does not duplicate large ASTs.
+
+    The output is typically
+
+        let needle = replacement in haystack
+
+    which is always equivalent to
+
+        subst(haystack, {needle.id:replacement})
+
+    but does not create many copies of the haystack expression in the AST.
+
+    This procedure does inline the replacement if it appears to be a good idea:
+     * if the needle only appears once in the haystack
+     * if the replacement is small (e.g. if it is a number literal or variable)
+    """
     if repl.size() <= 2 or free_vars(haystack, counts=True).get(needle, 0) <= 1:
         return subst(haystack, { needle.id : repl })
     e = syntax.ELet(repl, target_syntax.ELambda(needle, haystack))
