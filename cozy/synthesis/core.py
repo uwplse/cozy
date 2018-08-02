@@ -14,6 +14,7 @@ See their docstrings for more information.
 
 from collections import OrderedDict
 import itertools
+from typing import Callable
 
 from cozy.syntax import (
     INT, BOOL, TMap,
@@ -206,7 +207,7 @@ def search_for_improvements(
         context       : Context,
         examples      : [{str:object}],
         cost_model    : CostModel,
-        stop_callback,
+        stop_callback : Callable[[], bool],
         hints         : [Exp],
         ops           : [Op],
         blacklist     : {(Exp, Context, Pool, Exp) : str}):
@@ -391,12 +392,12 @@ def never_stop():
 def improve(
         target        : Exp,
         context       : Context,
-        assumptions   : Exp            = T,
-        stop_callback                  = never_stop,
-        hints         : [Exp]          = (),
-        examples      : [{str:object}] = (),
-        cost_model    : CostModel      = None,
-        ops           : [Op]           = ()):
+        assumptions   : Exp                = T,
+        stop_callback : Callable[[], bool] = never_stop,
+        hints         : [Exp]              = (),
+        examples      : [{str:object}]     = (),
+        cost_model    : CostModel          = None,
+        ops           : [Op]               = ()):
     """Improve the target expression using enumerative synthesis.
 
     This function is a generator that yields increasingly better and better
