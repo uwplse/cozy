@@ -6,6 +6,7 @@ from cozy.contexts import shred, replace
 from cozy.pools import RUNTIME_POOL, STATE_POOL
 from cozy.structures.heaps import TMinHeap, TMaxHeap, EMakeMinHeap, EMakeMaxHeap, EHeapPeek2
 from cozy.evaluation import construct_value, uneval, eval
+from cozy.opts import Option
 
 accelerate = Option("acceleration-rules", bool, True)
 
