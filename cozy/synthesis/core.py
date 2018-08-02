@@ -27,7 +27,7 @@ from cozy.typecheck import is_collection, is_scalar
 from cozy.syntax_tools import subst, pprint, free_vars, fresh_var, alpha_equivalent, strip_EStateVar, freshen_binders, wrap_naked_statevars, break_conj
 from cozy.wf import exp_wf
 from cozy.common import No, OrderedSet, unique, OrderedSet, StopException
-from cozy.solver import valid, solver_for_context
+from cozy.solver import valid, solver_for_context, ModelCachingSolver
 from cozy.evaluation import construct_value
 from cozy.cost_model import CostModel, Order, LINEAR_TIME_UOPS
 from cozy.opts import Option
@@ -199,178 +199,173 @@ def good_idea_recursive(solver, e : Exp, context : Context, pool = RUNTIME_POOL,
             return res
     return True
 
-class Learner(object):
-    def __init__(self, targets, solver, context, examples, cost_model, stop_callback, hints, ops):
-        self.context = context
-        self.stop_callback = stop_callback
-        self.cost_model = cost_model
-        self.hints = list(hints)
-        self.wf_solver = solver
-        self.ops = ops
-        self.blacklist = {}
-        self.reset(examples)
-        self.watch(targets)
+def search_for_improvements(
+        targets       : [Exp],
+        wf_solver     : ModelCachingSolver,
+        context       : Context,
+        examples      : [{str:object}],
+        cost_model    : CostModel,
+        stop_callback,
+        hints         : [Exp],
+        ops           : [Op],
+        blacklist     : {(Exp, Context, Pool, Exp) : str}):
+    """Search for potential improvements to any of the target expressions.
 
-    def reset(self, examples):
-        self.examples = list(examples)
+    This function yields expressions that look like improvements (or are
+    ambiguous with respect to some target).
+    """
 
-    def watch(self, new_targets):
-        self.targets = list(new_targets)
-        assert self.targets
+    root_ctx = context
+    def check_wf(e, ctx, pool):
+        with task("pruning", size=e.size()):
+            is_wf = exp_wf(e, pool=pool, context=ctx, solver=wf_solver)
+            assert is_wf, "{} is not well-formed: {}".format(pprint(e), is_wf)
+            res = good_idea_recursive(wf_solver, e, ctx, pool, ops=ops)
+            if not res:
+                return res
+            if cost_pruning.value and pool == RUNTIME_POOL and cost_model.compare(e, targets[0], ctx, pool) == Order.GT:
+                return No("too expensive")
+            return True
 
-    def search(self):
+    with task("setting up hints"):
+        frags = list(unique(itertools.chain(
+            *[shred(t, root_ctx) for t in targets],
+            *[shred(h, root_ctx) for h in hints])))
+        frags.sort(key=hint_order)
+        enum = Enumerator(
+            examples=examples,
+            cost_model=cost_model,
+            check_wf=check_wf,
+            hints=frags,
+            heuristics=try_optimize,
+            stop_callback=stop_callback,
+            do_eviction=enable_eviction.value)
 
-        root_ctx = self.context
-        def check_wf(e, ctx, pool):
-            with task("pruning", size=e.size()):
-                is_wf = exp_wf(e, pool=pool, context=ctx, solver=self.wf_solver)
-                assert is_wf, "{} is not well-formed: {}".format(pprint(e), is_wf)
-                res = good_idea_recursive(self.wf_solver, e, ctx, pool, ops=self.ops)
-                if not res:
-                    return res
-                if cost_pruning.value and pool == RUNTIME_POOL and self.cost_model.compare(e, self.targets[0], ctx, pool) == Order.GT:
-                    return No("too expensive")
-                return True
+    target_fp = fingerprint(targets[0], examples)
 
-        with task("setting up hints"):
-            frags = list(unique(itertools.chain(
-                *[shred(t, root_ctx) for t in self.targets],
-                *[shred(h, root_ctx) for h in self.hints])))
-            frags.sort(key=hint_order)
-            enum = Enumerator(
-                examples=self.examples,
-                cost_model=self.cost_model,
-                check_wf=check_wf,
-                hints=frags,
-                heuristics=try_optimize,
-                stop_callback=self.stop_callback,
-                do_eviction=enable_eviction.value)
+    with task("setting up watches"):
+        watches_by_context = OrderedDict()
+        for target in targets:
+            for e, ctx, pool in unique(shred(target, context=root_ctx, pool=RUNTIME_POOL)):
+                l = watches_by_context.get(ctx)
+                if l is None:
+                    l = []
+                    watches_by_context[ctx] = l
+                l.append((target, e, pool))
 
-        target_fp = fingerprint(self.targets[0], self.examples)
+        watches = OrderedDict()
+        for ctx, exprs in watches_by_context.items():
+            exs = ctx.instantiate_examples(examples)
+            for target, e, pool in exprs:
+                fp = fingerprint(e, exs)
+                k = (fp, ctx, pool)
+                l = watches.get(k)
+                if l is None:
+                    l = []
+                    watches[k] = l
+                l.append((target, e))
 
-        with task("setting up watches"):
-            watches_by_context = OrderedDict()
-            for target in self.targets:
-                for e, ctx, pool in unique(shred(target, context=root_ctx, pool=RUNTIME_POOL)):
-                    l = watches_by_context.get(ctx)
-                    if l is None:
-                        l = []
-                        watches_by_context[ctx] = l
-                    l.append((target, e, pool))
+        # watched_ctxs = list(unique((ctx, pool) for fp, ctx, pool in watches.keys()))
+        watched_ctxs = list(unique((ctx, pool) for _, _, ctx, pool in exploration_order(targets, root_ctx)))
 
-            watches = OrderedDict()
-            for ctx, exprs in watches_by_context.items():
-                exs = ctx.instantiate_examples(self.examples)
-                for target, e, pool in exprs:
-                    fp = fingerprint(e, exs)
-                    k = (fp, ctx, pool)
-                    l = watches.get(k)
-                    if l is None:
-                        l = []
-                        watches[k] = l
-                    l.append((target, e))
+    def consider_new_target(old_target, e, ctx, pool, replacement):
+        nonlocal n
+        n += 1
+        k = (e, ctx, pool, replacement)
+        if enable_blacklist.value and k in blacklist:
+            event("blacklisted")
+            print("skipping blacklisted substitution: {} ---> {} ({})".format(pprint(e), pprint(replacement), blacklist[k]))
+            return
+        new_target = freshen_binders(replace(
+            target, root_ctx, RUNTIME_POOL,
+            e, ctx, pool,
+            replacement), root_ctx)
+        if any(alpha_equivalent(t, new_target) for t in targets):
+            event("already seen")
+            return
+        wf = check_wf(new_target, root_ctx, RUNTIME_POOL)
+        if not wf:
+            msg = "not well-formed [wf={}]".format(wf)
+            event(msg)
+            blacklist[k] = msg
+            return
+        if not fingerprints_match(fingerprint(new_target, examples), target_fp):
+            msg = "not correct"
+            event(msg)
+            blacklist[k] = msg
+            return
+        if cost_model.compare(new_target, target, root_ctx, RUNTIME_POOL) not in (Order.LT, Order.AMBIGUOUS):
+            msg = "not an improvement"
+            event(msg)
+            blacklist[k] = msg
+            return
+        print("FOUND A GUESS AFTER {} CONSIDERED".format(n))
+        print(" * in {}".format(pprint(old_target), pprint(e), pprint(replacement)))
+        print(" * replacing {}".format(pprint(e)))
+        print(" * with {}".format(pprint(replacement)))
+        yield new_target
 
-            # watched_ctxs = list(unique((ctx, pool) for fp, ctx, pool in watches.keys()))
-            watched_ctxs = list(unique((ctx, pool) for _, _, ctx, pool in exploration_order(self.targets, root_ctx)))
+    size = 0
+    while True:
 
-        def consider_new_target(old_target, e, ctx, pool, replacement):
-            nonlocal n
-            n += 1
-            k = (e, ctx, pool, replacement)
-            if enable_blacklist.value and k in self.blacklist:
-                event("blacklisted")
-                print("skipping blacklisted substitution: {} ---> {} ({})".format(pprint(e), pprint(replacement), self.blacklist[k]))
-                return
-            new_target = freshen_binders(replace(
-                target, root_ctx, RUNTIME_POOL,
-                e, ctx, pool,
-                replacement), root_ctx)
-            if any(alpha_equivalent(t, new_target) for t in self.targets):
-                event("already seen")
-                return
-            wf = check_wf(new_target, root_ctx, RUNTIME_POOL)
-            if not wf:
-                msg = "not well-formed [wf={}]".format(wf)
-                event(msg)
-                self.blacklist[k] = msg
-                return
-            if not fingerprints_match(fingerprint(new_target, self.examples), target_fp):
-                msg = "not correct"
-                event(msg)
-                self.blacklist[k] = msg
-                return
-            if self.cost_model.compare(new_target, target, root_ctx, RUNTIME_POOL) not in (Order.LT, Order.AMBIGUOUS):
-                msg = "not an improvement"
-                event(msg)
-                self.blacklist[k] = msg
-                return
-            print("FOUND A GUESS AFTER {} CONSIDERED".format(n))
-            print(" * in {}".format(pprint(old_target), pprint(e), pprint(replacement)))
-            print(" * replacing {}".format(pprint(e)))
-            print(" * with {}".format(pprint(replacement)))
-            yield new_target
+        print("starting minor iteration {} with |cache|={}".format(size, enum.cache_size()))
+        if stop_callback():
+            raise StopException()
 
-        size = 0
-        while True:
+        n = 0
 
-            print("starting minor iteration {} with |cache|={}".format(size, enum.cache_size()))
-            if self.stop_callback():
-                raise StopException()
+        for ctx, pool in watched_ctxs:
+            with task("searching for obvious substitutions", ctx=ctx, pool=pool_name(pool)):
+                for info in enum.enumerate_with_info(size=size, context=ctx, pool=pool):
+                    with task("searching for obvious substitution", expression=pprint(info.e)):
+                        fp = info.fingerprint
+                        for ((fpx, cc, pp), reses) in watches.items():
+                            if cc != ctx or pp != pool:
+                                continue
 
-            n = 0
+                            if not fingerprints_match(fpx, fp):
+                                continue
 
-            for ctx, pool in watched_ctxs:
-                with task("searching for obvious substitutions", ctx=ctx, pool=pool_name(pool)):
-                    for info in enum.enumerate_with_info(size=size, context=ctx, pool=pool):
-                        with task("searching for obvious substitution", expression=pprint(info.e)):
-                            fp = info.fingerprint
-                            for ((fpx, cc, pp), reses) in watches.items():
-                                if cc != ctx or pp != pool:
-                                    continue
-
-                                if not fingerprints_match(fpx, fp):
-                                    continue
-
-                                for target, watched_e in reses:
-                                    replacement = info.e
-                                    event("possible substitution: {} ---> {}".format(pprint(watched_e), pprint(replacement)))
-                                    event("replacement locations: {}".format(pprint(replace(target, root_ctx, RUNTIME_POOL, watched_e, ctx, pool, EVar("___")))))
-
-                                    if alpha_equivalent(watched_e, replacement):
-                                        event("no change")
-                                        continue
-
-                                    yield from consider_new_target(target, watched_e, ctx, pool, replacement)
-
-            if check_all_substitutions.value:
-                print("Guessing at substitutions...")
-                for target, e, ctx, pool in exploration_order(self.targets, root_ctx):
-                    with task("checking substitutions",
-                            target=pprint(replace(target, root_ctx, RUNTIME_POOL, e, ctx, pool, EVar("___"))),
-                            e=pprint(e)):
-                        for info in enum.enumerate_with_info(size=size, context=ctx, pool=pool):
-                            with task("checking substitution", expression=pprint(info.e)):
-                                if self.stop_callback():
-                                    raise StopException()
+                            for target, watched_e in reses:
                                 replacement = info.e
-                                if replacement.type != e.type:
-                                    event("wrong type (is {}, need {})".format(pprint(replacement.type), pprint(e.type)))
-                                    continue
-                                if alpha_equivalent(replacement, e):
+                                event("possible substitution: {} ---> {}".format(pprint(watched_e), pprint(replacement)))
+                                event("replacement locations: {}".format(pprint(replace(target, root_ctx, RUNTIME_POOL, watched_e, ctx, pool, EVar("___")))))
+
+                                if alpha_equivalent(watched_e, replacement):
                                     event("no change")
                                     continue
-                                should_consider = should_consider_replacement(
-                                    target, root_ctx,
-                                    e, ctx, pool, fingerprint(e, ctx.instantiate_examples(self.examples)),
-                                    info.e, info.fingerprint)
-                                if not should_consider:
-                                    event("skipped; `should_consider_replacement` returned {}".format(should_consider))
-                                    continue
 
-                                yield from consider_new_target(target, e, ctx, pool, replacement)
+                                yield from consider_new_target(target, watched_e, ctx, pool, replacement)
 
-            print("CONSIDERED {}".format(n))
-            size += 1
+        if check_all_substitutions.value:
+            print("Guessing at substitutions...")
+            for target, e, ctx, pool in exploration_order(targets, root_ctx):
+                with task("checking substitutions",
+                        target=pprint(replace(target, root_ctx, RUNTIME_POOL, e, ctx, pool, EVar("___"))),
+                        e=pprint(e)):
+                    for info in enum.enumerate_with_info(size=size, context=ctx, pool=pool):
+                        with task("checking substitution", expression=pprint(info.e)):
+                            if stop_callback():
+                                raise StopException()
+                            replacement = info.e
+                            if replacement.type != e.type:
+                                event("wrong type (is {}, need {})".format(pprint(replacement.type), pprint(e.type)))
+                                continue
+                            if alpha_equivalent(replacement, e):
+                                event("no change")
+                                continue
+                            should_consider = should_consider_replacement(
+                                target, root_ctx,
+                                e, ctx, pool, fingerprint(e, ctx.instantiate_examples(examples)),
+                                info.e, info.fingerprint)
+                            if not should_consider:
+                                event("skipped; `should_consider_replacement` returned {}".format(should_consider))
+                                continue
+
+                            yield from consider_new_target(target, e, ctx, pool, replacement)
+
+        print("CONSIDERED {}".format(n))
+        size += 1
 
 def can_elim_vars(spec : Exp, assumptions : Exp, vs : [EVar]):
     spec = strip_EStateVar(spec)
@@ -483,11 +478,20 @@ def improve(
         cost_model = CostModel(funcs=funcs, assumptions=assumptions)
 
     watched_targets = [target]
-    learner = Learner(watched_targets, solver, context, examples, cost_model, stop_callback, hints, ops=ops)
+    blacklist = {}
 
     while True:
         # 1. find any potential improvement to any sub-exp of target
-        for new_target in learner.search():
+        for new_target in search_for_improvements(
+                targets=watched_targets,
+                wf_solver=solver,
+                context=context,
+                examples=examples,
+                cost_model=cost_model,
+                stop_callback=stop_callback,
+                hints=hints,
+                ops=ops,
+                blacklist=blacklist):
             print("Found candidate improvement: {}".format(pprint(new_target)))
 
             # 2. check
@@ -501,11 +505,10 @@ def improve(
                     print("old target = {!r}".format(target))
                     print("new target = {!r}".format(new_target))
                     raise Exception("got a duplicate example")
-                # a. if incorrect: add example, reset the learner
+                # a. if incorrect: add example, restart
                 examples.append(counterexample)
                 event("new example: {!r}".format(counterexample))
                 print("wrong; restarting with {} examples".format(len(examples)))
-                learner.reset(examples)
                 break
             else:
                 # b. if correct: yield it, watch the new target, goto 1
@@ -542,5 +545,4 @@ def improve(
 
                 watched_targets.append(new_target)
                 print("Now watching {} targets".format(len(watched_targets)))
-                learner.watch(watched_targets)
                 break
