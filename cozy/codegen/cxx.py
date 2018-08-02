@@ -363,9 +363,7 @@ class CxxPrinter(CodeGenerator):
 
     def visit_EMakeMap2(self, e):
         m = self.fv(e.type)
-        self.declare(m)
-        x = self.fv(e.type.k)
-        self.visit(SForEach(x, e.e, SMapPut(m, x, e.value.apply_to(x))))
+        self.declare(m, e)
         return m.id
 
     def visit_EHasKey(self, e):
@@ -419,7 +417,7 @@ class CxxPrinter(CodeGenerator):
         h = extension_handler(type(e))
         if h is not None:
             v = self.fv(e.type)
-            self.declare(v)
+            self.declare(v, evaluation.construct_value(v.type))
             self.visit(h.codegen(e, self.state_exps, out=v))
             return v.id
         else:

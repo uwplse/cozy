@@ -5,7 +5,7 @@ from cozy import common, evaluation
 from cozy.target_syntax import *
 from cozy.syntax_tools import free_vars, subst, all_exps
 from cozy.typecheck import is_scalar
-from cozy.structures.arrays import TArray
+from cozy.structures import extension_handler
 
 from .cxx import CxxPrinter
 from .misc import *
@@ -68,15 +68,19 @@ class JavaPrinter(CxxPrinter):
                 self.end_statement()
 
             # clear
-            self.write("{}public void clear() {{\n".format(INDENT, spec.name))
-            for name, t in spec.statevars:
-                initial_value = state_exps[name]
-                fvs = free_vars(initial_value)
-                initial_value = subst(initial_value,
-                    {v.id : evaluation.construct_value(v.type) for v in fvs})
-                setup = self.construct_concrete(t, initial_value, EVar(name).with_type(t))
-                self.visit(setup)
-            self.write("{}}}\n\n".format(INDENT))
+            self.begin_statement()
+            self.write("public void clear() ")
+            with self.block():
+                for name, t in spec.statevars:
+                    initial_value = state_exps[name]
+                    fvs = free_vars(initial_value)
+                    initial_value = subst(initial_value,
+                        {v.id : evaluation.construct_value(v.type) for v in fvs})
+                    setup = self.construct_concrete(t, initial_value, EVar(name).with_type(t))
+                    # from cozy.syntax_tools import pprint
+                    # self.write_stmt("// initializing {} = {}".format(name, pprint(initial_value)))
+                    self.visit(setup)
+            self.end_statement()
 
             # methods
             for op in spec.methods:
@@ -153,8 +157,6 @@ class JavaPrinter(CxxPrinter):
         return SEscape("{indent}{out} = new " + self.strip_generics(self.visit(elem_type, name="")) + "[{len}];\n", ["out", "len"], [out, len])
 
     def initialize_native_map(self, out):
-        if out.type.k == INT:
-            return self.initialize_array(out.type.v, ENum(64).with_type(INT), out)
         if self.use_trove(out.type):
             if self.trovename(out.type.k) == "Object":
                 args = "64, 0.5f, {default}"
@@ -463,9 +465,13 @@ class JavaPrinter(CxxPrinter):
         return self.visit_TNativeList(t, name)
 
     def visit_SCall(self, call):
+        h = extension_handler(type(call.target.type))
+        if h is not None:
+            return self.visit(h.implement_stmt(call, self.state_exps))
+
         target = self.visit(call.target)
         args = [self.visit(a) for a in call.args]
-        if type(call.target.type) in (TBag, TSet):
+        if type(call.target.type) in (TBag, TSet, TList):
             self.begin_statement()
             if call.func == "add":
                 self.write(target, ".add(", args[0], ");")
@@ -474,7 +480,8 @@ class JavaPrinter(CxxPrinter):
             else:
                 raise NotImplementedError(call.func)
             self.end_statement()
-        return super().visit_SCall(call)
+        else:
+            raise NotImplementedError(call)
 
     def visit_EGetField(self, e):
         ee = self.visit(e.e)
@@ -507,8 +514,6 @@ class JavaPrinter(CxxPrinter):
         return "{}[] {}".format(self.visit(t.t, name=""), name)
 
     def visit_TNativeMap(self, t, name):
-        if t.k == INT:
-            return self.visit(TArray(t.v), name)
         if self.use_trove(t):
             args = []
             for x in (t.k, t.v):
@@ -544,35 +549,39 @@ class JavaPrinter(CxxPrinter):
                 indent2=indent+INDENT)
         return super().for_each_native(x, iterable, body)
 
+    def visit_SSwap(self, s):
+        tmp = self.fv(s.lval1.type, "swap_tmp")
+        return self.visit(seq([
+            SDecl(tmp.id, s.lval1),
+            SAssign(s.lval1, s.lval2),
+            SAssign(s.lval2, tmp)]))
+
     def visit_SMapPut(self, update):
-        if update.map.type.k == INT:
-            self.array_resize_for_index(update.map.type.v, update.map, update.key)
         map = self.visit(update.map)
         key = self.visit(update.key)
-        if update.map.type.k == INT:
-            self.visit(self.array_put(update.map.type.v, EEscape(map, [], []).with_type(update.map.type), EEscape(key, [], []).with_type(update.key.type), update.value))
-        else:
-            val = self.fv(update.value.type)
-            self.declare(val, update.value)
-            self.begin_statement()
-            self.write(map, ".put(", key, ", ", val.id, ");")
-            self.end_statement()
+        val = self.fv(update.value.type)
+        self.declare(val, update.value)
+        self.begin_statement()
+        self.write(map, ".put(", key, ", ", val.id, ");")
+        self.end_statement()
 
     def visit_SMapUpdate(self, update):
         if isinstance(update.change, SNoOp):
             return ""
-        if update.map.type.k == INT:
-            self.array_resize_for_index(update.map.type.v, update.map, update.key)
         # TODO: liveness analysis to avoid this map lookup in some cases
         self.declare(update.val_var, EMapGet(update.map, update.key).with_type(update.map.type.v))
         map = self.visit(update.map) # TODO: deduplicate
         key = self.visit(update.key) # TODO: deduplicate
         self.visit(update.change)
         self.begin_statement()
-        if update.map.type.k == INT:
-            do_put = self.visit(self.array_put(update.map.type.v, EEscape(map, [], []).with_type(update.map.type), EEscape(key, [], []).with_type(update.key.type), update.val_var))
-        else:
-            self.write("{map}.put({key}, {val});\n".format(map=map, key=key, val=update.val_var.id))
+        self.write("{map}.put({key}, {val});\n".format(map=map, key=key, val=update.val_var.id))
+        self.end_statement()
+
+    def visit_SMapDel(self, update):
+        map = self.visit(update.map)
+        key = self.visit(update.key)
+        self.begin_statement()
+        self.write(map, ".remove(", key, ");")
         self.end_statement()
 
     def visit_SArrayAlloc(self, s):
@@ -582,8 +591,16 @@ class JavaPrinter(CxxPrinter):
         tname = self.strip_generics(self.visit(elem_type, name=""))
         self.write_stmt(lval, " = new ", tname, "[", cap, "];")
 
+    def visit_SEnsureCapacity(self, s):
+        return self.array_resize_for_index(s.a.type.t, s.a, s.capacity)
+
     def visit_SArrayReAlloc(self, s):
         return self.array_resize_for_index(s.a.type.t, s.a, s.new_capacity)
+
+    def visit_EArrayIndexOf(self, e):
+        # TODO: faster implementation that does not involve this intermediate list?
+        # TODO: unboxed version?
+        return self.visit(EEscape("java.util.Arrays.asList({a}).indexOf({x})", ("a", "x"), (e.a, e.x)).with_type(e.type))
 
     def array_resize_for_index(self, elem_type, a, i):
         new_a = fresh_name(hint="new_array")
@@ -606,6 +623,10 @@ class JavaPrinter(CxxPrinter):
                 [a, i, val])
         return SEscape("{indent}{lval} = {val};\n", ["lval", "val"], [self.array_get(elem_type, a, i), val])
 
+    def visit_EArrayLen(self, e):
+        a = self.visit(e.e)
+        return "{}.length".format(a)
+
     def array_get(self, elem_type, a, i):
         if elem_type == BOOL:
             return EEscape("(({a}[{i} >> 6] & (1L << {i})) != 0)", ["a", "i"], [a, i]).with_type(BOOL)
@@ -620,12 +641,12 @@ class JavaPrinter(CxxPrinter):
             EBinOp(i, ">=", ZERO).with_type(BOOL),
             EBinOp(i, "<", len).with_type(BOOL)])
 
+    def visit_EHasKey(self, e):
+        map = self.visit(e.map)
+        key = self.visit(e.key)
+        return "{map}.containsKey({key})".format(map=map, key=key)
+
     def native_map_get(self, e, default_value):
-        if e.key.type == INT:
-            return self.visit(ECond(
-                self.array_in_bounds(e.map.type.v, e.map, e.key),
-                self.array_get(e.map.type.v, e.map, e.key),
-                evaluation.construct_value(e.map.type.v)).with_type(e.map.type.v))
         if self.use_trove(e.map.type):
             if self.trovename(e.map.type.v) == "Object" and not isinstance(evaluation.construct_value(e.map.type.v), ENull):
                 # Le sigh...
