@@ -117,6 +117,8 @@ def mutate_in_place(
 
     if assumptions is None:
         assumptions = []
+    else:
+        assumptions = list(assumptions)
 
     if invariants is None:
         invariants = []
