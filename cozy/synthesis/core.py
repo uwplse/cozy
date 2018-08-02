@@ -9,6 +9,7 @@ See their docstrings for more information.
  - hint_order
  - good_idea
  - heuristic_done
+ - should_consider_replacement
 """
 
 from collections import OrderedDict
@@ -396,12 +397,10 @@ def improve(
         examples      : [{str:object}] = (),
         cost_model    : CostModel      = None,
         ops           : [Op]           = ()):
-    """
-    Improve the target expression using enumerative synthesis.
+    """Improve the target expression using enumerative synthesis.
+
     This function is a generator that yields increasingly better and better
     versions of the input expression `target`.
-
-    Notes on internals of this algorithm follow.
 
     Key differences from "regular" enumerative synthesis:
         - Expressions are either "state" expressions or "runtime" expressions,
