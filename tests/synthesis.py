@@ -1,15 +1,19 @@
 import unittest
+import datetime
 
 from cozy.syntax_tools import mk_lambda, pprint, alpha_equivalent
 from cozy.target_syntax import *
 from cozy.contexts import RootCtx, UnderBinder
-from cozy.typecheck import retypecheck
+from cozy.typecheck import retypecheck, typecheck
 from cozy.evaluation import mkval
 from cozy.cost_model import CostModel
+from cozy.synthesis import construct_initial_implementation, improve_implementation
 from cozy.synthesis.core import improve
 from cozy.synthesis.enumeration import Enumerator
+from cozy.parse import parse_spec
 from cozy.solver import valid, satisfy
 from cozy.pools import RUNTIME_POOL
+from cozy.desugar import desugar
 
 handle_type = THandle("H", INT)
 handle1 = (1, mkval(INT))
@@ -98,3 +102,33 @@ class TestSynthesisCore(unittest.TestCase):
             fingerprint_lens.add(len(info.fingerprint))
             print(info)
         assert len(fingerprint_lens) == 1, fingerprint_lens
+
+class TestSpecificationSynthesis(unittest.TestCase):
+
+    def test_bag_elimination(self):
+        spec = """
+            MyDataStructure:
+
+                state elements : Bag<Int>
+
+                query containsZero()
+                    exists [x | x <- elements, x == 0]
+
+                op addElement(x : Int)
+                    elements.add(x);
+        """
+
+        spec = parse_spec(spec)
+        errs = typecheck(spec)
+        assert not errs, str(errs)
+        spec = desugar(spec)
+
+        impl = construct_initial_implementation(spec)
+        impl = improve_implementation(impl, timeout=datetime.timedelta(seconds=30))
+
+        print(pprint(impl.code))
+
+        assert len(impl.concrete_state) == 1
+        (v, e), = impl.concrete_state
+        print("{} = {}".format(pprint(v), pprint(e)))
+        assert v.type == BOOL
