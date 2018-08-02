@@ -42,75 +42,13 @@ from .enumeration import Enumerator, Fingerprint, fingerprint, fingerprints_matc
 
 eliminate_vars = Option("eliminate-vars", bool, False)
 enable_blacklist = Option("enable-blacklist", bool, False)
-check_all_substitutions = Option("check-all-substitutions", bool, True)
+check_blind_substitutions = Option("check-blind-substitutions", bool, True)
 enable_eviction = Option("eviction", bool, True)
 cost_pruning = Option("prune-using-cost", bool, False,
     description="During synthesis, skip expressions that are more expensive "
         + "than the current best. This makes Cozy faster since it caches "
         + "fewer expressions, but also makes Cozy slower since it needs to do "
         + "more work when it sees each one for the first time.")
-
-def exploration_order(targets : [Exp], context : Context, pool : Pool = RUNTIME_POOL):
-    """
-    What order should subexpressions of the given targets be explored for
-    possible improvements?
-
-    Yields (target, subexpression, subcontext, subpool) tuples.
-    """
-
-    # current policy (earlier requirements have priority):
-    #  - visit runtime expressions first
-    #  - visit low-complexity contexts first
-    #  - visit small expressions first
-    def sort_key(tup):
-        e, ctx, p = tup
-        return (0 if p == RUNTIME_POOL else 1, ctx.complexity(), e.size())
-
-    for target in targets:
-        for e, ctx, p in sorted(unique(shred(target, context, pool=pool)), key=sort_key):
-            yield (target, e, ctx, p)
-
-def should_consider_replacement(
-        target         : Exp,
-        target_context : Context,
-        subexp         : Exp,
-        subexp_context : Context,
-        subexp_pool    : Pool,
-        subexp_fp      : Fingerprint,
-        replacement    : Exp,
-        replacement_fp : Fingerprint) -> bool:
-    """Heuristic that controls "blind" replacements.
-
-    Besides replacing subexpressions with improved versions, Cozy also attempts
-    "blind" replacements where the subexpression and the replacement do not
-    behave exactly the same.  In some cases this can actually make a huge
-    difference, for instance by replacing a collection with a singleton.
-
-    However, not all blind replacements are worth trying.  This function
-    controls which ones Cozy actually attempts.
-
-    Preconditions:
-     - subexp and replacement are both legal in (subexp_context, subexp_pool)
-     - subexp and replacement have the same type
-    """
-
-    if not is_collection(subexp.type):
-        return No("only collections matter")
-
-    if not fingerprint_is_subset(replacement_fp, subexp_fp):
-        return No("not a subset")
-
-    return True
-
-def hint_order(tup):
-    """What order should the enumerator see hints?
-
-    Takes an (e, ctx, pool) tuple as input and returns a sort key.
-    """
-
-    # current policy: visit smaller expressions first
-    e, ctx, pool = tup
-    return e.size()
 
 # Options that control `good_idea`
 allow_conditional_state = Option("allow-conditional-state", bool, True)
@@ -119,274 +57,8 @@ allow_big_sets = Option("allow-big-sets", bool, False)
 allow_big_maps = Option("allow-big-maps", bool, False)
 allow_int_arithmetic_state = Option("allow-int-arith-state", bool, True)
 
-def good_idea(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptions : Exp = T, ops : [Op] = ()) -> bool:
-    """Heuristic filter to ignore expressions that are almost certainly useless."""
-
-    if hasattr(e, "_good_idea"):
-        return True
-
-    state_vars  = OrderedSet(v for v, p in context.vars() if p == STATE_POOL)
-    args        = OrderedSet(v for v, p in context.vars() if p == RUNTIME_POOL)
-    assumptions = EAll([assumptions, context.path_condition()])
-    at_runtime  = pool == RUNTIME_POOL
-
-    if isinstance(e, EStateVar) and not free_vars(e.e):
-        return No("constant value in state position")
-    if (isinstance(e, EDropFront) or isinstance(e, EDropBack)) and not at_runtime:
-        return No("EDrop* in state position")
-    if not allow_big_sets.value and isinstance(e, EFlatMap) and not at_runtime:
-        return No("EFlatMap in state position")
-    if not allow_int_arithmetic_state.value and not at_runtime and isinstance(e, EBinOp) and e.type == INT:
-        return No("integer arithmetic in state position")
-    if is_collection(e.type) and not is_scalar(e.type.t):
-        return No("collection of nonscalar")
-    if isinstance(e.type, TMap) and not is_scalar(e.type.k):
-        return No("bad key type {}".format(pprint(e.type.k)))
-    if isinstance(e.type, TMap) and isinstance(e.type.v, TMap):
-        return No("map to map")
-    # This check is probably a bad idea: whether `the` is legal may depend on
-    # the contex that the expression is embedded within, so we can't skip it
-    # during synthesis just because it looks invalid now.
-    # if isinstance(e, EUnaryOp) and e.op == UOp.The:
-    #     len = EUnaryOp(UOp.Length, e.e).with_type(INT)
-    #     if not valid(EImplies(assumptions, EBinOp(len, "<=", ENum(1).with_type(INT)).with_type(BOOL))):
-    #         return No("illegal application of 'the': could have >1 elems")
-    if not at_runtime and isinstance(e, EBinOp) and e.op == "-" and is_collection(e.type):
-        return No("collection subtraction in state position")
-    # if not at_runtime and isinstance(e, ESingleton):
-    #     return No("singleton in state position")
-    # if not at_runtime and isinstance(e, ENum) and e.val != 0 and e.type == INT:
-    #     return No("nonzero integer constant in state position")
-    if at_runtime and isinstance(e, EStateVar) and isinstance(e.e, EBinOp) and is_scalar(e.e.e1.type) and is_scalar(e.e.e2.type):
-        return No("constant-time binary operator {!r} in state position".format(e.e.op))
-    if not allow_conditional_state.value and not at_runtime and isinstance(e, ECond):
-        return No("conditional in state position")
-    if isinstance(e, EMakeMap2) and isinstance(e.e, EEmptyList):
-        return No("trivially empty map")
-    if isinstance(e, EMakeMap2) and isinstance(e.e, ESingleton):
-        return No("really tiny map")
-    if not at_runtime and (isinstance(e, EArgMin) or isinstance(e, EArgMax)):
-        # Cozy has no way to efficiently implement mins/maxes when more than
-        # one element may leave the collection.
-        from cozy.state_maintenance import mutate
-        for op in ops:
-            elems = e.e
-            elems_prime = mutate(elems, op.body)
-            formula = EAll([assumptions] + list(op.assumptions) + [EGt(ELen(EBinOp(elems, "-", elems_prime).with_type(elems.type)), ONE)])
-            if solver.satisfiable(formula):
-                return No("more than one element might be removed during {}".format(op.name))
-    if not allow_peels.value and not at_runtime and isinstance(e, EFilter):
-        # catch "peels": removal of zero or one elements
-        if solver.valid(EImplies(assumptions, ELe(ELen(EFilter(e.e, ELambda(e.p.arg, ENot(e.p.body))).with_type(e.type)), ONE))):
-            return No("filter is a peel")
-    if not allow_big_maps.value and not at_runtime and isinstance(e, EMakeMap2) and is_collection(e.type.v):
-        all_collections = [sv for sv in state_vars if is_collection(sv.type)]
-        total_size = ENum(0).with_type(INT)
-        for c in all_collections:
-            total_size = EBinOp(total_size, "+", EUnaryOp(UOp.Length, c).with_type(INT)).with_type(INT)
-        my_size = EUnaryOp(UOp.Length, EFlatMap(EUnaryOp(UOp.Distinct, e.e).with_type(e.e.type), e.value).with_type(e.type.v)).with_type(INT)
-        s = EImplies(
-            assumptions,
-            EBinOp(total_size, ">=", my_size).with_type(BOOL))
-        if not solver.valid(s):
-            return No("non-polynomial-sized map")
-
-    e._good_idea = True
-    return True
-
-def good_idea_recursive(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptions : Exp = T, ops : [Op] = ()) -> bool:
-    for (sub, sub_ctx, sub_pool) in shred(e, context, pool):
-        res = good_idea(solver, sub, sub_ctx, sub_pool, assumptions=assumptions, ops=ops)
-        if not res:
-            return res
-    return True
-
-def search_for_improvements(
-        targets       : [Exp],
-        wf_solver     : ModelCachingSolver,
-        context       : Context,
-        examples      : [{str:object}],
-        cost_model    : CostModel,
-        stop_callback : Callable[[], bool],
-        hints         : [Exp],
-        ops           : [Op],
-        blacklist     : {(Exp, Context, Pool, Exp) : str}):
-    """Search for potential improvements to any of the target expressions.
-
-    This function yields expressions that look like improvements (or are
-    ambiguous with respect to some target).
-    """
-
-    root_ctx = context
-    def check_wf(e, ctx, pool):
-        with task("pruning", size=e.size()):
-            is_wf = exp_wf(e, pool=pool, context=ctx, solver=wf_solver)
-            assert is_wf, "{} is not well-formed: {}".format(pprint(e), is_wf)
-            res = good_idea_recursive(wf_solver, e, ctx, pool, ops=ops)
-            if not res:
-                return res
-            if cost_pruning.value and pool == RUNTIME_POOL and cost_model.compare(e, targets[0], ctx, pool) == Order.GT:
-                return No("too expensive")
-            return True
-
-    with task("setting up hints"):
-        frags = list(unique(itertools.chain(
-            *[shred(t, root_ctx) for t in targets],
-            *[shred(h, root_ctx) for h in hints])))
-        frags.sort(key=hint_order)
-        enum = Enumerator(
-            examples=examples,
-            cost_model=cost_model,
-            check_wf=check_wf,
-            hints=frags,
-            heuristics=try_optimize,
-            stop_callback=stop_callback,
-            do_eviction=enable_eviction.value)
-
-    target_fp = fingerprint(targets[0], examples)
-
-    with task("setting up watches"):
-        watches_by_context = OrderedDict()
-        for target in targets:
-            for e, ctx, pool in unique(shred(target, context=root_ctx, pool=RUNTIME_POOL)):
-                l = watches_by_context.get(ctx)
-                if l is None:
-                    l = []
-                    watches_by_context[ctx] = l
-                l.append((target, e, pool))
-
-        watches = OrderedDict()
-        for ctx, exprs in watches_by_context.items():
-            exs = ctx.instantiate_examples(examples)
-            for target, e, pool in exprs:
-                fp = fingerprint(e, exs)
-                k = (fp, ctx, pool)
-                l = watches.get(k)
-                if l is None:
-                    l = []
-                    watches[k] = l
-                l.append((target, e))
-
-        # watched_ctxs = list(unique((ctx, pool) for fp, ctx, pool in watches.keys()))
-        watched_ctxs = list(unique((ctx, pool) for _, _, ctx, pool in exploration_order(targets, root_ctx)))
-
-    def consider_new_target(old_target, e, ctx, pool, replacement):
-        nonlocal n
-        n += 1
-        k = (e, ctx, pool, replacement)
-        if enable_blacklist.value and k in blacklist:
-            event("blacklisted")
-            print("skipping blacklisted substitution: {} ---> {} ({})".format(pprint(e), pprint(replacement), blacklist[k]))
-            return
-        new_target = freshen_binders(replace(
-            target, root_ctx, RUNTIME_POOL,
-            e, ctx, pool,
-            replacement), root_ctx)
-        if any(alpha_equivalent(t, new_target) for t in targets):
-            event("already seen")
-            return
-        wf = check_wf(new_target, root_ctx, RUNTIME_POOL)
-        if not wf:
-            msg = "not well-formed [wf={}]".format(wf)
-            event(msg)
-            blacklist[k] = msg
-            return
-        if not fingerprints_match(fingerprint(new_target, examples), target_fp):
-            msg = "not correct"
-            event(msg)
-            blacklist[k] = msg
-            return
-        if cost_model.compare(new_target, target, root_ctx, RUNTIME_POOL) not in (Order.LT, Order.AMBIGUOUS):
-            msg = "not an improvement"
-            event(msg)
-            blacklist[k] = msg
-            return
-        print("FOUND A GUESS AFTER {} CONSIDERED".format(n))
-        print(" * in {}".format(pprint(old_target), pprint(e), pprint(replacement)))
-        print(" * replacing {}".format(pprint(e)))
-        print(" * with {}".format(pprint(replacement)))
-        yield new_target
-
-    size = 0
-    while True:
-
-        print("starting minor iteration {} with |cache|={}".format(size, enum.cache_size()))
-        if stop_callback():
-            raise StopException()
-
-        n = 0
-
-        for ctx, pool in watched_ctxs:
-            with task("searching for obvious substitutions", ctx=ctx, pool=pool_name(pool)):
-                for info in enum.enumerate_with_info(size=size, context=ctx, pool=pool):
-                    with task("searching for obvious substitution", expression=pprint(info.e)):
-                        fp = info.fingerprint
-                        for ((fpx, cc, pp), reses) in watches.items():
-                            if cc != ctx or pp != pool:
-                                continue
-
-                            if not fingerprints_match(fpx, fp):
-                                continue
-
-                            for target, watched_e in reses:
-                                replacement = info.e
-                                event("possible substitution: {} ---> {}".format(pprint(watched_e), pprint(replacement)))
-                                event("replacement locations: {}".format(pprint(replace(target, root_ctx, RUNTIME_POOL, watched_e, ctx, pool, EVar("___")))))
-
-                                if alpha_equivalent(watched_e, replacement):
-                                    event("no change")
-                                    continue
-
-                                yield from consider_new_target(target, watched_e, ctx, pool, replacement)
-
-        if check_all_substitutions.value:
-            print("Guessing at substitutions...")
-            for target, e, ctx, pool in exploration_order(targets, root_ctx):
-                with task("checking substitutions",
-                        target=pprint(replace(target, root_ctx, RUNTIME_POOL, e, ctx, pool, EVar("___"))),
-                        e=pprint(e)):
-                    for info in enum.enumerate_with_info(size=size, context=ctx, pool=pool):
-                        with task("checking substitution", expression=pprint(info.e)):
-                            if stop_callback():
-                                raise StopException()
-                            replacement = info.e
-                            if replacement.type != e.type:
-                                event("wrong type (is {}, need {})".format(pprint(replacement.type), pprint(e.type)))
-                                continue
-                            if alpha_equivalent(replacement, e):
-                                event("no change")
-                                continue
-                            should_consider = should_consider_replacement(
-                                target, root_ctx,
-                                e, ctx, pool, fingerprint(e, ctx.instantiate_examples(examples)),
-                                info.e, info.fingerprint)
-                            if not should_consider:
-                                event("skipped; `should_consider_replacement` returned {}".format(should_consider))
-                                continue
-
-                            yield from consider_new_target(target, e, ctx, pool, replacement)
-
-        print("CONSIDERED {}".format(n))
-        size += 1
-
-def can_elim_vars(spec : Exp, assumptions : Exp, vs : [EVar]):
-    spec = strip_EStateVar(spec)
-    sub = { v.id : fresh_var(v.type) for v in vs }
-    return valid(EImplies(
-        EAll([assumptions, subst(assumptions, sub)]),
-        EEq(spec, subst(spec, sub))))
-
-_DONE = set([EVar, EEnumEntry, ENum, EStr, EBool, EEmptyList, ENull])
-def heuristic_done(e : Exp):
-    return (
-        (type(e) in _DONE) or
-        (isinstance(e, ESingleton) and heuristic_done(e.e)) or
-        (isinstance(e, EStateVar) and heuristic_done(e.e)) or
-        (isinstance(e, EGetField) and heuristic_done(e.e)) or
-        (isinstance(e, EUnaryOp) and e.op not in LINEAR_TIME_UOPS and heuristic_done(e.e)) or
-        (isinstance(e, ENull)))
-
 def never_stop():
+    """Takes no arguments, always returns False."""
     return False
 
 def improve(
@@ -402,6 +74,9 @@ def improve(
 
     This function is a generator that yields increasingly better and better
     versions of the input expression `target`.
+
+    It periodically calls `stop_callback` and exits gracefully when
+    `stop_callback` returns True.
 
     Key differences from "regular" enumerative synthesis:
         - Expressions are either "state" expressions or "runtime" expressions,
@@ -546,3 +221,352 @@ def improve(
                 watched_targets.append(new_target)
                 print("Now watching {} targets".format(len(watched_targets)))
                 break
+
+def search_for_improvements(
+        targets       : [Exp],
+        wf_solver     : ModelCachingSolver,
+        context       : Context,
+        examples      : [{str:object}],
+        cost_model    : CostModel,
+        stop_callback : Callable[[], bool],
+        hints         : [Exp],
+        ops           : [Op],
+        blacklist     : {(Exp, Context, Pool, Exp) : str}):
+    """Search for potential improvements to any of the target expressions.
+
+    This function yields expressions that look like improvements (or are
+    ambiguous with respect to some target).  The expressions are only
+    guaranteed to be correct on the given examples.
+    """
+
+    root_ctx = context
+    def check_wf(e, ctx, pool):
+        with task("pruning", size=e.size()):
+            is_wf = exp_wf(e, pool=pool, context=ctx, solver=wf_solver)
+            assert is_wf, "{} is not well-formed: {}".format(pprint(e), is_wf)
+            res = good_idea_recursive(wf_solver, e, ctx, pool, ops=ops)
+            if not res:
+                return res
+            if cost_pruning.value and pool == RUNTIME_POOL and cost_model.compare(e, targets[0], ctx, pool) == Order.GT:
+                return No("too expensive")
+            return True
+
+    with task("setting up hints"):
+        frags = list(unique(itertools.chain(
+            *[shred(t, root_ctx) for t in targets],
+            *[shred(h, root_ctx) for h in hints])))
+        frags.sort(key=hint_order)
+        enum = Enumerator(
+            examples=examples,
+            cost_model=cost_model,
+            check_wf=check_wf,
+            hints=frags,
+            heuristics=try_optimize,
+            stop_callback=stop_callback,
+            do_eviction=enable_eviction.value)
+
+    target_fp = fingerprint(targets[0], examples)
+
+    with task("setting up watches"):
+        watches_by_context = OrderedDict()
+        for target in targets:
+            for e, ctx, pool in unique(shred(target, context=root_ctx, pool=RUNTIME_POOL)):
+                l = watches_by_context.get(ctx)
+                if l is None:
+                    l = []
+                    watches_by_context[ctx] = l
+                l.append((target, e, pool))
+
+        watches = OrderedDict()
+        for ctx, exprs in watches_by_context.items():
+            exs = ctx.instantiate_examples(examples)
+            for target, e, pool in exprs:
+                fp = fingerprint(e, exs)
+                k = (fp, ctx, pool)
+                l = watches.get(k)
+                if l is None:
+                    l = []
+                    watches[k] = l
+                l.append((target, e))
+
+        watched_ctxs = list(unique((ctx, pool) for _, _, ctx, pool in exploration_order(targets, root_ctx)))
+
+    def consider_new_target(old_target, e, ctx, pool, replacement):
+        nonlocal n
+        n += 1
+        k = (e, ctx, pool, replacement)
+        if enable_blacklist.value and k in blacklist:
+            event("blacklisted")
+            print("skipping blacklisted substitution: {} ---> {} ({})".format(pprint(e), pprint(replacement), blacklist[k]))
+            return
+        new_target = freshen_binders(replace(
+            target, root_ctx, RUNTIME_POOL,
+            e, ctx, pool,
+            replacement), root_ctx)
+        if any(alpha_equivalent(t, new_target) for t in targets):
+            event("already seen")
+            return
+        wf = check_wf(new_target, root_ctx, RUNTIME_POOL)
+        if not wf:
+            msg = "not well-formed [wf={}]".format(wf)
+            event(msg)
+            blacklist[k] = msg
+            return
+        if not fingerprints_match(fingerprint(new_target, examples), target_fp):
+            msg = "not correct"
+            event(msg)
+            blacklist[k] = msg
+            return
+        if cost_model.compare(new_target, target, root_ctx, RUNTIME_POOL) not in (Order.LT, Order.AMBIGUOUS):
+            msg = "not an improvement"
+            event(msg)
+            blacklist[k] = msg
+            return
+        print("FOUND A GUESS AFTER {} CONSIDERED".format(n))
+        print(" * in {}".format(pprint(old_target), pprint(e), pprint(replacement)))
+        print(" * replacing {}".format(pprint(e)))
+        print(" * with {}".format(pprint(replacement)))
+        yield new_target
+
+    size = 0
+    while True:
+
+        print("starting minor iteration {} with |cache|={}".format(size, enum.cache_size()))
+        if stop_callback():
+            raise StopException()
+
+        n = 0
+
+        for ctx, pool in watched_ctxs:
+            with task("searching for obvious substitutions", ctx=ctx, pool=pool_name(pool)):
+                for info in enum.enumerate_with_info(size=size, context=ctx, pool=pool):
+                    with task("searching for obvious substitution", expression=pprint(info.e)):
+                        fp = info.fingerprint
+                        for ((fpx, cc, pp), reses) in watches.items():
+                            if cc != ctx or pp != pool:
+                                continue
+
+                            if not fingerprints_match(fpx, fp):
+                                continue
+
+                            for target, watched_e in reses:
+                                replacement = info.e
+                                event("possible substitution: {} ---> {}".format(pprint(watched_e), pprint(replacement)))
+                                event("replacement locations: {}".format(pprint(replace(target, root_ctx, RUNTIME_POOL, watched_e, ctx, pool, EVar("___")))))
+
+                                if alpha_equivalent(watched_e, replacement):
+                                    event("no change")
+                                    continue
+
+                                yield from consider_new_target(target, watched_e, ctx, pool, replacement)
+
+        if check_blind_substitutions.value:
+            print("Guessing at substitutions...")
+            for target, e, ctx, pool in exploration_order(targets, root_ctx):
+                with task("checking substitutions",
+                        target=pprint(replace(target, root_ctx, RUNTIME_POOL, e, ctx, pool, EVar("___"))),
+                        e=pprint(e)):
+                    for info in enum.enumerate_with_info(size=size, context=ctx, pool=pool):
+                        with task("checking substitution", expression=pprint(info.e)):
+                            if stop_callback():
+                                raise StopException()
+                            replacement = info.e
+                            if replacement.type != e.type:
+                                event("wrong type (is {}, need {})".format(pprint(replacement.type), pprint(e.type)))
+                                continue
+                            if alpha_equivalent(replacement, e):
+                                event("no change")
+                                continue
+                            should_consider = should_consider_replacement(
+                                target, root_ctx,
+                                e, ctx, pool, fingerprint(e, ctx.instantiate_examples(examples)),
+                                info.e, info.fingerprint)
+                            if not should_consider:
+                                event("skipped; `should_consider_replacement` returned {}".format(should_consider))
+                                continue
+
+                            yield from consider_new_target(target, e, ctx, pool, replacement)
+
+        print("CONSIDERED {}".format(n))
+        size += 1
+
+def can_elim_vars(spec : Exp, assumptions : Exp, vs : [EVar]):
+    """Does any execution of `spec` actually depend on any of `vs`?
+
+    It is possible for a variable to appear in an expression like `spec`
+    without affecting its value.  This function uses the solver to try and
+    determine whether any of the given variables can affect the output of
+    `spec`.
+    """
+    spec = strip_EStateVar(spec)
+    sub = { v.id : fresh_var(v.type) for v in vs }
+    return valid(EImplies(
+        EAll([assumptions, subst(assumptions, sub)]),
+        EEq(spec, subst(spec, sub))))
+
+_DONE = set([EVar, EEnumEntry, ENum, EStr, EBool, EEmptyList, ENull])
+def heuristic_done(e : Exp):
+    """Returns True if it looks like `e` is as good as it can be ("done").
+
+    This does not guarantee that `e` is optimal with respect to the cost model,
+    but there are some cases where `e` is good enough and we'd rather not waste
+    resources looking harder.
+    """
+
+    # Currently, these cases are considered "done":
+    #  * variables
+    #  * literals
+    #  * a singleton set of a done expression
+    #  * a field lookup on a done expression
+    #  * a constant-time unary operator on a done expression
+    return (
+        (type(e) in _DONE) or
+        (isinstance(e, ESingleton) and heuristic_done(e.e)) or
+        (isinstance(e, EStateVar) and heuristic_done(e.e)) or
+        (isinstance(e, EGetField) and heuristic_done(e.e)) or
+        (isinstance(e, EUnaryOp) and e.op not in LINEAR_TIME_UOPS and heuristic_done(e.e)))
+
+def exploration_order(targets : [Exp], context : Context, pool : Pool = RUNTIME_POOL):
+    """
+    What order should subexpressions of the given targets be explored for
+    possible improvements?
+
+    Yields (target, subexpression, subcontext, subpool) tuples.
+    """
+
+    # current policy (earlier requirements have priority):
+    #  - visit runtime expressions first
+    #  - visit low-complexity contexts first
+    #  - visit small expressions first
+    def sort_key(tup):
+        e, ctx, p = tup
+        return (0 if p == RUNTIME_POOL else 1, ctx.complexity(), e.size())
+
+    for target in targets:
+        for e, ctx, p in sorted(unique(shred(target, context, pool=pool)), key=sort_key):
+            yield (target, e, ctx, p)
+
+def should_consider_replacement(
+        target         : Exp,
+        target_context : Context,
+        subexp         : Exp,
+        subexp_context : Context,
+        subexp_pool    : Pool,
+        subexp_fp      : Fingerprint,
+        replacement    : Exp,
+        replacement_fp : Fingerprint) -> bool:
+    """Heuristic that controls "blind" replacements.
+
+    Besides replacing subexpressions with improved versions, Cozy also attempts
+    "blind" replacements where the subexpression and the replacement do not
+    behave exactly the same.  In some cases this can actually make a huge
+    difference, for instance by replacing a collection with a singleton.
+
+    However, not all blind replacements are worth trying.  This function
+    controls which ones Cozy actually attempts.
+
+    Preconditions:
+     - subexp and replacement are both legal in (subexp_context, subexp_pool)
+     - subexp and replacement have the same type
+    """
+
+    if not is_collection(subexp.type):
+        return No("only collections matter")
+
+    if not fingerprint_is_subset(replacement_fp, subexp_fp):
+        return No("not a subset")
+
+    return True
+
+def hint_order(tup):
+    """What order should the enumerator see hints?
+
+    Takes an (e, ctx, pool) tuple as input and returns a sort key.
+    """
+
+    # current policy: visit smaller expressions first
+    e, ctx, pool = tup
+    return e.size()
+
+def good_idea(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptions : Exp = T, ops : [Op] = ()) -> bool:
+    """Heuristic filter to ignore expressions that are almost certainly useless."""
+
+    if hasattr(e, "_good_idea"):
+        return True
+
+    state_vars  = OrderedSet(v for v, p in context.vars() if p == STATE_POOL)
+    args        = OrderedSet(v for v, p in context.vars() if p == RUNTIME_POOL)
+    assumptions = EAll([assumptions, context.path_condition()])
+    at_runtime  = pool == RUNTIME_POOL
+
+    if isinstance(e, EStateVar) and not free_vars(e.e):
+        return No("constant value in state position")
+    if (isinstance(e, EDropFront) or isinstance(e, EDropBack)) and not at_runtime:
+        return No("EDrop* in state position")
+    if not allow_big_sets.value and isinstance(e, EFlatMap) and not at_runtime:
+        return No("EFlatMap in state position")
+    if not allow_int_arithmetic_state.value and not at_runtime and isinstance(e, EBinOp) and e.type == INT:
+        return No("integer arithmetic in state position")
+    if is_collection(e.type) and not is_scalar(e.type.t):
+        return No("collection of nonscalar")
+    if isinstance(e.type, TMap) and not is_scalar(e.type.k):
+        return No("bad key type {}".format(pprint(e.type.k)))
+    if isinstance(e.type, TMap) and isinstance(e.type.v, TMap):
+        return No("map to map")
+    # This check is probably a bad idea: whether `the` is legal may depend on
+    # the contex that the expression is embedded within, so we can't skip it
+    # during synthesis just because it looks invalid now.
+    # if isinstance(e, EUnaryOp) and e.op == UOp.The:
+    #     len = EUnaryOp(UOp.Length, e.e).with_type(INT)
+    #     if not valid(EImplies(assumptions, EBinOp(len, "<=", ENum(1).with_type(INT)).with_type(BOOL))):
+    #         return No("illegal application of 'the': could have >1 elems")
+    if not at_runtime and isinstance(e, EBinOp) and e.op == "-" and is_collection(e.type):
+        return No("collection subtraction in state position")
+    # if not at_runtime and isinstance(e, ESingleton):
+    #     return No("singleton in state position")
+    # if not at_runtime and isinstance(e, ENum) and e.val != 0 and e.type == INT:
+    #     return No("nonzero integer constant in state position")
+    if at_runtime and isinstance(e, EStateVar) and isinstance(e.e, EBinOp) and is_scalar(e.e.e1.type) and is_scalar(e.e.e2.type):
+        return No("constant-time binary operator {!r} in state position".format(e.e.op))
+    if not allow_conditional_state.value and not at_runtime and isinstance(e, ECond):
+        return No("conditional in state position")
+    if isinstance(e, EMakeMap2) and isinstance(e.e, EEmptyList):
+        return No("trivially empty map")
+    if isinstance(e, EMakeMap2) and isinstance(e.e, ESingleton):
+        return No("really tiny map")
+    if not at_runtime and (isinstance(e, EArgMin) or isinstance(e, EArgMax)):
+        # Cozy has no way to efficiently implement mins/maxes when more than
+        # one element may leave the collection.
+        from cozy.state_maintenance import mutate
+        for op in ops:
+            elems = e.e
+            elems_prime = mutate(elems, op.body)
+            formula = EAll([assumptions] + list(op.assumptions) + [EGt(ELen(EBinOp(elems, "-", elems_prime).with_type(elems.type)), ONE)])
+            if solver.satisfiable(formula):
+                return No("more than one element might be removed during {}".format(op.name))
+    if not allow_peels.value and not at_runtime and isinstance(e, EFilter):
+        # catch "peels": removal of zero or one elements
+        if solver.valid(EImplies(assumptions, ELe(ELen(EFilter(e.e, ELambda(e.p.arg, ENot(e.p.body))).with_type(e.type)), ONE))):
+            return No("filter is a peel")
+    if not allow_big_maps.value and not at_runtime and isinstance(e, EMakeMap2) and is_collection(e.type.v):
+        all_collections = [sv for sv in state_vars if is_collection(sv.type)]
+        total_size = ENum(0).with_type(INT)
+        for c in all_collections:
+            total_size = EBinOp(total_size, "+", EUnaryOp(UOp.Length, c).with_type(INT)).with_type(INT)
+        my_size = EUnaryOp(UOp.Length, EFlatMap(EUnaryOp(UOp.Distinct, e.e).with_type(e.e.type), e.value).with_type(e.type.v)).with_type(INT)
+        s = EImplies(
+            assumptions,
+            EBinOp(total_size, ">=", my_size).with_type(BOOL))
+        if not solver.valid(s):
+            return No("non-polynomial-sized map")
+
+    e._good_idea = True
+    return True
+
+def good_idea_recursive(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptions : Exp = T, ops : [Op] = ()) -> bool:
+    """Ensure that every subexpression of `e` passes the `good_idea` check."""
+    for (sub, sub_ctx, sub_pool) in shred(e, context, pool):
+        res = good_idea(solver, sub, sub_ctx, sub_pool, assumptions=assumptions, ops=ops)
+        if not res:
+            return res
+    return True
