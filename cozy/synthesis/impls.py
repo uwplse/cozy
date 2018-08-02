@@ -20,6 +20,8 @@ from cozy.simplification import simplify
 from cozy.solver import valid, ModelCachingSolver
 from cozy.logging import task, event
 from cozy.graph_theory import DirectedGraph
+from cozy.contexts import RootCtx
+from cozy.wf import repair_well_formedness
 
 from .misc import queries_equivalent, pull_temps
 
@@ -84,6 +86,12 @@ class Implementation(object):
     def extern_funcs(self) -> { str : TFunc }:
         return OrderedDict((f.name, TFunc(tuple(t for a, t in f.args), f.out_type)) for f in self.spec.extern_funcs)
 
+    def context_for_method(self, m : Method):
+        return RootCtx(
+            state_vars=self.abstract_state,
+            args=[EVar(a).with_type(t) for (a, t) in m.args],
+            funcs=self.extern_funcs)
+
     def _add_subquery(self, sub_q : Query, used_by : Stm) -> Stm:
         with task("adding query", query=sub_q.name):
             sub_q = shallow_copy(sub_q)
@@ -95,8 +103,11 @@ class Implementation(object):
                     sub_q.assumptions = list(itertools.chain(sub_q.assumptions, new_a))
 
             with task("repairing state var boundaries"):
-                available_state = self.abstract_state + [e for v, e in self.concrete_state]
-                sub_q.ret = inc.repair_EStateVar(sub_q.ret, available_state)
+                extra_available_state = [e for v, e in self.concrete_state]
+                sub_q.ret = repair_well_formedness(
+                    strip_EStateVar(sub_q.ret),
+                    self.context_for_method(sub_q),
+                    extra_available_state)
 
             with task("simplifying"):
                 orig_a = sub_q.assumptions

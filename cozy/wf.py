@@ -1,13 +1,16 @@
 """Well-formedness tests for Cozy expressions."""
 
-from cozy.common import No, typechecked, OrderedSet
+import itertools
+
+from cozy.common import No, typechecked, OrderedSet, unique
 from cozy.syntax import Exp, EVar, EAll, T
 from cozy.target_syntax import EStateVar
-from cozy.syntax_tools import pprint
+from cozy.syntax_tools import pprint, freshen_binders, strip_EStateVar, alpha_equivalent, BottomUpRewriter
 from cozy.solver import ModelCachingSolver
 from cozy.pools import RUNTIME_POOL, STATE_POOL
 from cozy.structures import extension_handler
 from cozy.contexts import Context, shred
+from cozy.logging import task
 
 class ExpIsNotWf(No):
     """An explanation for why an expression is not well-formed.
@@ -93,3 +96,45 @@ def exp_wf(e : Exp, context : Context, pool = RUNTIME_POOL, assumptions : Exp = 
                 return ExpIsNotWf(e, x, is_wf.msg)
             return is_wf
     return True
+
+def repair_well_formedness(e : Exp, context : Context, extra_available_state : [Exp] = []) -> Exp:
+    """Repair the EStateVar nodes in an expression that is not well-formed.
+
+    Parameters:
+        e                     - the expression to repair
+        context               - the intended context for e
+        extra_available_state - extra state expressions that e can use
+
+    Assuming that all expressions in extra_available_state are well-formed
+    state expressions, the output will be a well-formed runtime expression that
+    behaves like `e`.
+    """
+
+    with task("repairing"):
+
+        available_state = list(unique(itertools.chain(
+            (v for v, p in context.vars() if p == STATE_POOL),
+            extra_available_state)))
+
+        class RepairVisitor(BottomUpRewriter):
+            def visit_EStateVar(self, e):
+                wf = exp_wf(e.e, context, STATE_POOL)
+                if wf:
+                    return e
+                # print("WARNING: {} not a well-formed concretization function (wf={})".format(pprint(e.e), wf))
+                return self.visit(strip_EStateVar(e.e))
+            def visit_Exp(self, e):
+                if any(alpha_equivalent(e, x) for x in available_state):
+                    return EStateVar(e).with_type(e.type)
+                return super().visit_ADT(e)
+
+        with task("visiting nodes", size=e.size()):
+            e = RepairVisitor().visit(e)
+
+        with task("freshening binders"):
+            e = freshen_binders(e, context)
+
+        with task("checking correctness"):
+            assert exp_wf(e, context, RUNTIME_POOL)
+
+        return e

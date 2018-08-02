@@ -56,16 +56,6 @@ def mutate(e : syntax.Exp, op : syntax.Stm) -> syntax.Exp:
     else:
         raise NotImplementedError(type(op))
 
-def repair_EStateVar(e : syntax.Exp, available_state : [syntax.Exp]) -> syntax.Exp:
-    class V(BottomUpRewriter):
-        def visit_EStateVar(self, e):
-            return e
-        def visit_Exp(self, e):
-            if any(alpha_equivalent(e, x) for x in available_state):
-                return target_syntax.EStateVar(e).with_type(e.type)
-            return super().visit_ADT(e)
-    return V().visit(strip_EStateVar(e))
-
 def replace_get_value(e : syntax.Exp, ptr : syntax.Exp, new_value : syntax.Exp) -> syntax.Exp:
     """
     Return an expression representing the value of `e` after writing

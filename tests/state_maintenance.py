@@ -3,9 +3,11 @@ import unittest
 from cozy.target_syntax import *
 from cozy.structures.heaps import *
 from cozy.typecheck import retypecheck
-from cozy.syntax_tools import pprint
+from cozy.syntax_tools import pprint, strip_EStateVar
 from cozy.solver import valid
 import cozy.state_maintenance as inc
+from cozy.wf import repair_well_formedness
+from cozy.contexts import RootCtx
 
 class TestStateMaintenance(unittest.TestCase):
 
@@ -73,8 +75,8 @@ class TestStateMaintenance(unittest.TestCase):
         e = EBinOp(EStateVar(x), "+", ONE)
         assert retypecheck(e)
         s = SAssign(x, EBinOp(x, "+", ONE).with_type(INT))
-        e2 = inc.mutate(e, s)
-        e2 = inc.repair_EStateVar(e2, [x])
+        e2 = strip_EStateVar(inc.mutate(e, s))
+        e2 = repair_well_formedness(e2, context=RootCtx(state_vars=[x], args=[]))
         print(pprint(e))
         print(pprint(e2))
         assert e2 == EBinOp(EBinOp(EStateVar(x), "+", ONE), "+", ONE)
