@@ -1,4 +1,10 @@
-from collections import namedtuple, defaultdict, OrderedDict
+"""High-level synthesis routine for whole implementations.
+
+This module exports one important function:
+ - improve_implementation
+"""
+
+from collections import defaultdict, OrderedDict
 import datetime
 import itertools
 import sys
@@ -6,48 +12,51 @@ import os
 from queue import Empty
 
 from cozy.common import typechecked, OrderedSet
-from cozy.target_syntax import *
-from cozy.syntax_tools import all_types, free_vars, pprint, unpack_representation, shallow_copy, wrap_naked_statevars
-from cozy.typecheck import is_scalar
+from cozy.syntax import Query, Op, Exp, EVar, EAll, SNoOp
+from cozy.target_syntax import EStateVar
+from cozy.syntax_tools import free_vars, pprint, unpack_representation, shallow_copy, wrap_naked_statevars
 from cozy.timeouts import Timeout
 from cozy import jobs
-from cozy.contexts import RootCtx
+from cozy.contexts import Context
 from cozy.opts import Option
 from cozy.cost_model import CostModel
 
 from . import core
 from .impls import Implementation
 
-nice_children = Option("nice-children", bool, False)
-log_dir = Option("log-dir", str, "/tmp")
-SynthCtx = namedtuple("SynthCtx", ["all_types", "basic_types"])
+nice_children = Option("nice-children", bool, False,
+    description='Apply a high "niceness" value to child processes. '
+        + "Cozy can spawn a lot of child processes during synthesis, so this "
+        + "option exists to help control resource usage.")
+
+log_dir = Option("log-dir", str, "/tmp",
+    description="Location to place log files for child processes.")
+
 LINE_BUFFER_MODE = 1 # see help for open() function
 
 class ImproveQueryJob(jobs.Job):
     @typechecked
     def __init__(self,
-            ctx         : SynthCtx,
             state       : [EVar],
             assumptions : [Exp],
             q           : Query,
+            context     : Context,
             k,
             hints       : [Exp]     = [],
             freebies    : [Exp]     = [],
-            ops         : [Op]      = [],
-            funcs : { str:TFunc } = { }):
+            ops         : [Op]      = []):
         assert all(v in state for v in free_vars(q)), "Oops, query looks malformed due to {}:\n{}\nfree_vars({})".format([v for v in free_vars(q) if v not in state], pprint(q), repr(q))
         super().__init__()
-        self.ctx = ctx
         self.state = state
         self.assumptions = assumptions
         q = shallow_copy(q)
         q.ret = wrap_naked_statevars(q.ret, OrderedSet(state))
         self.q = q
+        self.context = context
         self.hints = hints
         self.freebies = freebies
         self.ops = ops
         self.k = k
-        self.funcs = OrderedDict(funcs)
     def __str__(self):
         return "ImproveQueryJob[{}]".format(self.q.name)
     def run(self):
@@ -61,13 +70,8 @@ class ImproveQueryJob(jobs.Job):
             if nice_children.value:
                 os.nice(20)
 
-            ctx = RootCtx(
-                state_vars=self.state,
-                args=[EVar(v).with_type(t) for (v, t) in self.q.args],
-                funcs=self.funcs)
-
             cost_model = CostModel(
-                    funcs=ctx.funcs(),
+                    funcs=self.context.funcs(),
                     assumptions=EAll(self.assumptions),
                     freebies=self.freebies,
                     ops=self.ops)
@@ -76,7 +80,7 @@ class ImproveQueryJob(jobs.Job):
                 for expr in itertools.chain((self.q.ret,), core.improve(
                         target=self.q.ret,
                         assumptions=EAll(self.assumptions),
-                        context=ctx,
+                        context=self.context,
                         hints=self.hints,
                         stop_callback=lambda: self.stop_requested,
                         cost_model=cost_model,
@@ -94,6 +98,17 @@ def improve_implementation(
         impl              : Implementation,
         timeout           : datetime.timedelta = datetime.timedelta(seconds=60),
         progress_callback = None) -> Implementation:
+    """Improve an implementation.
+
+    This function tries to synthesize a better version of the given
+    implementation. It returns the best version found within the given timeout.
+
+    If provided, progress_callback will be called every time a better
+    implementation is found. It will be given
+     - the current implementation
+     - the code for the current implementation
+     - the concretization functions for the current implementation
+    """
 
     start_time = datetime.datetime.now()
 
@@ -106,28 +121,24 @@ def improve_implementation(
         defaultdict(SNoOp, impl.updates),
         defaultdict(SNoOp, impl.handle_updates))
 
-    # gather root types
-    types = list(all_types(impl.spec))
-    basic_types = set(t for t in types if is_scalar(t))
-    basic_types |= { BOOL, INT }
-    print("basic types:")
-    for t in basic_types:
-        print("  --> {}".format(pprint(t)))
-    basic_types = list(basic_types)
-    ctx = SynthCtx(all_types=types, basic_types=basic_types)
-
-    # the actual worker threads
+    # worker threads ("jobs"), one per query
     improvement_jobs = []
 
     with jobs.SafeQueue() as solutions_q:
 
         def stop_jobs(js):
+            """Stop the given jobs and remove them from `improvement_jobs`."""
             js = list(js)
             jobs.stop_jobs(js)
             for j in js:
                 improvement_jobs.remove(j)
 
         def reconcile_jobs():
+            """Sync up the current set of jobs and the set of queries.
+
+            This function spawns new jobs for new queries and cleans up old
+            jobs whose queries have been dead-code-eliminated."""
+
             # figure out what new jobs we need
             job_query_names  = set(j.q.name for j in improvement_jobs)
             new = []
@@ -135,15 +146,14 @@ def improve_implementation(
                 if q.name not in job_query_names:
                     states_maintained_by_q = impl.states_maintained_by(q)
                     new.append(ImproveQueryJob(
-                        ctx,
                         impl.abstract_state,
                         list(impl.spec.assumptions) + list(q.assumptions),
                         q,
+                        context=impl.context_for_method(q),
                         k=(lambda q: lambda new_rep, new_ret: solutions_q.put((q, new_rep, new_ret)))(q),
                         hints=[EStateVar(c).with_type(c.type) for c in impl.concretization_functions.values()],
                         freebies=[e for (v, e) in impl.concrete_state if v in states_maintained_by_q],
-                        ops=impl.op_specs,
-                        funcs=impl.extern_funcs))
+                        ops=impl.op_specs))
 
             # figure out what old jobs we can stop
             impl_query_names = set(q.name for q in impl.query_specs)
