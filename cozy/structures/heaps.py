@@ -290,13 +290,13 @@ class Heaps(object):
                     SDecl(size.id, s.args[0]),
                     SEnsureCapacity(target_raw, EBinOp(size, "+", ELen(s.args[1])).with_type(INT)),
                     SForEach(x, s.args[1], seq([
-                        SAssign(EArrayGet(target_raw, size), x),
+                        SAssign(EArrayGet(target_raw, size).with_type(elem_type), x),
                         SDecl(i.id, size),
                         SWhile(EAll([
                             EBinOp(i, ">", ZERO).with_type(BOOL),
-                            ENot(EBinOp(f.apply_to(EArrayGet(target_raw, _parent(i))), comparison_op, f.apply_to(EArrayGet(target_raw, i))).with_type(BOOL))]),
+                            ENot(EBinOp(f.apply_to(EArrayGet(target_raw, _parent(i)).with_type(elem_type)), comparison_op, f.apply_to(EArrayGet(target_raw, i).with_type(elem_type))).with_type(BOOL))]),
                             seq([
-                                SSwap(EArrayGet(target_raw, _parent(i)), EArrayGet(target_raw, i)),
+                                SSwap(EArrayGet(target_raw, _parent(i)).with_type(elem_type), EArrayGet(target_raw, i).with_type(elem_type)),
                                 SAssign(i, _parent(i))])),
                         SAssign(size, EBinOp(size, "+", ONE).with_type(INT))]))])
             elif s.func == "remove_all":
@@ -312,16 +312,16 @@ class Heaps(object):
                         # find the element to remove
                         SDecl(i.id, EArrayIndexOf(target_raw, x).with_type(INT)),
                         # swap with last element in heap
-                        SSwap(EArrayGet(target_raw, i), EArrayGet(target_raw, size_minus_one)),
+                        SSwap(EArrayGet(target_raw, i).with_type(elem_type), EArrayGet(target_raw, size_minus_one).with_type(elem_type)),
                         # bubble down
                         SEscapableBlock(label, SWhile(_has_left_child(i, size_minus_one), seq([
                             SDecl(child_index.id, _left_child(i)),
-                            SIf(EAll([_has_right_child(i, size_minus_one), ENot(EBinOp(f.apply_to(EArrayGet(target_raw, _left_child(i))), comparison_op, f.apply_to(EArrayGet(target_raw, _right_child(i)))))]),
+                            SIf(EAll([_has_right_child(i, size_minus_one), ENot(EBinOp(f.apply_to(EArrayGet(target_raw, _left_child(i)).with_type(elem_type)), comparison_op, f.apply_to(EArrayGet(target_raw, _right_child(i)).with_type(elem_type))))]),
                                 SAssign(child_index, _right_child(i)),
                                 SNoOp()),
-                            SIf(ENot(EBinOp(f.apply_to(EArrayGet(target_raw, i)), comparison_op, f.apply_to(EArrayGet(target_raw, child_index)))),
+                            SIf(ENot(EBinOp(f.apply_to(EArrayGet(target_raw, i).with_type(elem_type)), comparison_op, f.apply_to(EArrayGet(target_raw, child_index).with_type(elem_type)))),
                                 seq([
-                                    SSwap(EArrayGet(target_raw, i), EArrayGet(target_raw, child_index)),
+                                    SSwap(EArrayGet(target_raw, i).with_type(elem_type), EArrayGet(target_raw, child_index).with_type(elem_type)),
                                     SAssign(i, child_index)]),
                                 SEscapeBlock(label))]))),
                         # dec. size
