@@ -219,8 +219,7 @@ class Learner(object):
         def check_wf(e, ctx, pool):
             with task("pruning", size=e.size()):
                 is_wf = exp_wf(e, pool=pool, context=ctx, solver=self.wf_solver)
-                if not is_wf:
-                    return is_wf
+                assert is_wf, "{} is not well-formed: {}".format(pprint(e), is_wf)
                 res = good_idea_recursive(self.wf_solver, e, ctx, pool, ops=self.ops)
                 if not res:
                     return res
