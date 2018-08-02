@@ -1071,7 +1071,7 @@ class IncrementalSolver(object):
                 e = cse(e, verify=False)
                 _tock(e, "cse (size: {} --> {})".format(orig_size, e.size()))
             with _LOCK:
-                self._create_vars(vars=free_vars(e), funcs=free_funcs(e))
+                self._create_vars(vars=free_vars(orig_e), funcs=free_funcs(orig_e))
                 with task("encode formula", size=e.size()):
                     return self.visitor.visit(e, self._env)
         except:
