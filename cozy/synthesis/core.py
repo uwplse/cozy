@@ -42,6 +42,11 @@ eliminate_vars = Option("eliminate-vars", bool, False)
 enable_blacklist = Option("enable-blacklist", bool, False)
 check_all_substitutions = Option("check-all-substitutions", bool, True)
 enable_eviction = Option("eviction", bool, True)
+cost_pruning = Option("prune-using-cost", bool, False,
+    description="During synthesis, skip expressions that are more expensive "
+        + "than the current best. This makes Cozy faster since it caches "
+        + "fewer expressions, but also makes Cozy slower since it needs to do "
+        + "more work when it sees each one for the first time.")
 
 def exploration_order(targets : [Exp], context : Context, pool : Pool = RUNTIME_POOL):
     """
@@ -223,7 +228,7 @@ class Learner(object):
                 res = good_idea_recursive(self.wf_solver, e, ctx, pool, ops=self.ops)
                 if not res:
                     return res
-                if pool == RUNTIME_POOL and self.cost_model.compare(e, self.targets[0], ctx, pool) == Order.GT:
+                if cost_pruning.value and pool == RUNTIME_POOL and self.cost_model.compare(e, self.targets[0], ctx, pool) == Order.GT:
                     return No("too expensive")
                 return True
 
