@@ -1096,6 +1096,9 @@ class IncrementalSolver(object):
         vars = self.vars
         visitor = self.visitor
 
+        if self.validate_model:
+            model_extraction = True
+
         with _LOCK:
             _tick()
 
