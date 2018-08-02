@@ -7,9 +7,6 @@ primitives the tool can output and use during synthesis.
 
 from cozy.syntax import *
 from cozy.common import declare_case, fresh_name
-from cozy.opts import Option
-
-enforce_estatevar_wf = Option("enforce-well-formed-state-var-boundaries", bool, False)
 
 # Misc
 TRef       = declare_case(Type, "TRef", ["t"])
@@ -19,17 +16,6 @@ EStm       = declare_case(Exp, "EStm", ["stm", "e"])
 
 # State var barrier: sub-expression should be maintained as a fresh state var
 EStateVar  = declare_case(Exp, "EStateVar", ["e"])
-
-class IllegalStateVarBoundary(Exception):
-    pass
-old = EStateVar.__init__
-def f(self, e):
-    if enforce_estatevar_wf.value:
-        from cozy.syntax_tools import free_vars, pprint
-        if not all(not v.id.startswith("_") for v in free_vars(e)):
-            raise IllegalStateVarBoundary(pprint(e))
-    old(self, e)
-EStateVar.__init__ = f
 
 def EIsSingleton(e):
     arg = EVar(fresh_name()).with_type(e.type.t)
