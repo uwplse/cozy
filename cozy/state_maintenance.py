@@ -10,7 +10,7 @@ import itertools
 from cozy.common import fresh_name
 from cozy import syntax
 from cozy import target_syntax
-from cozy.syntax_tools import free_vars, pprint, fresh_var, strip_EStateVar, subst, BottomUpRewriter, alpha_equivalent
+from cozy.syntax_tools import free_vars, pprint, fresh_var, strip_EStateVar, qsubst, BottomUpRewriter, alpha_equivalent
 from cozy.typecheck import is_numeric
 from cozy.solver import valid
 from cozy.opts import Option
@@ -49,7 +49,7 @@ def mutate(e : syntax.Exp, op : syntax.Stm) -> syntax.Exp:
             return mutate(e, syntax.SSeq(op.s1.s1, syntax.SSeq(op.s1.s2, op.s2)))
         e2 = mutate(mutate(e, op.s2), op.s1)
         if isinstance(op.s1, syntax.SDecl):
-            e2 = subst(e2, { op.s1.id : op.s1.val })
+            e2 = qsubst(e2, syntax.EVar(op.s1.id).with_type(op.s1.val.type), op.s1.val)
         return e2
     elif isinstance(op, syntax.SDecl):
         return e
@@ -96,7 +96,7 @@ def _do_assignment(lval : syntax.Exp, new_value : syntax.Exp, e : syntax.Exp) ->
     Return the value of `e` after the assignment `lval = new_value`.
     """
     if isinstance(lval, syntax.EVar):
-        return subst(e, { lval.id : new_value })
+        return qsubst(e, lval, new_value)
     elif isinstance(lval, syntax.EGetField):
         if isinstance(lval.e.type, syntax.THandle):
             assert lval.f == "val"
