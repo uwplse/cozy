@@ -1,9 +1,12 @@
-"""
-Code relating to implementations.
+"""Code relating to implementations.
 
 Implementations are almost exactly like Spec objects, but they have
 concretization functions relating them to their underlying specifications and
 they store various other information to aid synthesis.
+
+`Implementation` objects are typically constructed using the
+`construct_initial_implementation` function that converts a specification to a
+slow, but correct, implementation.
 """
 
 import itertools
@@ -16,7 +19,7 @@ from cozy.syntax import (
     Exp, EVar, EAll, ECall, EEq, EImplies, EGetField, ELambda, EIn, ENot, EUnaryOp, UOp,
     Stm, SNoOp, SForEach, seq)
 from cozy.target_syntax import EFilter, EDeepIn
-from cozy.syntax_tools import subst, free_vars, fresh_var, all_exps, BottomUpRewriter, pprint, shallow_copy, unpack_representation, wrap_naked_statevars, rewrite_ret, strip_EStateVar
+from cozy.syntax_tools import subst, free_vars, fresh_var, all_exps, BottomUpRewriter, pprint, shallow_copy, unpack_representation, rewrite_ret, strip_EStateVar
 from cozy.handle_tools import reachable_handles_at_method, implicit_handle_assumptions
 import cozy.state_maintenance as inc
 from cozy.opts import Option
@@ -24,12 +27,15 @@ from cozy.simplification import simplify
 from cozy.solver import valid, ModelCachingSolver
 from cozy.logging import task, event
 from cozy.graph_theory import DirectedGraph
-from cozy.contexts import RootCtx
+from cozy.contexts import Context, RootCtx
 from cozy.wf import repair_well_formedness
 
 from .misc import queries_equivalent, pull_temps
 
-dedup_queries = Option("deduplicate-subqueries", bool, True)
+dedup_queries = Option("deduplicate-subqueries", bool, True,
+    description="Use the solver to deduplicate the internal queries that Cozy "
+        + "adds to the implementation. While deduplication is slow (it involves "
+        + "a solver call), it results in far fewer query synthesis threads.")
 
 def simplify_or_ignore(e):
     ee = simplify(e)
@@ -45,6 +51,14 @@ class Implementation(object):
             query_impls : OrderedDict,
             updates : defaultdict,
             handle_updates : defaultdict):
+        """Construct an implementation.
+
+        This constructor should be considered private to the `impls` module.
+
+        You should call `construct_initial_implementation` instead of calling
+        this constructor directly; this constructor makes it easy to
+        accidentally create a malformed implementation.
+        """
         self.spec = spec
         self.concrete_state = concrete_state
         self.query_specs = query_specs
@@ -57,6 +71,7 @@ class Implementation(object):
             assumptions=EAll(spec.assumptions))
 
     def __getstate__(self):
+        # During serialization, do not save the solver object.
         d = dict(self.__dict__)
         if "state_solver" in d:
             del d["state_solver"]
@@ -75,22 +90,46 @@ class Implementation(object):
         fvs = free_vars(q)
         # initial rep
         qargs = set(EVar(a).with_type(t) for (a, t) in q.args)
-        rep, ret = unpack_representation(wrap_naked_statevars(q.ret, self.abstract_state))
+        safe_ret = repair_well_formedness(
+            q.ret,
+            context=self.context_for_method(q),
+            extra_available_state=[e for v, e in self.concrete_state])
+        rep, ret = unpack_representation(safe_ret)
         self.set_impl(q, rep, ret)
 
     @property
-    def op_specs(self):
-        return [ m for m in self.spec.methods if isinstance(m, Op) ]
+    def op_specs(self) -> [Op]:
+        """Returns the specifications for all the update operations."""
+        return [m for m in self.spec.methods if isinstance(m, Op)]
 
     @property
     def abstract_state(self) -> [EVar]:
+        """Returns the abstract state of this data structure."""
         return [EVar(name).with_type(t) for (name, t) in self.spec.statevars]
 
     @property
+    def abstract_invariants(self) -> [Exp]:
+        """Returns any user-specified invariants about the abstract state."""
+        return list(self.spec.assumptions)
+
+    @property
+    def concretization_functions(self) -> { str : Exp }:
+        """Returns a mapping from concrete state variables to their meanings.
+
+        The "meaning" of a concrete state variable is an expression (in terms
+        of abstract state) that it tracks."""
+        state_var_exps = OrderedDict()
+        for (v, e) in self.concrete_state:
+            state_var_exps[v.id] = e
+        return state_var_exps
+
+    @property
     def extern_funcs(self) -> { str : TFunc }:
+        """Return the types of all user-declared external functions."""
         return OrderedDict((f.name, TFunc(tuple(t for a, t in f.args), f.out_type)) for f in self.spec.extern_funcs)
 
-    def context_for_method(self, m : Method):
+    def context_for_method(self, m : Method) -> Context:
+        """Construct a context describing expressions in the given method."""
         return RootCtx(
             state_vars=self.abstract_state,
             args=[EVar(a).with_type(t) for (a, t) in m.args],
@@ -196,6 +235,14 @@ class Implementation(object):
                 self.handle_updates[(t, op.name)] = state_update_stm
 
     def set_impl(self, q : Query, rep : [(EVar, Exp)], ret : Exp):
+        """Update the implementation of a query.
+
+        The query having the same name as `q` will have its implementation
+        replaced by the given concrete representation and computation.
+
+        This call may add additional "subqueries" to the implementation to
+        maintain the new representation when each update operation is called.
+        """
         with task("updating implementation", query=q.name):
             with task("finding duplicated state vars"):
                 to_remove = set()
@@ -230,6 +277,13 @@ class Implementation(object):
 
     @property
     def code(self) -> Spec:
+        """Get the current code corresponding to this implementation.
+
+        The code is returned as a Cozy specification object, but the returned
+        object throws away any unused abstract state as well as all invariants
+        and assumptions on methods. It implements the same data structure, but
+        probably more efficiently.
+        """
 
         state_read_by_query = {
             query_name : free_vars(query)
@@ -309,17 +363,6 @@ class Implementation(object):
             self.spec.footer,
             self.spec.docstring)
 
-    @property
-    def abstract_invariants(self) -> [Exp]:
-        return list(self.spec.assumptions)
-
-    @property
-    def concretization_functions(self) -> { str : Exp }:
-        state_var_exps = OrderedDict()
-        for (v, e) in self.concrete_state:
-            state_var_exps[v.id] = e
-        return state_var_exps
-
     def cleanup(self):
         """
         Remove unused state, queries, and updates.
@@ -376,9 +419,9 @@ class Implementation(object):
 
 @typechecked
 def construct_initial_implementation(spec : Spec) -> Implementation:
-    """
-    Takes a typechecked specification as input, returns an initial
-    implementation.
+    """Convert a specification to a slow, but correct, implementation.
+
+    The input specification should already be typechecked and desugared.
     """
 
     impl = Implementation(spec, [], [], OrderedDict(), defaultdict(SNoOp), defaultdict(SNoOp))
@@ -387,8 +430,5 @@ def construct_initial_implementation(spec : Spec) -> Implementation:
             impl.add_query(m)
     impl._setup_handle_updates()
     impl.cleanup()
-
-    # print(pprint(impl.code))
-    # raise NotImplementedError()
 
     return impl
