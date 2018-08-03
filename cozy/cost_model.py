@@ -310,7 +310,11 @@ def worst_case_cardinality(e : Exp) -> DominantTerm:
     if isinstance(e, ESingleton):
         return DominantTerm.ONE
     if isinstance(e, EMapGet):
-        return worst_case_cardinality(map_value_func(e.map).body)
+        try:
+            return worst_case_cardinality(map_value_func(e.map).body)
+        except NotImplementedError:
+            print("WARNING: unable to peer inside map {}".format(pprint(e.map)))
+            return DominantTerm.N
     return DominantTerm.N
 
 def _maintenance_cost(e : Exp, op : Op, freebies : [Exp] = []):
