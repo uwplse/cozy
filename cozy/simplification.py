@@ -61,7 +61,7 @@ class _SimplificationVisitor(BottomUpRewriter):
                 EGetField(record.then_branch, e.field_name).with_type(e.type),
                 EGetField(record.else_branch, e.field_name).with_type(e.type)).with_type(e.type))
         if isinstance(record, EMakeRecord):
-            return dict(record.fields)[e.f]
+            return dict(record.fields)[e.field_name]
         return EGetField(record, e.field_name).with_type(e.type)
     def visit_EFilter(self, e):
         ee = self.visit(e.e)

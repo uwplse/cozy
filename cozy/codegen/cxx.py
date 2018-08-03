@@ -729,7 +729,7 @@ class CxxPrinter(CodeGenerator):
             return self.visit(ECond(EEq(ee, null),
                 EEscape("{ee}->val", ("ee",), (ee,)).with_type(e.type),
                 evaluation.construct_value(e.type)).with_type(e.type))
-        return "({ee}.{f})".format(ee=ee, f=e.f)
+        return "({ee}.{f})".format(ee=ee, f=e.field_name)
 
     def visit_ETuple(self, e):
         name = self.typename(e.type)
@@ -753,12 +753,6 @@ class CxxPrinter(CodeGenerator):
             return self.visit(body)
         else:
             raise Exception("unknown function {}".format(repr(e.func)))
-
-    # def visit_ELet(self, e):
-    #     v = self.fv(e.e.type, "v")
-    #     setup1 = self.visit(SDecl(v.id, e.e), indent=indent)
-    #     setup2, res = self.visit(e.f.apply_to(v), indent=indent)
-    #     return (setup1 + setup2, res)
 
     def visit_object(self, e):
         raise NotImplementedError(e)

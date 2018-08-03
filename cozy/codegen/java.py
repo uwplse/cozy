@@ -486,8 +486,8 @@ class JavaPrinter(CxxPrinter):
     def visit_EGetField(self, e):
         ee = self.visit(e.e)
         if isinstance(e.e.type, THandle):
-            return "({}).getVal()".format(ee, e.f)
-        return "({}).{}".format(ee, e.f)
+            return "({}).getVal()".format(ee, e.field_name)
+        return "({}).{}".format(ee, e.field_name)
 
     def find_one_native(self, iterable):
         it = fresh_name("iterator")

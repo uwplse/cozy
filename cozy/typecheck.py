@@ -359,14 +359,14 @@ class Typechecker(Visitor):
         e.key_function.arg.type = self.get_collection_type(e.e)
         self.visit(e.key_function)
         e.type = e.key_function.arg.type
-        # todo: ensure sortable (e.f.arg.type)
+        # todo: ensure sortable (e.key_function.arg.type)
 
     def visit_EArgMax(self, e):
         self.visit(e.e)
         e.key_function.arg.type = self.get_collection_type(e.e)
         self.visit(e.key_function)
         e.type = e.key_function.arg.type
-        # todo: ensure sortable (e.f.arg.type)
+        # todo: ensure sortable (e.key_function.arg.type)
 
     def visit_EBool(self, e):
         e.type = BOOL
@@ -538,7 +538,7 @@ class Typechecker(Visitor):
                 self.report_err(e, "no field {} on type {}".format(e.field_name, e.e.type))
                 e.type = DEFAULT_TYPE
         else:
-            self.report_err(e, "cannot get field {} from non-record {}".format(e.f, e.e.type))
+            self.report_err(e, "cannot get field {} from non-record {}".format(e.field_name, e.e.type))
             e.type = DEFAULT_TYPE
 
     def visit_EVar(self, e):

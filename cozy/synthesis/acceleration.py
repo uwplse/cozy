@@ -76,7 +76,7 @@ def _try_optimize(e, context, pool):
             yield _check(optimized_cond(e.cond, e.then_branch, e.else_branch), context, RUNTIME_POOL)
 
         if isinstance(e, EGetField):
-            for ee in optimized_get_field(e.e, e.f, args):
+            for ee in optimized_get_field(e.e, e.field_name, args):
                 yield _check(ee, context, RUNTIME_POOL)
 
         if isinstance(e, EBinOp) and e.op == BOp.In:
@@ -203,7 +203,7 @@ def optimized_in(x, xs):
             optimized_in(x, xs.else_branch)).with_type(BOOL)
     elif isinstance(xs, EFilter):
         return EAll([xs.predicate.apply_to(x), optimized_in(x, xs.e)])
-    elif isinstance(xs, EMap) and xs.f.arg not in free_vars(x):
+    elif isinstance(xs, EMap) and xs.transform_function.arg not in free_vars(x):
         return optimized_any_matches(xs.e, ELambda(xs.transform_function.arg, optimized_eq(xs.transform_function.body, x)))
     elif isinstance(xs, ESingleton):
         return optimized_eq(x, xs.e)
