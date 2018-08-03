@@ -27,7 +27,6 @@ from cozy.value_types import Map, Bag, Handle
 from cozy.evaluation import eval_bulk
 from cozy.contexts import Context
 
-save_solver_testcases = Option("save-solver-testcases", str, "", metavar="PATH")
 collection_depth_opt = Option("collection-depth", int, 4, metavar="N", description="Bound for bounded verification")
 use_quantified_encoding = Option("quantified-encoding", bool, False, description="Allow the use of quantifiers during formula encoding. The resulting formulas are still decideable using Z3's macro_finder option. Enabling this option offloads work from Python to Z3. Generally it harms performance.")
 
@@ -1212,14 +1211,6 @@ class IncrementalSolver(object):
                                 vars=repr(vars),
                                 collection_depth=repr(self.collection_depth),
                                 validate_model=repr(self.validate_model)))
-                            if save_solver_testcases.value:
-                                with open(save_solver_testcases.value, "a") as f:
-                                    f.write("satisfy({e}, vars={vars}, collection_depth={collection_depth}, validate_model={validate_model})".format(
-                                        e=repr(e),
-                                        vars=repr(vars),
-                                        collection_depth=repr(self.collection_depth),
-                                        validate_model=repr(self.validate_model)))
-                                    f.write("\n")
                             wq = [(e, _env, res)]
                             while wq:
                                 x, solver_env, eval_env = wq.pop()
