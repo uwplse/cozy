@@ -592,7 +592,7 @@ class JavaPrinter(CxxPrinter):
         self.write_stmt(lval, " = new ", tname, "[", cap, "];")
 
     def visit_SEnsureCapacity(self, s):
-        return self.array_resize_for_index(s.a.type.t, s.a, s.capacity)
+        return self.array_resize_for_index(s.a.type.elem_type, s.a, s.capacity)
 
     def visit_SArrayReAlloc(self, s):
         return self.array_resize_for_index(s.a.type.elem_type, s.a, s.new_capacity)
