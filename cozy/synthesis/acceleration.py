@@ -1,14 +1,129 @@
+"""Rewrite rules to directly optimize expressions.
+
+Cozy's synthesis procedure uses `try_optimize` to try and produce better
+versions of expressions it sees.  Since all expressions are checked for
+correctness, `try_optimize` has a very loose contract.
+"""
+
 from cozy.common import unique
 from cozy.target_syntax import *
 from cozy.syntax_tools import fresh_var, free_vars, free_funcs, break_conj, mk_lambda, strip_EStateVar, alpha_equivalent, compose
 from cozy.typecheck import is_collection, retypecheck
-from cozy.contexts import shred, replace
-from cozy.pools import RUNTIME_POOL, STATE_POOL
+from cozy.contexts import Context, shred, replace
+from cozy.pools import Pool, RUNTIME_POOL, STATE_POOL
 from cozy.structures.heaps import TMinHeap, TMaxHeap, EMakeMinHeap, EMakeMaxHeap, EHeapPeek2
 from cozy.evaluation import construct_value, uneval, eval
 from cozy.opts import Option
 
-accelerate = Option("acceleration-rules", bool, True)
+accelerate = Option("acceleration-rules", bool, True,
+    description="Enable rewrite rules that try to directly optimize "
+        + "expressions during synthesis. In most cases this dramatically "
+        + "improves Cozy's performance.")
+
+def try_optimize(e : Exp, context : Context, pool : Pool):
+    """Yields expressions for the given context and pool.
+
+    None of the expressions will be syntactically equivalent to `e`.
+
+    The expressions are likely to be semantically equivalent to `e` and likely
+    to be better than `e`, but this function makes no promises.
+    """
+    for ee in _try_optimize(e, context, pool):
+        if not alpha_equivalent(e, ee):
+            yield ee
+
+def _try_optimize(e, context, pool):
+    if not accelerate.value:
+        return
+
+    state_vars = [v for v, p in context.vars() if p == STATE_POOL]
+    args = [v for v, p in context.vars() if p == RUNTIME_POOL]
+
+    if pool == RUNTIME_POOL:
+
+        if not free_vars(e) and not free_funcs(e):
+            try:
+                yield _check(uneval(e.type, eval(e, {})), context, RUNTIME_POOL)
+            except NotImplementedError:
+                print("Unable to evaluate {!r}".format(e))
+
+        if all(v in state_vars for v in free_vars(e)):
+            nsv = strip_EStateVar(e)
+            sv = EStateVar(nsv).with_type(e.type)
+            yield _check(sv, context, RUNTIME_POOL)
+
+        for ee in fold_into_map(e, context):
+            yield _check(ee, context, pool)
+
+        if isinstance(e, EListGet) and e.index == ZERO:
+            for res in optimize_the(e.e, args):
+                yield _check(res, context, RUNTIME_POOL)
+
+        if isinstance(e, EArgMin) or isinstance(e, EArgMax):
+            for ee in optimized_best(e.e, e.f, "<" if isinstance(e, EArgMin) else ">", args=args):
+                yield _check(ee, context, RUNTIME_POOL)
+
+        if is_collection(e.type) and isinstance(e, EBinOp) and e.op == "-":
+            ee = optimized_bag_difference(e.e1, e.e2)
+            yield _check(ee, context, RUNTIME_POOL)
+
+        if isinstance(e, EBinOp) and e.op == "===" and isinstance(e.e1.type, THandle):
+            yield _check(EAll([
+                optimized_eq(optimized_addr(e.e1), optimized_addr(e.e2)),
+                optimized_eq(optimized_val(e.e1),  optimized_val(e.e2)).with_type(BOOL)]), context, RUNTIME_POOL)
+
+        if isinstance(e, ECond):
+            yield _check(optimized_cond(e.cond, e.then_branch, e.else_branch), context, RUNTIME_POOL)
+
+        if isinstance(e, EGetField):
+            for ee in optimized_get_field(e.e, e.f, args):
+                yield _check(ee, context, RUNTIME_POOL)
+
+        if isinstance(e, EBinOp) and e.op == BOp.In:
+            ee = optimized_in(e.e1, e.e2)
+            yield _check(ee, context, RUNTIME_POOL)
+
+        if isinstance(e, EUnaryOp) and e.op == UOp.Sum:
+            for ee in optimized_sum(e.e, args):
+                yield _check(ee, context, RUNTIME_POOL)
+
+        if isinstance(e, EUnaryOp) and e.op == UOp.Empty:
+            ee = optimized_empty(e.e)
+            yield _check(ee, context, RUNTIME_POOL)
+
+        if isinstance(e, EUnaryOp) and e.op == UOp.Exists:
+            ee = optimized_exists(e.e)
+            yield _check(ee, context, RUNTIME_POOL)
+
+        if isinstance(e, EUnaryOp) and e.op == UOp.Length:
+            ee = optimized_len(e.e)
+            yield _check(ee, context, RUNTIME_POOL)
+
+        if isinstance(e, EUnaryOp) and e.op == UOp.The:
+            for ee in optimize_the(e.e, args):
+                yield _check(ee, context, RUNTIME_POOL)
+
+        if isinstance(e, EFilter):
+            ee = optimize_filter_as_if_distinct(e.e, e.p, args=args)
+            yield _check(ee, context, RUNTIME_POOL)
+            if isinstance(e.e, EFilter):
+                # try swizzle
+                ee = EFilter(_simple_filter(e.e.e, e.p, args=args), e.e.p).with_type(e.type)
+                yield _check(ee, context, RUNTIME_POOL)
+
+        if isinstance(e, EMap):
+            for ee in optimize_map(e.e, e.f, args=args):
+                yield _check(ee, context, RUNTIME_POOL)
+
+def _check(e, context, pool):
+    """
+    When Cozy chokes on malformed expressions, bad acceleration rules are often
+    the culprit.  To help debug these kinds of problems, this function exists
+    as a "hook" where you can insert code to try and catch the issue before it
+    leaks out.  Exceptions thrown here will reveal what acceleration rule is
+    responsible for the problem.
+    """
+    return e
 
 def histogram(xs : Exp) -> Exp:
     elem_type = xs.type.t
@@ -478,16 +593,6 @@ def optimize_the(xs, args):
                 yield optimized_cond(e1_exists, x, y)
     yield EUnaryOp(UOp.The, xs).with_type(t)
 
-def _check(e, context, pool):
-    """
-    When Cozy chokes on malformed expressions, bad acceleration rules are often
-    the culprit.  To help debug these kinds of problems, this function exists
-    as a "hook" where you can insert code to try and catch the issue before it
-    leaks out.  Exceptions thrown here will reveal what acceleration rule is
-    responsible for the problem.
-    """
-    return e
-
 def fold_into_map(e, context):
     fvs = free_vars(e)
     state_vars = [v for v, p in context.vars() if p == STATE_POOL]
@@ -508,91 +613,3 @@ def fold_into_map(e, context):
             func = strip_EStateVar(func)
             new_map = map_values(map, func.apply_to)
             yield EMapGet(EStateVar(new_map).with_type(new_map.type), key).with_type(e.type)
-
-def _try_optimize(e, context, pool):
-    if not accelerate.value:
-        return
-
-    state_vars = [v for v, p in context.vars() if p == STATE_POOL]
-    args = [v for v, p in context.vars() if p == RUNTIME_POOL]
-
-    if pool == RUNTIME_POOL:
-
-        if not free_vars(e) and not free_funcs(e):
-            try:
-                yield _check(uneval(e.type, eval(e, {})), context, RUNTIME_POOL)
-            except NotImplementedError:
-                print("Unable to evaluate {!r}".format(e))
-
-        if all(v in state_vars for v in free_vars(e)):
-            nsv = strip_EStateVar(e)
-            sv = EStateVar(nsv).with_type(e.type)
-            yield _check(sv, context, RUNTIME_POOL)
-
-        for ee in fold_into_map(e, context):
-            yield _check(ee, context, pool)
-
-        if isinstance(e, EListGet) and e.index == ZERO:
-            for res in optimize_the(e.e, args):
-                yield _check(res, context, RUNTIME_POOL)
-
-        if isinstance(e, EArgMin) or isinstance(e, EArgMax):
-            for ee in optimized_best(e.e, e.f, "<" if isinstance(e, EArgMin) else ">", args=args):
-                yield _check(ee, context, RUNTIME_POOL)
-
-        if is_collection(e.type) and isinstance(e, EBinOp) and e.op == "-":
-            ee = optimized_bag_difference(e.e1, e.e2)
-            yield _check(ee, context, RUNTIME_POOL)
-
-        if isinstance(e, EBinOp) and e.op == "===" and isinstance(e.e1.type, THandle):
-            yield _check(EAll([
-                optimized_eq(optimized_addr(e.e1), optimized_addr(e.e2)),
-                optimized_eq(optimized_val(e.e1),  optimized_val(e.e2)).with_type(BOOL)]), context, RUNTIME_POOL)
-
-        if isinstance(e, ECond):
-            yield _check(optimized_cond(e.cond, e.then_branch, e.else_branch), context, RUNTIME_POOL)
-
-        if isinstance(e, EGetField):
-            for ee in optimized_get_field(e.e, e.f, args):
-                yield _check(ee, context, RUNTIME_POOL)
-
-        if isinstance(e, EBinOp) and e.op == BOp.In:
-            ee = optimized_in(e.e1, e.e2)
-            yield _check(ee, context, RUNTIME_POOL)
-
-        if isinstance(e, EUnaryOp) and e.op == UOp.Sum:
-            for ee in optimized_sum(e.e, args):
-                yield _check(ee, context, RUNTIME_POOL)
-
-        if isinstance(e, EUnaryOp) and e.op == UOp.Empty:
-            ee = optimized_empty(e.e)
-            yield _check(ee, context, RUNTIME_POOL)
-
-        if isinstance(e, EUnaryOp) and e.op == UOp.Exists:
-            ee = optimized_exists(e.e)
-            yield _check(ee, context, RUNTIME_POOL)
-
-        if isinstance(e, EUnaryOp) and e.op == UOp.Length:
-            ee = optimized_len(e.e)
-            yield _check(ee, context, RUNTIME_POOL)
-
-        if isinstance(e, EUnaryOp) and e.op == UOp.The:
-            for ee in optimize_the(e.e, args):
-                yield _check(ee, context, RUNTIME_POOL)
-
-        if isinstance(e, EFilter):
-            ee = optimize_filter_as_if_distinct(e.e, e.p, args=args)
-            yield _check(ee, context, RUNTIME_POOL)
-            if isinstance(e.e, EFilter):
-                # try swizzle
-                ee = EFilter(_simple_filter(e.e.e, e.p, args=args), e.e.p).with_type(e.type)
-                yield _check(ee, context, RUNTIME_POOL)
-
-        if isinstance(e, EMap):
-            for ee in optimize_map(e.e, e.f, args=args):
-                yield _check(ee, context, RUNTIME_POOL)
-
-def try_optimize(e, context, pool):
-    for ee in _try_optimize(e, context, pool):
-        if not alpha_equivalent(e, ee):
-            yield ee
