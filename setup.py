@@ -15,7 +15,7 @@ with open(os.path.join(os.path.dirname(__file__), "requirements.txt")) as f:
     reqs = [line.strip() for line in f]
 
 setup(
-    name='Cozy',
+    name='cozy',
     version='2.0a1',
     description='Data Structure Synthesizer',
     author='Calvin Loncaric',

@@ -1,3 +1,9 @@
+"""Brute-force enumeration of expressions.
+
+The key definition in this module is `Enumerator`, a class for enumerating
+expressions.
+"""
+
 from collections import namedtuple
 import itertools
 
@@ -8,17 +14,35 @@ from cozy.evaluation import eval, eval_bulk, construct_value, values_equal
 from cozy.typecheck import is_numeric, is_scalar, is_collection
 from cozy.cost_model import CostModel, Order
 from cozy.pools import Pool, RUNTIME_POOL, STATE_POOL, pool_name
-from cozy.contexts import Context, RootCtx, UnderBinder
+from cozy.contexts import Context, RootCtx, UnderBinder, more_specific_context
 from cozy.logging import task, task_begin, task_end, event, verbose
-from cozy.synthesis.acceleration import histogram
 
 # TODO: someday, turn this into a full-fledged type
 Fingerprint = tuple
 
 def fingerprint(e : Exp, examples : [{str:object}]) -> Fingerprint:
+    """Compute the "fingerprint" of an expression.
+
+    An expression's fingerprint is derived from a set of example inputs.  Two
+    expressions with different fingerprints may behave differently in some
+    cases.  Two expressions with the same fingerprint might be semantically
+    equivalent, or they might just appear to be semantically equivalent on the
+    given examples.
+
+    The Enumerator class uses fingerprints to group expressions into
+    equivalence classes.
+    """
     return (e.type,) + tuple(eval_bulk(e, examples))
 
-def fingerprints_match(fp1, fp2):
+def fingerprints_match(fp1 : Fingerprint, fp2 : Fingerprint) -> bool:
+    """Determine whether two fingerprints are very similar.
+
+    If this returns True, then expressions with the given fingerprints look to
+    be == to each other (but not necessarily === to each other).
+
+    Comparing two fingerprint objects directly with Python's == operator checks
+    whether expressions with those fingerprints look to be === to each other.
+    """
     assert isinstance(fp1[0], Type)
     assert isinstance(fp2[0], Type)
     if fp1[0] != fp2[0]:
@@ -26,8 +50,11 @@ def fingerprints_match(fp1, fp2):
     t = fp1[0]
     return all(values_equal(t, fp1[i], fp2[i]) for i in range(1, len(fp1)))
 
-def fingerprint_is_subset(fp1, fp2):
-    """Are all cases of fp1 a subset of fp2?"""
+def fingerprint_is_subset(fp1 : Fingerprint, fp2 : Fingerprint) -> bool:
+    """
+    Returns true if e1 appears to always be a subset of e2 (where e1 and e2
+    are collection-type expressions with the given fingerprints).
+    """
     assert is_collection(fp1[0])
     assert is_collection(fp2[0])
     x = EVar("x").with_type(fp1[0])
@@ -42,12 +69,14 @@ EnumeratedExp = namedtuple("EnumeratedExp", [
 
 LITERALS = (T, F, ZERO, ONE)
 
-def of_type(exps, t):
+def of_type(exps : [Exp], t : Type):
+    """Filter `exps` to expressions of the given type."""
     for e in exps:
         if e.type == t:
             yield e
 
-def collections(exps):
+def collections(exps : [Exp]):
+    """Filter `exps` to collection-type expressions."""
     for e in exps:
         if is_collection(e.type):
             yield e
@@ -55,12 +84,10 @@ def collections(exps):
 def belongs_in_context(fvs, context):
     return context is context.generalize(fvs)
 
-def parent_contexts(context):
-    while context:
-        parent = context.parent()
-        yield parent
-        context = parent
-
+# Debugging routines.
+# These serve no functional purpose, but they are useful hooks for developers
+# if you need to watch for a particular enumeration event (such as seeing a
+# given expression for the first time or evicting a given expression).
 def _interesting(e, size, context, pool):
     return isinstance(context, RootCtx) and hasattr(e, "_tag")
 def _consider(e, size, context, pool):
@@ -82,25 +109,12 @@ def _evict(e, size, context, pool, better_exp):
         print("evicting {}".format(pprint(e)))
     event("evicting {}".format(pprint(e)))
 
-def more_specific(ctx1, ctx2):
-    a = ctx1
-    while a != ctx2:
-        a = a.parent()
-    if a == ctx2:
-        return ctx1
-    a = ctx2
-    while a != ctx1:
-        a = a.parent()
-    if a == ctx1:
-        return ctx2
-    raise ValueError("not common: {}, {}".format(ctx1, ctx2))
-
 def eviction_policy(new_exp : Exp, new_ctx : Context, old_exp : Exp, old_ctx : Context, pool : Pool, cost_model : CostModel) -> [Exp]:
     """Decide which expressions to keep in the cache.
 
     The returned list contains the new exp, the old exp, or both.
     """
-    context = more_specific(new_ctx, old_ctx)
+    context = more_specific_context(new_ctx, old_ctx)
     ordering = cost_model.compare(new_exp, old_exp, context, pool)
     if ordering == Order.LT:        return [new_exp]
     if ordering == Order.GT:        return [old_exp]
@@ -109,7 +123,31 @@ def eviction_policy(new_exp : Exp, new_ctx : Context, old_exp : Exp, old_ctx : C
     raise ValueError(ordering)
 
 class Enumerator(object):
+    """Brute-force enumerator for expressions in order of AST size.
+
+    This class has lots of useful features:
+     - it uses a set of example inputs to deduplicate expressions
+     - expressions are cached so that less deduplication work needs to happen
+     - if two expressions behave the same on all examples, only the better one
+       is kept
+    """
+
     def __init__(self, examples, cost_model : CostModel, check_wf=None, hints=None, heuristics=None, stop_callback=None, do_eviction=True):
+        """Set up a fresh enumerator.
+
+        Parameters:
+         - examples: a set of example inputs to deduplicate expressions
+         - cost_model: a cost model to tell us which expressions to prefer
+         - check_wf: an optional additional filter to restrict which expressions
+           are visited
+         - hints: extra expressions to visit first
+         - heuristics: an optional function to try and improve visited
+           expressions
+         - stop_callback: a function that is checked periodically to stop
+           enumeration
+         - do_eviction: boolean flag to control whether this class spends time
+           trying to evict older, slower versions of expressions from its cache
+        """
         self.examples = list(examples)
         self.cost_model = cost_model
         self.cache = { } # keys -> [exp]
@@ -132,70 +170,15 @@ class Enumerator(object):
     def cache_size(self):
         return sum(len(v) for v in self.cache.values())
 
-    def heuristic_enumeration(self, context : Context, size : int, pool : Pool) -> [Exp]:
-        # lambda-instantiation
-        for sz1, sz2 in pick_to_sum(2, size-1):
-            for e in self.enumerate(context, sz1, pool):
-                for child in e.children():
-                    if isinstance(child, ELambda):
-                        for arg in self.enumerate(context, sz2, pool):
-                            if child.arg.type == arg.type:
-                                yield child.apply_to(arg)
+    def _enumerate_core(self, context : Context, size : int, pool : Pool) -> [Exp]:
+        """Build new expressions of the given size.
 
-        if pool == RUNTIME_POOL:
-
-            # is `x` the last of its kind in `xs`?
-            for sz1, sz2 in pick_to_sum(2, size-1):
-
-                for xs in self.enumerate(context, sz1, STATE_POOL):
-                    if not is_collection(xs.type):
-                        continue
-
-                    h = histogram(xs)
-                    h = EStateVar(h).with_type(h.type)
-                    for x in of_type(self.enumerate(context, sz2, RUNTIME_POOL), xs.type.t):
-                        mg = EMapGet(h, x).with_type(INT)
-                        e = EEq(mg, ONE)
-                        yield e
-                        yield ECond(e,
-                            ESingleton(x).with_type(xs.type),
-                            EEmptyList().with_type(xs.type)).with_type(xs.type)
-                        yield ECond(e,
-                            EEmptyList().with_type(xs.type),
-                            ESingleton(x).with_type(xs.type)).with_type(xs.type)
-
-            # is `x` the last of its kind in `xs` AND is it argmin
-            # according to some interesting function?
-            for sz1, sz2 in pick_to_sum(2, size-1):
-                for best in self.enumerate(context, sz1, STATE_POOL):
-                    if not (isinstance(best, EArgMin) or isinstance(best, EArgMax)):
-                        continue
-
-                    h = histogram(best.e)
-                    h = EStateVar(h).with_type(h.type)
-                    from cozy.structures.heaps import to_heap, EHeapPeek2
-                    heap = to_heap(best)
-                    heap = EStateVar(heap).with_type(heap.type)
-                    for x in of_type(self.enumerate(context, sz2, RUNTIME_POOL), best.type):
-                        mg = EMapGet(h, x).with_type(INT)
-                        e = EEq(mg, ONE)
-                        b = EStateVar(best).with_type(best.type)
-                        e = EAll([e, EEq(x, b)])
-                        yield e
-                        e = ECond(e,
-                            EHeapPeek2(heap, EStateVar(ELen(best.e)).with_type(INT)).with_type(best.type),
-                            b).with_type(best.type)
-                        yield e
-
-    def enumerate_core(self, context : Context, size : int, pool : Pool) -> [Exp]:
-        """
         Arguments:
-            conext : a Context object describing the vars in scope
-            size   : size to enumerate
-            pool   : pool to enumerate
+            context : a Context object describing the vars in scope
+            size    : size to enumerate
+            pool    : pool to enumerate
 
-        Yields all expressions of the given size legal in the given context and
-        pool.
+        This function is not cached.  Clients should call `enumerate` instead.
         """
 
         if size < 0:
@@ -222,8 +205,6 @@ class Enumerator(object):
                 if p == pool and ctx.alpha_equivalent(context):
                     yield context.adapt(e, ctx)
             return
-
-        yield from self.heuristic_enumeration(context, size, pool)
 
         for e in collections(self.enumerate(context, size-1, pool)):
             yield EEmptyList().with_type(e.type)
@@ -375,6 +356,16 @@ class Enumerator(object):
                         yield m
 
     def enumerate(self, context : Context, size : int, pool : Pool) -> [Exp]:
+        """Enumerate expressions of the given size.
+
+        The output of this function is cached, so subsequent calls are very
+        cheap.
+
+        Arguments:
+            context : a Context object describing the vars in scope
+            size    : size of expressions to enumerate
+            pool    : expression pool to visit
+        """
         for info in self.enumerate_with_info(context, size, pool):
             yield info.e
 
@@ -389,6 +380,16 @@ class Enumerator(object):
         return context
 
     def enumerate_with_info(self, context : Context, size : int, pool : Pool) -> [EnumeratedExp]:
+        """Enumerate expressions (and fingerprints) of the given size.
+
+        The output of this function is cached, so subsequent calls are very
+        cheap.
+
+        Arguments:
+            context : a Context object describing the vars in scope
+            size    : size of expressions to enumerate
+            pool    : expression pool to visit
+        """
         canonical_context = self.canonical_context(context)
         if canonical_context is not context:
             print("adapting request: {} ---> {}".format(context, canonical_context))
@@ -414,7 +415,7 @@ class Enumerator(object):
             self.in_progress.add(k)
             res = []
             self.cache[k] = res
-            queue = self.enumerate_core(context, size, pool)
+            queue = self._enumerate_core(context, size, pool)
             cost_model = self.cost_model
             while True:
                 if self.stop_callback():

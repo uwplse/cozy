@@ -438,3 +438,20 @@ def replace(
         Map {y -> (y+1) + 1} xs.
     """
     return _Replacer(haystack_context, haystack_pool, needle, needle_context, needle_pool, replacement).visit(haystack)
+
+def more_specific_context(ctx1 : Context, ctx2 : Context) -> Context:
+    """Return the one of ctx1 or ctx2 that is legal for more expressions.
+
+    This function raises ValueError if the contexts cannot be reconciled.
+    """
+    a = ctx1
+    while a != ctx2:
+        a = a.parent()
+    if a == ctx2:
+        return ctx1
+    a = ctx2
+    while a != ctx1:
+        a = a.parent()
+    if a == ctx1:
+        return ctx2
+    raise ValueError("no context in common: {}, {}".format(ctx1, ctx2))
