@@ -1100,21 +1100,22 @@ def subst(exp, replacements, tease=True):
                 return self.visit_lcmp(clauses, i + 1, e)
         def visit_EStateVar(self, e):
             return target_syntax.EStateVar(subst(e.e, replacements))
-        def visit_ELambda(self, e):
+        def visit_under_binder(self, binder : syntax.EVar, x):
             m = replacements
-            if e.arg.id in replacements:
+            if binder.id in replacements:
                 m = dict(m)
-                del m[e.arg.id]
-            arg = e.arg
-            body = e.body
-            while any(arg in free_vars(r) for r in replacements.values()):
-                if hasattr(arg, "type"):
-                    new_arg = fresh_var(arg.type)
+                del m[binder.id]
+            while any(binder in free_vars(r) for r in m.values()):
+                if hasattr(binder, "type"):
+                    new_binder = fresh_var(binder.type)
                 else:
-                    new_arg = syntax.EVar(common.fresh_name())
-                body = subst(body, { arg.id : new_arg })
-                arg = new_arg
-            return target_syntax.ELambda(arg, subst(body, m))
+                    new_binder = syntax.EVar(common.fresh_name())
+                x = subst(x, { binder.id : new_binder })
+                binder = new_binder
+            return (binder, subst(x, m))
+        def visit_ELambda(self, e):
+            arg, body = self.visit_under_binder(e.arg, e.body)
+            return syntax.ELambda(arg, body)
         def visit_ADT(self, e):
             children = e.children()
             children = tuple(self.visit(c) for c in children)
@@ -1158,6 +1159,25 @@ def subst(exp, replacements, tease=True):
             return syntax.SAssign(
                 subst_lval(s.lhs, replacements),
                 self.visit(s.rhs))
+        def visit_SDecl(self, s):
+            assert isinstance(s.var, syntax.EVar)
+            return syntax.SDecl(
+                s.var,
+                self.visit(s.val))
+        def visit_SSeq(self, s):
+            while isinstance(s.s1, syntax.SSeq):
+                s = syntax.SSeq(s.s1.s1, syntax.SSeq(s.s1.s2, s.s2))
+            s1 = self.visit(s.s1)
+            if isinstance(s1, syntax.SDecl):
+                # binding shadows variables in subsequent statements...
+                var, s2 = self.visit_under_binder(s1.var, s.s2)
+                return syntax.SSeq(
+                    syntax.SDecl(var, s1.val),
+                    s2)
+            else:
+                return syntax.SSeq(
+                    s1,
+                    self.visit(s.s2))
         def visit_SCall(self, s):
             return syntax.SCall(
                 subst_lval(s.target, replacements),

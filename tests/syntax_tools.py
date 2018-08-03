@@ -123,6 +123,37 @@ class TestSyntaxTools(unittest.TestCase):
         e = ELet(EBinOp(EVar('x').with_type(TInt()), '==', ENum(0).with_type(TInt())).with_type(TBool()), ELambda(EVar('_var0').with_type(TBool()), EUnaryOp('exists', EFilter(ESingleton(ENum(1).with_type(TInt())).with_type(TList(TInt())), ELambda(EVar('x').with_type(TInt()), EVar('_var0').with_type(TBool()))).with_type(TList(TInt()))).with_type(TBool()))).with_type(TBool())
         assert self._do_cse_check(e)
 
+    def test_subst_alpha_rename(self):
+        x = EVar("x")
+        y = EVar("y")
+        z = EVar("z")
+        e1 = ELambda(x, y)
+        e2 = subst(e1, {y.id : x})
+        print(pprint(e2))
+        assert alpha_equivalent(e2, ELambda(z, x))
+
+    def test_subst_sdecl(self):
+        x = EVar("x").with_type(INT)
+        s1 = SDecl(x, x)
+        s2 = subst(s1, {x.id : ONE})
+        assert s2 == SDecl(x, ONE), pprint(s2)
+
+    def test_subst_sdecl_seq(self):
+        x = EVar("x").with_type(INT)
+        s1 = SDecl(x, x)
+        s1 = seq([s1, s1])
+        s2 = subst(s1, {x.id : ONE})
+        assert s2 == seq([SDecl(x, ONE), SDecl(x, x)]), pprint(s2)
+
+    def test_subst_sdecl_seq_alpha_rename(self):
+        x = EVar("x").with_type(INT)
+        y = EVar("y").with_type(INT)
+        z = EVar("z").with_type(INT)
+        s1 = seq([SDecl(x, ONE), SDecl(x, y)])
+        s2 = subst(s1, {y.id : x})
+        assert s2.s1.var != x
+        assert s2.s2.val == x
+
     def test_cse_let_handling(self):
         x = EVar("x").with_type(INT)
         y = EVar("y").with_type(INT)
