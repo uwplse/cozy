@@ -43,7 +43,11 @@ from .enumeration import Enumerator, Fingerprint, fingerprint, fingerprints_matc
 
 eliminate_vars = Option("eliminate-vars", bool, False)
 enable_blacklist = Option("enable-blacklist", bool, False)
-check_blind_substitutions = Option("check-blind-substitutions", bool, True)
+check_blind_substitutions = Option("blind-substitutions", bool, True,
+    description='"Blind substitutions" allow Cozy to try replacing expressions '
+        + "with other expressions, even when the substitution appears wrong. "
+        + "In some cases, this allows Cozy to quickly discover nonintuitive "
+        + "solutions.")
 enable_eviction = Option("eviction", bool, True)
 cost_pruning = Option("prune-using-cost", bool, False,
     description="During synthesis, skip expressions that are more expensive "
