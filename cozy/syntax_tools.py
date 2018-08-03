@@ -955,7 +955,7 @@ def enumerate_fragments(e : syntax.Exp):
         if isinstance(ctx.e, syntax.Exp) and not isinstance(ctx.e, syntax.ELambda):
             yield ctx
 
-def replace(exp, old_exp, new_exp, safe=True, match=lambda e1, e2: e1 == e2):
+def replace(exp, old_exp, new_exp, safe=True, match=lambda e1, e2: e1 == e2, filter=lambda e: True):
     fvs = free_vars(old_exp) if safe else ()
     nfvs = free_vars(new_exp)
     class Replacer(BottomUpRewriter):
@@ -967,6 +967,8 @@ def replace(exp, old_exp, new_exp, safe=True, match=lambda e1, e2: e1 == e2):
                 e = target_syntax.ELambda(new_arg, subst(e.body, {e.arg.id:new_arg}))
             return target_syntax.ELambda(e.arg, self.visit(e.body))
         def visit(self, e):
+            if not filter(e):
+                return e
             if isinstance(e, syntax.Exp) and match(e, old_exp):
                 return new_exp
             return super().visit(e)
