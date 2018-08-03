@@ -25,13 +25,13 @@ TBool               = declare_case(Type, "TBool")
 TString             = declare_case(Type, "TString")
 TNative             = declare_case(Type, "TNative", ["name"])
 THandle             = declare_case(Type, "THandle", ["statevar", "value_type"])
-TBag                = declare_case(Type, "TBag",    ["t"])
-TSet                = declare_case(Type, "TSet",    ["t"])
-TList               = declare_case(Type, "TList",   ["t"])
+TBag                = declare_case(Type, "TBag",    ["elem_type"])
+TSet                = declare_case(Type, "TSet",    ["elem_type"])
+TList               = declare_case(Type, "TList",   ["elem_type"])
 TMap                = declare_case(Type, "TMap",    ["k", "v"])
 TNamed              = declare_case(Type, "TNamed",  ["id"])
 TRecord             = declare_case(Type, "TRecord", ["fields"])
-TApp                = declare_case(Type, "TApp",    ["t", "args"])
+TApp                = declare_case(Type, "TApp",    ["type_name", "args"])
 TEnum               = declare_case(Type, "TEnum",   ["cases"])
 TTuple              = declare_case(Type, "TTuple",  ["ts"])
 
@@ -91,10 +91,10 @@ ENull               = declare_case(Exp, "ENull")
 ECond               = declare_case(Exp, "ECond",              ["cond", "then_branch", "else_branch"])
 EBinOp              = declare_case(Exp, "EBinOp",             ["e1", "op", "e2"])
 EUnaryOp            = declare_case(Exp, "EUnaryOp",           ["op", "e"])
-EArgMin             = declare_case(Exp, "EArgMin",            ["e", "f"])
-EArgMax             = declare_case(Exp, "EArgMax",            ["e", "f"])
+EArgMin             = declare_case(Exp, "EArgMin",            ["e", "key_function"])
+EArgMax             = declare_case(Exp, "EArgMax",            ["e", "key_function"])
 EHandle             = declare_case(Exp, "EHandle",            ["addr", "value"])
-EGetField           = declare_case(Exp, "EGetField",          ["e", "f"])
+EGetField           = declare_case(Exp, "EGetField",          ["e", "field_name"])
 EMakeRecord         = declare_case(Exp, "EMakeRecord",        ["fields"])
 EListGet            = declare_case(Exp, "EListGet",           ["e", "index"])
 EListSlice          = declare_case(Exp, "EListSlice",         ["e", "start", "end"])
@@ -103,8 +103,8 @@ EEmptyList          = declare_case(Exp, "EEmptyList")
 ESingleton          = declare_case(Exp, "ESingleton",         ["e"])
 ECall               = declare_case(Exp, "ECall",              ["func", "args"])
 ETuple              = declare_case(Exp, "ETuple",             ["es"])
-ETupleGet           = declare_case(Exp, "ETupleGet",          ["e", "n"])
-ELet                = declare_case(Exp, "ELet",               ["e", "f"])
+ETupleGet           = declare_case(Exp, "ETupleGet",          ["e", "index"])
+ELet                = declare_case(Exp, "ELet",               ["e", "body_function"])
 
 # Lambdas
 TFunc = declare_case(Type, "TFunc", ["arg_types", "ret_type"])
@@ -130,8 +130,8 @@ SNoOp               = declare_case(Stm, "SNoOp")
 SSeq                = declare_case(Stm, "SSeq",     ["s1", "s2"])
 SCall               = declare_case(Stm, "SCall",    ["target", "func", "args"])
 SAssign             = declare_case(Stm, "SAssign",  ["lhs", "rhs"])
-SDecl               = declare_case(Stm, "SDecl",    ["id", "val"]) # str id
-SForEach            = declare_case(Stm, "SForEach", ["id", "iter", "body"]) # EVar id
+SDecl               = declare_case(Stm, "SDecl",    ["var", "val"]) # EVar var
+SForEach            = declare_case(Stm, "SForEach", ["loop_var", "iter", "body"]) # EVar id
 SIf                 = declare_case(Stm, "SIf",      ["cond", "then_branch", "else_branch"])
 
 # -----------------------------------------------------------------------------
@@ -145,8 +145,8 @@ STRING = TString()
 BOOL_BAG = TBag(BOOL)
 INT_BAG = TBag(INT)
 
-T = EBool(True) .with_type(BOOL)
-F = EBool(False).with_type(BOOL)
+ETRUE = EBool(True) .with_type(BOOL)
+EFALSE = EBool(False).with_type(BOOL)
 ZERO = ENum(0).with_type(INT)
 ONE = ENum(1).with_type(INT)
 TWO = ENum(2).with_type(INT)
@@ -198,19 +198,19 @@ def seq(stms):
     return build_balanced_tree(stms, SSeq)
 
 def EAll(exps):
-    exps = [ e for e in exps if e != T ]
-    if any(e == F for e in exps):
-        return F
+    exps = [ e for e in exps if e != ETRUE ]
+    if any(e == EFALSE for e in exps):
+        return EFALSE
     if not exps:
-        return T
+        return ETRUE
     return build_balanced_binop_tree(BOOL, BOp.And, exps)
 
 def EAny(exps):
-    exps = [ e for e in exps if e != F ]
-    if any(e == T for e in exps):
-        return T
+    exps = [ e for e in exps if e != EFALSE ]
+    if any(e == ETRUE for e in exps):
+        return ETRUE
     if not exps:
-        return F
+        return EFALSE
     return build_balanced_binop_tree(BOOL, BOp.Or, exps)
 
 def ENot(e):

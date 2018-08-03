@@ -45,13 +45,13 @@ class TestSyntaxTools(unittest.TestCase):
         xs_eq_zero = EFilter(xs, ELambda(x, equal(x, ZERO)))
         e = EFilter(xs_eq_zero, ELambda(x,
             equal(
-                EFilter(xs, ELambda(x, T)),
+                EFilter(xs, ELambda(x, ETRUE)),
                 EEmptyList().with_type(xs.type))))
         assert retypecheck(e)
         for ctx in enumerate_fragments(e):
             e = ctx.e
             a = ctx.facts
-            if e == T:
+            if e == ETRUE:
                 assert not valid(implies(EAll(a), equal(x, ZERO)), validate_model=True), "assumptions at {}: {}".format(pprint(e), "; ".join(pprint(aa) for aa in a))
 
     def test_enumerate_fragments_bound(self):
@@ -62,7 +62,7 @@ class TestSyntaxTools(unittest.TestCase):
             x = ctx.e
             bound = ctx.bound_vars
             if x == b:
-                assert bound == { e.f.arg }, "got {}".format(bound)
+                assert bound == { e.body_function.arg }, "got {}".format(bound)
             elif x == ZERO:
                 assert bound == set(), "got {}".format(bound)
 
@@ -122,6 +122,37 @@ class TestSyntaxTools(unittest.TestCase):
     def test_cse_safe_subst(self):
         e = ELet(EBinOp(EVar('x').with_type(TInt()), '==', ENum(0).with_type(TInt())).with_type(TBool()), ELambda(EVar('_var0').with_type(TBool()), EUnaryOp('exists', EFilter(ESingleton(ENum(1).with_type(TInt())).with_type(TList(TInt())), ELambda(EVar('x').with_type(TInt()), EVar('_var0').with_type(TBool()))).with_type(TList(TInt()))).with_type(TBool()))).with_type(TBool())
         assert self._do_cse_check(e)
+
+    def test_subst_alpha_rename(self):
+        x = EVar("x")
+        y = EVar("y")
+        z = EVar("z")
+        e1 = ELambda(x, y)
+        e2 = subst(e1, {y.id : x})
+        print(pprint(e2))
+        assert alpha_equivalent(e2, ELambda(z, x))
+
+    def test_subst_sdecl(self):
+        x = EVar("x").with_type(INT)
+        s1 = SDecl(x, x)
+        s2 = subst(s1, {x.id : ONE})
+        assert s2 == SDecl(x, ONE), pprint(s2)
+
+    def test_subst_sdecl_seq(self):
+        x = EVar("x").with_type(INT)
+        s1 = SDecl(x, x)
+        s1 = seq([s1, s1])
+        s2 = subst(s1, {x.id : ONE})
+        assert s2 == seq([SDecl(x, ONE), SDecl(x, x)]), pprint(s2)
+
+    def test_subst_sdecl_seq_alpha_rename(self):
+        x = EVar("x").with_type(INT)
+        y = EVar("y").with_type(INT)
+        z = EVar("z").with_type(INT)
+        s1 = seq([SDecl(x, ONE), SDecl(x, y)])
+        s2 = subst(s1, {y.id : x})
+        assert s2.s1.var != x
+        assert s2.s2.val == x
 
     def test_cse_let_handling(self):
         x = EVar("x").with_type(INT)
@@ -217,19 +248,19 @@ class TestSyntaxTools(unittest.TestCase):
 
     def test_stm_fvs(self):
         use_x = SCall(ONE, "f", (EVar("x"),))
-        assert list(free_vars(SDecl("x", EVar("x")))) == [EVar("x")]
+        assert list(free_vars(SDecl(EVar("x"), EVar("x")))) == [EVar("x")]
         assert list(free_vars(SSeq(
-            SDecl("x", ONE),
+            SDecl(EVar("x"), ONE),
             use_x))) == []
-        assert list(free_vars(SIf(T, SDecl("x", ONE), SNoOp()))) == []
+        assert list(free_vars(SIf(ETRUE, SDecl(EVar("x"), ONE), SNoOp()))) == []
         assert list(free_vars(SSeq(
-            SIf(T, SDecl("x", ONE), SNoOp()),
+            SIf(ETRUE, SDecl(EVar("x"), ONE), SNoOp()),
             use_x))) == [EVar("x")]
         assert list(free_vars(SForEach(EVar("x"), EEmptyList(), use_x))) == []
         assert list(free_vars(SSeq(SForEach(EVar("x"), EEmptyList(), use_x), use_x))) == [EVar("x")]
-        assert list(free_vars(SEscapableBlock("label", SDecl("x", ONE)))) == []
-        assert list(free_vars(SWhile(T, SDecl("x", ONE)))) == []
-        assert list(free_vars(SMapUpdate(T, T, EVar("x"), SSeq(SDecl("y", ONE), use_x)))) == []
+        assert list(free_vars(SEscapableBlock("label", SDecl(EVar("x"), ONE)))) == []
+        assert list(free_vars(SWhile(ETRUE, SDecl(EVar("x"), ONE)))) == []
+        assert list(free_vars(SMapUpdate(ETRUE, ETRUE, EVar("x"), SSeq(SDecl(EVar("y"), ONE), use_x)))) == []
 
     def test_deep_copy(self):
         e1 = ETuple((EVar("x"), EBinOp(EVar("x"), "+", EVar("y"))))
@@ -302,8 +333,8 @@ class TestSyntaxTools(unittest.TestCase):
             pass
 
     def test_all_exps_on_stm(self):
-        s = SIf(T, SNoOp(), SNoOp())
-        assert list(all_exps(s)) == [T]
+        s = SIf(ETRUE, SNoOp(), SNoOp())
+        assert list(all_exps(s)) == [ETRUE]
 
     def test_get_modified_var(self):
         htype = THandle("IntPtr", INT)
@@ -577,21 +608,24 @@ class TestElimination(unittest.TestCase):
         print(pprint(s))
         assert False
         """
-        assert isinstance(e1.p, ELambda)
+        assert isinstance(e1.predicate, ELambda)
 
         e1 = ELet(EVar("y").with_type(INT), ELambda(EVar("x").with_type(INT), EBinOp(EVar("x"), "+", ENum(2).with_type(INT))))
         e = ECond(EBinOp(EVar("x").with_type(INT), "<", EVar("y").with_type(INT)), e1, e1)
         assert retypecheck(e)
         e = cse_replace(e)
 
-        assert isinstance(e1.f, ELambda)
+        assert isinstance(e1.body_function, ELambda)
 
         for t in (EMap, EArgMax, EArgMin):
             e1 = t(ESingleton(ONE), ELambda(EVar("x").with_type(INT), EBinOp(EVar("x"), "+", ENum(2).with_type(INT))))
             e = ECond(EBinOp(EVar("x").with_type(INT), "<", EVar("y").with_type(INT)), e1, e1)
             assert retypecheck(e)
             e = cse_replace(e)
-            assert isinstance(e1.f, ELambda)
+            if isinstance(t, EMap):
+                assert isinstance(e1.transform_function, ELambda)
+            if isinstance(t, EArgMax) or isinstance(t, EArgMin):
+                assert isinstance(e1.key_function, ELambda)
 
     def test_cse_2_stm_simple(self):
         s = parse_stm(
@@ -911,7 +945,7 @@ class TestElimination(unittest.TestCase):
         assert new_form.count("+ 7") == 1
 
     def __test_cse_2(self):
-        op = Op('addElement', [('x', TInt())], [], SSeq(SSeq(SSeq(SDecl('_name5771', ECond(EBinOp(EBinOp(EBinOp(EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt()), '+', EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()), '<', ENum(5).with_type(TInt())).with_type(TBool()), 'or', EBinOp(EBinOp(EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt()), '+', EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()), '>', ENum(7).with_type(TInt())).with_type(TBool())).with_type(TBool()), EBinOp(EVar('_var2027').with_type(TBag(TInt())), '-', EBinOp(EVar('_var2027').with_type(TBag(TInt())), '+', ESingleton(EVar('x').with_type(TInt())).with_type(TBag(TInt()))).with_type(TBag(TInt()))).with_type(TBag(TInt())), EBinOp(EVar('_var2027').with_type(TBag(TInt())), '-', EVar('_var2027').with_type(TBag(TInt()))).with_type(TBag(TInt()))).with_type(TBag(TInt()))), SDecl('_name5772', ECond(EBinOp(EBinOp(EBinOp(EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt()), '+', EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()),'<', ENum(5).with_type(TInt())).with_type(TBool()), 'or', EBinOp(EBinOp(EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt()), '+', EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()), '>', ENum(7).with_type(TInt())).with_type(TBool())).with_type(TBool()), EBinOp(EBinOp(EVar('_var2027').with_type(TBag(TInt())), '+', ESingleton(EVar('x').with_type(TInt())).with_type(TBag(TInt()))).with_type(TBag(TInt())), '-', EVar('_var2027').with_type(TBag(TInt()))).with_type(TBag(TInt())), EBinOp(EVar('_var2027').with_type(TBag(TInt())), '-', EVar('_var2027').with_type(TBag(TInt()))).with_type(TBag(TInt()))).with_type(TBag(TInt())))), SAssign(EVar('_var507').with_type(TInt()), ECond(EBinOp(EBinOp(EBinOp(EUnaryOp('len', EEmptyList().with_type(TBag(TInt()))).with_type(TInt()), '+', EUnaryOp('len', EEmptyList().with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()), '<', ENum(5).with_type(TInt())).with_type(TBool()), 'or', EBinOp(ENum(5).with_type(TInt()), '>', ENum(7).with_type(TInt())).with_type(TBool())).with_type(TBool()), EBinOp(EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt()), '+', ENum(1).with_type(TInt())).with_type(TInt()), EUnaryOp('len', EEmptyList().with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()))), SSeq(SForEach(EVar('_var2988').with_type(TInt()), EVar('_name5771').with_type(TBag(TInt())), SCall(EVar('_var2027').with_type(TBag(TInt())), 'remove', [EVar('_var2988').with_type(TInt())])), SForEach(EVar('_var2988').with_type(TInt()), EVar('_name5772').with_type(TBag(TInt())), SCall(EVar('_var2027').with_type(TBag(TInt())), 'add', [EVar('_var2988').with_type(TInt())])))), '')
+        op = Op('addElement', [('x', TInt())], [], SSeq(SSeq(SSeq(SDecl('_name5771', ECond(EBinOp(EBinOp(EBinOp(EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt()), '+', EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()), '<', ENum(5).with_type(TInt())).with_type(TBool()), 'or', EBinOp(EBinOp(EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt()), '+', EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()), '>', ENum(7).with_type(TInt())).with_type(TBool())).with_type(TBool()), EBinOp(EVar('_var2027').with_type(TBag(TInt())), '-', EBinOp(EVar('_var2027').with_type(TBag(TInt())), '+', ESingleton(EVar('x').with_type(TInt())).with_type(TBag(TInt()))).with_type(TBag(TInt()))).with_type(TBag(TInt())), EBinOp(EVar('_var2027').with_type(TBag(TInt())), '-', EVar('_var2027').with_type(TBag(TInt()))).with_type(TBag(TInt()))).with_type(TBag(TInt()))), SDecl(EVar('_name5772'), ECond(EBinOp(EBinOp(EBinOp(EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt()), '+', EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()),'<', ENum(5).with_type(TInt())).with_type(TBool()), 'or', EBinOp(EBinOp(EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt()), '+', EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()), '>', ENum(7).with_type(TInt())).with_type(TBool())).with_type(TBool()), EBinOp(EBinOp(EVar('_var2027').with_type(TBag(TInt())), '+', ESingleton(EVar('x').with_type(TInt())).with_type(TBag(TInt()))).with_type(TBag(TInt())), '-', EVar('_var2027').with_type(TBag(TInt()))).with_type(TBag(TInt())), EBinOp(EVar('_var2027').with_type(TBag(TInt())), '-', EVar('_var2027').with_type(TBag(TInt()))).with_type(TBag(TInt()))).with_type(TBag(TInt())))), SAssign(EVar('_var507').with_type(TInt()), ECond(EBinOp(EBinOp(EBinOp(EUnaryOp('len', EEmptyList().with_type(TBag(TInt()))).with_type(TInt()), '+', EUnaryOp('len', EEmptyList().with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()), '<', ENum(5).with_type(TInt())).with_type(TBool()), 'or', EBinOp(ENum(5).with_type(TInt()), '>', ENum(7).with_type(TInt())).with_type(TBool())).with_type(TBool()), EBinOp(EUnaryOp('len', EVar('_var2027').with_type(TBag(TInt()))).with_type(TInt()), '+', ENum(1).with_type(TInt())).with_type(TInt()), EUnaryOp('len', EEmptyList().with_type(TBag(TInt()))).with_type(TInt())).with_type(TInt()))), SSeq(SForEach(EVar('_var2988').with_type(TInt()), EVar('_name5771').with_type(TBag(TInt())), SCall(EVar('_var2027').with_type(TBag(TInt())), 'remove', [EVar('_var2988').with_type(TInt())])), SForEach(EVar('_var2988').with_type(TInt()), EVar('_name5772').with_type(TBag(TInt())), SCall(EVar('_var2027').with_type(TBag(TInt())), 'add', [EVar('_var2988').with_type(TInt())])))), '')
         spec = Spec("foo", (), (), (), (), [op], "", "", "")
 
         assert retypecheck(spec)

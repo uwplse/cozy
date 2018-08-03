@@ -111,14 +111,14 @@ class JavaPrinter(CxxPrinter):
             return ""
         ret_type = q.ret.type
         if isinstance(ret_type, TBag):
-            x = EVar(self.fn("x")).with_type(ret_type.t)
+            x = EVar(self.fn("x")).with_type(ret_type.elem_type)
             def body(x):
                 return SEscape("{indent}_callback.accept({x});\n", ["x"], [x])
             if q.docstring:
                 self.write(indent_lines(q.docstring, self.get_indent()), "\n")
             self.begin_statement()
             self.write("public ", self.visit(ret_type, q.name), "(")
-            self.visit_args(itertools.chain(q.args, [("_callback", TNative("java.util.function.Consumer<{t}>".format(t=self.visit(ret_type.t, ""))))]))
+            self.visit_args(itertools.chain(q.args, [("_callback", TNative("java.util.function.Consumer<{t}>".format(t=self.visit(ret_type.elem_type, ""))))]))
             self.write(") ")
             with self.block():
                 self.visit(SForEach(x, q.ret, SEscape("{indent}_callback({x});\n", ["x"], [x])))
@@ -444,19 +444,19 @@ class JavaPrinter(CxxPrinter):
         return "String {}".format(name)
 
     def visit_TNativeList(self, t, name):
-        if self.boxed or not self.is_primitive(t.t):
-            return "java.util.ArrayList<{}> {}".format(self.visit(t.t, ""), name)
+        if self.boxed or not self.is_primitive(t.elem_type):
+            return "java.util.ArrayList<{}> {}".format(self.visit(t.elem_type, ""), name)
         else:
-            return "gnu.trove.list.array.T{}ArrayList {}".format(
-                self.trovename(t.t),
+            return "gnu.trove.list.array.elem_type{}ArrayList {}".format(
+                self.trovename(t.elem_type),
                 name)
 
     def visit_TNativeSet(self, t, name):
-        if self.boxed or not self.is_primitive(t.t):
-            return "java.util.HashSet< {} > {}".format(self.visit(t.t, ""), name)
+        if self.boxed or not self.is_primitive(t.elem_type):
+            return "java.util.HashSet< {} > {}".format(self.visit(t.elem_type, ""), name)
         else:
-            return "gnu.trove.set.hash.T{}HashSet {}".format(
-                self.trovename(t.t),
+            return "gnu.trove.set.hash.elem_type{}HashSet {}".format(
+                self.trovename(t.elem_type),
                 name)
 
     def visit_TBag(self, t, name):
@@ -486,8 +486,8 @@ class JavaPrinter(CxxPrinter):
     def visit_EGetField(self, e):
         ee = self.visit(e.e)
         if isinstance(e.e.type, THandle):
-            return "({}).getVal()".format(ee, e.f)
-        return "({}).{}".format(ee, e.f)
+            return "({}).getVal()".format(ee, e.field_name)
+        return "({}).{}".format(ee, e.field_name)
 
     def find_one_native(self, iterable):
         it = fresh_name("iterator")
@@ -501,7 +501,7 @@ class JavaPrinter(CxxPrinter):
             "({it}.hasNext() ? {it}.next() : null)".format(it=it))
 
     def visit_TVector(self, t, name):
-        return "{}[] {}".format(self.visit(t.t, ""), name)
+        return "{}[] {}".format(self.visit(t.elem_type, ""), name)
 
     def use_trove(self, t):
         if isinstance(t, TMap):
@@ -509,9 +509,9 @@ class JavaPrinter(CxxPrinter):
         return False
 
     def visit_TArray(self, t, name):
-        if t.t == BOOL:
+        if t.elem_type == BOOL:
             return "long[] {}".format(name)
-        return "{}[] {}".format(self.visit(t.t, name=""), name)
+        return "{}[] {}".format(self.visit(t.elem_type, name=""), name)
 
     def visit_TNativeMap(self, t, name):
         if self.use_trove(t):
@@ -520,7 +520,7 @@ class JavaPrinter(CxxPrinter):
                 x = self.troveargs(x)
                 if x is not None:
                     args.append(x)
-            return "gnu.trove.map.hash.T{k}{v}HashMap{targs} {name}".format(
+            return "gnu.trove.map.hash.elem_type{k}{v}HashMap{targs} {name}".format(
                 k=self.trovename(t.k),
                 v=self.trovename(t.v),
                 targs="<{}>".format(", ".join(args)) if args else "",
@@ -532,17 +532,17 @@ class JavaPrinter(CxxPrinter):
                 name)
 
     def visit_TRef(self, t, name):
-        return self.visit(t.t, name)
+        return self.visit(t.elem_type, name)
 
     def for_each_native(self, x, iterable, body):
         if not self.boxed and self.troveargs(x.type) is None:
             setup, iterable_src = self.visit(iterable)
             itname = fresh_name("iterator")
-            return "{setup}{indent}gnu.trove.iterator.T{T}Iterator {it} = {iterable}.iterator();\n{indent}while ({it}.hasNext()) {{\n{indent2}{decl} = {it}.next();\n{body}{indent}}}\n".format(
+            return "{setup}{indent}gnu.trove.iterator.elem_type{ETRUE}Iterator {it} = {iterable}.iterator();\n{indent}while ({it}.hasNext()) {{\n{indent2}{decl} = {it}.next();\n{body}{indent}}}\n".format(
                 setup=setup,
                 iterable=iterable_src,
                 it=itname,
-                T=self.trovename(x.type),
+                ETRUE=self.trovename(x.type),
                 decl=self.visit(x.type, name=x.id),
                 body=self.visit(body, indent+INDENT),
                 indent=indent,
@@ -552,7 +552,7 @@ class JavaPrinter(CxxPrinter):
     def visit_SSwap(self, s):
         tmp = self.fv(s.lval1.type, "swap_tmp")
         return self.visit(seq([
-            SDecl(tmp.id, s.lval1),
+            SDecl(tmp, s.lval1),
             SAssign(s.lval1, s.lval2),
             SAssign(s.lval2, tmp)]))
 
@@ -587,15 +587,15 @@ class JavaPrinter(CxxPrinter):
     def visit_SArrayAlloc(self, s):
         lval = self.visit(s.a)
         cap = self.visit(s.capacity)
-        elem_type = s.a.type.t
+        elem_type = s.a.type.elem_type
         tname = self.strip_generics(self.visit(elem_type, name=""))
         self.write_stmt(lval, " = new ", tname, "[", cap, "];")
 
     def visit_SEnsureCapacity(self, s):
-        return self.array_resize_for_index(s.a.type.t, s.a, s.capacity)
+        return self.array_resize_for_index(s.a.type.elem_type, s.a, s.capacity)
 
     def visit_SArrayReAlloc(self, s):
-        return self.array_resize_for_index(s.a.type.t, s.a, s.new_capacity)
+        return self.array_resize_for_index(s.a.type.elem_type, s.a, s.new_capacity)
 
     def visit_EArrayIndexOf(self, e):
         # TODO: faster implementation that does not involve this intermediate list?
@@ -654,7 +654,7 @@ class JavaPrinter(CxxPrinter):
                 ekey = self.visit(e.key)
                 v = self.fv(e.map.type.v, hint="v")
                 with self.boxed_mode():
-                    decl = self.visit(SDecl(v.id, EEscape("{emap}.get({ekey})".format(emap=emap, ekey=ekey), [], []).with_type(e.type)))
+                    decl = self.visit(SDecl(v, EEscape("{emap}.get({ekey})".format(emap=emap, ekey=ekey), [], []).with_type(e.type)))
                 s, e = self.visit(ECond(EEq(v, ENull().with_type(v.type)), evaluation.construct_value(e.map.type.v), v).with_type(e.type))
                 return (smap + skey + decl + s, e)
             else:

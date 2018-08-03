@@ -94,7 +94,7 @@ def equality_implies_deep_equality(t : syntax.Type):
     if isinstance(t, syntax.TRecord):
         return all(equality_implies_deep_equality(tt) for (f, tt) in t.fields)
     if isinstance(t, syntax.TList):
-        return equality_implies_deep_equality(t.t)
+        return equality_implies_deep_equality(t.elem_type)
     return False
 
 COLLECTION_TYPES = (syntax.TBag, syntax.TSet, syntax.TList)
@@ -103,11 +103,11 @@ def is_collection(t):
 
 def to_abstract(t):
     if isinstance(t, syntax.TBag):
-        return syntax.TBag(t.t)
+        return syntax.TBag(t.elem_type)
     if isinstance(t, syntax.TSet):
-        return syntax.TSet(t.t)
+        return syntax.TSet(t.elem_type)
     if isinstance(t, syntax.TList):
-        return syntax.TList(t.t)
+        return syntax.TList(t.elem_type)
     return t
 
 class Typechecker(Visitor):
@@ -182,14 +182,14 @@ class Typechecker(Visitor):
         return t
 
     def visit_TApp(self, t):
-        if t.t == "Set":
+        if t.type_name == "Set":
             return syntax.TSet(self.visit(t.args))
-        elif t.t == "Bag":
+        elif t.type_name == "Bag":
             return syntax.TBag(self.visit(t.args))
-        elif t.t == "List":
+        elif t.type_name == "List":
             return syntax.TList(self.visit(t.args))
         else:
-            self.report_err(t, "unknown type {}".format(t.t))
+            self.report_err(t, "unknown type {}".format(t.type_name))
             return t
 
     def visit_TRecord(self, t):
@@ -220,13 +220,13 @@ class Typechecker(Visitor):
         return t
 
     def visit_TBag(self, t):
-        return type(t)(self.visit(t.t))
+        return type(t)(self.visit(t.elem_type))
 
     def visit_TSet(self, t):
-        return type(t)(self.visit(t.t))
+        return type(t)(self.visit(t.elem_type))
 
     def visit_TList(self, t):
-        return type(t)(self.visit(t.t))
+        return type(t)(self.visit(t.elem_type))
 
     def visit_TMap(self, t):
         return type(t)(self.visit(t.k), self.visit(t.v))
@@ -235,9 +235,9 @@ class Typechecker(Visitor):
         if isinstance(t1, syntax.TMap) and isinstance(t2, syntax.TMap):
             return self.types_equivalent(t1.k, t2.k) and self.types_equivalent(t1.v, t2.v)
         elif isinstance(t1, syntax.TBag) and isinstance(t2, syntax.TBag):
-            return self.types_equivalent(t1.t, t2.t)
+            return self.types_equivalent(t1.elem_type, t2.elem_type)
         elif isinstance(t1, syntax.TSet) and isinstance(t2, syntax.TSet):
-            return self.types_equivalent(t1.t, t2.t)
+            return self.types_equivalent(t1.elem_type, t2.elem_type)
         else:
             return t1 == t2
 
@@ -265,10 +265,10 @@ class Typechecker(Visitor):
             return t1
         if is_numeric(t1) and is_numeric(t2):
             return self.numeric_lub(src, t1, t2)
-        if isinstance(t1, syntax.TList) and isinstance(t2, syntax.TList) and t1.t == t2.t:
-            return syntax.TList(t1.t)
-        if is_collection(t1) and is_collection(t2) and t1.t == t2.t:
-            return syntax.TBag(t1.t)
+        if isinstance(t1, syntax.TList) and isinstance(t2, syntax.TList) and t1.elem_type == t2.elem_type:
+            return syntax.TList(t1.elem_type)
+        if is_collection(t1) and is_collection(t2) and t1.elem_type == t2.elem_type:
+            return syntax.TBag(t1.elem_type)
         if t1 is DEFAULT_TYPE:
             return t2
         if t2 is DEFAULT_TYPE:
@@ -289,9 +289,9 @@ class Typechecker(Visitor):
     def get_collection_type(self, e):
         """if e has a collection type, e.g. List<Int>, this returns the inner type, e.g. Int"""
         if e.type is DEFAULT_TYPE:           return DEFAULT_TYPE
-        if isinstance(e.type, syntax.TBag):  return e.type.t
-        if isinstance(e.type, syntax.TSet):  return e.type.t
-        if isinstance(e.type, syntax.TList): return e.type.t
+        if isinstance(e.type, syntax.TBag):  return e.type.elem_type
+        if isinstance(e.type, syntax.TSet):  return e.type.elem_type
+        if isinstance(e.type, syntax.TList): return e.type.elem_type
         self.report_err(e, "expression has non-collection type {}".format(e.type))
         return DEFAULT_TYPE
 
@@ -311,9 +311,9 @@ class Typechecker(Visitor):
 
     def visit_ELet(self, e):
         self.visit(e.e)
-        e.f.arg.type = e.e.type
-        self.visit(e.f)
-        e.type = e.f.body.type
+        e.body_function.arg.type = e.e.type
+        self.visit(e.body_function)
+        e.type = e.body_function.body.type
 
     def visit_EUnaryOp(self, e):
         self.visit(e.e)
@@ -356,17 +356,17 @@ class Typechecker(Visitor):
 
     def visit_EArgMin(self, e):
         self.visit(e.e)
-        e.f.arg.type = self.get_collection_type(e.e)
-        self.visit(e.f)
-        e.type = e.f.arg.type
-        # todo: ensure sortable (e.f.arg.type)
+        e.key_function.arg.type = self.get_collection_type(e.e)
+        self.visit(e.key_function)
+        e.type = e.key_function.arg.type
+        # todo: ensure sortable (e.key_function.arg.type)
 
     def visit_EArgMax(self, e):
         self.visit(e.e)
-        e.f.arg.type = self.get_collection_type(e.e)
-        self.visit(e.f)
-        e.type = e.f.arg.type
-        # todo: ensure sortable (e.f.arg.type)
+        e.key_function.arg.type = self.get_collection_type(e.e)
+        self.visit(e.key_function)
+        e.type = e.key_function.arg.type
+        # todo: ensure sortable (e.key_function.arg.type)
 
     def visit_EBool(self, e):
         e.type = BOOL
@@ -435,10 +435,10 @@ class Typechecker(Visitor):
     def visit_EFlatMap(self, e):
         self.visit(e.e)
         t1 = self.get_collection_type(e.e)
-        self.visit(e.f)
-        self.ensure_type(e.f.arg, t1)
-        t2 = self.get_collection_type(e.f.body)
-        e.type = e.f.body.type
+        self.visit(e.transform_function)
+        self.ensure_type(e.transform_function.arg, t1)
+        t2 = self.get_collection_type(e.transform_function.body)
+        e.type = e.transform_function.body.type
 
     def visit_ECall(self, e):
         fname = e.func
@@ -476,7 +476,7 @@ class Typechecker(Visitor):
     def visit_EListGet(self, e):
         self.visit(e.e)
         if isinstance(e.e.type, syntax.TList):
-            e.type = e.e.type.t
+            e.type = e.e.type.elem_type
         else:
             e.type = DEFAULT_TYPE
             if e.e.type is not DEFAULT_TYPE:
@@ -526,19 +526,19 @@ class Typechecker(Visitor):
             return
         if isinstance(e.e.type, syntax.TRecord):
             fields = dict(e.e.type.fields)
-            if e.f in fields:
-                e.type = fields[e.f]
+            if e.field_name in fields:
+                e.type = fields[e.field_name]
             else:
-                self.report_err(e, "no field {} on type {}".format(e.f, e.e.type))
+                self.report_err(e, "no field {} on type {}".format(e.field_name, e.e.type))
                 e.type = DEFAULT_TYPE
         elif isinstance(e.e.type, syntax.THandle):
-            if e.f == "val":
+            if e.field_name == "val":
                 e.type = e.e.type.value_type
             else:
-                self.report_err(e, "no field {} on type {}".format(e.f, e.e.type))
+                self.report_err(e, "no field {} on type {}".format(e.field_name, e.e.type))
                 e.type = DEFAULT_TYPE
         else:
-            self.report_err(e, "cannot get field {} from non-record {}".format(e.f, e.e.type))
+            self.report_err(e, "cannot get field {} from non-record {}".format(e.field_name, e.e.type))
             e.type = DEFAULT_TYPE
 
     def visit_EVar(self, e):
@@ -581,10 +581,10 @@ class Typechecker(Visitor):
         self.visit(e.e)
         t = e.e.type
         if isinstance(t, syntax.TTuple):
-            if e.n >= 0 and e.n < len(t.ts):
-                e.type = t.ts[e.n]
+            if e.index >= 0 and e.index < len(t.ts):
+                e.type = t.ts[e.index]
             else:
-                self.report_err(e, "cannot get element {} from tuple of size {}".format(e.n, len(t.ts)))
+                self.report_err(e, "cannot get element {} from tuple of size {}".format(e.index, len(t.ts)))
                 e.type = DEFAULT_TYPE
         elif t is DEFAULT_TYPE:
             e.type = DEFAULT_TYPE
@@ -595,14 +595,14 @@ class Typechecker(Visitor):
     def visit_EMap(self, e):
         self.visit(e.e)
         elem_type = self.get_collection_type(e.e)
-        e.f.arg.type = elem_type
-        self.visit(e.f)
+        e.transform_function.arg.type = elem_type
+        self.visit(e.transform_function)
         if isinstance(e.e.type, syntax.TSet):
             # Sets might not have distinct elements after the map transform.
             # Consider e.g. `map {\x -> 1} my_set`.
-            e.type = syntax.TBag(e.f.body.type)
+            e.type = syntax.TBag(e.transform_function.body.type)
         elif is_collection(e.e.type):
-            e.type = type(to_abstract(e.e.type))(e.f.body.type)
+            e.type = type(to_abstract(e.e.type))(e.transform_function.body.type)
         elif e.e.type is DEFAULT_TYPE:
             e.type = DEFAULT_TYPE
         else:
@@ -612,17 +612,17 @@ class Typechecker(Visitor):
     def visit_EFilter(self, e):
         self.visit(e.e)
         elem_type = self.get_collection_type(e.e)
-        e.p.arg.type = elem_type
-        self.visit(e.p)
-        self.ensure_type(e.p.body, BOOL)
+        e.predicate.arg.type = elem_type
+        self.visit(e.predicate)
+        self.ensure_type(e.predicate.body, BOOL)
         e.type = to_abstract(e.e.type)
 
     def visit_EMakeMap2(self, e):
         self.visit(e.e)
         t = self.get_collection_type(e.e)
-        e.value.arg.type = t
-        self.visit(e.value)
-        e.type = syntax.TMap(t, e.value.body.type)
+        e.value_function.arg.type = t
+        self.visit(e.value_function)
+        e.type = syntax.TMap(t, e.value_function.body.type)
 
     def visit_EMapKeys(self, e):
         self.visit(e.e)
@@ -720,7 +720,7 @@ class Typechecker(Visitor):
                 self.ensure_type(s.args[0], elem_type)
         elif s.func in ("add_front", "add_back"):
             if isinstance(s.target.type, syntax.TList):
-                elem_type = s.target.type.t
+                elem_type = s.target.type.elem_type
                 if len(s.args) != 1:
                     self.report_err(s, "{f} takes exactly 1 argument".format(f=s.func))
                 if len(s.args) > 0:
@@ -772,16 +772,17 @@ class Typechecker(Visitor):
         self.check_assignment(s, s.lhs.type, s.rhs.type)
 
     def visit_SForEach(self, s):
-        assert isinstance(s.id, syntax.EVar)
+        assert isinstance(s.loop_var, syntax.EVar)
         with self.scope():
             self.visit(s.iter)
             t = self.get_collection_type(s.iter)
-            self.env[s.id.id] = t
+            self.env[s.loop_var.id] = t
             self.visit(s.body)
 
     def visit_SDecl(self, s):
         self.visit(s.val)
-        self.env[s.id] = s.val.type
+        s.var.type = s.val.type
+        self.env[s.var.id] = s.val.type
 
     def visit(self, x):
         res = super().visit(x)

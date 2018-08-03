@@ -47,7 +47,7 @@ def reachable_handles_by_type(root : Exp) -> {THandle:Exp}:
             { root.type : ESingleton(root).with_type(TBag(root.type)) },
             reachable_handles_by_type(EGetField(root, "val").with_type(root.type.value_type)))
     elif is_collection(root.type):
-        v = fresh_var(root.type.t)
+        v = fresh_var(root.type.elem_type)
         res = reachable_handles_by_type(v)
         for k, bag in list(res.items()):
             res[k] = EFlatMap(root, ELambda(v, bag)).with_type(bag.type)

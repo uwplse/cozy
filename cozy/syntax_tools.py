@@ -232,31 +232,31 @@ class PrettyPrinter(common.Visitor):
         return t.name
 
     def visit_TApp(self, app):
-        return "{}{lt}{}{gt}".format(app.t, self.visit(app.args), lt=self.format_lt(), gt=self.format_gt())
+        return "{}{lt}{}{gt}".format(app.type_name, self.visit(app.args), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_TBag(self, s):
-        return "Bag{lt}{}{gt}".format(self.visit(s.t), lt=self.format_lt(), gt=self.format_gt())
+        return "Bag{lt}{}{gt}".format(self.visit(s.elem_type), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_TSet(self, s):
-        return "Set{lt}{}{gt}".format(self.visit(s.t), lt=self.format_lt(), gt=self.format_gt())
+        return "Set{lt}{}{gt}".format(self.visit(s.elem_type), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_TList(self, s):
-        return "List{lt}{}{gt}".format(self.visit(s.t), lt=self.format_lt(), gt=self.format_gt())
+        return "List{lt}{}{gt}".format(self.visit(s.elem_type), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_TMap(self, m):
         return "Map{lt}{}, {}{gt}".format(self.visit(m.k), self.visit(m.v), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_THeap(self, h):
-        return "Heap{lt}{}{gt}".format(self.visit(h.t), lt=self.format_lt(), gt=self.format_gt())
+        return "Heap{lt}{}{gt}".format(self.visit(h.elem_type), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_TIntrusiveLinkedList(self, h):
-        return "IntrusiveLinkedList{lt}{}{gt}".format(self.visit(h.t), lt=self.format_lt(), gt=self.format_gt())
+        return "IntrusiveLinkedList{lt}{}{gt}".format(self.visit(h.elem_type), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_TNativeSet(self, h):
-        return "NativeSet{lt}{}{gt}".format(self.visit(h.t), lt=self.format_lt(), gt=self.format_gt())
+        return "NativeSet{lt}{}{gt}".format(self.visit(h.elem_type), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_TNativeList(self, h):
-        return "NativeList{lt}{}{gt}".format(self.visit(h.t), lt=self.format_lt(), gt=self.format_gt())
+        return "NativeList{lt}{}{gt}".format(self.visit(h.elem_type), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_THashMap(self, h):
         return "HashMap{lt}{}, {}{gt}".format(self.visit(h.k), self.visit(h.v), lt=self.format_lt(), gt=self.format_gt())
@@ -337,13 +337,13 @@ class PrettyPrinter(common.Visitor):
         return "{}[{}:{}]".format(self.visit(e.e), self.visit(e.start), self.visit(e.end))
 
     def visit_EMap(self, e):
-        return "{} {{{}}} ({})".format(self.format_builtin("Map"), self.visit(e.f), self.visit(e.e))
+        return "{} {{{}}} ({})".format(self.format_builtin("Map"), self.visit(e.transform_function), self.visit(e.e))
 
     def visit_EFilter(self, e):
-        return "{} {{{}}} ({})".format(self.format_builtin("Filter"), self.visit(e.p), self.visit(e.e))
+        return "{} {{{}}} ({})".format(self.format_builtin("Filter"), self.visit(e.predicate), self.visit(e.e))
 
     def visit_EFlatMap(self, e):
-        return "{} {{{}}} ({})".format(self.format_builtin("FlatMap"), self.visit(e.f), self.visit(e.e))
+        return "{} {{{}}} ({})".format(self.format_builtin("FlatMap"), self.visit(e.transform_function), self.visit(e.e))
 
     def visit_EBinOp(self, e):
         op = e.op.replace("<", self.format_lt()).replace(">", self.format_gt())
@@ -356,19 +356,19 @@ class PrettyPrinter(common.Visitor):
         return "({} {})".format(e.op, self.visit(e.e))
 
     def visit_EArgMin(self, e):
-        if e.f.body == e.f.arg:
+        if e.key_function.body == e.key_function.arg:
             return "{} {}".format(self.format_builtin("min"), self.visit(e.e))
         else:
-            return "{} {{{}}} {}".format(self.format_builtin("argmin"), self.visit(e.f), self.visit(e.e))
+            return "{} {{{}}} {}".format(self.format_builtin("argmin"), self.visit(e.key_function), self.visit(e.e))
 
     def visit_EArgMax(self, e):
-        if e.f.body == e.f.arg:
+        if e.key_function.body == e.key_function.arg:
             return "{} {}".format(self.format_builtin("max"), self.visit(e.e))
         else:
-            return "{} {{{}}} {}".format(self.format_builtin("argmax"), self.visit(e.f), self.visit(e.e))
+            return "{} {{{}}} {}".format(self.format_builtin("argmax"), self.visit(e.key_function), self.visit(e.e))
 
     def visit_EGetField(self, e):
-        return "({}).{}".format(self.visit(e.e), e.f)
+        return "({}).{}".format(self.visit(e.e), e.field_name)
 
     def visit_EMakeRecord(self, e):
         return "{{ {} }}".format(", ".join("{} : {}".format(name, self.visit(val)) for name, val in e.fields))
@@ -383,7 +383,7 @@ class PrettyPrinter(common.Visitor):
         return "[{} | {}]".format(self.visit(e.e), ", ".join(self.visit(clause) for clause in e.clauses))
 
     def visit_EAlloc(self, e):
-        return "{} {}({})".format(self.format_keyword("new"), self.visit(e.t), ", ".join(self.visit(arg) for arg in e.args))
+        return "{} {}({})".format(self.format_keyword("new"), self.visit(e.elem_type), ", ".join(self.visit(arg) for arg in e.args))
 
     def visit_ECall(self, e):
         return "{}({})".format(e.func, ", ".join(self.visit(arg) for arg in e.args))
@@ -392,10 +392,10 @@ class PrettyPrinter(common.Visitor):
         return "({})".format(", ".join(self.visit(e) for e in e.es))
 
     def visit_ETupleGet(self, e):
-        return "({}).{}".format(self.visit(e.e), e.n)
+        return "({}).{}".format(self.visit(e.e), e.index)
 
     def visit_ELet(self, e):
-        return "{} {} = {} in {}".format(self.format_keyword("let"), e.f.arg.id, self.visit(e.e), self.visit(e.f.body))
+        return "{} {} = {} in {}".format(self.format_keyword("let"), e.body_function.arg.id, self.visit(e.e), self.visit(e.body_function.body))
 
     def visit_CPull(self, c):
         return "{} {lt}- {}".format(c.id, self.visit(c.e), lt=self.format_lt())
@@ -420,7 +420,7 @@ class PrettyPrinter(common.Visitor):
         return "{}{} = {};".format(indent, self.visit(s.lhs), self.visit(s.rhs))
 
     def visit_SDecl(self, s, indent=""):
-        return "{}{} {} = {};".format(indent, self.format_keyword("let"), s.id, self.visit(s.val))
+        return "{}{} {} = {};".format(indent, self.format_keyword("let"), self.visit(s.var), self.visit(s.val))
 
     def visit_SSeq(self, s, indent=""):
         return "{}\n{}".format(self.visit(s.s1, indent), self.visit(s.s2, indent))
@@ -449,7 +449,7 @@ class PrettyPrinter(common.Visitor):
     def visit_SForEach(self, s, indent=""):
         return "{}{For} {} {In} {}:\n{}".format(
             indent,
-            s.id.id,
+            s.loop_var.id,
             self.visit(s.iter),
             self.visit(s.body, indent + "  "),
             For=self.format_keyword("for"),
@@ -574,7 +574,7 @@ def free_vars(exp, counts=False):
             else:
                 raise NotImplementedError()
         elif isinstance(x, syntax.SDecl):
-            v = syntax.EVar(x.id)
+            v = x.var
             if hasattr(x.val, "type"):
                 v = v.with_type(x.val.type)
             stk.append(Bind(v))
@@ -588,7 +588,7 @@ def free_vars(exp, counts=False):
         elif isinstance(x, syntax.SForEach):
             stk.append(PopScope())
             stk.append(x.body)
-            stk.append(Bind(x.id))
+            stk.append(Bind(x.loop_var))
             stk.append(PushScope())
             stk.append(x.iter)
         elif isinstance(x, target_syntax.SWhile):
@@ -771,48 +771,48 @@ class FragmentEnumerator(common.Visitor):
         yield self.make_ctx(e)
         t = e.type
         for ctx in self.visit(e.e):
-            yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EFilter(r(x), e.p).with_type(t))
-        for ctx in self.recurse_with_assumptions_about_bound_var(e.p, ElemOf(e.e)):
+            yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EFilter(r(x), e.predicate).with_type(t))
+        for ctx in self.recurse_with_assumptions_about_bound_var(e.predicate, ElemOf(e.e)):
             yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EFilter(e.e, r(x)).with_type(t))
 
     def visit_EMap(self, e):
         yield self.make_ctx(e)
         t = e.type
         for ctx in self.visit(e.e):
-            yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EMap(r(x), e.f).with_type(t))
-        for ctx in self.recurse_with_assumptions_about_bound_var(e.f, ElemOf(e.e)):
+            yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EMap(r(x), e.transform_function).with_type(t))
+        for ctx in self.recurse_with_assumptions_about_bound_var(e.transform_function, ElemOf(e.e)):
             yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EMap(e.e, r(x)).with_type(t))
 
     def visit_EFlatMap(self, e):
         yield self.make_ctx(e)
         t = e.type
         for ctx in self.visit(e.e):
-            yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EFlatMap(r(x), e.f).with_type(t))
-        for ctx in self.recurse_with_assumptions_about_bound_var(e.f, ElemOf(e.e)):
+            yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EFlatMap(r(x), e.transform_function).with_type(t))
+        for ctx in self.recurse_with_assumptions_about_bound_var(e.transform_function, ElemOf(e.e)):
             yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EFlatMap(e.e, r(x)).with_type(t))
 
     def visit_EMakeMap2(self, e):
         yield self.make_ctx(e)
         t = e.type
         for ctx in self.visit(e.e):
-            yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EMakeMap2(r(x), e.value).with_type(t))
-        for ctx in self.recurse_with_assumptions_about_bound_var(e.value, ElemOf(e.e)):
+            yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EMakeMap2(r(x), e.value_function).with_type(t))
+        for ctx in self.recurse_with_assumptions_about_bound_var(e.value_function, ElemOf(e.e)):
             yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EMakeMap2(e.e, r(x)).with_type(t))
 
     def visit_EArgMin(self, e):
         yield self.make_ctx(e)
         t = e.type
         for ctx in self.visit(e.e):
-            yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EArgMin(r(x), e.f).with_type(t))
-        for ctx in self.recurse_with_assumptions_about_bound_var(e.f, ElemOf(e.e)):
+            yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EArgMin(r(x), e.key_function).with_type(t))
+        for ctx in self.recurse_with_assumptions_about_bound_var(e.key_function, ElemOf(e.e)):
             yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EArgMin(e.e, r(x)).with_type(t))
 
     def visit_EArgMax(self, e):
         yield self.make_ctx(e)
         t = e.type
         for ctx in self.visit(e.e):
-            yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EArgMax(r(x), e.f).with_type(t))
-        for ctx in self.recurse_with_assumptions_about_bound_var(e.f, ElemOf(e.e)):
+            yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EArgMax(r(x), e.key_function).with_type(t))
+        for ctx in self.recurse_with_assumptions_about_bound_var(e.key_function, ElemOf(e.e)):
             yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EArgMax(e.e, r(x)).with_type(t))
 
     def visit_EMakeMinHeap(self, e):
@@ -820,8 +820,8 @@ class FragmentEnumerator(common.Visitor):
         yield self.make_ctx(e)
         t = e.type
         for ctx in self.visit(e.e):
-            yield self.update_repl(ctx, lambda r: lambda x: EMakeMinHeap(r(x), e.f).with_type(t))
-        for ctx in self.recurse_with_assumptions_about_bound_var(e.f, ElemOf(e.e)):
+            yield self.update_repl(ctx, lambda r: lambda x: EMakeMinHeap(r(x), e.key_function).with_type(t))
+        for ctx in self.recurse_with_assumptions_about_bound_var(e.key_function, ElemOf(e.e)):
             yield self.update_repl(ctx, lambda r: lambda x: EMakeMinHeap(e.e, r(x)).with_type(t))
 
     def visit_EMakeMaxHeap(self, e):
@@ -829,16 +829,16 @@ class FragmentEnumerator(common.Visitor):
         yield self.make_ctx(e)
         t = e.type
         for ctx in self.visit(e.e):
-            yield self.update_repl(ctx, lambda r: lambda x: EMakeMaxHeap(r(x), e.f).with_type(t))
-        for ctx in self.recurse_with_assumptions_about_bound_var(e.f, ElemOf(e.e)):
+            yield self.update_repl(ctx, lambda r: lambda x: EMakeMaxHeap(r(x), e.key_function).with_type(t))
+        for ctx in self.recurse_with_assumptions_about_bound_var(e.key_function, ElemOf(e.e)):
             yield self.update_repl(ctx, lambda r: lambda x: EMakeMaxHeap(e.e, r(x)).with_type(t))
 
     def visit_ELet(self, e):
         yield self.make_ctx(e)
         t = e.type
         for ctx in self.visit(e.e):
-            yield self.update_repl(ctx, lambda r: lambda x: syntax.ELet(r(x), e.f).with_type(t))
-        for ctx in self.recurse_with_assumptions_about_bound_var(e.f, Exactly(e.e)):
+            yield self.update_repl(ctx, lambda r: lambda x: syntax.ELet(r(x), e.body_function).with_type(t))
+        for ctx in self.recurse_with_assumptions_about_bound_var(e.body_function, Exactly(e.e)):
             yield self.update_repl(ctx, lambda r: lambda x: syntax.ELet(e.e, r(x)).with_type(t))
 
     def visit_ECond(self, e):
@@ -902,8 +902,8 @@ class FragmentEnumerator(common.Visitor):
     def visit_SDecl(self, s):
         yield self.make_ctx(s)
         for ctx in self.visit(s.val):
-            yield self.update_repl(ctx, lambda r: lambda x: syntax.SDecl(s.id, r(x)))
-        self.assumptions.append(syntax.EEq(syntax.EVar(s.id).with_type(s.val.type), s.val))
+            yield self.update_repl(ctx, lambda r: lambda x: syntax.SDecl(s.var, r(x)))
+        self.assumptions.append(syntax.EEq(s.var.with_type(s.val.type), s.val))
 
     def visit_SSeq(self, s):
         yield self.make_ctx(s)
@@ -1100,21 +1100,22 @@ def subst(exp, replacements, tease=True):
                 return self.visit_lcmp(clauses, i + 1, e)
         def visit_EStateVar(self, e):
             return target_syntax.EStateVar(subst(e.e, replacements))
-        def visit_ELambda(self, e):
+        def visit_under_binder(self, binder : syntax.EVar, x):
             m = replacements
-            if e.arg.id in replacements:
+            if binder.id in replacements:
                 m = dict(m)
-                del m[e.arg.id]
-            arg = e.arg
-            body = e.body
-            while any(arg in free_vars(r) for r in replacements.values()):
-                if hasattr(arg, "type"):
-                    new_arg = fresh_var(arg.type)
+                del m[binder.id]
+            while any(binder in free_vars(r) for r in m.values()):
+                if hasattr(binder, "type"):
+                    new_binder = fresh_var(binder.type)
                 else:
-                    new_arg = syntax.EVar(common.fresh_name())
-                body = subst(body, { arg.id : new_arg })
-                arg = new_arg
-            return target_syntax.ELambda(arg, subst(body, m))
+                    new_binder = syntax.EVar(common.fresh_name())
+                x = subst(x, { binder.id : new_binder })
+                binder = new_binder
+            return (binder, subst(x, m))
+        def visit_ELambda(self, e):
+            arg, body = self.visit_under_binder(e.arg, e.body)
+            return syntax.ELambda(arg, body)
         def visit_ADT(self, e):
             children = e.children()
             children = tuple(self.visit(c) for c in children)
@@ -1158,6 +1159,25 @@ def subst(exp, replacements, tease=True):
             return syntax.SAssign(
                 subst_lval(s.lhs, replacements),
                 self.visit(s.rhs))
+        def visit_SDecl(self, s):
+            assert isinstance(s.var, syntax.EVar)
+            return syntax.SDecl(
+                s.var,
+                self.visit(s.val))
+        def visit_SSeq(self, s):
+            while isinstance(s.s1, syntax.SSeq):
+                s = syntax.SSeq(s.s1.s1, syntax.SSeq(s.s1.s2, s.s2))
+            s1 = self.visit(s.s1)
+            if isinstance(s1, syntax.SDecl):
+                # binding shadows variables in subsequent statements...
+                var, s2 = self.visit_under_binder(s1.var, s.s2)
+                return syntax.SSeq(
+                    syntax.SDecl(var, s1.val),
+                    s2)
+            else:
+                return syntax.SSeq(
+                    s1,
+                    self.visit(s.s2))
         def visit_SCall(self, s):
             return syntax.SCall(
                 subst_lval(s.target, replacements),
@@ -1464,7 +1484,7 @@ class ExpMap(object):
         for k, v in self.items():
             yield v
 
-_ReduceOp = collections.namedtuple("_ReduceOp", ("x", "n"))
+_ReduceOp = collections.namedtuple("_ReduceOp", ("x", "index"))
 _OnExitOp = collections.namedtuple("_OnExitOp", ("x",))
 
 class IterativeReducer(object):
@@ -1519,7 +1539,7 @@ class IterativeReducer(object):
             # print("TODO: {}; DONE: {}".format(work_stack, done_stack))
             top = work_stack.pop()
             if isinstance(top, _ReduceOp):
-                args = [done_stack.pop() for i in range(top.n)]
+                args = [done_stack.pop() for i in range(top.index)]
                 args.reverse()
                 done_stack.append(self.reduce(top.x, tuple(args)))
                 continue
@@ -1632,7 +1652,7 @@ def cse(e, verify=False):
             return v
         def visit_ELet(self, e):
             # slow, but correct
-            return self.visit(subst(e.f.body, {e.f.arg.id:e.e}))
+            return self.visit(subst(e.body_function.body, {e.body_function.arg.id:e.e}))
         def visit_EListComprehension(self, e):
             raise NotImplementedError()
         def _fvs(self, e):
@@ -1720,7 +1740,7 @@ def get_modified_var(stm):
         elif isinstance(e, syntax.ETupleGet):
             return find_lvalue_target(e.e)[0], None
         elif isinstance(e, syntax.EGetField):
-            if isinstance(e.e.type, syntax.THandle) and e.f == "val":
+            if isinstance(e.e.type, syntax.THandle) and e.field_name == "val":
                 handle_type = e.e.type
             else:
                 handle_type = None
@@ -1899,9 +1919,9 @@ def cse_scan(e):
             self.visit(s.iter, path + (1,), entries, capture_point)
             # Capture point changes with SForEach. (The body is the child 2,
             # zero-indexed.)
-            submap = entries.unbind(s.id)
+            submap = entries.unbind(s.loop_var)
             self.visit(s.body, path + (2,), submap, s.body)
-            self.filter_captured_vars(entries, submap, path + (2,), s.id)
+            self.filter_captured_vars(entries, submap, path + (2,), s.loop_var)
             return s, set(), set()
 
         def visit_Exp(self, e, path, entries, capture_point):
@@ -2013,7 +2033,7 @@ class CSERewriter(PathAwareRewriter):
         s = visit_default(s)
 
         for temp, expr in reversed(self.capture_map.get(path, ())):
-            s = syntax.SSeq(syntax.SDecl(temp.id, expr), s)
+            s = syntax.SSeq(syntax.SDecl(temp, expr), s)
             self.did_alter_tree = True
 
         return s
@@ -2027,7 +2047,7 @@ class CSERewriter(PathAwareRewriter):
         [s1, s2, s3] -> [tmp1 = x+1, s1, tmp2=y+1, s2, s3]
         """
 
-        output = [syntax.SDecl(temp.id, expr)
+        output = [syntax.SDecl(temp, expr)
             for temp, expr in reversed(self.capture_map.get(path, ()))]
 
         # i is the original index of the child at scan time.
@@ -2041,7 +2061,7 @@ class CSERewriter(PathAwareRewriter):
             # Emit the original expression *before* any capture rewrites.
             output.append(stm)
 
-            output.extend(syntax.SDecl(temp.id, expr)
+            output.extend(syntax.SDecl(temp, expr)
                 for temp, expr in reversed(self.capture_map.get(child_path, ())))
 
         if len(s.statements) < len(output):
@@ -2139,7 +2159,7 @@ class ConditionalUseFinder(BottomUpExplorer):
 
 def introduce_decl(var : syntax.EVar, value : syntax.Exp, thing):
     if isinstance(thing, syntax.Stm):
-        return syntax.SSeq(syntax.SDecl(var.id, value), thing)
+        return syntax.SSeq(syntax.SDecl(var, value), thing)
     if isinstance(thing, syntax.Exp):
         return syntax.ELet(value, syntax.ELambda(var, thing)).with_type(thing.type)
     raise ValueError(thing)
@@ -2174,7 +2194,7 @@ class BindingRewriter(BottomUpRewriter):
     """
 
     def visit_ELet(self, e):
-        return push_decl(e.f.arg, e.e, self.visit(e.f.body))
+        return push_decl(e.body_function.arg, e.e, self.visit(e.body_function.body))
 
     def visit_SSeq(self, seq):
         parts = [self.visit(part) for part in break_seq(seq)]
@@ -2182,7 +2202,7 @@ class BindingRewriter(BottomUpRewriter):
         for i in reversed(range(len(parts) - 1)):
             p = parts[i]
             if isinstance(p, syntax.SDecl):
-                decl_var = syntax.EVar(p.id).with_type(p.val.type)
+                decl_var = p.var.with_type(p.val.type)
                 res = push_decl(decl_var, p.val, res)
             else:
                 res = syntax.SSeq(p, res)

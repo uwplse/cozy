@@ -49,7 +49,7 @@ def mutate(e : syntax.Exp, op : syntax.Stm) -> syntax.Exp:
             return mutate(e, syntax.SSeq(op.s1.s1, syntax.SSeq(op.s1.s2, op.s2)))
         e2 = mutate(mutate(e, op.s2), op.s1)
         if isinstance(op.s1, syntax.SDecl):
-            e2 = lightweight_subst(e2, syntax.EVar(op.s1.id).with_type(op.s1.val.type), op.s1.val)
+            e2 = lightweight_subst(e2, op.s1.var, op.s1.val)
         return e2
     elif isinstance(op, syntax.SDecl):
         return e
@@ -75,8 +75,8 @@ def replace_get_value(e : syntax.Exp, ptr : syntax.Exp, new_value : syntax.Exp) 
             return syntax.ELambda(e.arg, self.visit(e.body))
         def visit_EGetField(self, e):
             ee = self.visit(e.e)
-            res = syntax.EGetField(ee, e.f).with_type(e.type)
-            if e.e.type == t and e.f == "val":
+            res = syntax.EGetField(ee, e.field_name).with_type(e.type)
+            if e.e.type == t and e.field_name == "val":
                 res = syntax.ECond(syntax.EEq(ee, ptr), new_value, res).with_type(e.type)
             return res
     return V().visit(e)
@@ -89,11 +89,11 @@ def _do_assignment(lval : syntax.Exp, new_value : syntax.Exp, e : syntax.Exp) ->
         return lightweight_subst(e, lval, new_value)
     elif isinstance(lval, syntax.EGetField):
         if isinstance(lval.e.type, syntax.THandle):
-            assert lval.f == "val"
+            assert lval.field_name == "val"
             # Because any two handles might alias, we need to rewrite all
             # reachable handles in `e`.
             return replace_get_value(e, lval.e, new_value)
-        return _do_assignment(lval.e, _replace_field(lval.e, lval.f, new_value), e)
+        return _do_assignment(lval.e, _replace_field(lval.e, lval.field_name, new_value), e)
     else:
         raise Exception("not an lvalue: {}".format(pprint(lval)))
 
@@ -157,7 +157,7 @@ def value_at(m, k):
     if isinstance(m, target_syntax.EMakeMap2):
         return syntax.ECond(
             syntax.EIn(k, m.e),
-            m.value.apply_to(k),
+            m.value_function.apply_to(k),
             construct_value(m.type.v)).with_type(m.type.v)
     if isinstance(m, syntax.ECond):
         return syntax.ECond(
@@ -209,7 +209,7 @@ def sketch_update(
     if isinstance(t, syntax.TBag) or isinstance(t, syntax.TSet):
         to_add = make_subgoal(syntax.EBinOp(new_value, "-", old_value).with_type(t), docstring="additions to {}".format(pprint(lval)))
         to_del = make_subgoal(syntax.EBinOp(old_value, "-", new_value).with_type(t), docstring="deletions from {}".format(pprint(lval)))
-        v = fresh_var(t.t)
+        v = fresh_var(t.elem_type)
         stm = syntax.seq([
             syntax.SForEach(v, to_del, syntax.SCall(lval, "remove", [v])),
             syntax.SForEach(v, to_add, syntax.SCall(lval, "add", [v]))])

@@ -20,7 +20,7 @@ def desugar_list_comprehensions(syntax_tree : ADT) -> ADT:
             clause = clauses[i]
             if isinstance(clause, CPull):
                 bag = clause.e
-                arg = EVar(clause.id).with_type(bag.type.t)
+                arg = EVar(clause.id).with_type(bag.type.elem_type)
                 rest, guards, pulls = self.visit_clauses(clauses, final, res_type, i + 1)
                 if guards:
                     guard = guards[0]
@@ -79,7 +79,7 @@ def convert_sets_to_bags(spec : Spec) -> Spec:
     for i in range(len(spec.statevars)):
         v, t = spec.statevars[i]
         if isinstance(t, TSet):
-            t = TBag(t.t)
+            t = TBag(t.elem_type)
             spec.statevars[i] = (v, t)
             v = EVar(v).with_type(t)
             spec.assumptions.append(EUnaryOp(UOp.AreUnique, v).with_type(BOOL))

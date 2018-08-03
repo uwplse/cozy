@@ -103,7 +103,7 @@ def order_objects(x, y) -> Order:
 class CostModel(object):
 
     def __init__(self,
-            assumptions     : Exp   = T,
+            assumptions     : Exp   = ETRUE,
             examples                = (),
             funcs                   = (),
             freebies        : [Exp] = [],
@@ -224,7 +224,7 @@ def storage_size(e, freebies : [Exp] = []):
     elif isinstance(e.type, TRecord):
         return ESum([storage_size(EGetField(e, f).with_type(t)) for (f, t) in e.type.fields])
     elif is_collection(e.type):
-        v = fresh_var(e.type.t, omit=free_vars(e))
+        v = fresh_var(e.type.elem_type, omit=free_vars(e))
         return ESum([
             FOUR,
             EUnaryOp(UOp.Sum, EMap(e, ELambda(v, storage_size(v))).with_type(INT_BAG)).with_type(INT)])
@@ -284,7 +284,7 @@ class DominantTerm(object):
 def map_value_func(e : Exp):
     assert isinstance(e.type, TMap)
     if isinstance(e, EMakeMap2):
-        return e.value
+        return e.value_function
     if isinstance(e, EStateVar):
         return map_value_func(e.e)
     if isinstance(e, ECond):
@@ -302,7 +302,7 @@ def worst_case_cardinality(e : Exp) -> DominantTerm:
     if isinstance(e, EBinOp) and e.op == "+":
         return worst_case_cardinality(e.e1) + worst_case_cardinality(e.e2)
     if isinstance(e, EFlatMap):
-        return worst_case_cardinality(e.e) * worst_case_cardinality(e.f.body)
+        return worst_case_cardinality(e.e) * worst_case_cardinality(e.transform_function.body)
     if isinstance(e, ECond):
         return max(worst_case_cardinality(e.then_branch), worst_case_cardinality(e.else_branch))
     if isinstance(e, EEmptyList):
@@ -411,14 +411,16 @@ def asymptotic_runtime(e : Exp) -> DominantTerm:
         if isinstance(e, ELambda):
             e = e.body
         if isinstance(e, EFilter):
-            res += worst_case_cardinality(e.e) * asymptotic_runtime(e.p) + asymptotic_runtime(e.e)
+            res += worst_case_cardinality(e.e) * asymptotic_runtime(e.predicate) + asymptotic_runtime(e.e)
             continue
-        if isinstance(e, EMap) or isinstance(e, EFlatMap) or isinstance(e, EArgMin) or isinstance(e, EArgMax):
-            res += worst_case_cardinality(e.e) * asymptotic_runtime(e.f) + asymptotic_runtime(e.e)
+        if isinstance(e, EArgMin) or isinstance(e, EArgMax):
+            res += worst_case_cardinality(e.e) * asymptotic_runtime(e.key_function) + asymptotic_runtime(e.e)
             continue
+        if isinstance(e, EMap) or isinstance(e, EFlatMap):
+            res += worst_case_cardinality(e.e) * asymptotic_runtime(e.transform_function) + asymptotic_runtime(e.e)
         res += DominantTerm.ONE
         if isinstance(e, EMakeMap2):
-            res += worst_case_cardinality(e.e) * asymptotic_runtime(e.value)
+            res += worst_case_cardinality(e.e) * asymptotic_runtime(e.value_function)
         if isinstance(e, EBinOp) and e.op == BOp.In:
             res += worst_case_cardinality(e.e2)
         if isinstance(e, EBinOp) and e.op == "-" and is_collection(e.type):
@@ -476,7 +478,7 @@ def rt(e, account_for_constant_factors=True):
             continue
         if isinstance(e, ELet):
             stk.append(e.e)
-            terms.append(ELet(e.e, ELambda(e.f.arg, rt(e.f.body))).with_type(INT))
+            terms.append(ELet(e.e, ELambda(e.body_function.arg, rt(e.body_function.body))).with_type(INT))
             continue
 
         constant += 1
@@ -487,15 +489,17 @@ def rt(e, account_for_constant_factors=True):
 
         if isinstance(e, EFilter):
             # constant += EXTREME_COST
-            terms.append(EUnaryOp(UOp.Sum, EMap(e.e, ELambda(e.p.arg, rt(e.p.body))).with_type(INT_BAG)).with_type(INT))
-        elif isinstance(e, EMap) or isinstance(e, EFlatMap) or isinstance(e, EArgMin) or isinstance(e, EArgMax):
+            terms.append(EUnaryOp(UOp.Sum, EMap(e.e, ELambda(e.predicate.arg, rt(e.predicate.body))).with_type(INT_BAG)).with_type(INT))
+        elif isinstance(e, EArgMin) or isinstance(e, EArgMax):
             # constant += EXTREME_COST
-            terms.append(EUnaryOp(UOp.Sum, EMap(e.e, ELambda(e.f.arg, rt(e.f.body))).with_type(INT_BAG)).with_type(INT))
+            terms.append(EUnaryOp(UOp.Sum, EMap(e.e, ELambda(e.key_function.arg, rt(e.key_function.body))).with_type(INT_BAG)).with_type(INT))
+        elif isinstance(e, EMap) or isinstance(e, EFlatMap):
+            terms.append(EUnaryOp(UOp.Sum, EMap(e.e, ELambda(e.transform_function.arg, rt(e.transform_function.body))).with_type(INT_BAG)).with_type(INT))
         elif isinstance(e, EListSlice):
             terms.append(max_of(ZERO, EBinOp(e.end, "-", e.start).with_type(INT)))
         elif isinstance(e, EMakeMap2):
             constant += EXTREME_COST
-            terms.append(EUnaryOp(UOp.Sum, EMap(e.e, ELambda(e.value.arg, rt(e.value.body))).with_type(INT_BAG)).with_type(INT))
+            terms.append(EUnaryOp(UOp.Sum, EMap(e.e, ELambda(e.value_function.arg, rt(e.value_function.body))).with_type(INT_BAG)).with_type(INT))
         elif isinstance(e, EBinOp) and e.op == "-" and is_collection(e.type):
             constant += EXTREME_COST
             terms.append(cardinality(e.e1))

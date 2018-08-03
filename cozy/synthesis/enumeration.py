@@ -67,7 +67,7 @@ EnumeratedExp = namedtuple("EnumeratedExp", [
     "fingerprint",      # Its fingerprint
     ])
 
-LITERALS = (T, F, ZERO, ONE)
+LITERALS = (ETRUE, EFALSE, ZERO, ONE)
 
 def of_type(exps : [Exp], t : Type):
     """Filter `exps` to expressions of the given type."""
@@ -208,8 +208,8 @@ class Enumerator(object):
 
         for e in collections(self.enumerate(context, size-1, pool)):
             yield EEmptyList().with_type(e.type)
-            if is_numeric(e.type.t):
-                yield EUnaryOp(UOp.Sum, e).with_type(e.type.t)
+            if is_numeric(e.type.elem_type):
+                yield EUnaryOp(UOp.Sum, e).with_type(e.type.elem_type)
 
         for e in self.enumerate(context, size-1, pool):
             yield ESingleton(e).with_type(TBag(e.type))
@@ -255,7 +255,7 @@ class Enumerator(object):
                 for a2 in of_type(self.enumerate(context, sz2, pool), a1.type):
                     yield EBinOp(a1, "+", a2).with_type(a1.type)
                     yield EBinOp(a1, "-", a2).with_type(a1.type)
-                for a2 in of_type(self.enumerate(context, sz2, pool), a1.type.t):
+                for a2 in of_type(self.enumerate(context, sz2, pool), a1.type.elem_type):
                     yield EBinOp(a2, BOp.In, a1).with_type(BOOL)
             for a1 in of_type(self.enumerate(context, sz1, pool), BOOL):
                 for a2 in of_type(self.enumerate(context, sz2, pool), BOOL):
@@ -275,7 +275,7 @@ class Enumerator(object):
                 if not isinstance(l.type, TList):
                     continue
                 for i in of_type(self.enumerate(context, sz2, pool), INT):
-                    yield EListGet(l, i).with_type(l.type.t)
+                    yield EListGet(l, i).with_type(l.type.elem_type)
 
         for (sz1, sz2, sz3) in pick_to_sum(3, size-1):
             for cond in of_type(self.enumerate(context, sz1, pool), BOOL):
@@ -301,16 +301,16 @@ class Enumerator(object):
             # singleton?
             yield EEq(count, ONE)
 
-            yield EUnaryOp(UOp.The, bag).with_type(bag.type.t)
+            yield EUnaryOp(UOp.The, bag).with_type(bag.type.elem_type)
             yield EUnaryOp(UOp.Distinct, bag).with_type(bag.type)
             yield EUnaryOp(UOp.AreUnique, bag).with_type(BOOL)
 
-            if bag.type.t == BOOL:
+            if bag.type.elem_type == BOOL:
                 yield EUnaryOp(UOp.Any, bag).with_type(BOOL)
                 yield EUnaryOp(UOp.All, bag).with_type(BOOL)
 
         def build_lambdas(bag, pool, body_size):
-            v = fresh_var(bag.type.t, omit=set(v for v, p in context.vars()))
+            v = fresh_var(bag.type.elem_type, omit=set(v for v, p in context.vars()))
             inner_context = UnderBinder(context, v=v, bag=bag, bag_pool=pool)
             for lam_body in self.enumerate(inner_context, body_size, pool):
                 yield ELambda(v, lam_body)
@@ -334,10 +334,10 @@ class Enumerator(object):
                     if body_type == BOOL:
                         yield EFilter(bag, lam).with_type(bag.type)
                     if is_numeric(body_type):
-                        yield EArgMin(bag, lam).with_type(bag.type.t)
-                        yield EArgMax(bag, lam).with_type(bag.type.t)
+                        yield EArgMin(bag, lam).with_type(bag.type.elem_type)
+                        yield EArgMax(bag, lam).with_type(bag.type.elem_type)
                     if is_collection(body_type):
-                        yield EFlatMap(bag, lam).with_type(TBag(body_type.t))
+                        yield EFlatMap(bag, lam).with_type(TBag(body_type.elem_type))
 
         # Enable use of a state-pool expression at runtime
         if pool == RUNTIME_POOL:
@@ -348,10 +348,10 @@ class Enumerator(object):
         if pool == STATE_POOL:
             for (sz1, sz2) in pick_to_sum(2, size - 1):
                 for bag in collections(self.enumerate(context, sz1, STATE_POOL)):
-                    if not is_scalar(bag.type.t):
+                    if not is_scalar(bag.type.elem_type):
                         continue
                     for lam in build_lambdas(bag, STATE_POOL, sz2):
-                        t = TMap(bag.type.t, lam.body.type)
+                        t = TMap(bag.type.elem_type, lam.body.type)
                         m = EMakeMap2(bag, lam).with_type(t)
                         yield m
 

@@ -1,7 +1,7 @@
 MinFinder:
 
-    handletype T = Native "int"
-    state xs : Bag<T>
+    handletype ETRUE = Native "int"
+    state xs : Bag<ETRUE>
 
     invariant unique xs;
 
@@ -9,7 +9,7 @@ MinFinder:
         assume exists xs;
         argmin {x -> x.val} xs
 
-    op chval(x : T, nv : Native "int")
+    op chval(x : ETRUE, nv : Native "int")
         assume x in xs;
         assume x.val != nv;
         x.val = nv;

@@ -1,16 +1,14 @@
 """Miscellaneous procedures used during synthesis."""
 
-import itertools
-
-from cozy.common import FrozenDict, partition
-from cozy.syntax import T, Exp, Query, TFunc, EVar, EAll, EImplies, EEq, ELambda, Stm, SNoOp, SDecl, SAssign, SSeq, SIf, SForEach, SCall
+from cozy.common import partition
+from cozy.syntax import ETRUE, Exp, Query, TFunc, EVar, EAll, EImplies, EEq, ELambda, Stm, SNoOp, SDecl, SAssign, SSeq, SIf, SForEach, SCall
 from cozy.target_syntax import TMap, EMakeMap2, EMapGet, SMapPut, SMapDel, SMapUpdate
 from cozy.syntax_tools import fresh_var, free_vars, subst
 from cozy.solver import solver_for_context
 from cozy.contexts import RootCtx
 from cozy.logging import task
 
-def queries_equivalent(q1 : Query, q2 : Query, state_vars : [EVar], extern_funcs : { str : TFunc }, assumptions : Exp = T):
+def queries_equivalent(q1 : Query, q2 : Query, state_vars : [EVar], extern_funcs : { str : TFunc }, assumptions : Exp = ETRUE):
     """Determine whether two queries always return the same result.
 
     This function also checks that the two queries have identical preconditions.
@@ -46,7 +44,7 @@ def pull_temps(s : Stm, decls_out : [SDecl], exp_is_bad) -> Stm:
     def pull(e : Exp) -> Exp:
         if exp_is_bad(e):
             v = fresh_var(e.type)
-            decls_out.append(SDecl(v.id, e))
+            decls_out.append(SDecl(v, e))
             return v
         return e
     if isinstance(s, SNoOp):
@@ -56,7 +54,7 @@ def pull_temps(s : Stm, decls_out : [SDecl], exp_is_bad) -> Stm:
         s2 = pull_temps(s.s2, decls_out, exp_is_bad)
         return SSeq(s1, s2)
     if isinstance(s, SDecl):
-        return SDecl(s.id, pull(s.val))
+        return SDecl(s.var, pull(s.val))
     if isinstance(s, SIf):
         cond = pull(s.cond)
         s1 = pull_temps(s.then_branch, decls_out, exp_is_bad)
@@ -66,17 +64,17 @@ def pull_temps(s : Stm, decls_out : [SDecl], exp_is_bad) -> Stm:
         bag = pull(s.iter)
         d_tmp = []
         body = pull_temps(s.body, d_tmp, exp_is_bad)
-        to_fix, ok = partition(d_tmp, lambda d: s.id in free_vars(d.val))
+        to_fix, ok = partition(d_tmp, lambda d: s.loop_var in free_vars(d.val))
         decls_out.extend(ok)
         for d in to_fix:
-            v = EVar(d.id).with_type(d.val.type)
-            mt = TMap(s.id.type, v.type)
-            m = EMakeMap2(bag, ELambda(s.id, d.val)).with_type(mt)
+            v = d.var
+            mt = TMap(s.loop_var.type, v.type)
+            m = EMakeMap2(bag, ELambda(s.loop_var, d.val)).with_type(mt)
             mv = fresh_var(m.type)
-            md = SDecl(mv.id, m)
+            md = SDecl(mv, m)
             decls_out.append(md)
-            body = subst(body, { v.id : EMapGet(mv, s.id).with_type(v.type) })
-        return SForEach(s.id, bag, body)
+            body = subst(body, { v.id : EMapGet(mv, s.loop_var).with_type(v.type) })
+        return SForEach(s.loop_var, bag, body)
     if isinstance(s, SAssign):
         return SAssign(s.lhs, pull(s.rhs))
     if isinstance(s, SCall):
@@ -91,7 +89,7 @@ def pull_temps(s : Stm, decls_out : [SDecl], exp_is_bad) -> Stm:
         change = pull_temps(s.change, d_tmp, exp_is_bad)
         for d in d_tmp:
             if s.val_var in free_vars(d.val):
-                decls_out.append(SDecl(d.id, subst(d.val, { s.val_var.id : EMapGet(s.map, key).with_type(s.val_var.type) })))
+                decls_out.append(SDecl(d, subst(d.val, { s.val_var.id : EMapGet(s.map, key).with_type(s.val_var.type) })))
             else:
                 decls_out.append(d)
         return SMapUpdate(s.map, key, s.val_var, change)

@@ -166,7 +166,7 @@ def compare_values(t : Type, v1, v2, deep : bool = False) -> int:
                 elems2 = list(sorted(v2))
             if len(elems1) < len(elems2): return LT
             if len(elems1) > len(elems2): return GT
-            stk.extend(reversed([(t.t, x, y, deep) for (x, y) in zip(elems1, elems2)]))
+            stk.extend(reversed([(t.elem_type, x, y, deep) for (x, y) in zip(elems1, elems2)]))
         elif isinstance(t, TMap):
             keys1 = Bag(v1.keys())
             keys2 = Bag(v2.keys())
@@ -176,7 +176,7 @@ def compare_values(t : Type, v1, v2, deep : bool = False) -> int:
         elif isinstance(t, TTuple):
             stk.extend(reversed([(tt, vv1, vv2, deep) for (tt, vv1, vv2) in zip(t.ts, v1, v2)]))
         elif isinstance(t, TList):
-            stk.extend(reversed([(t.t, vv1, vv2, deep) for (vv1, vv2) in zip(v1, v2)]))
+            stk.extend(reversed([(t.elem_type, vv1, vv2, deep) for (vv1, vv2) in zip(v1, v2)]))
             stk.append((INT, len(v1), len(v2), deep))
         elif isinstance(t, TRecord):
             stk.extend(reversed([(ft, v1[f], v2[f], deep) for (f, ft) in t.fields]))

@@ -1,12 +1,12 @@
 Rot1:
 
-    type T = Native "Object"
-    state l : List<T>
+    type ETRUE = Native "Object"
+    state l : List<ETRUE>
 
     query elems()
         l
 
-    op append(x : T)
+    op append(x : ETRUE)
         l.add_back(x);
 
     op rot1()

@@ -473,11 +473,11 @@ def make_parser():
         if p[1] == "if":
             p[0] = syntax.SIf(p[2], p[3], p[4])
         elif p[1] == "let":
-            p[0] = syntax.SDecl(p[2], p[4])
+            p[0] = syntax.SDecl(syntax.EVar(p[2]), p[4])
         elif p[2] == "(":
             if not isinstance(p[1], syntax.EGetField):
                 report_parse_error(p[1], "Method calls must have the form `target.method(...)`")
-            p[0] = syntax.SCall(p[1].e, p[1].f, p[3])
+            p[0] = syntax.SCall(p[1].e, p[1].field_name, p[3])
         else:
             p[0] = syntax.SAssign(p[1], p[3])
 

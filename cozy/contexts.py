@@ -213,7 +213,7 @@ class UnderBinder(Context):
 
         `v` must not already be described by the parent context.
         """
-        assert v.type == bag.type.t
+        assert v.type == bag.type.elem_type
         assert parent.legal_for(free_vars(bag)), "cannot create context for {} in {}, {}".format(v.id, pprint(bag), parent)
         assert not any(v == vv for vv, p in parent.vars()), "binder {} already free in {}".format(v.id, parent)
         self._parent = parent
@@ -297,39 +297,39 @@ class _Shredder(Visitor):
     def visit_EMap(self, e):
         yield (e, self.ctx, self.pool)
         yield from self.visit(e.e)
-        yield from self.visit(e.f, e.e)
+        yield from self.visit(e.transform_function, e.e)
     def visit_EFilter(self, e):
         yield (e, self.ctx, self.pool)
         yield from self.visit(e.e)
-        yield from self.visit(e.p, e.e)
+        yield from self.visit(e.predicate, e.e)
     def visit_EFlatMap(self, e):
         yield (e, self.ctx, self.pool)
         yield from self.visit(e.e)
-        yield from self.visit(e.f, e.e)
+        yield from self.visit(e.transform_function, e.e)
     def visit_EArgMin(self, e):
         yield (e, self.ctx, self.pool)
         yield from self.visit(e.e)
-        yield from self.visit(e.f, e.e)
+        yield from self.visit(e.key_function, e.e)
     def visit_EArgMax(self, e):
         yield (e, self.ctx, self.pool)
         yield from self.visit(e.e)
-        yield from self.visit(e.f, e.e)
+        yield from self.visit(e.key_function, e.e)
     def visit_EMakeMap2(self, e):
         yield (e, self.ctx, self.pool)
         yield from self.visit(e.e)
-        yield from self.visit(e.value, e.e)
+        yield from self.visit(e.value_function, e.e)
     def visit_EMakeMinHeap(self, e):
         yield (e, self.ctx, self.pool)
         yield from self.visit(e.e)
-        yield from self.visit(e.f, e.e)
+        yield from self.visit(e.key_function, e.e)
     def visit_EMakeMaxHeap(self, e):
         yield (e, self.ctx, self.pool)
         yield from self.visit(e.e)
-        yield from self.visit(e.f, e.e)
+        yield from self.visit(e.key_function, e.e)
     def visit_ELet(self, e):
         yield (e, self.ctx, self.pool)
         yield from self.visit(e.e)
-        yield from self.visit(e.f, ESingleton(e.e).with_type(TBag(e.e.type)))
+        yield from self.visit(e.body_function, ESingleton(e.e).with_type(TBag(e.e.type)))
     def visit_Exp(self, e):
         yield (e, self.ctx, self.pool)
         for child in e.children():
@@ -388,23 +388,23 @@ class _Replacer(BottomUpRewriter):
                 ee = self.visit(e.e)
         return self.join(e, (ee,))
     def visit_EMap(self, e):
-        return self.join(e, (self.visit(e.e), self.visit(e.f, e.e)))
+        return self.join(e, (self.visit(e.e), self.visit(e.transform_function, e.e)))
     def visit_EFilter(self, e):
-        return self.join(e, (self.visit(e.e), self.visit(e.p, e.e)))
+        return self.join(e, (self.visit(e.e), self.visit(e.predicate, e.e)))
     def visit_EFlatMap(self, e):
-        return self.join(e, (self.visit(e.e), self.visit(e.f, e.e)))
+        return self.join(e, (self.visit(e.e), self.visit(e.transform_function, e.e)))
     def visit_EArgMin(self, e):
-        return self.join(e, (self.visit(e.e), self.visit(e.f, e.e)))
+        return self.join(e, (self.visit(e.e), self.visit(e.key_function, e.e)))
     def visit_EArgMax(self, e):
-        return self.join(e, (self.visit(e.e), self.visit(e.f, e.e)))
+        return self.join(e, (self.visit(e.e), self.visit(e.key_function, e.e)))
     def visit_EMakeMap2(self, e):
-        return self.join(e, (self.visit(e.e), self.visit(e.value, e.e)))
+        return self.join(e, (self.visit(e.e), self.visit(e.value_function, e.e)))
     def visit_EMakeMinHeap(self, e):
-        return self.join(e, (self.visit(e.e), self.visit(e.f, e.e)))
+        return self.join(e, (self.visit(e.e), self.visit(e.key_function, e.e)))
     def visit_EMakeMaxHeap(self, e):
-        return self.join(e, (self.visit(e.e), self.visit(e.f, e.e)))
+        return self.join(e, (self.visit(e.e), self.visit(e.key_function, e.e)))
     def visit_ELet(self, e):
-        return self.join(e, (self.visit(e.e), self.visit(e.f, ESingleton(e.e).with_type(TBag(e.e.type)))))
+        return self.join(e, (self.visit(e.e), self.visit(e.body_function, ESingleton(e.e).with_type(TBag(e.e.type)))))
     def visit(self, e, *args):
         if isinstance(e, Exp) and _sametype(e, self.needle) and self.pool == self.needle_pool and alpha_equivalent(self.needle, e) and self.needle_context.alpha_equivalent(self.ctx):
             return self.ctx.adapt(self.replacement, self.needle_context)

@@ -9,7 +9,7 @@ from cozy.syntax import *
 from cozy.common import declare_case, fresh_name
 
 # Misc
-TRef       = declare_case(Type, "TRef", ["t"])
+TRef       = declare_case(Type, "TRef", ["elem_type"])
 EEnumToInt = declare_case(Exp, "EEnumToInt", ["e"])
 EBoolToInt = declare_case(Exp, "EBoolToInt", ["e"])
 EStm       = declare_case(Exp, "EStm", ["stm", "e"])
@@ -18,7 +18,7 @@ EStm       = declare_case(Exp, "EStm", ["stm", "e"])
 EStateVar  = declare_case(Exp, "EStateVar", ["e"])
 
 def EIsSingleton(e):
-    arg = EVar(fresh_name()).with_type(e.type.t)
+    arg = EVar(fresh_name()).with_type(e.type.elem_type)
     return EBinOp(EUnaryOp(UOp.Sum, EMap(e, ELambda(arg, ONE)).with_type(TBag(INT))).with_type(INT), "<=", ONE).with_type(BOOL)
 
 def EDeepEq(e1, e2):
@@ -34,7 +34,7 @@ def EDeepIn(e1, e2):
 def ECountIn(e, collection):
     """Count the number of times e occurs in the collection"""
     from cozy.syntax_tools import free_vars, fresh_var
-    assert e.type == collection.type.t
+    assert e.type == collection.type.elem_type
     arg = fresh_var(e.type, omit=free_vars(e))
     return EUnaryOp(UOp.Length, EFilter(collection, ELambda(arg, EEq(arg, e))).with_type(collection.type)).with_type(INT)
 
@@ -50,15 +50,11 @@ def EArgDistinct(bag, key):
 
 def EForall(e, p):
     from cozy.syntax_tools import mk_lambda
-    return EUnaryOp(UOp.All, EMap(e, mk_lambda(e.type.t, p)).with_type(type(e.type)(BOOL))).with_type(BOOL)
+    return EUnaryOp(UOp.All, EMap(e, mk_lambda(e.type.elem_type, p)).with_type(type(e.type)(BOOL))).with_type(BOOL)
 
 def EDisjoint(xs, ys):
     return EForall(xs, lambda x:
         ENot(EIn(x, ys)))
-
-# Fixed-length vectors
-TVector    = declare_case(Type, "TVector", ["t", "n"])
-EVectorGet = declare_case(Exp, "EVectorGet", ["e", "i"])
 
 # Misc
 SWhile   = declare_case(Stm, "SWhile",  ["e", "body"])
@@ -70,16 +66,16 @@ SEscapableBlock = declare_case(Stm, "SEscapableBlock", ["label", "body"])
 SEscapeBlock    = declare_case(Stm, "SEscapeBlock", ["label"])
 
 # Bag transformations
-EFilter  = declare_case(Exp, "EFilter",  ["e", "p"])
-EMap     = declare_case(Exp, "EMap",     ["e", "f"])
-EFlatMap = declare_case(Exp, "EFlatMap", ["e", "f"])
+EFilter  = declare_case(Exp, "EFilter",  ["e", "predicate"])
+EMap     = declare_case(Exp, "EMap",     ["e", "transform_function"])
+EFlatMap = declare_case(Exp, "EFlatMap", ["e", "transform_function"])
 
 # List transformations
 EDropFront = declare_case(Exp, "EDropFront", ["e"])
 EDropBack  = declare_case(Exp, "EDropBack",  ["e"])
 
 # Maps
-EMakeMap2  = declare_case(Exp, "EMakeMap2", ["e", "value"])
+EMakeMap2  = declare_case(Exp, "EMakeMap2", ["e", "value_function"])
 EMapGet    = declare_case(Exp, "EMapGet", ["map", "key"])
 EHasKey    = declare_case(Exp, "EHasKey", ["map", "key"])
 EMapKeys   = declare_case(Exp, "EMapKeys", ["e"])

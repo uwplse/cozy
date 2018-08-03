@@ -85,7 +85,7 @@ def construct_value(t : Type) -> Exp:
     if is_numeric(t):
         e = ENum(0)
     elif t == BOOL:
-        e = F
+        e = EFALSE
     elif t == STRING:
         e = EStr("")
     elif is_collection(t):
@@ -119,7 +119,7 @@ def _uneval(t, value):
     elif is_collection(t):
         e = EEmptyList().with_type(t)
         for x in value:
-            e = EBinOp(e, "+", ESingleton(uneval(t.t, x)).with_type(t)).with_type(t)
+            e = EBinOp(e, "+", ESingleton(uneval(t.elem_type, x)).with_type(t)).with_type(t)
         return e
     elif isinstance(t, TString):
         return EStr(value).with_type(t)
@@ -472,11 +472,11 @@ def _compile(e, env : {str:int}, out):
     elif isinstance(e, EGetField):
         _compile(e.e, env, out)
         if isinstance(e.e.type, THandle):
-            assert e.f == "val"
+            assert e.field_name == "val"
             out.append(get_handle_value)
         else:
             assert isinstance(e.e.type, TRecord)
-            f = e.f
+            f = e.field_name
             def get_field(stk):
                 stk.append(stk.pop()[f])
             out.append(get_field)
@@ -491,7 +491,7 @@ def _compile(e, env : {str:int}, out):
     elif isinstance(e, ETupleGet):
         _compile(e.e, env, out)
         def tuple_get(stk):
-            stk.append(stk.pop()[e.n])
+            stk.append(stk.pop()[e.index])
         out.append(tuple_get)
     elif isinstance(e, EStateVar):
         _compile(e.e, env, out)
@@ -517,9 +517,9 @@ def _compile(e, env : {str:int}, out):
         elif e.op == UOp.Length:
             out.append(unaryop_len)
         elif e.op == UOp.AreUnique:
-            out.append(unaryop_areunique(e.e.type.t))
+            out.append(unaryop_areunique(e.e.type.elem_type))
         elif e.op == UOp.Distinct:
-            out.append(unaryop_distinct(e.e.type.t))
+            out.append(unaryop_distinct(e.e.type.elem_type))
         elif e.op == UOp.The:
             out.append(unaryop_the(default=mkval(e.type)))
         elif e.op == UOp.Reversed:
@@ -530,11 +530,11 @@ def _compile(e, env : {str:int}, out):
             raise NotImplementedError(e.op)
     elif isinstance(e, EBinOp):
         if e.op == BOp.And:
-            return _compile(ECond(e.e1, e.e2, F).with_type(BOOL), env, out)
+            return _compile(ECond(e.e1, e.e2, EFALSE).with_type(BOOL), env, out)
         elif e.op == BOp.Or:
-            return _compile(ECond(e.e1, T, e.e2).with_type(BOOL), env, out)
+            return _compile(ECond(e.e1, ETRUE, e.e2).with_type(BOOL), env, out)
         elif e.op == "=>":
-            return _compile(ECond(e.e1, e.e2, T).with_type(BOOL), env, out)
+            return _compile(ECond(e.e1, e.e2, ETRUE).with_type(BOOL), env, out)
         _compile(e.e1, env, out)
         _compile(e.e2, env, out)
         e1type = e.e1.type
@@ -547,9 +547,9 @@ def _compile(e, env : {str:int}, out):
             out.append(binaryop_mul)
         elif e.op == "-":
             if isinstance(e.type, TBag) or isinstance(e.type, TSet):
-                out.append(binaryop_sub_bags(e.type.t))
+                out.append(binaryop_sub_bags(e.type.elem_type))
             elif isinstance(e.type, TList):
-                out.append(binaryop_sub_lists(e.type.t))
+                out.append(binaryop_sub_lists(e.type.elem_type))
             else:
                 out.append(binaryop_sub)
         elif e.op == "==":
@@ -589,8 +589,8 @@ def _compile(e, env : {str:int}, out):
         _compile(e.e, env, out)
         box = [None]
         body = []
-        with extend(env, e.p.arg.id, lambda: box[0]):
-            _compile(e.p.body, env, body)
+        with extend(env, e.predicate.arg.id, lambda: box[0]):
+            _compile(e.predicate.body, env, body)
         def set_arg(v):
             def set_arg(stk):
                 box[0] = v
@@ -613,8 +613,8 @@ def _compile(e, env : {str:int}, out):
         _compile(e.e, env, out)
         box = [None]
         body = []
-        with extend(env, e.f.arg.id, lambda: box[0]):
-            _compile(e.f.body, env, body)
+        with extend(env, e.transform_function.arg.id, lambda: box[0]):
+            _compile(e.transform_function.body, env, body)
         def set_arg(v):
             def set_arg(stk):
                 box[0] = v
@@ -634,7 +634,7 @@ def _compile(e, env : {str:int}, out):
         out.append(do_map)
         out.append(iterable_to_bag)
     elif isinstance(e, EFlatMap):
-        _compile(EMap(e.e, e.f).with_type(TBag(e.type)), env, out)
+        _compile(EMap(e.e, e.transform_function).with_type(TBag(e.type)), env, out)
         out.append(do_concat)
     elif isinstance(e, EArgMin) or isinstance(e, EArgMax):
         # stack layout:
@@ -646,10 +646,10 @@ def _compile(e, env : {str:int}, out):
         def set_arg(stk):
             box[0] = stk[-1]
         body = [set_arg]
-        with extend(env, e.f.arg.id, lambda: box[0]):
-            _compile(e.f.body, env, body)
+        with extend(env, e.key_function.arg.id, lambda: box[0]):
+            _compile(e.key_function.body, env, body)
 
-        keytype = e.f.body.type
+        keytype = e.key_function.body.type
 
         def initialize(stk):
             bag = stk.pop()
@@ -673,7 +673,7 @@ def _compile(e, env : {str:int}, out):
         out.append(initialize)
         out.append(loop)
     elif isinstance(e, EMakeMap2):
-        _compile(EMap(e.e, ELambda(e.value.arg, ETuple((e.value.arg, e.value.body)).with_type(TTuple((e.value.arg.type, e.value.body.type))))).with_type(TBag(TTuple((e.value.arg.type, e.value.body.type)))), env, out)
+        _compile(EMap(e.e, ELambda(e.value_function.arg, ETuple((e.value_function.arg, e.value_function.body)).with_type(TTuple((e.value_function.arg.type, e.value_function.body.type))))).with_type(TBag(TTuple((e.value_function.arg.type, e.value_function.body.type)))), env, out)
         default = mkval(e.type.v)
         def make_map(stk):
             res = Map(e.type, default)
@@ -712,8 +712,8 @@ def _compile(e, env : {str:int}, out):
         def do_bind(stk):
             return [set_arg(stk.pop())]
         out.append(do_bind)
-        with extend(env, e.f.arg.id, lambda: box[0]):
-            _compile(e.f.body, env, out)
+        with extend(env, e.body_function.arg.id, lambda: box[0]):
+            _compile(e.body_function.body, env, out)
     else:
         h = extension_handler(type(e))
         if h is not None:
