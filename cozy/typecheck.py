@@ -781,6 +781,7 @@ class Typechecker(Visitor):
 
     def visit_SDecl(self, s):
         self.visit(s.val)
+        s.var.type = s.val.type
         self.env[s.var.id] = s.val.type
 
     def visit(self, x):
