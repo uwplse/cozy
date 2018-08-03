@@ -1,8 +1,8 @@
-from cozy.common import fresh_name, declare_case
+from cozy.common import fresh_name, declare_case, No
 from cozy.syntax import *
 from cozy.target_syntax import SWhile, SSwap, SSwitch, SEscapableBlock, SEscapeBlock, EMap, EFilter
 from cozy.syntax_tools import fresh_var, pprint, mk_lambda, alpha_equivalent
-from cozy.pools import RUNTIME_POOL
+from cozy.pools import Pool, RUNTIME_POOL
 
 from .arrays import TArray, EArrayGet, EArrayIndexOf, SArrayAlloc, SEnsureCapacity, EArrayLen
 
@@ -81,11 +81,21 @@ class Heaps(object):
         """Return None or a string indicating a well-formedness error."""
         if (isinstance(e, EHeapPeek) or isinstance(e, EHeapPeek2)):
             heap = e.e
-            if pool != RUNTIME_POOL:
-                return "heap peek in state position"
             if not is_valid(EEq(e.heap_length, ELen(EHeapElems(heap).with_type(TBag(heap.type.elem_type))))):
                 return "invalid `n` parameter"
         return None
+
+    def good_idea(self,
+            e           : Exp,
+            context,
+            pool        : Pool,
+            assumptions : Exp,
+            ops         : [Op],
+            solver) -> bool:
+        if isinstance(e, EHeapPeek) or isinstance(e, EHeapPeek2):
+            if pool != RUNTIME_POOL:
+                return No("heap peek in state position")
+        return True
 
     def typecheck(self, e : Exp, typecheck, report_err):
         """Typecheck expression `e`.

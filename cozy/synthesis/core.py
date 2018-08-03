@@ -36,6 +36,7 @@ from cozy.opts import Option
 from cozy.pools import Pool, RUNTIME_POOL, STATE_POOL, pool_name
 from cozy.contexts import Context, shred, replace
 from cozy.logging import task, event
+from cozy.structures import extension_handler
 
 from .acceleration import try_optimize
 from .enumeration import Enumerator, Fingerprint, fingerprint, fingerprints_match, fingerprint_is_subset, eviction_policy
@@ -498,6 +499,12 @@ def good_idea(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptio
     args        = OrderedSet(v for v, p in context.vars() if p == RUNTIME_POOL)
     assumptions = EAll([assumptions, context.path_condition()])
     at_runtime  = pool == RUNTIME_POOL
+
+    h = extension_handler(type(e))
+    if h is not None:
+        res = h.good_idea(e, context, pool, assumptions, ops, solver)
+        if not res:
+            return res
 
     if isinstance(e, EStateVar) and not free_vars(e.e):
         return No("constant value in state position")
