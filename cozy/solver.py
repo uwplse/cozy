@@ -10,6 +10,7 @@ Important functions and classes:
 
 from collections import defaultdict, OrderedDict
 from datetime import datetime, timedelta
+from functools import lru_cache
 import threading
 
 import z3
@@ -1313,6 +1314,7 @@ class ModelCachingSolver(object):
     def valid(self, e):
         return not self.satisfiable(ENot(e))
 
+@lru_cache()
 def solver_for_context(context : Context, assumptions : Exp = T):
     return ModelCachingSolver(
         vars        = [v for v, _ in context.vars()],

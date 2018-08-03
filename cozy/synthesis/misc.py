@@ -1,15 +1,21 @@
+"""Miscellaneous procedures used during synthesis."""
+
 import itertools
 
 from cozy.common import FrozenDict, partition
 from cozy.syntax import T, Exp, Query, TFunc, EVar, EAll, EImplies, EEq, ELambda, Stm, SNoOp, SDecl, SAssign, SSeq, SIf, SForEach, SCall
 from cozy.target_syntax import TMap, EMakeMap2, EMapGet, SMapPut, SMapDel, SMapUpdate
 from cozy.syntax_tools import fresh_var, free_vars, subst
-from cozy.solver import ModelCachingSolver
+from cozy.solver import solver_for_context
+from cozy.contexts import RootCtx
 from cozy.logging import task
 
-_qe_cache = { }
-
 def queries_equivalent(q1 : Query, q2 : Query, state_vars : [EVar], extern_funcs : { str : TFunc }, assumptions : Exp = T):
+    """Determine whether two queries always return the same result.
+
+    This function also checks that the two queries have identical preconditions.
+    """
+
     with task("checking query equivalence", q1=q1.name, q2=q2.name):
         if q1.ret.type != q2.ret.type:
             return False
@@ -17,22 +23,26 @@ def queries_equivalent(q1 : Query, q2 : Query, state_vars : [EVar], extern_funcs
         q2args = dict(q2.args)
         if q1args != q2args:
             return False
-        args = FrozenDict(q1args)
 
-        key = (args, assumptions)
-        checker = _qe_cache.get(key)
-        if checker is None:
-            checker = ModelCachingSolver(
-                vars = list(itertools.chain(state_vars, (EVar(v).with_type(t) for v, t in args.items()))),
-                funcs = extern_funcs,
-                assumptions = assumptions)
-            _qe_cache[key] = checker
+        checker = solver_for_context(
+            context=RootCtx(
+                state_vars=state_vars,
+                args=[EVar(a).with_type(t) for (a, t) in q1.args],
+                funcs=extern_funcs),
+            assumptions=assumptions)
 
         q1a = EAll(q1.assumptions)
         q2a = EAll(q2.assumptions)
         return checker.valid(EEq(q1a, q2a)) and checker.valid(EImplies(q1a, EEq(q1.ret, q2.ret)))
 
 def pull_temps(s : Stm, decls_out : [SDecl], exp_is_bad) -> Stm:
+    """Remove "bad" expressions from `s`.
+
+    This procedure writes temporary definitions into `decls_out` for all
+    expressions in `s` for which `exp_is_bad` returns True.  It returns `s`
+    in terms of those temporary definitions.
+    """
+
     def pull(e : Exp) -> Exp:
         if exp_is_bad(e):
             v = fresh_var(e.type)
