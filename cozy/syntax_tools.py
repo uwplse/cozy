@@ -232,7 +232,7 @@ class PrettyPrinter(common.Visitor):
         return t.name
 
     def visit_TApp(self, app):
-        return "{}{lt}{}{gt}".format(app.elem_type, self.visit(app.args), lt=self.format_lt(), gt=self.format_gt())
+        return "{}{lt}{}{gt}".format(app.type_name, self.visit(app.args), lt=self.format_lt(), gt=self.format_gt())
 
     def visit_TBag(self, s):
         return "Bag{lt}{}{gt}".format(self.visit(s.elem_type), lt=self.format_lt(), gt=self.format_gt())

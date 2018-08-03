@@ -182,14 +182,14 @@ class Typechecker(Visitor):
         return t
 
     def visit_TApp(self, t):
-        if t.elem_type == "Set":
+        if t.type_name == "Set":
             return syntax.TSet(self.visit(t.args))
-        elif t.elem_type == "Bag":
+        elif t.type_name == "Bag":
             return syntax.TBag(self.visit(t.args))
-        elif t.elem_type == "List":
+        elif t.type_name == "List":
             return syntax.TList(self.visit(t.args))
         else:
-            self.report_err(t, "unknown type {}".format(t.elem_type))
+            self.report_err(t, "unknown type {}".format(t.type_name))
             return t
 
     def visit_TRecord(self, t):

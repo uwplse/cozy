@@ -31,7 +31,7 @@ TList               = declare_case(Type, "TList",   ["elem_type"])
 TMap                = declare_case(Type, "TMap",    ["k", "v"])
 TNamed              = declare_case(Type, "TNamed",  ["id"])
 TRecord             = declare_case(Type, "TRecord", ["fields"])
-TApp                = declare_case(Type, "TApp",    ["elem_type", "args"])
+TApp                = declare_case(Type, "TApp",    ["type_name", "args"])
 TEnum               = declare_case(Type, "TEnum",   ["cases"])
 TTuple              = declare_case(Type, "TTuple",  ["ts"])
 
