@@ -67,7 +67,7 @@ def pull_temps(s : Stm, decls_out : [SDecl], exp_is_bad) -> Stm:
         to_fix, ok = partition(d_tmp, lambda d: s.loop_var in free_vars(d.val))
         decls_out.extend(ok)
         for d in to_fix:
-            v = EVar(d.id).with_type(d.val.type)
+            v = d.var
             mt = TMap(s.loop_var.type, v.type)
             m = EMakeMap2(bag, ELambda(s.loop_var, d.val)).with_type(mt)
             mv = fresh_var(m.type)
