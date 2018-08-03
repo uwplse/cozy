@@ -341,7 +341,7 @@ class Enumerator(object):
 
         # Enable use of a state-pool expression at runtime
         if pool == RUNTIME_POOL:
-            for e in self.enumerate(context, size-1, STATE_POOL):
+            for e in self.enumerate(context.root(), size-1, STATE_POOL):
                 yield EStateVar(e).with_type(e.type)
 
         # Create maps

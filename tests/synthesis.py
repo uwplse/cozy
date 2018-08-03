@@ -12,8 +12,9 @@ from cozy.synthesis.core import improve
 from cozy.synthesis.enumeration import Enumerator
 from cozy.parse import parse_spec
 from cozy.solver import valid, satisfy
-from cozy.pools import RUNTIME_POOL
+from cozy.pools import RUNTIME_POOL, STATE_POOL
 from cozy.desugar import desugar
+from cozy.value_types import Bag
 
 handle_type = THandle("H", INT)
 handle1 = (1, mkval(INT))
@@ -102,6 +103,50 @@ class TestSynthesisCore(unittest.TestCase):
             fingerprint_lens.add(len(info.fingerprint))
             print(info)
         assert len(fingerprint_lens) == 1, fingerprint_lens
+
+
+class TestEnumeration(unittest.TestCase):
+
+    def test_state_pool_boundary(self):
+        """
+        When enumerating expressions, we shouldn't ever enumerate state
+        expressions in a context where some binders are runtime variables.
+        """
+
+        class TestEnumerator(Enumerator):
+
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.state_enumerations = 0
+
+            def _enumerate_core(self, context, size, pool):
+                print("_enumerate_core({}, {}, {})".format(context, size, pool))
+                if pool == STATE_POOL:
+                    self.state_enumerations += 1
+                return super()._enumerate_core(context, size, pool)
+
+        state_bag = EVar("state").with_type(INT_BAG)
+        context = RootCtx(
+            state_vars=[state_bag],
+            args=[EVar("arg").with_type(INT)])
+
+        enumerator = TestEnumerator(
+            examples=[
+                {"state": Bag([10]), "arg": 10},
+                {"state": Bag([20]), "arg": 30}],
+            cost_model=CostModel())
+
+        for e in enumerator.enumerate(context, 1, RUNTIME_POOL):
+            pass
+
+        for e in enumerator.enumerate(
+                UnderBinder(context, EVar("x").with_type(INT), EStateVar(state_bag).with_type(state_bag.type), RUNTIME_POOL),
+                1,
+                RUNTIME_POOL):
+            pass
+
+        assert enumerator.state_enumerations == 1
+
 
 class TestSpecificationSynthesis(unittest.TestCase):
 

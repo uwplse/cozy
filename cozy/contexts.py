@@ -72,6 +72,13 @@ class Context(object):
         """
         raise NotImplementedError()
 
+    def root(self):
+        """Return this context's root context."""
+        ctx = self
+        while ctx.parent() is not None:
+            ctx = ctx.parent()
+        return ctx
+
     def complexity(self):
         """Return the number of steps to the root context"""
         n = 0
