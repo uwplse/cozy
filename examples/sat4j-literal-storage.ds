@@ -17,14 +17,17 @@ SynthesizedLitStorage:
     invariant unique [record.val.var | record <- records];
 
     op updateLevel(rec : Record, level : Int)
+        assume rec in records;
         rec.val.level = level;
 
     op updateReason(rec : Record, reason : Constr)
+        assume rec in records;
         rec.val.reason = reason;
 
     op add(rec : Record)
         assume not(rec.val.var in [r.val.var | r <- records]);
         assume not(rec in records);
+
         records.add(rec);
 
     op remove(rec : Record)
@@ -32,10 +35,13 @@ SynthesizedLitStorage:
         records.remove(rec);
 
     query size()
-        len records
+        sum [1 | _ <- records]
 
-    query find_1(varId : Int)
+    query findRecord(varId : Int)
         the [ r | r <- records, r.val.var == varId ]
+
+    query belongsToPool(varId : Int)
+        exists [ r | r <- records, r.val.var == varId ]
 
     query getLevel(varId : Int)
         the [ r.val.level | r <- records, r.val.var == varId ]
