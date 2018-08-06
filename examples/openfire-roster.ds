@@ -1,0 +1,205 @@
+
+RosterCore:
+
+    type JID      = Native "org.xmpp.packet.JID"
+    type AskType  = Native "org.jivesoftware.openfire.roster.RosterItem.AskType"
+    type RecvType = Native "org.jivesoftware.openfire.roster.RosterItem.RecvType"
+    type Date     = Native "java.util.Date"
+
+    handletype User = {
+        username : String,
+        salt : String,
+        storedKey : String,
+        serverKey : String,
+        iterations : Int,
+        name : String,
+        email : String,
+        creationDate : Date,
+        modificationDate : Date }
+
+    handletype RosterItem = {
+        backendId  : Long,
+        user       : String,
+        target     : JID,
+        nickname   : String, // user's nickname for the target
+        askStatus  : AskType,
+        recvStatus : RecvType }
+
+    type GroupRosterVisibility = enum { NOBODY, ONLY_GROUP, EVERYBODY }
+    handletype Group = {
+        name : String,
+        displayName : String,
+        description : String,
+        rosterMode : GroupRosterVisibility }
+
+    type RosterEntry = {
+        other : User,
+        to    : Bool,
+        from  : Bool,
+        item  : RosterItem }
+
+    extern jidToUsername(id : JID) : String = "{id}.getNode()"
+    extern usernameToJid(username : String) : JID = "new org.xmpp.packet.JID({username}, org.jivesoftware.openfire.XMPPServer.getInstance().getServerInfo().getXMPPDomain(), null)"
+    extern askNone()  : AskType  = "org.jivesoftware.openfire.roster.RosterItem.ASK_NONE"
+    extern recvNone() : RecvType = "org.jivesoftware.openfire.roster.RosterItem.RECV_NONE"
+
+    state users        : Bag<User>
+    state rosterItems  : Bag<RosterItem>
+    state groups       : Bag<Group>
+    state childGroups  : Set<(Group, Group)> // maps parent -> children
+    state groupMembers : Set<(Group, User)>  // maps group -> users
+    state admins       : Set<(Group, User)>  // maps group -> admin users
+
+    invariant unique [u.val.username | u <- users];
+    invariant unique [i.val.backendId | i <- rosterItems];
+    invariant unique [(i.val.user, jidToUsername(i.val.target)) | i <- rosterItems];
+    invariant unique [g.val.name | g <- groups];
+
+    // groups have children only if in ONLY_GROUP mode
+    invariant empty [ child | child <- childGroups, child.0.val.rosterMode != ONLY_GROUP ];
+
+    // childGroups, groupMembers, etc. are well-formed
+    invariant empty [ e | e <- childGroups,  not (e.0 in groups) or not (e.1 in groups) ];
+    invariant empty [ e | e <- groupMembers, not (e.0 in groups) or not (e.1 in users) ];
+    invariant empty [ e | e <- admins,       not (e.0 in groups) or not (e.1 in users) ];
+
+    op addUser(u : User)
+        assume not (u.val.username in [u.val.username | u <- users]);
+        users.add(u);
+
+    op rmUser(u : User)
+        assume empty [e | e <- groupMembers, e.1 == u];
+        assume empty [e | e <- admins,       e.1 == u];
+        users.remove(u);
+
+    op addRosterItem(e : RosterItem)
+        assume not (e.val.backendId in [e.val.backendId | e <- rosterItems]);
+        assume all [i.val.user != e.val.user or jidToUsername(i.val.target) != jidToUsername(e.val.target) | i <- rosterItems];
+        rosterItems.add(e);
+
+    op rmRosterItem(e : RosterItem)
+        rosterItems.remove(e);
+
+    op addGroup(g : Group)
+        assume not (g.val.name in [g.val.name | g <- groups]);
+        groups.add(g);
+
+    op rmGroup(g : Group)
+        assume empty [e | e <- childGroups,  e.0 == g or e.1 == g];
+        assume empty [e | e <- groupMembers, e.0 == g];
+        assume empty [e | e <- admins,       e.0 == g];
+        groups.remove(g);
+
+    op addMember(g : Group, u : User)
+        assume g in groups;
+        assume u in users;
+        assume not ((g, u) in groupMembers);
+        groupMembers.add((g, u));
+
+    op rmMember(g : Group, u : User)
+        groupMembers.remove((g, u));
+
+    op addSharedGroup(g : Group, g2 : Group)
+        assume g.val.rosterMode == ONLY_GROUP;
+        assume g in groups;
+        assume g2 in groups;
+        assume not ((g, g2) in childGroups);
+        childGroups.add((g, g2));
+
+    op removeSharedGroup(g : Group, g2 : Group)
+        childGroups.remove((g, g2));
+
+    op setMode(g : Group, mode : GroupRosterVisibility)
+        assume empty [child | child <- childGroups, child.0 == g and g.val.rosterMode == ONLY_GROUP];
+        g.val.rosterMode = mode;
+
+    op setGroupDisplayName(g : Group, name : String)
+        g.val.displayName = name;
+
+    op setAskStatus(i : RosterItem, status : AskType)
+        i.val.askStatus = status;
+
+    op setRecvStatus(i : RosterItem, status : RecvType)
+        i.val.recvStatus = status;
+
+    op setNickname(i : RosterItem, name : String)
+        i.val.nickname = name;
+
+    op setUserDisplayName(u : User, name : String)
+        u.val.name = name;
+
+    query findUser(username : String)
+        the [ u | u <- users, u.val.username == username ]
+
+    query findGroup(name : String)
+        the [ g | g <- groups, g.val.name == name ]
+
+    private query inGroup(u : User, g : Group)
+        assume u in users;
+        assume g in groups;
+        exists [ t | t <- groupMembers, t.0 == g and t.1 == u ]
+
+    private query groupsContaining(u : User)
+        assume u in users;
+        [ g | g <- groups, inGroup(u, g) ]
+
+    // Is group `g` visible to user `u`?
+    query groupIsVisible(g : Group, u : User)
+        assume u in users;
+        assume g in groups;
+        g.val.rosterMode == EVERYBODY or
+        (g.val.rosterMode == ONLY_GROUP and (g, u) in groupMembers) or
+        (g.val.rosterMode == ONLY_GROUP and
+            exists [ subg | subg <- groups,
+                inGroup(u, subg),
+                (g, subg) in childGroups ])
+
+    query usersWatchingGroup(g : Group)
+        assume g in groups;
+        [ u | u <- users, groupIsVisible(g, u) ]
+
+    private query findRosterItem(u1 : User, u2 : User)
+        assume u1 in users;
+        assume u2 in users;
+        the [ i | i <- rosterItems,
+            u1.val.username == i.val.user,
+            jidToUsername(i.val.target) == u2.val.username ]
+
+    // If u1 does not have an explicit roster item for u2, then what shared
+    // groups cause an implicit item?
+    query sharedGroups(u1 : User, u2 : User)
+        assume u1 in users;
+        assume u2 in users;
+        [ g.val.name | g <- groups, (g, u2) in groupMembers and groupIsVisible(g, u1) ]
+
+    query hasSharedGroups(u1 : User, u2 : User)
+        assume u1 in users;
+        assume u2 in users;
+        exists sharedGroups(u1, u2)
+
+    // This is the core definition of roster subscription. Does `u1` see `u2` in
+    // their roster?
+    query hasSubscriptionTo(u1 : User, u2 : User)
+        assume u1 in users;
+        assume u2 in users;
+        u1 != u2 and
+        // Either `u1` is explicitly subscribed to `u2`...
+        (exists [ i | i <- rosterItems,
+            u1.val.username == i.val.user,
+            jidToUsername(i.val.target) == u2.val.username ]
+        // ...or `u2` is in a group that is visible to `u1`.
+        or hasSharedGroups(u1, u2))
+
+    query getRosterItem(u1 : User, u2 : User)
+        assume u1 in users;
+        assume u2 in users;
+        { other : u2,
+          to    : hasSubscriptionTo(u1, u2),
+          from  : hasSubscriptionTo(u2, u1),
+          item  : findRosterItem(u1, u2) }
+
+    query roster(u : User)
+        assume u in users;
+        [ getRosterItem(u, other)
+          | other <- users,
+            hasSubscriptionTo(u, other) or hasSubscriptionTo(other, u) ]

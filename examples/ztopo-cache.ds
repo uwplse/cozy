@@ -1,0 +1,55 @@
+TileCache:
+
+    type State = enum {
+        Disk, Loading, DiskAndMemory, MemoryOnly,
+        Saving, NetworkPending, IndexPending, Invalid }
+    type Key = Native "uint64_t"
+
+    handletype Entry = {
+        key : Key,
+        pixmap : Native "QPixmap *",
+        indexData : Native "QByteArray",
+        memSize : Int,
+        diskSize : Int,
+        st : State,
+        inUse : Bool }
+
+    state entries : Set<Entry>
+
+    invariant unique [e.val.key | e <- entries];
+
+    op add(e : Entry)
+        assume all [ x.val.key != e.val.key | x <- entries ];
+        entries.add(e);
+
+    op rm(e : Entry)
+        assume (e in entries);
+        entries.remove(e);
+
+    op updateState(e : Entry, st : State)
+        assume (e in entries);
+        assume e.val.st != st;
+        e.val.st = st;
+
+    op updateInUse(e : Entry, inUse : Bool)
+        assume (e in entries);
+        assume e.val.inUse != inUse;
+        e.val.inUse = inUse;
+
+    query totalMemSize()
+        sum [e.val.memSize | e <- entries, e.val.st == DiskAndMemory or e.val.st == MemoryOnly]
+
+    query totalDiskSize()
+        sum [e.val.diskSize | e <- entries, e.val.st == Disk]
+
+    query diskEntries()
+        [e | e <- entries, e.val.st == Disk]
+
+    query pendingEntries()
+        [e | e <- entries, e.val.st == IndexPending]
+
+    query inMemEntries(inUse : Bool)
+        [e | e <- entries, (e.val.st == DiskAndMemory or e.val.st == MemoryOnly), e.val.inUse == inUse]
+
+    query findTile(k : Key)
+        the [e | e <- entries, e.val.key == k]

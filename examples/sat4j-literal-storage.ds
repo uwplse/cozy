@@ -1,0 +1,53 @@
+SynthesizedLitStorage:
+    type Constr             = Native "org.sat4j.specs.Constr"
+    type PropagatableVector = Native "org.sat4j.specs.IVec<org.sat4j.specs.Propagatable>"
+    type UndoVector         = Native "org.sat4j.specs.IVec<org.sat4j.minisat.core.Undoable>"
+
+    handletype Record = {
+        var    : Int,
+        level  : Int,
+        reason : Constr,
+        posWatches : PropagatableVector,
+        negWatches : PropagatableVector,
+        undos: UndoVector
+    }
+
+    state records : Bag<Record>
+
+    invariant unique [record.val.var | record <- records];
+
+    op updateLevel(rec : Record, level : Int)
+        rec.val.level = level;
+
+    op updateReason(rec : Record, reason : Constr)
+        rec.val.reason = reason;
+
+    op add(rec : Record)
+        assume not(rec.val.var in [r.val.var | r <- records]);
+        assume not(rec in records);
+        records.add(rec);
+
+    op remove(rec : Record)
+        assume rec in records;
+        records.remove(rec);
+
+    query size()
+        len records
+
+    query find_1(varId : Int)
+        the [ r | r <- records, r.val.var == varId ]
+
+    query getLevel(varId : Int)
+        the [ r.val.level | r <- records, r.val.var == varId ]
+
+    query getReason(varId : Int)
+        the [ r.val.reason | r <- records, r.val.var == varId ]
+
+    query getUndos(varId : Int)
+        the [ r.val.undos | r <- records, r.val.var == varId ]
+
+    query getPosWatches(varId : Int)
+        the [ r.val.posWatches | r <- records, r.val.var == varId ]
+
+    query getNegWatches(varId : Int)
+        the [ r.val.negWatches | r <- records, r.val.var == varId ]
