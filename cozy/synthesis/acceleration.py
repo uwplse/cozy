@@ -5,9 +5,11 @@ versions of expressions it sees.  Since all expressions are checked for
 correctness, `try_optimize` has a very loose contract.
 """
 
-from cozy.common import unique
+import itertools
+
+from cozy.common import find_one
 from cozy.target_syntax import *
-from cozy.syntax_tools import fresh_var, free_vars, free_funcs, break_conj, mk_lambda, strip_EStateVar, alpha_equivalent, compose
+from cozy.syntax_tools import fresh_var, free_vars, free_funcs, mk_lambda, strip_EStateVar, alpha_equivalent, compose, nnf
 from cozy.typecheck import is_collection, retypecheck
 from cozy.contexts import Context, shred, replace
 from cozy.pools import Pool, RUNTIME_POOL, STATE_POOL
@@ -19,6 +21,12 @@ accelerate = Option("acceleration-rules", bool, True,
     description="Enable rewrite rules that try to directly optimize "
         + "expressions during synthesis. In most cases this dramatically "
         + "improves Cozy's performance.")
+
+def find_one_or_fail(iter):
+    res = find_one(iter)
+    if res is None:
+        raise ValueError()
+    return res
 
 def try_optimize(e : Exp, context : Context, pool : Pool):
     """Yields expressions for the given context and pool.
@@ -104,11 +112,7 @@ def _try_optimize(e, context, pool):
                 yield _check(ee, context, RUNTIME_POOL)
 
         if isinstance(e, EFilter):
-            ee = optimize_filter_as_if_distinct(e.e, e.predicate, args=args)
-            yield _check(ee, context, RUNTIME_POOL)
-            if isinstance(e.e, EFilter):
-                # try swizzle
-                ee = EFilter(_simple_filter(e.e.e, e.predicate, args=args), e.e.predicate).with_type(e.type)
+            for ee in optimize_filter(e.e, e.predicate, args=args):
                 yield _check(ee, context, RUNTIME_POOL)
 
         if isinstance(e, EMap):
@@ -285,10 +289,10 @@ def excluded_element(xs, args):
             arg_left = arg in free_vars(e.e1)
             arg_right = arg in free_vars(e.e2)
             if arg_left and not arg_right:
-                return (xs.e, EUnaryOp(UOp.The, _simple_filter(xs.e, ELambda(arg, EEq(e.e1, e.e2)), args=args)).with_type(xs.type.elem_type))
+                return (xs.e, EUnaryOp(UOp.The, find_one_or_fail(_simple_filter(xs.e, ELambda(arg, EEq(e.e1, e.e2)), args=args))).with_type(xs.type.elem_type))
             if arg_right and not arg_left:
-                return (xs.e, EUnaryOp(UOp.The, _simple_filter(xs.e, ELambda(arg, EEq(e.e1, e.e2)), args=args)).with_type(xs.type.elem_type))
-        return (xs.e, optimized_the(_simple_filter(xs.e, ELambda(xs.predicate.arg, ENot(xs.predicate.body)), args), args))
+                return (xs.e, EUnaryOp(UOp.The, find_one_or_fail(_simple_filter(xs.e, ELambda(arg, EEq(e.e1, e.e2)), args=args))).with_type(xs.type.elem_type))
+        return (xs.e, optimized_the(find_one_or_fail(_simple_filter(xs.e, ELambda(xs.predicate.arg, ENot(xs.predicate.body)), args)), args))
     if isinstance(xs, EBinOp) and xs.op == "-" and isinstance(xs.e2, ESingleton):
         return (xs.e1, xs.e2.e)
     if isinstance(xs, EBinOp) and xs.op == "-":
@@ -417,33 +421,53 @@ def mapkeys(m):
         return m.keys
     return EMapKeys(m).with_type(TBag(m.type.k))
 
-def map_values(m, f):
+def map_values_multi(m, f):
     if isinstance(m, EMakeMap2):
-        new_body = f(m.value_function.body)
-        return EMakeMap2(m.e, ELambda(m.value_function.arg, new_body)).with_type(TMap(m.type.k, new_body.type))
+        for new_body in f(m.value_function.body):
+            yield EMakeMap2(m.e, ELambda(m.value_function.arg, new_body)).with_type(TMap(m.type.k, new_body.type))
     if isinstance(m, ECond):
-        return optimized_cond(
-            m.cond,
-            map_values(m.then_branch, f),
-            map_values(m.else_branch, f))
-    raise NotImplementedError(m)
+        for then_branch in map_values_multi(m.then_branch, f):
+            for else_branch in map_values_multi(m.else_branch, f):
+                yield optimized_cond(m.cond, then_branch, else_branch)
 
-def _simple_filter(xs, p, args):
+def map_values(m, f):
+    return find_one_or_fail(map_values_multi(m, lambda body: [f(body)]))
+
+def _simple_filter(xs : Exp, p : ELambda, args : {EVar}):
+    """Assumes the body of p is already in negation normal form"""
+    yielded = False
     if p.body == ETRUE:
-        return xs
+        yielded = True
+        yield xs
     if p.body == EFALSE:
-        return EEmptyList().with_type(xs.type)
+        yielded = True
+        yield EEmptyList().with_type(xs.type)
+    if isinstance(p.body, EBinOp) and p.body.op == BOp.Or:
+        for e1, e2 in itertools.permutations([p.body.e1, p.body.e2]):
+            for r1 in _simple_filter(xs, ELambda(p.arg, e1), args):
+                for r2 in _simple_filter(xs, ELambda(p.arg, EAll([e2, ENot(e1)])), args):
+                    yielded = True
+                    yield EBinOp(r1, "+", r2).with_type(xs.type)
+    if isinstance(p.body, EBinOp) and p.body.op == BOp.And:
+        for e1, e2 in itertools.permutations([p.body.e1, p.body.e2]):
+            for r1 in _simple_filter(xs, ELambda(p.arg, e1), args):
+                yielded = True
+                yield from _simple_filter(r1, ELambda(p.arg, e2), args)
     if isinstance(xs, EEmptyList):
-        return xs
+        yielded = True
+        yield xs
     if isinstance(xs, EStateVar) and not any(v in args for v in free_vars(p)):
-        return EStateVar(EFilter(xs.e, strip_EStateVar(p)).with_type(xs.type)).with_type(xs.type)
+        yielded = True
+        yield EStateVar(EFilter(xs.e, strip_EStateVar(p)).with_type(xs.type)).with_type(xs.type)
     if isinstance(xs, EMapGet) and isinstance(xs.map, EStateVar) and not any(v in args for v in free_vars(p)):
-        m = map_values(xs.map.e, lambda ys: _simple_filter(ys, p, args))
-        return EMapGet(EStateVar(m).with_type(m.type), xs.key).with_type(xs.type)
-    if isinstance(xs, EBinOp) and xs.op == "+":
-        return EBinOp(_simple_filter(xs.e1, p, args), "+", _simple_filter(xs.e2, p, args)).with_type(xs.type)
-    if isinstance(xs, EBinOp) and xs.op == "-":
-        return EBinOp(_simple_filter(xs.e1, p, args), "-", _simple_filter(xs.e2, p, args)).with_type(xs.type)
+        for m in map_values_multi(xs.map.e, lambda ys: _simple_filter(ys, p, args)):
+            yielded = True
+            yield EMapGet(EStateVar(m).with_type(m.type), xs.key).with_type(xs.type)
+    if isinstance(xs, EBinOp) and xs.op in ("+", "-"):
+        for e1 in _simple_filter(xs.e1, p, args):
+            for e2 in _simple_filter(xs.e2, p, args):
+                yielded = True
+                yield EBinOp(e1, xs.op, e2).with_type(xs.type)
     if isinstance(p.body, EBinOp) and p.body.op == "==":
         fvs2 = free_vars(p.body.e2)
         fvs1 = free_vars(p.body.e1)
@@ -457,8 +481,13 @@ def _simple_filter(xs, p, args):
                 p.body.e2)
             res = retypecheck(e)
             assert res
-            return e
-    return EFilter(xs, p).with_type(xs.type)
+            yielded = True
+            yield e
+    if not yielded:
+        yield EFilter(xs, p).with_type(xs.type)
+
+def optimize_filter(xs : Exp, p : ELambda, args : {EVar}):
+    yield from _simple_filter(xs, ELambda(p.arg, nnf(p.body)), args)
 
 def optimized_bag_difference(xs, ys):
     # EStateVar(distinct xs) - (EStateVar(xs) - [i])
@@ -496,32 +525,6 @@ def optimized_bag_difference(xs, ys):
     # only legal if xs are distinct, but we'll give it a go...
     return EFilter(xs, mk_lambda(xs.type.elem_type, lambda x: ENot(optimized_in(x, ys)))).with_type(xs.type)
 
-def optimize_filter_as_if_distinct(xs, p, args, dnf=True):
-    if isinstance(xs, EBinOp) and xs.op == "-":
-        return EBinOp(
-            optimize_filter_as_if_distinct(xs.e1, p, args), "-",
-            optimize_filter_as_if_distinct(xs.e2, p, args)).with_type(xs.type)
-        # return optimize_filter_as_if_distinct(xs.e1, ELambda(p.arg, EAll([ENot(optimized_in(p.arg, xs.e2)), p.body])), args)
-
-    if dnf:
-        from cozy.syntax_tools import dnf, nnf
-        cases = dnf(nnf(p.body))
-        cases = [list(unique(c)) for c in cases]
-        # for c in cases:
-        #     print("; ".join(pprint(x) for x in c))
-        assert cases
-    else:
-        cases = [list(break_conj(p.body))]
-
-    res = xs
-    for c in sorted(unique(cases[0]), key=lambda c: 1 if any(v in args for v in free_vars(c)) else 0):
-        res = _simple_filter(res, ELambda(p.arg, c), args)
-    if cases[1:]:
-        cond = EAll([ENot(EAll(cases[0])), EAny(EAll(c) for c in cases[1:])])
-        res = EBinOp(res, "+",
-                optimize_filter_as_if_distinct(xs, ELambda(p.arg, cond), args=args, dnf=False)).with_type(res.type)
-    return res
-
 def optimize_map(xs, f, args):
     res_type = type(xs.type)(f.body.type)
     if f.arg == f.body:
@@ -536,9 +539,11 @@ def optimize_map(xs, f, args):
                 for b in optimize_map(xs.e2, f, args):
                     yield EBinOp(a, "+", b).with_type(res_type)
     if isinstance(f.body, ECond):
-        for a     in optimize_map(optimize_filter_as_if_distinct(xs, ELambda(f.arg,      f.body.cond) , args=args), ELambda(f.arg, f.body.then_branch), args):
-            for b in optimize_map(optimize_filter_as_if_distinct(xs, ELambda(f.arg, ENot(f.body.cond)), args=args), ELambda(f.arg, f.body.else_branch), args):
-                yield EBinOp(a, "+", b).with_type(res_type)
+        for true_elems      in optimize_filter(xs, ELambda(f.arg,      f.body.cond) , args=args):
+            for false_elems in optimize_filter(xs, ELambda(f.arg, ENot(f.body.cond)), args=args):
+                for a     in optimize_map(true_elems,  ELambda(f.arg, f.body.then_branch), args):
+                    for b in optimize_map(false_elems, ELambda(f.arg, f.body.else_branch), args):
+                        yield EBinOp(a, "+", b).with_type(res_type)
     yield EMap(xs, f).with_type(res_type)
 
 sum_of = lambda xs: EUnaryOp(UOp.Sum, xs).with_type(xs.type.elem_type)
@@ -554,8 +559,9 @@ def optimized_sum(xs, args):
     if isinstance(xs, EBinOp) and xs.op == "-":
         arg = fresh_var(elem_type)
         for a in optimized_sum(xs.e1, args=args):
-            for b in optimized_sum(_simple_filter(xs.e2, ELambda(arg, optimized_in(arg, xs.e1)), args).with_type(xs.type), args=args):
-                yield EBinOp(a, "-", b).with_type(elem_type)
+            for e2 in _simple_filter(xs.e2, ELambda(arg, optimized_in(arg, xs.e1)), args):
+                for b in optimized_sum(e2, args=args):
+                    yield EBinOp(a, "-", b).with_type(elem_type)
     x = excluded_element(xs, args)
     if x is not None:
         bag, x = x
