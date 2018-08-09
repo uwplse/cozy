@@ -6,7 +6,7 @@ Important functions:
    syntax tree
 """
 
-from cozy.common import Visitor
+from cozy.common import Visitor, OrderedSet
 from cozy import syntax
 from cozy import target_syntax
 from cozy.syntax_tools import pprint, all_exps, free_vars
@@ -498,11 +498,18 @@ class Typechecker(Visitor):
         self.ensure_type(e.end, INT, "slice end must be an Int")
 
     def visit_EListComprehension(self, e):
+        collection_types = OrderedSet()
         with self.scope():
             for clause in e.clauses:
                 self.visit(clause)
+                if isinstance(clause, syntax.CPull) and clause.e.type is not DEFAULT_TYPE:
+                    collection_types.add(clause.e.type)
             self.visit(e.e)
-        e.type = syntax.TList(e.e.type)
+
+        if all(isinstance(t, syntax.TList) for t in collection_types):
+            e.type = syntax.TList(e.e.type)
+        else:
+            e.type = syntax.TBag(e.e.type)
 
     def visit_EMakeRecord(self, e):
         fields = []
