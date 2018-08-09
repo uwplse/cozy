@@ -290,7 +290,7 @@ def map_value_func(e : Exp):
     if isinstance(e, ECond):
         f1 = map_value_func(e.then_branch)
         return ELambda(f1.arg,
-            ECond(e.cond, f1.body, map_value_func(e.else_branch).apply_to(f1.arg)))
+            ECond(e.cond, f1.body, map_value_func(e.else_branch).apply_to(f1.arg)).with_type(f1.body.type))
     raise NotImplementedError(repr(e))
 
 def worst_case_cardinality(e : Exp) -> DominantTerm:
