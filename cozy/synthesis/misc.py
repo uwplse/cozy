@@ -89,7 +89,7 @@ def pull_temps(s : Stm, decls_out : [SDecl], exp_is_bad) -> Stm:
         change = pull_temps(s.change, d_tmp, exp_is_bad)
         for d in d_tmp:
             if s.val_var in free_vars(d.val):
-                decls_out.append(SDecl(d, subst(d.val, { s.val_var.id : EMapGet(s.map, key).with_type(s.val_var.type) })))
+                decls_out.append(SDecl(d.var, subst(d.val, { s.val_var.id : EMapGet(s.map, key).with_type(s.val_var.type) })))
             else:
                 decls_out.append(d)
         return SMapUpdate(s.map, key, s.val_var, change)
