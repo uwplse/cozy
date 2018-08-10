@@ -206,91 +206,95 @@ class Enumerator(object):
                     yield context.adapt(e, ctx)
             return
 
-        for e in collections(self.enumerate(context, size-1, pool)):
+        # load all smaller expressions in this context and pool
+        # cache[S] contains expressions of size S in this context and pool
+        cache = [list(self.enumerate(context, sz, pool)) for sz in range(size)]
+
+        for e in collections(cache[size-1]):
             yield EEmptyList().with_type(e.type)
             if is_numeric(e.type.elem_type):
                 yield EUnaryOp(UOp.Sum, e).with_type(e.type.elem_type)
 
-        for e in self.enumerate(context, size-1, pool):
+        for e in cache[size-1]:
             yield ESingleton(e).with_type(TBag(e.type))
 
-        for e in self.enumerate(context, size-1, pool):
+        for e in cache[size-1]:
             if isinstance(e.type, TRecord):
                 for (f,t) in e.type.fields:
                     yield EGetField(e, f).with_type(t)
 
-        for e in self.enumerate(context, size-1, pool):
+        for e in cache[size-1]:
             if isinstance(e.type, THandle):
                 yield EGetField(e, "val").with_type(e.type.value_type)
 
-        for e in self.enumerate(context, size-1, pool):
+        for e in cache[size-1]:
             if isinstance(e.type, TTuple):
                 for n in range(len(e.type.ts)):
                     yield ETupleGet(e, n).with_type(e.type.ts[n])
 
-        for e in of_type(self.enumerate(context, size-1, pool), BOOL):
+        for e in of_type(cache[size-1], BOOL):
             yield EUnaryOp(UOp.Not, e).with_type(BOOL)
 
-        for e in self.enumerate(context, size-1, pool):
+        for e in cache[size-1]:
             if is_numeric(e.type):
                 yield EUnaryOp("-", e).with_type(e.type)
 
-        for m in self.enumerate(context, size-1, pool):
+        for m in cache[size-1]:
             if isinstance(m.type, TMap):
                 yield EMapKeys(m).with_type(TBag(m.type.k))
 
         for (sz1, sz2) in pick_to_sum(2, size - 1):
-            for a1 in self.enumerate(context, sz1, pool):
+            for a1 in cache[sz1]:
                 t = a1.type
                 if not is_numeric(t):
                     continue
-                for a2 in of_type(self.enumerate(context, sz2, pool), t):
+                for a2 in of_type(cache[sz2], t):
                     yield EBinOp(a1, "+", a2).with_type(t)
                     yield EBinOp(a1, "-", a2).with_type(t)
                     yield EBinOp(a1, ">", a2).with_type(BOOL)
                     yield EBinOp(a1, "<", a2).with_type(BOOL)
                     yield EBinOp(a1, ">=", a2).with_type(BOOL)
                     yield EBinOp(a1, "<=", a2).with_type(BOOL)
-            for a1 in collections(self.enumerate(context, sz1, pool)):
-                for a2 in of_type(self.enumerate(context, sz2, pool), a1.type):
+            for a1 in collections(cache[sz1]):
+                for a2 in of_type(cache[sz2], a1.type):
                     yield EBinOp(a1, "+", a2).with_type(a1.type)
                     yield EBinOp(a1, "-", a2).with_type(a1.type)
-                for a2 in of_type(self.enumerate(context, sz2, pool), a1.type.elem_type):
+                for a2 in of_type(cache[sz2], a1.type.elem_type):
                     yield EBinOp(a2, BOp.In, a1).with_type(BOOL)
-            for a1 in of_type(self.enumerate(context, sz1, pool), BOOL):
-                for a2 in of_type(self.enumerate(context, sz2, pool), BOOL):
+            for a1 in of_type(cache[sz1], BOOL):
+                for a2 in of_type(cache[sz2], BOOL):
                     yield EBinOp(a1, BOp.And, a2).with_type(BOOL)
                     yield EBinOp(a1, BOp.Or, a2).with_type(BOOL)
-            for a1 in self.enumerate(context, sz1, pool):
+            for a1 in cache[sz1]:
                 if not isinstance(a1.type, TMap):
-                    for a2 in of_type(self.enumerate(context, sz2, pool), a1.type):
+                    for a2 in of_type(cache[sz2], a1.type):
                         yield EEq(a1, a2)
                         yield EBinOp(a1, "!=", a2).with_type(BOOL)
-            for m in self.enumerate(context, sz1, pool):
+            for m in cache[sz1]:
                 if isinstance(m.type, TMap):
-                    for k in of_type(self.enumerate(context, sz2, pool), m.type.k):
+                    for k in of_type(cache[sz2], m.type.k):
                         yield EMapGet(m, k).with_type(m.type.v)
                         yield EHasKey(m, k).with_type(BOOL)
-            for l in self.enumerate(context, sz1, pool):
+            for l in cache[sz1]:
                 if not isinstance(l.type, TList):
                     continue
-                for i in of_type(self.enumerate(context, sz2, pool), INT):
+                for i in of_type(cache[sz2], INT):
                     yield EListGet(l, i).with_type(l.type.elem_type)
 
         for (sz1, sz2, sz3) in pick_to_sum(3, size-1):
-            for cond in of_type(self.enumerate(context, sz1, pool), BOOL):
-                for then_branch in self.enumerate(context, sz2, pool):
-                    for else_branch in of_type(self.enumerate(context, sz2, pool), then_branch.type):
+            for cond in of_type(cache[sz1], BOOL):
+                for then_branch in cache[sz2]:
+                    for else_branch in of_type(cache[sz2], then_branch.type):
                         yield ECond(cond, then_branch, else_branch).with_type(then_branch.type)
 
-            for l in self.enumerate(context, sz1, pool):
+            for l in cache[sz1]:
                 if not isinstance(l.type, TList):
                     continue
-                for st in of_type(self.enumerate(context, sz2, pool), INT):
-                    for ed in of_type(self.enumerate(context, sz3, pool), INT):
+                for st in of_type(cache[sz2], INT):
+                    for ed in of_type(cache[sz3], INT):
                         yield EListSlice(l, st, ed).with_type(l.type)
 
-        for bag in collections(self.enumerate(context, size-1, pool)):
+        for bag in collections(cache[size-1]):
             # len of bag
             count = EUnaryOp(UOp.Length, bag).with_type(INT)
             yield count
@@ -317,17 +321,17 @@ class Enumerator(object):
 
         # Let-expressions
         for (sz1, sz2) in pick_to_sum(2, size - 1):
-            for x in self.enumerate(context, sz1, pool):
+            for x in cache[sz1]:
                 bag = ESingleton(x).with_type(TBag(x.type))
                 for lam in build_lambdas(bag, pool, sz2):
                     e = ELet(x, lam).with_type(lam.body.type)
-                    # if x == EBinOp(EVar("x"), "+", EVar("x")):
-                    #     e._tag = True
+                    if x == EBinOp(EVar("x"), "+", EVar("x")):
+                        e._tag = True
                     yield e
 
         # Iteration
         for (sz1, sz2) in pick_to_sum(2, size - 1):
-            for bag in collections(self.enumerate(context, sz1, pool)):
+            for bag in collections(cache[sz1]):
                 for lam in build_lambdas(bag, pool, sz2):
                     body_type = lam.body.type
                     yield EMap(bag, lam).with_type(TBag(body_type))
