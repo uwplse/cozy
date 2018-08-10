@@ -14,6 +14,7 @@ Extra collection types:
 
 # builtins
 from contextlib import contextmanager
+import datetime
 from functools import total_ordering, wraps
 import sys
 import os
@@ -138,6 +139,45 @@ class No(object):
         return "no: {}".format(self.msg)
     def __repr__(self):
         return "No({!r})".format(self.msg)
+
+class Periodically(object):
+    """Class to help prevent an procedure from running too often.
+
+    Typical usage:
+
+        import datetime
+
+        def do_action():
+            ...
+
+        p = Periodically(do_action, datetime.timedelta(seconds=30))
+        while True:
+            # call do_action if 30 seconds have elapsed since the last
+            # call to do_action
+            p.check()
+
+    Note that this class is not omniscient and does not see calls to the
+    procedure unless they happen through the `check` method.
+    """
+
+    @typechecked
+    def __init__(self, f, timespan : datetime.timedelta):
+        """Initialize the guard.
+
+        Parameters:
+            f - the procedure to call
+            timespan - how long to wait between calls
+        """
+        self.f = f
+        self.timespan = timespan
+        self.prev_call = None
+
+    def check(self):
+        """Call `self.f` if enough time has elapsed."""
+        now = datetime.datetime.now()
+        if self.prev_call is None or self.prev_call + self.timespan < now:
+            self.f()
+            self.prev_call = now
 
 # _protect helps to help guard against infinite recursion.
 # Since it is global, locking uses seems wise.

@@ -5,9 +5,10 @@ expressions.
 """
 
 from collections import namedtuple, defaultdict
+import datetime
 import itertools
 
-from cozy.common import pick_to_sum, OrderedSet, unique, make_random_access, StopException
+from cozy.common import pick_to_sum, OrderedSet, unique, make_random_access, StopException, Periodically
 from cozy.target_syntax import *
 from cozy.syntax_tools import pprint, fresh_var, free_vars, freshen_binders, alpha_equivalent, all_types
 from cozy.evaluation import eval, eval_bulk, construct_value, values_equal
@@ -201,6 +202,10 @@ class Enumerator(object):
             stop_callback = lambda: False
         self.stop_callback = stop_callback
         self.do_eviction = do_eviction
+        self.stat_timer = Periodically(self.print_stats, timespan=datetime.timedelta(seconds=2))
+
+    def print_stats(self):
+        print("  |cache|={}".format(self.cache_size()))
 
     def cache_size(self):
         return len(self.cache)
@@ -453,6 +458,8 @@ class Enumerator(object):
                     e = next(queue)
                 except StopIteration:
                     break
+
+                self.stat_timer.check()
 
                 e = freshen_binders(e, context)
                 _consider(e, size, context, pool)
