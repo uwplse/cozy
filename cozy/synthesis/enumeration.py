@@ -125,13 +125,21 @@ def eviction_policy(new_exp : Exp, new_ctx : Context, old_exp : Exp, old_ctx : C
     raise ValueError(ordering)
 
 class ExpCache(object):
+    """Cache for expressions used by Enumerator instances."""
+
     def __init__(self):
+        """Construct an empty cache."""
         self.data = { } # (Pool, Context) -> (int -> [EnumeratedExp], Fingerprint -> [EnumeratedExp])
 
     def __len__(self):
+        """Return the total number of cached expressions across all contexts and pools."""
         return sum(sum(len(l) for l in d.values()) for d, _ in self.data.values())
 
-    def add(self, context, pool, enumerated_exp):
+    def add(self, context : Context, pool : Pool, enumerated_exp : EnumeratedExp):
+        """Insert an expression into the cache for a given context and pool.
+
+        This method will happily insert duplicate expressions into the cache.
+        """
         key = (pool, context)
         storage = self.data.get(key)
         if storage is None:
@@ -141,20 +149,28 @@ class ExpCache(object):
         by_size[enumerated_exp.size].append(enumerated_exp)
         by_fingerprint[enumerated_exp.fingerprint].append(enumerated_exp)
 
-    def remove(self, context, pool, enumerated_exp):
+    def remove(self, context : Context, pool : Pool, enumerated_exp : EnumeratedExp):
+        """Remove an expression from the cache for a given context and pool.
+
+        This method requires that the expression already exist in the cache.
+        Only one copy is removed if multiple copies are present.
+        """
         key = (pool, context)
         by_size, by_fingerprint = self.data[key]
         by_size[enumerated_exp.size].remove(enumerated_exp)
         by_fingerprint[enumerated_exp.fingerprint].remove(enumerated_exp)
 
-    def all_contexts(self):
+    def all_contexts(self) -> [Context]:
+        """Iterate over the unique contexts that the cache has seen."""
         return unique(context for pool, context in self.data.keys())
 
-    def find_expressions_of_size(self, context, pool, size) -> [EnumeratedExp]:
+    def find_expressions_of_size(self, context : Context, pool : Pool, size : int) -> [EnumeratedExp]:
+        """Iterate over all expressions of the given size in the given context and pool."""
         key = (pool, context)
         yield from self.data.get(key, ({}, {}))[0].get(size, ())
 
-    def find_equivalent_expressions(self, context, pool, fingerprint) -> [EnumeratedExp]:
+    def find_equivalent_expressions(self, context : Context, pool : Pool, fingerprint : Fingerprint) -> [EnumeratedExp]:
+        """Iterate over all expressions with the given fingerprint in the given context and pool."""
         key = (pool, context)
         yield from self.data.get(key, ({}, {}))[1].get(fingerprint, ())
 
