@@ -6,7 +6,7 @@ import functools
 
 from cozy.common import OrderedSet
 from cozy.target_syntax import *
-from cozy.syntax_tools import pprint, fresh_var, free_vars, free_funcs, all_exps, alpha_equivalent, mk_lambda
+from cozy.syntax_tools import pprint, fresh_var, free_vars, free_funcs, all_exps, alpha_equivalent, mk_lambda, map_value_func
 from cozy.contexts import Context
 from cozy.typecheck import is_collection, is_numeric, is_scalar
 from cozy.pools import Pool, RUNTIME_POOL
@@ -280,18 +280,6 @@ class DominantTerm(object):
         return self
     def __mul__(self, other):
         return DominantTerm(self.multiplier * other.multiplier, self.exponent + other.exponent)
-
-def map_value_func(e : Exp):
-    assert isinstance(e.type, TMap)
-    if isinstance(e, EMakeMap2):
-        return e.value_function
-    if isinstance(e, EStateVar):
-        return map_value_func(e.e)
-    if isinstance(e, ECond):
-        f1 = map_value_func(e.then_branch)
-        return ELambda(f1.arg,
-            ECond(e.cond, f1.body, map_value_func(e.else_branch).apply_to(f1.arg)).with_type(f1.body.type))
-    raise NotImplementedError(repr(e))
 
 def worst_case_cardinality(e : Exp) -> DominantTerm:
     assert is_collection(e.type)

@@ -1428,6 +1428,18 @@ def build_right_seq_stick(seq):
 
     return head
 
+def map_value_func(e : syntax.Exp):
+    assert isinstance(e.type, target_syntax.TMap)
+    if isinstance(e, target_syntax.EMakeMap2):
+        return e.value_function
+    if isinstance(e, target_syntax.EStateVar):
+        return map_value_func(e.e)
+    if isinstance(e, syntax.ECond):
+        f1 = map_value_func(e.then_branch)
+        return syntax.ELambda(f1.arg,
+            syntax.ECond(e.cond, f1.body, map_value_func(e.else_branch).apply_to(f1.arg)).with_type(f1.body.type))
+    raise NotImplementedError(repr(e))
+
 class Aeq(object):
     def __init__(self, e : syntax.Exp):
         self.e = e
