@@ -4,7 +4,7 @@ The key definition in this module is `Enumerator`, a class for enumerating
 expressions.
 """
 
-from collections import namedtuple
+from collections import namedtuple, defaultdict
 import itertools
 
 from cozy.common import pick_to_sum, OrderedSet, unique, make_random_access, StopException
@@ -65,6 +65,7 @@ def fingerprint_is_subset(fp1 : Fingerprint, fp2 : Fingerprint) -> bool:
 EnumeratedExp = namedtuple("EnumeratedExp", [
     "e",                # The expression
     "fingerprint",      # Its fingerprint
+    "size",             # The size at which the expression was first discovered
     ])
 
 LITERALS = (ETRUE, EFALSE, ZERO, ONE)
@@ -104,7 +105,7 @@ def _skip(e, size, context, pool, reason):
         print("skipping [{}]".format(reason))
     event("skipping [{}]".format(reason))
     task_end()
-def _evict(e, size, context, pool, better_exp):
+def _evict(e, size, context, pool, better_exp, better_exp_size):
     if _interesting(e, size, context, pool) and not verbose.value:
         print("evicting {}".format(pprint(e)))
     event("evicting {}".format(pprint(e)))
@@ -121,6 +122,40 @@ def eviction_policy(new_exp : Exp, new_ctx : Context, old_exp : Exp, old_ctx : C
     if ordering == Order.EQUAL:     return [old_exp]
     if ordering == Order.AMBIGUOUS: return [new_exp, old_exp]
     raise ValueError(ordering)
+
+class ExpCache(object):
+    def __init__(self):
+        self.data = { } # (Pool, Context) -> (int -> [EnumeratedExp], Fingerprint -> [EnumeratedExp])
+
+    def __len__(self):
+        return sum(sum(len(l) for l in d.values()) for d, _ in self.data.values())
+
+    def add(self, context, pool, enumerated_exp):
+        key = (pool, context)
+        storage = self.data.get(key)
+        if storage is None:
+            storage = (defaultdict(list), defaultdict(list))
+            self.data[key] = storage
+        by_size, by_fingerprint = storage
+        by_size[enumerated_exp.size].append(enumerated_exp)
+        by_fingerprint[enumerated_exp.fingerprint].append(enumerated_exp)
+
+    def remove(self, context, pool, enumerated_exp):
+        key = (pool, context)
+        by_size, by_fingerprint = self.data[key]
+        by_size[enumerated_exp.size].remove(enumerated_exp)
+        by_fingerprint[enumerated_exp.fingerprint].remove(enumerated_exp)
+
+    def all_contexts(self):
+        return unique(context for pool, context in self.data.keys())
+
+    def find_expressions_of_size(self, context, pool, size) -> [EnumeratedExp]:
+        key = (pool, context)
+        yield from self.data.get(key, ({}, {}))[0].get(size, ())
+
+    def find_equivalent_expressions(self, context, pool, fingerprint) -> [EnumeratedExp]:
+        key = (pool, context)
+        yield from self.data.get(key, ({}, {}))[1].get(fingerprint, ())
 
 class Enumerator(object):
     """Brute-force enumerator for expressions in order of AST size.
@@ -150,9 +185,9 @@ class Enumerator(object):
         """
         self.examples = list(examples)
         self.cost_model = cost_model
-        self.cache = { } # keys -> [exp]
-        self.seen = { }  # (ctx, pool, fp) -> frontier, i.e. [exp]
+        self.cache = ExpCache()
         self.in_progress = set()
+        self.complete = set()
         if check_wf is None:
             check_wf = lambda e, ctx, pool: True
         self.check_wf = check_wf
@@ -168,7 +203,7 @@ class Enumerator(object):
         self.do_eviction = do_eviction
 
     def cache_size(self):
-        return sum(len(v) for v in self.cache.values())
+        return len(self.cache)
 
     def _enumerate_core(self, context : Context, size : int, pool : Pool) -> [Exp]:
         """Build new expressions of the given size.
@@ -373,12 +408,9 @@ class Enumerator(object):
         for info in self.enumerate_with_info(context, size, pool):
             yield info.e
 
-    def known_contexts(self):
-        return unique(ctx for (ctx, pool, fp) in self.seen.keys())
-
     def canonical_context(self, context):
         # TODO: deduplicate based on examples, not alpha equivalence
-        for ctx in self.known_contexts():
+        for ctx in self.cache.all_contexts():
             if ctx != context and ctx.alpha_equivalent(context):
                 return ctx
         return context
@@ -394,6 +426,7 @@ class Enumerator(object):
             size    : size of expressions to enumerate
             pool    : expression pool to visit
         """
+
         canonical_context = self.canonical_context(context)
         if canonical_context is not context:
             print("adapting request: {} ---> {}".format(context, canonical_context))
@@ -401,24 +434,15 @@ class Enumerator(object):
                 yield info._replace(e=context.adapt(info.e, canonical_context))
             return
 
-        examples = context.instantiate_examples(self.examples)
-        if context.parent() is not None:
-            for info in self.enumerate_with_info(context.parent(), size, pool):
-                e = info.e
-                yield EnumeratedExp(
-                    e=e,
-                    fingerprint=fingerprint(e, examples))
-
         k = (pool, size, context)
-        res = self.cache.get(k)
-        if res is not None:
-            for e in res:
-                yield e
+        cache = self.cache
+
+        if k in self.complete:
+            yield from cache.find_expressions_of_size(context, pool, size)
         else:
+            examples = context.instantiate_examples(self.examples)
             assert k not in self.in_progress, "recursive enumeration?? {}".format(k)
             self.in_progress.add(k)
-            res = []
-            self.cache[k] = res
             queue = self._enumerate_core(context, size, pool)
             cost_model = self.cost_model
             while True:
@@ -429,10 +453,6 @@ class Enumerator(object):
                     e = next(queue)
                 except StopIteration:
                     break
-
-                fvs = free_vars(e)
-                if not belongs_in_context(fvs, context):
-                    continue
 
                 e = freshen_binders(e, context)
                 _consider(e, size, context, pool)
@@ -445,57 +465,44 @@ class Enumerator(object):
                 fp = fingerprint(e, examples)
 
                 # collect all expressions from parent contexts
-                with task("collecting prev exps", size=size, context=context, pool=pool_name(pool)):
-                    prev = []
-                    for sz in range(0, size+1):
-                        prev.extend(self.enumerate_with_info(context, sz, pool))
-                    prev = [ p.e for p in prev if p.fingerprint == fp ]
+                prev = list(cache.find_equivalent_expressions(context, pool, fp))
+                to_evict = []
 
-                if any(alpha_equivalent(e, p) for p in prev):
+                if any(e.type == prev_entry.e.type and alpha_equivalent(e, prev_entry.e) for prev_entry in prev):
                     _skip(e, size, context, pool, "duplicate")
                     should_keep = False
                 else:
                     # decide whether to keep this expression
                     should_keep = True
                     with task("comparing to cached equivalents"):
-                        for prev_exp in prev:
+                        for entry in prev:
+                            prev_exp = entry.e
                             event("previous: {}".format(pprint(prev_exp)))
                             to_keep = eviction_policy(e, context, prev_exp, context, pool, cost_model)
                             if e not in to_keep:
                                 _skip(e, size, context, pool, "preferring {}".format(pprint(prev_exp)))
                                 should_keep = False
                                 break
+                            if prev_exp not in to_keep:
+                                to_evict.append(entry)
+
+                assert not (to_evict and not should_keep)
 
                 if should_keep:
 
                     if self.do_eviction:
                         with task("evicting"):
-                            to_evict = []
-                            for (key, exps) in self.cache.items():
-                                (p, s, c) = key
-                                if p == pool and c == context:
-                                    for ee in exps:
-                                        if ee.fingerprint == fp:
-                                            event("considering eviction of {}".format(pprint(ee.e)))
-                                            to_keep = eviction_policy(e, context, ee.e, c, pool, cost_model)
-                                            if ee.e not in to_keep:
-                                                to_evict.append((key, ee))
-                            for key, ee in to_evict:
-                                (p, s, c) = key
-                                _evict(ee.e, s, c, pool, e)
-                                self.cache[key].remove(ee)
-                                self.seen[(c, p, fp)].remove(ee.e)
+                            for entry in to_evict:
+                                _evict(entry.e, entry.size, context, pool, e, size)
+                                cache.remove(context, pool, entry)
 
                     _accept(e, size, context, pool)
-                    seen_key = (context, pool, fp)
-                    if seen_key not in self.seen:
-                        self.seen[seen_key] = []
-                    self.seen[seen_key].append(e)
                     info = EnumeratedExp(
                         e=e,
-                        fingerprint=fp)
-                    res.append(info)
+                        fingerprint=fp,
+                        size=size)
                     yield info
+                    cache.add(context, pool, info)
 
                     if size == 0:
                         with task("accelerating"):
@@ -505,3 +512,4 @@ class Enumerator(object):
                                 queue = itertools.chain(to_try, queue)
 
             self.in_progress.remove(k)
+            self.complete.add(k)
