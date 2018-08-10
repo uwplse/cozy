@@ -9,13 +9,14 @@ import itertools
 
 from cozy.common import find_one
 from cozy.target_syntax import *
-from cozy.syntax_tools import fresh_var, free_vars, free_funcs, mk_lambda, strip_EStateVar, alpha_equivalent, compose, nnf
+from cozy.syntax_tools import fresh_var, free_vars, free_funcs, mk_lambda, strip_EStateVar, alpha_equivalent, compose, nnf, map_value_func
 from cozy.typecheck import is_collection, retypecheck
 from cozy.contexts import Context, shred, replace
 from cozy.pools import Pool, RUNTIME_POOL, STATE_POOL
 from cozy.structures.heaps import TMinHeap, TMaxHeap, EMakeMinHeap, EMakeMaxHeap, EHeapPeek2
 from cozy.evaluation import construct_value, uneval, eval
 from cozy.opts import Option
+from cozy.wf import repair_well_formedness
 
 accelerate = Option("acceleration-rules", bool, True,
     description="Enable rewrite rules that try to directly optimize "
@@ -119,6 +120,10 @@ def _try_optimize(e, context, pool):
             for ee in optimize_map(e.e, e.transform_function, args=args):
                 yield _check(ee, context, RUNTIME_POOL)
 
+        if isinstance(e, EMapGet):
+            ee = inline_mapget(e, context)
+            yield _check(ee, context, RUNTIME_POOL)
+
 def _check(e, context, pool):
     """
     When Cozy chokes on malformed expressions, bad acceleration rules are often
@@ -136,6 +141,20 @@ def histogram(xs : Exp) -> Exp:
             ELen(EFilter(xs,
                 mk_lambda(elem_type, lambda y:
                     EEq(x, y))).with_type(xs.type)))).with_type(TMap(elem_type, INT))
+
+def inline_mapget(e : EMapGet, context : Context) -> Exp:
+    try:
+        keys = mapkeys(e.map)
+        cond = optimized_in(e.key, keys)
+        f = map_value_func(e.map)
+        return optimized_cond(
+            cond,
+            repair_well_formedness(f.apply_to(e.key), context),
+            construct_value(e.type))
+    except:
+        pass
+    print("warning: unable to inline {}".format(e))
+    return e
 
 def optimized_count(x, xs):
     if isinstance(xs, EStateVar):
@@ -418,7 +437,10 @@ def optimized_get_field(e, f, args):
 
 def mapkeys(m):
     if isinstance(m, EMakeMap2):
-        return m.keys
+        return m.e
+    if isinstance(m, EStateVar):
+        keys = mapkeys(m.e)
+        return EStateVar(keys).with_type(keys.type)
     return EMapKeys(m).with_type(TBag(m.type.k))
 
 def map_values_multi(m, f):
