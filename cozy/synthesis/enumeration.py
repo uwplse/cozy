@@ -497,10 +497,11 @@ class Enumerator(object):
                     res.append(info)
                     yield info
 
-                    with task("accelerating"):
-                        to_try = make_random_access(self.heuristics(e, context, pool))
-                        if to_try:
-                            event("trying {} accelerations of {}".format(len(to_try), pprint(e)))
-                            queue = itertools.chain(to_try, queue)
+                    if size == 0:
+                        with task("accelerating"):
+                            to_try = make_random_access(self.heuristics(e, context, pool))
+                            if to_try:
+                                event("trying {} accelerations of {}".format(len(to_try), pprint(e)))
+                                queue = itertools.chain(to_try, queue)
 
             self.in_progress.remove(k)
