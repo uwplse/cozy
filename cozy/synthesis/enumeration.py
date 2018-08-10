@@ -4,7 +4,7 @@ The key definition in this module is `Enumerator`, a class for enumerating
 expressions.
 """
 
-from collections import namedtuple, defaultdict
+from collections import namedtuple, defaultdict, OrderedDict
 import datetime
 import itertools
 
@@ -129,7 +129,7 @@ class ExpCache(object):
 
     def __init__(self):
         """Construct an empty cache."""
-        self.data = { } # (Pool, Context) -> (int -> [EnumeratedExp], Fingerprint -> [EnumeratedExp])
+        self.data = OrderedDict() # (Pool, Context) -> (int -> [EnumeratedExp], Fingerprint -> [EnumeratedExp])
 
     def __len__(self):
         """Return the total number of cached expressions across all contexts and pools."""
