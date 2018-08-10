@@ -10,7 +10,7 @@ import itertools
 from fractions import Fraction
 
 from cozy.target_syntax import *
-from cozy.syntax_tools import pprint, free_vars, free_vars_and_funcs, purify
+from cozy.syntax_tools import pprint, free_vars, free_funcs, purify
 from cozy.common import FrozenDict, OrderedSet, extend, unique
 from cozy.typecheck import is_numeric, is_collection
 from cozy.structures import extension_handler
@@ -50,13 +50,15 @@ def eval_bulk(
     the same expression.
     """
 
-    e = purify(e)
     if not envs:
         return []
+
+    e = purify(e)
     ops = []
-    vars = OrderedSet(free_vars_and_funcs(e))
     types = { v.id : v.type for v in free_vars(e) }
+    vars = OrderedSet(itertools.chain(types.keys(), free_funcs(e).keys()))
     vmap = { v : i for (i, v) in enumerate(vars) }
+
     try:
         envs = [ [(env.get(v, mkval(types[v])) if (use_default_values_for_undefined_vars and v in types) else env[v]) for v in vars] for env in envs ]
     except KeyError:
