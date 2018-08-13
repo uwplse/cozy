@@ -93,8 +93,8 @@ class Context(object):
         Determine whether an expression containing the given free variables is
         legal in this context.
         """
-        vs = {v for (v, pool) in self.vars()}
-        return all(v in vs for v in fvs)
+        vs = {(v, v.type) for (v, pool) in self.vars()}
+        return all((v, v.type) in vs for v in fvs)
 
     def instantiate_examples(self, examples : [dict]) -> [dict]:
         """
