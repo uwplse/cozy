@@ -428,7 +428,7 @@ def _compile(e, env : {str:int}, out):
     elif isinstance(e, ENum):
         s = e.val
         if e.type == FLOAT:
-            s = Fraction(s)
+            s = Fraction(str(s))
         def push_num(stk):
             stk.append(s)
         out.append(push_num)
