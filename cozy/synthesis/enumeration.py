@@ -258,8 +258,9 @@ class Enumerator(object):
                 if p == pool:
                     yield v
             for (e, ctx, p) in self.hints:
-                if p == pool and ctx.alpha_equivalent(context):
-                    yield context.adapt(e, ctx)
+                fvs = free_vars(e)
+                if p == pool and ctx.alpha_equivalent(context.generalize(fvs)):
+                    yield context.adapt(e, ctx, e_fvs=fvs)
             return
 
         # load all smaller expressions in this context and pool

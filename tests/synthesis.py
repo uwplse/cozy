@@ -147,6 +147,41 @@ class TestEnumeration(unittest.TestCase):
 
         assert enumerator.state_enumerations == 1
 
+    def test_hint_instantation(self):
+
+        x = EVar("x").with_type(INT)
+        y = EVar("y").with_type(INT)
+        z = EVar("z").with_type(INT)
+        hint = ECall("f", (x,)).with_type(INT)
+        context = UnderBinder(
+            RootCtx(args=[x]),
+            v=y,
+            bag=ESingleton(x).with_type(TBag(x.type)),
+            bag_pool=RUNTIME_POOL)
+        cost_model = CostModel()
+
+        f = lambda a: a + 1
+        enumerator = Enumerator(
+            examples=[{"x": 1, "f": f}, {"x": 100, "f": f}],
+            hints=[(hint, context, RUNTIME_POOL)],
+            cost_model=cost_model)
+
+        results = []
+        for ctx in (
+                context,
+                context.parent(),
+                UnderBinder(context, v=z, bag=ESingleton(y).with_type(TBag(y.type)), bag_pool=RUNTIME_POOL),
+                UnderBinder(context.parent(), v=z, bag=ESingleton(x).with_type(TBag(y.type)), bag_pool=RUNTIME_POOL),
+                UnderBinder(context.parent(), v=y, bag=ESingleton(ONE).with_type(INT_BAG), bag_pool=RUNTIME_POOL)):
+            print("-" * 30)
+            found = False
+            for e in enumerator.enumerate(ctx, 0, RUNTIME_POOL):
+                print(" -> {}".format(pprint(e)))
+                found = found or alpha_equivalent(e, hint)
+            print("found? {}".format(found))
+            results.append(found)
+
+        assert all(results)
 
 class TestSpecificationSynthesis(unittest.TestCase):
 
