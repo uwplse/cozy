@@ -3,7 +3,7 @@
 from cozy.common import typechecked
 from cozy.target_syntax import *
 from cozy.solver import valid
-from cozy.syntax_tools import pprint, enumerate_fragments, shallow_copy, inline_calls, subst
+from cozy.syntax_tools import pprint, enumerate_fragments, shallow_copy, inline_calls, subst, alpha_equivalent
 from cozy.handle_tools import reachable_handles_at_method, implicit_handle_assumptions
 from cozy.state_maintenance import mutate
 from cozy.opts import Option
@@ -39,9 +39,10 @@ def check_ops_preserve_invariants(spec : Spec):
         for a in spec.assumptions:
             print("Checking that {} preserves {}...".format(m.name, pprint(a)))
             a_post_delta = mutate(a, m.body)
-            assumptions = list(m.assumptions) + list(spec.assumptions)
-            if not valid(EImplies(EAll(assumptions), a_post_delta)):
-                res.append("{.name!r} may not preserve invariant {}".format(m, pprint(a)))
+            if not alpha_equivalent(a, a_post_delta):
+                assumptions = list(m.assumptions) + list(spec.assumptions)
+                if not valid(EImplies(EAll(assumptions), a_post_delta)):
+                    res.append("{.name!r} may not preserve invariant {}".format(m, pprint(a)))
     return res
 
 def check_the_wf(spec : Spec):
