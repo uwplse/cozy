@@ -125,7 +125,7 @@ class Context(object):
         """
         raise NotImplementedError()
 
-    def adapt(self, e : Exp, ctx) -> Exp:
+    def adapt(self, e : Exp, ctx, e_fvs : {EVar} = None) -> Exp:
         """
         If expression `e` is legal in context `ctx` and this context is
         alpha-equivalent to `ctx`, produce an expression equivalent to `e` but
@@ -179,7 +179,7 @@ class RootCtx(Context):
         return examples
     def alpha_equivalent(self, other):
         return self == other
-    def adapt(self, e : Exp, ctx) -> Exp:
+    def adapt(self, e : Exp, ctx, e_fvs=None) -> Exp:
         if self == ctx:
             return e
         raise Exception("cannot adapt from {} to {}".format(ctx, self))
@@ -246,13 +246,18 @@ class UnderBinder(Context):
         if not self._parent.alpha_equivalent(other._parent):
             return False
         return alpha_equivalent(self.bag, self._parent.adapt(other.bag, other._parent))
-    def adapt(self, e : Exp, ctx) -> Exp:
+    def adapt(self, e : Exp, ctx, e_fvs=None) -> Exp:
         if self == ctx:
             return e
-        if self.alpha_equivalent(ctx):
-            e = self._parent.adapt(e, ctx._parent)
-            return subst(e, { ctx.var.id : self.var })
-        return self._parent.adapt(e, ctx)
+        if e_fvs is None:
+            e_fvs = free_vars(e)
+        if isinstance(ctx, UnderBinder):
+            if ctx.var not in e_fvs:
+                return self.adapt(e, ctx.parent(), e_fvs=e_fvs)
+            if alpha_equivalent(self.bag, self._parent.adapt(ctx.bag, ctx._parent)):
+                e = self._parent.adapt(e, ctx._parent, e_fvs=e_fvs)
+                return subst(e, { ctx.var.id : self.var })
+        return self._parent.adapt(e, ctx, e_fvs=e_fvs)
     def path_conditions(self):
         pcs = self._parent.path_conditions()
         # pcs = [pc for pc in self._parent.path_conditions() if self.var not in free_vars(pc)]
