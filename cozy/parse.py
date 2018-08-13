@@ -328,6 +328,7 @@ def make_parser():
                | KW_NOT exp
                | OP_MINUS exp
                | exp KW_IN exp
+               | KW_LET OP_OPEN_BRACE WORD OP_ASSIGN exp OP_CLOSE_BRACE KW_IN exp
                | KW_UNIQUE exp
                | KW_DISTINCT exp
                | KW_EMPTY exp
@@ -391,6 +392,8 @@ def make_parser():
         else:
             if p[2] == "?":
                 p[0] = syntax.ECond(p[1], p[3], p[5])
+            elif p[1] == "let":
+                p[0] = syntax.ELet(p[5], syntax.ELambda(syntax.EVar(p[3]), p[8]))
             elif p[2] == "[":
                 if isinstance(p[3], syntax.Exp):
                     p[0] = syntax.EListGet(p[1], p[3])
