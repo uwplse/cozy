@@ -26,7 +26,7 @@ from cozy.target_syntax import (
     EFlatMap, EFilter, EMakeMap2, EStateVar,
     EDropFront, EDropBack)
 from cozy.typecheck import is_collection, is_scalar
-from cozy.syntax_tools import subst, pprint, free_vars, fresh_var, alpha_equivalent, strip_EStateVar, freshen_binders, wrap_naked_statevars, break_conj
+from cozy.syntax_tools import subst, pprint, free_vars, fresh_var, alpha_equivalent, strip_EStateVar, freshen_binders, wrap_naked_statevars, break_conj, inline_lets
 from cozy.wf import exp_wf
 from cozy.common import No, OrderedSet, unique, OrderedSet, StopException
 from cozy.solver import valid, solver_for_context, ModelCachingSolver
@@ -114,6 +114,7 @@ def improve(
             cost_model=cost_model,
             ops=ops))
 
+    target = inline_lets(target)
     target = freshen_binders(target, context)
     assumptions = freshen_binders(assumptions, context)
 

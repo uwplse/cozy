@@ -1740,6 +1740,12 @@ def inline_calls(spec, target=None):
     rewriter = CallInliner()
     return rewriter.visit(target)
 
+class LetInliner(BottomUpRewriter):
+    def visit_ELet(self, e):
+        body = subst(e.body_function.body, {e.body_function.arg.id : e.e})
+        return self.visit(body)
+inline_lets = LetInliner().visit
+
 def get_modified_var(stm):
     """
     Given a statement, returns a tuple:
