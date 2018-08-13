@@ -15,6 +15,7 @@ import itertools
 import json
 import functools
 from enum import Enum
+from fractions import Fraction
 
 from cozy.common import typechecked
 from cozy import common
@@ -611,7 +612,7 @@ def free_vars(exp, counts=False):
             stk.extend(reversed(x.children()))
         elif isinstance(x, list) or isinstance(x, tuple):
             stk.extend(reversed(x))
-        elif isinstance(x, (str, int, float)):
+        elif isinstance(x, (str, int, float, Fraction)):
             continue
         else:
             raise NotImplementedError(repr(x))

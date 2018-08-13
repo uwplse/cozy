@@ -4,7 +4,7 @@ from cozy.target_syntax import *
 from cozy.syntax_tools import *
 from cozy.value_types import Bag, Map, Handle, compare_values, values_equal, EQ
 from cozy.structures.heaps import TMinHeap
-from cozy.evaluation import eval
+from cozy.evaluation import eval, uneval
 from cozy.typecheck import retypecheck
 
 zero = ENum(0).with_type(INT)
@@ -68,3 +68,7 @@ class TestEvaluation(unittest.TestCase):
     def test_bag_equality_with_tuple(self):
         assert (0, 1, 2) == Bag((0, 1, 2))
         assert Bag((0, 1, 2)) == (0, 1, 2)
+
+    def test_makerecord(self):
+        e = EMakeRecord((('orderkey', ENum(0).with_type(TInt())), ('custkey', ENum(0).with_type(TInt())), ('orderstatus', ENative(ENum(0).with_type(TInt())).with_type(TNative('char'))), ('totalprice', ENum(0).with_type(TFloat())), ('orderdate', ENative(ENum(0).with_type(TInt())).with_type(TNative('uint64_t'))), ('orderpriority', EStr('').with_type(TString())), ('clerk', EStr('').with_type(TString())), ('shippriority', ENum(0).with_type(TInt())), ('comment', EStr('').with_type(TString())))).with_type(TRecord((('orderkey', TInt()), ('custkey', TInt()), ('orderstatus', TNative('char')), ('totalprice', TFloat()), ('orderdate', TNative('uint64_t')), ('orderpriority', TString()), ('clerk', TString()), ('shippriority', TInt()), ('comment', TString()))))
+        uneval(e.type, eval(e, {}))
