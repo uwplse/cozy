@@ -279,7 +279,7 @@ class UnderBinder(Context):
     def __eq__(self, other):
         return isinstance(other, UnderBinder) and (self._parent, self.var, self.bag, self.pool) == (other._parent, other.var, other.bag, other.pool)
     def __repr__(self):
-        return "UnderBinder(parent={}, v={}, bag={}, bag_pool={})".format(self._parent, self.var, self.bag, self.pool)
+        return "UnderBinder(parent={!r}, v={!r}, bag={!r}, bag_pool={!r})".format(self._parent, self.var, self.bag, self.pool)
     def __str__(self):
         return "{} in {}, {}".format(self.var.id, pprint(self.bag), self._parent)
 
