@@ -343,6 +343,8 @@ class _Shredder(Visitor):
         return ()
     def visit_float(self, i):
         return ()
+    def visit_Fraction(self, i):
+        return ()
 
 def shred(e : Exp, context : Context, pool : Pool = RUNTIME_POOL) -> [(Exp, Context, Pool)]:
     """Shred `e` into a list of all its subexpressions.

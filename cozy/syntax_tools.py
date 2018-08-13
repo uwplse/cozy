@@ -1286,6 +1286,8 @@ def alpha_equivalent(e1 : syntax.Exp, e2 : syntax.Exp) -> bool:
             return i1 == i2
         def visit_float(self, f1, f2):
             return f1 == f2
+        def visit_Fraction(self, f1, f2):
+            return f1 == f2
         def visit_tuple(self, t1, t2):
             return len(t1) == len(t2) and all(self.visit(x, y) for x, y in zip(t1, t2))
         def visit_list(self, t1, t2):
