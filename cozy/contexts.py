@@ -153,7 +153,7 @@ class Context(object):
         raise NotImplementedError()
 
 class RootCtx(Context):
-    def __init__(self, state_vars : [Exp], args : [Exp], funcs : {str:TFunc} = None):
+    def __init__(self, state_vars : [Exp] = (), args : [Exp] = (), funcs : {str:TFunc} = None):
         """Construct a root context.
 
         Parameters:
