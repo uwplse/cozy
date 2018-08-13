@@ -498,17 +498,18 @@ class Enumerator(object):
                 else:
                     # decide whether to keep this expression
                     should_keep = True
-                    with task("comparing to cached equivalents"):
-                        for entry in prev:
-                            prev_exp = entry.e
-                            event("previous: {}".format(pprint(prev_exp)))
-                            to_keep = eviction_policy(e, context, prev_exp, context, pool, cost_model)
-                            if e not in to_keep:
-                                _skip(e, size, context, pool, "preferring {}".format(pprint(prev_exp)))
-                                should_keep = False
-                                break
-                            if prev_exp not in to_keep:
-                                to_evict.append(entry)
+                    if prev:
+                        with task("comparing to cached equivalents"):
+                            for entry in prev:
+                                prev_exp = entry.e
+                                event("previous: {}".format(pprint(prev_exp)))
+                                to_keep = eviction_policy(e, context, prev_exp, context, pool, cost_model)
+                                if e not in to_keep:
+                                    _skip(e, size, context, pool, "preferring {}".format(pprint(prev_exp)))
+                                    should_keep = False
+                                    break
+                                if prev_exp not in to_keep:
+                                    to_evict.append(entry)
 
                 assert not (to_evict and not should_keep)
 
