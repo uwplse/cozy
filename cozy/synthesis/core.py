@@ -187,7 +187,7 @@ def improve(
                     raise Exception("got a duplicate example")
                 # a. if incorrect: add example, restart
                 examples.append(counterexample)
-                event("new example: {!r}".format(counterexample))
+                print("new example: {!r}".format(counterexample))
                 print("wrong; restarting with {} examples".format(len(examples)))
                 break
             else:
