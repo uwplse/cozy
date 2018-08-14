@@ -2,7 +2,6 @@
 
 from collections import OrderedDict
 from enum import Enum
-import functools
 
 from cozy.common import OrderedSet
 from cozy.target_syntax import *
@@ -15,6 +14,7 @@ from cozy.evaluation import eval, eval_bulk
 from cozy.structures import extension_handler
 from cozy.logging import task, event
 from cozy.state_maintenance import mutate
+from cozy.polynomials import Polynomial, DominantTerm
 from cozy.opts import Option
 
 consider_maintenance_cost = Option("consider-maintenance-cost", bool, False, description="Experimental option that lets Cozy use ops for the cost model. Note that Cozy will become much slower with this option on.")
@@ -253,35 +253,7 @@ def hash_cost(e):
 def comparison_cost(e1, e2):
     return ESum([storage_size(e1), storage_size(e2)])
 
-@functools.total_ordering
-class DominantTerm(object):
-    """A term of the form c*n^e for some unknown n.
-
-    Instances of this class can be added, multiplied, and compared.  A term
-    with a higher exponent is always greater than one with a lower exponent.
-    """
-    __slots__ = ("multiplier", "exponent")
-    def __init__(self, multiplier, exponent):
-        self.multiplier = multiplier
-        self.exponent = exponent
-    def __eq__(self, other):
-        return self.multiplier == other.multiplier and self.exponent == other.exponent
-    def __lt__(self, other):
-        return (self.exponent, self.multiplier) < (other.exponent, other.multiplier)
-    def __str__(self):
-        return "{}n^{}".format(self.multiplier, self.exponent)
-    def __repr__(self):
-        return "DominantTerm({}, {})".format(self.multiplier, self.exponent)
-    def __add__(self, other):
-        if other.exponent == self.exponent:
-            return DominantTerm(self.multiplier + other.multiplier, self.exponent)
-        if other.exponent > self.exponent:
-            return other
-        return self
-    def __mul__(self, other):
-        return DominantTerm(self.multiplier * other.multiplier, self.exponent + other.exponent)
-
-def worst_case_cardinality(e : Exp) -> DominantTerm:
+def worst_case_cardinality(e : Exp) -> Polynomial:
     assert is_collection(e.type)
     while isinstance(e, EFilter) or isinstance(e, EMap) or isinstance(e, EFlatMap) or isinstance(e, EMakeMap2) or isinstance(e, EStateVar) or (isinstance(e, EUnaryOp) and e.op == UOp.Distinct) or isinstance(e, EListSlice):
         e = e.e
@@ -294,16 +266,16 @@ def worst_case_cardinality(e : Exp) -> DominantTerm:
     if isinstance(e, ECond):
         return max(worst_case_cardinality(e.then_branch), worst_case_cardinality(e.else_branch))
     if isinstance(e, EEmptyList):
-        return DominantTerm.ZERO
+        return Polynomial.ZERO
     if isinstance(e, ESingleton):
-        return DominantTerm.ONE
+        return Polynomial.ONE
     if isinstance(e, EMapGet):
         try:
             return worst_case_cardinality(map_value_func(e.map).body)
         except NotImplementedError:
             print("WARNING: unable to peer inside map {}".format(pprint(e.map)))
-            return DominantTerm.N
-    return DominantTerm.N
+            return Polynomial.N
+    return Polynomial.N
 
 def _maintenance_cost(e : Exp, op : Op, freebies : [Exp] = []):
     """Determines the cost of maintaining the expression when there are
@@ -373,7 +345,6 @@ def maintenance_cost(e : Exp, op : Op, freebies : [Exp] = []):
     """This method calulates the result over all expressions that are EStateVar """
     return ESum([_maintenance_cost(e=x.e, op=op, freebies=freebies) for x in all_exps(e) if isinstance(x, EStateVar)])
 
-
 # These require walking over the entire collection.
 # Some others (e.g. "exists" or "empty") just look at the first item.
 LINEAR_TIME_UOPS = {
@@ -382,12 +353,8 @@ LINEAR_TIME_UOPS = {
     UOp.All, UOp.Any,
     UOp.Reversed }
 
-DominantTerm.ZERO = DominantTerm(0, 0)
-DominantTerm.ONE  = DominantTerm(1, 0)
-DominantTerm.N    = DominantTerm(1, 1)
-
-def asymptotic_runtime(e : Exp) -> DominantTerm:
-    res = DominantTerm.ZERO
+def polynomial_runtime(e : Exp) -> Polynomial:
+    res = Polynomial.ZERO
     stk = [e]
     while stk:
         e = stk.pop()
@@ -399,16 +366,16 @@ def asymptotic_runtime(e : Exp) -> DominantTerm:
         if isinstance(e, ELambda):
             e = e.body
         if isinstance(e, EFilter):
-            res += worst_case_cardinality(e.e) * asymptotic_runtime(e.predicate) + asymptotic_runtime(e.e)
+            res += worst_case_cardinality(e.e) * polynomial_runtime(e.predicate) + polynomial_runtime(e.e)
             continue
         if isinstance(e, EArgMin) or isinstance(e, EArgMax):
-            res += worst_case_cardinality(e.e) * asymptotic_runtime(e.key_function) + asymptotic_runtime(e.e)
+            res += worst_case_cardinality(e.e) * polynomial_runtime(e.key_function) + polynomial_runtime(e.e)
             continue
         if isinstance(e, EMap) or isinstance(e, EFlatMap):
-            res += worst_case_cardinality(e.e) * asymptotic_runtime(e.transform_function) + asymptotic_runtime(e.e)
-        res += DominantTerm.ONE
+            res += worst_case_cardinality(e.e) * polynomial_runtime(e.transform_function) + polynomial_runtime(e.e)
+        res += Polynomial.ONE
         if isinstance(e, EMakeMap2):
-            res += worst_case_cardinality(e.e) * asymptotic_runtime(e.value_function)
+            res += worst_case_cardinality(e.e) * polynomial_runtime(e.value_function)
         if isinstance(e, EBinOp) and e.op == BOp.In:
             res += worst_case_cardinality(e.e2)
         if isinstance(e, EBinOp) and e.op == "-" and is_collection(e.type):
@@ -416,12 +383,16 @@ def asymptotic_runtime(e : Exp) -> DominantTerm:
         if isinstance(e, EUnaryOp) and e.op in LINEAR_TIME_UOPS:
             res += worst_case_cardinality(e.e)
         if isinstance(e, ECond):
-            res += max(asymptotic_runtime(e.then_branch), asymptotic_runtime(e.else_branch))
+            res += max(polynomial_runtime(e.then_branch), polynomial_runtime(e.else_branch))
             stk.append(e.cond)
             continue
         if isinstance(e, EStateVar):
             continue
         stk.extend(e.children())
+    return res
+
+def asymptotic_runtime(e : Exp) -> DominantTerm:
+    res = polynomial_runtime(e).largest_term()
     if res.exponent == 0:
         return DominantTerm.ONE
     return res
