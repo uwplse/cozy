@@ -491,20 +491,23 @@ def _simple_filter(xs : Exp, p : ELambda, args : {EVar}):
                 yielded = True
                 yield EBinOp(e1, xs.op, e2).with_type(xs.type)
     if isinstance(p.body, EBinOp) and p.body.op == "==":
-        fvs2 = free_vars(p.body.e2)
-        fvs1 = free_vars(p.body.e1)
-        if p.arg in fvs1 and not any(a in fvs1 for a in args) and p.arg not in fvs2 and isinstance(xs, EStateVar):
-            k = fresh_var(p.body.e1.type)
-            e = EMapGet(
-                EStateVar(
-                    EMakeMap2(
-                        EMap(xs.e, ELambda(p.arg, p.body.e1)),
-                        ELambda(k, EFilter(xs.e, ELambda(p.arg, EEq(p.body.e1, k)))))),
-                p.body.e2)
-            res = retypecheck(e)
-            assert res
-            yielded = True
-            yield e
+        e1 = p.body.e1
+        e2 = p.body.e2
+        fvs2 = free_vars(e2)
+        fvs1 = free_vars(e1)
+        for (e1, fvs1), (e2, fvs2) in itertools.permutations([(e1, fvs1), (e2, fvs2)]):
+            if p.arg in fvs1 and not any(a in fvs1 for a in args) and p.arg not in fvs2 and isinstance(xs, EStateVar):
+                k = fresh_var(e1.type)
+                e = EMapGet(
+                    EStateVar(
+                        EMakeMap2(
+                            EMap(xs.e, ELambda(p.arg, e1)),
+                            ELambda(k, EFilter(xs.e, ELambda(p.arg, EEq(e1, k)))))),
+                    e2)
+                res = retypecheck(e)
+                assert res
+                yielded = True
+                yield e
     if not yielded:
         yield EFilter(xs, p).with_type(xs.type)
 
