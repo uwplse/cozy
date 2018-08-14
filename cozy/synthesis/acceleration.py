@@ -497,6 +497,12 @@ def _simple_filter(xs : Exp, p : ELambda, args : {EVar}):
         fvs1 = free_vars(e1)
         for (e1, fvs1), (e2, fvs2) in itertools.permutations([(e1, fvs1), (e2, fvs2)]):
             if p.arg in fvs1 and not any(a in fvs1 for a in args) and p.arg not in fvs2 and isinstance(xs, EStateVar):
+                if e1 == p.arg:
+                    yield optimized_cond(
+                        optimized_in(e2, xs),
+                        ESingleton(e2).with_type(xs.type),
+                        EEmptyList().with_type(xs.type))
+
                 k = fresh_var(e1.type)
                 e = EMapGet(
                     EStateVar(
