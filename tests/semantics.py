@@ -25,7 +25,7 @@ class SemanticsTests(unittest.TestCase):
             print(" ---> {!r}".format(r2))
         assert satisfy(EAll([
             assumptions,
-            ENot(EBinOp(e1, op, e2).with_type(BOOL))]), model_callback=dbg) is None
+            ENot(EBinOp(e1, op, e2).with_type(BOOL))]), model_callback=dbg, validate_model=True) is None
 
     def test_distinct_mapkeys(self):
         xs = EVar("xs").with_type(INT_BAG)

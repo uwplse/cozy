@@ -52,10 +52,10 @@ class Map(object):
     def items(self):
         yield from self._items
     def keys(self):
-        for (k, v) in reversed(self._items):
+        for (k, v) in self.items():
             yield k
     def values(self):
-        for (k, v) in self._items:
+        for (k, v) in self.items():
             yield v
     def _hashable(self):
         return (self.default,) + tuple(sorted(self._items))

@@ -679,7 +679,7 @@ def _compile(e, env : {str:int}, out):
         default = mkval(e.type.v)
         def make_map(stk):
             res = Map(e.type, default)
-            for (k, v) in reversed(list(stk.pop())):
+            for (k, v) in list(stk.pop()):
                 res[k] = v
             stk.append(res)
         out.append(make_map)

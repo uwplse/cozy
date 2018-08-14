@@ -72,3 +72,20 @@ class TestEvaluation(unittest.TestCase):
     def test_makerecord(self):
         e = EMakeRecord((('orderkey', ENum(0).with_type(TInt())), ('custkey', ENum(0).with_type(TInt())), ('orderstatus', ENative(ENum(0).with_type(TInt())).with_type(TNative('char'))), ('totalprice', ENum(0).with_type(TFloat())), ('orderdate', ENative(ENum(0).with_type(TInt())).with_type(TNative('uint64_t'))), ('orderpriority', EStr('').with_type(TString())), ('clerk', EStr('').with_type(TString())), ('shippriority', ENum(0).with_type(TInt())), ('comment', EStr('').with_type(TString())))).with_type(TRecord((('orderkey', TInt()), ('custkey', TInt()), ('orderstatus', TNative('char')), ('totalprice', TFloat()), ('orderdate', TNative('uint64_t')), ('orderpriority', TString()), ('clerk', TString()), ('shippriority', TInt()), ('comment', TString()))))
         uneval(e.type, eval(e, {}))
+
+    def test_distinct_order(self):
+        env = {
+            "xs": Bag([0, 1, 0]),
+        }
+        e = EUnaryOp(UOp.Distinct, EVar("xs").with_type(INT_BAG)).with_type(INT_BAG)
+        self.assertEqual(eval(e, env), Bag([0, 1]))
+
+    def test_map_keys1(self):
+        m = Map(TMap(INT, INT), 0, [(0, 1), (1, 2)])
+        ks = list(m.keys())
+        self.assertEqual(ks, [0, 1])
+
+    def test_map_keys2(self):
+        m = Map(TMap(INT, INT), 0, [(0, 1), (1, 2), (0, 3)])
+        ks = list(m.keys())
+        self.assertEqual(ks, [0, 1])
