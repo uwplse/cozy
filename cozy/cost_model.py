@@ -517,6 +517,9 @@ def debug_comparison(cm : CostModel, e1 : Exp, e2 : Exp, context : Context):
     print("  e1 = {}".format(pprint(e1)))
     print("  e2 = {}".format(pprint(e2)))
     print("  res = {}".format(cm.compare(e1, e2, context=context, pool=RUNTIME_POOL)))
+    print("-" * 20 + " {} freebies...".format(len(cm.freebies)))
+    for freebie in cm.freebies:
+        print("  * {}".format(pprint(freebie)))
     print("-" * 20 + " {} ops...".format(len(cm.ops)))
     for o in cm.ops:
         print(pprint(o))

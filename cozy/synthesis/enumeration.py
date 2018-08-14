@@ -492,7 +492,7 @@ class Enumerator(object):
                     # decide whether to keep this expression
                     should_keep = True
                     if prev:
-                        with task("comparing to cached equivalents"):
+                        with task("comparing to cached equivalents", count=len(prev)):
                             for entry in prev:
                                 prev_exp = entry.e
                                 event("previous: {}".format(pprint(prev_exp)))
@@ -508,8 +508,8 @@ class Enumerator(object):
 
                 if should_keep:
 
-                    if self.do_eviction:
-                        with task("evicting"):
+                    if self.do_eviction and to_evict:
+                        with task("evicting", count=to_evict):
                             for entry in to_evict:
                                 _evict(entry.e, entry.size, context, pool, e, size)
                                 cache.remove(context, pool, entry)
