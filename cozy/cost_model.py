@@ -17,7 +17,13 @@ from cozy.state_maintenance import mutate
 from cozy.polynomials import Polynomial, DominantTerm
 from cozy.opts import Option
 
-consider_maintenance_cost = Option("consider-maintenance-cost", bool, False, description="Experimental option that lets Cozy use ops for the cost model. Note that Cozy will become much slower with this option on.")
+cost_model_selection = Option("cost-model", int, 2,
+    description="Cost model to use.  "
+        + "Higher numbers are much slower to evaluate but often yield better results.  "
+        + "0: optimize for expression size.  "
+        + "1: optimize for asymptotic runtime.  "
+        + "2: optimize for a mix of asymptotic runtime, storage size, and exact runtime.  "
+        + "3: optimize for a mix of asymptotic runtime and state maintenance cost.")
 
 class Order(Enum):
     EQUAL     = 0
@@ -163,7 +169,28 @@ class CostModel(object):
 
     def compare(self, e1 : Exp, e2 : Exp, context : Context, pool : Pool) -> Order:
         with task("compare costs", context=context):
-            if consider_maintenance_cost.value:
+            selection = cost_model_selection.value
+            if selection == 0:
+                return order_objects(e1.size(), e2.size())
+            if selection == 1:
+                if pool == RUNTIME_POOL:
+                    return prioritized_order(
+                        lambda: order_objects(polynomial_runtime(e1), polynomial_runtime(e2)),
+                        lambda: order_objects(e1.size(), e2.size()))
+                else:
+                    return order_objects(e1.size(), e2.size())
+            if selection == 2:
+                if pool == RUNTIME_POOL:
+                    return prioritized_order(
+                        lambda: order_objects(asymptotic_runtime(e1), asymptotic_runtime(e2)),
+                        lambda: self._compare(max_storage_size(e1, self.freebies), max_storage_size(e2, self.freebies), context),
+                        lambda: self._compare(rt(e1), rt(e2), context),
+                        lambda: order_objects(e1.size(), e2.size()))
+                else:
+                    return prioritized_order(
+                        lambda: self._compare(storage_size(e1, self.freebies), storage_size(e2, self.freebies), context),
+                        lambda: order_objects(e1.size(), e2.size()))
+            if selection == 3:
                 if pool == RUNTIME_POOL:
                     return prioritized_order(
                         lambda: order_objects(asymptotic_runtime(e1), asymptotic_runtime(e2)),
@@ -182,17 +209,7 @@ class CostModel(object):
                     return prioritized_order(
                         lambda: self._compare(storage_size(e1, self.freebies), storage_size(e2, self.freebies), context),
                         lambda: order_objects(e1.size(), e2.size()))
-            else:
-                if pool == RUNTIME_POOL:
-                    return prioritized_order(
-                        lambda: order_objects(asymptotic_runtime(e1), asymptotic_runtime(e2)),
-                        lambda: self._compare(max_storage_size(e1, self.freebies), max_storage_size(e2, self.freebies), context),
-                        lambda: self._compare(rt(e1), rt(e2), context),
-                        lambda: order_objects(e1.size(), e2.size()))
-                else:
-                    return prioritized_order(
-                        lambda: self._compare(storage_size(e1, self.freebies), storage_size(e2, self.freebies), context),
-                        lambda: order_objects(e1.size(), e2.size()))
+            raise ValueError("illegal value for --{}: {}".format(cost_model_selection.name, selection))
 
 def cardinality(e : Exp) -> Exp:
     assert is_collection(e.type)
