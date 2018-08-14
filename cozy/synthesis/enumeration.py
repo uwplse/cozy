@@ -210,6 +210,9 @@ class Enumerator(object):
         if hints is None:
             hints = ()
         self.hints = OrderedSet((e, ctx.generalize(free_vars(e)), p) for (e, ctx, p) in hints)
+        self.hint_types = OrderedSet()
+        for h, _, _ in self.hints:
+            self.hint_types |= all_types(h)
         if heuristics is None:
             heuristics = lambda e, ctx, pool: ()
         self.heuristics = heuristics
@@ -243,11 +246,9 @@ class Enumerator(object):
             for e in LITERALS:
                 yield e
 
-            all_interesting_types = OrderedSet()
+            all_interesting_types = OrderedSet(self.hint_types)
             for v, _ in context.vars():
-                all_interesting_types |= all_types(v)
-            for h, _, _ in self.hints:
-                all_interesting_types |= all_types(h)
+                all_interesting_types |= all_types(v.type)
             for t in all_interesting_types:
                 l = construct_value(t)
                 if l not in LITERALS:
@@ -351,16 +352,9 @@ class Enumerator(object):
                         yield EListSlice(l, st, ed).with_type(l.type)
 
         for bag in collections(cache[size-1]):
-            # len of bag
-            count = EUnaryOp(UOp.Length, bag).with_type(INT)
-            yield count
-            # empty?
+            yield EUnaryOp(UOp.Length, bag).with_type(INT)
             yield EUnaryOp(UOp.Empty, bag).with_type(BOOL)
-            # exists?
             yield EUnaryOp(UOp.Exists, bag).with_type(BOOL)
-            # singleton?
-            yield EEq(count, ONE)
-
             yield EUnaryOp(UOp.The, bag).with_type(bag.type.elem_type)
             yield EUnaryOp(UOp.Distinct, bag).with_type(bag.type)
             yield EUnaryOp(UOp.AreUnique, bag).with_type(BOOL)
