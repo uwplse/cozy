@@ -419,7 +419,7 @@ class Typechecker(Visitor):
                 t1 = self.get_collection_type(e.e1)
                 t2 = self.get_collection_type(e.e2)
                 if t1 != t2:
-                    self.report_err(e, "cannot concat {} and {}".format(pprint(e.e1.type), pprint(e.e2.type)))
+                    self.report_err(e, "cannot {!r} {} and {}".format(e.op, pprint(e.e1.type), pprint(e.e2.type)))
                 e.type = to_abstract(e.e1.type)
         elif e.op in ["*"]:
             if is_numeric(e.e1.type):
