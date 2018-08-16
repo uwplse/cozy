@@ -61,6 +61,7 @@ _OPERATORS = [
     ("PLUS", "+"),
     ("MINUS", "-"),
     ("TIMES", "*"),
+    ("DIVIDE", "/"),
     ("QUESTION", "?"),
     ("COLON", ":"),
     ("SEMICOLON", ";"),
@@ -326,6 +327,7 @@ def make_parser():
                | exp OP_MINUS exp
                | OP_MINUS exp
                | exp OP_TIMES exp
+               | exp OP_DIVIDE exp
                | exp OP_QUESTION exp OP_COLON exp
                | exp OP_DOT NUM
                | exp OP_DOT WORD

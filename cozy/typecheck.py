@@ -429,6 +429,15 @@ class Typechecker(Visitor):
             else:
                 e.type = DEFAULT_TYPE
                 self.report_err(e, "cannot multiply {} and {}".format(pprint(e.e1.type), pprint(e.e2.type)))
+        elif e.op == "/":
+            e.type = FLOAT
+            if not (e.e1.type is DEFAULT_TYPE or e.e1.type == FLOAT):
+                self.report_err(e, "division is only legal on floats; left-hand side {} has type {}".format(pprint(e.e1), pprint(e.e1.type)))
+            if not (e.e2.type is DEFAULT_TYPE or e.e2.type == FLOAT):
+                self.report_err(e, "division is only legal on floats; right-hand side {} has type {}".format(pprint(e.e2), pprint(e.e2.type)))
+            self.report_err(e,
+                "Division is currently unsupported since it is a partial function (x/0 is undefined)."
+                + "  See https://github.com/CozySynthesizer/cozy/issues/19 for more information.")
         else:
             raise NotImplementedError(e.op)
 
