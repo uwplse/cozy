@@ -505,6 +505,10 @@ def debug_comparison(cm : CostModel, e1 : Exp, e2 : Exp, context : Context):
     print("  e1 = {}".format(pprint(e1)))
     print("  e2 = {}".format(pprint(e2)))
     print("  res = {}".format(cm.compare(e1, e2, context=context, pool=RUNTIME_POOL)))
+    if is_collection(e1.type):
+        print("worst_case_cardinality(e1) = {}".format(worst_case_cardinality(e1)))
+    if is_collection(e2.type):
+        print("worst_case_cardinality(e2) = {}".format(worst_case_cardinality(e2)))
     print("-" * 20 + " {} freebies...".format(len(cm.freebies)))
     for freebie in cm.freebies:
         print("  * {}".format(pprint(freebie)))
@@ -515,7 +519,7 @@ def debug_comparison(cm : CostModel, e1 : Exp, e2 : Exp, context : Context):
             print("maintenance_cost({e}) = {res}".format(e=ename, res=pprint(maintenance_cost(e, o))))
 
     print("-" * 20)
-    for f in asymptotic_runtime, max_storage_size, rt:
+    for f in asymptotic_runtime, polynomial_runtime, max_storage_size, rt:
         for ename, e in [("e1", e1), ("e2", e2)]:
             res = f(e)
             print("{f}({e}) = {res}".format(f=f.__name__, e=ename, res=(pprint(res) if isinstance(res, Exp) else res)))
@@ -523,8 +527,6 @@ def debug_comparison(cm : CostModel, e1 : Exp, e2 : Exp, context : Context):
     print("-" * 20 + " {} examples...".format(len(cm.examples)))
     for x in cm.examples:
         print(x)
-        print("asympto(e1) = {}".format(asymptotic_runtime(e1)))
-        print("asympto(e2) = {}".format(asymptotic_runtime(e2)))
 
         for op in cm.ops:
             print(pprint(op))
