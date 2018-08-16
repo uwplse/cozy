@@ -383,13 +383,21 @@ def polynomial_runtime(e : Exp) -> Polynomial:
         if isinstance(e, ELambda):
             e = e.body
         if isinstance(e, EFilter):
-            res += worst_case_cardinality(e.e) * polynomial_runtime(e.predicate) + polynomial_runtime(e.e)
+            stk.append(e.e)
+            res += worst_case_cardinality(e.e) * polynomial_runtime(e.predicate)
             continue
         if isinstance(e, EArgMin) or isinstance(e, EArgMax):
-            res += worst_case_cardinality(e.e) * polynomial_runtime(e.key_function) + polynomial_runtime(e.e)
+            stk.append(e.e)
+            res += worst_case_cardinality(e.e) * polynomial_runtime(e.key_function)
             continue
         if isinstance(e, EMap) or isinstance(e, EFlatMap):
-            res += worst_case_cardinality(e.e) * polynomial_runtime(e.transform_function) + polynomial_runtime(e.e)
+            stk.append(e.e)
+            res += worst_case_cardinality(e.e) * polynomial_runtime(e.transform_function)
+            continue
+        if isinstance(e, ELet):
+            stk.append(e.e)
+            stk.append(e.body_function.body)
+            continue
         res += Polynomial.ONE
         if isinstance(e, EMakeMap2):
             res += worst_case_cardinality(e.e) * polynomial_runtime(e.value_function)
