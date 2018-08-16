@@ -62,6 +62,7 @@ allow_big_sets = Option("allow-big-sets", bool, False)
 allow_big_maps = Option("allow-big-maps", bool, False)
 allow_int_arithmetic_state = Option("allow-int-arith-state", bool, True)
 allow_nonzero_state_constants = Option("allow-nonzero-state-constants", bool, True)
+allow_binop_state = Option("allow-binop-state", bool, False)
 
 def never_stop():
     """Takes no arguments, always returns False."""
@@ -537,7 +538,7 @@ def good_idea(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptio
     #     return No("singleton in state position")
     if not allow_nonzero_state_constants.value and not at_runtime and isinstance(e, ENum) and e.val != 0:
         return No("nonzero integer constant in state position")
-    if at_runtime and isinstance(e, EStateVar) and isinstance(e.e, EBinOp) and is_scalar(e.e.e1.type) and is_scalar(e.e.e2.type):
+    if not allow_binop_state.value and at_runtime and isinstance(e, EStateVar) and isinstance(e.e, EBinOp) and is_scalar(e.e.e1.type) and is_scalar(e.e.e2.type):
         return No("constant-time binary operator {!r} in state position".format(e.e.op))
     if not allow_conditional_state.value and not at_runtime and isinstance(e, ECond):
         return No("conditional in state position")
