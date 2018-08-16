@@ -498,9 +498,6 @@ def hint_order(tup):
 def good_idea(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptions : Exp = ETRUE, ops : [Op] = ()) -> bool:
     """Heuristic filter to ignore expressions that are almost certainly useless."""
 
-    if hasattr(e, "_good_idea"):
-        return True
-
     state_vars  = OrderedSet(v for v, p in context.vars() if p == STATE_POOL)
     args        = OrderedSet(v for v, p in context.vars() if p == RUNTIME_POOL)
     assumptions = EAll([assumptions, context.path_condition()])
@@ -573,7 +570,6 @@ def good_idea(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptio
         if not solver.valid(s):
             return No("non-polynomial-sized map")
 
-    e._good_idea = True
     return True
 
 def good_idea_recursive(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptions : Exp = ETRUE, ops : [Op] = ()) -> bool:
