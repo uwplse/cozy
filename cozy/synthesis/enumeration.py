@@ -96,9 +96,9 @@ def _consider(e, size, context, pool):
     if _interesting(e, size, context, pool) and not verbose.value:
         print("considering {} @ size={} in {}/{}".format(pprint(e), size, context, pool_name(pool)))
     task_begin("considering expression", expression=pprint(e), size=size, context=context, pool=pool_name(pool), interesting=_interesting(e, size, context, pool))
-def _accept(e, size, context, pool):
+def _accept(e, size, context, pool, fingerprint):
     if _interesting(e, size, context, pool) and not verbose.value:
-        print("accepting")
+        print("accepting [fp={}]".format(fingerprint))
     event("accepting {} @ {} in {}/{}".format(pprint(e), size, context, pool_name(pool)))
     task_end()
 def _skip(e, size, context, pool, reason):
@@ -109,6 +109,8 @@ def _skip(e, size, context, pool, reason):
 def _evict(e, size, context, pool, better_exp, better_exp_size):
     if _interesting(e, size, context, pool) and not verbose.value:
         print("evicting {}".format(pprint(e)))
+    elif _interesting(better_exp, better_exp_size, context, pool) and not verbose.value:
+        print("{} caused eviction of {}".format(pprint(better_exp), pprint(e)))
     event("evicting {}".format(pprint(e)))
 
 def eviction_policy(new_exp : Exp, new_ctx : Context, old_exp : Exp, old_ctx : Context, pool : Pool, cost_model : CostModel) -> [Exp]:
@@ -514,7 +516,7 @@ class Enumerator(object):
                                 _evict(entry.e, entry.size, context, pool, e, size)
                                 cache.remove(context, pool, entry)
 
-                    _accept(e, size, context, pool)
+                    _accept(e, size, context, pool, fp)
                     info = EnumeratedExp(
                         e=e,
                         fingerprint=fp,
