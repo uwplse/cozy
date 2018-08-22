@@ -25,7 +25,7 @@ from . import core
 from .impls import Implementation
 
 nice_children = Option("nice-children", bool, False,
-    description='Apply a high "niceness" value to child processes. '
+    description='Apply a high Unix "niceness" value to child processes. '
         + "Cozy can spawn a lot of child processes during synthesis, so this "
         + "option exists to help control resource usage.")
 
@@ -112,7 +112,7 @@ def improve_implementation(
 
     start_time = datetime.datetime.now()
 
-    # we statefully modify `impl`, so let's make a defensive copy
+    # we statefully modify `impl`, so let's make a defensive copy, which we will modify
     impl = Implementation(
         impl.spec,
         list(impl.concrete_state),

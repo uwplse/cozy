@@ -1,11 +1,14 @@
-"""Definitions for expression pools.
+"""Constants that identify expression pools.
 
-During synthesis, expressions belong to one of two pools: the runtime pool for
-expressions executed when the method is called, and the state pool for
-expressions that are part of the abstraction relation.
+During synthesis, expressions belong to one of two pools:
+ * the runtime pool for expressions executed when the method is called, and
+ * the state pool for expressions that are part of the abstraction relation.
+These pools are conceptual:  they are not separately represented, but each
+expression is tagged with one of these two constants to indicate which pool
+it is part of.
 
-This module declares constants for the two pools and a `pool_name` function to
-print them.
+This module declares two constants that are used to identify which
+pool an expression is in, and a `pool_name` function to print them.
 """
 
 from enum import Enum

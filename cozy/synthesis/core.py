@@ -1,9 +1,9 @@
 """Core synthesis algorithm for expressions.
 
-The main function here is `improve`, which takes an expression and yields
+The main function is `improve`, which takes an expression and yields
 increasingly better and better versions of it.
 
-There are a number of heuristics here that affect how `improve` functions.
+There are a number of heuristics that affect how `improve` functions.
 See their docstrings for more information.
  - exploration_order
  - hint_order
@@ -301,6 +301,7 @@ def search_for_improvements(
         watched_ctxs = list(unique((ctx, pool) for _, _, ctx, pool in exploration_order(targets, root_ctx)))
 
     def consider_new_target(old_target, e, ctx, pool, replacement):
+        """Always yields 0 or 1 items."""
         nonlocal n
         n += 1
         k = (e, ctx, pool, replacement)

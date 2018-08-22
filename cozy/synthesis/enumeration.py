@@ -77,8 +77,10 @@ class Fingerprint(object):
         """Determine whether two fingerprints are very similar.
 
         If this returns True, then expressions with the given fingerprints look
-        to be == to each other (but not necessarily === to each other).
+        to be == to each other (that's the Cozy ==, not Python ==), but not
+        necessarily === to each other (that's Cozy ===; Python has no ===).
 
+        Clients should use this instead of Python's == operator.
         Comparing two fingerprint objects directly with Python's == operator
         checks whether expressions with those fingerprints look to be === to
         each other.
@@ -225,7 +227,7 @@ class Enumerator(object):
     """Brute-force enumerator for expressions in order of AST size.
 
     This class has lots of useful features:
-     - it uses a set of example inputs to deduplicate expressions
+     - it uses a set of example inputs to deduplicate expressions via "fingerprints"
      - expressions are cached so that less deduplication work needs to happen
      - if two expressions behave the same on all examples, only the better one
        is kept
@@ -280,7 +282,8 @@ class Enumerator(object):
 
         Arguments:
             context : a Context object describing the vars in scope
-            size    : size to enumerate
+            size    : size of expressions to enumerate; each expression in
+                      the output will have this size
             pool    : pool to enumerate
 
         This function is not cached.  Clients should call `enumerate` instead.
@@ -348,6 +351,7 @@ class Enumerator(object):
                 yield EMapKeys(m).with_type(TBag(m.type.k))
 
         for (sz1, sz2) in pick_to_sum(2, size - 1):
+            # sz1 + sz2 = size - 1
             for a1 in cache[sz1]:
                 t = a1.type
                 if not is_numeric(t):
@@ -386,6 +390,7 @@ class Enumerator(object):
                     yield EListGet(l, i).with_type(l.type.elem_type)
 
         for (sz1, sz2, sz3) in pick_to_sum(3, size-1):
+            # sz1 + sz2 + sz3 = size - 1
             for cond in of_type(cache[sz1], BOOL):
                 for then_branch in cache[sz2]:
                     for else_branch in of_type(cache[sz2], then_branch.type):
@@ -465,6 +470,8 @@ class Enumerator(object):
             pool    : expression pool to visit
         """
         for info in self.enumerate_with_info(context, size, pool):
+            # enumerate_with_info yields more information than needed here.
+            # Just yield part of it.
             yield info.e
 
     def canonical_context(self, context):
