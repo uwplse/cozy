@@ -1,6 +1,6 @@
-"""Rewrite rules to directly optimize expressions.
+"""Rewrite rules to optimize expressions.
 
-Cozy's synthesis procedure uses `try_optimize` to try and produce better
+Cozy's synthesis procedure uses `try_optimize` to try to produce better
 versions of expressions it sees.  Since all expressions are checked for
 correctness, `try_optimize` has a very loose contract.
 """
@@ -19,8 +19,8 @@ from cozy.opts import Option
 from cozy.wf import repair_well_formedness
 
 accelerate = Option("acceleration-rules", bool, True,
-    description="Enable rewrite rules that try to directly optimize "
-        + "expressions during synthesis. In most cases this dramatically "
+    description="Enable rewrite rules that try to optimize "
+        + "expressions during synthesis. This usually "
         + "improves Cozy's performance.")
 
 def find_one_or_fail(iter):
@@ -32,16 +32,16 @@ def find_one_or_fail(iter):
 def try_optimize(e : Exp, context : Context, pool : Pool):
     """Yields expressions for the given context and pool.
 
-    None of the expressions will be syntactically equivalent to `e`.
-
     The expressions are likely to be semantically equivalent to `e` and likely
     to be better than `e`, but this function makes no promises.
+
+    None of the expressions will be syntactically equivalent to `e`.
     """
     for ee in _try_optimize(e, context, pool):
         if not alpha_equivalent(e, ee):
             yield ee
 
-def _try_optimize(e, context, pool):
+def _try_optimize(e : Exp, context : Context, pool : Pool):
     if not accelerate.value:
         return
 
@@ -124,11 +124,11 @@ def _try_optimize(e, context, pool):
             ee = inline_mapget(e, context)
             yield _check(ee, context, RUNTIME_POOL)
 
-def _check(e, context, pool):
+def _check(e : Exp, context : Context, pool : Pool):
     """
     When Cozy chokes on malformed expressions, bad acceleration rules are often
     the culprit.  To help debug these kinds of problems, this function exists
-    as a "hook" where you can insert code to try and catch the issue before it
+    as a "hook" where you can insert code to catch the issue before it
     leaks out.  Exceptions thrown here will reveal what acceleration rule is
     responsible for the problem.
     """

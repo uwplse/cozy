@@ -401,7 +401,7 @@ def can_elim_vars(spec : Exp, assumptions : Exp, vs : [EVar]):
     """Does any execution of `spec` actually depend on any of `vs`?
 
     It is possible for a variable to appear in an expression like `spec`
-    without affecting its value.  This function uses the solver to try and
+    without affecting its value.  This function uses the solver to
     determine whether any of the given variables can affect the output of
     `spec`.
     """

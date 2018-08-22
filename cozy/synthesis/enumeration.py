@@ -193,8 +193,7 @@ class Enumerator(object):
          - check_wf: an optional additional filter to restrict which expressions
            are visited
          - hints: extra expressions to visit first
-         - heuristics: an optional function to try and improve visited
-           expressions
+         - heuristics: an optional function to improve visited expressions
          - stop_callback: a function that is checked periodically to stop
            enumeration
          - do_eviction: boolean flag to control whether this class spends time
