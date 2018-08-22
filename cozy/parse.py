@@ -47,6 +47,8 @@ _KEYWORDS = ([
 # Each operator has a name and a syntax in a Cozy specification. Each
 # becomes an OP_* token for the lexer. So, e.g. ("ASSIGN", "=") matches "="
 # and the token will be named OP_ASSIGN.
+# If you update this, also update file User-Manual.md in the wiki repository;
+# keep them in sync and in the same order.
 _OPERATORS = [
     ("ASSIGN", "="),
     ("IMPLIES", "=>"),
@@ -308,12 +310,8 @@ def make_parser():
         """exp : NUM
                | FLOAT
                | WORD
-               | WORD OP_OPEN_PAREN exp_list OP_CLOSE_PAREN
                | KW_TRUE
                | KW_FALSE
-               | exp OP_PLUS  exp
-               | exp OP_MINUS exp
-               | exp OP_TIMES exp
                | exp OP_EQ exp
                | exp OP_NE exp
                | exp OP_LT exp
@@ -322,33 +320,38 @@ def make_parser():
                | exp OP_GE exp
                | exp KW_AND exp
                | exp KW_OR exp
-               | exp OP_IMPLIES exp
-               | exp OP_QUESTION exp OP_COLON exp
-               | exp OP_OPEN_BRACKET slice OP_CLOSE_BRACKET
                | KW_NOT exp
+               | exp OP_IMPLIES exp
+               | exp OP_PLUS  exp
+               | exp OP_MINUS exp
                | OP_MINUS exp
-               | exp KW_IN exp
-               | KW_LET OP_OPEN_BRACE WORD OP_ASSIGN exp OP_CLOSE_BRACE KW_IN exp
-               | KW_UNIQUE exp
-               | KW_DISTINCT exp
-               | KW_EMPTY exp
-               | KW_THE exp
-               | KW_MIN exp
-               | KW_MAX exp
-               | KW_ARGMIN lambda exp
-               | KW_ARGMAX lambda exp
-               | KW_SUM exp
-               | KW_LEN exp
-               | KW_ANY exp
-               | KW_ALL exp
-               | KW_EXISTS exp
-               | KW_REVERSED exp
+               | exp OP_TIMES exp
+               | exp OP_QUESTION exp OP_COLON exp
                | exp OP_DOT NUM
                | exp OP_DOT WORD
                | OP_OPEN_PAREN exp_list OP_CLOSE_PAREN
                | OP_OPEN_BRACE record_fields OP_CLOSE_BRACE
                | OP_OPEN_BRACKET exp OP_CLOSE_BRACKET
-               | OP_OPEN_BRACKET exp OP_VBAR comprehension_body OP_CLOSE_BRACKET"""
+               | OP_OPEN_BRACKET exp OP_VBAR comprehension_body OP_CLOSE_BRACKET
+               | exp OP_OPEN_BRACKET slice OP_CLOSE_BRACKET
+               | KW_LET OP_OPEN_BRACE WORD OP_ASSIGN exp OP_CLOSE_BRACE KW_IN exp
+               | WORD OP_OPEN_PAREN exp_list OP_CLOSE_PAREN
+               | KW_SUM exp
+               | KW_LEN exp
+               | KW_EMPTY exp
+               | KW_EXISTS exp
+               | KW_ALL exp
+               | KW_ANY exp
+               | KW_DISTINCT exp
+               | KW_UNIQUE exp
+               | KW_THE exp
+               | exp KW_IN exp
+               | KW_MIN exp
+               | KW_MAX exp
+               | KW_ARGMIN lambda exp
+               | KW_ARGMAX lambda exp
+               | KW_REVERSED exp
+        """
         if len(p) == 2:
             if type(p[1]) is syntax.ENum:
                 p[0] = p[1]
