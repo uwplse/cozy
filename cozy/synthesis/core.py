@@ -39,7 +39,7 @@ from cozy.logging import task, event
 from cozy.structures import extension_handler
 
 from .acceleration import try_optimize
-from .enumeration import Enumerator, Fingerprint, fingerprint, fingerprints_match, fingerprint_is_subset, eviction_policy
+from .enumeration import Enumerator, Fingerprint, eviction_policy
 
 eliminate_vars = Option("eliminate-vars", bool, False)
 enable_blacklist = Option("enable-blacklist", bool, False)
@@ -274,7 +274,7 @@ def search_for_improvements(
             stop_callback=stop_callback,
             do_eviction=enable_eviction.value)
 
-    target_fp = fingerprint(targets[0], examples)
+    target_fp = Fingerprint.of(targets[0], examples)
 
     with task("setting up watches"):
         watches_by_context = OrderedDict()
@@ -290,7 +290,7 @@ def search_for_improvements(
         for ctx, exprs in watches_by_context.items():
             exs = ctx.instantiate_examples(examples)
             for target, e, pool in exprs:
-                fp = fingerprint(e, exs)
+                fp = Fingerprint.of(e, exs)
                 k = (fp, ctx, pool)
                 l = watches.get(k)
                 if l is None:
@@ -321,7 +321,7 @@ def search_for_improvements(
             event(msg)
             blacklist[k] = msg
             return
-        if not fingerprints_match(fingerprint(new_target, examples), target_fp):
+        if not Fingerprint.of(new_target, examples).equal_to(target_fp):
             msg = "not correct"
             event(msg)
             blacklist[k] = msg
@@ -355,7 +355,7 @@ def search_for_improvements(
                             if cc != ctx or pp != pool:
                                 continue
 
-                            if not fingerprints_match(fpx, fp):
+                            if not fpx.equal_to(fp):
                                 continue
 
                             for target, watched_e in reses:
@@ -388,7 +388,7 @@ def search_for_improvements(
                                 continue
                             should_consider = should_consider_replacement(
                                 target, root_ctx,
-                                e, ctx, pool, fingerprint(e, ctx.instantiate_examples(examples)),
+                                e, ctx, pool, Fingerprint.of(e, ctx.instantiate_examples(examples)),
                                 info.e, info.fingerprint)
                             if not should_consider:
                                 event("skipped; `should_consider_replacement` returned {}".format(should_consider))
@@ -482,7 +482,7 @@ def should_consider_replacement(
     if not is_collection(subexp.type):
         return No("only collections matter")
 
-    if not fingerprint_is_subset(replacement_fp, subexp_fp):
+    if not replacement_fp.subset_of(subexp_fp):
         return No("not a subset")
 
     return True

@@ -9,7 +9,7 @@ from cozy.evaluation import mkval
 from cozy.cost_model import CostModel
 from cozy.synthesis import construct_initial_implementation, improve_implementation
 from cozy.synthesis.core import improve
-from cozy.synthesis.enumeration import Enumerator
+from cozy.synthesis.enumeration import Enumerator, Fingerprint
 from cozy.parse import parse_spec
 from cozy.solver import valid, satisfy
 from cozy.pools import RUNTIME_POOL, STATE_POOL
@@ -106,6 +106,17 @@ class TestSynthesisCore(unittest.TestCase):
 
 
 class TestEnumeration(unittest.TestCase):
+
+    def test_fingerprint_equality(self):
+        inp = { "x": 1 }
+        e1 = EVar("x").with_type(INT)
+        e2 = ONE
+        fp1 = Fingerprint.of(e1, [inp])
+        fp2 = Fingerprint.of(e2, [inp])
+        self.assertEqual(hash(fp1), hash(fp2))
+        self.assertEqual(len(fp1), len(fp2))
+        self.assertEqual(fp1, fp2)
+        self.assertNotEqual(fp1, 1)
 
     def test_state_pool_boundary(self):
         """
