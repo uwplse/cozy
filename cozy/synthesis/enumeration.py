@@ -376,10 +376,7 @@ class Enumerator(object):
             for x in cache[sz1]:
                 bag = ESingleton(x).with_type(TBag(x.type))
                 for lam in build_lambdas(bag, pool, sz2):
-                    e = ELet(x, lam).with_type(lam.body.type)
-                    if x == EBinOp(EVar("x"), "+", EVar("x")):
-                        e._tag = True
-                    yield e
+                    yield ELet(x, lam).with_type(lam.body.type)
 
         # Iteration
         for (sz1, sz2) in pick_to_sum(2, size - 1):
