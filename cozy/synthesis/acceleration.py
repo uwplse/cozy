@@ -45,100 +45,101 @@ def _try_optimize(e : Exp, context : Context, pool : Pool):
     if not accelerate.value:
         return
 
+    if pool != RUNTIME_POOL:
+        return
+
     state_vars = [v for v, p in context.vars() if p == STATE_POOL]
     args = [v for v, p in context.vars() if p == RUNTIME_POOL]
 
-    if pool == RUNTIME_POOL:
+    # ---------------------------------------------------------------------
+    # "Rewrite schemes": these trigger on many different AST shapes
+    # They are listed first because they are more powerful than the
+    # specific rewrite rules below.
 
-        # ---------------------------------------------------------------------
-        # "Rewrite schemes": these trigger on many different AST shapes
-        # They are listed first because they are more powerful than the
-        # specific rewrite rules below.
+    if not free_vars(e) and not free_funcs(e):
+        try:
+            yield _check(uneval(e.type, eval(e, {})), context, RUNTIME_POOL)
+        except NotImplementedError:
+            print("Unable to evaluate {!r}".format(e))
 
-        if not free_vars(e) and not free_funcs(e):
-            try:
-                yield _check(uneval(e.type, eval(e, {})), context, RUNTIME_POOL)
-            except NotImplementedError:
-                print("Unable to evaluate {!r}".format(e))
+    if all(v in state_vars for v in free_vars(e)):
+        nsv = strip_EStateVar(e)
+        sv = EStateVar(nsv).with_type(e.type)
+        yield _check(sv, context, RUNTIME_POOL)
 
-        if all(v in state_vars for v in free_vars(e)):
-            nsv = strip_EStateVar(e)
-            sv = EStateVar(nsv).with_type(e.type)
-            yield _check(sv, context, RUNTIME_POOL)
+    for ee in fold_into_map(e, context):
+        yield _check(ee, context, pool)
 
-        for ee in fold_into_map(e, context):
-            yield _check(ee, context, pool)
+    # ---------------------------------------------------------------------
+    # "Rewrites": these trigger on specific AST nodes
 
-        # ---------------------------------------------------------------------
-        # "Rewrites": these trigger on specific AST nodes
+    if isinstance(e, EBinOp):
 
-        if isinstance(e, EBinOp):
-
-            if e.op == "-" and is_collection(e.type):
-                ee = optimized_bag_difference(e.e1, e.e2)
-                yield _check(ee, context, RUNTIME_POOL)
-
-            if e.op == "===" and isinstance(e.e1.type, THandle):
-                yield _check(EAll([
-                    optimized_eq(optimized_addr(e.e1), optimized_addr(e.e2)),
-                    optimized_eq(optimized_val(e.e1),  optimized_val(e.e2)).with_type(BOOL)]), context, RUNTIME_POOL)
-
-            if e.op == BOp.In:
-                ee = optimized_in(e.e1, e.e2)
-                yield _check(ee, context, RUNTIME_POOL)
-
-        if isinstance(e, ECond):
-            yield _check(optimized_cond(e.cond, e.then_branch, e.else_branch), context, RUNTIME_POOL)
-
-        if isinstance(e, EGetField):
-            for ee in optimized_get_field(e.e, e.field_name, args):
-                yield _check(ee, context, RUNTIME_POOL)
-
-        if isinstance(e, EListGet) and e.index == ZERO:
-            for res in optimize_the(e.e, args):
-                yield _check(res, context, RUNTIME_POOL)
-
-        if isinstance(e, EMapGet):
-            ee = inline_mapget(e, context)
+        if e.op == "-" and is_collection(e.type):
+            ee = optimized_bag_difference(e.e1, e.e2)
             yield _check(ee, context, RUNTIME_POOL)
 
-        if isinstance(e, EUnaryOp):
+        if e.op == "===" and isinstance(e.e1.type, THandle):
+            yield _check(EAll([
+                optimized_eq(optimized_addr(e.e1), optimized_addr(e.e2)),
+                optimized_eq(optimized_val(e.e1),  optimized_val(e.e2)).with_type(BOOL)]), context, RUNTIME_POOL)
 
-            if e.op == UOp.Sum:
-                for ee in optimized_sum(e.e, args):
-                    yield _check(ee, context, RUNTIME_POOL)
+        if e.op == BOp.In:
+            ee = optimized_in(e.e1, e.e2)
+            yield _check(ee, context, RUNTIME_POOL)
 
-            if e.op == UOp.Length:
-                ee = optimized_len(e.e)
+    if isinstance(e, ECond):
+        yield _check(optimized_cond(e.cond, e.then_branch, e.else_branch), context, RUNTIME_POOL)
+
+    if isinstance(e, EGetField):
+        for ee in optimized_get_field(e.e, e.field_name, args):
+            yield _check(ee, context, RUNTIME_POOL)
+
+    if isinstance(e, EListGet) and e.index == ZERO:
+        for res in optimize_the(e.e, args):
+            yield _check(res, context, RUNTIME_POOL)
+
+    if isinstance(e, EMapGet):
+        ee = inline_mapget(e, context)
+        yield _check(ee, context, RUNTIME_POOL)
+
+    if isinstance(e, EUnaryOp):
+
+        if e.op == UOp.Sum:
+            for ee in optimized_sum(e.e, args):
                 yield _check(ee, context, RUNTIME_POOL)
 
-            if e.op == UOp.Empty:
-                ee = optimized_empty(e.e)
+        if e.op == UOp.Length:
+            ee = optimized_len(e.e)
+            yield _check(ee, context, RUNTIME_POOL)
+
+        if e.op == UOp.Empty:
+            ee = optimized_empty(e.e)
+            yield _check(ee, context, RUNTIME_POOL)
+
+        if e.op == UOp.Exists:
+            ee = optimized_exists(e.e)
+            yield _check(ee, context, RUNTIME_POOL)
+
+        if e.op == UOp.Distinct:
+            for ee in optimized_distinct(e.e, args):
                 yield _check(ee, context, RUNTIME_POOL)
 
-            if e.op == UOp.Exists:
-                ee = optimized_exists(e.e)
+        if e.op == UOp.The:
+            for ee in optimize_the(e.e, args):
                 yield _check(ee, context, RUNTIME_POOL)
 
-            if e.op == UOp.Distinct:
-                for ee in optimized_distinct(e.e, args):
-                    yield _check(ee, context, RUNTIME_POOL)
+    if isinstance(e, EArgMin) or isinstance(e, EArgMax):
+        for ee in optimized_best(e.e, e.key_function, "<" if isinstance(e, EArgMin) else ">", args=args):
+            yield _check(ee, context, RUNTIME_POOL)
 
-            if e.op == UOp.The:
-                for ee in optimize_the(e.e, args):
-                    yield _check(ee, context, RUNTIME_POOL)
+    if isinstance(e, EFilter):
+        for ee in optimize_filter(e.e, e.predicate, args=args):
+            yield _check(ee, context, RUNTIME_POOL)
 
-        if isinstance(e, EArgMin) or isinstance(e, EArgMax):
-            for ee in optimized_best(e.e, e.key_function, "<" if isinstance(e, EArgMin) else ">", args=args):
-                yield _check(ee, context, RUNTIME_POOL)
-
-        if isinstance(e, EFilter):
-            for ee in optimize_filter(e.e, e.predicate, args=args):
-                yield _check(ee, context, RUNTIME_POOL)
-
-        if isinstance(e, EMap):
-            for ee in optimize_map(e.e, e.transform_function, args=args):
-                yield _check(ee, context, RUNTIME_POOL)
+    if isinstance(e, EMap):
+        for ee in optimize_map(e.e, e.transform_function, args=args):
+            yield _check(ee, context, RUNTIME_POOL)
 
 def _check(e : Exp, context : Context, pool : Pool):
     """
