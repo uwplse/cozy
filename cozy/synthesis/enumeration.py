@@ -130,9 +130,6 @@ def collections(exps : [Exp]):
         if is_collection(e.type):
             yield e
 
-def belongs_in_context(fvs, context):
-    return context is context.generalize(fvs)
-
 # Debugging routines.
 # These serve no functional purpose, but they are useful hooks for developers
 # if you need to watch for a particular enumeration event (such as seeing a
