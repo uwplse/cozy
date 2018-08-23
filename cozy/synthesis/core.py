@@ -80,7 +80,8 @@ def improve(
     """Improve the target expression using enumerative synthesis.
 
     This function is a generator that yields increasingly better and better
-    versions of the input expression `target`.
+    versions of the input expression `target` in the given `context`.  The
+    `cost_model` defines "better".
 
     It periodically calls `stop_callback` and exits gracefully when
     `stop_callback` returns True.
@@ -95,6 +96,18 @@ def improve(
           returned. This "smooths out" the search space a little, and lets us
           find kinda-good solutions very quickly, even if the best possible
           solution is out of reach.
+
+    Other parameters:
+        - assumptions: a precondition.  The yielded improvements will only be
+          correct when the assumptions are true.
+        - hints: expressions that might be useful.  These will be explored
+          first when looking for improvements.
+        - examples: inputs that will be used internally to differentiate
+          semantically distinct expressions.  This procedure discovers more
+          examples as it runs, so there usually isn't a reason to provide any.
+        - ops: update operations.  This function may make different choices
+          about what expressions are state expressions based on what changes
+          can happen to that state.
     """
 
     print("call to improve:")
