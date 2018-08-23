@@ -52,10 +52,11 @@ from cozy.syntax_tools import pprint, alpha_equivalent, free_vars, subst, Bottom
 from cozy.pools import Pool, RUNTIME_POOL, STATE_POOL
 
 class Context(object):
-    """A Context describes "where we are" in an expression.
+    """A Context describes each variable in the environment.
 
-    A Context is hashable and comparable---but note that equality (==) does not
-    imply alpha equivalence (see `Context.alpha_equivalent`)."""
+    A Context is hashable and comparable---but note that equality (==) is
+    stricter than alpha equivalence (see `Context.alpha_equivalent`).
+    """
 
     def vars(self) -> {(EVar, Pool)}:
         """Return all in-scope variables (and what pools they are legal in)"""
