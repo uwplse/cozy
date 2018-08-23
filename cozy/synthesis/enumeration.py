@@ -101,8 +101,8 @@ class Fingerprint(object):
         if not is_collection(other.type):
             raise ValueError("other fingerprint is not for a collection-type expression")
         self._require_comparable_to(other)
-        x = EVar("x").with_type(fp1[0])
-        y = EVar("y").with_type(fp2[0])
+        x = EVar("x").with_type(self.type)
+        y = EVar("y").with_type(other.type)
         is_subset = EIsSubset(x, y)
         return all(eval_bulk(
             is_subset,

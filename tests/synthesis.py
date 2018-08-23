@@ -118,6 +118,16 @@ class TestEnumeration(unittest.TestCase):
         self.assertEqual(fp1, fp2)
         self.assertNotEqual(fp1, 1)
 
+    def test_fingerprint_subset(self):
+        inp = { "x": Bag([1]) }
+        e1 = EVar("x").with_type(INT_BAG)
+        e2 = EEmptyList().with_type(e1.type)
+        fp1 = Fingerprint.of(e1, [inp])
+        fp2 = Fingerprint.of(e2, [inp])
+        self.assertNotEqual(fp1, fp2)
+        assert not fp1.subset_of(fp2)
+        assert fp2.subset_of(fp1)
+
     def test_state_pool_boundary(self):
         """
         When enumerating expressions, we shouldn't ever enumerate state
