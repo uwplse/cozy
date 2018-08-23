@@ -96,7 +96,7 @@ def _try_optimize(e : Exp, context : Context, pool : Pool):
             yield _check(ee, context, RUNTIME_POOL)
 
     if isinstance(e, EListGet) and e.index == ZERO:
-        for res in optimize_the(e.e, args):
+        for res in optimized_the(e.e, args):
             yield _check(res, context, RUNTIME_POOL)
 
     if isinstance(e, EMapGet):
@@ -126,7 +126,7 @@ def _try_optimize(e : Exp, context : Context, pool : Pool):
                 yield _check(ee, context, RUNTIME_POOL)
 
         if e.op == UOp.The:
-            for ee in optimize_the(e.e, args):
+            for ee in optimized_the(e.e, args):
                 yield _check(ee, context, RUNTIME_POOL)
 
     if isinstance(e, EArgMin) or isinstance(e, EArgMax):
@@ -134,11 +134,11 @@ def _try_optimize(e : Exp, context : Context, pool : Pool):
             yield _check(ee, context, RUNTIME_POOL)
 
     if isinstance(e, EFilter):
-        for ee in optimize_filter(e.e, e.predicate, args=args):
+        for ee in optimized_filter(e.e, e.predicate, args=args):
             yield _check(ee, context, RUNTIME_POOL)
 
     if isinstance(e, EMap):
-        for ee in optimize_map(e.e, e.transform_function, args=args):
+        for ee in optimized_map(e.e, e.transform_function, args=args):
             yield _check(ee, context, RUNTIME_POOL)
 
 def _check(e : Exp, context : Context, pool : Pool):
@@ -328,11 +328,11 @@ def excluded_element(xs, args):
                 return (xs.e, EUnaryOp(UOp.The, find_one_or_fail(_simple_filter(xs.e, ELambda(arg, EEq(e.e1, e.e2)), args=args))).with_type(xs.type.elem_type))
             if arg_right and not arg_left:
                 return (xs.e, EUnaryOp(UOp.The, find_one_or_fail(_simple_filter(xs.e, ELambda(arg, EEq(e.e1, e.e2)), args=args))).with_type(xs.type.elem_type))
-        return (xs.e, optimized_the(find_one_or_fail(_simple_filter(xs.e, ELambda(xs.predicate.arg, ENot(xs.predicate.body)), args)), args))
+        return (xs.e, find_one(optimized_the(find_one_or_fail(_simple_filter(xs.e, ELambda(xs.predicate.arg, ENot(xs.predicate.body)), args)), args)))
     if isinstance(xs, EBinOp) and xs.op == "-" and isinstance(xs.e2, ESingleton):
         return (xs.e1, xs.e2.e)
     if isinstance(xs, EBinOp) and xs.op == "-":
-        return (xs.e1, optimized_the(xs.e2, args))
+        return (xs.e1, find_one(optimized_the(xs.e2, args)))
     if isinstance(xs, EBinOp) and xs.op == "+" and isinstance(xs.e1, EListSlice) and isinstance(xs.e2, EListSlice):
         for e1, e2 in [(xs.e1, xs.e2), (xs.e2, xs.e1)]:
             if e1.e == e2.e and e1.start == ZERO and e2.start == EBinOp(e1.end, "+", ONE) and is_lenof(e2.end, e2.e):
@@ -537,7 +537,7 @@ def _simple_filter(xs : Exp, p : ELambda, args : {EVar}):
     if not yielded:
         yield EFilter(xs, p).with_type(xs.type)
 
-def optimize_filter(xs : Exp, p : ELambda, args : {EVar}):
+def optimized_filter(xs : Exp, p : ELambda, args : {EVar}):
     yield from _simple_filter(xs, ELambda(p.arg, nnf(p.body)), args)
 
 def optimized_bag_difference(xs, ys):
@@ -576,7 +576,7 @@ def optimized_bag_difference(xs, ys):
     # only legal if xs are distinct, but we'll give it a go...
     return EFilter(xs, mk_lambda(xs.type.elem_type, lambda x: ENot(optimized_in(x, ys)))).with_type(xs.type)
 
-def optimize_map(xs, f, args):
+def optimized_map(xs, f, args):
     res_type = type(xs.type)(f.body.type)
     if f.arg == f.body:
         yield xs
@@ -588,14 +588,14 @@ def optimize_map(xs, f, args):
         yield EStateVar(EMap(xs.e, f).with_type(res_type)).with_type(res_type)
     if isinstance(xs, EBinOp):
         if xs.op in ("+", "-"):
-            for a in optimize_map(xs.e1, f, args):
-                for b in optimize_map(xs.e2, f, args):
+            for a in optimized_map(xs.e1, f, args):
+                for b in optimized_map(xs.e2, f, args):
                     yield EBinOp(a, xs.op, b).with_type(res_type)
     if isinstance(f.body, ECond):
-        for true_elems      in optimize_filter(xs, ELambda(f.arg,      f.body.cond) , args=args):
-            for false_elems in optimize_filter(xs, ELambda(f.arg, ENot(f.body.cond)), args=args):
-                for a     in optimize_map(true_elems,  ELambda(f.arg, f.body.then_branch), args):
-                    for b in optimize_map(false_elems, ELambda(f.arg, f.body.else_branch), args):
+        for true_elems      in optimized_filter(xs, ELambda(f.arg,      f.body.cond) , args=args):
+            for false_elems in optimized_filter(xs, ELambda(f.arg, ENot(f.body.cond)), args=args):
+                for a     in optimized_map(true_elems,  ELambda(f.arg, f.body.then_branch), args):
+                    for b in optimized_map(false_elems, ELambda(f.arg, f.body.else_branch), args):
                         yield EBinOp(a, "+", b).with_type(res_type)
     yield EMap(xs, f).with_type(res_type)
 
@@ -625,13 +625,10 @@ def optimized_sum(xs, args):
     yield sum_of(xs)
 
 def optimized_the(xs, args):
-    return EUnaryOp(UOp.The, xs).with_type(xs.type.elem_type)
-
-def optimize_the(xs, args):
     t = xs.type.elem_type
     if isinstance(xs, ECond):
-        for e1 in optimize_the(xs.then_branch, args):
-            for e2 in optimize_the(xs.else_branch, args):
+        for e1 in optimized_the(xs.then_branch, args):
+            for e2 in optimized_the(xs.else_branch, args):
                 yield optimized_cond(xs.cond, e1, e2)
     if isinstance(xs, EStateVar):
         yield EStateVar(EUnaryOp(UOp.The, xs.e).with_type(t)).with_type(t)
@@ -639,16 +636,16 @@ def optimize_the(xs, args):
         x = excluded_element(xs, args)
         if x is not None:
             bag, x = x
-            for elem in optimize_the(bag, args):
+            for elem in optimized_the(bag, args):
                 yield optimized_cond(EEq(elem, x), EListGet(bag, ONE).with_type(t), elem)
     if isinstance(xs, EMap):
         exists = optimized_exists(xs.e)
-        for x in optimize_the(xs.e, args):
+        for x in optimized_the(xs.e, args):
             yield optimized_cond(exists, xs.transform_function.apply_to(x), construct_value(t))
     if isinstance(xs, EBinOp) and xs.op == "+":
         e1_exists = optimized_exists(xs.e1)
-        for x in optimize_the(xs.e1, args):
-            for y in optimize_the(xs.e2, args):
+        for x in optimized_the(xs.e1, args):
+            for y in optimized_the(xs.e2, args):
                 yield optimized_cond(e1_exists, x, y)
     yield EUnaryOp(UOp.The, xs).with_type(t)
 
@@ -663,13 +660,13 @@ def optimized_distinct(xs, args):
             v = fresh_var(xs.type.elem_type)
             for a in optimized_distinct(xs.e1, args):
                 for b in optimized_distinct(xs.e2, args):
-                    for b_prime in optimize_filter(b, ELambda(v, ENot(optimized_in(v, a))), args):
+                    for b_prime in optimized_filter(b, ELambda(v, ENot(optimized_in(v, a))), args):
                         yield EBinOp(a, "+", b_prime).with_type(xs.type)
         if xs.op == "-":
             v = fresh_var(xs.type.elem_type)
             for a in optimized_distinct(xs.e1, args):
                 for b in optimized_distinct(xs.e2, args):
-                    yield from optimize_filter(a, ELambda(v, ENot(optimized_in(v, b))), args)
+                    yield from optimized_filter(a, ELambda(v, ENot(optimized_in(v, b))), args)
     if isinstance(xs, EFilter):
         for ee in optimized_distinct(xs.e, args):
             yield EFilter(ee, xs.predicate).with_type(xs.type)
