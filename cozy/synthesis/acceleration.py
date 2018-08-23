@@ -50,6 +50,11 @@ def _try_optimize(e : Exp, context : Context, pool : Pool):
 
     if pool == RUNTIME_POOL:
 
+        # ---------------------------------------------------------------------
+        # "Rewrite schemes": these trigger on many different AST shapes
+        # They are listed first because they are more powerful than the
+        # specific rewrite rules below.
+
         if not free_vars(e) and not free_funcs(e):
             try:
                 yield _check(uneval(e.type, eval(e, {})), context, RUNTIME_POOL)
@@ -64,22 +69,23 @@ def _try_optimize(e : Exp, context : Context, pool : Pool):
         for ee in fold_into_map(e, context):
             yield _check(ee, context, pool)
 
-        if isinstance(e, EListGet) and e.index == ZERO:
-            for res in optimize_the(e.e, args):
-                yield _check(res, context, RUNTIME_POOL)
+        # ---------------------------------------------------------------------
+        # "Rewrites": these trigger on specific AST nodes
 
-        if isinstance(e, EArgMin) or isinstance(e, EArgMax):
-            for ee in optimized_best(e.e, e.key_function, "<" if isinstance(e, EArgMin) else ">", args=args):
+        if isinstance(e, EBinOp):
+
+            if e.op == "-" and is_collection(e.type):
+                ee = optimized_bag_difference(e.e1, e.e2)
                 yield _check(ee, context, RUNTIME_POOL)
 
-        if is_collection(e.type) and isinstance(e, EBinOp) and e.op == "-":
-            ee = optimized_bag_difference(e.e1, e.e2)
-            yield _check(ee, context, RUNTIME_POOL)
+            if e.op == "===" and isinstance(e.e1.type, THandle):
+                yield _check(EAll([
+                    optimized_eq(optimized_addr(e.e1), optimized_addr(e.e2)),
+                    optimized_eq(optimized_val(e.e1),  optimized_val(e.e2)).with_type(BOOL)]), context, RUNTIME_POOL)
 
-        if isinstance(e, EBinOp) and e.op == "===" and isinstance(e.e1.type, THandle):
-            yield _check(EAll([
-                optimized_eq(optimized_addr(e.e1), optimized_addr(e.e2)),
-                optimized_eq(optimized_val(e.e1),  optimized_val(e.e2)).with_type(BOOL)]), context, RUNTIME_POOL)
+            if e.op == BOp.In:
+                ee = optimized_in(e.e1, e.e2)
+                yield _check(ee, context, RUNTIME_POOL)
 
         if isinstance(e, ECond):
             yield _check(optimized_cond(e.cond, e.then_branch, e.else_branch), context, RUNTIME_POOL)
@@ -88,32 +94,42 @@ def _try_optimize(e : Exp, context : Context, pool : Pool):
             for ee in optimized_get_field(e.e, e.field_name, args):
                 yield _check(ee, context, RUNTIME_POOL)
 
-        if isinstance(e, EBinOp) and e.op == BOp.In:
-            ee = optimized_in(e.e1, e.e2)
+        if isinstance(e, EListGet) and e.index == ZERO:
+            for res in optimize_the(e.e, args):
+                yield _check(res, context, RUNTIME_POOL)
+
+        if isinstance(e, EMapGet):
+            ee = inline_mapget(e, context)
             yield _check(ee, context, RUNTIME_POOL)
 
-        if isinstance(e, EUnaryOp) and e.op == UOp.Sum:
-            for ee in optimized_sum(e.e, args):
+        if isinstance(e, EUnaryOp):
+
+            if e.op == UOp.Sum:
+                for ee in optimized_sum(e.e, args):
+                    yield _check(ee, context, RUNTIME_POOL)
+
+            if e.op == UOp.Length:
+                ee = optimized_len(e.e)
                 yield _check(ee, context, RUNTIME_POOL)
 
-        if isinstance(e, EUnaryOp) and e.op == UOp.Empty:
-            ee = optimized_empty(e.e)
-            yield _check(ee, context, RUNTIME_POOL)
-
-        if isinstance(e, EUnaryOp) and e.op == UOp.Exists:
-            ee = optimized_exists(e.e)
-            yield _check(ee, context, RUNTIME_POOL)
-
-        if isinstance(e, EUnaryOp) and e.op == UOp.Length:
-            ee = optimized_len(e.e)
-            yield _check(ee, context, RUNTIME_POOL)
-
-        if isinstance(e, EUnaryOp) and e.op == UOp.The:
-            for ee in optimize_the(e.e, args):
+            if e.op == UOp.Empty:
+                ee = optimized_empty(e.e)
                 yield _check(ee, context, RUNTIME_POOL)
 
-        if isinstance(e, EUnaryOp) and e.op == UOp.Distinct:
-            for ee in optimized_distinct(e.e, args):
+            if e.op == UOp.Exists:
+                ee = optimized_exists(e.e)
+                yield _check(ee, context, RUNTIME_POOL)
+
+            if e.op == UOp.Distinct:
+                for ee in optimized_distinct(e.e, args):
+                    yield _check(ee, context, RUNTIME_POOL)
+
+            if e.op == UOp.The:
+                for ee in optimize_the(e.e, args):
+                    yield _check(ee, context, RUNTIME_POOL)
+
+        if isinstance(e, EArgMin) or isinstance(e, EArgMax):
+            for ee in optimized_best(e.e, e.key_function, "<" if isinstance(e, EArgMin) else ">", args=args):
                 yield _check(ee, context, RUNTIME_POOL)
 
         if isinstance(e, EFilter):
@@ -124,15 +140,11 @@ def _try_optimize(e : Exp, context : Context, pool : Pool):
             for ee in optimize_map(e.e, e.transform_function, args=args):
                 yield _check(ee, context, RUNTIME_POOL)
 
-        if isinstance(e, EMapGet):
-            ee = inline_mapget(e, context)
-            yield _check(ee, context, RUNTIME_POOL)
-
 def _check(e : Exp, context : Context, pool : Pool):
     """
     When Cozy chokes on malformed expressions, bad acceleration rules are often
     the culprit.  To help debug these kinds of problems, this function exists
-    as a "hook" where you can insert code to detect the issue before it
+    as a "hook" where you can insert code to catch the issue before it
     leaks out.  Exceptions thrown here will reveal what acceleration rule is
     responsible for the problem.
     """
