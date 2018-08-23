@@ -196,7 +196,7 @@ class Enumerator(object):
          - heuristics: an optional function to improve visited expressions
          - stop_callback: a function that is checked periodically to stop
            enumeration
-         - do_eviction: boolean flag to control whether this class spends time
+         - do_eviction: boolean. if true, this class spends time
            trying to evict older, slower versions of expressions from its cache
         """
         self.examples = list(examples)

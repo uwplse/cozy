@@ -241,7 +241,7 @@ def search_for_improvements(
     """Search for potential improvements to any of the target expressions.
 
     This function yields expressions that look like improvements (or are
-    ambiguous with respect to some target).  The expressions are only
+    ambiguous) with respect to some target.  The yielded expressions are only
     guaranteed to be correct on the given examples.
     """
 

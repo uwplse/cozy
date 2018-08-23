@@ -128,7 +128,7 @@ def _check(e : Exp, context : Context, pool : Pool):
     """
     When Cozy chokes on malformed expressions, bad acceleration rules are often
     the culprit.  To help debug these kinds of problems, this function exists
-    as a "hook" where you can insert code to catch the issue before it
+    as a "hook" where you can insert code to detect the issue before it
     leaks out.  Exceptions thrown here will reveal what acceleration rule is
     responsible for the problem.
     """
