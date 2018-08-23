@@ -43,6 +43,10 @@ class Order(Enum):
             return Order.LT
         return order
 
+    def could_be(self, order):
+        """Returns true if this is the given order or AMBIGUOUS."""
+        return self in (order, Order.AMBIGUOUS)
+
 def prioritized_order(*funcs):
     """Combine several Orders where you know which ones are more important.
 

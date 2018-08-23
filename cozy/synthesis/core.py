@@ -440,7 +440,7 @@ def _consider_replacement(
         event(msg)
         blacklist[k] = msg
         return
-    if info.cost_model.compare(new_target, target, context, RUNTIME_POOL) not in (Order.LT, Order.AMBIGUOUS):
+    if not info.cost_model.compare(new_target, target, context, RUNTIME_POOL).could_be(Order.LT):
         msg = "not an improvement"
         event(msg)
         blacklist[k] = msg
