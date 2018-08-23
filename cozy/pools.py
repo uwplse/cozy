@@ -3,9 +3,9 @@
 During synthesis, expressions belong to one of two pools:
  * the runtime pool for expressions executed when the method is called, and
  * the state pool for expressions that are part of the abstraction relation.
-These pools are conceptual:  they are not separately represented, but each
-expression is tagged with one of these two constants to indicate which pool
-it is part of.
+
+These pools are conceptual:  they are not separately represented, but these
+constants can be passed around to indicate which pool an expression belongs to.
 
 This module declares two constants that are used to identify which
 pool an expression is in, and a `pool_name` function to print them.
