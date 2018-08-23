@@ -133,24 +133,50 @@ def collections(exps : [Exp]):
 # Debugging routines.
 # These serve no functional purpose, but they are useful hooks for developers
 # if you need to watch for a particular enumeration event (such as seeing a
-# given expression for the first time or evicting a given expression).
+# given expression for the first time or evicting a given expression).  Usually
+# you will modify _interesting to return True for expressions you are
+# interested in.
 def _interesting(e, size, context, pool):
+    """Is an expression "interesting" for debugging?
+
+    If this returns True, then
+     - if Cozy is in verbose mode (--verbose flag), Cozy will print
+       "interesting=True" when it starts considering the given expression,
+       making the logs easier to search
+     - if we are NOT in verbose mode, then Cozy will print log messages about
+       the given expression anyway
+
+    The default implementation considers expressions interesting if they are
+    in the root context (i.e. not in the body of lambda node) and have the
+    "_tag" attribute.
+
+    No expressions have the _tag attribute.  This makes it easy to enable this
+    function from other modules by setting
+        `expression._tag = True`
+    for an expression you are interested in.  Usually it is easier to add a tag
+    where an interesting expression gets created than it is to write a
+    predicate here that identifies the expression.
+    """
     return isinstance(context, RootCtx) and hasattr(e, "_tag")
 def _consider(e, size, context, pool):
+    """Called when an Enumerator sees an expression for the first time."""
     if _interesting(e, size, context, pool) and not verbose.value:
         print("considering {} @ size={} in {}/{}".format(pprint(e), size, context, pool_name(pool)))
     task_begin("considering expression", expression=pprint(e), size=size, context=context, pool=pool_name(pool), interesting=_interesting(e, size, context, pool))
 def _accept(e, size, context, pool, fingerprint):
+    """Called when an Enumerator "accepts" an expression and adds it to the cache."""
     if _interesting(e, size, context, pool) and not verbose.value:
         print("accepting [fp={}]".format(fingerprint))
     event("accepting {} @ {} in {}/{}".format(pprint(e), size, context, pool_name(pool)))
     task_end()
 def _skip(e, size, context, pool, reason):
+    """Called when an Enumerator skips over an expression and does not cache it."""
     if _interesting(e, size, context, pool) and not verbose.value:
         print("skipping [{}]".format(reason))
     event("skipping [{}]".format(reason))
     task_end()
 def _evict(e, size, context, pool, better_exp, better_exp_size):
+    """Called when an Enumerator evicts a cached expression in favor of a better one."""
     if _interesting(e, size, context, pool) and not verbose.value:
         print("evicting {}".format(pprint(e)))
     elif _interesting(better_exp, better_exp_size, context, pool) and not verbose.value:
