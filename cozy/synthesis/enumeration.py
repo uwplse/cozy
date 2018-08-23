@@ -251,9 +251,11 @@ class Enumerator(object):
 
     This class has lots of useful features:
      - it uses a set of example inputs to deduplicate expressions via "fingerprints"
-     - expressions are cached so that less deduplication work needs to happen
+     - expressions are cached, so enumerating expressions of size N+1 will not
+       re-do all the work done while enumerating expressions of size N
      - if two expressions behave the same on all examples, only the better one
-       is kept
+       is kept in the cache (although clients might still see the worse one if
+       it gets discovered first)
     """
 
     def __init__(self, examples, cost_model : CostModel, check_wf=None, hints=None, heuristics=None, stop_callback=None, do_eviction=True):
