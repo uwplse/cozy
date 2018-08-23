@@ -12,7 +12,7 @@ See their docstrings for more information.
  - should_consider_replacement
 """
 
-from collections import OrderedDict
+from collections import OrderedDict, namedtuple
 import itertools
 from typing import Callable
 
@@ -243,6 +243,15 @@ def improve(
                 print("Now watching {} targets".format(len(watched_targets)))
                 break
 
+SearchInfo = namedtuple("SearchInfo", (
+    "context",
+    "targets",
+    "target_fingerprint",
+    "examples",
+    "check_wf",
+    "cost_model",
+    "blacklist"))
+
 def search_for_improvements(
         targets       : [Exp],
         wf_solver     : ModelCachingSolver,
@@ -256,8 +265,10 @@ def search_for_improvements(
     """Search for potential improvements to any of the target expressions.
 
     This function yields expressions that look like improvements (or are
-    ambiguous) with respect to some target.  The yielded expressions are only
+    ambiguous with respect to some target).  The expressions are only
     guaranteed to be correct on the given examples.
+
+    This function may add new items to the given blacklist.
     """
 
     root_ctx = context
@@ -313,43 +324,14 @@ def search_for_improvements(
 
         watched_ctxs = list(unique((ctx, pool) for _, _, ctx, pool in exploration_order(targets, root_ctx)))
 
-    def consider_new_target(old_target, e, ctx, pool, replacement):
-        """Always yields 0 or 1 items."""
-        nonlocal n
-        n += 1
-        k = (e, ctx, pool, replacement)
-        if enable_blacklist.value and k in blacklist:
-            event("blacklisted")
-            print("skipping blacklisted substitution: {} ---> {} ({})".format(pprint(e), pprint(replacement), blacklist[k]))
-            return
-        new_target = freshen_binders(replace(
-            target, root_ctx, RUNTIME_POOL,
-            e, ctx, pool,
-            replacement), root_ctx)
-        if any(alpha_equivalent(t, new_target) for t in targets):
-            event("already seen")
-            return
-        wf = check_wf(new_target, root_ctx, RUNTIME_POOL)
-        if not wf:
-            msg = "not well-formed [wf={}]".format(wf)
-            event(msg)
-            blacklist[k] = msg
-            return
-        if not Fingerprint.of(new_target, examples).equal_to(target_fp):
-            msg = "not correct"
-            event(msg)
-            blacklist[k] = msg
-            return
-        if cost_model.compare(new_target, target, root_ctx, RUNTIME_POOL) not in (Order.LT, Order.AMBIGUOUS):
-            msg = "not an improvement"
-            event(msg)
-            blacklist[k] = msg
-            return
-        print("FOUND A GUESS AFTER {} CONSIDERED".format(n))
-        print(" * in {}".format(pprint(old_target), pprint(e), pprint(replacement)))
-        print(" * replacing {}".format(pprint(e)))
-        print(" * with {}".format(pprint(replacement)))
-        yield new_target
+    search_info = SearchInfo(
+        context=root_ctx,
+        targets=targets,
+        target_fingerprint=target_fp,
+        examples=examples,
+        check_wf=check_wf,
+        cost_model=cost_model,
+        blacklist=blacklist)
 
     size = 0
     while True:
@@ -357,8 +339,6 @@ def search_for_improvements(
         print("starting minor iteration {} with |cache|={}".format(size, enum.cache_size()))
         if stop_callback():
             raise StopException()
-
-        n = 0
 
         for ctx, pool in watched_ctxs:
             with task("searching for obvious substitutions", ctx=ctx, pool=pool_name(pool)):
@@ -381,7 +361,7 @@ def search_for_improvements(
                                     event("no change")
                                     continue
 
-                                yield from consider_new_target(target, watched_e, ctx, pool, replacement)
+                                yield from _consider_replacement(target, watched_e, ctx, pool, replacement, search_info)
 
         if check_blind_substitutions.value:
             print("Guessing at substitutions...")
@@ -408,10 +388,68 @@ def search_for_improvements(
                                 event("skipped; `should_consider_replacement` returned {}".format(should_consider))
                                 continue
 
-                            yield from consider_new_target(target, e, ctx, pool, replacement)
+                            yield from _consider_replacement(target, e, ctx, pool, replacement, search_info)
 
-        print("CONSIDERED {}".format(n))
         size += 1
+
+def _consider_replacement(
+        target      : Exp,
+        e           : Exp,
+        ctx         : Context,
+        pool        : Pool,
+        replacement : Exp,
+        info        : SearchInfo):
+    """Helper for search_for_improvements.
+
+    This procedure decides whether replacing `e` with `replacement` in the
+    given `target` is an improvement.  If yes, it yields the result of the
+    replacement.  Otherwise it yields nothing.
+
+    Parameters:
+     - target: the top-level expression to improve
+     - e: a subexpression of the target
+     - ctx: e's context in the target
+     - pool: e's pool in the target
+     - replacement: a possible replacement for e
+     - info: a SearchInfo object with auxiliary data
+
+    This procedure may add items to info.blacklist.
+    """
+    context = info.context
+    blacklist = info.blacklist
+    k = (e, ctx, pool, replacement)
+    if enable_blacklist.value and k in blacklist:
+        event("blacklisted")
+        print("skipping blacklisted substitution: {} ---> {} ({})".format(pprint(e), pprint(replacement), blacklist[k]))
+        return
+    new_target = freshen_binders(replace(
+        target, context, RUNTIME_POOL,
+        e, ctx, pool,
+        replacement), context)
+    if any(alpha_equivalent(t, new_target) for t in info.targets):
+        event("already seen")
+        return
+    wf = info.check_wf(new_target, context, RUNTIME_POOL)
+    if not wf:
+        msg = "not well-formed [wf={}]".format(wf)
+        event(msg)
+        blacklist[k] = msg
+        return
+    if not Fingerprint.of(new_target, info.examples).equal_to(info.target_fingerprint):
+        msg = "not correct"
+        event(msg)
+        blacklist[k] = msg
+        return
+    if info.cost_model.compare(new_target, target, context, RUNTIME_POOL) not in (Order.LT, Order.AMBIGUOUS):
+        msg = "not an improvement"
+        event(msg)
+        blacklist[k] = msg
+        return
+    print("FOUND A GUESS")
+    print(" * in {}".format(pprint(target), pprint(e), pprint(replacement)))
+    print(" * replacing {}".format(pprint(e)))
+    print(" * with {}".format(pprint(replacement)))
+    yield new_target
 
 def can_elim_vars(spec : Exp, assumptions : Exp, vs : [EVar]):
     """Does any execution of `spec` actually depend on any of `vs`?
