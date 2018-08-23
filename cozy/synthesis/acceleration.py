@@ -152,6 +152,13 @@ def _check(e : Exp, context : Context, pool : Pool):
     return e
 
 def histogram(xs : Exp) -> Exp:
+    """Compute a histogram of the given collection.
+
+    This function takes a collection-type expression `xs` and returns a
+    map-type expression.  The new expression constructs a map from elements of
+    `xs` to the number of times they occur in `xs` (i.e. a histogram of the
+    elements).
+    """
     elem_type = xs.type.elem_type
     return EMakeMap2(xs,
         mk_lambda(elem_type, lambda x:
