@@ -112,6 +112,10 @@ def _try_optimize(e : Exp, context : Context, pool : Pool):
             for ee in optimize_the(e.e, args):
                 yield _check(ee, context, RUNTIME_POOL)
 
+        if isinstance(e, EUnaryOp) and e.op == UOp.Distinct:
+            for ee in optimized_distinct(e.e, args):
+                yield _check(ee, context, RUNTIME_POOL)
+
         if isinstance(e, EFilter):
             for ee in optimize_filter(e.e, e.predicate, args=args):
                 yield _check(ee, context, RUNTIME_POOL)
@@ -457,13 +461,19 @@ def map_values(m, f):
 
 def _simple_filter(xs : Exp, p : ELambda, args : {EVar}):
     """Assumes the body of p is already in negation normal form"""
-    yielded = False
     if p.body == ETRUE:
-        yielded = True
         yield xs
+        return
     if p.body == EFALSE:
-        yielded = True
         yield EEmptyList().with_type(xs.type)
+        return
+    if isinstance(xs, EEmptyList):
+        yield xs
+        return
+    yielded = False
+    if isinstance(xs, ESingleton):
+        yielded = True
+        yield optimized_cond(p.apply_to(xs.e), xs, EEmptyList().with_type(xs.type))
     if isinstance(p.body, EBinOp) and p.body.op == BOp.Or:
         for e1, e2 in itertools.permutations([p.body.e1, p.body.e2]):
             for r1 in _simple_filter(xs, ELambda(p.arg, e1), args):
@@ -475,9 +485,6 @@ def _simple_filter(xs : Exp, p : ELambda, args : {EVar}):
             for r1 in _simple_filter(xs, ELambda(p.arg, e1), args):
                 yielded = True
                 yield from _simple_filter(r1, ELambda(p.arg, e2), args)
-    if isinstance(xs, EEmptyList):
-        yielded = True
-        yield xs
     if isinstance(xs, EStateVar) and not any(v in args for v in free_vars(p)):
         yielded = True
         yield EStateVar(EFilter(xs.e, strip_EStateVar(p)).with_type(xs.type)).with_type(xs.type)
@@ -491,20 +498,29 @@ def _simple_filter(xs : Exp, p : ELambda, args : {EVar}):
                 yielded = True
                 yield EBinOp(e1, xs.op, e2).with_type(xs.type)
     if isinstance(p.body, EBinOp) and p.body.op == "==":
-        fvs2 = free_vars(p.body.e2)
-        fvs1 = free_vars(p.body.e1)
-        if p.arg in fvs1 and not any(a in fvs1 for a in args) and p.arg not in fvs2 and isinstance(xs, EStateVar):
-            k = fresh_var(p.body.e1.type)
-            e = EMapGet(
-                EStateVar(
-                    EMakeMap2(
-                        EMap(xs.e, ELambda(p.arg, p.body.e1)),
-                        ELambda(k, EFilter(xs.e, ELambda(p.arg, EEq(p.body.e1, k)))))),
-                p.body.e2)
-            res = retypecheck(e)
-            assert res
-            yielded = True
-            yield e
+        e1 = p.body.e1
+        e2 = p.body.e2
+        fvs2 = free_vars(e2)
+        fvs1 = free_vars(e1)
+        for (e1, fvs1), (e2, fvs2) in itertools.permutations([(e1, fvs1), (e2, fvs2)]):
+            if p.arg in fvs1 and not any(a in fvs1 for a in args) and p.arg not in fvs2 and isinstance(xs, EStateVar):
+                if e1 == p.arg:
+                    yield optimized_cond(
+                        optimized_in(e2, xs),
+                        ESingleton(e2).with_type(xs.type),
+                        EEmptyList().with_type(xs.type))
+
+                k = fresh_var(e1.type)
+                e = EMapGet(
+                    EStateVar(
+                        EMakeMap2(
+                            EMap(xs.e, ELambda(p.arg, e1)),
+                            ELambda(k, EFilter(xs.e, ELambda(p.arg, EEq(e1, k)))))),
+                    e2)
+                res = retypecheck(e)
+                assert res
+                yielded = True
+                yield e
     if not yielded:
         yield EFilter(xs, p).with_type(xs.type)
 
@@ -555,11 +571,13 @@ def optimize_map(xs, f, args):
         yield ESingleton(f.apply_to(xs.e)).with_type(res_type)
     if isinstance(xs, EEmptyList):
         yield EEmptyList().with_type(res_type)
+    if isinstance(xs, EStateVar) and not any(v in args for v in free_vars(f)):
+        yield EStateVar(EMap(xs.e, f).with_type(res_type)).with_type(res_type)
     if isinstance(xs, EBinOp):
-        if xs.op == "+":
+        if xs.op in ("+", "-"):
             for a in optimize_map(xs.e1, f, args):
                 for b in optimize_map(xs.e2, f, args):
-                    yield EBinOp(a, "+", b).with_type(res_type)
+                    yield EBinOp(a, xs.op, b).with_type(res_type)
     if isinstance(f.body, ECond):
         for true_elems      in optimize_filter(xs, ELambda(f.arg,      f.body.cond) , args=args):
             for false_elems in optimize_filter(xs, ELambda(f.arg, ENot(f.body.cond)), args=args):
@@ -620,6 +638,29 @@ def optimize_the(xs, args):
             for y in optimize_the(xs.e2, args):
                 yield optimized_cond(e1_exists, x, y)
     yield EUnaryOp(UOp.The, xs).with_type(t)
+
+def optimized_distinct(xs, args):
+    if isinstance(xs, EEmptyList) or isinstance(xs, ESingleton):
+        yield xs
+        return
+    if isinstance(xs, EStateVar):
+        yield EStateVar(EUnaryOp(UOp.Distinct, xs.e).with_type(xs.type)).with_type(xs.type)
+    if isinstance(xs, EBinOp):
+        if xs.op == "+":
+            v = fresh_var(xs.type.elem_type)
+            for a in optimized_distinct(xs.e1, args):
+                for b in optimized_distinct(xs.e2, args):
+                    for b_prime in optimize_filter(b, ELambda(v, ENot(optimized_in(v, a))), args):
+                        yield EBinOp(a, "+", b_prime).with_type(xs.type)
+        if xs.op == "-":
+            v = fresh_var(xs.type.elem_type)
+            for a in optimized_distinct(xs.e1, args):
+                for b in optimized_distinct(xs.e2, args):
+                    yield from optimize_filter(a, ELambda(v, ENot(optimized_in(v, b))), args)
+    if isinstance(xs, EFilter):
+        for ee in optimized_distinct(xs.e, args):
+            yield EFilter(ee, xs.predicate).with_type(xs.type)
+    yield EUnaryOp(UOp.Distinct, xs).with_type(xs.type)
 
 def fold_into_map(e, context):
     fvs = free_vars(e)

@@ -61,6 +61,7 @@ _OPERATORS = [
     ("PLUS", "+"),
     ("MINUS", "-"),
     ("TIMES", "*"),
+    ("DIVIDE", "/"),
     ("QUESTION", "?"),
     ("COLON", ":"),
     ("SEMICOLON", ";"),
@@ -275,7 +276,7 @@ def make_parser():
         ("left", "KW_AND", "KW_OR"),
         ("left", "OP_EQ", "OP_NE", "OP_LT", "OP_LE", "OP_GT", "OP_GE"),
         ("left", "OP_PLUS", "OP_MINUS"),
-        ("left", "OP_TIMES"),
+        ("left", "OP_TIMES", "OP_DIVIDE"),
         ("left", "KW_IN"),
         ("left", "KW_NOT", "KW_DISTINCT", "KW_UNIQUE", "KW_EMPTY", "KW_EXISTS", "KW_THE", "KW_MIN", "KW_MAX", "KW_ARGMIN", "KW_ARGMAX", "KW_SUM", "KW_ANY", "KW_ALL", "KW_LEN", "KW_REVERSED"),
         ("left", "OP_OPEN_BRACKET"),
@@ -326,6 +327,7 @@ def make_parser():
                | exp OP_MINUS exp
                | OP_MINUS exp
                | exp OP_TIMES exp
+               | exp OP_DIVIDE exp
                | exp OP_QUESTION exp OP_COLON exp
                | exp OP_DOT NUM
                | exp OP_DOT WORD

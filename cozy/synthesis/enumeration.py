@@ -7,61 +7,106 @@ expressions.
 from collections import namedtuple, defaultdict, OrderedDict
 import datetime
 import itertools
+import functools
 
 from cozy.common import pick_to_sum, OrderedSet, unique, make_random_access, StopException, Periodically
 from cozy.target_syntax import *
 from cozy.syntax_tools import pprint, fresh_var, free_vars, freshen_binders, alpha_equivalent, all_types
-from cozy.evaluation import eval, eval_bulk, construct_value, values_equal
+from cozy.evaluation import eval_bulk, construct_value, values_equal
 from cozy.typecheck import is_numeric, is_scalar, is_collection
 from cozy.cost_model import CostModel, Order
 from cozy.pools import Pool, RUNTIME_POOL, STATE_POOL, pool_name
 from cozy.contexts import Context, RootCtx, UnderBinder, more_specific_context
 from cozy.logging import task, task_begin, task_end, event, verbose
 
-# TODO: someday, turn this into a full-fledged type
-Fingerprint = tuple
-
-def fingerprint(e : Exp, examples : [{str:object}]) -> Fingerprint:
-    """Compute the "fingerprint" of an expression.
+@functools.total_ordering
+class Fingerprint(object):
+    """A fuzzy identifier for an expression.
 
     An expression's fingerprint is derived from a set of example inputs.  Two
-    expressions with different fingerprints may behave differently in some
-    cases.  Two expressions with the same fingerprint might be semantically
-    equivalent, or they might just appear to be semantically equivalent on the
-    given examples.
+    expressions with different fingerprints definitely behave differently in
+    some cases.  Two expressions with the same fingerprint might be
+    semantically equivalent (i.e. behave the same on all inputs), or they might
+    just appear to be semantically equivalent on the given examples.
 
     The Enumerator class uses fingerprints to group expressions into
     equivalence classes.
     """
-    return (e.type,) + tuple(eval_bulk(e, examples))
+    __slots__ = ("type", "signature")
 
-def fingerprints_match(fp1 : Fingerprint, fp2 : Fingerprint) -> bool:
-    """Determine whether two fingerprints are very similar.
+    @staticmethod
+    def of(e : Exp, inputs : [{str:object}]):
+        """Compute the fingerprint of an expression."""
+        return Fingerprint(e.type, eval_bulk(e, inputs))
 
-    If this returns True, then expressions with the given fingerprints look to
-    be == to each other (but not necessarily === to each other).
+    def __init__(self, type : Type, signature : [object]):
+        self.type = type
+        self.signature = tuple(signature)
 
-    Comparing two fingerprint objects directly with Python's == operator checks
-    whether expressions with those fingerprints look to be === to each other.
-    """
-    assert isinstance(fp1[0], Type)
-    assert isinstance(fp2[0], Type)
-    if fp1[0] != fp2[0]:
-        return False
-    t = fp1[0]
-    return all(values_equal(t, fp1[i], fp2[i]) for i in range(1, len(fp1)))
+    def _as_tuple(self):
+        return (self.type, self.signature)
 
-def fingerprint_is_subset(fp1 : Fingerprint, fp2 : Fingerprint) -> bool:
-    """
-    Returns true if e1 appears to always be a subset of e2 (where e1 and e2
-    are collection-type expressions with the given fingerprints).
-    """
-    assert is_collection(fp1[0])
-    assert is_collection(fp2[0])
-    x = EVar("x").with_type(fp1[0])
-    y = EVar("y").with_type(fp2[0])
-    is_subset = EIsSubset(x, y)
-    return all(eval(is_subset, { "x": a, "y": b }) for (a, b) in zip(fp1[1:], fp2[1:]))
+    def __hash__(self) -> int:
+        return hash(self._as_tuple())
+
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, Fingerprint):
+            return NotImplemented
+        return self._as_tuple() == other._as_tuple()
+
+    def __lt__(self, other) -> bool:
+        if not isinstance(other, Fingerprint):
+            return NotImplemented
+        return self._as_tuple() < other._as_tuple()
+
+    def __len__(self) -> int:
+        """Returns the number of examples used to compute this fingerprint."""
+        return len(self.signature)
+
+    def __repr__(self):
+        return "Fingerprint{!r}".format(self._as_tuple())
+
+    def __str__(self):
+        return "Fingerprint ({}): [{}]".format(pprint(self.type), ", ".join(str(x) for x in self.signature))
+
+    def _require_comparable_to(self, other):
+        if len(self) != len(other):
+            raise ValueError("fingerprints have different sizes; were they computed from different sets of examples?")
+
+    def equal_to(self, other) -> bool:
+        """Determine whether two fingerprints are very similar.
+
+        If this returns True, then expressions with the given fingerprints look
+        to be == to each other (but not necessarily === to each other).
+
+        Comparing two fingerprint objects directly with Python's == operator
+        checks whether expressions with those fingerprints look to be === to
+        each other.
+        """
+        self._require_comparable_to(other)
+        return (
+            self.type == other.type
+            and len(self.signature) == len(other.signature)
+            and all(values_equal(self.type, v1, v2) for (v1, v2) in zip(self.signature, other.signature)))
+
+    def subset_of(self, other) -> bool:
+        """Determine whether this fingerprint looks like a subset of the other.
+
+        If this returns True, then it could be the case that an expression with
+        this fingerprint always returns a strict subset of the elements that
+        would be returned by an expression with the other fingerprint.
+        """
+        if not is_collection(self.type):
+            raise ValueError("this fingerprint is not for a collection-type expression")
+        if not is_collection(other.type):
+            raise ValueError("other fingerprint is not for a collection-type expression")
+        self._require_comparable_to(other)
+        x = EVar("x").with_type(self.type)
+        y = EVar("y").with_type(other.type)
+        is_subset = EIsSubset(x, y)
+        return all(eval_bulk(
+            is_subset,
+            [{x.id:a, y.id:b} for (a, b) in zip(self.signature, other.signature)]))
 
 EnumeratedExp = namedtuple("EnumeratedExp", [
     "e",                # The expression
@@ -96,9 +141,9 @@ def _consider(e, size, context, pool):
     if _interesting(e, size, context, pool) and not verbose.value:
         print("considering {} @ size={} in {}/{}".format(pprint(e), size, context, pool_name(pool)))
     task_begin("considering expression", expression=pprint(e), size=size, context=context, pool=pool_name(pool), interesting=_interesting(e, size, context, pool))
-def _accept(e, size, context, pool):
+def _accept(e, size, context, pool, fingerprint):
     if _interesting(e, size, context, pool) and not verbose.value:
-        print("accepting")
+        print("accepting [fp={}]".format(fingerprint))
     event("accepting {} @ {} in {}/{}".format(pprint(e), size, context, pool_name(pool)))
     task_end()
 def _skip(e, size, context, pool, reason):
@@ -109,6 +154,8 @@ def _skip(e, size, context, pool, reason):
 def _evict(e, size, context, pool, better_exp, better_exp_size):
     if _interesting(e, size, context, pool) and not verbose.value:
         print("evicting {}".format(pprint(e)))
+    elif _interesting(better_exp, better_exp_size, context, pool) and not verbose.value:
+        print("{} caused eviction of {}".format(pprint(better_exp), pprint(e)))
     event("evicting {}".format(pprint(e)))
 
 def eviction_policy(new_exp : Exp, new_ctx : Context, old_exp : Exp, old_ctx : Context, pool : Pool, cost_model : CostModel) -> [Exp]:
@@ -210,6 +257,9 @@ class Enumerator(object):
         if hints is None:
             hints = ()
         self.hints = OrderedSet((e, ctx.generalize(free_vars(e)), p) for (e, ctx, p) in hints)
+        self.hint_types = OrderedSet()
+        for h, _, _ in self.hints:
+            self.hint_types |= all_types(h)
         if heuristics is None:
             heuristics = lambda e, ctx, pool: ()
         self.heuristics = heuristics
@@ -243,11 +293,9 @@ class Enumerator(object):
             for e in LITERALS:
                 yield e
 
-            all_interesting_types = OrderedSet()
+            all_interesting_types = OrderedSet(self.hint_types)
             for v, _ in context.vars():
-                all_interesting_types |= all_types(v)
-            for h, _, _ in self.hints:
-                all_interesting_types |= all_types(h)
+                all_interesting_types |= all_types(v.type)
             for t in all_interesting_types:
                 l = construct_value(t)
                 if l not in LITERALS:
@@ -351,16 +399,9 @@ class Enumerator(object):
                         yield EListSlice(l, st, ed).with_type(l.type)
 
         for bag in collections(cache[size-1]):
-            # len of bag
-            count = EUnaryOp(UOp.Length, bag).with_type(INT)
-            yield count
-            # empty?
+            yield EUnaryOp(UOp.Length, bag).with_type(INT)
             yield EUnaryOp(UOp.Empty, bag).with_type(BOOL)
-            # exists?
             yield EUnaryOp(UOp.Exists, bag).with_type(BOOL)
-            # singleton?
-            yield EEq(count, ONE)
-
             yield EUnaryOp(UOp.The, bag).with_type(bag.type.elem_type)
             yield EUnaryOp(UOp.Distinct, bag).with_type(bag.type)
             yield EUnaryOp(UOp.AreUnique, bag).with_type(BOOL)
@@ -380,10 +421,7 @@ class Enumerator(object):
             for x in cache[sz1]:
                 bag = ESingleton(x).with_type(TBag(x.type))
                 for lam in build_lambdas(bag, pool, sz2):
-                    e = ELet(x, lam).with_type(lam.body.type)
-                    if x == EBinOp(EVar("x"), "+", EVar("x")):
-                        e._tag = True
-                    yield e
+                    yield ELet(x, lam).with_type(lam.body.type)
 
         # Iteration
         for (sz1, sz2) in pick_to_sum(2, size - 1):
@@ -485,7 +523,7 @@ class Enumerator(object):
                     _skip(e, size, context, pool, "wf={}".format(wf))
                     continue
 
-                fp = fingerprint(e, examples)
+                fp = Fingerprint.of(e, examples)
 
                 # collect all expressions from parent contexts
                 prev = list(cache.find_equivalent_expressions(context, pool, fp))
@@ -498,7 +536,7 @@ class Enumerator(object):
                     # decide whether to keep this expression
                     should_keep = True
                     if prev:
-                        with task("comparing to cached equivalents"):
+                        with task("comparing to cached equivalents", count=len(prev)):
                             for entry in prev:
                                 prev_exp = entry.e
                                 event("previous: {}".format(pprint(prev_exp)))
@@ -514,13 +552,13 @@ class Enumerator(object):
 
                 if should_keep:
 
-                    if self.do_eviction:
-                        with task("evicting"):
+                    if self.do_eviction and to_evict:
+                        with task("evicting", count=to_evict):
                             for entry in to_evict:
                                 _evict(entry.e, entry.size, context, pool, e, size)
                                 cache.remove(context, pool, entry)
 
-                    _accept(e, size, context, pool)
+                    _accept(e, size, context, pool, fp)
                     info = EnumeratedExp(
                         e=e,
                         fingerprint=fp,

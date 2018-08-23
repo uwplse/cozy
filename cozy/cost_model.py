@@ -2,7 +2,6 @@
 
 from collections import OrderedDict
 from enum import Enum
-import functools
 
 from cozy.common import OrderedSet
 from cozy.target_syntax import *
@@ -15,9 +14,16 @@ from cozy.evaluation import eval, eval_bulk
 from cozy.structures import extension_handler
 from cozy.logging import task, event
 from cozy.state_maintenance import mutate
+from cozy.polynomials import Polynomial, DominantTerm
 from cozy.opts import Option
 
-consider_maintenance_cost = Option("consider-maintenance-cost", bool, False, description="Experimental option that lets Cozy use ops for the cost model. Note that Cozy will become much slower with this option on.")
+cost_model_selection = Option("cost-model", int, 2,
+    description="Cost model to use.  "
+        + "Higher numbers are much slower to evaluate but often yield better results.  "
+        + "0: optimize for expression size.  "
+        + "1: optimize for asymptotic runtime.  "
+        + "2: optimize for a mix of asymptotic runtime, storage size, and exact runtime.  "
+        + "3: optimize for a mix of asymptotic runtime and state maintenance cost.")
 
 class Order(Enum):
     EQUAL     = 0
@@ -163,7 +169,28 @@ class CostModel(object):
 
     def compare(self, e1 : Exp, e2 : Exp, context : Context, pool : Pool) -> Order:
         with task("compare costs", context=context):
-            if consider_maintenance_cost.value:
+            selection = cost_model_selection.value
+            if selection == 0:
+                return order_objects(e1.size(), e2.size())
+            if selection == 1:
+                if pool == RUNTIME_POOL:
+                    return prioritized_order(
+                        lambda: order_objects(polynomial_runtime(e1), polynomial_runtime(e2)),
+                        lambda: order_objects(e1.size(), e2.size()))
+                else:
+                    return order_objects(e1.size(), e2.size())
+            if selection == 2:
+                if pool == RUNTIME_POOL:
+                    return prioritized_order(
+                        lambda: order_objects(asymptotic_runtime(e1), asymptotic_runtime(e2)),
+                        lambda: self._compare(max_storage_size(e1, self.freebies), max_storage_size(e2, self.freebies), context),
+                        lambda: self._compare(rt(e1), rt(e2), context),
+                        lambda: order_objects(e1.size(), e2.size()))
+                else:
+                    return prioritized_order(
+                        lambda: self._compare(storage_size(e1, self.freebies), storage_size(e2, self.freebies), context),
+                        lambda: order_objects(e1.size(), e2.size()))
+            if selection == 3:
                 if pool == RUNTIME_POOL:
                     return prioritized_order(
                         lambda: order_objects(asymptotic_runtime(e1), asymptotic_runtime(e2)),
@@ -182,17 +209,7 @@ class CostModel(object):
                     return prioritized_order(
                         lambda: self._compare(storage_size(e1, self.freebies), storage_size(e2, self.freebies), context),
                         lambda: order_objects(e1.size(), e2.size()))
-            else:
-                if pool == RUNTIME_POOL:
-                    return prioritized_order(
-                        lambda: order_objects(asymptotic_runtime(e1), asymptotic_runtime(e2)),
-                        lambda: self._compare(max_storage_size(e1, self.freebies), max_storage_size(e2, self.freebies), context),
-                        lambda: self._compare(rt(e1), rt(e2), context),
-                        lambda: order_objects(e1.size(), e2.size()))
-                else:
-                    return prioritized_order(
-                        lambda: self._compare(storage_size(e1, self.freebies), storage_size(e2, self.freebies), context),
-                        lambda: order_objects(e1.size(), e2.size()))
+            raise ValueError("illegal value for --{}: {}".format(cost_model_selection.name, selection))
 
 def cardinality(e : Exp) -> Exp:
     assert is_collection(e.type)
@@ -253,35 +270,7 @@ def hash_cost(e):
 def comparison_cost(e1, e2):
     return ESum([storage_size(e1), storage_size(e2)])
 
-@functools.total_ordering
-class DominantTerm(object):
-    """A term of the form c*n^e for some unknown n.
-
-    Instances of this class can be added, multiplied, and compared.  A term
-    with a higher exponent is always greater than one with a lower exponent.
-    """
-    __slots__ = ("multiplier", "exponent")
-    def __init__(self, multiplier, exponent):
-        self.multiplier = multiplier
-        self.exponent = exponent
-    def __eq__(self, other):
-        return self.multiplier == other.multiplier and self.exponent == other.exponent
-    def __lt__(self, other):
-        return (self.exponent, self.multiplier) < (other.exponent, other.multiplier)
-    def __str__(self):
-        return "{}n^{}".format(self.multiplier, self.exponent)
-    def __repr__(self):
-        return "DominantTerm({}, {})".format(self.multiplier, self.exponent)
-    def __add__(self, other):
-        if other.exponent == self.exponent:
-            return DominantTerm(self.multiplier + other.multiplier, self.exponent)
-        if other.exponent > self.exponent:
-            return other
-        return self
-    def __mul__(self, other):
-        return DominantTerm(self.multiplier * other.multiplier, self.exponent + other.exponent)
-
-def worst_case_cardinality(e : Exp) -> DominantTerm:
+def worst_case_cardinality(e : Exp) -> Polynomial:
     assert is_collection(e.type)
     while isinstance(e, EFilter) or isinstance(e, EMap) or isinstance(e, EFlatMap) or isinstance(e, EMakeMap2) or isinstance(e, EStateVar) or (isinstance(e, EUnaryOp) and e.op == UOp.Distinct) or isinstance(e, EListSlice):
         e = e.e
@@ -294,16 +283,16 @@ def worst_case_cardinality(e : Exp) -> DominantTerm:
     if isinstance(e, ECond):
         return max(worst_case_cardinality(e.then_branch), worst_case_cardinality(e.else_branch))
     if isinstance(e, EEmptyList):
-        return DominantTerm.ZERO
+        return Polynomial.ZERO
     if isinstance(e, ESingleton):
-        return DominantTerm.ONE
+        return Polynomial.ONE
     if isinstance(e, EMapGet):
         try:
             return worst_case_cardinality(map_value_func(e.map).body)
         except NotImplementedError:
             print("WARNING: unable to peer inside map {}".format(pprint(e.map)))
-            return DominantTerm.N
-    return DominantTerm.N
+            return Polynomial.N
+    return Polynomial.N
 
 def _maintenance_cost(e : Exp, op : Op, freebies : [Exp] = []):
     """Determines the cost of maintaining the expression when there are
@@ -373,7 +362,6 @@ def maintenance_cost(e : Exp, op : Op, freebies : [Exp] = []):
     """This method calulates the result over all expressions that are EStateVar """
     return ESum([_maintenance_cost(e=x.e, op=op, freebies=freebies) for x in all_exps(e) if isinstance(x, EStateVar)])
 
-
 # These require walking over the entire collection.
 # Some others (e.g. "exists" or "empty") just look at the first item.
 LINEAR_TIME_UOPS = {
@@ -382,12 +370,8 @@ LINEAR_TIME_UOPS = {
     UOp.All, UOp.Any,
     UOp.Reversed }
 
-DominantTerm.ZERO = DominantTerm(0, 0)
-DominantTerm.ONE  = DominantTerm(1, 0)
-DominantTerm.N    = DominantTerm(1, 1)
-
-def asymptotic_runtime(e : Exp) -> DominantTerm:
-    res = DominantTerm.ZERO
+def polynomial_runtime(e : Exp) -> Polynomial:
+    res = Polynomial.ZERO
     stk = [e]
     while stk:
         e = stk.pop()
@@ -399,16 +383,24 @@ def asymptotic_runtime(e : Exp) -> DominantTerm:
         if isinstance(e, ELambda):
             e = e.body
         if isinstance(e, EFilter):
-            res += worst_case_cardinality(e.e) * asymptotic_runtime(e.predicate) + asymptotic_runtime(e.e)
+            stk.append(e.e)
+            res += worst_case_cardinality(e.e) * polynomial_runtime(e.predicate)
             continue
         if isinstance(e, EArgMin) or isinstance(e, EArgMax):
-            res += worst_case_cardinality(e.e) * asymptotic_runtime(e.key_function) + asymptotic_runtime(e.e)
+            stk.append(e.e)
+            res += worst_case_cardinality(e.e) * polynomial_runtime(e.key_function)
             continue
         if isinstance(e, EMap) or isinstance(e, EFlatMap):
-            res += worst_case_cardinality(e.e) * asymptotic_runtime(e.transform_function) + asymptotic_runtime(e.e)
-        res += DominantTerm.ONE
+            stk.append(e.e)
+            res += worst_case_cardinality(e.e) * polynomial_runtime(e.transform_function)
+            continue
+        if isinstance(e, ELet):
+            stk.append(e.e)
+            stk.append(e.body_function.body)
+            continue
+        res += Polynomial.ONE
         if isinstance(e, EMakeMap2):
-            res += worst_case_cardinality(e.e) * asymptotic_runtime(e.value_function)
+            res += worst_case_cardinality(e.e) * polynomial_runtime(e.value_function)
         if isinstance(e, EBinOp) and e.op == BOp.In:
             res += worst_case_cardinality(e.e2)
         if isinstance(e, EBinOp) and e.op == "-" and is_collection(e.type):
@@ -416,12 +408,16 @@ def asymptotic_runtime(e : Exp) -> DominantTerm:
         if isinstance(e, EUnaryOp) and e.op in LINEAR_TIME_UOPS:
             res += worst_case_cardinality(e.e)
         if isinstance(e, ECond):
-            res += max(asymptotic_runtime(e.then_branch), asymptotic_runtime(e.else_branch))
+            res += max(polynomial_runtime(e.then_branch), polynomial_runtime(e.else_branch))
             stk.append(e.cond)
             continue
         if isinstance(e, EStateVar):
             continue
         stk.extend(e.children())
+    return res
+
+def asymptotic_runtime(e : Exp) -> DominantTerm:
+    res = polynomial_runtime(e).largest_term()
     if res.exponent == 0:
         return DominantTerm.ONE
     return res
@@ -517,6 +513,13 @@ def debug_comparison(cm : CostModel, e1 : Exp, e2 : Exp, context : Context):
     print("  e1 = {}".format(pprint(e1)))
     print("  e2 = {}".format(pprint(e2)))
     print("  res = {}".format(cm.compare(e1, e2, context=context, pool=RUNTIME_POOL)))
+    if is_collection(e1.type):
+        print("worst_case_cardinality(e1) = {}".format(worst_case_cardinality(e1)))
+    if is_collection(e2.type):
+        print("worst_case_cardinality(e2) = {}".format(worst_case_cardinality(e2)))
+    print("-" * 20 + " {} freebies...".format(len(cm.freebies)))
+    for freebie in cm.freebies:
+        print("  * {}".format(pprint(freebie)))
     print("-" * 20 + " {} ops...".format(len(cm.ops)))
     for o in cm.ops:
         print(pprint(o))
@@ -524,7 +527,7 @@ def debug_comparison(cm : CostModel, e1 : Exp, e2 : Exp, context : Context):
             print("maintenance_cost({e}) = {res}".format(e=ename, res=pprint(maintenance_cost(e, o))))
 
     print("-" * 20)
-    for f in asymptotic_runtime, max_storage_size, rt:
+    for f in asymptotic_runtime, polynomial_runtime, max_storage_size, rt:
         for ename, e in [("e1", e1), ("e2", e2)]:
             res = f(e)
             print("{f}({e}) = {res}".format(f=f.__name__, e=ename, res=(pprint(res) if isinstance(res, Exp) else res)))
@@ -532,8 +535,6 @@ def debug_comparison(cm : CostModel, e1 : Exp, e2 : Exp, context : Context):
     print("-" * 20 + " {} examples...".format(len(cm.examples)))
     for x in cm.examples:
         print(x)
-        print("asympto(e1) = {}".format(asymptotic_runtime(e1)))
-        print("asympto(e2) = {}".format(asymptotic_runtime(e2)))
 
         for op in cm.ops:
             print(pprint(op))

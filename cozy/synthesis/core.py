@@ -39,7 +39,7 @@ from cozy.logging import task, event
 from cozy.structures import extension_handler
 
 from .acceleration import try_optimize
-from .enumeration import Enumerator, Fingerprint, fingerprint, fingerprints_match, fingerprint_is_subset, eviction_policy
+from .enumeration import Enumerator, Fingerprint, eviction_policy
 
 eliminate_vars = Option("eliminate-vars", bool, False)
 enable_blacklist = Option("enable-blacklist", bool, False)
@@ -61,6 +61,8 @@ allow_peels = Option("allow-peels", bool, False)
 allow_big_sets = Option("allow-big-sets", bool, False)
 allow_big_maps = Option("allow-big-maps", bool, False)
 allow_int_arithmetic_state = Option("allow-int-arith-state", bool, True)
+allow_nonzero_state_constants = Option("allow-nonzero-state-constants", bool, True)
+allow_binop_state = Option("allow-binop-state", bool, False)
 
 def never_stop():
     """Takes no arguments, always returns False."""
@@ -272,7 +274,7 @@ def search_for_improvements(
             stop_callback=stop_callback,
             do_eviction=enable_eviction.value)
 
-    target_fp = fingerprint(targets[0], examples)
+    target_fp = Fingerprint.of(targets[0], examples)
 
     with task("setting up watches"):
         watches_by_context = OrderedDict()
@@ -288,7 +290,7 @@ def search_for_improvements(
         for ctx, exprs in watches_by_context.items():
             exs = ctx.instantiate_examples(examples)
             for target, e, pool in exprs:
-                fp = fingerprint(e, exs)
+                fp = Fingerprint.of(e, exs)
                 k = (fp, ctx, pool)
                 l = watches.get(k)
                 if l is None:
@@ -319,7 +321,7 @@ def search_for_improvements(
             event(msg)
             blacklist[k] = msg
             return
-        if not fingerprints_match(fingerprint(new_target, examples), target_fp):
+        if not Fingerprint.of(new_target, examples).equal_to(target_fp):
             msg = "not correct"
             event(msg)
             blacklist[k] = msg
@@ -353,7 +355,7 @@ def search_for_improvements(
                             if cc != ctx or pp != pool:
                                 continue
 
-                            if not fingerprints_match(fpx, fp):
+                            if not fpx.equal_to(fp):
                                 continue
 
                             for target, watched_e in reses:
@@ -386,7 +388,7 @@ def search_for_improvements(
                                 continue
                             should_consider = should_consider_replacement(
                                 target, root_ctx,
-                                e, ctx, pool, fingerprint(e, ctx.instantiate_examples(examples)),
+                                e, ctx, pool, Fingerprint.of(e, ctx.instantiate_examples(examples)),
                                 info.e, info.fingerprint)
                             if not should_consider:
                                 event("skipped; `should_consider_replacement` returned {}".format(should_consider))
@@ -480,7 +482,7 @@ def should_consider_replacement(
     if not is_collection(subexp.type):
         return No("only collections matter")
 
-    if not fingerprint_is_subset(replacement_fp, subexp_fp):
+    if not replacement_fp.subset_of(subexp_fp):
         return No("not a subset")
 
     return True
@@ -497,9 +499,6 @@ def hint_order(tup):
 
 def good_idea(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptions : Exp = ETRUE, ops : [Op] = ()) -> bool:
     """Heuristic filter to ignore expressions that are almost certainly useless."""
-
-    if hasattr(e, "_good_idea"):
-        return True
 
     state_vars  = OrderedSet(v for v, p in context.vars() if p == STATE_POOL)
     args        = OrderedSet(v for v, p in context.vars() if p == RUNTIME_POOL)
@@ -537,9 +536,9 @@ def good_idea(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptio
         return No("collection subtraction in state position")
     # if not at_runtime and isinstance(e, ESingleton):
     #     return No("singleton in state position")
-    # if not at_runtime and isinstance(e, ENum) and e.val != 0 and e.type == INT:
-    #     return No("nonzero integer constant in state position")
-    if at_runtime and isinstance(e, EStateVar) and isinstance(e.e, EBinOp) and is_scalar(e.e.e1.type) and is_scalar(e.e.e2.type):
+    if not allow_nonzero_state_constants.value and not at_runtime and isinstance(e, ENum) and e.val != 0:
+        return No("nonzero integer constant in state position")
+    if not allow_binop_state.value and at_runtime and isinstance(e, EStateVar) and isinstance(e.e, EBinOp) and is_scalar(e.e.e1.type) and is_scalar(e.e.e2.type):
         return No("constant-time binary operator {!r} in state position".format(e.e.op))
     if not allow_conditional_state.value and not at_runtime and isinstance(e, ECond):
         return No("conditional in state position")
@@ -573,7 +572,6 @@ def good_idea(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptio
         if not solver.valid(s):
             return No("non-polynomial-sized map")
 
-    e._good_idea = True
     return True
 
 def good_idea_recursive(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptions : Exp = ETRUE, ops : [Op] = ()) -> bool:
