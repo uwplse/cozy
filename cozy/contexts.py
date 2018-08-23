@@ -35,8 +35,8 @@ Important terminology:
    describes only a subset of B's variables
 
 Important functions:
- - shred: enumerate all subexpressions (with corresponding context and pool) of
-   a given top-level expression.
+ - all_subexpressions_with_context_information: enumerate all subexpressions
+   (with corresponding context and pool) of a given top-level expression.
    (See pools.py for a description of pools in Cozy.)
  - replace: context-aware expression replacement.
 """
@@ -285,6 +285,7 @@ class UnderBinder(Context):
         return "{} in {}, {}".format(self.var.id, pprint(self.bag), self._parent)
 
 class _Shredder(Visitor):
+    """Helper for all_subexpressions_with_context_information."""
     def __init__(self, ctx, pool=RUNTIME_POOL):
         self.root_ctx = ctx
         self.ctx = ctx
@@ -352,8 +353,8 @@ class _Shredder(Visitor):
     def visit_Fraction(self, i):
         return ()
 
-def shred(e : Exp, context : Context, pool : Pool = RUNTIME_POOL) -> [(Exp, Context, Pool)]:
-    """Shred `e` into a list of all its subexpressions.
+def all_subexpressions_with_context_information(e : Exp, context : Context, pool : Pool = RUNTIME_POOL) -> [(Exp, Context, Pool)]:
+    """Iterate over all subexpressions in `e`.
 
     This function returns a stream of (exp, context, pool) tuples, where `exp`
     is a subexpression of `e` described by `context` and `pool`.
@@ -369,6 +370,7 @@ def _sametype(e1 : Exp, e2 : Exp):
     return True
 
 class _Replacer(BottomUpRewriter):
+    """Helper for replace."""
     def __init__(self,
             haystack_context : Context,
             haystack_pool : Pool,

@@ -9,7 +9,7 @@ from cozy.syntax_tools import pprint, strip_EStateVar, freshen_binders, alpha_eq
 from cozy.solver import ModelCachingSolver
 from cozy.pools import RUNTIME_POOL, STATE_POOL
 from cozy.structures import extension_handler
-from cozy.contexts import Context, shred
+from cozy.contexts import Context, all_subexpressions_with_context_information
 from cozy.logging import task
 
 class ExpIsNotWf(No):
@@ -89,7 +89,7 @@ def exp_wf(e : Exp, context : Context, pool = RUNTIME_POOL, assumptions : Exp = 
     """
     if solver is None:
         solver = ModelCachingSolver(vars=[], funcs={})
-    for x, ctx, p in shred(e, context, pool):
+    for x, ctx, p in all_subexpressions_with_context_information(e, context, pool):
         is_wf = exp_wf_nonrecursive(solver, x, ctx, p, assumptions=ctx.adapt(assumptions, context))
         if not is_wf:
             if isinstance(is_wf, No):

@@ -34,7 +34,7 @@ from cozy.evaluation import construct_value
 from cozy.cost_model import CostModel, Order, LINEAR_TIME_UOPS
 from cozy.opts import Option
 from cozy.pools import Pool, RUNTIME_POOL, STATE_POOL, pool_name
-from cozy.contexts import Context, shred, replace
+from cozy.contexts import Context, all_subexpressions_with_context_information, replace
 from cozy.logging import task, event
 from cozy.structures import extension_handler
 
@@ -262,8 +262,8 @@ def search_for_improvements(
 
     with task("setting up hints"):
         frags = list(unique(itertools.chain(
-            *[shred(t, root_ctx) for t in targets],
-            *[shred(h, root_ctx) for h in hints])))
+            *[all_subexpressions_with_context_information(t, root_ctx) for t in targets],
+            *[all_subexpressions_with_context_information(h, root_ctx) for h in hints])))
         frags.sort(key=hint_order)
         enum = Enumerator(
             examples=examples,
@@ -279,7 +279,7 @@ def search_for_improvements(
     with task("setting up watches"):
         watches_by_context = OrderedDict()
         for target in targets:
-            for e, ctx, pool in unique(shred(target, context=root_ctx, pool=RUNTIME_POOL)):
+            for e, ctx, pool in unique(all_subexpressions_with_context_information(target, context=root_ctx, pool=RUNTIME_POOL)):
                 l = watches_by_context.get(ctx)
                 if l is None:
                     l = []
@@ -453,7 +453,7 @@ def exploration_order(targets : [Exp], context : Context, pool : Pool = RUNTIME_
         return (0 if p == RUNTIME_POOL else 1, ctx.complexity(), e.size())
 
     for target in targets:
-        for e, ctx, p in sorted(unique(shred(target, context, pool=pool)), key=sort_key):
+        for e, ctx, p in sorted(unique(all_subexpressions_with_context_information(target, context, pool=pool)), key=sort_key):
             yield (target, e, ctx, p)
 
 def should_consider_replacement(
@@ -577,7 +577,7 @@ def good_idea(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptio
 
 def good_idea_recursive(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptions : Exp = ETRUE, ops : [Op] = ()) -> bool:
     """Ensure that every subexpression of `e` passes the `good_idea` check."""
-    for (sub, sub_ctx, sub_pool) in shred(e, context, pool):
+    for (sub, sub_ctx, sub_pool) in all_subexpressions_with_context_information(e, context, pool):
         res = good_idea(solver, sub, sub_ctx, sub_pool, assumptions=assumptions, ops=ops)
         if not res:
             return res

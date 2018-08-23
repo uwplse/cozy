@@ -11,7 +11,7 @@ from cozy.common import find_one
 from cozy.target_syntax import *
 from cozy.syntax_tools import fresh_var, free_vars, free_funcs, mk_lambda, strip_EStateVar, alpha_equivalent, compose, nnf, map_value_func
 from cozy.typecheck import is_collection, retypecheck
-from cozy.contexts import Context, shred, replace
+from cozy.contexts import Context, all_subexpressions_with_context_information, replace
 from cozy.pools import Pool, RUNTIME_POOL, STATE_POOL
 from cozy.structures.heaps import TMinHeap, TMaxHeap, EMakeMinHeap, EMakeMaxHeap, EHeapPeek2
 from cozy.evaluation import construct_value, uneval, eval
@@ -665,7 +665,7 @@ def optimized_distinct(xs, args):
 def fold_into_map(e, context):
     fvs = free_vars(e)
     state_vars = [v for v, p in context.vars() if p == STATE_POOL]
-    for subexp, subcontext, subpool in shred(e, context, RUNTIME_POOL):
+    for subexp, subcontext, subpool in all_subexpressions_with_context_information(e, context, RUNTIME_POOL):
         if isinstance(subexp, EMapGet) and isinstance(subexp.map, EStateVar):
             map = subexp.map.e
             key = subexp.key

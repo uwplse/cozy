@@ -6,7 +6,7 @@ from cozy.target_syntax import *
 from cozy.typecheck import retypecheck
 from cozy.syntax_tools import pprint
 from cozy.pools import RUNTIME_POOL, STATE_POOL
-from cozy.contexts import RootCtx, UnderBinder, shred, replace
+from cozy.contexts import RootCtx, UnderBinder, all_subexpressions_with_context_information, replace
 from cozy.structures.heaps import TMinHeap, EMakeMinHeap
 
 x = EVar("x").with_type(INT)
@@ -36,11 +36,11 @@ class TestContexts(unittest.TestCase):
         gen = ctx2.generalize({z})
         assert gen is ctx2
 
-    def test_shred_minheap(self):
+    def test_all_subexpressions_with_context_information_minheap(self):
         f = ELambda(x, x)
         e = EMakeMinHeap(EEmptyList().with_type(INT_BAG), f).with_type(TMinHeap(INT, f))
         ctx = RootCtx(args=(), state_vars=())
-        list(shred(e, ctx))
+        list(all_subexpressions_with_context_information(e, ctx))
 
     def test_replace_numeric_literal(self):
         f = ELambda(x, x)
@@ -75,7 +75,7 @@ class TestContexts(unittest.TestCase):
         e = EMap(xs, ELambda(x, EStateVar(y)))
         ctx = RootCtx(args=(xs,), state_vars=(y,))
         assert retypecheck(e)
-        for ee, ctx, pool in shred(e, ctx):
+        for ee, ctx, pool in all_subexpressions_with_context_information(e, ctx):
             if ee == y:
                 assert isinstance(ctx, RootCtx)
 
@@ -92,14 +92,14 @@ class TestContexts(unittest.TestCase):
         assert retypecheck(e)
 
         c1 = []
-        for ee, ctx, pool in shred(e, root_ctx, RUNTIME_POOL):
+        for ee, ctx, pool in all_subexpressions_with_context_information(e, root_ctx, RUNTIME_POOL):
             if ee == ONE:
                 c1.append(ctx)
         assert len(c1) == 1
         c1 = c1[0]
 
         c2 = []
-        for ee, ctx, pool in shred(e, root_ctx, STATE_POOL):
+        for ee, ctx, pool in all_subexpressions_with_context_information(e, root_ctx, STATE_POOL):
             if ee == ONE:
                 c2.append(ctx)
         assert len(c2) == 1
@@ -113,7 +113,7 @@ class TestContexts(unittest.TestCase):
         root_ctx = RootCtx(args=(), state_vars=())
         assert retypecheck(e1)
         n = 0
-        for ee, ctx, pool in shred(e1, root_ctx, RUNTIME_POOL):
+        for ee, ctx, pool in all_subexpressions_with_context_information(e1, root_ctx, RUNTIME_POOL):
             if ee == x:
                 e2 = replace(
                     e1, root_ctx, RUNTIME_POOL,
