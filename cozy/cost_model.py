@@ -26,10 +26,10 @@ cost_model_selection = Option("cost-model", int, 2,
         + "3: optimize for a mix of asymptotic runtime and state maintenance cost.")
 
 class Order(Enum):
-    EQUAL     = 0
-    LT        = 1
-    GT        = 2
-    AMBIGUOUS = 3
+    EQUAL     = "="
+    LT        = "<"
+    GT        = ">"
+    AMBIGUOUS = "?"
 
     def flip(order):
         """Flips the direction of the Order.
