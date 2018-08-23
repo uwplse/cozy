@@ -85,7 +85,7 @@ class Heaps(object):
                 return "invalid `n` parameter"
         return None
 
-    def good_idea(self,
+    def possibly_useful(self,
             e           : Exp,
             context,
             pool        : Pool,

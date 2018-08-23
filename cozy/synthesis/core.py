@@ -7,7 +7,7 @@ There are a number of heuristics that affect how `improve` functions.
 See their docstrings for more information.
  - exploration_order
  - hint_order
- - good_idea
+ - possibly_useful
  - heuristic_done
  - should_consider_replacement
 """
@@ -55,7 +55,7 @@ cost_pruning = Option("prune-using-cost", bool, False,
         + "fewer expressions, but also makes Cozy slower since it needs to do "
         + "more work when it sees each one for the first time.")
 
-# Options that control `good_idea`
+# Options that control `possibly_useful`
 allow_conditional_state = Option("allow-conditional-state", bool, True)
 allow_peels = Option("allow-peels", bool, False)
 allow_big_sets = Option("allow-big-sets", bool, False)
@@ -162,7 +162,7 @@ def improve(
         yield construct_value(target.type)
         return
 
-    is_good = good_idea_recursive(solver, target, context)
+    is_good = possibly_useful(solver, target, context)
     if not is_good:
         print("WARNING: this target is already a bad idea")
         print("is_good = {}".format(is_good))
@@ -277,7 +277,7 @@ def search_for_improvements(
             is_wf = exp_wf(e, pool=pool, context=ctx, solver=wf_solver)
             if not is_wf:
                 return is_wf
-            res = good_idea_recursive(wf_solver, e, ctx, pool, ops=ops)
+            res = possibly_useful(wf_solver, e, ctx, pool, ops=ops)
             if not res:
                 return res
             if cost_pruning.value and pool == RUNTIME_POOL and cost_model.compare(e, targets[0], ctx, pool) == Order.GT:
@@ -549,7 +549,7 @@ def hint_order(tup):
     e, ctx, pool = tup
     return e.size()
 
-def good_idea(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptions : Exp = ETRUE, ops : [Op] = ()) -> bool:
+def possibly_useful_nonrecursive(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptions : Exp = ETRUE, ops : [Op] = ()) -> bool:
     """Heuristic filter to ignore expressions that are almost certainly useless."""
 
     state_vars  = OrderedSet(v for v, p in context.vars() if p == STATE_POOL)
@@ -559,7 +559,7 @@ def good_idea(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptio
 
     h = extension_handler(type(e))
     if h is not None:
-        res = h.good_idea(e, context, pool, assumptions, ops, solver)
+        res = h.possibly_useful(e, context, pool, assumptions, ops, solver)
         if not res:
             return res
 
@@ -626,10 +626,10 @@ def good_idea(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptio
 
     return True
 
-def good_idea_recursive(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptions : Exp = ETRUE, ops : [Op] = ()) -> bool:
-    """Ensure that every subexpression of `e` passes the `good_idea` check."""
+def possibly_useful(solver, e : Exp, context : Context, pool = RUNTIME_POOL, assumptions : Exp = ETRUE, ops : [Op] = ()) -> bool:
+    """Ensure that every subexpression of `e` passes the `possibly_useful_nonrecursive` check."""
     for (sub, sub_ctx, sub_pool) in all_subexpressions_with_context_information(e, context, pool):
-        res = good_idea(solver, sub, sub_ctx, sub_pool, assumptions=assumptions, ops=ops)
+        res = possibly_useful_nonrecursive(solver, sub, sub_ctx, sub_pool, assumptions=assumptions, ops=ops)
         if not res:
             return res
     return True

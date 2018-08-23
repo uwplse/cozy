@@ -8,7 +8,7 @@ from cozy.syntax_tools import pprint, pprint_unpacked
 from cozy.contexts import RootCtx
 from cozy.pools import Pool, RUNTIME_POOL
 from cozy.synthesis.acceleration import try_optimize
-from cozy.synthesis.core import good_idea_recursive
+from cozy.synthesis.core import possibly_useful
 from cozy.solver import ModelCachingSolver
 from cozy.evaluation import eval
 from cozy.cost_model import CostModel, Order, debug_comparison
@@ -34,7 +34,7 @@ def can_improve(e, context, assumptions : Exp = ETRUE, pool : Pool = RUNTIME_POO
             vars=[v for v, p in context.vars()],
             funcs=context.funcs(),
             assumptions=assumptions)
-        gi = good_idea_recursive(solver, ee, context, pool, ops=ops)
+        gi = possibly_useful(solver, ee, context, pool, ops=ops)
         if not gi:
             print("    NOT A GOOD IDEA: {}".format(gi))
             continue
