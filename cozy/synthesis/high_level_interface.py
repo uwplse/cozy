@@ -14,7 +14,7 @@ from queue import Empty
 from cozy.common import typechecked, OrderedSet, LINE_BUFFER_MODE
 from cozy.syntax import Query, Op, Exp, EVar, EAll, SNoOp
 from cozy.target_syntax import EStateVar
-from cozy.syntax_tools import free_vars, pprint, unpack_representation, shallow_copy, wrap_naked_statevars
+from cozy.syntax_tools import pprint, unpack_representation, shallow_copy, wrap_naked_statevars
 from cozy.timeouts import Timeout
 from cozy import jobs
 from cozy.contexts import Context
@@ -43,7 +43,6 @@ class ImproveQueryJob(jobs.Job):
             hints       : [Exp]     = [],
             freebies    : [Exp]     = [],
             ops         : [Op]      = []):
-        assert all(v in state for v in free_vars(q)), "Oops, query looks malformed due to {}:\n{}\nfree_vars({})".format([v for v in free_vars(q) if v not in state], pprint(q), repr(q))
         super().__init__()
         self.state = state
         self.assumptions = assumptions
