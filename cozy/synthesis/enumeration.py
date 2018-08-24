@@ -45,16 +45,25 @@ from cozy.logging import task, task_begin, task_end, event, verbose
 
 @functools.total_ordering
 class Fingerprint(object):
-    """A fuzzy identifier for an expression.
+    """A summary of an expression's behavior on some inputs.
 
     An expression's fingerprint is derived from a set of example inputs.  Two
-    expressions with different fingerprints definitely behave differently in
+    expressions with different fingerprints are known to behave differently in
     some cases.  Two expressions with the same fingerprint might be
     semantically equivalent (i.e. behave the same on all inputs), or they might
-    just appear to be semantically equivalent on the given examples.
+    just appear to be semantically equivalent on the given inputs.
 
     The Enumerator class uses fingerprints to group expressions into
-    equivalence classes.
+    equivalence classes.  It uses fingerprints as keys into a map to quickly
+    determine whether a semantically-equivalent version of an expression
+    exists.  While fingerprints derived from different examples might have
+    different sizes, the behavior here is safe since the set of examples is
+    fixed at construction time for any one Enumerator class.
+
+    External clients need to be more careful about how they use Fingerprints:
+    comparisons between two Fingerprints are meaningless if they were derived
+    from different inputs.  Clients also need to be aware that fingerprint
+    equality does not imply full semantic equivalence between expressions.
     """
     __slots__ = ("type", "signature")
 
