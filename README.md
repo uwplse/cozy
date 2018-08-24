@@ -29,6 +29,8 @@ setup and installation](https://github.com/CozySynthesizer/cozy/wiki/Troubleshoo
 To list all command-line options (and ensure that everything is correctly
 installed):
 
+    $ git clone git@github.com:CozySynthesizer/cozy.git
+    $ cd cozy
     $ python3 -m cozy --help
 
 To synthesize an implementation (`Basic.java`) of the specification
