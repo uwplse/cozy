@@ -2,6 +2,17 @@
 
 The key definition in this module is `Enumerator`, a class for enumerating
 expressions.
+
+The enumerator is very efficient since it implements "equivalence class
+deduplication" to avoid visiting different expressions that are semantically
+equivalent.
+
+For more information on equivalence class deduplication, see section III.D on
+"Enumerative Learning" in the paper
+
+    Syntax-Guided Synthesis
+    by Alur et. al.
+    published in FMCAD 2013
 """
 
 from collections import namedtuple, defaultdict, OrderedDict
