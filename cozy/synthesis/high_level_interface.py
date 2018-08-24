@@ -216,8 +216,13 @@ def improve_implementation(
 
                 print("considering update {}/{}...".format(i, len(improvements)))
                 i += 1
-                # this guard might be false if a better solution was
-                # enqueued but the job has already been cleaned up
+                # The guard on the next line might be false!
+                # It might so happen that:
+                #   - a job found a better version for q
+                #   - a different job found a better version of some other query X
+                #   - both improvements were in the `results` list pulled from the queue
+                #   - we visited the improvement for X first
+                #   - after cleanup, q is no longer needed and was removed
                 if q.name in [qq.name for qq in impl.query_specs]:
                     elapsed = datetime.datetime.now() - start_time
                     print("SOLUTION FOR {} AT {} [size={}]".format(q.name, elapsed, new_ret.size() + sum(proj.size() for (v, proj) in new_rep)))
@@ -234,7 +239,7 @@ def improve_implementation(
                         progress_callback(impl)
                     reconcile_jobs()
                 else:
-                    print("  (skipped)")
+                    print("  (skipped; {} was aleady cleaned up)".format(q.name))
 
         # stop jobs
         print("Stopping jobs")
