@@ -102,9 +102,9 @@ def improve_implementation(
 
     If provided, progress_callback will be called every time a better
     implementation is found. It will be given
-     - the current implementation
-     - the code for the current implementation
-     - the concretization functions for the current implementation
+     - the better implementation
+     - the code for the better implementation
+     - the concretization functions for the better implementation
     """
 
     start_time = datetime.datetime.now()
