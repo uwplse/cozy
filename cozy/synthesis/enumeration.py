@@ -10,7 +10,20 @@ import itertools
 import functools
 
 from cozy.common import pick_to_sum, OrderedSet, unique, make_random_access, StopException, Periodically
-from cozy.target_syntax import *
+from cozy.syntax import (
+    Type, BOOL, INT,
+    Exp, ETRUE, EFALSE, ZERO, ONE, EVar, EUnaryOp, UOp, EBinOp, BOp, ECond, EEq,
+    TTuple, ETupleGet,
+    TRecord, THandle, EGetField,
+    TBag, ESingleton,
+    TList, EEmptyList, EListGet, EListSlice,
+    EIsSubset,
+    EArgMin, EArgMax,
+    ELet, ELambda)
+from cozy.target_syntax import (
+    EStateVar,
+    EMap, EFilter, EFlatMap,
+    TMap, EMakeMap2, EMapKeys, EMapGet, EHasKey)
 from cozy.syntax_tools import pprint, fresh_var, free_vars, freshen_binders, alpha_equivalent, all_types
 from cozy.evaluation import eval_bulk, construct_value, values_equal
 from cozy.typecheck import is_numeric, is_scalar, is_collection
