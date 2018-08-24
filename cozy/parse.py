@@ -308,9 +308,9 @@ def make_parser():
             p[0] = (p[1], p[3])
 
     def p_exp(p):
-        """exp : NUM
+        """exp : WORD
+               | NUM
                | FLOAT
-               | WORD
                | KW_TRUE
                | KW_FALSE
                | exp OP_EQ exp
@@ -336,6 +336,7 @@ def make_parser():
                | OP_OPEN_BRACKET exp OP_CLOSE_BRACKET
                | OP_OPEN_BRACKET exp OP_VBAR comprehension_body OP_CLOSE_BRACKET
                | exp OP_OPEN_BRACKET slice OP_CLOSE_BRACKET
+               | KW_REVERSED exp
                | KW_LET OP_OPEN_BRACE WORD OP_ASSIGN exp OP_CLOSE_BRACE KW_IN exp
                | WORD OP_OPEN_PAREN exp_list OP_CLOSE_PAREN
                | KW_SUM exp
@@ -352,7 +353,6 @@ def make_parser():
                | KW_MAX exp
                | KW_ARGMIN lambda exp
                | KW_ARGMAX lambda exp
-               | KW_REVERSED exp
         """
         if len(p) == 2:
             if type(p[1]) is syntax.ENum:
