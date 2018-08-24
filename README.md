@@ -46,7 +46,8 @@ If you want to install the global executable
     $ pip3 install .
 
 Installation is optional; Cozy can run in this source directory as described
-in the "Quickstart" section.
+in the "Quickstart" section.  Running `cozy [ARGS]` behaves just like
+`python3 -m cozy [ARGS]` would.
 
 ## More Information
 
