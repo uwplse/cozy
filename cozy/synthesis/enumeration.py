@@ -63,6 +63,14 @@ class Fingerprint(object):
         return hash(self._as_tuple())
 
     def __eq__(self, other) -> bool:
+        """Test for deep equality.
+
+        Returns true if the fingerprints have the same type and their values
+        are deeply equal to each other.
+
+        For information on normal and deep equality, see the documentation for
+        compare_values in value_types.py.
+        """
         if not isinstance(other, Fingerprint):
             return NotImplemented
         return self._as_tuple() == other._as_tuple()
@@ -87,16 +95,13 @@ class Fingerprint(object):
             raise ValueError("fingerprints have different sizes; were they computed from different sets of examples?")
 
     def equal_to(self, other) -> bool:
-        """Determine whether two fingerprints are very similar.
+        """Test for normal equality.
 
-        If this returns True, then expressions with the given fingerprints look
-        to be == to each other (that's the Cozy ==, not Python ==), but not
-        necessarily === to each other (that's Cozy ===; Python has no ===).
+        Returns true if the fingerprints have the same type and their values
+        are == to each other.
 
-        Clients should use this instead of Python's == operator.
-        Comparing two fingerprint objects directly with Python's == operator
-        checks whether expressions with those fingerprints look to be === to
-        each other.
+        For information on normal and deep equality, see the documentation for
+        compare_values in value_types.py.
         """
         self._require_comparable_to(other)
         return (

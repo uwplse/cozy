@@ -130,6 +130,34 @@ def compare_values(t : Type, v1, v2, deep : bool = False) -> int:
 
         values.sort(key=functools.cmp_to_key(
             lambda v1, v2: compare_values(t, v1, v2)))
+
+    Notes regarding `deep`:
+
+    There are two definitions of equality between Cozy values:
+        ==  (aka "double-equals" or "normal equality")
+        === (aka "triple-equals" or "deep equality")
+
+    Normal equality is what a user means when they write "x == y" in an input
+    specification: pointers are compared by address and two sets are the same
+    if they have all the same elements.
+
+    Deep equality is more useful internally: "x === y" means that every
+    observable property of x is the same for y.  In other words, an expression
+    that uses x can be replaced by the same expression using y instead, and
+    the output will always be the same.  This is NOT true of double-equals
+    expressions.  A good example of this is the operator UOp.The, which gets
+    the first element of a collection.  Even if (x==y) for sets x and y, it can
+    be true that (the x != the y), if the elements of x and y happen to be in
+    different orders.
+
+    In Python code, the == operator implements deep equality between Cozy
+    values.  This is very important so that Cozy values can be keys in maps,
+    and two Cozy values that are not perfectly 100% the same do not overlap.
+
+    The call `compare_values(type, v1, v2) == EQ` checks for normal equality.
+
+    The call `compare_values(type, v1, v2, deep=True) == EQ` is identical to
+    `v1 == v2`.
     """
 
     # For performance, this function uses a work-stack algorithm rather than
