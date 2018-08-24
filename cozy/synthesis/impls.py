@@ -58,13 +58,46 @@ class Implementation(object):
         You should call `construct_initial_implementation` instead of calling
         this constructor directly; this constructor makes it easy to
         accidentally create a malformed implementation.
+
+        Parameters:
+
+         - spec: the original specification
+
+         - concretization_functions: pairs of (v, e) indicating that this
+           implementation stores a state variable `v` whose value tracks `e`,
+           a function of the state in `spec`
+
+         - query_specs: specifications for all queries in `spec` plus
+           additional private helper queries that may have been added, in terms
+           of the state in spec
+
+         - query_impls: implementations for all queries in `spec` plus
+           additional private helper queries, in terms of the state variables
+           in `concretization_functions`.  The query implementations are stored
+           in a map keyed by query name.
+
+         - updates: a map from (concrete_var_name, op_name) to statements,
+           where the concrete_var_name is one of the state variables described
+           by `concretization_functions`, op_name is one of the update
+           operations in `spec`, and `stm` is a statement that may use private
+           helper queries and exists entirely to maintain the relationship
+           between `concrete_var_name` and the state in the specification.
+           The statements are all in terms of the original state, before the
+           update started executing.
+
+         - handle_updates: a map from (handle_type, op_name) to statements,
+           where handle_type is a THandle instance and op_name is one of the
+           update operations in `spec`.  These statements update the values of
+           every reachable instance of the given handle (aka pointer).  Like
+           updates, these statements are in terms of the original state before
+           the update started executing.
         """
         self.spec = spec
         self._concretization_functions = concretization_functions
         self.query_specs = query_specs
         self.query_impls = query_impls
-        self.updates = updates # maps (concrete_var_name, op_name) to stm
-        self.handle_updates = handle_updates # maps (handle_type, op_name) to stm
+        self.updates = updates
+        self.handle_updates = handle_updates
         self.state_solver = ModelCachingSolver(
             vars=self.abstract_state,
             funcs=self.extern_funcs,
