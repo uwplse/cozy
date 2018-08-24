@@ -86,17 +86,6 @@ def improve(
     It periodically calls `stop_callback` and exits gracefully when
     `stop_callback` returns True.
 
-    Key differences from "regular" enumerative synthesis:
-        - Expressions are either "state" expressions or "runtime" expressions,
-          allowing this algorithm to choose what things to store on the data
-          structure and what things to compute at query execution time. (The
-          cost model is ultimately responsible for this choice.)
-        - If a better version of *any subexpression* for the target is found,
-          it is immediately substituted in and the overall expression is
-          returned. This "smooths out" the search space a little, and lets us
-          find kinda-good solutions very quickly, even if the best possible
-          solution is out of reach.
-
     Other parameters:
         - assumptions: a precondition.  The yielded improvements will only be
           correct when the assumptions are true.
@@ -108,6 +97,17 @@ def improve(
         - ops: update operations.  This function may make different choices
           about what expressions are state expressions based on what changes
           can happen to that state.
+
+    Key differences from "regular" enumerative synthesis:
+        - Expressions are either "state" expressions or "runtime" expressions,
+          allowing this algorithm to choose what things to store on the data
+          structure and what things to compute at query execution time. (The
+          cost model is ultimately responsible for this choice.)
+        - If a better version of *any subexpression* for the target is found,
+          it is immediately substituted in and the overall expression is
+          returned. This "smooths out" the search space a little, and lets us
+          find kinda-good solutions very quickly, even if the best possible
+          solution is out of reach.
     """
 
     print("call to improve:")

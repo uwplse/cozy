@@ -4,16 +4,17 @@ Cozy's specification language includes several numeric types, lists, sets,
 bags, maps, and more.  Values for some of these types (especially numbers) can
 be represented using built-in Python types.  This module declares classes for
 representing types that do not have a perfect correspondence to a built-in
-Python type.  These classes all have a few important attributes:
+Python type, notably:
+ - Map
+ - Bag (which represents both Cozy bags and Cozy sets)
+ - Handle
+
+These classes all have a few important attributes:
  - these classes are immutable (and therefore hashable)
- - these collections can be compared with ==, <, <=, etc.
+ - the collections can be compared with ==, <, <=, etc.
  - the collections have a deterministic iteration order
  - the iteration order for the collection affects equality and comparisons
 
-Important types:
- - Map
- - Bag
- - Handle
 
 Important functions:
  - compare_values: compare two Cozy values

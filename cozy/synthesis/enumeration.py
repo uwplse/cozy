@@ -48,15 +48,15 @@ class Fingerprint(object):
     """A summary of an expression's behavior on some inputs.
 
     An expression's fingerprint is derived from a set of example inputs.  Two
-    expressions with different fingerprints are known to behave differently in
-    some cases.  Two expressions with the same fingerprint might be
+    expressions with different fingerprints are known to behave differently.
+    Two expressions with the same fingerprint might be
     semantically equivalent (i.e. behave the same on all inputs), or they might
     just appear to be semantically equivalent on the given inputs.
 
     The Enumerator class uses fingerprints to group expressions into
     equivalence classes.  It uses fingerprints as keys into a map to quickly
     determine whether a semantically-equivalent version of an expression
-    exists.  While fingerprints derived from different examples might have
+    exists.  While fingerprints derived from different example inputs might have
     different sizes, the behavior here is safe since the set of examples is
     fixed at construction time for any one Enumerator class.
 
@@ -69,7 +69,7 @@ class Fingerprint(object):
 
     @staticmethod
     def of(e : Exp, inputs : [{str:object}]):
-        """Compute the fingerprint of an expression."""
+        """Compute the fingerprint of an expression over the given inputs."""
         return Fingerprint(e.type, eval_bulk(e, inputs))
 
     def __init__(self, type : Type, signature : [object]):
@@ -371,9 +371,10 @@ class Enumerator(object):
                 if p == pool:
                     yield v
             for (e, ctx, p) in self.hints:
-                fvs = free_vars(e)
-                if p == pool and ctx.alpha_equivalent(context.generalize(fvs)):
-                    yield context.adapt(e, ctx, e_fvs=fvs)
+                if p == pool:
+                    fvs = free_vars(e)
+                    if ctx.alpha_equivalent(context.generalize(fvs)):
+                        yield context.adapt(e, ctx, e_fvs=fvs)
             return
 
         def build_lambdas(bag, pool, body_size):
@@ -382,8 +383,8 @@ class Enumerator(object):
             for lam_body in self.enumerate(inner_context, body_size, pool):
                 yield ELambda(v, lam_body)
 
-        # load all smaller expressions in this context and pool
-        # cache[S] contains expressions of size S in this context and pool
+        # Load all smaller expressions in this context and pool.
+        # cache[S] contains expressions of size S in this context and pool.
         cache = [list(self.enumerate(context, sz, pool)) for sz in range(size)]
 
         # Enable use of a state-pool expression at runtime
@@ -525,6 +526,10 @@ class Enumerator(object):
             yield info.e
 
     def canonical_context(self, context):
+        """Returns a context that is equivalent to this one.
+
+        This canonical representative is the one used in the cache.
+        """
         # TODO: deduplicate based on examples, not alpha equivalence
         for ctx in self.cache.all_contexts():
             if ctx != context and ctx.alpha_equivalent(context):
