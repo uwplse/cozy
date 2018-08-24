@@ -96,8 +96,7 @@ def run():
         server = None
 
         if checkpoint_prefix.value:
-            def callback(res):
-                impl, ast, state_map = res
+            def callback(impl):
                 assert isinstance(impl, synthesis.Implementation)
                 now = datetime.datetime.now()
                 elapsed = now - start
@@ -110,10 +109,11 @@ def run():
             from cozy import progress_server
             state = ["Initializing..."]
             orig_callback = callback
-            def callback(res):
+            def callback(impl):
                 if orig_callback is not None:
-                    orig_callback(res)
-                impl, ast, state_map = res
+                    orig_callback(impl)
+                ast = impl.code
+                state_map = impl.concretization_functions
                 s = "<!DOCTYPE html>\n"
                 s += "<html>"
                 s += "<head><style>"

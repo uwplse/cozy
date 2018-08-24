@@ -7,6 +7,7 @@ This module exports one important function:
 from collections import defaultdict, OrderedDict
 import datetime
 import itertools
+from typing import Callable, Any
 import sys
 import os
 from queue import Empty
@@ -90,21 +91,18 @@ class ImproveQueryJob(jobs.Job):
                 print("stopping synthesis of {}".format(self.q.name))
                 return
 
-@typechecked
 def improve_implementation(
         impl              : Implementation,
         timeout           : datetime.timedelta = datetime.timedelta(seconds=60),
-        progress_callback = None) -> Implementation:
+        progress_callback : Callable[[Implementation], Any] = None) -> Implementation:
     """Improve an implementation.
 
     This function tries to synthesize a better version of the given
     implementation. It returns the best version found within the given timeout.
 
-    If provided, progress_callback will be called every time a better
-    implementation is found. It will be given
-     - the better implementation
-     - the code for the better implementation
-     - the concretization functions for the better implementation
+    If provided, progress_callback will be called whenever a better
+    implementation is found.  It will be given the better implementation, which
+    it should not modify or cache.
     """
 
     start_time = datetime.datetime.now()
@@ -233,7 +231,7 @@ def improve_implementation(
                     # clean up
                     impl.cleanup()
                     if progress_callback is not None:
-                        progress_callback((impl, impl.code, impl.concretization_functions))
+                        progress_callback(impl)
                     reconcile_jobs()
                 else:
                     print("  (skipped)")
