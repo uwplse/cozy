@@ -70,6 +70,24 @@ class Implementation(object):
             funcs=self.extern_funcs,
             assumptions=EAll(spec.assumptions))
 
+    def safe_copy(self):
+        """Create a copy of this implementation.
+
+        The copy is "safe" in the sense that modifications made to the copy
+        through methods on the Implementation class do not affect self (and
+        vice versa).  However, note that the copy is not truly a deep copy; it
+        may still be possible to get strange behavior by manually writing to
+        properties of the underlying members (for instance, self and the copy
+        will still share a Spec object).
+        """
+        return Implementation(
+            self.spec,
+            list(self.concrete_state),
+            list(self.query_specs),
+            OrderedDict(self.query_impls),
+            defaultdict(SNoOp, self.updates),
+            defaultdict(SNoOp, self.handle_updates))
+
     def __getstate__(self):
         # During serialization, do not save the solver object.
         d = dict(self.__dict__)

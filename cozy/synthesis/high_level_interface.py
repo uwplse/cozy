@@ -4,7 +4,7 @@ This module exports one important function:
  - improve_implementation
 """
 
-from collections import defaultdict, OrderedDict
+from collections import OrderedDict
 import datetime
 import itertools
 from typing import Callable, Any
@@ -13,7 +13,7 @@ import os
 from queue import Empty
 
 from cozy.common import typechecked, OrderedSet, LINE_BUFFER_MODE
-from cozy.syntax import Query, Op, Exp, EVar, EAll, SNoOp
+from cozy.syntax import Query, Op, Exp, EVar, EAll
 from cozy.target_syntax import EStateVar
 from cozy.syntax_tools import pprint, unpack_representation, shallow_copy, wrap_naked_statevars
 from cozy.timeouts import Timeout
@@ -107,14 +107,8 @@ def improve_implementation(
 
     start_time = datetime.datetime.now()
 
-    # we statefully modify `impl`, so let's make a defensive copy, which we will modify
-    impl = Implementation(
-        impl.spec,
-        list(impl.concrete_state),
-        list(impl.query_specs),
-        OrderedDict(impl.query_impls),
-        defaultdict(SNoOp, impl.updates),
-        defaultdict(SNoOp, impl.handle_updates))
+    # we statefully modify `impl`, so let's make a defensive copy which we will modify instead
+    impl = impl.safe_copy()
 
     # worker threads ("jobs"), one per query
     improvement_jobs = []
