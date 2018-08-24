@@ -531,79 +531,91 @@ class Enumerator(object):
         if k in self.complete:
             yield from cache.find_expressions_of_size(context, pool, size)
         else:
-            examples = context.instantiate_examples(self.examples)
             assert k not in self.in_progress, "recursive enumeration?? {}".format(k)
             self.in_progress.add(k)
-            queue = self._enumerate_core(context, size, pool)
-            cost_model = self.cost_model
-            while True:
-                if self.stop_callback():
-                    raise StopException()
-
-                try:
-                    e = next(queue)
-                except StopIteration:
-                    break
-
-                self.stat_timer.check()
-
-                e = freshen_binders(e, context)
-                _consider(e, size, context, pool)
-
-                wf = self.check_wf(e, context, pool)
-                if not wf:
-                    _skip(e, size, context, pool, "wf={}".format(wf))
-                    continue
-
-                fp = Fingerprint.of(e, examples)
-
-                # collect all expressions from parent contexts
-                prev = list(cache.find_equivalent_expressions(context, pool, fp))
-                to_evict = []
-
-                if any(e.type == prev_entry.e.type and alpha_equivalent(e, prev_entry.e) for prev_entry in prev):
-                    _skip(e, size, context, pool, "duplicate")
-                    should_keep = False
-                else:
-                    # decide whether to keep this expression
-                    should_keep = True
-                    if prev:
-                        with task("comparing to cached equivalents", count=len(prev)):
-                            for entry in prev:
-                                prev_exp = entry.e
-                                event("previous: {}".format(pprint(prev_exp)))
-                                to_keep = eviction_policy(e, context, prev_exp, context, pool, cost_model)
-                                if e not in to_keep:
-                                    _skip(e, size, context, pool, "preferring {}".format(pprint(prev_exp)))
-                                    should_keep = False
-                                    break
-                                if prev_exp not in to_keep:
-                                    to_evict.append(entry)
-
-                assert not (to_evict and not should_keep)
-
-                if should_keep:
-
-                    if self.do_eviction and to_evict:
-                        with task("evicting", count=to_evict):
-                            for entry in to_evict:
-                                _evict(entry.e, entry.size, context, pool, e, size)
-                                cache.remove(context, pool, entry)
-
-                    _accept(e, size, context, pool, fp)
-                    info = EnumeratedExp(
-                        e=e,
-                        fingerprint=fp,
-                        size=size)
-                    yield info
-                    cache.add(context, pool, info)
-
-                    if size == 0:
-                        with task("accelerating"):
-                            to_try = make_random_access(self.heuristics(e, context, pool))
-                            if to_try:
-                                event("trying {} accelerations of {}".format(len(to_try), pprint(e)))
-                                queue = itertools.chain(to_try, queue)
-
+            yield from self._enumerate_with_info(context, size, pool)
             self.in_progress.remove(k)
             self.complete.add(k)
+
+    def _enumerate_with_info(self, context : Context, size : int, pool : Pool) -> [EnumeratedExp]:
+        """Helper for enumerate_with_info that bypasses the cache.
+
+        Note that this method DOES affect the cache: it writes its output into
+        the cache and may do evictions.  The enumerate_with_info method ensures
+        that there is only ever one call to this method for a given (context,
+        size, pool).
+        """
+
+        examples = context.instantiate_examples(self.examples)
+        cache = self.cache
+        queue = self._enumerate_core(context, size, pool)
+        cost_model = self.cost_model
+
+        while True:
+            if self.stop_callback():
+                raise StopException()
+
+            try:
+                e = next(queue)
+            except StopIteration:
+                break
+
+            self.stat_timer.check()
+
+            e = freshen_binders(e, context)
+            _consider(e, size, context, pool)
+
+            wf = self.check_wf(e, context, pool)
+            if not wf:
+                _skip(e, size, context, pool, "wf={}".format(wf))
+                continue
+
+            fp = Fingerprint.of(e, examples)
+
+            # collect all expressions from parent contexts
+            prev = list(cache.find_equivalent_expressions(context, pool, fp))
+            to_evict = []
+
+            if any(e.type == prev_entry.e.type and alpha_equivalent(e, prev_entry.e) for prev_entry in prev):
+                _skip(e, size, context, pool, "duplicate")
+                should_keep = False
+            else:
+                # decide whether to keep this expression
+                should_keep = True
+                if prev:
+                    with task("comparing to cached equivalents", count=len(prev)):
+                        for entry in prev:
+                            prev_exp = entry.e
+                            event("previous: {}".format(pprint(prev_exp)))
+                            to_keep = eviction_policy(e, context, prev_exp, context, pool, cost_model)
+                            if e not in to_keep:
+                                _skip(e, size, context, pool, "preferring {}".format(pprint(prev_exp)))
+                                should_keep = False
+                                break
+                            if prev_exp not in to_keep:
+                                to_evict.append(entry)
+
+            assert not (to_evict and not should_keep)
+
+            if should_keep:
+
+                if self.do_eviction and to_evict:
+                    with task("evicting", count=to_evict):
+                        for entry in to_evict:
+                            _evict(entry.e, entry.size, context, pool, e, size)
+                            cache.remove(context, pool, entry)
+
+                _accept(e, size, context, pool, fp)
+                info = EnumeratedExp(
+                    e=e,
+                    fingerprint=fp,
+                    size=size)
+                yield info
+                cache.add(context, pool, info)
+
+                if size == 0:
+                    with task("accelerating"):
+                        to_try = make_random_access(self.heuristics(e, context, pool))
+                        if to_try:
+                            event("trying {} accelerations of {}".format(len(to_try), pprint(e)))
+                            queue = itertools.chain(to_try, queue)
