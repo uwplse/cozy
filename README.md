@@ -36,13 +36,15 @@ To synthesize an implementation (`Basic.java`) of the specification
 
     $ python3 -m cozy examples/basic.ds --java Basic.java
 
-## Installation
+## The `cozy` executable
 
-Installation is optional; Cozy can run in this source directory as described
-in the "Quickstart" section. If you want to install the global executable
-"cozy" on your system:
+If you want to install the global executable
+`cozy` on your system:
 
     $ pip3 install .
+
+Installation is optional; Cozy can run in this source directory as described
+in the "Quickstart" section.
 
 ## More Information
 
