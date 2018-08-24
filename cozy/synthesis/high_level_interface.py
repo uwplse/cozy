@@ -141,7 +141,7 @@ def improve_implementation(
                         context=impl.context_for_method(q),
                         k=(lambda q: lambda new_rep, new_ret: solutions_q.put((q, new_rep, new_ret)))(q),
                         hints=[EStateVar(c).with_type(c.type) for c in impl.concretization_functions.values()],
-                        freebies=[e for (v, e) in impl.concrete_state if v in states_maintained_by_q],
+                        freebies=[e for (v, e) in impl.concretization_functions.items() if EVar(v) in states_maintained_by_q],
                         ops=impl.op_specs))
 
             # figure out what old jobs we can stop

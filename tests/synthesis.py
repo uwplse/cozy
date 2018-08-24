@@ -229,7 +229,7 @@ class TestSpecificationSynthesis(unittest.TestCase):
 
         print(pprint(impl.code))
 
-        assert len(impl.concrete_state) == 1
-        (v, e), = impl.concrete_state
-        print("{} = {}".format(pprint(v), pprint(e)))
-        assert v.type == BOOL
+        assert len(impl.concretization_functions) == 1
+        (v, e), = list(impl.concretization_functions.items())
+        print("{} = {}".format(v, pprint(e)))
+        assert e.type == BOOL
