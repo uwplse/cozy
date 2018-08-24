@@ -31,6 +31,7 @@ installed):
 
     $ git clone git@github.com:CozySynthesizer/cozy.git
     $ cd cozy
+    $ pip3 install -r requirements.txt
     $ python3 -m cozy --help
 
 To synthesize an implementation (`Basic.java`) of the specification
