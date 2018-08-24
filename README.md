@@ -29,6 +29,9 @@ setup and installation](https://github.com/CozySynthesizer/cozy/wiki/Troubleshoo
 To list all command-line options (and ensure that everything is correctly
 installed):
 
+    $ git clone git@github.com:CozySynthesizer/cozy.git
+    $ cd cozy
+    $ pip3 install -r requirements.txt
     $ python3 -m cozy --help
 
 To synthesize an implementation (`Basic.java`) of the specification
@@ -44,7 +47,8 @@ If you want to install the global executable
     $ pip3 install .
 
 Installation is optional; Cozy can run in this source directory as described
-in the "Quickstart" section.
+in the "Quickstart" section.  Running `cozy [ARGS]` behaves just like
+`python3 -m cozy [ARGS]` would.
 
 ## More Information
 
