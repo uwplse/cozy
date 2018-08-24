@@ -11,7 +11,7 @@ import sys
 import os
 from queue import Empty
 
-from cozy.common import typechecked, OrderedSet
+from cozy.common import typechecked, OrderedSet, LINE_BUFFER_MODE
 from cozy.syntax import Query, Op, Exp, EVar, EAll, SNoOp
 from cozy.target_syntax import EStateVar
 from cozy.syntax_tools import free_vars, pprint, unpack_representation, shallow_copy, wrap_naked_statevars
@@ -31,8 +31,6 @@ nice_children = Option("nice-children", bool, False,
 
 log_dir = Option("log-dir", str, "/tmp",
     description="Location to place log files for child processes.")
-
-LINE_BUFFER_MODE = 1 # see help for open() function
 
 class ImproveQueryJob(jobs.Job):
     @typechecked

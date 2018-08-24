@@ -29,6 +29,13 @@ import shutil
 from ordered_set import OrderedSet
 from dictionaries import FrozenDict as _FrozenDict
 
+# Constant that indicates we want to use line buffering when reading or
+# writing a file.  This is passed to Python's builtin `open` function, which
+# does not have readable names for these constants.  For more information, see
+# the documentation on the `buffering` flag for `open`:
+# https://docs.python.org/3/library/functions.html#open
+LINE_BUFFER_MODE = 1
+
 def check_type(value, ty, value_name="value"):
     """
     Verify that the given value has the given type.
