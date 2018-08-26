@@ -133,6 +133,10 @@ def improve(
     target = freshen_binders(target, context)
     assumptions = freshen_binders(assumptions, context)
 
+    if heuristic_done(target):
+        print("The target already looks great!")
+        return
+
     print()
     print("improving: {}".format(pprint(target)))
     print("subject to: {}".format(pprint(assumptions)))
