@@ -466,7 +466,7 @@ class Enumerator(object):
 
                 if isinstance(t, TList):
                     for i in of_type(cache[sz2], INT):
-                        yield EListGet(l, i).with_type(l.type.elem_type)
+                        yield EListGet(e1, i).with_type(e1.type.elem_type)
 
                 if is_collection(t):
                     elem_type = t.elem_type
