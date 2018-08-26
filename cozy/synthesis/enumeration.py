@@ -505,7 +505,7 @@ class Enumerator(object):
                 if isinstance(e1.type, TList):
                     for start in of_type(cache[sz2], INT):
                         for end in of_type(cache[sz3], INT):
-                            yield EListSlice(l, start, end).with_type(l.type)
+                            yield EListSlice(e1, start, end).with_type(e1.type)
 
     def enumerate(self, context : Context, size : int, pool : Pool) -> [Exp]:
         """Enumerate expressions of the given size.
