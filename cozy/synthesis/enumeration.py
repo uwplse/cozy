@@ -487,9 +487,7 @@ class Enumerator(object):
                             yield EFlatMap(e1, f).with_type(TBag(body_type.elem_type))
 
                         if pool == STATE_POOL and is_scalar(elem_type):
-                            t = TMap(elem_type, body_type)
-                            m = EMakeMap2(e1, f).with_type(t)
-                            yield m
+                            yield EMakeMap2(e1, f).with_type(TMap(elem_type, body_type))
 
                 e1_singleton = ESingleton(e1).with_type(TBag(e1.type))
                 for f in build_lambdas(e1_singleton, pool, sz2):
