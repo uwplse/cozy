@@ -42,6 +42,12 @@ from cozy.cost_model import CostModel, Order
 from cozy.pools import Pool, RUNTIME_POOL, STATE_POOL, pool_name
 from cozy.contexts import Context, RootCtx, UnderBinder, more_specific_context
 from cozy.logging import task, task_begin, task_end, event, verbose
+from cozy.opts import Option
+
+do_enumerate = Option("enumeration", bool, True,
+    description="Enable brute-force enumeration.  "
+        + "Disabling this option cripples Cozy, but makes the effect of the "
+        + "acceleration rules more apparent.")
 
 @functools.total_ordering
 class Fingerprint(object):
@@ -375,6 +381,9 @@ class Enumerator(object):
                     fvs = free_vars(e)
                     if ctx.alpha_equivalent(context.generalize(fvs)):
                         yield context.adapt(e, ctx, e_fvs=fvs)
+            return
+
+        if not do_enumerate.value:
             return
 
         def build_lambdas(bag, pool, body_size):
