@@ -663,3 +663,23 @@ class Enumerator(object):
                         if to_try:
                             event("trying {} accelerations of {}".format(len(to_try), pprint(e)))
                             queue = itertools.chain(to_try, queue)
+
+    def expressions_may_exist_above_size(self, context, pool, size):
+        """Returns true if expressions larger than `size` might exist.
+
+        If this method returns false, then all calls to `enumerate` or
+        `enumerate_with_info` with sizes strictly larger than the given size
+        will yield no results.
+        """
+
+        if size <= 0:
+            return True
+
+        maximum_arity = 3 # TODO: adjust this later?
+        for arity in range(1, maximum_arity+1):
+            for split in pick_to_sum(arity, size):
+                for exprs in itertools.product(*(self.enumerate(context, sz, pool) for sz in split)):
+                    return True
+        if pool == RUNTIME_POOL:
+            return self.expressions_may_exist_above_size(context.root(), STATE_POOL, size-1)
+        return False

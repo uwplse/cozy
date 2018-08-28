@@ -394,6 +394,9 @@ def search_for_improvements(
 
                             yield from _consider_replacement(target, e, ctx, pool, replacement, search_info)
 
+        if not enum.expressions_may_exist_above_size(context, RUNTIME_POOL, size):
+            raise StopException("no more expressions can exist above size={}".format(size))
+
         size += 1
 
 def _consider_replacement(
