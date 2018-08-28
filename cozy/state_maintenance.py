@@ -22,7 +22,11 @@ skip_stateless_synthesis = Option("skip-stateless-synthesis", bool, False,
 update_numbers_with_deltas = Option("update-numbers-with-deltas", bool, False)
 
 def mutate(e : syntax.Exp, op : syntax.Stm) -> syntax.Exp:
-    """Return the new value of `e` after executing `op`."""
+    """Return the new value of `e` after executing `op`.
+
+    Evaluating the returned expression will give the same output as running
+    `op` followed by evaluating the input expression `e`.
+    """
     if isinstance(op, syntax.SNoOp):
         return e
     elif isinstance(op, syntax.SAssign):
@@ -113,6 +117,22 @@ def mutate_in_place(
     """
     Produce code to update `lval` that tracks derived value `e` when `op` is
     run.
+
+    Parameters:
+      - abstract_state: variables that are part of the abstract state of the
+        data structure
+      - assumptions: formulas that are known to be true before `op` runs
+      - invariants: true formulas about the abstract state
+      - subgoals_out [out parameter]: a list that will be filled with new
+        query operations
+
+    The queries written into `subgoals_out` will be used by the returned code.
+    They will include `assumptions` as preconditions, but not `invariants`.
+    This behavior allows them to be added to an implementation that already has
+    the given invariants.
+
+    Note that the returned subgoals are all in terms of the pre-state before
+    `op` runs.
     """
 
     if assumptions is None:
