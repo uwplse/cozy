@@ -38,7 +38,7 @@ from cozy.target_syntax import (
 from cozy.structures import all_extension_handlers
 from cozy.syntax_tools import pprint, fresh_var, free_vars, freshen_binders, alpha_equivalent, all_types
 from cozy.evaluation import eval_bulk, construct_value, values_equal
-from cozy.typecheck import is_numeric, is_scalar, is_collection
+from cozy.typecheck import is_numeric, is_scalar, is_collection, is_ordered
 from cozy.cost_model import CostModel, Order
 from cozy.pools import Pool, RUNTIME_POOL, STATE_POOL, pool_name
 from cozy.contexts import Context, RootCtx, UnderBinder, more_specific_context
@@ -454,6 +454,9 @@ class Enumerator(object):
                     for a2 in of_type(cache[sz2], t):
                         yield EBinOp(e1, "+", a2).with_type(t)
                         yield EBinOp(e1, "-", a2).with_type(t)
+
+                if is_ordered(t):
+                    for a2 in of_type(cache[sz2], t):
                         yield EBinOp(e1, ">", a2).with_type(BOOL)
                         yield EBinOp(e1, "<", a2).with_type(BOOL)
                         yield EBinOp(e1, ">=", a2).with_type(BOOL)
