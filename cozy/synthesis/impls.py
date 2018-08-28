@@ -131,6 +131,25 @@ class Implementation(object):
                 d[a] = getattr(self, a)
         return d
 
+    def __setstate__(self, state):
+        spec = state["spec"]
+        try:
+            concretization_functions = state["_concretization_functions"]
+        except KeyError:
+            # older format
+            concretization_functions = state["concrete_state"]
+        query_specs = state["query_specs"]
+        query_impls = state["query_impls"]
+        updates = state["updates"]
+        handle_updates = state["handle_updates"]
+        self.__init__(
+            spec,
+            concretization_functions,
+            query_specs,
+            query_impls,
+            updates,
+            handle_updates)
+
     def add_query(self, q : Query):
         """
         Given a query in terms of abstract state, add an initial concrete
