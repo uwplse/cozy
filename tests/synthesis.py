@@ -1,7 +1,8 @@
 import unittest
 import datetime
 
-from cozy.syntax_tools import mk_lambda, pprint, alpha_equivalent
+from cozy.common import save_property
+from cozy.syntax_tools import mk_lambda, pprint, alpha_equivalent, deep_copy
 from cozy.target_syntax import *
 from cozy.contexts import RootCtx, UnderBinder
 from cozy.typecheck import retypecheck, typecheck
@@ -15,6 +16,8 @@ from cozy.solver import valid, satisfy
 from cozy.pools import RUNTIME_POOL, STATE_POOL
 from cozy.desugar import desugar
 from cozy.value_types import Bag
+from cozy.structures.heaps import EMakeMinHeap, EMakeMaxHeap, EHeapPeek, EHeapPeek2
+from cozy.synthesis.acceleration import accelerate
 
 handle_type = THandle("H", INT)
 handle1 = (1, mkval(INT))
@@ -203,6 +206,55 @@ class TestEnumeration(unittest.TestCase):
             results.append(found)
 
         assert all(results)
+
+    def test_heap_enumeration(self):
+        xs = EVar("xs").with_type(INT_BAG)
+        context = RootCtx(state_vars=[xs])
+        cost_model = CostModel()
+
+        def not_min_or_max(e, *args, **kwargs):
+            # forbid min/max to ensure that heap operations get cached
+            if isinstance(e, EArgMin) or isinstance(e, EArgMax):
+                return False
+            return True
+
+        enumerator = Enumerator(
+            examples=[{"xs": Bag(())}, {"xs": Bag((1,2))}, {"xs": Bag((1,1))}],
+            cost_model=cost_model,
+            check_wf=not_min_or_max)
+
+        with save_property(accelerate, "value"):
+            accelerate.value = False
+
+            print("-" * 20 + " Looking for xs...")
+            found_xs = False
+            for e in enumerator.enumerate(context, 0, STATE_POOL):
+                print(pprint(e))
+                if e == xs:
+                    assert retypecheck(deep_copy(e))
+                    found_xs = True
+                    print("^^^ FOUND")
+            assert found_xs
+
+            print("-" * 20 + " Looking for heap construction...")
+            found_make_heap = False
+            for e in enumerator.enumerate(context, 1, STATE_POOL):
+                print(pprint(e))
+                if isinstance(e, EMakeMinHeap) or isinstance(e, EMakeMaxHeap):
+                    assert retypecheck(deep_copy(e))
+                    found_make_heap = True
+                    print("^^^ FOUND")
+            assert found_make_heap
+
+            print("-" * 20 + " Looking for heap usage...")
+            found_heap_peek = False
+            for e in enumerator.enumerate(context, 2, RUNTIME_POOL):
+                print(pprint(e))
+                if isinstance(e, EHeapPeek) or isinstance(e, EHeapPeek2):
+                    assert retypecheck(deep_copy(e))
+                    found_heap_peek = True
+                    print("^^^ FOUND")
+            assert found_heap_peek
 
 class TestSpecificationSynthesis(unittest.TestCase):
 

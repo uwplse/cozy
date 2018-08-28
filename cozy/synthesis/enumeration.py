@@ -35,6 +35,7 @@ from cozy.target_syntax import (
     EStateVar,
     EMap, EFilter, EFlatMap,
     TMap, EMakeMap2, EMapKeys, EMapGet, EHasKey)
+from cozy.structures import all_extension_handlers
 from cozy.syntax_tools import pprint, fresh_var, free_vars, freshen_binders, alpha_equivalent, all_types
 from cozy.evaluation import eval_bulk, construct_value, values_equal
 from cozy.typecheck import is_numeric, is_scalar, is_collection
@@ -515,6 +516,9 @@ class Enumerator(object):
                     for start in of_type(cache[sz2], INT):
                         for end in of_type(cache[sz3], INT):
                             yield EListSlice(e1, start, end).with_type(e1.type)
+
+        for h in all_extension_handlers():
+            yield from h.enumerate(context, size, pool, self.enumerate, build_lambdas)
 
     def enumerate(self, context : Context, size : int, pool : Pool) -> [Exp]:
         """Enumerate expressions of the given size.

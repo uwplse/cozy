@@ -81,6 +81,9 @@ def is_scalar(t : syntax.Type):
         return all(is_scalar(tt) for (f, tt) in t.fields)
     return False
 
+def is_ordered(t : syntax.Type):
+    return is_numeric(t) or isinstance(t, syntax.TNative)
+
 def equality_implies_deep_equality(t : syntax.Type):
     """For values of type `t`, does "==" always behave the same as "==="?"""
     if isinstance(t, syntax.THandle):

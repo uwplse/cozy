@@ -1,8 +1,8 @@
-from cozy.common import fresh_name, declare_case, No
+from cozy.common import fresh_name, declare_case, No, pick_to_sum
 from cozy.syntax import *
-from cozy.target_syntax import SWhile, SSwap, SSwitch, SEscapableBlock, SEscapeBlock, EMap, EFilter
+from cozy.target_syntax import SWhile, SSwap, SSwitch, SEscapableBlock, SEscapeBlock, EMap, EFilter, EStateVar
 from cozy.syntax_tools import fresh_var, pprint, mk_lambda, alpha_equivalent
-from cozy.pools import Pool, RUNTIME_POOL
+from cozy.pools import Pool, RUNTIME_POOL, STATE_POOL
 
 from .arrays import TArray, EArrayGet, EArrayIndexOf, SArrayAlloc, SEnsureCapacity, EArrayLen
 
@@ -65,6 +65,30 @@ class Heaps(object):
 
     def owned_types(self):
         return (TMinHeap, TMaxHeap, EMakeMinHeap, EMakeMaxHeap, EHeapElems, EHeapPeek, EHeapPeek2)
+
+    def enumerate(self, context, size, pool, enumerate_subexps, enumerate_lambdas):
+        from cozy.typecheck import is_ordered, is_collection
+
+        if pool == STATE_POOL:
+            for (sz1, sz2) in pick_to_sum(2, size-1):
+                for e in enumerate_subexps(context, sz1, pool):
+                    if is_collection(e.type):
+                        elem_type = e.type.elem_type
+                        for keyfunc in enumerate_lambdas(e, pool, sz2):
+                            key_type = keyfunc.body.type
+                            if is_ordered(key_type):
+                                yield EMakeMinHeap(e, keyfunc).with_type(TMinHeap(elem_type, key_type))
+                                yield EMakeMaxHeap(e, keyfunc).with_type(TMaxHeap(elem_type, key_type))
+
+        elif pool == RUNTIME_POOL:
+            for e in enumerate_subexps(context.root(), size-1, STATE_POOL):
+                t = e.type
+                if isinstance(t, TMinHeap) or isinstance(t, TMaxHeap):
+                    elem_type = t.elem_type
+                    n_elems = EStateVar(ELen(EHeapElems(e).with_type(TBag(elem_type)))).with_type(INT)
+                    # yielding EHeapElems would be redundant
+                    yield EHeapPeek (EStateVar(e).with_type(e.type), n_elems).with_type(elem_type)
+                    yield EHeapPeek2(EStateVar(e).with_type(e.type), n_elems).with_type(elem_type)
 
     def default_value(self, t : Type, default_value) -> Exp:
         """Construct a default value of the given type.
