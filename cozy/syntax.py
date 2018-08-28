@@ -197,6 +197,9 @@ def seq(stms):
         return SNoOp()
     return build_balanced_tree(stms, SSeq)
 
+def EFirst(e):
+    return EUnaryOp(UOp.The, e).with_type(e.type.elem_type)
+
 def EAll(exps):
     exps = [ e for e in exps if e != ETRUE ]
     if any(e == EFALSE for e in exps):
