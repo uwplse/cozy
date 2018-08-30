@@ -539,19 +539,26 @@ class JavaPrinter(CxxPrinter):
         return "({}).keySet()".format(m)
 
     def for_each_native(self, x, iterable, body):
-        if not self.boxed and self.troveargs(x.type) is None:
-            setup, iterable_src = self.visit(iterable)
+        if not self.boxed and self.trovename(x.type) != "Object":
+            iterable_src = self.visit(iterable)
             itname = fresh_name("iterator")
-            return "{setup}{indent}gnu.trove.iterator.elem_type{ETRUE}Iterator {it} = {iterable}.iterator();\n{indent}while ({it}.hasNext()) {{\n{indent2}{decl} = {it}.next();\n{body}{indent}}}\n".format(
-                setup=setup,
-                iterable=iterable_src,
+            self.write_stmt("gnu.trove.iterator.T{T}Iterator {it} = {iterable}.iterator();".format(
                 it=itname,
-                ETRUE=self.trovename(x.type),
-                decl=self.visit(x.type, name=x.id),
-                body=self.visit(body, indent+INDENT),
-                indent=indent,
-                indent2=indent+INDENT)
-        return super().for_each_native(x, iterable, body)
+                iterable=iterable_src,
+                T=self.trovename(x.type)))
+            self.begin_statement()
+            self.write("while ({it}.hasNext()) ".format(it=itname))
+            with self.block():
+                self.declare(x, EEscape("{it}.next()".format(it=itname), (), ()).with_type(x.type))
+                self.visit(body)
+            self.end_statement()
+            return
+        iterable = self.visit(iterable)
+        self.begin_statement()
+        self.write("for (", self.visit(x.type, x.id), " : ", iterable, ") ")
+        with self.block():
+            self.visit(body)
+        self.end_statement()
 
     def visit_SSwap(self, s):
         tmp = self.fv(s.lval1.type, "swap_tmp")
