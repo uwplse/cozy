@@ -121,7 +121,7 @@ class JavaPrinter(CxxPrinter):
             self.visit_args(itertools.chain(q.args, [("_callback", TNative("java.util.function.Consumer<{t}>".format(t=self.visit(ret_type.elem_type, ""))))]))
             self.write(") ")
             with self.block():
-                self.visit(SForEach(x, q.ret, SEscape("{indent}_callback({x});\n", ["x"], [x])))
+                self.visit(SForEach(x, q.ret, SEscape("{indent}_callback.accept({x});\n", ["x"], [x])))
         else:
             if q.docstring:
                 self.write(indent_lines(q.docstring, self.get_indent()), "\n")
