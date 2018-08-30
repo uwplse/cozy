@@ -557,9 +557,9 @@ class CxxPrinter(CodeGenerator):
         elif isinstance(iterable, EListSlice):
             s = self.fv(INT, "start")
             e = self.fv(INT, "end")
-            l = self.visit(iterable.e)
-            self.declare(s, iterable.start)
-            self.declare(e, iterable.end)
+            l = self.visit(self.to_lvalue(iterable.e))
+            self.declare(s, EEscape("::std::max({start}, 0)", ("start",), (iterable.start,)))
+            self.declare(e, EEscape("::std::min({end}, static_cast<int>({it}.size()))", ("it", "end"), (iterable.e, iterable.end,)))
             return self.visit(SWhile(ELt(s, e), SSeq(
                 body(EEscape("{l}[{i}]", ("l", "i"), (iterable.e, s)).with_type(iterable.type.elem_type)),
                 SAssign(s, EBinOp(s, "+", ONE).with_type(INT)))))
