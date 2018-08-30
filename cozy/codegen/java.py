@@ -4,7 +4,7 @@ import itertools
 from cozy import common, evaluation
 from cozy.target_syntax import *
 from cozy.syntax_tools import free_vars, subst, all_exps
-from cozy.typecheck import is_scalar
+from cozy.typecheck import is_scalar, is_collection
 from cozy.structures import extension_handler
 
 from .cxx import CxxPrinter
@@ -110,18 +110,18 @@ class JavaPrinter(CxxPrinter):
         if q.visibility != Visibility.Public:
             return ""
         ret_type = q.ret.type
-        if isinstance(ret_type, TBag):
+        if is_collection(ret_type):
             x = EVar(self.fn("x")).with_type(ret_type.elem_type)
             def body(x):
                 return SEscape("{indent}_callback.accept({x});\n", ["x"], [x])
             if q.docstring:
                 self.write(indent_lines(q.docstring, self.get_indent()), "\n")
             self.begin_statement()
-            self.write("public ", self.visit(ret_type, q.name), "(")
+            self.write("public ", self.visit(TNative("void"), q.name), "(")
             self.visit_args(itertools.chain(q.args, [("_callback", TNative("java.util.function.Consumer<{t}>".format(t=self.visit(ret_type.elem_type, ""))))]))
             self.write(") ")
             with self.block():
-                self.visit(SForEach(x, q.ret, SEscape("{indent}_callback({x});\n", ["x"], [x])))
+                self.visit(SForEach(x, q.ret, SEscape("{indent}_callback.accept({x});\n", ["x"], [x])))
         else:
             if q.docstring:
                 self.write(indent_lines(q.docstring, self.get_indent()), "\n")
@@ -239,7 +239,7 @@ class JavaPrinter(CxxPrinter):
         return self.visit(EEscape("{set}.contains({elem})", ["set", "elem"], [set, elem]).with_type(BOOL))
 
     def compute_hash_1(self, e : str, t : Type, out : EVar, indent : str) -> str:
-        if self.is_primitive(t):
+        if self.is_primitive(t) and not self.boxed:
             if t == INT:
                 res = e
             elif t == LONG:
@@ -408,7 +408,7 @@ class JavaPrinter(CxxPrinter):
         return "{} {}".format("Integer" if self.boxed else "int", name)
 
     def visit_TLong(self, t, name):
-        return "{} {}".format("Long" if self.boxed else "int", name)
+        return "{} {}".format("Long" if self.boxed else "long", name)
 
     def visit_TFloat(self, t, name):
         return "{} {}".format("Float" if self.boxed else "float", name)
@@ -447,7 +447,7 @@ class JavaPrinter(CxxPrinter):
         if self.boxed or not self.is_primitive(t.elem_type):
             return "java.util.ArrayList<{}> {}".format(self.visit(t.elem_type, ""), name)
         else:
-            return "gnu.trove.list.array.elem_type{}ArrayList {}".format(
+            return "gnu.trove.list.array.T{}ArrayList {}".format(
                 self.trovename(t.elem_type),
                 name)
 
@@ -455,7 +455,7 @@ class JavaPrinter(CxxPrinter):
         if self.boxed or not self.is_primitive(t.elem_type):
             return "java.util.HashSet< {} > {}".format(self.visit(t.elem_type, ""), name)
         else:
-            return "gnu.trove.set.hash.elem_type{}HashSet {}".format(
+            return "gnu.trove.set.hash.T{}HashSet {}".format(
                 self.trovename(t.elem_type),
                 name)
 
@@ -520,7 +520,7 @@ class JavaPrinter(CxxPrinter):
                 x = self.troveargs(x)
                 if x is not None:
                     args.append(x)
-            return "gnu.trove.map.hash.elem_type{k}{v}HashMap{targs} {name}".format(
+            return "gnu.trove.map.hash.T{k}{v}HashMap{targs} {name}".format(
                 k=self.trovename(t.k),
                 v=self.trovename(t.v),
                 targs="<{}>".format(", ".join(args)) if args else "",
@@ -534,20 +534,31 @@ class JavaPrinter(CxxPrinter):
     def visit_TRef(self, t, name):
         return self.visit(t.elem_type, name)
 
+    def visit_EMapKeys(self, e):
+        m = self.visit(e.e)
+        return "({}).keySet()".format(m)
+
     def for_each_native(self, x, iterable, body):
-        if not self.boxed and self.troveargs(x.type) is None:
-            setup, iterable_src = self.visit(iterable)
+        if not self.boxed and self.trovename(x.type) != "Object":
+            iterable_src = self.visit(iterable)
             itname = fresh_name("iterator")
-            return "{setup}{indent}gnu.trove.iterator.elem_type{ETRUE}Iterator {it} = {iterable}.iterator();\n{indent}while ({it}.hasNext()) {{\n{indent2}{decl} = {it}.next();\n{body}{indent}}}\n".format(
-                setup=setup,
-                iterable=iterable_src,
+            self.write_stmt("gnu.trove.iterator.T{T}Iterator {it} = {iterable}.iterator();".format(
                 it=itname,
-                ETRUE=self.trovename(x.type),
-                decl=self.visit(x.type, name=x.id),
-                body=self.visit(body, indent+INDENT),
-                indent=indent,
-                indent2=indent+INDENT)
-        return super().for_each_native(x, iterable, body)
+                iterable=iterable_src,
+                T=self.trovename(x.type)))
+            self.begin_statement()
+            self.write("while ({it}.hasNext()) ".format(it=itname))
+            with self.block():
+                self.declare(x, EEscape("{it}.next()".format(it=itname), (), ()).with_type(x.type))
+                self.visit(body)
+            self.end_statement()
+            return
+        iterable = self.visit(iterable)
+        self.begin_statement()
+        self.write("for (", self.visit(x.type, x.id), " : ", iterable, ") ")
+        with self.block():
+            self.visit(body)
+        self.end_statement()
 
     def visit_SSwap(self, s):
         tmp = self.fv(s.lval1.type, "swap_tmp")
@@ -654,9 +665,8 @@ class JavaPrinter(CxxPrinter):
                 ekey = self.visit(e.key)
                 v = self.fv(e.map.type.v, hint="v")
                 with self.boxed_mode():
-                    decl = self.visit(SDecl(v, EEscape("{emap}.get({ekey})".format(emap=emap, ekey=ekey), [], []).with_type(e.type)))
-                s, e = self.visit(ECond(EEq(v, ENull().with_type(v.type)), evaluation.construct_value(e.map.type.v), v).with_type(e.type))
-                return (smap + skey + decl + s, e)
+                    self.visit(SDecl(v, EEscape("{emap}.get({ekey})".format(emap=emap, ekey=ekey), [], []).with_type(e.type)))
+                return self.visit(ECond(EEq(v, ENull().with_type(v.type)), evaluation.construct_value(e.map.type.v), v).with_type(e.type))
             else:
                 # For Trove, defaults are set at construction time
                 emap = self.visit(e.map)
