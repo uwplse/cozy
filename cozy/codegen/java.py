@@ -239,7 +239,7 @@ class JavaPrinter(CxxPrinter):
         return self.visit(EEscape("{set}.contains({elem})", ["set", "elem"], [set, elem]).with_type(BOOL))
 
     def compute_hash_1(self, e : str, t : Type, out : EVar, indent : str) -> str:
-        if self.is_primitive(t):
+        if self.is_primitive(t) and not self.boxed:
             if t == INT:
                 res = e
             elif t == LONG:
