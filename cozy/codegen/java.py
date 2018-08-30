@@ -447,7 +447,7 @@ class JavaPrinter(CxxPrinter):
         if self.boxed or not self.is_primitive(t.elem_type):
             return "java.util.ArrayList<{}> {}".format(self.visit(t.elem_type, ""), name)
         else:
-            return "gnu.trove.list.array.elem_type{}ArrayList {}".format(
+            return "gnu.trove.list.array.T{}ArrayList {}".format(
                 self.trovename(t.elem_type),
                 name)
 
@@ -455,7 +455,7 @@ class JavaPrinter(CxxPrinter):
         if self.boxed or not self.is_primitive(t.elem_type):
             return "java.util.HashSet< {} > {}".format(self.visit(t.elem_type, ""), name)
         else:
-            return "gnu.trove.set.hash.elem_type{}HashSet {}".format(
+            return "gnu.trove.set.hash.T{}HashSet {}".format(
                 self.trovename(t.elem_type),
                 name)
 
@@ -520,7 +520,7 @@ class JavaPrinter(CxxPrinter):
                 x = self.troveargs(x)
                 if x is not None:
                     args.append(x)
-            return "gnu.trove.map.hash.elem_type{k}{v}HashMap{targs} {name}".format(
+            return "gnu.trove.map.hash.T{k}{v}HashMap{targs} {name}".format(
                 k=self.trovename(t.k),
                 v=self.trovename(t.v),
                 targs="<{}>".format(", ".join(args)) if args else "",
