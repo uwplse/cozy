@@ -467,7 +467,7 @@ class CxxPrinter(CodeGenerator):
 
     def visit_EBinOp(self, e):
         op = e.op
-        if op == "+" and (isinstance(e.e1.type, TBag) or isinstance(e.e1.type, TSet)):
+        if op == "+" and is_collection(e.type):
             raise NotImplementedError("adding collections: {}".format(e))
         elif op == "==":
             return self._eq(e.e1, e.e2)
