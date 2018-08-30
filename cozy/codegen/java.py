@@ -4,7 +4,7 @@ import itertools
 from cozy import common, evaluation
 from cozy.target_syntax import *
 from cozy.syntax_tools import free_vars, subst, all_exps
-from cozy.typecheck import is_scalar
+from cozy.typecheck import is_scalar, is_collection
 from cozy.structures import extension_handler
 
 from .cxx import CxxPrinter
@@ -110,14 +110,14 @@ class JavaPrinter(CxxPrinter):
         if q.visibility != Visibility.Public:
             return ""
         ret_type = q.ret.type
-        if isinstance(ret_type, TBag):
+        if is_collection(ret_type):
             x = EVar(self.fn("x")).with_type(ret_type.elem_type)
             def body(x):
                 return SEscape("{indent}_callback.accept({x});\n", ["x"], [x])
             if q.docstring:
                 self.write(indent_lines(q.docstring, self.get_indent()), "\n")
             self.begin_statement()
-            self.write("public ", self.visit(ret_type, q.name), "(")
+            self.write("public ", self.visit(TNative("void"), q.name), "(")
             self.visit_args(itertools.chain(q.args, [("_callback", TNative("java.util.function.Consumer<{t}>".format(t=self.visit(ret_type.elem_type, ""))))]))
             self.write(") ")
             with self.block():
