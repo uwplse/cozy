@@ -534,6 +534,10 @@ class JavaPrinter(CxxPrinter):
     def visit_TRef(self, t, name):
         return self.visit(t.elem_type, name)
 
+    def visit_EMapKeys(self, e):
+        m = self.visit(e.e)
+        return "({}).keySet()".format(m)
+
     def for_each_native(self, x, iterable, body):
         if not self.boxed and self.troveargs(x.type) is None:
             setup, iterable_src = self.visit(iterable)
