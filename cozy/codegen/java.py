@@ -408,7 +408,7 @@ class JavaPrinter(CxxPrinter):
         return "{} {}".format("Integer" if self.boxed else "int", name)
 
     def visit_TLong(self, t, name):
-        return "{} {}".format("Long" if self.boxed else "int", name)
+        return "{} {}".format("Long" if self.boxed else "long", name)
 
     def visit_TFloat(self, t, name):
         return "{} {}".format("Float" if self.boxed else "float", name)
