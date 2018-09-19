@@ -1004,6 +1004,9 @@ class CxxPrinter(CodeGenerator):
         s = SSeq(s, SEscape("{indent}return {e};\n", ("e",), (hc,)))
         return s
 
+    def visit_ESingleton(self, e):
+        return self.visit(self.to_lvalue(e))
+
     @typechecked
     def visit_Spec(self, spec : Spec, state_exps : { str : Exp }, sharing, abstract_state=()):
         self.state_exps = state_exps

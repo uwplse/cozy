@@ -603,7 +603,9 @@ class JavaPrinter(CxxPrinter):
         self.write_stmt(lval, " = new ", tname, "[", cap, "];")
 
     def visit_SEnsureCapacity(self, s):
-        return self.array_resize_for_index(s.a.type.elem_type, s.a, s.capacity)
+        """Ensure that array s.a satisfies capacity requirement s.capacity
+        """
+        return self.array_resize_for_index(s.a.type.elem_type, s.a, EBinOp(s.capacity, "-", ONE).with_type(INT))
 
     def visit_SArrayReAlloc(self, s):
         return self.array_resize_for_index(s.a.type.elem_type, s.a, s.new_capacity)
@@ -614,18 +616,21 @@ class JavaPrinter(CxxPrinter):
         return self.visit(EEscape("java.util.Arrays.asList({a}).indexOf({x})", ("a", "x"), (e.a, e.x)).with_type(e.type))
 
     def array_resize_for_index(self, elem_type, a, i):
+        """Grows the array a until a[i] will execute without exception, if i >= 0;
+        when i < 0, it will do nothing
+        """
         new_a = fresh_name(hint="new_array")
         if elem_type == BOOL:
             t = "long"
         else:
             t = self.strip_generics(self.visit(elem_type, name=""))
         len = EEscape("{a}.length", ["a"], [a]).with_type(INT)
-        double_size = SEscape(
-            "{{indent}}{t}[] {new_a} = new {t}[{{len}} << 1];\n{{indent}}System.arraycopy({{a}}, 0, {new_a}, 0, {{len}});\n{{indent}}{{a}} = {new_a};\n".format(t=t, new_a=new_a),
+        double_and_incr_size = SEscape(
+            "{{indent}}{t}[] {new_a} = new {t}[({{len}} << 1) + 1];\n{{indent}}System.arraycopy({{a}}, 0, {new_a}, 0, {{len}});\n{{indent}}{{a}} = {new_a};\n".format(t=t, new_a=new_a),
             ["a", "len"], [a, len])
         self.visit(SWhile(
-            ENot(self.array_in_bounds(elem_type, a, i)),
-            double_size))
+            EAll([EBinOp(i, ">=", ZERO).with_type(BOOL), ENot(self.array_in_bounds(elem_type, a, i))]),
+            double_and_incr_size))
 
     def array_put(self, elem_type, a, i, val):
         if elem_type == BOOL:

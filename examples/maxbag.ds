@@ -1,0 +1,13 @@
+MaxBag:
+    state l : Set<Int>
+
+    query get_max()
+        assume exists l;
+        argmax {x -> x} l
+
+    op add(x: Int)
+        assume not(x in l);
+        l.add(x);
+
+    op remove(x: Int)
+        l.remove(x);
