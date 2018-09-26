@@ -18,7 +18,12 @@ EHeapPeek  = declare_case(Exp, "EHeapPeek",  ["e", "heap_length"]) # look at min
 EHeapPeek2 = declare_case(Exp, "EHeapPeek2", ["e", "heap_length"]) # look at 2nd min
 
 def to_heap(e : Exp) -> Exp:
-    """Implement expression e as a heap operation."""
+    """Construct a heap that would be useful for evaluating `e`.
+
+    Given an EArgMin or EArgMax expression, this function produces a new
+    expression that constructs a heap. Peeking the top value of the
+    constructed heap is semantically equivalent to evaluating `e`.
+    """
     if isinstance(e, EArgMin):
         elem_type = e.type
         key_type = e.key_function.body.type
