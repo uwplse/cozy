@@ -22,3 +22,4 @@ parser.out
 # environmental files
 .venv
 .idea
+.vscode

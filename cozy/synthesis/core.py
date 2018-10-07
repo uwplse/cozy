@@ -42,7 +42,9 @@ from .acceleration import try_optimize
 from .enumeration import Enumerator, Fingerprint, eviction_policy
 
 eliminate_vars = Option("eliminate-vars", bool, False)
-enable_blacklist = Option("enable-blacklist", bool, False)
+enable_blacklist = Option("enable-blacklist", bool, False,
+    description='If enabled, skip expressions that have been ' +
+                'found not useful or invalid during improvement searching')
 check_blind_substitutions = Option("blind-substitutions", bool, True,
     description='"Blind substitutions" allow Cozy to try replacing expressions '
         + "with other expressions, even when the substitution appears wrong. "

@@ -157,9 +157,6 @@ class Implementation(object):
         """
         print("Adding query {}...".format(q.name))
         self.query_specs.append(q)
-        fvs = free_vars(q)
-        # initial rep
-        qargs = set(EVar(a).with_type(t) for (a, t) in q.args)
         safe_ret = repair_well_formedness(
             q.ret,
             context=self.context_for_method(q),
