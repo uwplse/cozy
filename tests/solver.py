@@ -329,11 +329,11 @@ class TestSolver(unittest.TestCase):
 
     def test_minheap(self):
         e = EVar("h").with_type(TMinHeap(BOOL, INT))
-        check_encoding(e, require=EGt(ELen(EHeapElems(e).with_type(BOOL_BAG)), TWO))
+        check_encoding(e, require=EGt(ELen(EHeapElems(e, ZERO.with_type(INT)).with_type(BOOL_BAG)), TWO))
 
     def test_maxheap(self):
         e = EVar("h").with_type(TMaxHeap(BOOL, INT))
-        check_encoding(e, require=EGt(ELen(EHeapElems(e).with_type(BOOL_BAG)), TWO))
+        check_encoding(e, require=EGt(ELen(EHeapElems(e, ZERO.with_type(INT)).with_type(BOOL_BAG)), TWO))
 
     def test_lists1(self):
         satisfy(EUnaryOp('not', EBinOp(EUnaryOp('not', EBool(True).with_type(TBool())).with_type(TBool()), 'or', EBinOp(EVar('l').with_type(TList(TNative('Object'))), '==', EDropFront(EBinOp(EVar('l').with_type(TList(TNative('Object'))), '+', ESingleton(EListGet(EVar('l').with_type(TList(TNative('Object'))), ENum(0).with_type(TInt())).with_type(TNative('Object'))).with_type(TList(TNative('Object')))).with_type(TList(TNative('Object')))).with_type(TList(TNative('Object')))).with_type(TBool())).with_type(TBool())).with_type(TBool()), vars=OrderedSet([EVar('l').with_type(TList(TNative('Object')))]), collection_depth=2, validate_model=True)

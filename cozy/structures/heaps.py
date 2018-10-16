@@ -1,7 +1,7 @@
 from cozy.common import fresh_name, declare_case, No, pick_to_sum
 from cozy.syntax import *
 from cozy.target_syntax import SWhile, SSwap, SSwitch, SEscapableBlock, SEscapeBlock, EMap, EFilter, EStateVar
-from cozy.syntax_tools import fresh_var, pprint, mk_lambda, alpha_equivalent
+from cozy.syntax_tools import fresh_var, pprint, mk_lambda, alpha_equivalent, inline_lets
 from cozy.pools import Pool, RUNTIME_POOL, STATE_POOL
 
 from .arrays import TArray, EArrayGet, EArrayIndexOf, SArrayAlloc, SEnsureCapacity, EArrayLen
@@ -13,7 +13,7 @@ TMaxHeap = declare_case(Type, "TMaxHeap", ["elem_type", "key_type"])
 EMakeMinHeap = declare_case(Exp, "EMakeMinHeap", ["e", "key_function"])
 EMakeMaxHeap = declare_case(Exp, "EMakeMaxHeap", ["e", "key_function"])
 
-EHeapElems = declare_case(Exp, "EHeapElems", ["e"]) # all elements
+EHeapElems = declare_case(Exp, "EHeapElems", ["e", "heap_length"]) # all elements
 EHeapPeek  = declare_case(Exp, "EHeapPeek",  ["e", "heap_length"]) # look at min
 EHeapPeek2 = declare_case(Exp, "EHeapPeek2", ["e", "heap_length"]) # look at 2nd min
 
@@ -66,6 +66,30 @@ def heap_func(e : Exp, concretization_functions : { str : Exp } = None) -> ELamb
         return ELambda(v, ECond(e.cond, h1.apply_to(v), h2.apply_to(v)).with_type(h1.body.type))
     raise NotImplementedError(repr(e))
 
+
+def heap_elems(e : Exp, concretization_functions : { str : Exp } = None) -> Exp:
+    """
+    Assuming 'e' produces a heap, this returns its elements.
+    """
+    if isinstance(e, EMakeMinHeap) or isinstance(e, EMakeMaxHeap):
+        return e.e
+    if isinstance(e, EVar) and concretization_functions:
+        ee = concretization_functions.get(e.id)
+        if ee is not None:
+            return heap_elems(ee)
+    if isinstance(e, ECond):
+        h1 = heap_elems(e.then_branch)
+        h2 = heap_elems(e.else_branch)
+        if alpha_equivalent(h1, h2):
+            return h1
+        return ECond(e.cond, h1, h2).with_type(h1.type)
+    if isinstance(e, EStateVar):
+        return heap_elems(e.e)
+    if isinstance(e, ELet):
+        return heap_elems(inline_lets(e))
+    raise NotImplementedError(repr(e))
+
+
 class Heaps(object):
 
     def owned_types(self):
@@ -90,7 +114,7 @@ class Heaps(object):
                 t = e.type
                 if isinstance(t, TMinHeap) or isinstance(t, TMaxHeap):
                     elem_type = t.elem_type
-                    n_elems = EStateVar(ELen(EHeapElems(e).with_type(TBag(elem_type)))).with_type(INT)
+                    n_elems = EStateVar(ELen(heap_elems(e).with_type(TBag(elem_type)))).with_type(INT)
                     # yielding EHeapElems would be redundant
                     yield EHeapPeek (EStateVar(e).with_type(e.type), n_elems).with_type(elem_type)
                     yield EHeapPeek2(EStateVar(e).with_type(e.type), n_elems).with_type(elem_type)
@@ -108,9 +132,9 @@ class Heaps(object):
 
     def check_wf(self, e : Exp, is_valid, state_vars : {EVar}, args : {EVar}, pool = RUNTIME_POOL, assumptions : Exp = ETRUE):
         """Return None or a string indicating a well-formedness error."""
-        if (isinstance(e, EHeapPeek) or isinstance(e, EHeapPeek2)):
+        if (isinstance(e, EHeapPeek) or isinstance(e, EHeapPeek2) or isinstance(e, EHeapElems)):
             heap = e.e
-            if not is_valid(EEq(e.heap_length, ELen(EHeapElems(heap).with_type(TBag(heap.type.elem_type))))):
+            if not is_valid(EEq(e.heap_length, ELen(heap_elems(heap).with_type(TBag(heap.type.elem_type))))):
                 return "invalid `n` parameter"
         return None
 
@@ -168,7 +192,7 @@ class Heaps(object):
         storage sizes for other expressions.
         """
         assert type(e.type) in (TMinHeap, TMaxHeap)
-        return storage_size(EHeapElems(e).with_type(TBag(e.type.elem_type)))
+        return storage_size(heap_elems(e).with_type(TBag(e.type.elem_type)))
 
     def maintenance_cost(self,
             old_value           : Exp,
@@ -181,8 +205,8 @@ class Heaps(object):
 
         # added/removed elements
         t = TBag(e.type.elem_type)
-        old_elems = EHeapElems(old_value).with_type(t)
-        new_elems = EHeapElems(new_value).with_type(t)
+        old_elems = heap_elems(old_value).with_type(t)
+        new_elems = heap_elems(new_value).with_type(t)
 
         # Add these
         elems_added = storage_size(
@@ -246,8 +270,8 @@ class Heaps(object):
 
         # added/removed elements
         t = TBag(lval.type.elem_type)
-        old_elems = EHeapElems(old_value).with_type(t)
-        new_elems = EHeapElems(new_value).with_type(t)
+        old_elems = heap_elems(old_value).with_type(t)
+        new_elems = heap_elems(new_value).with_type(t)
         initial_count = make_subgoal(ELen(old_elems))
         to_add = make_subgoal(EBinOp(new_elems, "-", old_elems).with_type(t), docstring="additions to {}".format(pprint(lval)))
         to_del_spec = EBinOp(old_elems, "-", new_elems).with_type(t)
