@@ -33,7 +33,9 @@ def run():
     parser = argparse.ArgumentParser(description='Data structure synthesizer.')
     parser.add_argument("-S", "--save", metavar="FILE", type=str, default=None, help="Save synthesis output")
     parser.add_argument("-R", "--resume", action="store_true", help="Resume from saved synthesis output")
-    parser.add_argument("-t", "--timeout", metavar="N", type=float, default=60, help="Per-query synthesis timeout (in seconds); default=60")
+    parser.add_argument("-t", "--timeout", metavar="N", type=float, default=60,
+                        help="Global synthesis timeout (in seconds); default=60. " +
+                             "Smaller timeout speeds up the synthesis process, but may also result in less efficient code")
     parser.add_argument("-s", "--simple", action="store_true", help="Do not synthesize improved solution; use the most trivial implementation of the spec")
     parser.add_argument("-p", "--port", metavar="P", type=int, default=None, help="Port to run progress-showing HTTP server")
 
