@@ -1,0 +1,40 @@
+Redmine:
+    handletype ProjectModule = {
+        id : Int,
+        name : String
+    }
+    handletype Project = {
+        id : Int,
+        status : Int,
+        modules : Bag<ProjectModule>
+    }
+    handletype IssueStatus = {
+        id : Int,
+        is_closed : Bool
+    }
+    handletype Issue = {
+        id : Int,
+        author_id : Int,
+        project : Project,
+        statuses : Bag<IssueStatus>,
+        assigned_to : Int
+    }
+    extern is_issue_tracking(x : String) : Bool = "({x} == \"issue_tracking\")"
+    state issues : Bag<Issue>
+    state projects : Bag<Project>
+    invariant unique [ p.val.id | p <- projects ];
+    query countIssues(p1 : Int)
+        len [ i | i <- issues,
+                  i.val.project.val.status != 9,
+                  exists [ m | m <- i.val.project.val.modules, is_issue_tracking(m.val.name) ],
+                  i.val.assigned_to == p1,
+                  exists [ s | s <- i.val.statuses, s.val.is_closed == false ] ]
+    op insertIssue(i: Issue)
+        issues.add(i);
+    op insertProject(p : Project)
+        assume not (exists [ p0 | p0 <- projects, p.val.id == p0.val.id ]);
+        projects.add(p);
+    query getProjectById(id : Int)
+        the [ p | p <- projects, p.val.id == id ]
+    op updateProjectStatus(p: Project, status : Int)
+        p.val.status = status;
