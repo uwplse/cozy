@@ -1,0 +1,46 @@
+TPCHQ5:
+    handletype Region = {
+        id : Int,
+        name : String
+    }
+    handletype Nation = {
+        id : Int,
+        region : Region
+    }
+    handletype Supplier = {
+        id : Int,
+        nation : Nation
+    }
+    handletype Customer = {
+        id : Int,
+        nation : Nation
+    }
+    handletype Order = {
+        id : Int,
+        orderdate : Int,
+        customer : Customer
+    }
+    handletype Lineitem = {
+        id : Int,
+        extendedprice : Float,
+        discount : Float,
+        supplier : Supplier,
+        order : Order
+    }
+    extern mul(x : Float, y : Float) : Float = "{x} * {y}"
+    state lineitems : Bag<Lineitem>
+    private query selectLineitemsById(id : Int, p1 : String, p2 : Int, p3 : Int)
+        [ i | i <- lineitems,
+              i.val.supplier.val.nation.val.id == id,
+              i.val.supplier.val.nation.val.region.val.name == p1,
+              i.val.order.val.customer.val.nation.val.id == i.val.supplier.val.nation.val.id,
+              i.val.order.val.orderdate >= p2,
+              i.val.order.val.orderdate <= p3 ]
+    private query nationIdSet()
+        distinct [ i.val.supplier.val.nation.val.id | i <- lineitems ]
+    private query sumAmount(items: Bag<Lineitem>)
+        sum [ mul(i.val.extendedprice, (1f - i.val.discount)) | i <- items ]
+    query selectLineitems(p1 : String, p2 : Int, p3 : Int)
+        [ sumAmount(selectLineitemsById(id, p1, p2, p3)) | id <- nationIdSet() ]
+    op insertLineitem(i: Lineitem)
+        lineitems.add(i);
