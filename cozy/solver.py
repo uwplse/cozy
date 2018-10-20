@@ -1199,7 +1199,7 @@ class IncrementalSolver(object):
                     if self.validate_model:
                         x = evaluation.eval(e, res)
                         if x is not True:
-                            print("bad example: {}".format(res))
+                            print("solver returned a bad model: {}".format(res))
                             print(" ---> formula: {}".format(pprint(e)))
                             print(" ---> got {}".format(repr(x)))
                             print(" ---> model: {}".format(model))
