@@ -169,10 +169,7 @@ def improve(
         return
 
     is_good = possibly_useful(solver, target, context)
-    if not is_good:
-        print("WARNING: this target is already a bad idea")
-        print("is_good = {}".format(is_good))
-        assert False
+    assert is_good, "WARNING: this target is already a bad idea\n is_good = {}, target = {}".format(is_good, target)
 
     examples = list(examples)
 

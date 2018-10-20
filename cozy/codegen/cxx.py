@@ -278,7 +278,7 @@ class CxxPrinter(CodeGenerator):
             h = extension_handler(type(t))
             if h is not None:
                 return h.codegen(e, self.state_exps, out=out)
-            raise NotImplementedError(t, e, out)
+            raise NotImplementedError("t: {}\ne: {}\nout: {}\n".format(t, e, out))
 
     def construct_map(self, t, e, out):
         if isinstance(e, ECond):
