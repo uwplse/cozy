@@ -1181,13 +1181,11 @@ class IncrementalSolver(object):
                         if z3_func is None:
                             return ExtractedFunc({}, evaluation.mkval(out_type))
                         *z3_entries, z3_default = z3_func.as_list()
-                        default = reconstruct(model, z3_default, out_type)
-                        entries = OrderedDict()
-                        for *z3_input, z3_output in z3_entries:
-                            input = tuple(reconstruct(model, i, t) for (i, t) in zip(z3_input, arg_types))
-                            output = reconstruct(model, z3_output, out_type)
-                            entries[input] = output
-                        return ExtractedFunc(entries, default)
+                        # TODO: this lambda captures the whole model and
+                        # Z3 context, resulting in a surprising amount of
+                        # memory being preserved.  Someday it would be nice to
+                        # extract Z3 functions to pure Python objects.
+                        return lambda *args: reconstruct(model, f(*(self.visitor.unreconstruct(a, t) for a, t in zip(args, arg_types))), out_type)
                     model = solver.model()
                     for name, t in self.funcs.items():
                         f = _env[name]
