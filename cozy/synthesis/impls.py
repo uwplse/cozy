@@ -76,7 +76,7 @@ class Implementation(object):
            in `concretization_functions`.  The query implementations are stored
            in a map keyed by query name.
 
-         - updates: a map from (concrete_var_name, op_name) to statements,
+         - updates: a map from (concrete_var_name, op_name) to statements `stm`,
            where the concrete_var_name is one of the state variables described
            by `concretization_functions`, op_name is one of the update
            operations in `spec`, and `stm` is a statement that may use private
