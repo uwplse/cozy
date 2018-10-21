@@ -544,7 +544,7 @@ class Enumerator(object):
                 if e1.type == BOOL:
                     cond = e1
                     for then_branch in cache[sz2]:
-                        for else_branch in of_type(cache[sz2], then_branch.type):
+                        for else_branch in of_type(cache[sz3], then_branch.type):
                             yield ECond(cond, then_branch, else_branch).with_type(then_branch.type)
                 if isinstance(e1.type, TList):
                     for start in of_type(cache[sz2], INT):
