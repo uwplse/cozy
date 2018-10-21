@@ -42,17 +42,28 @@ def queries_equivalent(q1 : Query, q2 : Query, state_vars : [EVar], extern_funcs
 def pull_temps(s : Stm, decls_out : [SDecl], exp_is_bad) -> Stm:
     """Remove "bad" expressions from `s`.
 
-    This procedure writes temporary definitions into `decls_out` for all
-    expressions in `s` for which `exp_is_bad` returns True.  It returns `s`
-    in terms of those temporary definitions.
+    This procedure returns a statement new_s that replaces every expression in
+    `s` where `exp_is_bad` returns True with a fresh variable.  After running,
+    `decls_out` contains definitions for the fresh variables so that the whole
+    statement
+
+        decls_out; new_s
+
+    should return the same result as `s`.
     """
 
     def pull(e : Exp) -> Exp:
+        """Pull an expression into a temporary.
+
+        Creates a fresh variable for `e`, writes a declaration into `decls_out`,
+        and returns the fresh variable.
+        """
         if exp_is_bad(e):
             v = fresh_var(e.type)
             decls_out.append(SDecl(v, e))
             return v
         return e
+
     if isinstance(s, SNoOp):
         return s
     if isinstance(s, SSeq):
