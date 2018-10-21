@@ -431,7 +431,12 @@ class Enumerator(object):
             if is_collection(e.type):
                 elem_type = e.type.elem_type
 
+                # This method of generating EEmptyList() ensures that we visit
+                # empty collections of all possible types, but results in a lot
+                # of duplicates.  Fortunately, equivalence class deduplication
+                # efficiently weeds them out during enumeration.
                 yield EEmptyList().with_type(e.type)
+
                 if is_numeric(elem_type):
                     yield EUnaryOp(UOp.Sum, e).with_type(elem_type)
 
