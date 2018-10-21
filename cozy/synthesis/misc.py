@@ -11,7 +11,13 @@ from cozy.logging import task
 def queries_equivalent(q1 : Query, q2 : Query, state_vars : [EVar], extern_funcs : { str : TFunc }, assumptions : Exp = ETRUE):
     """Determine whether two queries always return the same result.
 
-    This function also checks that the two queries have identical preconditions.
+    This function also checks that the two queries have semantically equivalent
+    preconditions.  Checking the preconditions is necessary to ensure semantic
+    equivalence of the queries: a query object should be interpreted to mean
+    "if my preconditions hold then I compute and return my body expression".
+    If two queries do not have semantically equivalent preconditions, then
+    there might be cases where one is obligated to return a value and the other
+    has no defined behavior.
     """
 
     with task("checking query equivalence", q1=q1.name, q2=q2.name):
