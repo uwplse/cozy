@@ -230,7 +230,7 @@ def _evict(e, size, context, pool, better_exp, better_exp_size):
         print("{} caused eviction of {}".format(pprint(better_exp), pprint(e)))
     event("evicting {}".format(pprint(e)))
 
-def eviction_policy(new_exp : Exp, new_ctx : Context, old_exp : Exp, old_ctx : Context, pool : Pool, cost_model : CostModel) -> [Exp]:
+def retention_policy(new_exp : Exp, new_ctx : Context, old_exp : Exp, old_ctx : Context, pool : Pool, cost_model : CostModel) -> [Exp]:
     """Decide which expressions to keep in the cache.
 
     The returned list contains the new exp, the old exp, or both.
@@ -633,7 +633,7 @@ class Enumerator(object):
                         for entry in prev:
                             prev_exp = entry.e
                             event("previous: {}".format(pprint(prev_exp)))
-                            to_keep = eviction_policy(e, context, prev_exp, context, pool, cost_model)
+                            to_keep = retention_policy(e, context, prev_exp, context, pool, cost_model)
                             if e not in to_keep:
                                 _skip(e, size, context, pool, "preferring {}".format(pprint(prev_exp)))
                                 should_keep = False

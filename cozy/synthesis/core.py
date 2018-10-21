@@ -39,7 +39,7 @@ from cozy.logging import task, event
 from cozy.structures import extension_handler
 
 from .acceleration import try_optimize
-from .enumeration import Enumerator, Fingerprint, eviction_policy
+from .enumeration import Enumerator, Fingerprint, retention_policy
 
 eliminate_vars = Option("eliminate-vars", bool, False)
 enable_blacklist = Option("enable-blacklist", bool, False,
@@ -244,7 +244,7 @@ def improve(
                     keep = True
                     old_better = None
                     for old_target in watched_targets:
-                        evc = eviction_policy(new_target, context, old_target, context, RUNTIME_POOL, cost_model)
+                        evc = retention_policy(new_target, context, old_target, context, RUNTIME_POOL, cost_model)
                         if old_target not in evc:
                             to_evict.append(old_target)
                         if new_target not in evc:
