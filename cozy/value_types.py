@@ -34,7 +34,9 @@ class Map(object):
 
     This class is immutable, hashable, comparable, and has a deterministic
     iteration order.  It implements identical map semantics to those in the
-    solver module."""
+    solver module.
+    """
+
     def __init__(self, type, default, items=()):
         self.type = type
         self.default = default
@@ -87,7 +89,8 @@ class Bag(object):
     """A collection of Cozy values.
 
     This class serves to represent both sets and multisets; a set is just a
-    Bag whose elements happen to be distinct."""
+    Bag whose elements happen to be distinct.
+    """
 
     def __init__(self, iterable=()):
         self.elems = iterable if isinstance(iterable, tuple) else tuple(iterable)
