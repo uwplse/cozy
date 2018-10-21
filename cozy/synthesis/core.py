@@ -58,13 +58,37 @@ cost_pruning = Option("prune-using-cost", bool, False,
         + "more work when it sees each one for the first time.")
 
 # Options that control `possibly_useful`
-allow_conditional_state = Option("allow-conditional-state", bool, True)
-allow_peels = Option("allow-peels", bool, False)
-allow_big_sets = Option("allow-big-sets", bool, False)
-allow_big_maps = Option("allow-big-maps", bool, False)
-allow_int_arithmetic_state = Option("allow-int-arith-state", bool, True)
-allow_nonzero_state_constants = Option("allow-nonzero-state-constants", bool, True)
-allow_binop_state = Option("allow-binop-state", bool, False)
+allow_conditional_state = Option("allow-conditional-state", bool, True,
+    description="If enabled, Cozy is allowed to emit concretization functions "
+        + "of the form `cond ? x : y`. Sometimes this is desireable, but it "
+        + "can also lead to situations where the synthesized data structure "
+        + "needs to do an enormous amount of work when `cond` changes value.")
+allow_peels = Option("allow-peels", bool, False,
+    description="If enabled, Cozy is allowed to emit concretization functions "
+        + "that remove or \"peel\" a single element off of a set. This is "
+        + "rarely useful and can lead to very slow data structures.")
+allow_big_sets = Option("allow-big-sets", bool, False,
+    description="If enabled, Cozy is allowed to store collections on the data "
+        + "structure whose maximum size may exceed that of any collection in "
+        + "the specification. Usually this is undesireable as it can produce "
+        + "data structures that are fast but exhaust available memory.")
+allow_big_maps = Option("allow-big-maps", bool, False,
+    description="Similar to --allow-big-sets, but for hash maps.")
+allow_int_arithmetic_state = Option("allow-int-arith-state", bool, True,
+    description="If enabled, Cozy is allowed to do integer arithmetic in "
+        + "concretization functions. In rare cases this can cause Cozy to "
+        + "\"spin out\" and produce increasingly bizarre concretization "
+        + "functions.")
+allow_nonzero_state_constants = Option("allow-nonzero-state-constants", bool, True,
+    description="If enabled, Cozy is allowed to use non-zero numerical "
+        + "constants in concretization functions.  Note that disabling this "
+        + "option only makes the task more difficult, as Cozy can still "
+        + "discover ways to produce integer constants from other expressions.")
+allow_binop_state = Option("allow-binop-state", bool, False,
+    description="If enabled, Cozy is allowed to use fast constant-time binary "
+        + "operators in concretization functions.  Generally it is more "
+        + "desireable for Cozy to use simpler concretization functions and "
+        + "have the data structure do fast binary operations at run time.")
 
 def never_stop():
     """Takes no arguments, always returns False."""
