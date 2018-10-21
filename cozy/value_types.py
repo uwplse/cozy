@@ -35,7 +35,6 @@ class Map(object):
     This class is immutable, hashable, comparable, and has a deterministic
     iteration order.  It implements identical map semantics to those in the
     solver module."""
-
     def __init__(self, type, default, items=()):
         self.type = type
         self.default = default
