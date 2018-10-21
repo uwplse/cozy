@@ -497,6 +497,12 @@ class Enumerator(object):
                     for a2 in of_type(cache[sz2], BOOL):
                         yield EBinOp(e1, BOp.And, a2).with_type(BOOL)
                         yield EBinOp(e1, BOp.Or, a2).with_type(BOOL)
+                        # Cozy supports the implication operator "=>", but this
+                        # function does not enumerate it because
+                        #  - (a => b) is equivalent to ((not a) or b)
+                        #  - there isn't an implication operator in any of our
+                        #    current target languages, so we would need to
+                        #    desugar it to ((not a) or b) anyway.
 
                 if not isinstance(t, TMap):
                     for a2 in of_type(cache[sz2], t):
