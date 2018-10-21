@@ -644,6 +644,9 @@ class Enumerator(object):
             try:
                 e = next(queue)
             except StopIteration:
+                # StopIteration is a "control flow exception" indicating that
+                # there isn't a next element.  Since the queue is exhausted,
+                # breaking out of the loop is the right thing to do.
                 break
 
             self.stat_timer.check()
