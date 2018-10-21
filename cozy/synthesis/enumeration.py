@@ -324,7 +324,8 @@ class Enumerator(object):
          - cost_model: a cost model to tell us which expressions to prefer
          - check_wf: an optional additional filter to restrict which expressions
            are visited
-         - hints: extra expressions to visit first
+         - hints: expressions that get treated as size 0 during enumeration, so
+           they are enumerated very early
          - heuristics: an optional function to improve visited expressions
          - stop_callback: a function that is checked periodically to stop
            enumeration
