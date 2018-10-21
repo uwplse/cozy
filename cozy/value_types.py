@@ -30,7 +30,11 @@ from cozy.structures import extension_handler
 
 @total_ordering
 class Map(object):
-    """A Cozy key-value map."""
+    """A Cozy key-value map.
+
+    This class is immutable, hashable, comparable, and has a deterministic
+    iteration order.  It implements identical map semantics to those in the
+    solver module."""
 
     def __init__(self, type, default, items=()):
         self.type = type
