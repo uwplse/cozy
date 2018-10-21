@@ -72,19 +72,19 @@ class Fingerprint(object):
     from different inputs.  Clients also need to be aware that fingerprint
     equality does not imply full semantic equivalence between expressions.
     """
-    __slots__ = ("type", "signature")
+    __slots__ = ("type", "outputs")
 
     @staticmethod
     def of(e : Exp, inputs : [{str:object}]):
         """Compute the fingerprint of an expression over the given inputs."""
         return Fingerprint(e.type, eval_bulk(e, inputs))
 
-    def __init__(self, type : Type, signature : [object]):
+    def __init__(self, type : Type, outputs : [object]):
         self.type = type
-        self.signature = tuple(signature)
+        self.outputs = tuple(outputs)
 
     def _as_tuple(self):
-        return (self.type, self.signature)
+        return (self.type, self.outputs)
 
     def __hash__(self) -> int:
         return hash(self._as_tuple())
@@ -109,13 +109,13 @@ class Fingerprint(object):
 
     def __len__(self) -> int:
         """Returns the number of examples used to compute this fingerprint."""
-        return len(self.signature)
+        return len(self.outputs)
 
     def __repr__(self):
         return "Fingerprint{!r}".format(self._as_tuple())
 
     def __str__(self):
-        return "Fingerprint ({}): [{}]".format(pprint(self.type), ", ".join(str(x) for x in self.signature))
+        return "Fingerprint ({}): [{}]".format(pprint(self.type), ", ".join(str(x) for x in self.outputs))
 
     def _require_comparable_to(self, other):
         if len(self) != len(other):
@@ -133,8 +133,8 @@ class Fingerprint(object):
         self._require_comparable_to(other)
         return (
             self.type == other.type
-            and len(self.signature) == len(other.signature)
-            and all(values_equal(self.type, v1, v2) for (v1, v2) in zip(self.signature, other.signature)))
+            and len(self.outputs) == len(other.outputs)
+            and all(values_equal(self.type, v1, v2) for (v1, v2) in zip(self.outputs, other.outputs)))
 
     def subset_of(self, other) -> bool:
         """Determine whether this fingerprint looks like a subset of the other.
@@ -153,7 +153,7 @@ class Fingerprint(object):
         is_subset = EIsSubset(x, y)
         return all(eval_bulk(
             is_subset,
-            [{x.id:a, y.id:b} for (a, b) in zip(self.signature, other.signature)]))
+            [{x.id:a, y.id:b} for (a, b) in zip(self.outputs, other.outputs)]))
 
 EnumeratedExp = namedtuple("EnumeratedExp", [
     "e",                # The expression
