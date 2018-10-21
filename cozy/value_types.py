@@ -9,7 +9,8 @@ Python type, notably:
  - Bag (which represents both Cozy bags and Cozy sets)
  - Handle
 
-These classes all have a few important attributes:
+These classes all have a few important attributes not satisfied by built-in
+Python types:
  - these classes are immutable (and therefore hashable)
  - the collections can be compared with ==, <, <=, etc.
  - the collections have a deterministic iteration order
