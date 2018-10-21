@@ -661,19 +661,19 @@ class Enumerator(object):
 
             fp = Fingerprint.of(e, examples)
 
-            # collect all expressions from parent contexts
-            prev = list(cache.find_equivalent_expressions(context, pool, fp))
+            # collect all expressions from parent contexts that are fingerprint-equivalent to this one
+            known_equivalents = list(cache.find_equivalent_expressions(context, pool, fp))
             to_evict = []
 
-            if any(e.type == prev_entry.e.type and alpha_equivalent(e, prev_entry.e) for prev_entry in prev):
+            if any(e.type == prev_entry.e.type and alpha_equivalent(e, prev_entry.e) for prev_entry in known_equivalents):
                 _skip(e, size, context, pool, "duplicate")
                 should_keep = False
             else:
                 # decide whether to keep this expression
                 should_keep = True
-                if prev:
-                    with task("comparing to cached equivalents", count=len(prev)):
-                        for entry in prev:
+                if known_equivalents:
+                    with task("comparing to cached equivalents", count=len(known_equivalents)):
+                        for entry in known_equivalents:
                             prev_exp = entry.e
                             event("previous: {}".format(pprint(prev_exp)))
                             to_keep = retention_policy(e, context, prev_exp, context, pool, cost_model)
