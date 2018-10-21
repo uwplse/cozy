@@ -334,8 +334,19 @@ class Enumerator(object):
         self.examples = list(examples)
         self.cost_model = cost_model
         self.cache = ExpCache()
+
+        # Set of (pool, size, context) tuples that are currently being
+        # enumerated.  This is used to catch infinite recursion bugs, since
+        # enumerating expressions in one context may require enumerating
+        # expressions in a different context recursively.
         self.in_progress = set()
+
+        # Set of (pool, size, context) tuples that have been fully enumerated;
+        # there are no more expressions to discover and the results have been
+        # cached in `cache`.  There is no overlap between this and the
+        # `in_progress` set.
         self.complete = set()
+
         if check_wf is None:
             check_wf = lambda e, ctx, pool: True
         self.check_wf = check_wf
