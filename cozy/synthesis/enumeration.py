@@ -244,7 +244,15 @@ def retention_policy(new_exp : Exp, new_ctx : Context, old_exp : Exp, old_ctx : 
     raise ValueError(ordering)
 
 class ExpCache(object):
-    """Cache for expressions used by Enumerator instances."""
+    """Cache for expressions used by Enumerator instances.
+
+    The cache acts like a bag of (Context, Pool, EnumeratedExp) tuples, but can
+    efficiently
+     - count how many tuples are in the cache (__len__)
+     - find all unique contexts (all_contexts)
+     - find all expressions of a given size (find_expressions_of_size)
+     - find all expressions with a given fingerprint (find_equivalent_expressions)
+    """
 
     def __init__(self):
         """Construct an empty cache."""
@@ -258,6 +266,7 @@ class ExpCache(object):
         """Insert an expression into the cache for a given context and pool.
 
         This method will happily insert duplicate expressions into the cache.
+        Clients who don't want that must take steps to avoid it.
         """
         key = (pool, context)
         storage = self.data.get(key)
@@ -271,7 +280,9 @@ class ExpCache(object):
     def remove(self, context : Context, pool : Pool, enumerated_exp : EnumeratedExp):
         """Remove an expression from the cache for a given context and pool.
 
-        This method requires that the expression already exist in the cache.
+        This method requires that the expression already exist in the cache,
+        otherwise it raises a ValueError.
+
         Only one copy is removed if multiple copies are present.
         """
         key = (pool, context)
