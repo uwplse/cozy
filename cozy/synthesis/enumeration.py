@@ -381,6 +381,10 @@ class Enumerator(object):
             pool    : pool to enumerate
 
         This function is not cached.  Clients should call `enumerate` instead.
+
+        This function tries to be a clean description of the Cozy grammar.  It
+        does not concern itself with deduplication (which is handled
+        efficiently by equivalence class deduplication).
         """
 
         if size < 0:
@@ -432,9 +436,7 @@ class Enumerator(object):
                 elem_type = e.type.elem_type
 
                 # This method of generating EEmptyList() ensures that we visit
-                # empty collections of all possible types, but results in a lot
-                # of duplicates.  Fortunately, equivalence class deduplication
-                # efficiently weeds them out during enumeration.
+                # empty collections of all possible types.
                 yield EEmptyList().with_type(e.type)
 
                 if is_numeric(elem_type):
