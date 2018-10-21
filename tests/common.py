@@ -5,7 +5,8 @@ import unittest
 
 from cozy.common import (
     divide_integers_and_round_up, integer_log2_round_up,
-    FrozenDict, AtomicWriteableFile, read_file)
+    FrozenDict, AtomicWriteableFile, read_file,
+    pick_to_sum)
 
 class TestCommonUtils(unittest.TestCase):
 
@@ -59,3 +60,12 @@ class TestCommonUtils(unittest.TestCase):
         except CustomExc:
             pass
         assert read_file(path) == "contents1"
+
+    def test_pick_to_sum_1_2(self):
+        self.assertEqual(list(pick_to_sum(1, total_size=2)), [(2,)])
+
+    def test_pick_to_sum_2_2(self):
+        self.assertEqual(list(pick_to_sum(2, total_size=2)), [(0,2), (1,1), (2,0)])
+
+    def test_pick_to_sum_2_3(self):
+        self.assertEqual(list(pick_to_sum(2, total_size=3)), [(0,3), (1,2), (2,1), (3,0)])
