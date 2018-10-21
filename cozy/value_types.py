@@ -9,7 +9,8 @@ Python type, notably:
  - Bag (which represents both Cozy bags and Cozy sets)
  - Handle
 
-These classes all have a few important attributes:
+These classes all have a few important attributes not satisfied by built-in
+Python types:
  - these classes are immutable (and therefore hashable)
  - the collections can be compared with ==, <, <=, etc.
  - the collections have a deterministic iteration order
@@ -29,7 +30,12 @@ from cozy.structures import extension_handler
 
 @total_ordering
 class Map(object):
-    """A Cozy key-value map."""
+    """A Cozy key-value map.
+
+    This class is immutable, hashable, comparable, and has a deterministic
+    iteration order.  It implements identical map semantics to those in the
+    solver module.
+    """
 
     def __init__(self, type, default, items=()):
         self.type = type
@@ -83,7 +89,8 @@ class Bag(object):
     """A collection of Cozy values.
 
     This class serves to represent both sets and multisets; a set is just a
-    Bag whose elements happen to be distinct."""
+    Bag whose elements happen to be distinct.
+    """
 
     def __init__(self, iterable=()):
         self.elems = iterable if isinstance(iterable, tuple) else tuple(iterable)
@@ -157,8 +164,9 @@ def compare_values(t : Type, v1, v2, deep : bool = False) -> int:
 
     The call `compare_values(type, v1, v2) == EQ` checks for normal equality.
 
-    The call `compare_values(type, v1, v2, deep=True) == EQ` is identical to
-    `v1 == v2`.
+    The call `compare_values(type, v1, v2, deep=True) == EQ` produces the same
+    results as `v1 == v2`.  However, performance might be slightly better if
+    v1 and v2 are large collections.
     """
 
     # For performance, this function uses a work-stack algorithm rather than
@@ -169,6 +177,10 @@ def compare_values(t : Type, v1, v2, deep : bool = False) -> int:
     stk = [(t, v1, v2, deep)]
 
     while stk:
+        # The code in this loop looks backwards since the "top" of the stack
+        # is the last elment in the list.  Thus, the next item to be compared
+        # needs to be pushed LAST.  As a result, we append sequences to the
+        # stack in reversed order and we append more-important elements later.
         (t, v1, v2, deep) = stk.pop()
 
         h = extension_handler(type(t))

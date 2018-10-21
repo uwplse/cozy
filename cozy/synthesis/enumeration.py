@@ -72,19 +72,19 @@ class Fingerprint(object):
     from different inputs.  Clients also need to be aware that fingerprint
     equality does not imply full semantic equivalence between expressions.
     """
-    __slots__ = ("type", "signature")
+    __slots__ = ("type", "outputs")
 
     @staticmethod
     def of(e : Exp, inputs : [{str:object}]):
         """Compute the fingerprint of an expression over the given inputs."""
         return Fingerprint(e.type, eval_bulk(e, inputs))
 
-    def __init__(self, type : Type, signature : [object]):
+    def __init__(self, type : Type, outputs : [object]):
         self.type = type
-        self.signature = tuple(signature)
+        self.outputs = tuple(outputs)
 
     def _as_tuple(self):
-        return (self.type, self.signature)
+        return (self.type, self.outputs)
 
     def __hash__(self) -> int:
         return hash(self._as_tuple())
@@ -93,7 +93,8 @@ class Fingerprint(object):
         """Test for deep equality.
 
         Returns true if the fingerprints have the same type and their values
-        are deeply equal to each other.
+        are deeply equal to each other, implying that the expressions with these
+        fingerprints might be semantically equivalent.
 
         For information on normal and deep equality, see the documentation for
         compare_values in value_types.py.
@@ -109,13 +110,13 @@ class Fingerprint(object):
 
     def __len__(self) -> int:
         """Returns the number of examples used to compute this fingerprint."""
-        return len(self.signature)
+        return len(self.outputs)
 
     def __repr__(self):
         return "Fingerprint{!r}".format(self._as_tuple())
 
     def __str__(self):
-        return "Fingerprint ({}): [{}]".format(pprint(self.type), ", ".join(str(x) for x in self.signature))
+        return "Fingerprint ({}): [{}]".format(pprint(self.type), ", ".join(str(x) for x in self.outputs))
 
     def _require_comparable_to(self, other):
         if len(self) != len(other):
@@ -125,7 +126,8 @@ class Fingerprint(object):
         """Test for normal equality.
 
         Returns true if the fingerprints have the same type and their values
-        are == to each other.
+        are == to each other, implying that the expressions with these
+        fingerprints might be semantically equivalent up to normal equality.
 
         For information on normal and deep equality, see the documentation for
         compare_values in value_types.py.
@@ -133,11 +135,11 @@ class Fingerprint(object):
         self._require_comparable_to(other)
         return (
             self.type == other.type
-            and len(self.signature) == len(other.signature)
-            and all(values_equal(self.type, v1, v2) for (v1, v2) in zip(self.signature, other.signature)))
+            and len(self.outputs) == len(other.outputs)
+            and all(values_equal(self.type, v1, v2) for (v1, v2) in zip(self.outputs, other.outputs)))
 
     def subset_of(self, other) -> bool:
-        """Determine whether this fingerprint looks like a subset of the other.
+        """Test for subset inclusion.
 
         If this returns True, then it could be the case that an expression with
         this fingerprint always returns a strict subset of the elements that
@@ -153,7 +155,7 @@ class Fingerprint(object):
         is_subset = EIsSubset(x, y)
         return all(eval_bulk(
             is_subset,
-            [{x.id:a, y.id:b} for (a, b) in zip(self.signature, other.signature)]))
+            [{x.id:a, y.id:b} for (a, b) in zip(self.outputs, other.outputs)]))
 
 EnumeratedExp = namedtuple("EnumeratedExp", [
     "e",                # The expression
@@ -228,7 +230,7 @@ def _evict(e, size, context, pool, better_exp, better_exp_size):
         print("{} caused eviction of {}".format(pprint(better_exp), pprint(e)))
     event("evicting {}".format(pprint(e)))
 
-def eviction_policy(new_exp : Exp, new_ctx : Context, old_exp : Exp, old_ctx : Context, pool : Pool, cost_model : CostModel) -> [Exp]:
+def retention_policy(new_exp : Exp, new_ctx : Context, old_exp : Exp, old_ctx : Context, pool : Pool, cost_model : CostModel) -> [Exp]:
     """Decide which expressions to keep in the cache.
 
     The returned list contains the new exp, the old exp, or both.
@@ -242,11 +244,19 @@ def eviction_policy(new_exp : Exp, new_ctx : Context, old_exp : Exp, old_ctx : C
     raise ValueError(ordering)
 
 class ExpCache(object):
-    """Cache for expressions used by Enumerator instances."""
+    """Cache for expressions used by Enumerator instances.
+
+    The cache acts like a bag of (Context, Pool, EnumeratedExp) tuples, but can
+    efficiently
+     - count how many tuples are in the cache (__len__)
+     - find all unique contexts (all_contexts)
+     - find all expressions of a given size (find_expressions_of_size)
+     - find all expressions with a given fingerprint (find_equivalent_expressions)
+    """
 
     def __init__(self):
         """Construct an empty cache."""
-        self.data = OrderedDict() # (Pool, Context) -> (int -> [EnumeratedExp], Fingerprint -> [EnumeratedExp])
+        self.data = OrderedDict() # (Pool, Context) -> (size -> [EnumeratedExp], Fingerprint -> [EnumeratedExp])
 
     def __len__(self):
         """Return the total number of cached expressions across all contexts and pools."""
@@ -256,6 +266,7 @@ class ExpCache(object):
         """Insert an expression into the cache for a given context and pool.
 
         This method will happily insert duplicate expressions into the cache.
+        Clients who don't want that must take steps to avoid it.
         """
         key = (pool, context)
         storage = self.data.get(key)
@@ -269,7 +280,9 @@ class ExpCache(object):
     def remove(self, context : Context, pool : Pool, enumerated_exp : EnumeratedExp):
         """Remove an expression from the cache for a given context and pool.
 
-        This method requires that the expression already exist in the cache.
+        This method requires that the expression already exist in the cache,
+        otherwise it raises a ValueError.
+
         Only one copy is removed if multiple copies are present.
         """
         key = (pool, context)
@@ -311,7 +324,8 @@ class Enumerator(object):
          - cost_model: a cost model to tell us which expressions to prefer
          - check_wf: an optional additional filter to restrict which expressions
            are visited
-         - hints: extra expressions to visit first
+         - hints: expressions that get treated as size 0 during enumeration, so
+           they are enumerated very early
          - heuristics: an optional function to improve visited expressions
          - stop_callback: a function that is checked periodically to stop
            enumeration
@@ -321,8 +335,19 @@ class Enumerator(object):
         self.examples = list(examples)
         self.cost_model = cost_model
         self.cache = ExpCache()
+
+        # Set of (pool, size, context) tuples that are currently being
+        # enumerated.  This is used to catch infinite recursion bugs, since
+        # enumerating expressions in one context may require enumerating
+        # expressions in a different context recursively.
         self.in_progress = set()
+
+        # Set of (pool, size, context) tuples that have been fully enumerated;
+        # there are no more expressions to discover and the results have been
+        # cached in `cache`.  There is no overlap between this and the
+        # `in_progress` set.
         self.complete = set()
+
         if check_wf is None:
             check_wf = lambda e, ctx, pool: True
         self.check_wf = check_wf
@@ -357,6 +382,10 @@ class Enumerator(object):
             pool    : pool to enumerate
 
         This function is not cached.  Clients should call `enumerate` instead.
+
+        This function tries to be a clean description of the Cozy grammar.  It
+        does not concern itself with deduplication (which is handled
+        efficiently by equivalence class deduplication).
         """
 
         if size < 0:
@@ -407,7 +436,10 @@ class Enumerator(object):
             if is_collection(e.type):
                 elem_type = e.type.elem_type
 
+                # This method of generating EEmptyList() ensures that we visit
+                # empty collections of all possible types.
                 yield EEmptyList().with_type(e.type)
+
                 if is_numeric(elem_type):
                     yield EUnaryOp(UOp.Sum, e).with_type(elem_type)
 
@@ -466,6 +498,12 @@ class Enumerator(object):
                     for a2 in of_type(cache[sz2], BOOL):
                         yield EBinOp(e1, BOp.And, a2).with_type(BOOL)
                         yield EBinOp(e1, BOp.Or, a2).with_type(BOOL)
+                        # Cozy supports the implication operator "=>", but this
+                        # function does not enumerate it because
+                        #  - (a => b) is equivalent to ((not a) or b)
+                        #  - there isn't an implication operator in any of our
+                        #    current target languages, so we would need to
+                        #    desugar it to ((not a) or b) anyway.
 
                 if not isinstance(t, TMap):
                     for a2 in of_type(cache[sz2], t):
@@ -513,12 +551,17 @@ class Enumerator(object):
                 if e1.type == BOOL:
                     cond = e1
                     for then_branch in cache[sz2]:
-                        for else_branch in of_type(cache[sz2], then_branch.type):
+                        for else_branch in of_type(cache[sz3], then_branch.type):
                             yield ECond(cond, then_branch, else_branch).with_type(then_branch.type)
                 if isinstance(e1.type, TList):
                     for start in of_type(cache[sz2], INT):
                         for end in of_type(cache[sz3], INT):
                             yield EListSlice(e1, start, end).with_type(e1.type)
+                            # It is not necessary to create slice expressions of
+                            # the form a[:i] or a[i:].  Those are desugared
+                            # after parsing to a[0:i] and a[i:len(a)]
+                            # respectively, and Cozy is perfectly capable of
+                            # discovering these expanded forms as well.
 
         for h in all_extension_handlers():
             yield from h.enumerate(context, size, pool, self.enumerate, build_lambdas)
@@ -602,6 +645,9 @@ class Enumerator(object):
             try:
                 e = next(queue)
             except StopIteration:
+                # StopIteration is a "control flow exception" indicating that
+                # there isn't a next element.  Since the queue is exhausted,
+                # breaking out of the loop is the right thing to do.
                 break
 
             self.stat_timer.check()
@@ -616,22 +662,24 @@ class Enumerator(object):
 
             fp = Fingerprint.of(e, examples)
 
-            # collect all expressions from parent contexts
-            prev = list(cache.find_equivalent_expressions(context, pool, fp))
+            # Collect all expressions from parent contexts that are
+            # fingerprint-equivalent to this one.  There might be more than one
+            # because of how `retention_policy` works.
+            known_equivalents = list(cache.find_equivalent_expressions(context, pool, fp))
             to_evict = []
 
-            if any(e.type == prev_entry.e.type and alpha_equivalent(e, prev_entry.e) for prev_entry in prev):
+            if any(e.type == prev_entry.e.type and alpha_equivalent(e, prev_entry.e) for prev_entry in known_equivalents):
                 _skip(e, size, context, pool, "duplicate")
                 should_keep = False
             else:
                 # decide whether to keep this expression
                 should_keep = True
-                if prev:
-                    with task("comparing to cached equivalents", count=len(prev)):
-                        for entry in prev:
+                if known_equivalents:
+                    with task("comparing to cached equivalents", count=len(known_equivalents)):
+                        for entry in known_equivalents:
                             prev_exp = entry.e
                             event("previous: {}".format(pprint(prev_exp)))
-                            to_keep = eviction_policy(e, context, prev_exp, context, pool, cost_model)
+                            to_keep = retention_policy(e, context, prev_exp, context, pool, cost_model)
                             if e not in to_keep:
                                 _skip(e, size, context, pool, "preferring {}".format(pprint(prev_exp)))
                                 should_keep = False

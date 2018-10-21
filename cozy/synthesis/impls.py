@@ -76,7 +76,7 @@ class Implementation(object):
            in `concretization_functions`.  The query implementations are stored
            in a map keyed by query name.
 
-         - updates: a map from (concrete_var_name, op_name) to statements,
+         - updates: a map from (concrete_var_name, op_name) to statements `stm`,
            where the concrete_var_name is one of the state variables described
            by `concretization_functions`, op_name is one of the update
            operations in `spec`, and `stm` is a statement that may use private
@@ -203,6 +203,18 @@ class Implementation(object):
             funcs=self.extern_funcs)
 
     def _add_subquery(self, sub_q : Query, used_by : Stm) -> Stm:
+        """Add a query that helps maintain some other state.
+
+        Parameters:
+            sub_q - the specification of the helper query
+            used_by - the statement that calls `sub_q`
+
+        If a query already exists that is equivalent to `sub_q`, this method
+        returns `used_by` rewritten to use the existing query and does not add
+        the query to the implementation.  Otherwise it returns `used_by`
+        unchanged.
+        """
+
         with task("adding query", query=sub_q.name):
             sub_q = shallow_copy(sub_q)
             with task("checking whether we need more handle assumptions"):
