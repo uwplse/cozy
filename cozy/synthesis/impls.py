@@ -203,6 +203,18 @@ class Implementation(object):
             funcs=self.extern_funcs)
 
     def _add_subquery(self, sub_q : Query, used_by : Stm) -> Stm:
+        """Add a query that helps maintain some other state.
+
+        Parameters:
+            sub_q - the specification of the helper query
+            used_by - the statement that calls `sub_q`
+
+        If a query already exists that is equivalent to `sub_q`, this method
+        returns `used_by` rewritten to use the existing query and does not add
+        the query to the implementation.  Otherwise it returns `used_by`
+        unchanged.
+        """
+
         with task("adding query", query=sub_q.name):
             sub_q = shallow_copy(sub_q)
             with task("checking whether we need more handle assumptions"):
