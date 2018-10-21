@@ -164,8 +164,9 @@ def compare_values(t : Type, v1, v2, deep : bool = False) -> int:
 
     The call `compare_values(type, v1, v2) == EQ` checks for normal equality.
 
-    The call `compare_values(type, v1, v2, deep=True) == EQ` is identical to
-    `v1 == v2`.
+    The call `compare_values(type, v1, v2, deep=True) == EQ` produces the same
+    results as `v1 == v2`.  However, performance might be slightly better if
+    v1 and v2 are large collections.
     """
 
     # For performance, this function uses a work-stack algorithm rather than
