@@ -173,6 +173,10 @@ def compare_values(t : Type, v1, v2, deep : bool = False) -> int:
     stk = [(t, v1, v2, deep)]
 
     while stk:
+        # The code in this loop looks backwards since the "top" of the stack
+        # is the last elment in the list.  Thus, the next item to be compared
+        # needs to be pushed LAST.  As a result, we append sequences to the
+        # stack in reversed order and we append more-important elements later.
         (t, v1, v2, deep) = stk.pop()
 
         h = extension_handler(type(t))
