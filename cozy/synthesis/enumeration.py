@@ -661,7 +661,9 @@ class Enumerator(object):
 
             fp = Fingerprint.of(e, examples)
 
-            # collect all expressions from parent contexts that are fingerprint-equivalent to this one
+            # Collect all expressions from parent contexts that are
+            # fingerprint-equivalent to this one.  There might be more than one
+            # because of how `retention_policy` works.
             known_equivalents = list(cache.find_equivalent_expressions(context, pool, fp))
             to_evict = []
 
