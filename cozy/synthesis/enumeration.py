@@ -93,7 +93,8 @@ class Fingerprint(object):
         """Test for deep equality.
 
         Returns true if the fingerprints have the same type and their values
-        are deeply equal to each other.
+        are deeply equal to each other, implying that the expressions with these
+        fingerprints might be semantically equivalent.
 
         For information on normal and deep equality, see the documentation for
         compare_values in value_types.py.
@@ -125,7 +126,8 @@ class Fingerprint(object):
         """Test for normal equality.
 
         Returns true if the fingerprints have the same type and their values
-        are == to each other.
+        are == to each other, implying that the expressions with these
+        fingerprints might be semantically equivalent up to normal equality.
 
         For information on normal and deep equality, see the documentation for
         compare_values in value_types.py.
@@ -137,7 +139,7 @@ class Fingerprint(object):
             and all(values_equal(self.type, v1, v2) for (v1, v2) in zip(self.outputs, other.outputs)))
 
     def subset_of(self, other) -> bool:
-        """Determine whether this fingerprint looks like a subset of the other.
+        """Test for subset inclusion.
 
         If this returns True, then it could be the case that an expression with
         this fingerprint always returns a strict subset of the elements that
