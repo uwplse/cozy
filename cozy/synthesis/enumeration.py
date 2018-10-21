@@ -550,6 +550,11 @@ class Enumerator(object):
                     for start in of_type(cache[sz2], INT):
                         for end in of_type(cache[sz3], INT):
                             yield EListSlice(e1, start, end).with_type(e1.type)
+                            # It is not necessary to create slice expressions of
+                            # the form a[:i] or a[i:].  Those are desugared
+                            # after parsing to a[0:i] and a[i:len(a)]
+                            # respectively, and Cozy is perfectly capable of
+                            # discovering these expanded forms as well.
 
         for h in all_extension_handlers():
             yield from h.enumerate(context, size, pool, self.enumerate, build_lambdas)
