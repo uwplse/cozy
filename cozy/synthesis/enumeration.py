@@ -248,7 +248,7 @@ class ExpCache(object):
 
     def __init__(self):
         """Construct an empty cache."""
-        self.data = OrderedDict() # (Pool, Context) -> (int -> [EnumeratedExp], Fingerprint -> [EnumeratedExp])
+        self.data = OrderedDict() # (Pool, Context) -> (size -> [EnumeratedExp], Fingerprint -> [EnumeratedExp])
 
     def __len__(self):
         """Return the total number of cached expressions across all contexts and pools."""
