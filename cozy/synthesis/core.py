@@ -107,9 +107,10 @@ def improve(
           cost model is ultimately responsible for this choice.)
         - If a better version of *any subexpression* for the target is found,
           it is immediately substituted in and the overall expression is
-          returned. This "smooths out" the search space a little, and lets us
+          returned. This "smooths out" the search space a little, allowing us
           find kinda-good solutions very quickly, even if the best possible
-          solution is out of reach.
+          solution is out of reach.  This is more desireable than running for
+          an indeterminate amount of time doing nothing.
     """
 
     print("call to improve:")
