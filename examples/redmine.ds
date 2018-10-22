@@ -23,6 +23,7 @@ Redmine:
     state issues : Bag<Issue>
     state projects : Bag<Project>
     invariant unique [ p.val.id | p <- projects ];
+    invariant all [ i.val.project in projects | i <- issues ];
     query countIssues(p1 : Int)
         len [ i | i <- issues,
                   i.val.project.val.status != 9,
@@ -30,6 +31,7 @@ Redmine:
                   i.val.assigned_to == p1,
                   exists [ s | s <- i.val.statuses, s.val.is_closed == false ] ]
     op insertIssue(i: Issue)
+        assume (i.val.project in projects);
         issues.add(i);
     op insertProject(p : Project)
         assume not (exists [ p0 | p0 <- projects, p.val.id == p0.val.id ]);
