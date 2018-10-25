@@ -13,6 +13,7 @@ from cozy.syntax_tools import pprint, all_exps, free_vars
 
 from cozy.syntax import BOOL, INT, LONG, FLOAT, STRING
 from cozy.structures import extension_handler
+from cozy.structures.arrays import TArray
 
 def typecheck(
         ast,
@@ -100,7 +101,7 @@ def equality_implies_deep_equality(t : syntax.Type):
         return equality_implies_deep_equality(t.elem_type)
     return False
 
-COLLECTION_TYPES = (syntax.TBag, syntax.TSet, syntax.TList)
+COLLECTION_TYPES = (syntax.TBag, syntax.TSet, syntax.TList, TArray)
 def is_collection(t):
     return any(isinstance(t, ct) for ct in COLLECTION_TYPES)
 

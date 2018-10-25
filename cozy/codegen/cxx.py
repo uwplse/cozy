@@ -5,9 +5,10 @@ import itertools
 from cozy import common, evaluation
 from cozy.common import fresh_name, declare_case, extend
 from cozy.target_syntax import *
-from cozy.syntax_tools import all_types, fresh_var, subst, free_vars, all_exps, break_seq, is_lvalue
+from cozy.syntax_tools import all_types, fresh_var, subst, free_vars, all_exps, break_seq, is_lvalue, shallow_copy
 from cozy.typecheck import is_collection, is_scalar
 from cozy.structures import extension_handler
+from cozy.structures.arrays import TArray, EArrayGet
 
 from .misc import *
 
@@ -348,7 +349,9 @@ class CxxPrinter(CodeGenerator):
                 evaluation.construct_value(e.type)).with_type(e.type))).with_type(e.type))
 
     def visit_EArrayIndexOf(self, e):
-        assert isinstance(e.a, EVar) # TODO: make this fast when this is false
+        if isinstance(e.a, EVar): pass
+        elif isinstance(e.a, ETupleGet) and isinstance(e.a.e, EVar): pass
+        else: raise NotImplementedError("finding index of non-var array") # TODO: make this fast when this is false
         it = self.fv(TNative("{}::const_iterator".format(self.visit(e.a.type, "").strip())), "cursor")
         res = self.fv(INT, "index")
         self.visit(seq([
@@ -373,6 +376,9 @@ class CxxPrinter(CodeGenerator):
         m = self.fv(e.type)
         self.declare(m, e)
         return m.id
+
+    def visit_EArrayList(self, e):
+        return "(std::vector< {} >())".format(self.visit(e.type.elem_type, ""))
 
     def visit_EHasKey(self, e):
         map = self.visit(e.map)
@@ -818,7 +824,7 @@ class CxxPrinter(CodeGenerator):
     def visit_SDecl(self, s):
         assert isinstance(s.var, EVar)
         t = s.val.type
-        return self.declare(s.var.with_type(t), s.val)
+        return self.declare(shallow_copy(s.var).with_type(t), s.val)
 
     def visit_SSeq(self, s):
         for ss in break_seq(s):
@@ -980,6 +986,12 @@ class CxxPrinter(CodeGenerator):
             if t not in self.types and type(t) in [THandle, TRecord, TTuple, TEnum]:
                 name = names.get(t, self.fn("Type"))
                 self.types[t] = name
+            # add representation type for extension data structures
+            h = extension_handler(type(t))
+            if t not in self.types and h is not None:
+                name = names.get(t, self.fn("Type"))
+                t = h.rep_type(t)
+                self.types[t] = name
 
     def visit_args(self, args):
         for (i, (v, t)) in enumerate(args):
@@ -998,17 +1010,32 @@ class CxxPrinter(CodeGenerator):
         except KeyError:
             return "std::hash<{}>".format(self.visit(t, ""))
 
-    def compute_hash_1(self, e : Exp) -> Exp:
-        return EEscape("{hasher}()({{e}})".format(hasher=self._hasher(e.type)), ("e",), (e,)).with_type(TNative("std::size_t"))
+    def compute_hash_scalar(self, e: Exp) -> Exp:
+        return EEscape("{hasher}()({{e}})".format(hasher=self._hasher(e.type)), ("e",), (e,)).with_type(INT)
+
+    def compute_hash_1(self, hc: Exp, e : Exp) -> Stm:
+        if is_scalar(e.type):
+            return SAssign(hc, self.compute_hash_scalar(e))
+        elif isinstance(e.type, TArray):
+            x = fresh_var(e.type.elem_type, "x")
+            s = SSeq(SAssign(hc, ZERO.with_type(hc.type)),
+                     SForEach(x, e,
+                         SAssign(hc, EEscape("({hc} * 31) ^ ({h})", ("hc", "h"),
+                                             (hc, self.compute_hash_scalar(x))).with_type(INT))))
+            return s
+        else:
+            raise NotImplementedError("can't compute hash for type {}".format(e.type))
 
     def compute_hash(self, fields : [Exp]) -> Stm:
-        hc = self.fv(TNative("std::size_t"), "hash_code")
-        s = SDecl(hc, ENum(0).with_type(hc.type))
+        hc = self.fv(INT, "hash_code")
+        h = self.fv(INT, "hash_code")
+        s = SSeq(SDecl(hc, ENum(0).with_type(hc.type)),
+                 SDecl(h, ENum(0).with_type(h.type)))
         for f in fields:
-                    # return SAssign(out, )
-            s = SSeq(s, SAssign(hc,
-                EEscape("({hc} * 31) ^ ({h})", ("hc", "h"),
-                    (hc, self.compute_hash_1(f))).with_type(TNative("std::size_t"))))
+            s = seq([s,
+                     self.compute_hash_1(h, f),
+                     SAssign(hc,
+                        EEscape("({hc} * 31) ^ ({h})", ("hc", "h"), (hc, h)).with_type(INT))])
         s = SSeq(s, SEscape("{indent}return {e};\n", ("e",), (hc,)))
         return s
 

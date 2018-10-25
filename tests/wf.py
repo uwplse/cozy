@@ -12,7 +12,7 @@ from cozy.contexts import RootCtx
 class TestWf(unittest.TestCase):
 
     def test_heap_wf(self):
-        e = EHeapPeek2(EStateVar(EMakeMinHeap(EVar('xs'), ELambda(EVar('_var21501'), EVar('_var21501')))), EStateVar(EUnaryOp('len', EVar('xs'))))
+        e = EHeapPeek2(EStateVar(EMakeMinHeap(EVar('xs'), ELambda(EVar('_var21501'), EVar('_var21501')))))
         assert retypecheck(e, env={
             "xs": INT_BAG,
             "_var21501": INT})

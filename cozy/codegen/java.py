@@ -136,6 +136,9 @@ class JavaPrinter(CxxPrinter):
                 self.end_statement()
         self.end_statement()
 
+    def visit_EArrayList(self, e):
+        return "(new {}[0])".format(self.visit(e.type.elem_type, ""))
+
     def initialize_native_list(self, out):
         init = "new {};\n".format(self.visit(out.type, name="()"))
         return SEscape("{indent}{e} = " + init, ["e"], [out])
