@@ -603,7 +603,7 @@ def possibly_useful_nonrecursive(solver, e : Exp, context : Context, pool = RUNT
     if not allow_int_arithmetic_state.value and not at_runtime and isinstance(e, EBinOp) and e.type == INT:
         return No("integer arithmetic in state position")
     if is_collection(e.type) and not is_scalar(e.type.elem_type):
-        return No("collection of nonscalar")
+        return No("collection of nonscalar: e {}\n elem_type: {}\n".format(e, e.type.elem_type))
     if isinstance(e.type, TMap) and not is_scalar(e.type.k):
         return No("bad key type {}".format(pprint(e.type.k)))
     if isinstance(e.type, TMap) and isinstance(e.type.v, TMap):
