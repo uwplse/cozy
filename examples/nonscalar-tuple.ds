@@ -1,0 +1,12 @@
+Example:
+  type Member = {
+    id : Int,
+    name: String
+  }
+  handletype Clz = {
+    id : Int,
+    members : Bag<Member>
+  }
+  state classes : Bag<Clz>
+  query selectClzMembers()
+    [ (c, [ m.id | m <- c.val.members, m.id > 10 ]) | c <- classes ]

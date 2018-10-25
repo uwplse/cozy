@@ -274,6 +274,14 @@ class CxxPrinter(CodeGenerator):
             return SEscape("{indent}{lhs} = {rhs};\n", ["lhs", "rhs"], [out, e])
         elif is_scalar(t):
             return SEscape("{indent}{lhs} = {rhs};\n", ["lhs", "rhs"], [out, e])
+        elif isinstance(t, TTuple):
+            x = self.fv(t, "x")
+            indices = range(len(t.ts))
+            return SSeq(
+                SEscape("{indent}{rv} = {rhs};\n", ["rv", "rhs"], [x, e]),
+                SEscape("{indent}{lhs} = {rv};\n", ["lhs", "rv"],
+                        [out, ETuple([ETupleGet(x, i).with_type(t.ts[i]) for i in indices]).with_type(t)]),
+            )
         else:
             h = extension_handler(type(t))
             if h is not None:
