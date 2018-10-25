@@ -4,7 +4,7 @@ from cozy.target_syntax import SWhile, SSwap, SSwitch, SEscapableBlock, SEscapeB
 from cozy.syntax_tools import fresh_var, pprint, mk_lambda, alpha_equivalent
 from cozy.pools import Pool, RUNTIME_POOL, STATE_POOL
 
-from .arrays import TArray, EArrayGet, EArrayIndexOf, SArrayAlloc, SEnsureCapacity, EArrayLen
+from .arrays import TArray, EArrayGet, EArrayIndexOf, SArrayAlloc, SEnsureCapacity, EArrayLen, EArrayList
 
 TMinHeap = declare_case(Type, "TMinHeap", ["elem_type", "key_type"])
 TMaxHeap = declare_case(Type, "TMaxHeap", ["elem_type", "key_type"])
@@ -14,8 +14,8 @@ EMakeMinHeap = declare_case(Exp, "EMakeMinHeap", ["e", "key_function"])
 EMakeMaxHeap = declare_case(Exp, "EMakeMaxHeap", ["e", "key_function"])
 
 EHeapElems = declare_case(Exp, "EHeapElems", ["e"]) # all elements
-EHeapPeek  = declare_case(Exp, "EHeapPeek",  ["e", "heap_length"]) # look at min
-EHeapPeek2 = declare_case(Exp, "EHeapPeek2", ["e", "heap_length"]) # look at 2nd min
+EHeapPeek  = declare_case(Exp, "EHeapPeek",  ["e"]) # look at min
+EHeapPeek2 = declare_case(Exp, "EHeapPeek2", ["e"]) # look at 2nd min
 
 def to_heap(e : Exp) -> Exp:
     """Construct a heap that would be useful for evaluating `e`.
@@ -90,10 +90,9 @@ class Heaps(object):
                 t = e.type
                 if isinstance(t, TMinHeap) or isinstance(t, TMaxHeap):
                     elem_type = t.elem_type
-                    n_elems = EStateVar(ELen(EHeapElems(e).with_type(TBag(elem_type)))).with_type(INT)
                     # yielding EHeapElems would be redundant
-                    yield EHeapPeek (EStateVar(e).with_type(e.type), n_elems).with_type(elem_type)
-                    yield EHeapPeek2(EStateVar(e).with_type(e.type), n_elems).with_type(elem_type)
+                    yield EHeapPeek (EStateVar(e).with_type(e.type)).with_type(elem_type)
+                    yield EHeapPeek2(EStateVar(e).with_type(e.type)).with_type(elem_type)
 
     def default_value(self, t : Type, default_value) -> Exp:
         """Construct a default value of the given type.
@@ -108,10 +107,6 @@ class Heaps(object):
 
     def check_wf(self, e : Exp, is_valid, state_vars : {EVar}, args : {EVar}, pool = RUNTIME_POOL, assumptions : Exp = ETRUE):
         """Return None or a string indicating a well-formedness error."""
-        if (isinstance(e, EHeapPeek) or isinstance(e, EHeapPeek2)):
-            heap = e.e
-            if not is_valid(EEq(e.heap_length, ELen(EHeapElems(heap).with_type(TBag(heap.type.elem_type))))):
-                return "invalid `n` parameter"
         return None
 
     def possibly_useful(self,
@@ -142,13 +137,9 @@ class Heaps(object):
             e.type = TMinHeap(e.e.type.elem_type, e.key_function.body.type)
         elif isinstance(e, EHeapPeek) or isinstance(e, EHeapPeek2):
             typecheck(e.e)
-            typecheck(e.heap_length)
             ok = True
             if not (isinstance(e.e.type, TMinHeap) or isinstance(e.e.type, TMaxHeap)):
                 report_err(e, "cannot peek a non-heap")
-                ok = False
-            if e.heap_length.type != INT:
-                report_err(e, "length param is not an int")
                 ok = False
             if ok:
                 e.type = e.e.type.elem_type
@@ -269,7 +260,7 @@ class Heaps(object):
             SForEach(v, modified, SCall(lval, "update", (v, make_subgoal(new_v_key, a=[EIn(v, mod_spec)]))))])
 
     def rep_type(self, t : Type) -> Type:
-        return TArray(t.elem_type)
+        return TTuple((INT, TArray(t.elem_type)))
 
     def codegen(self, e : Exp, concretization_functions : { str : Exp }, out : EVar) -> Stm:
         """Return statements that write the result of `e` to `out`.
@@ -279,10 +270,10 @@ class Heaps(object):
         """
         if isinstance(e, EMakeMinHeap) or isinstance(e, EMakeMaxHeap):
             out_raw = EVar(out.id).with_type(self.rep_type(e.type))
-            l = fresh_var(INT, "alloc_len")
+            elem_type = e.type.elem_type
             return seq([
-                SDecl(l, ELen(e.e)),
-                SArrayAlloc(out_raw, l),
+                SAssign(out_raw, ETuple([ELen(e.e), EArrayList().with_type(TArray(elem_type))]).with_type(self.rep_type(e.type))),
+                SArrayAlloc(ETupleGet(out_raw, 1).with_type(TArray(elem_type)), ELen(e.e)),
                 SCall(out, "add_all", (ZERO, e.e))])
         elif isinstance(e, EHeapElems):
             elem_type = e.type.elem_type
@@ -292,8 +283,8 @@ class Heaps(object):
             i = fresh_var(INT, "i") # the array index
             return seq([
                 SDecl(i, ZERO),
-                SWhile(ELt(i, EArrayLen(e.e).with_type(INT)), seq([
-                    SCall(out, "add", (EArrayGet(e.e, i).with_type(elem_type),)),
+                SWhile(ELt(i, ETupleGet(e.e, 0).with_type(INT)), seq([
+                    SCall(out, "add", (EArrayGet(ETupleGet(e.e, 1), i).with_type(elem_type),)),
                     SAssign(i, EBinOp(i, "+", ONE).with_type(INT))]))])
         elif isinstance(e, EHeapPeek):
             raise NotImplementedError()
@@ -301,11 +292,12 @@ class Heaps(object):
             from cozy.evaluation import construct_value
             best = EArgMin if isinstance(e.e.type, TMinHeap) else EArgMax
             f = heap_func(e.e, concretization_functions)
-            return SSwitch(e.heap_length, (
+            return SSwitch(ETupleGet(e.e, 0), (
                 (ZERO, SAssign(out, construct_value(e.type))),
                 (ONE,  SAssign(out, construct_value(e.type))),
-                (TWO,  SAssign(out, EArrayGet(e.e, ONE).with_type(e.type)))),
-                SAssign(out, best(EBinOp(ESingleton(EArrayGet(e.e, ONE).with_type(e.type)).with_type(TBag(out.type)), "+", ESingleton(EArrayGet(e.e, TWO).with_type(e.type)).with_type(TBag(out.type))).with_type(TBag(out.type)), f).with_type(out.type)))
+                (TWO,  SAssign(out, EArrayGet(ETupleGet(e.e, 1), ONE).with_type(e.type)))),
+                SAssign(out, best(EBinOp(ESingleton(EArrayGet(ETupleGet(e.e, 1), ONE).with_type(e.type)).with_type(TBag(out.type)), "+",
+                                         ESingleton(EArrayGet(ETupleGet(e.e, 1), TWO).with_type(e.type)).with_type(TBag(out.type))).with_type(TBag(out.type)), f).with_type(out.type)))
         else:
             raise NotImplementedError(e)
 
@@ -321,21 +313,24 @@ class Heaps(object):
         if isinstance(s, SCall):
             elem_type = s.target.type.elem_type
             target_raw = EVar(s.target.id).with_type(self.rep_type(s.target.type))
+            target_len = ETupleGet(target_raw, 0).with_type(INT)
+            target_array = ETupleGet(target_raw, 1).with_type(TArray(elem_type))
             if s.func == "add_all":
                 size = fresh_var(INT, "heap_size")
                 i = fresh_var(INT, "i")
                 x = fresh_var(elem_type, "x")
                 return seq([
                     SDecl(size, s.args[0]),
-                    SEnsureCapacity(target_raw, EBinOp(size, "+", ELen(s.args[1])).with_type(INT)),
+                    SEnsureCapacity(target_array, EBinOp(size, "+", ELen(s.args[1])).with_type(INT)),
                     SForEach(x, s.args[1], seq([
-                        SAssign(EArrayGet(target_raw, size).with_type(elem_type), x),
+                        SAssign(target_len, EBinOp(target_len, "+", ONE).with_type(INT)),
+                        SAssign(EArrayGet(target_array, size).with_type(elem_type), x),
                         SDecl(i, size),
                         SWhile(EAll([
                             EBinOp(i, ">", ZERO).with_type(BOOL),
-                            ENot(EBinOp(f.apply_to(EArrayGet(target_raw, _parent(i)).with_type(elem_type)), comparison_op, f.apply_to(EArrayGet(target_raw, i).with_type(elem_type))).with_type(BOOL))]),
+                            ENot(EBinOp(f.apply_to(EArrayGet(target_array, _parent(i)).with_type(elem_type)), comparison_op, f.apply_to(EArrayGet(target_array, i).with_type(elem_type))).with_type(BOOL))]),
                             seq([
-                                SSwap(EArrayGet(target_raw, _parent(i)).with_type(elem_type), EArrayGet(target_raw, i).with_type(elem_type)),
+                                SSwap(EArrayGet(target_array, _parent(i)).with_type(elem_type), EArrayGet(target_array, i).with_type(elem_type)),
                                 SAssign(i, _parent(i))])),
                         SAssign(size, EBinOp(size, "+", ONE).with_type(INT))]))])
             elif s.func == "remove_all":
@@ -348,19 +343,20 @@ class Heaps(object):
                 return seq([
                     SDecl(size, s.args[0]),
                     SForEach(x, s.args[1], seq([
+                        SAssign(target_len, EBinOp(target_len, "-", ONE).with_type(INT)),
                         # find the element to remove
-                        SDecl(i, EArrayIndexOf(target_raw, x).with_type(INT)),
+                        SDecl(i, EArrayIndexOf(target_array, x).with_type(INT)),
                         # swap with last element in heap
-                        SSwap(EArrayGet(target_raw, i).with_type(elem_type), EArrayGet(target_raw, size_minus_one).with_type(elem_type)),
+                        SSwap(EArrayGet(target_array, i).with_type(elem_type), EArrayGet(target_array, size_minus_one).with_type(elem_type)),
                         # bubble down
                         SEscapableBlock(label, SWhile(_has_left_child(i, size_minus_one), seq([
                             SDecl(child_index, _left_child(i)),
-                            SIf(EAll([_has_right_child(i, size_minus_one), ENot(EBinOp(f.apply_to(EArrayGet(target_raw, _left_child(i)).with_type(elem_type)), comparison_op, f.apply_to(EArrayGet(target_raw, _right_child(i)).with_type(elem_type))))]),
+                            SIf(EAll([_has_right_child(i, size_minus_one), ENot(EBinOp(f.apply_to(EArrayGet(target_array, _left_child(i)).with_type(elem_type)), comparison_op, f.apply_to(EArrayGet(target_array, _right_child(i)).with_type(elem_type))))]),
                                 SAssign(child_index, _right_child(i)),
                                 SNoOp()),
-                            SIf(ENot(EBinOp(f.apply_to(EArrayGet(target_raw, i).with_type(elem_type)), comparison_op, f.apply_to(EArrayGet(target_raw, child_index).with_type(elem_type)))),
+                            SIf(ENot(EBinOp(f.apply_to(EArrayGet(target_array, i).with_type(elem_type)), comparison_op, f.apply_to(EArrayGet(target_array, child_index).with_type(elem_type)))),
                                 seq([
-                                    SSwap(EArrayGet(target_raw, i).with_type(elem_type), EArrayGet(target_raw, child_index).with_type(elem_type)),
+                                    SSwap(EArrayGet(target_array, i).with_type(elem_type), EArrayGet(target_array, child_index).with_type(elem_type)),
                                     SAssign(i, child_index)]),
                                 SEscapeBlock(label))]))),
                         # dec. size

@@ -54,7 +54,7 @@ class TestTypechecking(unittest.TestCase):
         assert retypecheck(EMakeMap2(s, ELambda(x, x)))
 
     def test_heaps(self):
-        e = ECond(EBinOp(EBinOp(EMapGet(EStateVar(EMakeMap2(EVar('xs'), ELambda(EVar('_var39381'), EUnaryOp('len', EFilter(EVar('xs'), ELambda(EVar('_var39382'), EBinOp(EVar('_var39381'), '==', EVar('_var39382')))))))), ENum(0).with_type(INT)), '==', ENum(1).with_type(INT)), 'and', EBinOp(ENum(0).with_type(INT), '==', EStateVar(EArgMin(EVar('xs'), ELambda(EVar('_var21501'), EVar('_var21501')))))), EHeapPeek2(EStateVar(EMakeMinHeap(EVar('xs'), ELambda(EVar('_var21501'), EVar('_var21501')))), EStateVar(EUnaryOp('len', EVar('xs')))), EStateVar(EArgMin(EVar('xs'), ELambda(EVar('_var21501'), EVar('_var21501')))))
+        e = ECond(EBinOp(EBinOp(EMapGet(EStateVar(EMakeMap2(EVar('xs'), ELambda(EVar('_var39381'), EUnaryOp('len', EFilter(EVar('xs'), ELambda(EVar('_var39382'), EBinOp(EVar('_var39381'), '==', EVar('_var39382')))))))), ENum(0).with_type(INT)), '==', ENum(1).with_type(INT)), 'and', EBinOp(ENum(0).with_type(INT), '==', EStateVar(EArgMin(EVar('xs'), ELambda(EVar('_var21501'), EVar('_var21501')))))), EHeapPeek2(EStateVar(EMakeMinHeap(EVar('xs'), ELambda(EVar('_var21501'), EVar('_var21501'))))), EStateVar(EArgMin(EVar('xs'), ELambda(EVar('_var21501'), EVar('_var21501')))))
         assert retypecheck(e, env={
             "xs": INT_BAG,
             "_var21501": INT})

@@ -358,7 +358,7 @@ def optimized_best(xs, keyfunc, op, args):
             h = make_heap(bag.e, keyfunc).with_type(heap_type(elem_type, key_type))
             for prev_min in optimized_best(bag.e, keyfunc, op, args=args):
                 prev_min = EStateVar(prev_min).with_type(elem_type)
-                heap_peek = EHeapPeek2(EStateVar(h).with_type(h.type), EStateVar(ELen(bag.e)).with_type(INT)).with_type(elem_type)
+                heap_peek = EHeapPeek2(EStateVar(h).with_type(h.type)).with_type(elem_type)
                 conds = [optimized_in(x, bag), optimized_eq(x, prev_min)]
                 if isinstance(x, EUnaryOp) and x.op == UOp.The:
                     conds = [optimized_exists(x.e)] + conds
