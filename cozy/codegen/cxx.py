@@ -278,7 +278,7 @@ class CxxPrinter(CodeGenerator):
             x = self.fv(t, "x")
             indices = range(len(t.ts))
             return SSeq(
-                SEscape("{indent}{rv} = {rhs};\n", ["rv", "rhs"], [x, e]),
+                SEscape("{indent}" + self.visit(t, x.id) + " = {rhs};\n", ("rhs",), (e,)),
                 SEscape("{indent}{lhs} = {rv};\n", ["lhs", "rv"],
                         [out, ETuple([ETupleGet(x, i).with_type(t.ts[i]) for i in indices]).with_type(t)]),
             )
