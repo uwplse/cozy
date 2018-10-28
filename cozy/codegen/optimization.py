@@ -169,6 +169,7 @@ def simplify_and_optimize(s : Stm) -> Stm:
       - anything handled by an extension structure (see cozy.structures module)
       - EMakeMap2
       - ELet
+      - EListSlice
     """
     assert isinstance(s, Stm)
 

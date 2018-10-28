@@ -5,7 +5,7 @@ import itertools
 from cozy import common, evaluation
 from cozy.common import fresh_name, extend
 from cozy.target_syntax import *
-from cozy.syntax_tools import all_types, fresh_var, subst, free_vars, all_exps, break_seq, is_lvalue, shallow_copy
+from cozy.syntax_tools import all_types, fresh_var, subst, free_vars, all_exps, break_seq, shallow_copy
 from cozy.typecheck import is_collection, is_scalar
 from cozy.structures import extension_handler
 from cozy.structures.arrays import TArray
@@ -36,12 +36,6 @@ class CxxPrinter(CodeGenerator):
 
     def typename(self, t):
         return self.types[t]
-
-    def is_ptr_type(self, t):
-        return isinstance(t, THandle)
-
-    def to_ptr(self, x, t):
-        return x if self.is_ptr_type(t) else "&({})".format(x)
 
     def visit_TNative(self, t, name):
         return "{} {}".format(t.name, name)
@@ -218,82 +212,6 @@ class CxxPrinter(CodeGenerator):
         t = self.visit(e.type, "")
         return "(" + t + "())"
 
-    def to_lvalue(self, e : Exp) -> Exp:
-        if is_lvalue(e):
-            return e
-        v = self.fv(e.type, "x")
-        self.declare(v, e)
-        return v
-
-    # def construct_concrete(self, t : Type, e : Exp, out : Exp):
-    #     """
-    #     Construct a value of type `t` from the expression `e` and store it in
-    #     lvalue `out`.
-    #     """
-    #     if hasattr(t, "construct_concrete"):
-    #         return t.construct_concrete(e, out)
-    #     elif isinstance(t, TBag) or isinstance(t, TList):
-    #         assert out not in free_vars(e)
-    #         x = self.fv(t.elem_type, "x")
-    #         return SSeq(
-    #             self.initialize_native_list(out),
-    #             SForEach(x, e, SCall(out, "add", [x])))
-    #     elif isinstance(t, TSet):
-    #         if isinstance(e, EUnaryOp) and e.op == UOp.Distinct:
-    #             return self.construct_concrete(t, e.e, out)
-    #         x = self.fv(t.elem_type, "x")
-    #         return SSeq(
-    #             self.initialize_native_set(out),
-    #             SForEach(x, e, SCall(out, "add", [x])))
-    #     elif isinstance(t, TMap):
-    #         return SSeq(
-    #             self.initialize_native_map(out),
-    #             self.construct_map(t, e, out))
-    #     elif isinstance(t, THandle):
-    #         return SEscape("{indent}{lhs} = {rhs};\n", ["lhs", "rhs"], [out, e])
-    #     elif is_scalar(t):
-    #         return SEscape("{indent}{lhs} = {rhs};\n", ["lhs", "rhs"], [out, e])
-    #     elif isinstance(t, TTuple):
-    #         x = self.fv(t, "x")
-    #         indices = range(len(t.ts))
-    #         return SSeq(
-    #             SEscape("{indent}" + self.visit(t, x.id) + " = {rhs};\n", ("rhs",), (e,)),
-    #             SEscape("{indent}{lhs} = {rv};\n", ["lhs", "rv"],
-    #                     [out, ETuple([ETupleGet(x, i).with_type(t.ts[i]) for i in indices]).with_type(t)]),
-    #         )
-    #     else:
-    #         h = extension_handler(type(t))
-    #         if h is not None:
-    #             return h.codegen(e, self.state_exps, out=out)
-    #         raise NotImplementedError("t: {}\ne: {}\nout: {}\n".format(t, e, out))
-
-    # def construct_map(self, t, e, out):
-    #     if isinstance(e, ECond):
-    #         return SIf(e.cond,
-    #             construct_map(t, e.then_branch, out),
-    #             construct_map(t, e.else_branch, out))
-    #     elif isinstance(e, EMakeMap2):
-    #         k = self.fv(t.k, "k")
-    #         v = self.fv(t.v, "v")
-    #         return SForEach(k, e.e,
-    #             SMapUpdate(out, k, v,
-    #                 self.construct_concrete(t.v, e.value_function.apply_to(k), v)))
-    #     else:
-    #         raise NotImplementedError(e)
-
-    def initialize_native_list(self, e) -> Stm:
-        return SNoOp() # C++ does default-initialization
-
-    def initialize_native_set(self, e) -> Stm:
-        return SNoOp() # C++ does default-initialization
-
-    def initialize_native_map(self, e) -> Stm:
-        return SNoOp() # C++ does default-initialization
-
-    # def visit_EListGet(self, e, indent):
-    #     assert type(e.e.type) is TList
-    #     return self.visit(EEscape("{l}[{i}]", ["l", "i"], [e.e, e.index]).with_type(e.e.type.elem_type))
-
     def visit_ENative(self, e):
         assert e.e == ENum(0)
         v = self.fv(e.type, "tmp")
@@ -319,12 +237,12 @@ class CxxPrinter(CodeGenerator):
         return "{}.size()".format(a)
 
     def visit_EListGet(self, e):
-        l = self.to_lvalue(e.e)
-        i = self.fv(INT)
-        return self.visit(ELet(e.index, ELambda(i,
+        l = self.visit(e.e)
+        i = self.visit(e.index)
+        return self.visit(
             ECond(EAll([EGe(i, ZERO), ELt(i, EEscape("{l}.size()", ("l",), (l,)).with_type(INT))]),
                 EEscape("{l}[{i}]", ("l", "i"), (l, i)).with_type(e.type),
-                evaluation.construct_value(e.type)).with_type(e.type))).with_type(e.type))
+                evaluation.construct_value(e.type)).with_type(e.type))
 
     def visit_EArrayIndexOf(self, e):
         if isinstance(e.a, EVar): pass
@@ -439,33 +357,12 @@ class CxxPrinter(CodeGenerator):
     def visit_EBoolToInt(self, e):
         return "static_cast<int>(" + self.visit(e.e) + ")"
 
-    # def _is_concrete(self, e):
-    #     if is_scalar(e.type):
-    #         return True
-    #     elif type(e.type) in [TMap, TSet, TBag]:
-    #         return False
-    #     return True
-
-    def histogram(self, e) -> EVar:
-        t = TMap(e.type.elem_type, INT)
-        hist = self.fv(t, "hist")
-        x = self.fv(e.type.elem_type)
-        val = self.fv(INT, "val")
-        self.declare(hist)
-        self.visit(self.initialize_native_map(hist))
-        self.visit(SForEach(x, e,
-            SMapUpdate(hist, x, val,
-                SAssign(val, EBinOp(val, "+", ONE).with_type(INT)))))
-        return hist
-
     def _eq(self, e1, e2):
         return self.visit(EEscape("({e1} == {e2})", ["e1", "e2"], [e1, e2]).with_type(BOOL))
 
     def visit_EBinOp(self, e):
         op = e.op
-        if op == "+" and is_collection(e.type):
-            return self.visit(self.to_lvalue(e))
-        elif op == "==":
+        if op == "==":
             return self._eq(e.e1, e.e2)
         elif op == "===":
             # rewrite deep-equality test into regular equality
@@ -476,29 +373,11 @@ class CxxPrinter(CodeGenerator):
             return self.visit(ECond(e.e1, ETRUE, e.e2).with_type(BOOL))
         elif op == BOp.And:
             return self.visit(ECond(e.e1, e.e2, EFALSE).with_type(BOOL))
-        elif op == "-" and is_collection(e.type):
-            t = e.type
-            v = self.fv(t, "v")
-            x = self.fv(t.elem_type, "x")
-            self.declare(v, e.e1)
-            self.visit(SForEach(x, e.e2, SCall(v, "remove", [x])))
-            return v.id
         elif op == BOp.In:
             if isinstance(e.e2.type, TSet):
                 return self.test_set_containment_native(e.e2, e.e1)
             else:
-                t = BOOL
-                res = self.fv(t, "found")
-                x = self.fv(e.e1.type, "x")
-                label = fresh_name("label")
-                self.visit(seq([
-                    SDecl(res, EFALSE),
-                    SEscapableBlock(label,
-                        SForEach(x, e.e2, SIf(
-                            EBinOp(x, "==", e.e1).with_type(BOOL),
-                            seq([SAssign(res, ETRUE), SEscapeBlock(label)]),
-                            SNoOp())))]))
-                return res.id
+                raise Exception("{!r} operator is supposed to be handled by simplify_and_optimize".format(op))
         return "({e1} {op} {e2})".format(e1=self.visit(e.e1), op=op, e2=self.visit(e.e2))
 
     def test_set_containment_native(self, set : Exp, elem : Exp) -> str:
@@ -510,68 +389,10 @@ class CxxPrinter(CodeGenerator):
             self.visit(s.s)
         self.end_statement()
 
-    def for_each(self, iterable : Exp, body) -> str:
-        """Body is function: exp -> stm"""
-        # if isinstance(iterable, EEmptyList):
-        #     return ""
-        # elif isinstance(iterable, ESingleton):
-        #     return self.visit(SScoped(body(iterable.e)))
-        # elif isinstance(iterable, ECond):
-        #     v = self.fv(iterable.type.elem_type, "v")
-        #     new_body = body(v)
-        #     assert isinstance(new_body, Stm)
-        #     return self.visit(SIf(iterable.cond,
-        #         SForEach(v, iterable.then_branch, new_body),
-        #         SForEach(v, iterable.else_branch, new_body)))
-        # elif isinstance(iterable, EMap):
-        #     return self.for_each(
-        #         iterable.e,
-        #         lambda v: body(iterable.transform_function.apply_to(v)))
-        # elif isinstance(iterable, EUnaryOp) and iterable.op == UOp.Distinct:
-        #     tmp = self.fv(TSet(iterable.type.elem_type), "tmp")
-        #     self.declare(tmp)
-        #     self.visit(self.initialize_native_set(tmp))
-        #     self.for_each(iterable.e, lambda x: SIf(
-        #         ENot(EBinOp(x, BOp.In, tmp).with_type(BOOL)),
-        #         seq([body(x), SCall(tmp, "add", [x])]),
-        #         SNoOp()))
-        # elif isinstance(iterable, EFilter):
-        #     return self.for_each(iterable.e, lambda x: SIf(iterable.predicate.apply_to(x), body(x), SNoOp()))
-        # elif isinstance(iterable, EBinOp) and iterable.op == "+":
-        #     self.for_each(iterable.e1, body)
-        #     self.for_each(iterable.e2, body)
-        # elif isinstance(iterable, EBinOp) and iterable.op == "-":
-        #     t = TList(iterable.type.elem_type)
-        #     e = self.visit(EBinOp(iterable.e1, "-", iterable.e2).with_type(t))
-        #     return self.for_each(EEscape(e, (), ()).with_type(t), body)
-        # elif isinstance(iterable, EFlatMap):
-        #     v = self.fv(iterable.type.elem_type)
-        #     new_body = body(v)
-        #     assert isinstance(new_body, Stm)
-        #     return self.for_each(iterable.e,
-        #         body=lambda bag: SForEach(v, iterable.transform_function.apply_to(bag), new_body))
-        # elif isinstance(iterable, EListSlice):
-        #     s = self.fv(INT, "start")
-        #     e = self.fv(INT, "end")
-        #     l = self.visit(self.to_lvalue(iterable.e))
-        #     self.declare(s, EEscape("::std::max({start}, 0)", ("start",), (iterable.start,)))
-        #     self.declare(e, EEscape("::std::min({end}, static_cast<int>({it}.size()))", ("it", "end"), (iterable.e, iterable.end,)))
-        #     return self.visit(SWhile(ELt(s, e), SSeq(
-        #         body(EEscape("{l}[{i}]", ("l", "i"), (iterable.e, s)).with_type(iterable.type.elem_type)),
-        #         SAssign(s, EBinOp(s, "+", ONE).with_type(INT)))))
-        # elif isinstance(iterable, ECall) and iterable.func in self.queries:
-        #     q = self.queries[iterable.func]
-        #     return self.for_each(subst(q.ret, { a : v for ((a, t), v) in zip(q.args, iterable.args) }), body)
-        # elif isinstance(iterable, ELet):
-        #     return self.for_each(iterable.body_function.apply_to(iterable.e), body)
-        # else:
-        #     assert is_collection(iterable.type), repr(iterable)
-        #     x = self.fv(iterable.type.elem_type, "x")
-        #     return self.for_each_native(x, iterable, body(x))
-        x = self.fv(iterable.type.elem_type, "x")
-        return self.for_each_native(x, iterable, body(x))
-
-    def for_each_native(self, x : EVar, iterable, body):
+    def visit_SForEach(self, for_each):
+        loop_var = for_each.loop_var
+        iterable = for_each.iter
+        body = for_each.body
         if isinstance(iterable, EMapKeys):
             map = self.visit(iterable.e)
             pair = self.fv(TNative("const auto &"))
@@ -579,65 +400,25 @@ class CxxPrinter(CodeGenerator):
             self.write("for (", self.visit(pair.type, pair.id), " : ", map, ") ")
             with self.block():
                 self.visit(SSeq(
-                    SDecl(x, EEscape("{p}.first", ("p",), (pair,)).with_type(x.type)),
+                    SDecl(loop_var, EEscape("{p}.first", ("p",), (pair,)).with_type(loop_var.type)),
                     body))
             self.end_statement()
             return
         iterable = self.visit(iterable)
         self.begin_statement()
-        self.write("for (", self.visit(x.type, x.id), " : ", iterable, ") ")
+        self.write("for (", self.visit(loop_var.type, loop_var.id), " : ", iterable, ") ")
         with self.block():
             self.visit(body)
         self.end_statement()
 
-    def visit_SForEach(self, for_each):
-        loop_var = for_each.loop_var
-        iter = for_each.iter
-        body = for_each.body
-        return self.for_each_native(loop_var, iter, body)
-
-    def find_one(self, iterable):
-        v = self.fv(iterable.type.elem_type, "v")
-        label = fresh_name("label")
-        x = self.fv(iterable.type.elem_type, "x")
-        decl = SDecl(v, evaluation.construct_value(v.type))
-        find = SEscapableBlock(label,
-            SForEach(x, iterable, seq([
-                SAssign(v, x),
-                SEscapeBlock(label)])))
-        self.visit(seq([decl, find]))
-        return v.id
-
-    def min_or_max(self, op, e, f):
-        if isinstance(e, EBinOp) and e.op == "+" and isinstance(e.e1, ESingleton) and isinstance(e.e2, ESingleton):
-            # argmin_f ([a] + [b]) ---> f(a) < f(b) ? a : b
-            return self.visit(ECond(
-                EBinOp(f.apply_to(e.e1.e), op, f.apply_to(e.e2.e)).with_type(BOOL),
-                e.e1.e,
-                e.e2.e).with_type(e.e1.e.type))
-        out = self.fv(e.type.elem_type, "min" if op == "<" else "max")
-        first = self.fv(BOOL, "first")
-        x = self.fv(e.type.elem_type, "x")
-        decl1 = SDecl(out, evaluation.construct_value(out.type))
-        decl2 = SDecl(first, ETRUE)
-        find = SForEach(x, e,
-            SIf(EBinOp(
-                    first,
-                    BOp.Or,
-                    EBinOp(f.apply_to(x), op, f.apply_to(out)).with_type(BOOL)).with_type(BOOL),
-                seq([SAssign(first, EFALSE), SAssign(out, x)]),
-                SNoOp()))
-        self.visit(seq([decl1, decl2, find]))
-        return out.id
-
     def visit_EArgMin(self, e):
-        return self.min_or_max("<", e.e, e.key_function)
+        raise Exception("argmin is supposed to be handled by simplify_and_optimize")
 
     def visit_EArgMax(self, e):
-        return self.min_or_max(">", e.e, e.key_function)
+        raise Exception("argmax is supposed to be handled by simplify_and_optimize")
 
     def visit_EListSlice(self, e):
-        return self.visit(self.to_lvalue(e))
+        raise Exception("list slicing is supposed to be handled by simplify_and_optimize")
 
     def reverse_inplace(self, e : EVar) -> Stm:
         assert isinstance(e.type, TList)
@@ -859,6 +640,8 @@ class CxxPrinter(CodeGenerator):
             self.begin_statement()
             self.write("struct ", name, " ")
             with self.block():
+
+                # TODO: sort fields by size descending for better packing
                 for f, ft in t.fields:
                     self.declare_field(f, ft)
 
