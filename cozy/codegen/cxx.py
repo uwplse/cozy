@@ -179,11 +179,11 @@ class CxxPrinter(CodeGenerator):
             if q.docstring:
                 self.write(indent_lines(q.docstring, self.get_indent()), "\n")
             self.begin_statement()
-            self.write("template <class EFALSE>")
+            self.write("template <class F>")
             self.end_statement()
             self.begin_statement()
             self.write("inline void ", q.name, "(")
-            self.visit_args(itertools.chain(q.args, [("_callback", TNative("const EFALSE&"))]))
+            self.visit_args(itertools.chain(q.args, [("_callback", TNative("const F&"))]))
             self.write(") ")
             with self.block():
                 self.visit(SForEach(x, ret_exp, SEscape("{indent}_callback({x});\n", ["x"], [x])))
