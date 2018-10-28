@@ -115,13 +115,6 @@ class CxxPrinter(CodeGenerator):
     def visit_TEnum(self, enum, name):
         return "{} {}".format(self.typename(enum), name)
 
-    def visit_ELet(self, e):
-        if isinstance(e.e, EVar):
-            return self.visit(e.body_function.apply_to(e.e))
-        v = self.fv(e.e.type)
-        self.declare(v, e.e)
-        return self.visit(e.body_function.apply_to(v))
-
     def visit_TVector(self, t, name):
         return "{}[{}]".format(self.visit(t.elem_type, name), t.index)
 

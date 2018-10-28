@@ -14,7 +14,7 @@ from cozy.target_syntax import (
     SReturn,
     EMap, EFilter, EFlatMap,
     EEmptyMap, EMapGet, SMapUpdate)
-from cozy.syntax_tools import fresh_var, count_occurrences_of_free_var, subst, BottomUpRewriter
+from cozy.syntax_tools import fresh_var, count_occurrences_of_free_var, subst, BottomUpRewriter, lightweight_subst
 from cozy.typecheck import is_collection
 from cozy.synthesis.acceleration import histogram
 
@@ -168,6 +168,7 @@ def simplify_and_optimize(s : Stm) -> Stm:
         "+" on collections
       - anything handled by an extension structure (see cozy.structures module)
       - EMakeMap2
+      - ELet
     """
     assert isinstance(s, Stm)
 
@@ -284,6 +285,10 @@ class ExpressionOptimizer(BottomUpRewriter):
             SMapUpdate(res, k, v,
                 SAssign(v, e.value_function.body)))))
         return EMove(res).with_type(res.type)
+
+    def visit_ELet(self, e):
+        value_exp = self.visit(e.e)
+        return lightweight_subst(e.body_function.body, e.body_function.arg, value_exp)
 
     def visit_Exp(self, e):
         if isinstance(e, Exp) and any(isinstance(child, ELambda) for child in e.children()):
