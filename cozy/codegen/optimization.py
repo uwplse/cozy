@@ -160,6 +160,9 @@ def simplify_and_optimize(s : Stm) -> Stm:
     if isinstance(s, SAssign):
         setup, e = simplify_and_optimize_expression(s.rhs)
         return SSeq(setup, SAssign(s.lhs, e))
+    if isinstance(s, SReturn):
+        setup, e = simplify_and_optimize_expression(s.e)
+        return SSeq(setup, SReturn(e))
     if isinstance(s, SDecl):
         setup, e = simplify_and_optimize_expression(s.val)
         return SSeq(setup, SDecl(s.var, e))

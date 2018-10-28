@@ -60,6 +60,7 @@ def EDisjoint(xs, ys):
 SWhile   = declare_case(Stm, "SWhile",  ["e", "body"])
 SSwap    = declare_case(Stm, "SSwap",   ["lval1", "lval2"])
 SSwitch  = declare_case(Stm, "SSwitch", ["e", "cases", "default"])
+SReturn  = declare_case(Stm, "SReturn", ["e"])
 
 # Fake go-to
 SEscapableBlock = declare_case(Stm, "SEscapableBlock", ["label", "body"])

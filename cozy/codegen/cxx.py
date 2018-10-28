@@ -197,10 +197,7 @@ class CxxPrinter(CodeGenerator):
             self.visit_args(q.args)
             self.write(") ")
             with self.block():
-                ret = self.visit(ret_exp)
-                self.begin_statement()
-                self.write("return ", ret, ";")
-                self.end_statement()
+                self.visit(simplify_and_optimize(SReturn(ret_exp)))
             self.end_statement()
 
     def visit_Op(self, q):
