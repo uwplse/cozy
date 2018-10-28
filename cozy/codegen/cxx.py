@@ -738,8 +738,8 @@ class CxxPrinter(CodeGenerator):
             ee = EEscape(ee, (), ()).with_type(e.e.type)
             null = ENull().with_type(e.e.type)
             return self.visit(ECond(EEq(ee, null),
-                EEscape("{ee}->val", ("ee",), (ee,)).with_type(e.type),
-                evaluation.construct_value(e.type)).with_type(e.type))
+                evaluation.construct_value(e.type),
+                EEscape("{ee}->val", ("ee",), (ee,)).with_type(e.type)).with_type(e.type))
         return "({ee}.{f})".format(ee=ee, f=e.field_name)
 
     def visit_ETuple(self, e):
