@@ -628,6 +628,9 @@ def free_vars_and_funcs(e : syntax.Exp):
     for f in free_funcs(e):
         yield f
 
+def count_occurrences_of_free_var(e : syntax.Exp, v : syntax.EVar) -> int:
+    return free_vars(e, counts=True).get(v, 0)
+
 def all_exps(x):
     q = [x]
     while q:
@@ -1215,7 +1218,7 @@ def lightweight_subst(
      * if the needle only appears once in the haystack
      * if the replacement is small (e.g. if it is a number literal or variable)
     """
-    if repl.size() <= 2 or free_vars(haystack, counts=True).get(needle, 0) <= 1:
+    if repl.size() <= 2 or count_occurrences_of_free_var(haystack, needle) <= 1:
         return subst(haystack, { needle.id : repl })
     e = syntax.ELet(repl, target_syntax.ELambda(needle, haystack))
     if hasattr(haystack, "type"):
