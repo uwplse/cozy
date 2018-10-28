@@ -7,7 +7,8 @@ The key methods are
 """
 
 from cozy.syntax import (
-    Exp, EVar, ELambda, ELet, EListSlice, EEmptyList, ESingleton, ECond, EUnaryOp, UOp, EBinOp,
+    TSet, BOOL,
+    Exp, EVar, ELambda, ELet, EListSlice, EEmptyList, ESingleton, ECond, EUnaryOp, UOp, EBinOp, BOp, ENot,
     Stm, SAssign, SIf, SForEach, SNoOp, seq, SSeq, SDecl, SCall)
 from cozy.target_syntax import (
     EMap, EFilter, EFlatMap,
@@ -64,14 +65,13 @@ def stream(iterable : Exp, loop_var : EVar, body : Stm) -> Stm:
             stream(iterable.then_branch, loop_var, body),
             stream(iterable.else_branch, loop_var, body))
     elif isinstance(iterable, EUnaryOp) and iterable.op == UOp.Distinct:
-        raise NotImplementedError()
-        # tmp = fresh_var(TSet(iterable.type.elem_type), "tmp")
-        # return seq([
-        #     SDecl(tmp, EEmptyList().with_type(tmp.type)),
-        #     stream(iterable.e, loop_var, SIf(
-        #         ENot(EBinOp(loop_var, BOp.In, tmp).with_type(BOOL)),
-        #         seq([body, SCall(tmp, "add", [loop_var])]),
-        #         SNoOp()))])
+        tmp = fresh_var(TSet(iterable.type.elem_type), "distinct_elems")
+        return seq([
+            SDecl(tmp, EEmptyList().with_type(tmp.type)),
+            stream(iterable.e, loop_var, SIf(
+                ENot(EBinOp(loop_var, BOp.In, tmp).with_type(BOOL)),
+                seq([body, SCall(tmp, "add", [loop_var])]),
+                SNoOp()))])
     elif isinstance(iterable, EBinOp) and iterable.op == "+":
         return seq([
             stream(iterable.e1, loop_var, body),
@@ -199,6 +199,11 @@ class ExpressionOptimizer(BottomUpRewriter):
 
     def visit_EFlatMap(self, e):
         return self.visit_iterable(e)
+
+    def visit_EUnaryOp(self, e):
+        if e.op == UOp.Distinct:
+            return self.visit_iterable(e)
+        return self.visit_Exp(e)
 
     def visit_EMakeMap2(self, e):
         res = fresh_var(e.type, "map")

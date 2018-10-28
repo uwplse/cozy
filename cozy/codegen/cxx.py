@@ -693,9 +693,7 @@ class CxxPrinter(CodeGenerator):
             op_str = "!" if op == UOp.Not else op
             return "({op}({ee}))".format(op=op_str, ee=ee)
         elif op == UOp.Distinct:
-            v = self.fv(e.type, "v")
-            self.declare(v, e)
-            return v.id
+            raise ValueError("this case is supposed to be handled by simplify_and_optimize")
         elif op == UOp.AreUnique:
             s = self.fv(TSet(e.e.type.elem_type), "unique_elems")
             u = self.fv(BOOL, "is_unique")
@@ -1013,7 +1011,8 @@ class CxxPrinter(CodeGenerator):
         return s
 
     def visit_ESingleton(self, e):
-        return self.visit(self.to_lvalue(e))
+        value = self.visit(e.e)
+        return self.visit(e.type, "") + " { " + value + " }"
 
     @typechecked
     def visit_Spec(self, spec : Spec, state_exps : { str : Exp }, sharing, abstract_state=()):
