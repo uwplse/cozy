@@ -7,15 +7,16 @@ The key methods are
 """
 
 from cozy.syntax import (
-    TSet, BOOL,
-    Exp, EVar, ELambda, ELet, EListSlice, EEmptyList, ESingleton, ECond, EUnaryOp, UOp, EBinOp, BOp, ENot,
+    TSet, BOOL, INT, INT_BAG,
+    Exp, ZERO, ONE, EVar, ELambda, ELet, EListSlice, EEmptyList, ESingleton, ECond, EUnaryOp, UOp, EBinOp, BOp, ENot, EGt,
     Stm, SAssign, SIf, SForEach, SNoOp, seq, SSeq, SDecl, SCall)
 from cozy.target_syntax import (
+    SReturn,
     EMap, EFilter, EFlatMap,
-    EEmptyMap,
-    SMapUpdate)
+    EEmptyMap, EMapGet, SMapUpdate)
 from cozy.syntax_tools import fresh_var, count_occurrences_of_free_var, subst, BottomUpRewriter
 from cozy.typecheck import is_collection
+from cozy.synthesis.acceleration import histogram
 
 from .misc import SScoped, SEscape, EMove
 
@@ -77,10 +78,17 @@ def stream(iterable : Exp, loop_var : EVar, body : Stm) -> Stm:
             stream(iterable.e1, loop_var, body),
             stream(iterable.e2, loop_var, body)])
     elif isinstance(iterable, EBinOp) and iterable.op == "-":
-        raise NotImplementedError()
-        # t = TList(iterable.type.elem_type)
-        # e = self.visit(EBinOp(iterable.e1, "-", iterable.e2).with_type(t))
-        # return stream(EEscape(e, (), ()).with_type(t), body)
+        h_value = histogram(iterable.e2)
+        h = fresh_var(h_value.type, "histogram")
+        val_ref = fresh_var(INT, "count")
+        return seq([
+            simplify_and_optimize(SDecl(h, h_value)),
+            stream(
+                iterable.e1,
+                loop_var,
+                SIf(EGt(EMapGet(h, loop_var).with_type(INT), ZERO),
+                    SMapUpdate(h, loop_var, val_ref, SAssign(val_ref, EBinOp(val_ref, "-", ONE).with_type(INT))),
+                    body))])
     elif isinstance(iterable, EFilter):
         return stream(
             EFlatMap(iterable.e, ELambda(iterable.predicate.arg,
@@ -124,6 +132,8 @@ def stream(iterable : Exp, loop_var : EVar, body : Stm) -> Stm:
     elif isinstance(iterable, ELet):
         raise NotImplementedError()
         # return stream(iterable.body_function.apply_to(iterable.e), body)
+    elif isinstance(iterable, EMove):
+        return stream(iterable.e, loop_var, body)
     else:
         assert is_collection(iterable.type), repr(iterable)
         setup, e = simplify_and_optimize_expression(iterable)
@@ -146,8 +156,16 @@ def simplify_and_optimize(s : Stm) -> Stm:
     Expression types eliminated by this procedure:
       - EMap, EFilter, EFlatMap
       - EArg{Min,Max}
-      - unary ops: Distinct
-      - binary ops: In (where the collection is a Bag or List)
+      - unary ops:
+        Distinct,
+        AreUnique,
+        Length, Sum, All, Any,
+        Exists, Empty,
+        The
+      - binary ops:
+        In (where the collection is a Bag or List)
+        "-" on collections
+        "+" on collections
       - anything handled by an extension structure (see cozy.structures module)
       - EMakeMap2
     """
@@ -204,8 +222,57 @@ class ExpressionOptimizer(BottomUpRewriter):
         return self.visit_iterable(e)
 
     def visit_EUnaryOp(self, e):
-        if e.op == UOp.Distinct:
+        op = e.op
+        if op == UOp.Distinct:
             return self.visit_iterable(e)
+        elif op == UOp.The:
+            return self.find_one(e.e)
+        elif op == UOp.Sum:
+            sum_var = fresh_var(INT, "sum")
+            loop_var = fresh_var(e.e.type.elem_type, "x")
+            self.stms.append(simplify_and_optimize(seq([
+                SDecl(sum_var, ZERO),
+                SForEach(loop_var, e.e,
+                    SAssign(sum_var, EBinOp(sum_var, "+", ONE).with_type(INT)))])))
+            return sum_var
+        elif op == UOp.Length:
+            arg = EVar("x").with_type(e.e.type.elem_type)
+            return self.visit(EUnaryOp(UOp.Sum, EMap(e.e, ELambda(arg, ONE)).with_type(INT_BAG)).with_type(INT))
+        elif op == UOp.All:
+            arg = EVar("x").with_type(e.e.type.elem_type)
+            return self.visit(EUnaryOp(UOp.Empty, EFilter(e.e, ELambda(arg, ENot(arg))).with_type(INT_BAG)).with_type(INT))
+        elif op == UOp.Any:
+            arg = EVar("x").with_type(e.e.type.elem_type)
+            return self.visit(EUnaryOp(UOp.Exists, EFilter(e.e, ELambda(arg, arg)).with_type(INT_BAG)).with_type(INT))
+        # elif op == UOp.Empty:
+        #     iterable = e.e
+        #     v = self.fv(BOOL, "v")
+        #     label = fresh_name("label")
+        #     x = self.fv(iterable.type.elem_type, "x")
+        #     decl = SDecl(v, ETRUE)
+        #     find = SEscapableBlock(label,
+        #         SForEach(x, iterable, seq([
+        #             SAssign(v, EFALSE),
+        #             SEscapeBlock(label)])))
+        #     self.visit(seq([decl, find]))
+        #     return v.id
+        elif op == UOp.Exists:
+            return self.visit(ENot(EUnaryOp(UOp.Empty, e.e).with_type(BOOL)))
+        # elif op == UOp.AreUnique:
+        #     s = self.fv(TSet(e.e.type.elem_type), "unique_elems")
+        #     u = self.fv(BOOL, "is_unique")
+        #     x = self.fv(e.e.type.elem_type)
+        #     label = fresh_name("label")
+        #     self.visit(seq([
+        #         SDecl(s, EEmptyList().with_type(s.type)),
+        #         SDecl(u, ETRUE),
+        #         SEscapableBlock(label,
+        #             SForEach(x, e.e,
+        #                 SIf(EEscape("{s}.find({x}) != {s}.end()", ("s", "x"), (s, x)).with_type(BOOL),
+        #                     seq([SAssign(u, EFALSE), SEscapeBlock(label)]),
+        #                     SEscape("{indent}{s}.insert({x});\n", ("s", "x"), (s, x)))))]))
+        #     return u.id
+
         return self.visit_Exp(e)
 
     def visit_EMakeMap2(self, e):

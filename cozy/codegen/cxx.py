@@ -652,64 +652,17 @@ class CxxPrinter(CodeGenerator):
 
     def visit_EUnaryOp(self, e):
         op = e.op
-        if op == UOp.The:
-            return self.find_one(e.e)
-        elif op == UOp.Sum:
-            type = e.e.type.elem_type
-            res = self.fv(type, "sum")
-            x = self.fv(type, "x")
-            self.visit(seq([
-                SDecl(res, ENum(0).with_type(type)),
-                SForEach(x, e.e, SAssign(res, EBinOp(res, "+", x).with_type(type)))]))
-            return res.id
-        elif op == UOp.Length:
-            arg = EVar("x").with_type(e.e.type.elem_type)
-            return self.visit(EUnaryOp(UOp.Sum, EMap(e.e, ELambda(arg, ONE)).with_type(INT_BAG)).with_type(INT))
-        elif op == UOp.All:
-            arg = EVar("x").with_type(e.e.type.elem_type)
-            return self.visit(EUnaryOp(UOp.Empty, EFilter(e.e, ELambda(arg, ENot(arg))).with_type(INT_BAG)).with_type(INT))
-        elif op == UOp.Any:
-            arg = EVar("x").with_type(e.e.type.elem_type)
-            return self.visit(EUnaryOp(UOp.Exists, EFilter(e.e, ELambda(arg, arg)).with_type(INT_BAG)).with_type(INT))
-        elif op == UOp.Empty:
-            iterable = e.e
-            v = self.fv(BOOL, "v")
-            label = fresh_name("label")
-            x = self.fv(iterable.type.elem_type, "x")
-            decl = SDecl(v, ETRUE)
-            find = SEscapableBlock(label,
-                SForEach(x, iterable, seq([
-                    SAssign(v, EFALSE),
-                    SEscapeBlock(label)])))
-            self.visit(seq([decl, find]))
-            return v.id
-        elif op == UOp.Exists:
-            return self.visit(ENot(EUnaryOp(UOp.Empty, e.e).with_type(BOOL)))
-        elif op in ("-", UOp.Not):
+        if op in ("-", UOp.Not):
             ee = self.visit(e.e)
             op_str = "!" if op == UOp.Not else op
             return "({op}({ee}))".format(op=op_str, ee=ee)
-        elif op == UOp.Distinct:
-            raise ValueError("this case is supposed to be handled by simplify_and_optimize")
-        elif op == UOp.AreUnique:
-            s = self.fv(TSet(e.e.type.elem_type), "unique_elems")
-            u = self.fv(BOOL, "is_unique")
-            x = self.fv(e.e.type.elem_type)
-            label = fresh_name("label")
-            self.visit(seq([
-                SDecl(s, EEmptyList().with_type(s.type)),
-                SDecl(u, ETRUE),
-                SEscapableBlock(label,
-                    SForEach(x, e.e,
-                        SIf(EEscape("{s}.find({x}) != {s}.end()", ("s", "x"), (s, x)).with_type(BOOL),
-                            seq([SAssign(u, EFALSE), SEscapeBlock(label)]),
-                            SEscape("{indent}{s}.insert({x});\n", ("s", "x"), (s, x)))))]))
-            return u.id
         elif op == UOp.Reversed:
             v = self.fv(e.type, "v")
             self.declare(v, e.e)
             self.visit(self.reverse_inplace(v))
             return v.id
+        elif op in (UOp.Distinct, UOp.AreUnique, UOp.Length, UOp.Sum, UOp.All, UOp.Any, UOp.Exists, UOp.Empty, UOp.The):
+            raise Exception("{!r} operator is supposed to be handled by simplify_and_optimize".format(op))
         else:
             raise NotImplementedError(op)
 
