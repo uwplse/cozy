@@ -8,9 +8,10 @@ from cozy.target_syntax import *
 from cozy.syntax_tools import all_types, fresh_var, subst, free_vars, all_exps, break_seq, is_lvalue, shallow_copy
 from cozy.typecheck import is_collection, is_scalar
 from cozy.structures import extension_handler
-from cozy.structures.arrays import TArray, EArrayGet
+from cozy.structures.arrays import TArray
 
 from .misc import *
+from .optimization import simplify_and_optimize
 
 class CxxPrinter(CodeGenerator):
 
@@ -186,7 +187,7 @@ class CxxPrinter(CodeGenerator):
             self.visit_args(itertools.chain(q.args, [("_callback", TNative("const F&"))]))
             self.write(") ")
             with self.block():
-                self.visit(SForEach(x, ret_exp, SEscape("{indent}_callback({x});\n", ["x"], [x])))
+                self.visit(simplify_and_optimize(SForEach(x, ret_exp, SEscape("{indent}_callback({x});\n", ["x"], [x]))))
             self.end_statement()
         else:
             if q.docstring:
@@ -210,7 +211,7 @@ class CxxPrinter(CodeGenerator):
         self.visit_args(q.args)
         self.write(") ")
         with self.block():
-            self.visit(q.body)
+            self.visit(simplify_and_optimize(q.body))
         self.end_statement()
 
     def visit_ENull(self, e):
@@ -220,22 +221,12 @@ class CxxPrinter(CodeGenerator):
         return "true" if e.val else "false"
 
     def visit_EEmptyList(self, e):
-        v = self.fv(e.type)
-        self.declare(v)
-        self.visit(self.construct_concrete(e.type, e, v))
-        return v.id
+        t = self.visit(e.type, "")
+        return "(" + t + "())"
 
-    def native_map_get(self, e, default_value):
-        emap = self.visit(e.map)
-        if self.use_qhash:
-            return "{}.value({})".format(emap, ekey)
-        t = self.visit(e.map.type, "").strip() + "::const_iterator"
-        iterator = self.fv(TNative(t), "map_iterator")
-        self.declare(iterator, EEscape(emap + ".find({key})", ("key",), (e.key,)))
-        return self.visit(ECond(
-            EEscape("{it} == " + emap + ".end()", ("it",), (iterator,)).with_type(BOOL),
-            evaluation.construct_value(e.type),
-            EEscape("{it}->second", ("it",), (iterator,)).with_type(e.type)).with_type(e.type))
+    def visit_EEmptyMap(self, e):
+        t = self.visit(e.type, "")
+        return "(" + t + "())"
 
     def to_lvalue(self, e : Exp) -> Exp:
         if is_lvalue(e):
@@ -244,61 +235,61 @@ class CxxPrinter(CodeGenerator):
         self.declare(v, e)
         return v
 
-    def construct_concrete(self, t : Type, e : Exp, out : Exp):
-        """
-        Construct a value of type `t` from the expression `e` and store it in
-        lvalue `out`.
-        """
-        if hasattr(t, "construct_concrete"):
-            return t.construct_concrete(e, out)
-        elif isinstance(t, TBag) or isinstance(t, TList):
-            assert out not in free_vars(e)
-            x = self.fv(t.elem_type, "x")
-            return SSeq(
-                self.initialize_native_list(out),
-                SForEach(x, e, SCall(out, "add", [x])))
-        elif isinstance(t, TSet):
-            if isinstance(e, EUnaryOp) and e.op == UOp.Distinct:
-                return self.construct_concrete(t, e.e, out)
-            x = self.fv(t.elem_type, "x")
-            return SSeq(
-                self.initialize_native_set(out),
-                SForEach(x, e, SCall(out, "add", [x])))
-        elif isinstance(t, TMap):
-            return SSeq(
-                self.initialize_native_map(out),
-                self.construct_map(t, e, out))
-        elif isinstance(t, THandle):
-            return SEscape("{indent}{lhs} = {rhs};\n", ["lhs", "rhs"], [out, e])
-        elif is_scalar(t):
-            return SEscape("{indent}{lhs} = {rhs};\n", ["lhs", "rhs"], [out, e])
-        elif isinstance(t, TTuple):
-            x = self.fv(t, "x")
-            indices = range(len(t.ts))
-            return SSeq(
-                SEscape("{indent}" + self.visit(t, x.id) + " = {rhs};\n", ("rhs",), (e,)),
-                SEscape("{indent}{lhs} = {rv};\n", ["lhs", "rv"],
-                        [out, ETuple([ETupleGet(x, i).with_type(t.ts[i]) for i in indices]).with_type(t)]),
-            )
-        else:
-            h = extension_handler(type(t))
-            if h is not None:
-                return h.codegen(e, self.state_exps, out=out)
-            raise NotImplementedError("t: {}\ne: {}\nout: {}\n".format(t, e, out))
+    # def construct_concrete(self, t : Type, e : Exp, out : Exp):
+    #     """
+    #     Construct a value of type `t` from the expression `e` and store it in
+    #     lvalue `out`.
+    #     """
+    #     if hasattr(t, "construct_concrete"):
+    #         return t.construct_concrete(e, out)
+    #     elif isinstance(t, TBag) or isinstance(t, TList):
+    #         assert out not in free_vars(e)
+    #         x = self.fv(t.elem_type, "x")
+    #         return SSeq(
+    #             self.initialize_native_list(out),
+    #             SForEach(x, e, SCall(out, "add", [x])))
+    #     elif isinstance(t, TSet):
+    #         if isinstance(e, EUnaryOp) and e.op == UOp.Distinct:
+    #             return self.construct_concrete(t, e.e, out)
+    #         x = self.fv(t.elem_type, "x")
+    #         return SSeq(
+    #             self.initialize_native_set(out),
+    #             SForEach(x, e, SCall(out, "add", [x])))
+    #     elif isinstance(t, TMap):
+    #         return SSeq(
+    #             self.initialize_native_map(out),
+    #             self.construct_map(t, e, out))
+    #     elif isinstance(t, THandle):
+    #         return SEscape("{indent}{lhs} = {rhs};\n", ["lhs", "rhs"], [out, e])
+    #     elif is_scalar(t):
+    #         return SEscape("{indent}{lhs} = {rhs};\n", ["lhs", "rhs"], [out, e])
+    #     elif isinstance(t, TTuple):
+    #         x = self.fv(t, "x")
+    #         indices = range(len(t.ts))
+    #         return SSeq(
+    #             SEscape("{indent}" + self.visit(t, x.id) + " = {rhs};\n", ("rhs",), (e,)),
+    #             SEscape("{indent}{lhs} = {rv};\n", ["lhs", "rv"],
+    #                     [out, ETuple([ETupleGet(x, i).with_type(t.ts[i]) for i in indices]).with_type(t)]),
+    #         )
+    #     else:
+    #         h = extension_handler(type(t))
+    #         if h is not None:
+    #             return h.codegen(e, self.state_exps, out=out)
+    #         raise NotImplementedError("t: {}\ne: {}\nout: {}\n".format(t, e, out))
 
-    def construct_map(self, t, e, out):
-        if isinstance(e, ECond):
-            return SIf(e.cond,
-                construct_map(t, e.then_branch, out),
-                construct_map(t, e.else_branch, out))
-        elif isinstance(e, EMakeMap2):
-            k = self.fv(t.k, "k")
-            v = self.fv(t.v, "v")
-            return SForEach(k, e.e,
-                SMapUpdate(out, k, v,
-                    self.construct_concrete(t.v, e.value_function.apply_to(k), v)))
-        else:
-            raise NotImplementedError(e)
+    # def construct_map(self, t, e, out):
+    #     if isinstance(e, ECond):
+    #         return SIf(e.cond,
+    #             construct_map(t, e.then_branch, out),
+    #             construct_map(t, e.else_branch, out))
+    #     elif isinstance(e, EMakeMap2):
+    #         k = self.fv(t.k, "k")
+    #         v = self.fv(t.v, "v")
+    #         return SForEach(k, e.e,
+    #             SMapUpdate(out, k, v,
+    #                 self.construct_concrete(t.v, e.value_function.apply_to(k), v)))
+    #     else:
+    #         raise NotImplementedError(e)
 
     def initialize_native_list(self, e) -> Stm:
         return SNoOp() # C++ does default-initialization
@@ -383,12 +374,16 @@ class CxxPrinter(CodeGenerator):
         return "{map}.find({key}) != {map}.end()".format(map=map, key=key)
 
     def visit_EMapGet(self, e):
-        return self.native_map_get(
-            e,
-            lambda out: self.construct_concrete(
-                e.map.type.v,
-                evaluation.construct_value(e.map.type.v),
-                out))
+        emap = self.visit(e.map)
+        if self.use_qhash:
+            return "{}.value({})".format(emap, ekey)
+        t = self.visit(e.map.type, "").strip() + "::const_iterator"
+        iterator = self.fv(TNative(t), "map_iterator")
+        self.declare(iterator, EEscape(emap + ".find({key})", ("key",), (e.key,)))
+        return self.visit(ECond(
+            EEscape("{it} == " + emap + ".end()", ("it",), (iterator,)).with_type(BOOL),
+            evaluation.construct_value(e.type),
+            EEscape("{it}->second", ("it",), (iterator,)).with_type(e.type)).with_type(e.type))
 
     def visit_SMapUpdate(self, update):
         map = self.visit(update.map)
@@ -527,62 +522,64 @@ class CxxPrinter(CodeGenerator):
 
     def for_each(self, iterable : Exp, body) -> str:
         """Body is function: exp -> stm"""
-        if isinstance(iterable, EEmptyList):
-            return ""
-        elif isinstance(iterable, ESingleton):
-            return self.visit(SScoped(body(iterable.e)))
-        elif isinstance(iterable, ECond):
-            v = self.fv(iterable.type.elem_type, "v")
-            new_body = body(v)
-            assert isinstance(new_body, Stm)
-            return self.visit(SIf(iterable.cond,
-                SForEach(v, iterable.then_branch, new_body),
-                SForEach(v, iterable.else_branch, new_body)))
-        elif isinstance(iterable, EMap):
-            return self.for_each(
-                iterable.e,
-                lambda v: body(iterable.transform_function.apply_to(v)))
-        elif isinstance(iterable, EUnaryOp) and iterable.op == UOp.Distinct:
-            tmp = self.fv(TSet(iterable.type.elem_type), "tmp")
-            self.declare(tmp)
-            self.visit(self.initialize_native_set(tmp))
-            self.for_each(iterable.e, lambda x: SIf(
-                ENot(EBinOp(x, BOp.In, tmp).with_type(BOOL)),
-                seq([body(x), SCall(tmp, "add", [x])]),
-                SNoOp()))
-        elif isinstance(iterable, EFilter):
-            return self.for_each(iterable.e, lambda x: SIf(iterable.predicate.apply_to(x), body(x), SNoOp()))
-        elif isinstance(iterable, EBinOp) and iterable.op == "+":
-            self.for_each(iterable.e1, body)
-            self.for_each(iterable.e2, body)
-        elif isinstance(iterable, EBinOp) and iterable.op == "-":
-            t = TList(iterable.type.elem_type)
-            e = self.visit(EBinOp(iterable.e1, "-", iterable.e2).with_type(t))
-            return self.for_each(EEscape(e, (), ()).with_type(t), body)
-        elif isinstance(iterable, EFlatMap):
-            v = self.fv(iterable.type.elem_type)
-            new_body = body(v)
-            assert isinstance(new_body, Stm)
-            return self.for_each(iterable.e,
-                body=lambda bag: SForEach(v, iterable.transform_function.apply_to(bag), new_body))
-        elif isinstance(iterable, EListSlice):
-            s = self.fv(INT, "start")
-            e = self.fv(INT, "end")
-            l = self.visit(self.to_lvalue(iterable.e))
-            self.declare(s, EEscape("::std::max({start}, 0)", ("start",), (iterable.start,)))
-            self.declare(e, EEscape("::std::min({end}, static_cast<int>({it}.size()))", ("it", "end"), (iterable.e, iterable.end,)))
-            return self.visit(SWhile(ELt(s, e), SSeq(
-                body(EEscape("{l}[{i}]", ("l", "i"), (iterable.e, s)).with_type(iterable.type.elem_type)),
-                SAssign(s, EBinOp(s, "+", ONE).with_type(INT)))))
-        elif isinstance(iterable, ECall) and iterable.func in self.queries:
-            q = self.queries[iterable.func]
-            return self.for_each(subst(q.ret, { a : v for ((a, t), v) in zip(q.args, iterable.args) }), body)
-        elif isinstance(iterable, ELet):
-            return self.for_each(iterable.body_function.apply_to(iterable.e), body)
-        else:
-            assert is_collection(iterable.type), repr(iterable)
-            x = self.fv(iterable.type.elem_type, "x")
-            return self.for_each_native(x, iterable, body(x))
+        # if isinstance(iterable, EEmptyList):
+        #     return ""
+        # elif isinstance(iterable, ESingleton):
+        #     return self.visit(SScoped(body(iterable.e)))
+        # elif isinstance(iterable, ECond):
+        #     v = self.fv(iterable.type.elem_type, "v")
+        #     new_body = body(v)
+        #     assert isinstance(new_body, Stm)
+        #     return self.visit(SIf(iterable.cond,
+        #         SForEach(v, iterable.then_branch, new_body),
+        #         SForEach(v, iterable.else_branch, new_body)))
+        # elif isinstance(iterable, EMap):
+        #     return self.for_each(
+        #         iterable.e,
+        #         lambda v: body(iterable.transform_function.apply_to(v)))
+        # elif isinstance(iterable, EUnaryOp) and iterable.op == UOp.Distinct:
+        #     tmp = self.fv(TSet(iterable.type.elem_type), "tmp")
+        #     self.declare(tmp)
+        #     self.visit(self.initialize_native_set(tmp))
+        #     self.for_each(iterable.e, lambda x: SIf(
+        #         ENot(EBinOp(x, BOp.In, tmp).with_type(BOOL)),
+        #         seq([body(x), SCall(tmp, "add", [x])]),
+        #         SNoOp()))
+        # elif isinstance(iterable, EFilter):
+        #     return self.for_each(iterable.e, lambda x: SIf(iterable.predicate.apply_to(x), body(x), SNoOp()))
+        # elif isinstance(iterable, EBinOp) and iterable.op == "+":
+        #     self.for_each(iterable.e1, body)
+        #     self.for_each(iterable.e2, body)
+        # elif isinstance(iterable, EBinOp) and iterable.op == "-":
+        #     t = TList(iterable.type.elem_type)
+        #     e = self.visit(EBinOp(iterable.e1, "-", iterable.e2).with_type(t))
+        #     return self.for_each(EEscape(e, (), ()).with_type(t), body)
+        # elif isinstance(iterable, EFlatMap):
+        #     v = self.fv(iterable.type.elem_type)
+        #     new_body = body(v)
+        #     assert isinstance(new_body, Stm)
+        #     return self.for_each(iterable.e,
+        #         body=lambda bag: SForEach(v, iterable.transform_function.apply_to(bag), new_body))
+        # elif isinstance(iterable, EListSlice):
+        #     s = self.fv(INT, "start")
+        #     e = self.fv(INT, "end")
+        #     l = self.visit(self.to_lvalue(iterable.e))
+        #     self.declare(s, EEscape("::std::max({start}, 0)", ("start",), (iterable.start,)))
+        #     self.declare(e, EEscape("::std::min({end}, static_cast<int>({it}.size()))", ("it", "end"), (iterable.e, iterable.end,)))
+        #     return self.visit(SWhile(ELt(s, e), SSeq(
+        #         body(EEscape("{l}[{i}]", ("l", "i"), (iterable.e, s)).with_type(iterable.type.elem_type)),
+        #         SAssign(s, EBinOp(s, "+", ONE).with_type(INT)))))
+        # elif isinstance(iterable, ECall) and iterable.func in self.queries:
+        #     q = self.queries[iterable.func]
+        #     return self.for_each(subst(q.ret, { a : v for ((a, t), v) in zip(q.args, iterable.args) }), body)
+        # elif isinstance(iterable, ELet):
+        #     return self.for_each(iterable.body_function.apply_to(iterable.e), body)
+        # else:
+        #     assert is_collection(iterable.type), repr(iterable)
+        #     x = self.fv(iterable.type.elem_type, "x")
+        #     return self.for_each_native(x, iterable, body(x))
+        x = self.fv(iterable.type.elem_type, "x")
+        return self.for_each_native(x, iterable, body(x))
 
     def for_each_native(self, x : EVar, iterable, body):
         if isinstance(iterable, EMapKeys):
@@ -607,7 +604,7 @@ class CxxPrinter(CodeGenerator):
         loop_var = for_each.loop_var
         iter = for_each.iter
         body = for_each.body
-        self.for_each(iter, lambda x: SSeq(SDecl(loop_var, x), body))
+        return self.for_each_native(loop_var, iter, body)
 
     def find_one(self, iterable):
         v = self.fv(iterable.type.elem_type, "v")
@@ -648,12 +645,6 @@ class CxxPrinter(CodeGenerator):
 
     def visit_EArgMax(self, e):
         return self.min_or_max(">", e.e, e.key_function)
-
-    def visit_EMap(self, e):
-        return self.visit(self.to_lvalue(e))
-
-    def visit_EFilter(self, e):
-        return self.visit(self.to_lvalue(e))
 
     def visit_EListSlice(self, e):
         return self.visit(self.to_lvalue(e))
@@ -789,34 +780,19 @@ class CxxPrinter(CodeGenerator):
     def visit_SNoOp(self, s):
         pass
 
-    # def copy_to(self, lhs, rhs):
-    #     if isinstance(lhs.type, TBag):
-    #         cl, el = self.visit(lhs, indent)
-    #         x = self.fv(lhs.type.elem_type, "x")
-    #         # TODO: hacky use of EVar ahead! We need an EEscape, like SEscape
-    #         return cl + self.visit(SForEach(x, rhs, SCall(EVar(el).with_type(lhs.type), "add", [x])), indent=indent)
-    #     else:
-    #         return self.visit(SAssign(lhs, rhs), indent)
-
     def visit_EMove(self, e):
         return "std::move(" + self.visit(e.e) + ")"
 
     def declare(self, v : EVar, initial_value : Exp = None):
-        if initial_value is not None and is_scalar(v.type):
+        if initial_value is not None:
             iv = self.visit(initial_value)
             self.write_stmt(self.visit(v.type, v.id), " = ", iv, ";")
         else:
             self.write_stmt(self.visit(v.type, v.id), ";")
-            if initial_value is not None:
-                self.visit(self.construct_concrete(v.type, initial_value, v))
 
     def visit_SAssign(self, s):
-        if is_scalar(s.rhs.type):
-            self.write_stmt(self.visit(s.lhs), " = ", self.visit(s.rhs), ";")
-        else:
-            v = self.fv(s.lhs.type)
-            self.declare(v, s.rhs)
-            self.write_stmt(self.visit(s.lhs), " = ", self.visit(EMove(v).with_type(v.type)), ";")
+        value = self.visit(s.rhs)
+        self.write_stmt(self.visit(s.lhs), " = ", value, ";")
 
     def visit_SDecl(self, s):
         assert isinstance(s.var, EVar)
@@ -1115,7 +1091,8 @@ class CxxPrinter(CodeGenerator):
                     initial_value = state_exps[name]
                     fvs = free_vars(initial_value)
                     initial_value = subst(initial_value, {v.id : evaluation.construct_value(v.type) for v in fvs})
-                    self.visit(self.construct_concrete(t, initial_value, EVar(name).with_type(t)))
+                    stm = simplify_and_optimize(SAssign(EVar(name).with_type(t), initial_value))
+                    self.visit(stm)
             self.end_statement()
 
             # explicit constructor
@@ -1127,7 +1104,7 @@ class CxxPrinter(CodeGenerator):
                 with self.block():
                     for name, t in spec.statevars:
                         initial_value = state_exps[name]
-                        self.visit(self.construct_concrete(t, initial_value, EVar(name).with_type(t)))
+                        self.visit(simplify_and_optimize(SAssign(EVar(name).with_type(t), initial_value)))
                 self.end_statement()
 
             # disable copy constructor (TODO: support this in the future?)
