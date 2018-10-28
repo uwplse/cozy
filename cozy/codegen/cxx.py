@@ -3,7 +3,7 @@ import json
 import itertools
 
 from cozy import common, evaluation
-from cozy.common import fresh_name, declare_case, extend
+from cozy.common import fresh_name, extend
 from cozy.target_syntax import *
 from cozy.syntax_tools import all_types, fresh_var, subst, free_vars, all_exps, break_seq, is_lvalue, shallow_copy
 from cozy.typecheck import is_collection, is_scalar
@@ -11,9 +11,6 @@ from cozy.structures import extension_handler
 from cozy.structures.arrays import TArray, EArrayGet
 
 from .misc import *
-
-EMove = declare_case(Exp, "EMove", ["e"])
-SScoped = declare_case(Stm, "SScoped", ["s"])
 
 class CxxPrinter(CodeGenerator):
 
