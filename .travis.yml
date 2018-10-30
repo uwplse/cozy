@@ -9,6 +9,8 @@ dist: trusty
 cache: pip
 python:
   - "3.5"
+jdk:
+  - openjdk8
 addons:
   apt:
     update: true
@@ -40,3 +42,4 @@ script:
       --show-source
       $(find cozy tests -name '*.py' -not -name 'parsetab.py')"
   - python -m unittest -vb tests/*.py
+  - bash test_examples.sh
