@@ -19,6 +19,7 @@ parser.out
 *.hpp
 *.out
 *.log
+*.o
 
 # environmental files
 .venv
