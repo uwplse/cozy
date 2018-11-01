@@ -145,7 +145,7 @@ STRING = TString()
 BOOL_BAG = TBag(BOOL)
 INT_BAG = TBag(INT)
 
-ETRUE = EBool(True) .with_type(BOOL)
+ETRUE = EBool(True).with_type(BOOL)
 EFALSE = EBool(False).with_type(BOOL)
 ZERO = ENum(0).with_type(INT)
 ONE = ENum(1).with_type(INT)
