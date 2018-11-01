@@ -388,7 +388,9 @@ class ExpressionOptimizer(BottomUpRewriter):
 
     def visit_ELet(self, e):
         value_exp = self.visit(e.e)
-        return lightweight_subst(e.body_function.body, e.body_function.arg, value_exp)
+        fv = fresh_var(value_exp.type, e.body_function.arg.id)
+        self.stms.append(SDecl(fv, value_exp))
+        return self.visit(subst(e.body_function.body, { e.body_function.arg.id : fv }))
 
     def visit_ECond(self, e):
         v = fresh_var(e.type, "conditional_result")
