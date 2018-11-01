@@ -174,6 +174,8 @@ def simplify_and_optimize(s : Stm) -> Stm:
     if isinstance(s, SNoOp):
         return s
     if isinstance(s, SSeq):
+        # TODO: while the first basic statement in s1 is an SDecl, we should
+        # apply `re_use` to perhaps eliminate or inline the declaration.
         return seq([simplify_and_optimize(s.s1), simplify_and_optimize(s.s2)])
     if isinstance(s, SAssign):
         setup, e = simplify_and_optimize_expression(s.rhs)
@@ -193,7 +195,12 @@ def simplify_and_optimize(s : Stm) -> Stm:
         return seq([setup, SIf(test, simplify_and_optimize(s.then_branch), simplify_and_optimize(s.else_branch))])
     if isinstance(s, SWhile):
         setup, cond = simplify_and_optimize_expression(s.e)
-        return seq([setup, SWhile(cond, seq([simplify_and_optimize(s.body), setup]))])
+        if setup != SNoOp():
+            # This is a problem because we don't want to duplicate the setup
+            # condition.
+            # TODO: introduce an SEscapableBlock/SEscapeBlock to do it right
+            raise ValueError("oops! setup for condition {} is very long:\n{}".format(pprint(s.e), pprint(setup)))
+        return SWhile(cond, simplify_and_optimize(s.body))
     if isinstance(s, SScoped):
         return SScoped(simplify_and_optimize(s.s))
     if isinstance(s, SMapUpdate):
