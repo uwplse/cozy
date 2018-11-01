@@ -5,7 +5,7 @@ import itertools
 from cozy import common, evaluation
 from cozy.common import fresh_name, extend
 from cozy.target_syntax import *
-from cozy.syntax_tools import all_types, fresh_var, subst, free_vars, all_exps, break_seq, shallow_copy
+from cozy.syntax_tools import pprint, all_types, fresh_var, subst, free_vars, all_exps, break_seq, shallow_copy
 from cozy.typecheck import is_collection, is_scalar
 
 from .misc import *
@@ -66,19 +66,13 @@ class CxxPrinter(CodeGenerator):
             return "std::unordered_map< {}, {}, {} > {}".format(self.visit(t.k, ""), self.visit(t.v, ""), self._hasher(t.k), name)
 
     def visit_TMap(self, t, name):
-        if type(t) is TMap:
-            return self.visit_TNativeMap(t, name)
-        return self.visit(t.rep_type(), name)
+        return self.visit_TNativeMap(t, name)
 
     def visit_TList(self, t, name):
-        if type(t) is TList:
-            return self.visit_TNativeList(t, name)
-        return self.visit_Type(t, name)
+        return self.visit_TNativeList(t, name)
 
     def visit_TBag(self, t, name):
-        if type(t) is TBag:
-            return self.visit_TNativeList(t, name)
-        return self.visit_Type(t, name)
+        return self.visit_TNativeList(t, name)
 
     def visit_TSet(self, t, name):
         return self.visit_TNativeSet(t, name)
@@ -254,7 +248,7 @@ class CxxPrinter(CodeGenerator):
         return res.id
 
     def visit_SArrayAlloc(self, s):
-        a = self.visit(s.a)
+        a = self.visit(s.a.type, s.a.id)
         cap = self.visit(s.capacity)
         self.write_stmt(a, " = std::move(", self.visit(s.a.type, ""), "(", cap, "));")
 
@@ -458,11 +452,6 @@ class CxxPrinter(CodeGenerator):
         if e.func in self.funcs:
             f = self.funcs[e.func]
             return "({})".format(f.body_string.format(**{ arg: "({})".format(val) for (arg, _), val in zip(f.args, args) }))
-        elif e.func in self.queries:
-            print("Inlining query {}".format(e.func))
-            q = self.queries[e.func]
-            body = subst(q.ret, { q.args[i][0] : EEscape(args[i], (), ()).with_type(q.args[i][1]) for i in range(len(q.args)) })
-            return self.visit(body)
         else:
             raise Exception("unknown function {}".format(repr(e.func)))
 
@@ -494,6 +483,7 @@ class CxxPrinter(CodeGenerator):
         return "std::move(" + self.visit(e.e) + ")"
 
     def declare(self, v : EVar, initial_value : Exp = None):
+        assert hasattr(v, "type"), repr(v)
         if initial_value is not None:
             iv = self.visit(initial_value)
             self.write_stmt(self.visit(v.type, v.id), " = ", iv, ";")
@@ -505,9 +495,13 @@ class CxxPrinter(CodeGenerator):
         self.write_stmt(self.visit(s.lhs), " = ", value, ";")
 
     def visit_SDecl(self, s):
-        assert isinstance(s.var, EVar)
-        t = s.val.type
-        return self.declare(shallow_copy(s.var).with_type(t), s.val)
+        var = s.var
+        assert isinstance(var, EVar)
+        if not hasattr(var, "type"):
+            # This should not be necessary, but it guards against sloppiness
+            # elsewhere.
+            var = shallow_copy(var).with_type(s.val.type)
+        return self.declare(var, s.val)
 
     def visit_SSeq(self, s):
         for ss in break_seq(s):
@@ -559,7 +553,7 @@ class CxxPrinter(CodeGenerator):
             else:
                 raise NotImplementedError(call.func)
         else:
-            raise NotImplementedError()
+            raise NotImplementedError("unknown target type {} in {}".format(pprint(call.target.type), pprint(call)))
 
         self.end_statement()
 
