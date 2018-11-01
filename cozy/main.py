@@ -161,8 +161,7 @@ def run():
         print("Eliminating common subexpressions...")
         code = syntax_tools.cse_replace_spec(code)
 
-    print("Loading concretization functions...")
-    state_map = ast.concretization_functions
+    print("Concretization functions:")
     print()
     for v, e in state_map.items():
         print("{} : {} = {}".format(v, syntax_tools.pprint(e.type), syntax_tools.pprint(e)))
