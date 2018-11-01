@@ -86,7 +86,8 @@ def stream(iterable : Exp, loop_var : EVar, body : Stm) -> Stm:
             stream(iterable.e1, loop_var, body),
             stream(iterable.e2, loop_var, body)])
     elif isinstance(iterable, EBinOp) and iterable.op == "-":
-        h_value = histogram(iterable.e2)
+        e2capture = fresh_var(iterable.e2.type, "bag_subtraction_right_side")
+        h_value = lightweight_subst(histogram(e2capture), e2capture, iterable.e2)
         h = fresh_var(h_value.type, "histogram")
         val_ref = fresh_var(INT, "count")
         return seq([
