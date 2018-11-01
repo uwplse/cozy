@@ -2239,12 +2239,33 @@ def fix_conditionals(e):
     return rewriter.visit(e)
 
 def is_lvalue(e : syntax.Exp) -> bool:
+    """Determine whether an expression is a legal L-value.
+
+    L-values are expressions that may occur on the left-hand side of an
+    assignment (SAssign nodes in Cozy's IR).  For instance, all variable
+    expressions (EVar nodes) are legal L-values.
+
+    Note that in Cozy, all non-handle types (including collections like maps
+    and lists) are value types, not secret references like they are in Java.
+    That means that a statement like
+
+        getList()[0] = 0
+
+    is not actually a well-formed L-value: the list being modified is a fresh
+    copy returned by getList(), making the whole statement a no-op.
+    """
+
     if isinstance(e, syntax.EVar):
         return True
     if isinstance(e, syntax.EGetField):
-        return True
+        if isinstance(e.e.type, syntax.THandle):
+            assert e.field_name == "val"
+            return True
+        else:
+            assert isinstance(e.e.type, syntax.TRecord)
+            return is_lvalue(e.e)
     if isinstance(e, syntax.EListGet):
-        return True
+        return is_lvalue(e.e)
     if isinstance(e, target_syntax.EMapGet):
-        return True
+        return is_lvalue(e.map)
     return False
