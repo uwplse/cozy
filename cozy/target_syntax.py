@@ -12,7 +12,10 @@ from cozy.common import declare_case, fresh_name
 TRef       = declare_case(Type, "TRef", ["elem_type"])
 EEnumToInt = declare_case(Exp, "EEnumToInt", ["e"])
 EBoolToInt = declare_case(Exp, "EBoolToInt", ["e"])
-EStm       = declare_case(Exp, "EStm", ["stm", "e"])
+
+# Execute a statement and then "return" the value of `out_var`.  The statement
+# must declare `out_var` in its body.
+EStm       = declare_case(Exp, "EStm", ["stm", "out_var"])
 
 # State var barrier: sub-expression should be maintained as a fresh state var
 EStateVar  = declare_case(Exp, "EStateVar", ["e"])
