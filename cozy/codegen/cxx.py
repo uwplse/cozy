@@ -7,8 +7,6 @@ from cozy.common import fresh_name, extend
 from cozy.target_syntax import *
 from cozy.syntax_tools import all_types, fresh_var, subst, free_vars, all_exps, break_seq, shallow_copy
 from cozy.typecheck import is_collection, is_scalar
-from cozy.structures import extension_handler
-from cozy.structures.arrays import TArray
 
 from .misc import *
 from .optimization import simplify_and_optimize
@@ -95,9 +93,6 @@ class CxxPrinter(CodeGenerator):
         return "std::vector< {} > {}".format(self.visit(t.elem_type, ""), name)
 
     def visit_Type(self, t, name):
-        h = extension_handler(type(t))
-        if h is not None:
-            return self.visit(h.rep_type(t), name)
         raise NotImplementedError(t)
 
     def visit_TRecord(self, t, name):
@@ -328,14 +323,7 @@ class CxxPrinter(CodeGenerator):
         self.end_statement()
 
     def visit_Exp(self, e):
-        h = extension_handler(type(e))
-        if h is not None:
-            v = self.fv(e.type)
-            self.declare(v, evaluation.construct_value(v.type))
-            self.visit(h.codegen(e, self.state_exps, out=v))
-            return v.id
-        else:
-            raise NotImplementedError(e)
+        raise NotImplementedError(e)
 
     def visit_EVar(self, e):
         return e.id
@@ -548,10 +536,6 @@ class CxxPrinter(CodeGenerator):
         return v.id
 
     def visit_SCall(self, call):
-        h = extension_handler(type(call.target.type))
-        if h is not None:
-            return self.visit(h.implement_stmt(call, self.state_exps))
-
         target = self.visit(call.target)
         args = [self.visit(a) for a in call.args]
         self.begin_statement()
