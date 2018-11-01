@@ -6,17 +6,23 @@ The key methods are
  - simplify_and_optimize_expression
 """
 
+from cozy.common import fresh_name
 from cozy.syntax import (
-    TSet, BOOL, INT, INT_BAG,
-    Exp, ZERO, ONE, EVar, ELambda, ELet, EListSlice, EEmptyList, ESingleton, ECond, EUnaryOp, UOp, EBinOp, BOp, ENot, EGt,
+    BOOL, INT, INT_BAG, TSet, THandle,
+    Exp, ZERO, ONE, ETRUE, EFALSE, EVar, ELambda, ELet,
+    ECond, EUnaryOp, UOp, EBinOp, BOp, ENot, EGt,
+    EGetField, EListGet, EListSlice, EEmptyList, ESingleton,
     Stm, SAssign, SIf, SForEach, SNoOp, seq, SSeq, SDecl, SCall)
 from cozy.target_syntax import (
-    SReturn,
+    SSwap, SWhile, SReturn, SSwitch,
     EMap, EFilter, EFlatMap,
-    EEmptyMap, EMapGet, SMapUpdate)
-from cozy.syntax_tools import fresh_var, count_occurrences_of_free_var, subst, BottomUpRewriter, lightweight_subst
+    EEmptyMap, EMapGet, SMapUpdate, SMapDel,
+    SEscapableBlock, SEscapeBlock)
+from cozy.syntax_tools import fresh_var, count_occurrences_of_free_var, subst, BottomUpRewriter, lightweight_subst, pprint, is_lvalue
 from cozy.typecheck import is_collection
 from cozy.synthesis.acceleration import histogram
+from cozy import evaluation
+from cozy.structures.arrays import SArrayAlloc, SArrayReAlloc, SEnsureCapacity
 
 from .misc import SScoped, SEscape, EMove
 
@@ -26,8 +32,8 @@ def stream(iterable : Exp, loop_var : EVar, body : Stm) -> Stm:
     Input:
       iterable - an expression with an iterable type (Bag, Set, or List), not
         yet optimized
-      body - a function that accepts a loop variable and produces a statement
-        to run on that variable, not yet optimized
+      loop_var - a variable to use as the loop variable
+      body - a statement to run on that variable, not yet optimized
 
     Output:
       A statement equivalent to
@@ -61,10 +67,12 @@ def stream(iterable : Exp, loop_var : EVar, body : Stm) -> Stm:
         # variables, that will cause problems in languages like Java or C++.
         return seq([setup, SScoped(re_use(value, loop_var, simplify_and_optimize(body)))])
     elif isinstance(iterable, ECond):
-        # todo: optimize cond
-        return SIf(iterable.cond,
-            stream(iterable.then_branch, loop_var, body),
-            stream(iterable.else_branch, loop_var, body))
+        cond_setup, cond = simplify_and_optimize_expression(iterable.cond)
+        return seq([
+            cond_setup,
+            SIf(cond,
+                stream(iterable.then_branch, loop_var, body),
+                stream(iterable.else_branch, loop_var, body))])
     elif isinstance(iterable, EUnaryOp) and iterable.op == UOp.Distinct:
         tmp = fresh_var(TSet(iterable.type.elem_type), "distinct_elems")
         return seq([
@@ -97,28 +105,17 @@ def stream(iterable : Exp, loop_var : EVar, body : Stm) -> Stm:
                     EEmptyList().with_type(iterable.type)).with_type(iterable.type))).with_type(iterable.type),
             loop_var,
             body)
-        # test_setup, test_res = simplify_and_optimize_expression(iterable.predicate.apply_to(loop_var))
-        # return stream(iterable.e, loop_var,
-        #     seq([test_setup, SIf(test_res, body, SNoOp())]))
     elif isinstance(iterable, EMap):
         return stream(
             EFlatMap(iterable.e, ELambda(iterable.transform_function.arg,
                 ESingleton(iterable.transform_function.body).with_type(iterable.type))).with_type(iterable.type),
             loop_var,
             body)
-        # return stream(
-        #     iterable.e,
-        #     lambda v: body(iterable.transform_function.apply_to(v)))
     elif isinstance(iterable, EFlatMap):
         return stream(
             iterable.e,
             iterable.transform_function.arg,
             stream(iterable.transform_function.body, loop_var, body))
-        # v = fresh_var(iterable.type.elem_type)
-        # new_body = body(v)
-        # assert isinstance(new_body, Stm)
-        # return stream(iterable.e,
-        #     body=lambda bag: SForEach(v, iterable.transform_function.apply_to(bag), new_body))
     elif isinstance(iterable, EListSlice):
         raise NotImplementedError()
         # s = fresh_var(INT, "start")
@@ -137,7 +134,7 @@ def stream(iterable : Exp, loop_var : EVar, body : Stm) -> Stm:
     else:
         assert is_collection(iterable.type), repr(iterable)
         setup, e = simplify_and_optimize_expression(iterable)
-        return SSeq(setup, SForEach(loop_var, e, simplify_and_optimize(body)))
+        return seq([setup, SForEach(loop_var, e, simplify_and_optimize(body))])
 
 def simplify_and_optimize(s : Stm) -> Stm:
     """Simplify and optimize a statement.
@@ -166,40 +163,80 @@ def simplify_and_optimize(s : Stm) -> Stm:
         In (where the collection is a Bag or List)
         "-" on collections
         "+" on collections
-      - anything handled by an extension structure (see cozy.structures module)
       - EMakeMap2
       - ELet
       - EListSlice
+      - EStm
     """
     assert isinstance(s, Stm)
 
     if isinstance(s, SNoOp):
         return s
     if isinstance(s, SSeq):
-        return SSeq(simplify_and_optimize(s.s1), simplify_and_optimize(s.s2))
+        return seq([simplify_and_optimize(s.s1), simplify_and_optimize(s.s2)])
     if isinstance(s, SAssign):
         setup, e = simplify_and_optimize_expression(s.rhs)
-        return SSeq(setup, SAssign(s.lhs, e))
+        return seq([setup, SAssign(s.lhs, e)])
     if isinstance(s, SReturn):
         setup, e = simplify_and_optimize_expression(s.e)
-        return SSeq(setup, SReturn(e))
+        return seq([setup, SReturn(e)])
     if isinstance(s, SDecl):
         setup, e = simplify_and_optimize_expression(s.val)
-        return SSeq(setup, SDecl(s.var, e))
+        return seq([setup, SDecl(s.var, e)])
     if isinstance(s, SForEach):
         return stream(s.iter, s.loop_var, s.body)
     if isinstance(s, SEscape):
         return s
     if isinstance(s, SIf):
         setup, test = simplify_and_optimize_expression(s.cond)
-        return SSeq(setup, SIf(test, simplify_and_optimize(s.then_branch), simplify_and_optimize(s.else_branch)))
+        return seq([setup, SIf(test, simplify_and_optimize(s.then_branch), simplify_and_optimize(s.else_branch))])
+    if isinstance(s, SWhile):
+        setup, cond = simplify_and_optimize_expression(s.e)
+        return seq([setup, SWhile(cond, seq([simplify_and_optimize(s.body), setup]))])
     if isinstance(s, SScoped):
         return SScoped(simplify_and_optimize(s.s))
     if isinstance(s, SMapUpdate):
-        return SMapUpdate(s.map, s.key, s.val_var, simplify_and_optimize(s.change))
+        # TODO: optimize s.map & s.key
+        # TODO: s.map must be optimized as an lvalue
+        mapsetup, map = simplify_and_optimize_lvalue(s.map)
+        keysetup, key = simplify_and_optimize_expression(s.key)
+        return seq([
+            mapsetup,
+            keysetup,
+            SMapUpdate(map, key, s.val_var, simplify_and_optimize(s.change))])
+    if isinstance(s, SMapDel):
+        mapsetup, map = simplify_and_optimize_lvalue(s.map)
+        keysetup, key = simplify_and_optimize_expression(s.key)
+        return seq([
+            mapsetup,
+            keysetup,
+            SMapDel(map, key)])
     if isinstance(s, SCall):
         setups, args = zip(*(simplify_and_optimize_expression(a) for a in s.args))
         return seq(list(setups) + [SCall(s.target, s.func, tuple(args))])
+    if isinstance(s, SEscapableBlock):
+        return SEscapableBlock(s.label, simplify_and_optimize(s.body))
+    if isinstance(s, SEscapeBlock):
+        return s
+    if isinstance(s, SArrayAlloc):
+        setup, cap = simplify_and_optimize_expression(s.capacity)
+        return seq([setup, SArrayAlloc(s.a, cap)])
+    if isinstance(s, SArrayReAlloc):
+        setup, cap = simplify_and_optimize_expression(s.new_capacity)
+        return seq([setup, SArrayReAlloc(s.a, cap)])
+    if isinstance(s, SEnsureCapacity):
+        setup, cap = simplify_and_optimize_expression(s.capacity)
+        return seq([setup, SEnsureCapacity(s.a, cap)])
+    if isinstance(s, SSwap):
+        # TODO: if we want to optimize the operands we will need a special
+        # procedure that optimizes lvalues while preserving meaning... same
+        # goes for SAssign case above.
+        return s
+    if isinstance(s, SSwitch):
+        setup, e = simplify_and_optimize_expression(s.e)
+        new_cases = [(case, simplify_and_optimize(stm)) for (case, stm) in s.cases]
+        new_default = simplify_and_optimize(s.default)
+        return seq([setup, SSwitch(e, new_cases, new_default)])
     raise NotImplementedError(repr(s))
 
 class ExpressionOptimizer(BottomUpRewriter):
@@ -222,6 +259,50 @@ class ExpressionOptimizer(BottomUpRewriter):
 
     def visit_EFlatMap(self, e):
         return self.visit_iterable(e)
+
+    def visit_EStm(self, e):
+        self.stms.append(simplify_and_optimize(e.stm))
+        return self.visit(e.out_var)
+
+    def min_or_max(self, op, e, f):
+        if isinstance(e, EBinOp) and e.op == "+" and isinstance(e.e1, ESingleton) and isinstance(e.e2, ESingleton):
+            # argmin_f ([a] + [b]) ---> f(a) < f(b) ? a : b
+            return self.visit(ECond(
+                EBinOp(f.apply_to(e.e1.e), op, f.apply_to(e.e2.e)).with_type(BOOL),
+                e.e1.e,
+                e.e2.e).with_type(e.e1.e.type))
+        out = fresh_var(e.type.elem_type, "min" if op == "<" else "max")
+        first = fresh_var(BOOL, "first")
+        x = fresh_var(e.type.elem_type, "x")
+        decl1 = SDecl(out, evaluation.construct_value(out.type))
+        decl2 = SDecl(first, ETRUE)
+        find = SForEach(x, e,
+            SIf(EBinOp(
+                    first,
+                    BOp.Or,
+                    EBinOp(f.apply_to(x), op, f.apply_to(out)).with_type(BOOL)).with_type(BOOL),
+                seq([SAssign(first, EFALSE), SAssign(out, x)]),
+                SNoOp()))
+        self.stms.append(simplify_and_optimize(seq([decl1, decl2, find])))
+        return out
+
+    def visit_EArgMin(self, e):
+        return self.min_or_max("<", e.e, e.key_function)
+
+    def visit_EArgMax(self, e):
+        return self.min_or_max(">", e.e, e.key_function)
+
+    def find_one(self, iterable):
+        v = fresh_var(iterable.type.elem_type, "v")
+        label = fresh_name("label")
+        x = fresh_var(iterable.type.elem_type, "x")
+        decl = SDecl(v, evaluation.construct_value(v.type))
+        find = SEscapableBlock(label,
+            SForEach(x, iterable, seq([
+                SAssign(v, x),
+                SEscapeBlock(label)])))
+        self.stms.append(simplify_and_optimize(seq([decl, find])))
+        return v
 
     def visit_EUnaryOp(self, e):
         op = e.op
@@ -246,24 +327,24 @@ class ExpressionOptimizer(BottomUpRewriter):
         elif op == UOp.Any:
             arg = EVar("x").with_type(e.e.type.elem_type)
             return self.visit(EUnaryOp(UOp.Exists, EFilter(e.e, ELambda(arg, arg)).with_type(INT_BAG)).with_type(INT))
-        # elif op == UOp.Empty:
-        #     iterable = e.e
-        #     v = self.fv(BOOL, "v")
-        #     label = fresh_name("label")
-        #     x = self.fv(iterable.type.elem_type, "x")
-        #     decl = SDecl(v, ETRUE)
-        #     find = SEscapableBlock(label,
-        #         SForEach(x, iterable, seq([
-        #             SAssign(v, EFALSE),
-        #             SEscapeBlock(label)])))
-        #     self.visit(seq([decl, find]))
-        #     return v.id
+        elif op == UOp.Empty:
+            iterable = e.e
+            v = fresh_var(BOOL, "v")
+            label = fresh_name("label")
+            x = fresh_var(iterable.type.elem_type, "x")
+            decl = SDecl(v, ETRUE)
+            find = SEscapableBlock(label,
+                SForEach(x, iterable, seq([
+                    SAssign(v, EFALSE),
+                    SEscapeBlock(label)])))
+            self.stms.append(simplify_and_optimize(seq([decl, find])))
+            return v
         elif op == UOp.Exists:
             return self.visit(ENot(EUnaryOp(UOp.Empty, e.e).with_type(BOOL)))
         # elif op == UOp.AreUnique:
-        #     s = self.fv(TSet(e.e.type.elem_type), "unique_elems")
-        #     u = self.fv(BOOL, "is_unique")
-        #     x = self.fv(e.e.type.elem_type)
+        #     s = fresh_var(TSet(e.e.type.elem_type), "unique_elems")
+        #     u = fresh_var(BOOL, "is_unique")
+        #     x = fresh_var(e.e.type.elem_type)
         #     label = fresh_name("label")
         #     self.visit(seq([
         #         SDecl(s, EEmptyList().with_type(s.type)),
@@ -275,6 +356,24 @@ class ExpressionOptimizer(BottomUpRewriter):
         #                     SEscape("{indent}{s}.insert({x});\n", ("s", "x"), (s, x)))))]))
         #     return u.id
 
+        return self.visit_Exp(e)
+
+    def visit_EBinOp(self, e):
+        if e.op in ("+", "-") and is_collection(e.type):
+            return self.visit_iterable(e)
+        elif e.op == BOp.In and not isinstance(e.e2.type, TSet):
+            t = BOOL
+            res = fresh_var(t, "found")
+            x = fresh_var(e.e1.type, "x")
+            label = fresh_name("label")
+            self.stms.append(simplify_and_optimize(seq([
+                SDecl(res, EFALSE),
+                SEscapableBlock(label,
+                    SForEach(x, e.e2, SIf(
+                        EBinOp(x, "==", e.e1).with_type(BOOL),
+                        seq([SAssign(res, ETRUE), SEscapeBlock(label)]),
+                        SNoOp())))])))
+            return res
         return self.visit_Exp(e)
 
     def visit_EMakeMap2(self, e):
@@ -290,6 +389,13 @@ class ExpressionOptimizer(BottomUpRewriter):
     def visit_ELet(self, e):
         value_exp = self.visit(e.e)
         return lightweight_subst(e.body_function.body, e.body_function.arg, value_exp)
+
+    def visit_ECond(self, e):
+        v = fresh_var(e.type, "conditional_result")
+        self.stms.append(simplify_and_optimize(seq([
+            SDecl(v, evaluation.construct_value(e.type)),
+            SIf(e.cond, SAssign(v, e.then_branch), SAssign(v, e.else_branch))])))
+        return v
 
     def visit_Exp(self, e):
         if isinstance(e, Exp) and any(isinstance(child, ELambda) for child in e.children()):
@@ -309,6 +415,40 @@ def simplify_and_optimize_expression(e : Exp) -> (Stm, Exp):
     optimizer = ExpressionOptimizer()
     e_prime = optimizer.visit(e)
     return (seq(optimizer.stms), e_prime)
+
+def simplify_and_optimize_lvalue(e : Exp) -> (Stm, Exp):
+    """Helper for simplify_and_optimize.
+
+    Input:
+      e - an L-value expression to optimize
+
+    Output:
+      A pair (s, e') such that executing s and then evaluating e' is the same
+      as evaluating the input expression.
+
+    Unlike `simplify_and_optimize_expression`, this function preserves the
+    meaning of `e` as an L-value.  For instance, this function will not replace
+    `e` with a fresh variable.
+    """
+    assert is_lvalue(e), "not an L-value: {}".format(pprint(e))
+    if isinstance(e, EVar):
+        return (SNoOp(), e)
+    if isinstance(e, EGetField):
+        if isinstance(e.e.type, THandle):
+            setup, handle = simplify_and_optimize_expression(e.e)
+            return (setup, EGetField(handle, e.field_name).with_type(e.type))
+        else:
+            setup, lvalue = simplify_and_optimize_lvalue(e.e)
+            return (setup, EGetField(lvalue, e.field_name).with_type(e.type))
+    if isinstance(e, EMapGet):
+        mapsetup, map = simplify_and_optimize_lvalue(e.map)
+        keysetup, key = simplify_and_optimize_expression(e.key)
+        return (seq([mapsetup, keysetup]), EMapGet(map, key).with_type(e.type))
+    if isinstance(e, EListGet):
+        listsetup, list_lvalue = simplify_and_optimize_lvalue(e.e)
+        indexsetup, index_exp = simplify_and_optimize_expression(e.index)
+        return (seq([listsetup, indexsetup]), EListGet(list_lvalue, index_exp).with_type(e.type))
+    raise NotImplementedError(repr(e))
 
 def efficiently_reuseable(e : Exp) -> bool:
     if isinstance(e, EVar):
