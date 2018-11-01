@@ -12,7 +12,11 @@ from cozy.codegen import CxxPrinter, JavaPrinter
 from cozy.codegen.optimization import simplify_and_optimize, simplify_and_optimize_expression
 from cozy.structures.rewriting import rewrite_extensions
 
-CODEGEN_TYPES = (CxxPrinter, JavaPrinter)
+CODE_GENERATORS = (
+    lambda out: CxxPrinter(out=out),
+    lambda out: JavaPrinter(out=out, boxed=True),
+    lambda out: JavaPrinter(out=out, boxed=False),
+)
 
 class TestCodegen(unittest.TestCase):
 
@@ -33,6 +37,8 @@ class TestCodegen(unittest.TestCase):
 
         ext = "java" if isinstance(codegen, JavaPrinter) else "cpp"
         compile = ["javac"] if isinstance(codegen, JavaPrinter) else ["c++", "-std=c++11", "-w", "-c", "-o", "/dev/null"]
+        if isinstance(codegen, JavaPrinter) and not codegen.boxed:
+            compile.extend(["-classpath", self.trove_path()])
         dir = tempfile.mkdtemp()
         print("Writing impls to {}".format(dir))
         filename = os.path.join(dir, "{}.{}".format(impl.name, ext))
@@ -63,7 +69,7 @@ class TestCodegen(unittest.TestCase):
         for v, e in state_map.items():
             print(" - {} = {}".format(v, pprint(e)))
         print(pprint(impl))
-        for codegen in CODEGEN_TYPES:
+        for codegen in CODE_GENERATORS:
             share_info = defaultdict(list, {})
             self.check(impl, state_map, share_info, lambda out: codegen(out=out))
 
@@ -75,13 +81,13 @@ class TestCodegen(unittest.TestCase):
         for v, e in state_map.items():
             print(" - {} = {}".format(v, pprint(e)))
         print(pprint(impl))
-        for codegen in CODEGEN_TYPES:
+        for codegen in CODE_GENERATORS:
             share_info = {}
             self.check(impl, state_map, share_info, lambda out: codegen(out=out))
 
     def test_distinct_foreach(self):
         with io.StringIO() as f:
-            for codegen_type in CODEGEN_TYPES:
+            for codegen_type in CODE_GENERATORS:
                 codegen = codegen_type(out=f)
                 bag = EFilter(EVar("v").with_type(TBag(INT)), mk_lambda(INT, lambda x: EBinOp(x, ">", ZERO))).with_type(TBag(INT))
                 x = fresh_var(INT)
@@ -92,7 +98,7 @@ class TestCodegen(unittest.TestCase):
 
     def test_distinct(self):
         with io.StringIO() as f:
-            for codegen_type in CODEGEN_TYPES:
+            for codegen_type in CODE_GENERATORS:
                 codegen = codegen_type(out=f)
                 bag = EFilter(EVar("v").with_type(TBag(INT)), mk_lambda(INT, lambda x: EBinOp(x, ">", ZERO))).with_type(TBag(INT))
                 e = EUnaryOp(UOp.Distinct, bag).with_type(TSet(INT))
@@ -102,7 +108,7 @@ class TestCodegen(unittest.TestCase):
 
     def test_len(self):
         with io.StringIO() as f:
-            for codegen_type in CODEGEN_TYPES:
+            for codegen_type in CODE_GENERATORS:
                 codegen = codegen_type(out=f)
                 bag = EFilter(EVar("v").with_type(TBag(INT)), mk_lambda(INT, lambda x: EBinOp(x, ">", ZERO))).with_type(TBag(INT))
                 e = EUnaryOp(UOp.Length, bag).with_type(TSet(INT))
@@ -112,7 +118,7 @@ class TestCodegen(unittest.TestCase):
 
     def test_all(self):
         with io.StringIO() as f:
-            for codegen_type in CODEGEN_TYPES:
+            for codegen_type in CODE_GENERATORS:
                 codegen = codegen_type(out=f)
                 bag = EMap(EVar("v").with_type(TBag(INT)), mk_lambda(INT, lambda x: EBinOp(x, ">", ZERO))).with_type(TBag(BOOL))
                 e = EUnaryOp(UOp.All, bag).with_type(TSet(INT))
@@ -122,7 +128,7 @@ class TestCodegen(unittest.TestCase):
 
     def test_any(self):
         with io.StringIO() as f:
-            for codegen_type in CODEGEN_TYPES:
+            for codegen_type in CODE_GENERATORS:
                 codegen = codegen_type(out=f)
                 bag = EMap(EVar("v").with_type(TBag(INT)), mk_lambda(INT, lambda x: EBinOp(x, ">", ZERO).with_type(BOOL))).with_type(TBag(BOOL))
                 e = EUnaryOp(UOp.Any, bag).with_type(TSet(INT))
@@ -132,7 +138,7 @@ class TestCodegen(unittest.TestCase):
 
     def test_argmin(self):
         with io.StringIO() as f:
-            for codegen_type in CODEGEN_TYPES:
+            for codegen_type in CODE_GENERATORS:
                 codegen = codegen_type(out=f)
                 bag = EMap(EVar("v").with_type(TBag(INT)), mk_lambda(INT, lambda x: EBinOp(x, ">", ZERO).with_type(BOOL))).with_type(TBag(BOOL))
                 e = EArgMin(bag, mk_lambda(INT, lambda x: EUnaryOp("-", x).with_type(x.type))).with_type(INT)
