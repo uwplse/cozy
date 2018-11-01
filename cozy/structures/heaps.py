@@ -374,6 +374,9 @@ class Heaps(object):
                                 SEscapeBlock(label))]))),
                         # dec. size
                         SAssign(size, size_minus_one)]))])
+            elif s.func == "update":
+                # TODO: implement this
+                return SNoOp()
             else:
                 raise ValueError("heaps do not support the function {}".format(s.func))
         else:
