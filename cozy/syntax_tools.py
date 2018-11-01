@@ -559,6 +559,11 @@ def free_vars(exp, counts=False):
             bind(x.arg)
             stk.append(PopScope())
             stk.append(x.body)
+        elif isinstance(x, target_syntax.EStm):
+            push_scope()
+            bind(x.out_var)
+            stk.append(PopScope())
+            stk.append(x.stm)
         elif isinstance(x, syntax.EListComprehension):
             raise NotImplementedError()
         elif isinstance(x, syntax.Method):
