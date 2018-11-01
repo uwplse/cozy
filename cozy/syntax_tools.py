@@ -21,6 +21,7 @@ from cozy.common import typechecked
 from cozy import common
 from cozy import syntax
 from cozy import target_syntax
+from cozy.structures import arrays
 from cozy import pools
 
 def var_name(v):
@@ -986,9 +987,38 @@ def rewrite_ret(q : syntax.Query, repl, keep_assumptions=True) -> syntax.Query:
     return q
 
 def subst_lval(lval, replacements):
-    # Currently we only allow vars and lval.field as l-values.
-    # Neither requires attention during substitution.
-    return lval
+    assert is_lvalue(lval), "not an L-value: {}".format(pprint(lval))
+    if isinstance(lval, syntax.EVar):
+        repl = replacements.get(lval.id)
+        if repl is not None:
+            assert is_lvalue(repl), "cannot safely substitute L-value {} with {}".format(pprint(lval), pprint(repl))
+            return repl
+        return lval
+    if isinstance(lval, syntax.EGetField):
+        if isinstance(lval.e.type, syntax.THandle):
+            assert lval.field_name == "val"
+            return subst(lval, replacements)
+        else:
+            assert isinstance(lval.e.type, syntax.TRecord)
+            res = shallow_copy(lval)
+            res.e = subst_lval(res.e, replacements)
+            return res
+    if isinstance(lval, syntax.EListGet):
+        res = shallow_copy(lval)
+        res.e = subst_lval(res.e, replacements)
+        res.index = subst(res.index, replacements)
+        return res
+    if isinstance(lval, target_syntax.EMapGet):
+        res = shallow_copy(lval)
+        res.map = subst_lval(res.map, replacements)
+        res.key = subst(res.key, replacements)
+        return res
+    if isinstance(lval, arrays.EArrayGet):
+        res = shallow_copy(lval)
+        res.a = subst_lval(res.a, replacements)
+        res.i = subst(res.i, replacements)
+        return res
+    raise NotImplementedError(repr(lval))
 
 @typechecked
 def unpack_representation(exp : syntax.Exp, names_to_avoid : {syntax.EVar} = set()) -> ([(syntax.EVar, syntax.Exp)], syntax.Exp):
@@ -1122,6 +1152,10 @@ def subst(exp, replacements, tease=True):
         def visit_ELambda(self, e):
             arg, body = self.visit_under_binder(e.arg, e.body)
             return syntax.ELambda(arg, body)
+        def visit_EStm(self, e):
+            # The out variable is supposed to be introduced by the statement,
+            # so it should never be changed by a subst operation.
+            return target_syntax.EStm(self.visit(e.stm), e.out_var)
         def visit_ADT(self, e):
             children = e.children()
             children = tuple(self.visit(c) for c in children)
@@ -1189,6 +1223,31 @@ def subst(exp, replacements, tease=True):
                 subst_lval(s.target, replacements),
                 s.func,
                 self.visit(s.args))
+        def visit_SForEach(self, s):
+            iter = self.visit(s.iter)
+            loop_var, body = self.visit_under_binder(s.loop_var, s.body)
+            return syntax.SForEach(loop_var, iter, body)
+        def visit_SMapUpdate(self, s):
+            map = subst_lval(s.map, replacements)
+            key = self.visit(s.key)
+            val_var, change = self.visit_under_binder(s.val_var, s.change)
+            return target_syntax.SMapUpdate(map, key, val_var, change)
+        def visit_SSwap(self, s):
+            return target_syntax.SSwap(
+                subst_lval(s.lval1, replacements),
+                subst_lval(s.lval2, replacements))
+        def visit_SArrayAlloc(self, s):
+            return arrays.SArrayAlloc(
+                subst_lval(s.a, replacements),
+                self.visit(s.capacity))
+        def visit_SArrayRealloc(self, s):
+            return arrays.SArrayRealloc(
+                subst_lval(s.a, replacements),
+                self.visit(s.new_capacity))
+        def visit_SEnsureCapacity(self, s):
+            return arrays.SEnsureCapacity(
+                subst_lval(s.a, replacements),
+                self.visit(s.capacity))
         def visit(self, x, *args, **kwargs):
             res = super().visit(x, *args, **kwargs)
             if isinstance(res, syntax.Exp) and hasattr(x, "type") and not hasattr(res, "type"):
@@ -2268,4 +2327,6 @@ def is_lvalue(e : syntax.Exp) -> bool:
         return is_lvalue(e.e)
     if isinstance(e, target_syntax.EMapGet):
         return is_lvalue(e.map)
+    if isinstance(e, arrays.EArrayGet):
+        return is_lvalue(e.a)
     return False
