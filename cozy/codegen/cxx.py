@@ -661,12 +661,6 @@ class CxxPrinter(CodeGenerator):
             if t not in self.types and type(t) in [THandle, TRecord, TTuple, TEnum]:
                 name = names.get(t, self.fn("Type"))
                 self.types[t] = name
-            # add representation type for extension data structures
-            h = extension_handler(type(t))
-            if t not in self.types and h is not None:
-                name = names.get(t, self.fn("Type"))
-                t = h.rep_type(t)
-                self.types[t] = name
 
     def visit_args(self, args):
         for (i, (v, t)) in enumerate(args):
