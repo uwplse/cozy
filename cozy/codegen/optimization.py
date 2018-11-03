@@ -9,7 +9,7 @@ The key methods are
 from cozy.common import fresh_name
 from cozy.syntax import (
     BOOL, INT, INT_BAG, TSet, THandle,
-    Exp, ZERO, ONE, ETRUE, EFALSE, EVar, ELambda, ELet,
+    Exp, ZERO, ONE, ETRUE, EFALSE, EVar, ENum, ELambda, ELet,
     ECond, EUnaryOp, UOp, EBinOp, BOp, ENot, EGt,
     EGetField, EListGet, EListSlice, EEmptyList, ESingleton,
     Stm, SAssign, SIf, SForEach, SNoOp, seq, SSeq, SDecl, SCall)
@@ -319,12 +319,12 @@ class ExpressionOptimizer(BottomUpRewriter):
         elif op == UOp.The:
             return self.find_one(e.e)
         elif op == UOp.Sum:
-            sum_var = fresh_var(INT, "sum")
+            sum_var = fresh_var(e.type, "sum")
             loop_var = fresh_var(e.e.type.elem_type, "x")
             self.stms.append(simplify_and_optimize(seq([
-                SDecl(sum_var, ZERO),
+                SDecl(sum_var, ENum(0).with_type(e.type)),
                 SForEach(loop_var, e.e,
-                    SAssign(sum_var, EBinOp(sum_var, "+", ONE).with_type(INT)))])))
+                    SAssign(sum_var, EBinOp(sum_var, "+", loop_var).with_type(INT)))])))
             return sum_var
         elif op == UOp.Length:
             arg = EVar("x").with_type(e.e.type.elem_type)
