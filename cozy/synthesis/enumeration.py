@@ -38,7 +38,7 @@ from cozy.target_syntax import (
 from cozy.structures import all_extension_handlers
 from cozy.syntax_tools import pprint, fresh_var, free_vars, freshen_binders, alpha_equivalent, all_types
 from cozy.evaluation import eval_bulk, construct_value, values_equal
-from cozy.typecheck import is_numeric, is_scalar, is_collection, is_ordered
+from cozy.typecheck import is_numeric, is_collection, is_ordered, is_hashable
 from cozy.cost_model import CostModel, Order
 from cozy.pools import Pool, RUNTIME_POOL, STATE_POOL, pool_name
 from cozy.contexts import Context, RootCtx, UnderBinder, more_specific_context
@@ -537,7 +537,7 @@ class Enumerator(object):
                         if is_collection(body_type):
                             yield EFlatMap(e1, f).with_type(TBag(body_type.elem_type))
 
-                        if pool == STATE_POOL and is_scalar(elem_type):
+                        if pool == STATE_POOL and is_hashable(elem_type):
                             yield EMakeMap2(e1, f).with_type(TMap(elem_type, body_type))
 
                 e1_singleton = ESingleton(e1).with_type(TBag(e1.type))
