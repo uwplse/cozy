@@ -4,7 +4,7 @@ from cozy.target_syntax import SWhile, SSwap, SSwitch, SEscapableBlock, SEscapeB
 from cozy.syntax_tools import fresh_var, pprint, mk_lambda, alpha_equivalent
 from cozy.pools import Pool, RUNTIME_POOL, STATE_POOL
 
-from .arrays import TArray, EArrayGet, EArrayIndexOf, SArrayAlloc, SEnsureCapacity, EArrayLen, EArrayList
+from .arrays import TArray, EArrayGet, EArrayIndexOf, SArrayAlloc, SEnsureCapacity
 
 TMinHeap = declare_case(Type, "TMinHeap", ["elem_type", "key_type"])
 TMaxHeap = declare_case(Type, "TMaxHeap", ["elem_type", "key_type"])
