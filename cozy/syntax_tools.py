@@ -586,6 +586,10 @@ def free_vars(exp, counts=False):
                 v = v.with_type(x.val.type)
             stk.append(Bind(v))
             stk.append(x.val)
+        elif isinstance(x, arrays.SArrayAlloc):
+            v = x.a
+            stk.append(Bind(v))
+            stk.append(x.capacity)
         elif isinstance(x, syntax.SIf):
             for branch in (x.then_branch, x.else_branch):
                 stk.append(PopScope())
