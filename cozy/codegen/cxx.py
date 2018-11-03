@@ -281,6 +281,7 @@ class CxxPrinter(CodeGenerator):
     def visit_EMapGet(self, e):
         emap = self.visit(e.map)
         if self.use_qhash:
+            ekey = self.visit(e.key)
             return "{}.value({})".format(emap, ekey)
         t = self.visit(e.map.type, "").strip() + "::const_iterator"
         iterator = self.fv(TNative(t), "map_iterator")
