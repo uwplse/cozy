@@ -10,7 +10,7 @@ from cozy.common import fresh_name
 from cozy.syntax import (
     BOOL, INT, INT_BAG, TSet, THandle,
     Exp, ZERO, ONE, ETRUE, EFALSE, EVar, ENum, ELambda, ELet,
-    ECond, EUnaryOp, UOp, EBinOp, BOp, ENot, EGt,
+    ECond, EUnaryOp, UOp, EBinOp, BOp, ENot, EGt, EIn,
     EGetField, EListGet, EListSlice, EEmptyList, ESingleton,
     Stm, SAssign, SIf, SForEach, SNoOp, seq, SSeq, SDecl, SCall)
 from cozy.target_syntax import (
@@ -20,7 +20,7 @@ from cozy.target_syntax import (
     SEscapableBlock, SEscapeBlock,
     SArrayAlloc, SArrayReAlloc, SEnsureCapacity)
 from cozy.syntax_tools import fresh_var, count_occurrences_of_free_var, subst, BottomUpRewriter, pprint, is_lvalue
-from cozy.typecheck import is_collection
+from cozy.typecheck import is_collection, is_hashable
 from cozy import evaluation
 
 from .misc import SScoped, SEscape, EMove
@@ -102,16 +102,27 @@ def stream(iterable : Exp, loop_var : EVar, body : Stm) -> Stm:
             stream(iterable.e1, loop_var, body),
             stream(iterable.e2, loop_var, body)])
     elif isinstance(iterable, EBinOp) and iterable.op == "-":
-        h_setup, h = histogram(iterable.e2)
-        val_ref = fresh_var(INT, "count")
-        return seq([
-            simplify_and_optimize(h_setup),
-            stream(
-                iterable.e1,
-                loop_var,
-                SIf(EGt(EMapGet(h, loop_var).with_type(INT), ZERO),
-                    SMapUpdate(h, loop_var, val_ref, SAssign(val_ref, EBinOp(val_ref, "-", ONE).with_type(INT))),
-                    body))])
+        if is_hashable(iterable.type.elem_type):
+            h_setup, h = histogram(iterable.e2)
+            val_ref = fresh_var(INT, "count")
+            return seq([
+                simplify_and_optimize(h_setup),
+                stream(
+                    iterable.e1,
+                    loop_var,
+                    SIf(EGt(EMapGet(h, loop_var).with_type(INT), ZERO),
+                        SMapUpdate(h, loop_var, val_ref, SAssign(val_ref, EBinOp(val_ref, "-", ONE).with_type(INT))),
+                        body))])
+        else:
+            rhs = fresh_var(iterable.e2.type, "bag_subtraction_right")
+            return seq([
+                simplify_and_optimize(SDecl(rhs, iterable.e2)),
+                stream(
+                    iterable.e1,
+                    loop_var,
+                    SIf(EIn(loop_var, rhs),
+                        SCall(rhs, "remove", (loop_var,)),
+                        body))])
     elif isinstance(iterable, EFilter):
         return stream(
             EFlatMap(iterable.e, ELambda(iterable.predicate.arg,
