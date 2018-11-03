@@ -126,9 +126,6 @@ class JavaPrinter(CxxPrinter):
                 self.end_statement()
         self.end_statement()
 
-    def visit_EArrayList(self, e):
-        return "(new {}[0])".format(self.visit(e.type.elem_type, ""))
-
     def visit_EEmptyList(self, e):
         t = self.visit(e.type, "()")
         return "new " + t

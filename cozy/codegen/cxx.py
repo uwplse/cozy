@@ -270,9 +270,6 @@ class CxxPrinter(CodeGenerator):
         self.declare(m, e)
         return m.id
 
-    def visit_EArrayList(self, e):
-        return "(std::vector< {} >())".format(self.visit(e.type.elem_type, ""))
-
     def visit_EHasKey(self, e):
         map = self.visit(e.map)
         key = self.visit(e.key)
