@@ -1012,6 +1012,11 @@ def subst_lval(lval, replacements):
             res = shallow_copy(lval)
             res.e = subst_lval(res.e, replacements)
             return res
+    if isinstance(lval, syntax.ETupleGet):
+        res = shallow_copy(lval)
+        res.e = subst_lval(res.e, replacements)
+        res.index = subst(res.index, replacements)
+        return res
     if isinstance(lval, syntax.EListGet):
         res = shallow_copy(lval)
         res.e = subst_lval(res.e, replacements)
@@ -2332,6 +2337,8 @@ def is_lvalue(e : syntax.Exp) -> bool:
         else:
             assert isinstance(e.e.type, syntax.TRecord)
             return is_lvalue(e.e)
+    if isinstance(e, syntax.ETupleGet):
+        return is_lvalue(e.e)
     if isinstance(e, syntax.EListGet):
         return is_lvalue(e.e)
     if isinstance(e, target_syntax.EMapGet):
