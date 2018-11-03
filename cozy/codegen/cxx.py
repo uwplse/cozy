@@ -235,10 +235,10 @@ class CxxPrinter(CodeGenerator):
     def visit_EListGet(self, e):
         l = self.visit(e.e)
         i = self.visit(e.index)
-        return self.visit(
-            ECond(EAll([EGe(i, ZERO), ELt(i, EEscape("{l}.size()", ("l",), (l,)).with_type(INT))]),
-                EEscape("{l}[{i}]", ("l", "i"), (l, i)).with_type(e.type),
-                evaluation.construct_value(e.type)).with_type(e.type))
+        return self.visit(EEscape(
+            "(" + i + " >= 0 && " + i + " < " + l + ".size()) ? " + l + "[" + i + "] : {default}",
+            ("default",),
+            (evaluation.construct_value(e.type),)).with_type(e.type))
 
     def visit_EArrayIndexOf(self, e):
         if isinstance(e.a, EVar): pass
