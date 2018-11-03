@@ -9,8 +9,8 @@ The key methods are
 from cozy.common import fresh_name
 from cozy.syntax import (
     BOOL, INT, INT_BAG, TSet, THandle,
-    Exp, ZERO, ONE, ETRUE, EFALSE, EVar, ENum, ELambda, ELet,
-    ECond, EUnaryOp, UOp, EBinOp, BOp, ENot, EGt, EIn,
+    Exp, ZERO, ONE, ETRUE, EFALSE, EVar, ENum, ELambda, ELet, ELen, ELt,
+    ECond, EUnaryOp, UOp, EBinOp, BOp, ENot, EGt, EIn, min_of, max_of,
     EGetField, EListGet, EListSlice, EEmptyList, ESingleton,
     Stm, SAssign, SIf, SForEach, SNoOp, seq, SSeq, SDecl, SCall)
 from cozy.target_syntax import (
@@ -146,18 +146,25 @@ def stream(iterable : Exp, loop_var : EVar, body : Stm) -> Stm:
             inner_loop_var,
             stream(iterable.transform_function.apply_to(inner_loop_var), loop_var, body))
     elif isinstance(iterable, EListSlice):
-        raise NotImplementedError()
-        # s = fresh_var(INT, "start")
-        # e = fresh_var(INT, "end")
-        # l = self.visit(self.to_lvalue(iterable.e))
-        # self.declare(s, EEscape("::std::max({start}, 0)", ("start",), (iterable.start,)))
-        # self.declare(e, EEscape("::std::min({end}, static_cast<int>({it}.size()))", ("it", "end"), (iterable.e, iterable.end,)))
-        # return self.visit(SWhile(ELt(s, e), SSeq(
-        #     body(EEscape("{l}[{i}]", ("l", "i"), (iterable.e, s)).with_type(iterable.type.elem_type)),
-        #     SAssign(s, EBinOp(s, "+", ONE).with_type(INT)))))
+        elem_type = iterable.type.elem_type
+        l = fresh_var(iterable.e.type, "list")
+        s = fresh_var(INT, "start")
+        e = fresh_var(INT, "end")
+        return simplify_and_optimize(seq([
+            SDecl(l, iterable.e),
+            SDecl(s, max_of(iterable.start, ZERO)),
+            SDecl(e, min_of(iterable.end, ELen(l))),
+            SWhile(ELt(s, e), seq([
+                SDecl(loop_var, EListGet(l, s).with_type(elem_type)),
+                body,
+                SAssign(s, EBinOp(s, "+", ONE).with_type(INT))]))]))
     elif isinstance(iterable, ELet):
-        raise NotImplementedError()
-        # return stream(iterable.body_function.apply_to(iterable.e), body)
+        v = fresh_var(
+            iterable.body_function.arg.type,
+            iterable.body_function.arg.id)
+        return seq([
+            simplify_and_optimize(SDecl(v, iterable.e)),
+            stream(iterable.body_function.apply_to(v), loop_var, body)])
     elif isinstance(iterable, EMove):
         return stream(iterable.e, loop_var, body)
     else:
