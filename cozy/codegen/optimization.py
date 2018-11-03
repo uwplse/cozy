@@ -113,10 +113,13 @@ def stream(iterable : Exp, loop_var : EVar, body : Stm) -> Stm:
             loop_var,
             body)
     elif isinstance(iterable, EFlatMap):
+        inner_loop_var = fresh_var(
+            iterable.transform_function.arg.type,
+            iterable.transform_function.arg.id)
         return stream(
             iterable.e,
-            iterable.transform_function.arg,
-            stream(iterable.transform_function.body, loop_var, body))
+            inner_loop_var,
+            stream(iterable.transform_function.apply_to(inner_loop_var), loop_var, body))
     elif isinstance(iterable, EListSlice):
         raise NotImplementedError()
         # s = fresh_var(INT, "start")
