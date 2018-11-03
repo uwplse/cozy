@@ -1,10 +1,10 @@
 from cozy.common import fresh_name, declare_case, No, pick_to_sum
 from cozy.syntax import *
-from cozy.target_syntax import SWhile, SSwap, SSwitch, SEscapableBlock, SEscapeBlock, EMap, EFilter, EStateVar
+from cozy.target_syntax import (
+    SWhile, SSwap, SSwitch, SEscapableBlock, SEscapeBlock, EMap, EFilter, EStateVar,
+    TArray, EArrayGet, EArrayIndexOf, SArrayAlloc, SEnsureCapacity)
 from cozy.syntax_tools import fresh_var, pprint, mk_lambda, alpha_equivalent
 from cozy.pools import Pool, RUNTIME_POOL, STATE_POOL
-
-from .arrays import TArray, EArrayGet, EArrayIndexOf, SArrayAlloc, SEnsureCapacity
 
 TMinHeap = declare_case(Type, "TMinHeap", ["elem_type", "key_type"])
 TMaxHeap = declare_case(Type, "TMaxHeap", ["elem_type", "key_type"])

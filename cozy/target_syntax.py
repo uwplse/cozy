@@ -78,6 +78,15 @@ EFlatMap = declare_case(Exp, "EFlatMap", ["e", "transform_function"])
 EDropFront = declare_case(Exp, "EDropFront", ["e"])
 EDropBack  = declare_case(Exp, "EDropBack",  ["e"])
 
+# Arrays
+TArray = declare_case(Type, "TArray", ["elem_type"])
+EArrayLen = declare_case(Exp, "EArrayLen", ["e"])
+EArrayGet = declare_case(Exp, "EArrayGet", ["a", "i"])
+EArrayIndexOf = declare_case(Exp, "EArrayIndexOf", ["a", "x"])
+SArrayAlloc = declare_case(Stm, "SArrayAlloc", ["a", "capacity"])
+SArrayReAlloc = declare_case(Stm, "SArrayReAlloc", ["a", "new_capacity"])
+SEnsureCapacity = declare_case(Stm, "SEnsureCapacity", ["a", "capacity"])
+
 # Maps
 EEmptyMap  = declare_case(Exp, "EEmptyMap")
 EMakeMap2  = declare_case(Exp, "EMakeMap2", ["e", "value_function"])

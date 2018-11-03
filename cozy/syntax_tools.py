@@ -21,7 +21,6 @@ from cozy.common import typechecked
 from cozy import common
 from cozy import syntax
 from cozy import target_syntax
-from cozy.structures import arrays
 from cozy import pools
 
 def var_name(v):
@@ -586,7 +585,7 @@ def free_vars(exp, counts=False):
                 v = v.with_type(x.val.type)
             stk.append(Bind(v))
             stk.append(x.val)
-        elif isinstance(x, arrays.SArrayAlloc):
+        elif isinstance(x, target_syntax.SArrayAlloc):
             v = x.a
             stk.append(Bind(v))
             stk.append(x.capacity)
@@ -1027,7 +1026,7 @@ def subst_lval(lval, replacements):
         res.map = subst_lval(res.map, replacements)
         res.key = subst(res.key, replacements)
         return res
-    if isinstance(lval, arrays.EArrayGet):
+    if isinstance(lval, target_syntax.EArrayGet):
         res = shallow_copy(lval)
         res.a = subst_lval(res.a, replacements)
         res.i = subst(res.i, replacements)
@@ -1251,15 +1250,15 @@ def subst(exp, replacements, tease=True):
                 subst_lval(s.lval1, replacements),
                 subst_lval(s.lval2, replacements))
         def visit_SArrayAlloc(self, s):
-            return arrays.SArrayAlloc(
+            return target_syntax.SArrayAlloc(
                 subst_lval(s.a, replacements),
                 self.visit(s.capacity))
         def visit_SArrayRealloc(self, s):
-            return arrays.SArrayRealloc(
+            return target_syntax.SArrayRealloc(
                 subst_lval(s.a, replacements),
                 self.visit(s.new_capacity))
         def visit_SEnsureCapacity(self, s):
-            return arrays.SEnsureCapacity(
+            return target_syntax.SEnsureCapacity(
                 subst_lval(s.a, replacements),
                 self.visit(s.capacity))
         def visit(self, x, *args, **kwargs):
@@ -2343,6 +2342,6 @@ def is_lvalue(e : syntax.Exp) -> bool:
         return is_lvalue(e.e)
     if isinstance(e, target_syntax.EMapGet):
         return is_lvalue(e.map)
-    if isinstance(e, arrays.EArrayGet):
+    if isinstance(e, target_syntax.EArrayGet):
         return is_lvalue(e.a)
     return False

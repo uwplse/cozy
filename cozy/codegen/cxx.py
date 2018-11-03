@@ -11,8 +11,7 @@ from cozy.syntax import (
     Exp, EVar, ENum, EFALSE, ETRUE, ZERO, ENull, EEq, EGe, ELt, ENot, ECond, EAll,
     EEnumEntry, ETuple, ETupleGet, EGetField,
     Stm, SNoOp, SIf, SDecl, SSeq, seq, SForEach, SAssign)
-from cozy.target_syntax import TRef, EEnumToInt, EMapKeys, SReturn
-from cozy.structures.arrays import TArray
+from cozy.target_syntax import TArray, TRef, EEnumToInt, EMapKeys, SReturn
 from cozy.syntax_tools import pprint, all_types, fresh_var, subst, free_vars, all_exps, break_seq, shallow_copy
 from cozy.typecheck import is_collection, is_scalar
 

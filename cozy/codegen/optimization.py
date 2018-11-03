@@ -17,12 +17,12 @@ from cozy.target_syntax import (
     SSwap, SWhile, SReturn, SSwitch,
     EMap, EFilter, EFlatMap,
     EEmptyMap, EMapGet, SMapUpdate, SMapDel,
-    SEscapableBlock, SEscapeBlock)
+    SEscapableBlock, SEscapeBlock,
+    SArrayAlloc, SArrayReAlloc, SEnsureCapacity)
 from cozy.syntax_tools import fresh_var, count_occurrences_of_free_var, subst, BottomUpRewriter, lightweight_subst, pprint, is_lvalue
 from cozy.typecheck import is_collection
 from cozy.synthesis.acceleration import histogram
 from cozy import evaluation
-from cozy.structures.arrays import SArrayAlloc, SArrayReAlloc, SEnsureCapacity
 
 from .misc import SScoped, SEscape, EMove
 
