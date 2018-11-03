@@ -11,7 +11,6 @@ from cozy.common import declare_case, fresh_name
 # Misc
 TRef       = declare_case(Type, "TRef", ["elem_type"])
 EEnumToInt = declare_case(Exp, "EEnumToInt", ["e"])
-EBoolToInt = declare_case(Exp, "EBoolToInt", ["e"])
 
 # Execute a statement and then "return" the value of `out_var`.  The statement
 # must declare `out_var` in its body.

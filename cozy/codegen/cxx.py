@@ -341,9 +341,6 @@ class CxxPrinter(CodeGenerator):
     def visit_EEnumToInt(self, e):
         return "static_cast<int>(" + self.visit(e.e) + ")"
 
-    def visit_EBoolToInt(self, e):
-        return "static_cast<int>(" + self.visit(e.e) + ")"
-
     def _eq(self, e1, e2):
         return self.visit(EEscape("({e1} == {e2})", ["e1", "e2"], [e1, e2]).with_type(BOOL))
 
