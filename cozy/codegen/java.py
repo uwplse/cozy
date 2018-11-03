@@ -478,17 +478,6 @@ class JavaPrinter(CxxPrinter):
             return "({}).getVal()".format(ee, e.field_name)
         return "({}).{}".format(ee, e.field_name)
 
-    def find_one_native(self, iterable):
-        it = fresh_name("iterator")
-        setup, e = self.visit(iterable)
-        return (
-            "{setup}{indent}{decl} = {e}.iterator();\n".format(
-                setup=setup,
-                indent=indent,
-                decl=self.visit(TNative("java.util.Iterator<>"), it),
-                e=e),
-            "({it}.hasNext() ? {it}.next() : null)".format(it=it))
-
     def visit_TVector(self, t, name):
         return "{}[] {}".format(self.visit(t.elem_type, ""), name)
 
