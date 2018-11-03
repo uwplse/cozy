@@ -3,12 +3,20 @@ import json
 import itertools
 
 from cozy import common, evaluation
-from cozy.common import fresh_name, extend
-from cozy.target_syntax import *
+from cozy.common import fresh_name, extend, typechecked
+from cozy.syntax import (
+    Spec, Query,
+    Visibility, UOp, BOp,
+    Type, INT, BOOL, TNative, TSet, TList, TBag, THandle, TEnum, TTuple, TRecord, TFloat,
+    Exp, EVar, ENum, EFALSE, ETRUE, ZERO, ENull, EEq, EGe, ELt, ENot, ECond, EAll,
+    EEnumEntry, ETuple, ETupleGet, EGetField,
+    Stm, SNoOp, SIf, SDecl, SSeq, seq, SForEach, SAssign)
+from cozy.target_syntax import TRef, EEnumToInt, EMapKeys, SReturn
+from cozy.structures.arrays import TArray
 from cozy.syntax_tools import pprint, all_types, fresh_var, subst, free_vars, all_exps, break_seq, shallow_copy
 from cozy.typecheck import is_collection, is_scalar
 
-from .misc import *
+from .misc import CodeGenerator, indent_lines, EEscape, SEscape, EMove, SScoped
 from .optimization import simplify_and_optimize
 
 class CxxPrinter(CodeGenerator):
