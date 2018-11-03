@@ -8,6 +8,9 @@ INDENT = "  "
 SEscape = declare_case(Stm, "SEscape", ["body_string", "arg_names", "args"])
 EEscape = declare_case(Exp, "EEscape", ["body_string", "arg_names", "args"])
 
+EMove = declare_case(Exp, "EMove", ["e"])
+SScoped = declare_case(Stm, "SScoped", ["s"])
+
 def indent_lines(s, indent):
     """
     Prepends the given indentation string to the beginning of each line of the

@@ -4,10 +4,9 @@ set -x
 set -e
 
 function test_example {
-  cozy $1.ds --c++ $2 --simple
+  cozy $1.ds --c++ $2 --java $3 --simple
   g++ -std=c++11 -c $2
   rm $2
-  cozy $1.ds --java $3 --simple
   javac $3
   rm $3
 }

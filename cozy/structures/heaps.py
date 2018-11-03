@@ -1,10 +1,10 @@
 from cozy.common import fresh_name, declare_case, No, pick_to_sum
 from cozy.syntax import *
-from cozy.target_syntax import SWhile, SSwap, SSwitch, SEscapableBlock, SEscapeBlock, EMap, EFilter, EStateVar
+from cozy.target_syntax import (
+    SWhile, SSwap, SSwitch, SEscapableBlock, SEscapeBlock, EMap, EFilter, EStateVar,
+    TArray, EArrayGet, EArrayIndexOf, SArrayAlloc, SEnsureCapacity)
 from cozy.syntax_tools import fresh_var, pprint, mk_lambda, alpha_equivalent
 from cozy.pools import Pool, RUNTIME_POOL, STATE_POOL
-
-from .arrays import TArray, EArrayGet, EArrayIndexOf, SArrayAlloc, SEnsureCapacity, EArrayLen, EArrayList
 
 TMinHeap = declare_case(Type, "TMinHeap", ["elem_type", "key_type"])
 TMaxHeap = declare_case(Type, "TMaxHeap", ["elem_type", "key_type"])
@@ -260,28 +260,39 @@ class Heaps(object):
             SForEach(v, modified, SCall(lval, "update", (v, make_subgoal(new_v_key, a=[EIn(v, mod_spec)]))))])
 
     def rep_type(self, t : Type) -> Type:
+        assert isinstance(t, TMinHeap) or isinstance(t, TMaxHeap), repr(t)
         return TTuple((INT, TArray(t.elem_type)))
 
     def codegen(self, e : Exp, concretization_functions : { str : Exp }, out : EVar) -> Stm:
         """Return statements that write the result of `e` to `out`.
 
+        The returned statements must declare the variable `out`; it will not be
+        declared by the caller.
+
         This function also requires the `concretization_functions` that
         describe the invariants for variables in `e`.
         """
         if isinstance(e, EMakeMinHeap) or isinstance(e, EMakeMaxHeap):
-            out_raw = EVar(out.id).with_type(self.rep_type(e.type))
+            assert out.type == self.rep_type(e.type)
             elem_type = e.type.elem_type
+            extended_concretization_functions = dict(concretization_functions)
+            extended_concretization_functions[out.id] = e
+            dummy_out = EVar(out.id).with_type(e.type)
+            a = fresh_var(TArray(elem_type), "heap_elems")
             return seq([
-                SAssign(out_raw, ETuple([ELen(e.e), EArrayList().with_type(TArray(elem_type))]).with_type(self.rep_type(e.type))),
-                SArrayAlloc(ETupleGet(out_raw, 1).with_type(TArray(elem_type)), ELen(e.e)),
-                SCall(out, "add_all", (ZERO, e.e))])
+                SArrayAlloc(a, ZERO),
+                SDecl(out, ETuple((ZERO, a)).with_type(out.type)),
+                self.implement_stmt(SCall(dummy_out, "add_all", (ZERO, e.e)), extended_concretization_functions)])
         elif isinstance(e, EHeapElems):
             elem_type = e.type.elem_type
             if isinstance(e.e, EMakeMinHeap) or isinstance(e.e, EMakeMaxHeap):
                 x = fresh_var(elem_type, "x")
-                return SForEach(x, e.e.e, SCall(out, "add", (x,)))
+                return seq([
+                    SDecl(out, EEmptyList().with_type(out.type)),
+                    SForEach(x, e.e.e, SCall(out, "add", (x,)))])
             i = fresh_var(INT, "i") # the array index
             return seq([
+                SDecl(out, EEmptyList().with_type(out.type)),
                 SDecl(i, ZERO),
                 SWhile(ELt(i, ETupleGet(e.e, 0).with_type(INT)), seq([
                     SCall(out, "add", (EArrayGet(ETupleGet(e.e, 1), i).with_type(elem_type),)),
@@ -292,12 +303,14 @@ class Heaps(object):
             from cozy.evaluation import construct_value
             best = EArgMin if isinstance(e.e.type, TMinHeap) else EArgMax
             f = heap_func(e.e, concretization_functions)
-            return SSwitch(ETupleGet(e.e, 0), (
-                (ZERO, SAssign(out, construct_value(e.type))),
-                (ONE,  SAssign(out, construct_value(e.type))),
-                (TWO,  SAssign(out, EArrayGet(ETupleGet(e.e, 1), ONE).with_type(e.type)))),
-                SAssign(out, best(EBinOp(ESingleton(EArrayGet(ETupleGet(e.e, 1), ONE).with_type(e.type)).with_type(TBag(out.type)), "+",
-                                         ESingleton(EArrayGet(ETupleGet(e.e, 1), TWO).with_type(e.type)).with_type(TBag(out.type))).with_type(TBag(out.type)), f).with_type(out.type)))
+            return seq([
+                SDecl(out, construct_value(out.type)),
+                SSwitch(ETupleGet(e.e, 0), (
+                    (ZERO, SAssign(out, construct_value(e.type))),
+                    (ONE,  SAssign(out, construct_value(e.type))),
+                    (TWO,  SAssign(out, EArrayGet(ETupleGet(e.e, 1), ONE).with_type(e.type)))),
+                    SAssign(out, best(EBinOp(ESingleton(EArrayGet(ETupleGet(e.e, 1), ONE).with_type(e.type)).with_type(TBag(out.type)), "+",
+                                             ESingleton(EArrayGet(ETupleGet(e.e, 1), TWO).with_type(e.type)).with_type(TBag(out.type))).with_type(TBag(out.type)), f).with_type(out.type)))])
         else:
             raise NotImplementedError(e)
 
@@ -361,6 +374,9 @@ class Heaps(object):
                                 SEscapeBlock(label))]))),
                         # dec. size
                         SAssign(size, size_minus_one)]))])
+            elif s.func == "update":
+                # TODO: implement this
+                return SNoOp()
             else:
                 raise ValueError("heaps do not support the function {}".format(s.func))
         else:

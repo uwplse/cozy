@@ -11,8 +11,10 @@ from cozy.common import declare_case, fresh_name
 # Misc
 TRef       = declare_case(Type, "TRef", ["elem_type"])
 EEnumToInt = declare_case(Exp, "EEnumToInt", ["e"])
-EBoolToInt = declare_case(Exp, "EBoolToInt", ["e"])
-EStm       = declare_case(Exp, "EStm", ["stm", "e"])
+
+# Execute a statement and then "return" the value of `out_var`.  The statement
+# must declare `out_var` in its body.
+EStm       = declare_case(Exp, "EStm", ["stm", "out_var"])
 
 # State var barrier: sub-expression should be maintained as a fresh state var
 EStateVar  = declare_case(Exp, "EStateVar", ["e"])
@@ -60,6 +62,7 @@ def EDisjoint(xs, ys):
 SWhile   = declare_case(Stm, "SWhile",  ["e", "body"])
 SSwap    = declare_case(Stm, "SSwap",   ["lval1", "lval2"])
 SSwitch  = declare_case(Stm, "SSwitch", ["e", "cases", "default"])
+SReturn  = declare_case(Stm, "SReturn", ["e"])
 
 # Fake go-to
 SEscapableBlock = declare_case(Stm, "SEscapableBlock", ["label", "body"])
@@ -74,7 +77,17 @@ EFlatMap = declare_case(Exp, "EFlatMap", ["e", "transform_function"])
 EDropFront = declare_case(Exp, "EDropFront", ["e"])
 EDropBack  = declare_case(Exp, "EDropBack",  ["e"])
 
+# Arrays
+TArray = declare_case(Type, "TArray", ["elem_type"])
+EArrayLen = declare_case(Exp, "EArrayLen", ["e"])
+EArrayGet = declare_case(Exp, "EArrayGet", ["a", "i"])
+EArrayIndexOf = declare_case(Exp, "EArrayIndexOf", ["a", "x"])
+SArrayAlloc = declare_case(Stm, "SArrayAlloc", ["a", "capacity"])
+SArrayReAlloc = declare_case(Stm, "SArrayReAlloc", ["a", "new_capacity"])
+SEnsureCapacity = declare_case(Stm, "SEnsureCapacity", ["a", "capacity"])
+
 # Maps
+EEmptyMap  = declare_case(Exp, "EEmptyMap")
 EMakeMap2  = declare_case(Exp, "EMakeMap2", ["e", "value_function"])
 EMapGet    = declare_case(Exp, "EMapGet", ["map", "key"])
 EHasKey    = declare_case(Exp, "EHasKey", ["map", "key"])

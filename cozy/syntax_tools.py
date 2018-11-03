@@ -558,6 +558,11 @@ def free_vars(exp, counts=False):
             bind(x.arg)
             stk.append(PopScope())
             stk.append(x.body)
+        elif isinstance(x, target_syntax.EStm):
+            push_scope()
+            bind(x.out_var)
+            stk.append(PopScope())
+            stk.append(x.stm)
         elif isinstance(x, syntax.EListComprehension):
             raise NotImplementedError()
         elif isinstance(x, syntax.Method):
@@ -580,6 +585,10 @@ def free_vars(exp, counts=False):
                 v = v.with_type(x.val.type)
             stk.append(Bind(v))
             stk.append(x.val)
+        elif isinstance(x, target_syntax.SArrayAlloc):
+            v = x.a
+            stk.append(Bind(v))
+            stk.append(x.capacity)
         elif isinstance(x, syntax.SIf):
             for branch in (x.then_branch, x.else_branch):
                 stk.append(PopScope())
@@ -627,6 +636,9 @@ def free_vars_and_funcs(e : syntax.Exp):
         yield v.id
     for f in free_funcs(e):
         yield f
+
+def count_occurrences_of_free_var(e : syntax.Exp, v : syntax.EVar) -> int:
+    return free_vars(e, counts=True).get(v, 0)
 
 def all_exps(x):
     q = [x]
@@ -983,9 +995,43 @@ def rewrite_ret(q : syntax.Query, repl, keep_assumptions=True) -> syntax.Query:
     return q
 
 def subst_lval(lval, replacements):
-    # Currently we only allow vars and lval.field as l-values.
-    # Neither requires attention during substitution.
-    return lval
+    assert is_lvalue(lval), "not an L-value: {}".format(pprint(lval))
+    if isinstance(lval, syntax.EVar):
+        repl = replacements.get(lval.id)
+        if repl is not None:
+            assert is_lvalue(repl), "cannot safely substitute L-value {} with {}".format(pprint(lval), pprint(repl))
+            return repl
+        return lval
+    if isinstance(lval, syntax.EGetField):
+        if isinstance(lval.e.type, syntax.THandle):
+            assert lval.field_name == "val"
+            return subst(lval, replacements)
+        else:
+            assert isinstance(lval.e.type, syntax.TRecord)
+            res = shallow_copy(lval)
+            res.e = subst_lval(res.e, replacements)
+            return res
+    if isinstance(lval, syntax.ETupleGet):
+        res = shallow_copy(lval)
+        res.e = subst_lval(res.e, replacements)
+        res.index = subst(res.index, replacements)
+        return res
+    if isinstance(lval, syntax.EListGet):
+        res = shallow_copy(lval)
+        res.e = subst_lval(res.e, replacements)
+        res.index = subst(res.index, replacements)
+        return res
+    if isinstance(lval, target_syntax.EMapGet):
+        res = shallow_copy(lval)
+        res.map = subst_lval(res.map, replacements)
+        res.key = subst(res.key, replacements)
+        return res
+    if isinstance(lval, target_syntax.EArrayGet):
+        res = shallow_copy(lval)
+        res.a = subst_lval(res.a, replacements)
+        res.i = subst(res.i, replacements)
+        return res
+    raise NotImplementedError(repr(lval))
 
 @typechecked
 def unpack_representation(exp : syntax.Exp, names_to_avoid : {syntax.EVar} = set()) -> ([(syntax.EVar, syntax.Exp)], syntax.Exp):
@@ -1119,6 +1165,10 @@ def subst(exp, replacements, tease=True):
         def visit_ELambda(self, e):
             arg, body = self.visit_under_binder(e.arg, e.body)
             return syntax.ELambda(arg, body)
+        def visit_EStm(self, e):
+            # The out variable is supposed to be introduced by the statement,
+            # so it should never be changed by a subst operation.
+            return target_syntax.EStm(self.visit(e.stm), e.out_var)
         def visit_ADT(self, e):
             children = e.children()
             children = tuple(self.visit(c) for c in children)
@@ -1186,6 +1236,31 @@ def subst(exp, replacements, tease=True):
                 subst_lval(s.target, replacements),
                 s.func,
                 self.visit(s.args))
+        def visit_SForEach(self, s):
+            iter = self.visit(s.iter)
+            loop_var, body = self.visit_under_binder(s.loop_var, s.body)
+            return syntax.SForEach(loop_var, iter, body)
+        def visit_SMapUpdate(self, s):
+            map = subst_lval(s.map, replacements)
+            key = self.visit(s.key)
+            val_var, change = self.visit_under_binder(s.val_var, s.change)
+            return target_syntax.SMapUpdate(map, key, val_var, change)
+        def visit_SSwap(self, s):
+            return target_syntax.SSwap(
+                subst_lval(s.lval1, replacements),
+                subst_lval(s.lval2, replacements))
+        def visit_SArrayAlloc(self, s):
+            return target_syntax.SArrayAlloc(
+                subst_lval(s.a, replacements),
+                self.visit(s.capacity))
+        def visit_SArrayRealloc(self, s):
+            return target_syntax.SArrayRealloc(
+                subst_lval(s.a, replacements),
+                self.visit(s.new_capacity))
+        def visit_SEnsureCapacity(self, s):
+            return target_syntax.SEnsureCapacity(
+                subst_lval(s.a, replacements),
+                self.visit(s.capacity))
         def visit(self, x, *args, **kwargs):
             res = super().visit(x, *args, **kwargs)
             if isinstance(res, syntax.Exp) and hasattr(x, "type") and not hasattr(res, "type"):
@@ -1215,7 +1290,7 @@ def lightweight_subst(
      * if the needle only appears once in the haystack
      * if the replacement is small (e.g. if it is a number literal or variable)
     """
-    if repl.size() <= 2 or free_vars(haystack, counts=True).get(needle, 0) <= 1:
+    if repl.size() <= 2 or count_occurrences_of_free_var(haystack, needle) <= 1:
         return subst(haystack, { needle.id : repl })
     e = syntax.ELet(repl, target_syntax.ELambda(needle, haystack))
     if hasattr(haystack, "type"):
@@ -2236,12 +2311,37 @@ def fix_conditionals(e):
     return rewriter.visit(e)
 
 def is_lvalue(e : syntax.Exp) -> bool:
+    """Determine whether an expression is a legal L-value.
+
+    L-values are expressions that may occur on the left-hand side of an
+    assignment (SAssign nodes in Cozy's IR).  For instance, all variable
+    expressions (EVar nodes) are legal L-values.
+
+    Note that in Cozy, all non-handle types (including collections like maps
+    and lists) are value types, not secret references like they are in Java.
+    That means that a statement like
+
+        getList()[0] = 0
+
+    is not actually a well-formed L-value: the list being modified is a fresh
+    copy returned by getList(), making the whole statement a no-op.
+    """
+
     if isinstance(e, syntax.EVar):
         return True
     if isinstance(e, syntax.EGetField):
-        return True
+        if isinstance(e.e.type, syntax.THandle):
+            assert e.field_name == "val"
+            return True
+        else:
+            assert isinstance(e.e.type, syntax.TRecord)
+            return is_lvalue(e.e)
+    if isinstance(e, syntax.ETupleGet):
+        return is_lvalue(e.e)
     if isinstance(e, syntax.EListGet):
-        return True
+        return is_lvalue(e.e)
     if isinstance(e, target_syntax.EMapGet):
-        return True
+        return is_lvalue(e.map)
+    if isinstance(e, target_syntax.EArrayGet):
+        return is_lvalue(e.a)
     return False

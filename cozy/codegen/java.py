@@ -1,14 +1,22 @@
-from contextlib import contextmanager
 import itertools
+import re
 
 from cozy import common, evaluation
-from cozy.target_syntax import *
+from cozy.common import fresh_name
+from cozy.syntax import (
+    Query, Visibility,
+    Type, INT, LONG, BOOL, FLOAT, TNative, TTuple, THandle, TRecord, TEnum,
+    TBag, TSet, TList,
+    Exp, ENum, ONE, ZERO, EVar, EBinOp, EEmptyList, ENull, ETuple, EMakeRecord,
+    EEq, ENot, EAll, ECond,
+    SNoOp, SAssign, SForEach, seq, SDecl)
+from cozy.target_syntax import TMap, EMapGet, SWhile, SReturn
 from cozy.syntax_tools import free_vars, subst, all_exps
 from cozy.typecheck import is_scalar, is_collection
-from cozy.structures import extension_handler
 
 from .cxx import CxxPrinter
-from .misc import *
+from .misc import INDENT, indent_lines, EEscape, SEscape
+from .optimization import simplify_and_optimize
 
 JAVA_PRIMITIVE_TYPES = {
     "boolean", "byte", "char", "short", "int", "long", "float", "double"}
@@ -18,13 +26,6 @@ class JavaPrinter(CxxPrinter):
     def __init__(self, out, boxed : bool = True):
         super().__init__(out=out)
         self.boxed = boxed
-
-    @contextmanager
-    def boxed_mode(self):
-        oldboxed = self.boxed
-        self.boxed = True
-        yield
-        self.boxed = oldboxed
 
     def visit_Spec(self, spec, state_exps, sharing, abstract_state=()):
         self.state_exps = state_exps
@@ -63,8 +64,7 @@ class JavaPrinter(CxxPrinter):
                 with self.block():
                     for name, t in spec.statevars:
                         initial_value = state_exps[name]
-                        setup = self.construct_concrete(t, initial_value, EVar(name).with_type(t))
-                        self.visit(setup)
+                        self.visit(simplify_and_optimize(SAssign(EVar(name).with_type(t), initial_value)))
                 self.end_statement()
 
             # clear
@@ -76,9 +76,7 @@ class JavaPrinter(CxxPrinter):
                     fvs = free_vars(initial_value)
                     initial_value = subst(initial_value,
                         {v.id : evaluation.construct_value(v.type) for v in fvs})
-                    setup = self.construct_concrete(t, initial_value, EVar(name).with_type(t))
-                    # from cozy.syntax_tools import pprint
-                    # self.write_stmt("// initializing {} = {}".format(name, pprint(initial_value)))
+                    setup = simplify_and_optimize(SAssign(EVar(name).with_type(t), initial_value))
                     self.visit(setup)
             self.end_statement()
 
@@ -103,7 +101,7 @@ class JavaPrinter(CxxPrinter):
         self.visit_args(q.args)
         self.write(") ")
         with self.block():
-            self.visit(q.body)
+            self.visit(simplify_and_optimize(q.body))
         self.end_statement()
 
     def visit_Query(self, q):
@@ -121,7 +119,7 @@ class JavaPrinter(CxxPrinter):
             self.visit_args(itertools.chain(q.args, [("_callback", TNative("java.util.function.Consumer<{t}>".format(t=self.visit(ret_type.elem_type, ""))))]))
             self.write(") ")
             with self.block():
-                self.visit(SForEach(x, q.ret, SEscape("{indent}_callback.accept({x});\n", ["x"], [x])))
+                self.visit(simplify_and_optimize(SForEach(x, q.ret, SEscape("{indent}_callback.accept({x});\n", ["x"], [x]))))
         else:
             if q.docstring:
                 self.write(indent_lines(q.docstring, self.get_indent()), "\n")
@@ -130,25 +128,38 @@ class JavaPrinter(CxxPrinter):
             self.visit_args(q.args)
             self.write(") ")
             with self.block():
-                ret = self.visit(q.ret)
-                self.begin_statement()
-                self.write("return ", ret, ";")
-                self.end_statement()
+                self.visit(simplify_and_optimize(SReturn(q.ret)))
         self.end_statement()
 
-    def visit_EArrayList(self, e):
-        return "(new {}[0])".format(self.visit(e.type.elem_type, ""))
+    def visit_EEmptyList(self, e):
+        t = self.visit(e.type, "()")
+        return "new " + t
 
-    def initialize_native_list(self, out):
-        init = "new {};\n".format(self.visit(out.type, name="()"))
-        return SEscape("{indent}{e} = " + init, ["e"], [out])
+    def visit_EEmptyMap(self, e):
+        map_type = e.type
+        if self.use_trove(map_type):
+            if self.trovename(map_type.k) == "Object":
+                args = "64, 0.5f, {default}"
+            elif self.trovename(map_type.v) == "Object":
+                args = "64, 0.5f"
+            else:
+                args = "64, 0.5f, 0, {default}"
+            # args:
+            # int initialCapacity, float loadFactor, K noEntryKey, V noEntryValue
+            # loadFactor of 0.5 (trove's default) means map has 2x more buckets than entries
+            init = "new {}({})".format(self.visit(map_type, name=""), args)
+            return self.visit(EEscape(init, ["default"], [evaluation.construct_value(map_type.v)]))
+        else:
+            return "new {}".format(self.visit(map_type, name="()"))
 
-    def initialize_native_set(self, out):
-        init = "new {};\n".format(self.visit(out.type, name="()"))
-        return SEscape("{indent}{e} = " + init, ["e"], [out])
+    def visit_ESingleton(self, e):
+        elem = self.visit(e.e)
+        v = self.fv(e.type, "singleton")
+        self.declare(v, EEmptyList().with_type(e.type))
+        self.write_stmt(v.id, ".add(", elem, ");")
+        return v.id
 
     def strip_generics(self, t : str):
-        import re
         return re.sub("<.*>", "", t)
 
     def div_by_64_and_round_up(self, e):
@@ -158,23 +169,6 @@ class JavaPrinter(CxxPrinter):
         if elem_type == BOOL:
             return SEscape("{indent}{out} = new long[{len}];\n", ["out", "len"], [out, self.div_by_64_and_round_up(len)])
         return SEscape("{indent}{out} = new " + self.strip_generics(self.visit(elem_type, name="")) + "[{len}];\n", ["out", "len"], [out, len])
-
-    def initialize_native_map(self, out):
-        if self.use_trove(out.type):
-            if self.trovename(out.type.k) == "Object":
-                args = "64, 0.5f, {default}"
-            elif self.trovename(out.type.v) == "Object":
-                args = "64, 0.5f"
-            else:
-                args = "64, 0.5f, 0, {default}"
-            # args:
-            # int initialCapacity, float loadFactor, K noEntryKey, V noEntryValue
-            # loadFactor of 0.5 (trove's default) means map has 2x more buckets than entries
-            init = "new {}({});\n".format(self.visit(out.type, name=""), args)
-            return SEscape("{indent}{e} = " + init, ["e", "default"], [out, evaluation.construct_value(out.type.v)])
-        else:
-            init = "new {};\n".format(self.visit(out.type, name="()"))
-            return SEscape("{indent}{e} = " + init, ["e"], [out])
 
     def visit_SEscapableBlock(self, s):
         self.begin_statement()
@@ -433,11 +427,17 @@ class JavaPrinter(CxxPrinter):
             return "Object"
         return t
 
+    def box_if_boolean(self, t : Type) -> Type:
+        # See note about boolean collections above.
+        return TNative("Boolean") if t == BOOL else t
+
     def troveargs(self, t):
+        if t == BOOL:
+            # See note about boolean collections above.
+            return "Boolean"
         name = self.trovename(t)
         if name == "Object":
-            with self.boxed_mode():
-                return self.visit(t, name="")
+            return self.visit(t, name="")
         return None
 
     def visit_THandle(self, t, name):
@@ -446,7 +446,7 @@ class JavaPrinter(CxxPrinter):
     def visit_TString(self, t, name):
         return "String {}".format(name)
 
-    def visit_TNativeList(self, t, name):
+    def visit_TList(self, t, name):
         if self.boxed or not self.is_primitive(t.elem_type):
             return "java.util.ArrayList<{}> {}".format(self.visit(t.elem_type, ""), name)
         else:
@@ -454,7 +454,7 @@ class JavaPrinter(CxxPrinter):
                 self.trovename(t.elem_type),
                 name)
 
-    def visit_TNativeSet(self, t, name):
+    def visit_TSet(self, t, name):
         if self.boxed or not self.is_primitive(t.elem_type):
             return "java.util.HashSet< {} > {}".format(self.visit(t.elem_type, ""), name)
         else:
@@ -463,15 +463,9 @@ class JavaPrinter(CxxPrinter):
                 name)
 
     def visit_TBag(self, t, name):
-        if hasattr(t, "rep_type"):
-            return self.visit(t.rep_type(), name)
-        return self.visit_TNativeList(t, name)
+        return self.visit_TList(t, name)
 
     def visit_SCall(self, call):
-        h = extension_handler(type(call.target.type))
-        if h is not None:
-            return self.visit(h.implement_stmt(call, self.state_exps))
-
         target = self.visit(call.target)
         args = [self.visit(a) for a in call.args]
         if type(call.target.type) in (TBag, TSet, TList):
@@ -492,17 +486,6 @@ class JavaPrinter(CxxPrinter):
             return "({}).getVal()".format(ee, e.field_name)
         return "({}).{}".format(ee, e.field_name)
 
-    def find_one_native(self, iterable):
-        it = fresh_name("iterator")
-        setup, e = self.visit(iterable)
-        return (
-            "{setup}{indent}{decl} = {e}.iterator();\n".format(
-                setup=setup,
-                indent=indent,
-                decl=self.visit(TNative("java.util.Iterator<>"), it),
-                e=e),
-            "({it}.hasNext() ? {it}.next() : null)".format(it=it))
-
     def visit_TVector(self, t, name):
         return "{}[] {}".format(self.visit(t.elem_type, ""), name)
 
@@ -516,7 +499,7 @@ class JavaPrinter(CxxPrinter):
             return "long[] {}".format(name)
         return "{}[] {}".format(self.visit(t.elem_type, name=""), name)
 
-    def visit_TNativeMap(self, t, name):
+    def visit_TMap(self, t, name):
         if self.use_trove(t):
             args = []
             for x in (t.k, t.v):
@@ -541,7 +524,10 @@ class JavaPrinter(CxxPrinter):
         m = self.visit(e.e)
         return "({}).keySet()".format(m)
 
-    def for_each_native(self, x, iterable, body):
+    def visit_SForEach(self, for_each):
+        x = for_each.loop_var
+        iterable = for_each.iter
+        body = for_each.body
         if not self.boxed and self.trovename(x.type) != "Object":
             iterable_src = self.visit(iterable)
             itname = fresh_name("iterator")
@@ -599,15 +585,14 @@ class JavaPrinter(CxxPrinter):
         self.end_statement()
 
     def visit_SArrayAlloc(self, s):
-        lval = self.visit(s.a)
+        self.declare(s.a)
         cap = self.visit(s.capacity)
         elem_type = s.a.type.elem_type
         tname = self.strip_generics(self.visit(elem_type, name=""))
-        self.write_stmt(lval, " = new ", tname, "[", cap, "];")
+        self.write_stmt(s.a.id, " = new ", tname, "[", cap, "];")
 
     def visit_SEnsureCapacity(self, s):
-        """Ensure that array s.a satisfies capacity requirement s.capacity
-        """
+        """Ensure that array s.a satisfies capacity requirement s.capacity"""
         return self.array_resize_for_index(s.a.type.elem_type, s.a, EBinOp(s.capacity, "-", ONE).with_type(INT))
 
     def visit_SArrayReAlloc(self, s):
@@ -619,8 +604,9 @@ class JavaPrinter(CxxPrinter):
         return self.visit(EEscape("java.util.Arrays.asList({a}).indexOf({x})", ("a", "x"), (e.a, e.x)).with_type(e.type))
 
     def array_resize_for_index(self, elem_type, a, i):
-        """Grows the array a until a[i] will execute without exception, if i >= 0;
-        when i < 0, it will do nothing
+        """Resize the array until `i` is a legal index.
+
+        When i < 0, it will do nothing instead.
         """
         new_a = fresh_name(hint="new_array")
         if elem_type == BOOL:
@@ -665,15 +651,14 @@ class JavaPrinter(CxxPrinter):
         key = self.visit(e.key)
         return "{map}.containsKey({key})".format(map=map, key=key)
 
-    def native_map_get(self, e, default_value):
+    def visit_EMapGet(self, e):
         if self.use_trove(e.map.type):
             if self.trovename(e.map.type.v) == "Object" and not isinstance(evaluation.construct_value(e.map.type.v), ENull):
                 # Le sigh...
                 emap = self.visit(e.map)
                 ekey = self.visit(e.key)
-                v = self.fv(e.map.type.v, hint="v")
-                with self.boxed_mode():
-                    self.visit(SDecl(v, EEscape("{emap}.get({ekey})".format(emap=emap, ekey=ekey), [], []).with_type(e.type)))
+                v = self.fv(self.box_if_boolean(e.map.type.v), hint="v")
+                self.visit(SDecl(v, EEscape("{emap}.get({ekey})".format(emap=emap, ekey=ekey), [], []).with_type(e.type)))
                 return self.visit(ECond(EEq(v, ENull().with_type(v.type)), evaluation.construct_value(e.map.type.v), v).with_type(e.type))
             else:
                 # For Trove, defaults are set at construction time

@@ -18,6 +18,7 @@ from cozy import desugar
 from cozy import syntax_tools
 from cozy import invariant_preservation
 from cozy import synthesis
+from cozy.structures import rewriting
 from cozy import opts
 
 save_failed_codegen_inputs = opts.Option("save-failed-codegen-inputs", str, "/tmp/failed_codegen.py", metavar="PATH")
@@ -153,12 +154,14 @@ def run():
     print("Inlining calls...")
     code = syntax_tools.inline_calls(code)
 
+    print("Generating code for extension types...")
+    code, state_map = rewriting.rewrite_extensions(code, ast.concretization_functions)
+
     if do_cse.value:
         print("Eliminating common subexpressions...")
         code = syntax_tools.cse_replace_spec(code)
 
-    print("Loading concretization functions...")
-    state_map = ast.concretization_functions
+    print("Concretization functions:")
     print()
     for v, e in state_map.items():
         print("{} : {} = {}".format(v, syntax_tools.pprint(e.type), syntax_tools.pprint(e)))
