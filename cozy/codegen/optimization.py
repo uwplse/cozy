@@ -227,6 +227,10 @@ def simplify_and_optimize(s : Stm) -> Stm:
         return s
     if isinstance(s, SIf):
         setup, test = simplify_and_optimize_expression(s.cond)
+        if test == ETRUE:
+            return simplify_and_optimize(s.then_branch)
+        if test == EFALSE:
+            return simplify_and_optimize(s.else_branch)
         return seq([setup, SIf(test, simplify_and_optimize(s.then_branch), simplify_and_optimize(s.else_branch))])
     if isinstance(s, SWhile):
         setup, cond = simplify_and_optimize_expression(s.e)
