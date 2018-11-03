@@ -2,12 +2,20 @@ import itertools
 import re
 
 from cozy import common, evaluation
-from cozy.target_syntax import *
+from cozy.common import fresh_name
+from cozy.syntax import (
+    Query, Visibility,
+    Type, INT, LONG, BOOL, FLOAT, TNative, TTuple, THandle, TRecord, TEnum,
+    TBag, TSet, TList,
+    Exp, ENum, ONE, ZERO, EVar, EBinOp, EEmptyList, ENull, ETuple, EMakeRecord,
+    EEq, ENot, EAll, ECond,
+    SNoOp, SAssign, SForEach, seq, SDecl)
+from cozy.target_syntax import TMap, EMapGet, SWhile, SReturn
 from cozy.syntax_tools import free_vars, subst, all_exps
 from cozy.typecheck import is_scalar, is_collection
 
 from .cxx import CxxPrinter
-from .misc import *
+from .misc import INDENT, indent_lines, EEscape, SEscape
 from .optimization import simplify_and_optimize
 
 JAVA_PRIMITIVE_TYPES = {
