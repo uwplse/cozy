@@ -120,10 +120,7 @@ class JavaPrinter(CxxPrinter):
             self.visit_args(q.args)
             self.write(") ")
             with self.block():
-                ret = self.visit(simplify_and_optimize(SReturn(q.ret)))
-                self.begin_statement()
-                self.write("return ", ret, ";")
-                self.end_statement()
+                self.visit(simplify_and_optimize(SReturn(q.ret)))
         self.end_statement()
 
     def visit_EEmptyList(self, e):

@@ -534,6 +534,10 @@ class CxxPrinter(CodeGenerator):
         self.visit(SIf(e.cond, SAssign(v, e.then_branch), SAssign(v, e.else_branch)))
         return v.id
 
+    def visit_SReturn(self, ret):
+        e = self.visit(ret.e)
+        self.write_stmt("return ", e, ";")
+
     def visit_SCall(self, call):
         target = self.visit(call.target)
         args = [self.visit(a) for a in call.args]
