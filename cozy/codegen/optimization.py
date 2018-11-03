@@ -16,15 +16,31 @@ from cozy.syntax import (
 from cozy.target_syntax import (
     SSwap, SWhile, SReturn, SSwitch,
     EMap, EFilter, EFlatMap,
-    EEmptyMap, EMapGet, SMapUpdate, SMapDel,
+    TMap, EEmptyMap, EMapGet, SMapUpdate, SMapDel,
     SEscapableBlock, SEscapeBlock,
     SArrayAlloc, SArrayReAlloc, SEnsureCapacity)
-from cozy.syntax_tools import fresh_var, count_occurrences_of_free_var, subst, BottomUpRewriter, lightweight_subst, pprint, is_lvalue
+from cozy.syntax_tools import fresh_var, count_occurrences_of_free_var, subst, BottomUpRewriter, pprint, is_lvalue
 from cozy.typecheck import is_collection
-from cozy.synthesis.acceleration import histogram
 from cozy import evaluation
 
 from .misc import SScoped, SEscape, EMove
+
+def histogram(e : Exp) -> (Stm, EVar):
+    """Compute a histogram of the elements in the iterable `e`.
+
+    Returns an unoptimized statement that declares and constructs a histogram
+    map and the fresh variable that got declared.
+    """
+    elem_type = e.type.elem_type
+    h = fresh_var(TMap(elem_type, INT), "histogram")
+    x = fresh_var(elem_type, "x")
+    count = fresh_var(INT, "count")
+    stm = seq([
+        SDecl(h, EEmptyMap().with_type(h.type)),
+        SForEach(x, e,
+            SMapUpdate(h, x, count,
+                SAssign(count, EBinOp(count, "+", ONE).with_type(INT))))])
+    return (stm, h)
 
 def stream(iterable : Exp, loop_var : EVar, body : Stm) -> Stm:
     """Convert an iterable expression to a streaming operation.
@@ -86,12 +102,10 @@ def stream(iterable : Exp, loop_var : EVar, body : Stm) -> Stm:
             stream(iterable.e1, loop_var, body),
             stream(iterable.e2, loop_var, body)])
     elif isinstance(iterable, EBinOp) and iterable.op == "-":
-        e2capture = fresh_var(iterable.e2.type, "bag_subtraction_right_side")
-        h_value = lightweight_subst(histogram(e2capture), e2capture, iterable.e2)
-        h = fresh_var(h_value.type, "histogram")
+        h_setup, h = histogram(iterable.e2)
         val_ref = fresh_var(INT, "count")
         return seq([
-            simplify_and_optimize(SDecl(h, h_value)),
+            simplify_and_optimize(h_setup),
             stream(
                 iterable.e1,
                 loop_var,
