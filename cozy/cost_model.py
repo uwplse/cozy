@@ -2,6 +2,8 @@
 
 from collections import OrderedDict
 from enum import Enum
+from functools import lru_cache
+import hashlib
 
 from cozy.common import OrderedSet
 from cozy.target_syntax import *
@@ -18,6 +20,7 @@ from cozy.polynomials import Polynomial, DominantTerm
 from cozy.opts import Option
 
 import tempfile
+import memcache
 
 cost_model_selection = Option("cost-model", int, 2,
     description="Cost model to use.  "
@@ -136,7 +139,7 @@ class CostModel(object):
         self.funcs = OrderedDict(funcs)
         self.ops = ops
         self.freebies = freebies
-        self.cache = {}
+        self.cache = memcache.Client(["localhost:11211"])
         self.cache_hit = 0
         self.cache_query = 0
         self.cache_stat_file = tempfile.NamedTemporaryFile(mode="w+", delete=False, prefix="cozy_cache")
@@ -154,14 +157,15 @@ class CostModel(object):
         return tuple(self.solver.examples)
 
     def _compare(self, e1: Exp, e2: Exp, context: Context):
-        key = (str(e1), str(e2), str(context.path_conditions()))
+        key = str(e1) + ':' + str(e2) + ':' + str(context.path_conditions())
+        key = hashlib.md5(key.encode('utf-8')).hexdigest()[:16]
         self.cache_query += 1
-        if key not in self.cache:
+        value = self.cache.get(key)
+        if value is None:
             value = self._compare_(e1, e2, context)
-            self.cache[key] = value
+            self.cache.set(key, value)
         else:
             self.cache_hit += 1
-            value = self.cache[key]
         self.cache_stat_file.write("{}\n".format(float(self.cache_hit) / self.cache_query))
         return value
 
