@@ -17,6 +17,8 @@ from cozy.state_maintenance import mutate
 from cozy.polynomials import Polynomial, DominantTerm
 from cozy.opts import Option
 
+import tempfile
+
 cost_model_selection = Option("cost-model", int, 2,
     description="Cost model to use.  "
         + "Higher numbers are much slower to evaluate but often yield better results.  "
@@ -134,6 +136,10 @@ class CostModel(object):
         self.funcs = OrderedDict(funcs)
         self.ops = ops
         self.freebies = freebies
+        self.cache = {}
+        self.cache_hit = 0
+        self.cache_query = 0
+        self.cache_stat_file = tempfile.NamedTemporaryFile(mode="w+", delete=False, prefix="cozy_cache")
 
     def __repr__(self):
         return "CostModel(assumptions={!r}, examples={!r}, funcs={!r}, freebies={!r}, ops={!r})".format(
@@ -147,7 +153,19 @@ class CostModel(object):
     def examples(self):
         return tuple(self.solver.examples)
 
-    def _compare(self, e1 : Exp, e2 : Exp, context : Context):
+    def _compare(self, e1: Exp, e2: Exp, context: Context):
+        key = (str(e1), str(e2), str(context.path_conditions()))
+        self.cache_query += 1
+        if key not in self.cache:
+            value = self._compare_(e1, e2, context)
+            self.cache[key] = value
+        else:
+            self.cache_hit += 1
+            value = self.cache[key]
+        self.cache_stat_file.write("{}\n".format(float(self.cache_hit) / self.cache_query))
+        return value
+
+    def _compare_(self, e1 : Exp, e2 : Exp, context : Context):
         e1_constant = not free_vars(e1) and not free_funcs(e1)
         e2_constant = not free_vars(e2) and not free_funcs(e2)
         if e1_constant and e2_constant:
