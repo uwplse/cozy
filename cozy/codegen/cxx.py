@@ -113,7 +113,14 @@ class CxxPrinter(CodeGenerator):
         i = self.visit(e.i)
         return "{}[{}]".format(v, i)
 
+    def write_comment(self, x):
+        if hasattr(x, "comment"):
+            for line in x.comment.split("\n"):
+                self.begin_statement()
+                self.write("// {}\n".format(line))
+
     def visit_SWhile(self, w):
+        self.write_comment(w)
         self.begin_statement()
         self.write("for (;;) ")
         with self.block():

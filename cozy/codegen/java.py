@@ -619,7 +619,7 @@ class JavaPrinter(CxxPrinter):
             ["a", "len"], [a, len])
         self.visit(SWhile(
             EAll([EBinOp(i, ">=", ZERO).with_type(BOOL), ENot(self.array_in_bounds(elem_type, a, i))]),
-            double_and_incr_size))
+            double_and_incr_size).with_comment("array_resize_for_index"))
 
     def array_put(self, elem_type, a, i, val):
         if elem_type == BOOL:

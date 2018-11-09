@@ -209,6 +209,13 @@ class ADT(object):
         - Visitor
     """
 
+    def with_comment(self, comment: str):
+        if hasattr(self, "comment"):
+            self.comment = self.comment + comment
+        else:
+            self.comment = comment
+        return self
+
     def children(self):
         return ()
     def size(self):
