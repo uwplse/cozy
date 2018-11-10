@@ -8,7 +8,7 @@ from cozy.syntax import (
     Spec, Query,
     Visibility, UOp, BOp,
     Type, INT, BOOL, TNative, TSet, TList, TBag, THandle, TEnum, TTuple, TRecord, TFloat,
-    Exp, EVar, ENum, EFALSE, ETRUE, ZERO, ENull, EEq, EGe, ELt, ENot, ECond, EAll,
+    Exp, EVar, ENum, EFALSE, ETRUE, ZERO, ENull, EEq, ELt, ENot, ECond, EAll,
     EEnumEntry, ETuple, ETupleGet, EGetField,
     Stm, SNoOp, SIf, SDecl, SSeq, seq, SForEach, SAssign)
 from cozy.target_syntax import TArray, TRef, EEnumToInt, EMapKeys, SReturn
@@ -408,6 +408,12 @@ class CxxPrinter(CodeGenerator):
         assert isinstance(e.type, TList)
         return SEscape("{indent}std::reverse({e}.begin(), {e}.end());\n", ("e",), (e,))
 
+    def visit_ESorted(self, e):
+        target = self.fv(e.type, "list")
+        self.declare(target, e)
+        self.write_stmt("std::sort({}.begin(), {}.end());".format(target.id, target.id))
+        return self.visit(target)
+
     def visit_EUnaryOp(self, e):
         op = e.op
         if op in ("-", UOp.Not):
@@ -419,6 +425,8 @@ class CxxPrinter(CodeGenerator):
             self.declare(v, e.e)
             self.visit(self.reverse_inplace(v))
             return v.id
+        elif op == UOp.Sorted:
+            return self.visit_ESorted(e.e)
         elif op in (UOp.Distinct, UOp.AreUnique, UOp.Length, UOp.Sum, UOp.All, UOp.Any, UOp.Exists, UOp.Empty, UOp.The):
             raise Exception("{!r} operator is supposed to be handled by simplify_and_optimize".format(op))
         else:

@@ -357,6 +357,9 @@ class Typechecker(Visitor):
         elif e.op == "-":
             self.ensure_numeric(e.e)
             e.type = e.e.type
+        elif e.op == syntax.UOp.Sorted:
+            self.get_collection_type(e.e)
+            e.type = to_abstract(e.e.type)
         else:
             raise NotImplementedError(e.op)
 

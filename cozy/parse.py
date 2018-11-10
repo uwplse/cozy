@@ -40,6 +40,7 @@ _KEYWORDS = ([
     "if",
     "else",
     "let",
+    "sorted",
     "Native"] +
     list(syntax.UOps) +
     list(syntax.BOps))
@@ -341,6 +342,7 @@ def make_parser():
                | WORD OP_OPEN_PAREN exp_list OP_CLOSE_PAREN
                | KW_SUM exp
                | KW_LEN exp
+               | KW_SORTED exp
                | KW_EMPTY exp
                | KW_EXISTS exp
                | KW_ALL exp
@@ -437,9 +439,13 @@ def make_parser():
 
     def p_accesschain(p):
         """accesschain : WORD
+                       | accesschain OP_OPEN_BRACKET exp OP_CLOSE_BRACKET
                        | accesschain OP_DOT WORD"""
         if len(p) > 2:
-            p[0] = syntax.EGetField(p[1], p[3])
+            if p[2] == "[":
+                p[0] = syntax.EListGet(p[1], p[3])
+            else:
+                p[0] = syntax.EGetField(p[1], p[3])
         else:
             p[0] = syntax.EVar(p[1])
 

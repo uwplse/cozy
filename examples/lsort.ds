@@ -1,0 +1,9 @@
+LSort:
+    state l : List<Int>
+
+    query elems()
+        sorted l
+
+    op mod(i: Int, x: Int)
+        assume i < len l and i >= 0;
+        l[i] = x;

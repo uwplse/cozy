@@ -48,6 +48,7 @@ class UOp(object):
     Empty     = "empty"
     The       = "the"
     Reversed  = "reversed"
+    Sorted    = "sorted"
 
 UOps = (UOp.Sum,
         UOp.Not,

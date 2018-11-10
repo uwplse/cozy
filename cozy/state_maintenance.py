@@ -98,8 +98,16 @@ def _do_assignment(lval : syntax.Exp, new_value : syntax.Exp, e : syntax.Exp) ->
             # reachable handles in `e`.
             return replace_get_value(e, lval.e, new_value)
         return _do_assignment(lval.e, _replace_field(lval.e, lval.field_name, new_value), e)
+    elif isinstance(lval, syntax.EListGet):
+        return _do_assignment(lval.e, _replace_elem(lval.e, lval.index, new_value), e)
     else:
         raise Exception("not an lvalue: {}".format(pprint(lval)))
+
+def _replace_elem(ls : syntax.Exp, index : syntax.Exp, new_value : syntax.Exp) -> syntax.Exp:
+    return syntax.EBinOp(syntax.EListSlice(ls, syntax.ZERO, index).with_type(ls.type), "+",
+                         syntax.EBinOp(syntax.ESingleton(new_value).with_type(ls.type), "+",
+                                       syntax.EListSlice(ls, syntax.EBinOp(index, "+", syntax.ONE).with_type(syntax.INT),
+                                                         syntax.ELen(ls)).with_type(ls.type)).with_type(ls.type)).with_type(ls.type)
 
 def _replace_field(record : syntax.Exp, field : str, new_value : syntax.Exp) -> syntax.Exp:
     return syntax.EMakeRecord(tuple(

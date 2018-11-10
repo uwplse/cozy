@@ -29,6 +29,7 @@ class CodeGenerator(Visitor):
 
     def write(self, *parts):
         for p in parts:
+            assert isinstance(p, str), str(p)
             self.out.write(p)
 
     def write_stmt(self, *parts):

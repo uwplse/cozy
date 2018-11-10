@@ -535,7 +535,7 @@ class Enumerator(object):
                             yield EArgMin(e1, f).with_type(elem_type)
                             yield EArgMax(e1, f).with_type(elem_type)
                         if is_collection(body_type):
-                            yield EFlatMap(e1, f).with_type(TBag(body_type.elem_type))
+                            yield  EFlatMap(e1, f).with_type(TBag(body_type.elem_type))
 
                         if pool == STATE_POOL and is_hashable(elem_type):
                             yield EMakeMap2(e1, f).with_type(TMap(elem_type, body_type))
