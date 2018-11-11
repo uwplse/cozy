@@ -394,6 +394,10 @@ def polynomial_runtime(e : Exp) -> Polynomial:
             stk.append(e.e)
             res += worst_case_cardinality(e.e) * polynomial_runtime(e.key_function)
             continue
+        if isinstance(e, ESorted):
+            stk.append(e.e)
+            res += worst_case_cardinality(e.e)
+            continue
         if isinstance(e, EMap) or isinstance(e, EFlatMap):
             stk.append(e.e)
             res += worst_case_cardinality(e.e) * polynomial_runtime(e.transform_function)

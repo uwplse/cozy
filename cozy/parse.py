@@ -40,6 +40,7 @@ _KEYWORDS = ([
     "if",
     "else",
     "let",
+    "sorted",
     "Native"] +
     list(syntax.UOps) +
     list(syntax.BOps))
@@ -351,6 +352,7 @@ def make_parser():
                | exp KW_IN exp
                | KW_MIN exp
                | KW_MAX exp
+               | KW_SORTED exp exp
                | KW_ARGMIN lambda exp
                | KW_ARGMAX lambda exp
         """
@@ -388,6 +390,8 @@ def make_parser():
                     p[0] = syntax.ETupleGet(p[1], p[3].val)
                 else:
                     p[0] = syntax.EGetField(p[1], p[3])
+            elif p[1] == "sorted":
+                p[0] = syntax.ESorted(p[3], p[2])
             elif p[1] == "argmin":
                 p[0] = syntax.EArgMin(p[3], p[2])
             elif p[1] == "argmax":

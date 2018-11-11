@@ -1,0 +1,11 @@
+LSort:
+    state l : Bag<Int>
+
+    query get_sorted(asc: Bool)
+        sorted asc l
+
+    op add(i: Int)
+        l.add(i);
+
+    op rm(i: Int)
+        l.remove(i);

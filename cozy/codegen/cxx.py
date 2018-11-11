@@ -321,6 +321,9 @@ class CxxPrinter(CodeGenerator):
         self.write(map, ".erase(", key, ");")
         self.end_statement()
 
+    def visit_ESorted(self, e):
+        return "ESorted_NOT_DONE"
+
     def visit_Exp(self, e):
         raise NotImplementedError(e)
 

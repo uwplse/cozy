@@ -587,6 +587,20 @@ def _compile(e, env : {str:int}, out):
     elif isinstance(e, EDropBack):
         _compile(e.e, env, out)
         out.append(drop_back)
+    elif isinstance(e, ESorted):
+        _compile(e.e, env, out)
+        _compile(e.asc, env, out)
+        def bag_sort(stk):
+            asc = stk.pop()
+            bag = stk.pop()
+            bag = sorted(bag)
+            assert isinstance(asc, bool)
+            assert isinstance(bag, list)
+            if asc:
+                stk.append(bag)
+            else:
+                stk.append(list(reversed(bag)))
+        out.append(bag_sort)
     elif isinstance(e, EFilter):
         _compile(e.e, env, out)
         box = [None]
@@ -717,9 +731,17 @@ def _compile(e, env : {str:int}, out):
         with extend(env, e.body_function.arg.id, lambda: box[0]):
             _compile(e.body_function.body, env, out)
     else:
+        from cozy.structures.ordered import EOrderedElems
         h = extension_handler(type(e))
         if h is not None:
-            _compile(h.encode(e), env, out)
+            if isinstance(e, EOrderedElems) and isinstance(e.e, EVar):
+                _compile(e.e, env, out)
+                # this is a no-op because its argument, the Treeset, will be sorted already
+                def no_op(stk):
+                    pass
+                out.append(no_op)
+            else:
+                _compile(h.encode(e), env, out)
         else:
             raise NotImplementedError(type(e))
     if hasattr(e, "type") and isinstance(e.type, TList):

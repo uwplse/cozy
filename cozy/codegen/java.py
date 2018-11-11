@@ -34,6 +34,7 @@ class JavaPrinter(CxxPrinter):
         self.vars = set(e.id for e in all_exps(spec) if isinstance(e, EVar))
         self.setup_types(spec, state_exps, sharing)
 
+        self.write("import com.google.common.collect.TreeMultiset;\n")
         if spec.header:
             self.write(spec.header.strip() + "\n\n")
 

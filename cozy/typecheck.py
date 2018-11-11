@@ -368,6 +368,12 @@ class Typechecker(Visitor):
         else:
             raise NotImplementedError(e.op)
 
+    def visit_ESorted(self, e):
+        self.visit(e.e)
+        self.ensure_type(e.asc, BOOL)
+        self.visit(e.asc)
+        e.type = syntax.TList(e.e.type.elem_type)
+
     def visit_EArgMin(self, e):
         self.visit(e.e)
         e.key_function.arg.type = self.get_collection_type(e.e)
