@@ -1,4 +1,5 @@
 from . import heaps
+from . import ordered
 
 _handlers = []
 _lookup = { }
@@ -8,6 +9,7 @@ def _register(o):
         _lookup[t] = o
 
 _register(heaps.Heaps())
+_register(ordered.Ordereds())
 
 def extension_handler(t):
     return _lookup.get(t)

@@ -313,6 +313,12 @@ class _Shredder(Visitor):
         yield (e, self.ctx, self.pool)
         yield from self.visit(e.e)
         yield from self.visit(e.transform_function, e.e)
+
+    def visit_ESorted(self, e):
+        yield (e, self.ctx, self.pool)
+        yield from self.visit(e.e)
+        yield from self.visit(e.asc)
+
     def visit_EArgMin(self, e):
         yield (e, self.ctx, self.pool)
         yield from self.visit(e.e)

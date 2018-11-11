@@ -16,6 +16,7 @@ from cozy.logging import task, event
 from cozy.state_maintenance import mutate
 from cozy.polynomials import Polynomial, DominantTerm
 from cozy.opts import Option
+from cozy.structures.ordered import EOrderedElems, EOrderedPeek
 
 cost_model_selection = Option("cost-model", int, 2,
     description="Cost model to use.  "
@@ -185,6 +186,8 @@ class CostModel(object):
                     return order_objects(e1.size(), e2.size())
             if selection == 2:
                 if pool == RUNTIME_POOL:
+                    # assert not (isinstance(e1, EListGet) and isinstance(e2, EOrderedPeek) and isinstance(e1.e, EOrderedElems)), pprint(e1) + "\n" + pprint(e2)
+                    # assert not (isinstance(e2, EListGet) and isinstance(e1, EOrderedPeek) and isinstance(e2.e, EOrderedElems)), pprint(e1) + "\n" + pprint(e2)
                     return prioritized_order(
                         lambda: order_objects(asymptotic_runtime(e1), asymptotic_runtime(e2)),
                         lambda: self._compare(max_storage_size(e1, self.freebies), max_storage_size(e2, self.freebies), context),
@@ -394,6 +397,11 @@ def polynomial_runtime(e : Exp) -> Polynomial:
             stk.append(e.e)
             res += worst_case_cardinality(e.e) * polynomial_runtime(e.key_function)
             continue
+        if isinstance(e, ESorted):
+            stk.append(e.e)
+            n = worst_case_cardinality(e.e)
+            res += n * n
+            continue
         if isinstance(e, EMap) or isinstance(e, EFlatMap):
             stk.append(e.e)
             res += worst_case_cardinality(e.e) * polynomial_runtime(e.transform_function)
@@ -468,7 +476,13 @@ def rt(e, account_for_constant_factors=True):
             stk.append(e.e)
             terms.append(ELet(e.e, ELambda(e.body_function.arg, rt(e.body_function.body))).with_type(INT))
             continue
-
+        if isinstance(e, EOrderedPeek):
+            stk.append(e.index)
+            continue
+        if isinstance(e, EListGet) and isinstance(e.e, EOrderedElems):
+            constant += 1
+            stk.append(e.index)
+            continue
         constant += 1
         if isinstance(e, EStateVar):
             continue
@@ -499,6 +513,8 @@ def rt(e, account_for_constant_factors=True):
         elif isinstance(e, EMapGet):
             terms.append(hash_cost(e.key))
             terms.append(comparison_cost(e.key, e.key))
+        elif isinstance(e, EOrderedElems):
+            terms.append(cardinality(e))
 
     terms.append(ENum(constant).with_type(INT))
     if not account_for_constant_factors:

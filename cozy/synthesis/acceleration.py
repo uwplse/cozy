@@ -99,6 +99,15 @@ def _try_optimize(e : Exp, context : Context, pool : Pool):
         for res in optimized_the(e.e, args):
             yield _check(res, context, RUNTIME_POOL)
 
+    if isinstance(e, EListGet) and isinstance(e.e, ECond):
+        yield optimized_cond(e.e.cond,
+                             EListGet(e.e.then_branch, e.index).with_type(e.type),
+                             EListGet(e.e.else_branch, e.index).with_type(e.type))
+
+    from cozy.structures.ordered import EOrderedElems, EOrderedPeek
+    if isinstance(e, EListGet) and isinstance(e.e, EOrderedElems):
+        yield EOrderedPeek(e.e.e, e.index).with_type(e.type)
+
     if isinstance(e, EMapGet):
         ee = inline_mapget(e, context)
         yield _check(ee, context, RUNTIME_POOL)
@@ -140,6 +149,16 @@ def _try_optimize(e : Exp, context : Context, pool : Pool):
     if isinstance(e, EMap):
         for ee in optimized_map(e.e, e.transform_function, args=args):
             yield _check(ee, context, RUNTIME_POOL)
+    from cozy.syntax import ESorted
+    from cozy.structures.ordered import EMakeMaxOrdered, TMaxOrdered, EMakeMinOrdered, TMinOrdered, EOrderedElems
+    target = e
+    if isinstance(target, ESorted) and isinstance(target.e, EStateVar):
+        e_max = EMakeMaxOrdered(target.e.e).with_type(TMaxOrdered(target.e.e.type.elem_type))
+        e_min = EMakeMinOrdered(target.e.e).with_type(TMinOrdered(target.e.e.type.elem_type))
+        ee = optimized_cond(target.asc,
+                             EOrderedElems(EStateVar(e_min).with_type(e_min.type)).with_type(target.type),
+                             EOrderedElems(EStateVar(e_max).with_type(e_max.type)).with_type(target.type))
+        yield _check(ee, context, RUNTIME_POOL)
 
 def _check(e : Exp, context : Context, pool : Pool):
     """

@@ -1,7 +1,7 @@
 import itertools
 import re
 
-from cozy import common, evaluation
+from cozy import common, evaluation, opts
 from cozy.common import fresh_name
 from cozy.syntax import (
     Query, Visibility,
@@ -9,7 +9,7 @@ from cozy.syntax import (
     TBag, TSet, TList,
     Exp, ENum, ONE, ZERO, EVar, EBinOp, EEmptyList, ENull, ETuple, EMakeRecord,
     EEq, ENot, EAll, ECond,
-    SNoOp, SAssign, SForEach, seq, SDecl)
+    SNoOp, SAssign, SForEach, seq, SDecl, ELt)
 from cozy.target_syntax import TMap, EMapGet, SWhile, SReturn
 from cozy.syntax_tools import free_vars, subst, all_exps
 from cozy.typecheck import is_scalar, is_collection
@@ -17,6 +17,8 @@ from cozy.typecheck import is_scalar, is_collection
 from .cxx import CxxPrinter
 from .misc import INDENT, indent_lines, EEscape, SEscape
 from .optimization import simplify_and_optimize
+
+guava = opts.Option("guava", bool, False, description="Import Google's Guava library in generated Java class")
 
 JAVA_PRIMITIVE_TYPES = {
     "boolean", "byte", "char", "short", "int", "long", "float", "double"}
@@ -34,6 +36,9 @@ class JavaPrinter(CxxPrinter):
         self.vars = set(e.id for e in all_exps(spec) if isinstance(e, EVar))
         self.setup_types(spec, state_exps, sharing)
 
+        if guava.value:
+            self.write("import com.google.common.collect.TreeMultiset;\n")
+            self.write("import com.google.common.collect.Iterators;\n")
         if spec.header:
             self.write(spec.header.strip() + "\n\n")
 
@@ -225,6 +230,15 @@ class JavaPrinter(CxxPrinter):
     def visit_EMove(self, e):
         return self.visit(e.e)
 
+    def visit_EOrderedPeek(self, e):
+        return self.visit(ECond(ELt(e.index, EEscape("{xs}.size()", ("xs",), (e.e,))).with_type(BOOL),
+                                EEscape("Iterators.get({xs}.iterator(), {i})", ("xs", "i"), (e.e, e.index)).with_type(e.type),
+                                evaluation.construct_value(e.type)).with_type(e.type))
+    def visit_SErase(self, s):
+        return self.visit(SEscape("{indent}{target}.remove({x});", ("target", "x"), (s.target, s.x)))
+    def visit_SInsert(self, s):
+        return self.visit(SEscape("{indent}{target}.add({x});", ("target", "x"), (s.target, s.x)))
+
     def _eq(self, e1, e2):
         if not self.boxed and self.is_primitive(e1.type):
             return self.visit(EEscape("({e1} == {e2})", ("e1", "e2"), (e1, e2)).with_type(BOOL))
@@ -397,6 +411,10 @@ class JavaPrinter(CxxPrinter):
             return self.define_type(toplevel_name, TRecord(tuple(("_{}".format(i), t.ts[i]) for i in range(len(t.ts)))), name, sharing)
         else:
             return ""
+
+    def visit_TOrderedNative(self, t, name):
+        # TODO(zhen): the visit_{Type}(t, name) takes both parameters and not so well-defined
+        return "TreeMultiset< {elem_type} > {name} = TreeMultiset.create()".format(elem_type=self.visit(t.elem_type, ""), name=name)
 
     def visit_TBool(self, t, name):
         return "{} {}".format("Boolean" if self.boxed else "boolean", name)

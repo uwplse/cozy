@@ -17,7 +17,7 @@ from cozy.target_syntax import (
     SSwap, SWhile, SReturn, SSwitch,
     EMap, EFilter, EFlatMap,
     TMap, EEmptyMap, EMapGet, SMapUpdate, SMapDel,
-    SEscapableBlock, SEscapeBlock,
+    SEscapableBlock, SEscapeBlock, SInsert, SErase,
     SArrayAlloc, SArrayReAlloc, SEnsureCapacity)
 from cozy.syntax_tools import fresh_var, count_occurrences_of_free_var, subst, BottomUpRewriter, pprint, is_lvalue
 from cozy.typecheck import is_collection, is_hashable
@@ -284,6 +284,8 @@ def simplify_and_optimize(s : Stm) -> Stm:
         new_cases = [(case, simplify_and_optimize(stm)) for (case, stm) in s.cases]
         new_default = simplify_and_optimize(s.default)
         return seq([setup, SSwitch(e, new_cases, new_default)])
+    if isinstance(s, SErase) or isinstance(s, SInsert):
+        return s
     raise NotImplementedError(repr(s))
 
 class ExpressionOptimizer(BottomUpRewriter):

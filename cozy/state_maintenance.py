@@ -158,13 +158,15 @@ def mutate_in_place(
 
     h = extension_handler(type(lval.type))
     if h is not None:
-        return h.mutate_in_place(
+        ret = h.mutate_in_place(
             lval=lval,
             e=e,
             op=op,
             assumptions=assumptions,
             invariants=invariants,
             make_subgoal=make_subgoal)
+        if ret is not None:
+            return ret
 
     # fallback: use an update sketch
     new_e = mutate(e, op)

@@ -95,3 +95,8 @@ EMapKeys   = declare_case(Exp, "EMapKeys", ["e"])
 SMapPut    = declare_case(Stm, "SMapPut", ["map", "key", "value"])
 SMapDel    = declare_case(Stm, "SMapDel", ["map", "key"])
 SMapUpdate = declare_case(Stm, "SMapUpdate", ["map", "key", "val_var", "change"]) # val_var is EVar
+
+# orderd multiset
+TOrderedNative = declare_case(Type, "TOrderedNative", ["elem_type"])
+SInsert  = declare_case(Stm, "SInsert", ["target", "x"])
+SErase   = declare_case(Stm, "SErase",  ["target", "x"])
