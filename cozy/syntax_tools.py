@@ -623,6 +623,8 @@ def free_vars(exp, counts=False):
             stk.extend(reversed(x))
         elif isinstance(x, (str, int, float, Fraction)):
             continue
+        elif x is None:
+            continue
         else:
             raise NotImplementedError(repr(x))
 
@@ -811,6 +813,14 @@ class FragmentEnumerator(common.Visitor):
             yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EMakeMap2(r(x), e.value_function).with_type(t))
         for ctx in self.recurse_with_assumptions_about_bound_var(e.value_function, ElemOf(e.e)):
             yield self.update_repl(ctx, lambda r: lambda x: target_syntax.EMakeMap2(e.e, r(x)).with_type(t))
+
+    def visit_ESorted(self, e):
+        yield self.make_ctx(e)
+        t = e.type
+        for ctx in self.visit(e.e):
+            yield self.update_repl(ctx, lambda r: lambda x: target_syntax.ESorted(r(x), e.asc).with_type(t))
+        for ctx in self.visit(e.asc):
+            yield self.update_repl(ctx, lambda r: lambda x: target_syntax.ESorted(e.e, r(x)).with_type(t))
 
     def visit_EArgMin(self, e):
         yield self.make_ctx(e)

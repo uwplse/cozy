@@ -480,6 +480,15 @@ def _consider_replacement(
     print(" * in {}".format(pprint(target), pprint(e), pprint(replacement)))
     print(" * replacing {}".format(pprint(e)))
     print(" * with {}".format(pprint(replacement)))
+    from cozy.structures.treemultiset import ETreeMultisetElems
+    if isinstance(e, ETreeMultisetElems) and isinstance(e.e, EStateVar) and \
+            isinstance(replacement, EStateVar) and isinstance(replacement.e, ETreeMultisetElems):
+        # FIXME(zhen): current enumerator will always try to make ETreeMultisetElems a state var
+        # FIXME(zhen): we don't want this because we need to put TreeSet into state var, rather than its iterator
+        # FIXME(zhen): I still don't know how to fix this in a sensible way, but giving up an "improvement"
+        # FIXME(zhen): should be okay temporarily
+        print("give up {} -> {}".format(pprint(e), pprint(replacement)))
+        return
     yield new_target
 
 def can_elim_vars(spec : Exp, assumptions : Exp, vs : [EVar]):
