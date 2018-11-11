@@ -8,7 +8,7 @@ from cozy.syntax import (
     Spec, Query,
     Visibility, UOp, BOp,
     Type, INT, BOOL, TNative, TSet, TList, TBag, THandle, TEnum, TTuple, TRecord, TFloat,
-    Exp, EVar, ENum, EFALSE, ETRUE, ZERO, ENull, EEq, EGe, ELt, ENot, ECond, EAll,
+    Exp, EVar, ENum, EFALSE, ETRUE, ZERO, ENull, EEq, ELt, ENot, ECond, EAll,
     EEnumEntry, ETuple, ETupleGet, EGetField,
     Stm, SNoOp, SIf, SDecl, SSeq, seq, SForEach, SAssign)
 from cozy.target_syntax import TArray, TRef, EEnumToInt, EMapKeys, SReturn
@@ -44,6 +44,9 @@ class CxxPrinter(CodeGenerator):
 
     def visit_TNative(self, t, name):
         return "{} {}".format(t.name, name)
+
+    def visit_TTreeMultisetNative(self, t, name):
+        return "std::multiset< {} > {}".format(self.visit(t.elem_type, ""), name)
 
     def visit_TInt(self, t, name):
         return "int {}".format(name)
@@ -321,6 +324,10 @@ class CxxPrinter(CodeGenerator):
         self.write(map, ".erase(", key, ");")
         self.end_statement()
 
+    def visit_ESorted(self, e):
+        # TODO(zhen): implement this
+        raise NotImplementedError("{} is not implemented. Try a larger timeout for its improved version".format(e))
+
     def visit_Exp(self, e):
         raise NotImplementedError(e)
 
@@ -483,6 +490,17 @@ class CxxPrinter(CodeGenerator):
 
     def visit_EMove(self, e):
         return "std::move(" + self.visit(e.e) + ")"
+
+    def visit_ETreeMultisetPeek(self, e):
+        return self.visit(ECond(ELt(e.index, EEscape("{xs}.size()", ("xs",), (e.e,))).with_type(BOOL),
+                                EEscape("*std::next({xs}.begin(), {i})", ("xs", "i"), (e.e, e.index)).with_type(e.type),
+                                evaluation.construct_value(e.type)).with_type(e.type))
+
+    def visit_SErase(self, s):
+        return self.visit(SEscape("{indent}{target}.erase({x});", ("target", "x"), (s.target, s.x)))
+
+    def visit_SInsert(self, s):
+        return self.visit(SEscape("{indent}{target}.insert({x});", ("target", "x"), (s.target, s.x)))
 
     def declare(self, v : EVar, initial_value : Exp = None):
         assert hasattr(v, "type"), repr(v)
@@ -727,6 +745,7 @@ class CxxPrinter(CodeGenerator):
 
         self.write("#pragma once\n")
         self.write("#include <algorithm>\n")
+        self.write("#include <set>\n")
         self.write("#include <functional>\n")
         self.write("#include <vector>\n")
         self.write("#include <unordered_set>\n")

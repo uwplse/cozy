@@ -607,6 +607,25 @@ class ToZ3(Visitor):
         return self._optimal(e, env, self.lt)
     def visit_EArgMax(self, e, env):
         return self._optimal(e, env, self.gt)
+    def visit_ESorted(self, e, env):
+        asc = self.visit(e.asc, env)
+        elem_type = e.e.type.elem_type
+        ee = self.visit(e.e, env)
+        bag_mask, bag_elems = ee
+        # create a _list_ with the same dimension as sorted bag
+        v = self.mkvar(len(bag_elems), TList(elem_type))
+        bag_mask2, bag_elems2 = v
+        # constraint 1: the new list contains same elements as the bag
+        self.solver.add(self.eq(TBag(elem_type), v, ee, deep=False))
+        # constraint 2: the new list is sorted
+        for i in range(len(bag_elems)):
+            for j in range(i + 1, len(bag_elems)):
+                self.solver.add(self.implies(self.all([bag_mask2[i], bag_mask2[j]]), ite(BOOL, asc, bag_elems2[i] <= bag_elems2[j], bag_elems2[i] >= bag_elems2[j])))
+        return v
+    def visit_ETreeMultisetElems(self, e, env):
+        # this is a no-op since Z3 encoding of inner treeset will be converted to ESorted, and transformed into Z3
+        # expression using visit_ESorted
+        return self.visit(e.e, env)
     def visit_EGetField(self, e, env):
         r = self.visit(e.e, env)
         if isinstance(e.e.type, THandle):

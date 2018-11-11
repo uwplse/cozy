@@ -3,7 +3,13 @@
 MaxBag.java: maxbag.ds
 	cozy maxbag.ds --java MaxBag.java
 
-%.class: %.java
-	javac $<
+LSort.java: lsort.ds
+	cozy lsort.ds --java LSort.java
 
-java: MaxBag.class MaxBagMain.class
+guava-23.0.jar:
+	wget https://search.maven.org/remotecontent?filepath=com/google/guava/guava/23.0/guava-23.0.jar -O $@
+
+%.class: %.java guava-23.0.jar
+	javac -cp .:* $<
+
+java: MaxBag.class MaxBagMain.class LSort.class

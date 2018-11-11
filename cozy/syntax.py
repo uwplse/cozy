@@ -97,6 +97,7 @@ EBinOp              = declare_case(Exp, "EBinOp",             ["e1", "op", "e2"]
 EUnaryOp            = declare_case(Exp, "EUnaryOp",           ["op", "e"])
 EArgMin             = declare_case(Exp, "EArgMin",            ["e", "key_function"])
 EArgMax             = declare_case(Exp, "EArgMax",            ["e", "key_function"])
+ESorted             = declare_case(Exp, "ESorted",            ["e", "asc"])
 EHandle             = declare_case(Exp, "EHandle",            ["addr", "value"])
 EGetField           = declare_case(Exp, "EGetField",          ["e", "field_name"])
 EMakeRecord         = declare_case(Exp, "EMakeRecord",        ["fields"])

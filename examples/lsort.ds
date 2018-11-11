@@ -1,0 +1,16 @@
+LSort:
+    // TODO(zhen): get rid of this HACK
+    extern get_ith_escaped(asc : Bool, i : Int) : Float = "get_ith({asc}, {i})"
+    state l : Bag<Float>
+
+    query get_sorted(asc: Bool)
+        sorted asc l
+
+    query get_ith(asc: Bool, i: Int)
+        (sorted asc l)[i]
+
+    op add(v: Float)
+        l.add(v);
+
+    op remove(v: Float)
+        l.remove(v);
