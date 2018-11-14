@@ -62,6 +62,14 @@ DEFAULT_TYPE = object()
 def is_numeric(t):
     return t in (INT, LONG, FLOAT)
 
+# TODO: complete it
+def is_constant(e):
+    if isinstance(e, syntax.ENum):
+        return True
+    elif isinstance(e, syntax.EUnaryOp) and e.op == "-":
+        return is_constant(e.e)
+    return False
+
 _NON_NUMERIC_SCALAR_TYPES = set((
     syntax.TBool,
     syntax.TString,
@@ -430,7 +438,7 @@ class Typechecker(Visitor):
         elif e.op in ["*"]:
             if is_numeric(e.e1.type):
                 e.type = self.numeric_lub(e, e.e1.type, e.e2.type)
-                if not isinstance(e.e1, syntax.ENum) and not isinstance(e.e2, syntax.ENum):
+                if not is_constant(e.e1) and not is_constant(e.e2):
                     self.report_err(e, "multiplication is only legal when one operand is a constant")
             else:
                 e.type = DEFAULT_TYPE
