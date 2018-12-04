@@ -73,6 +73,10 @@ BOps = (BOp.And,
 
 class Exp(ADT):
     def with_type(self, t):
+        if hasattr(self, "type"):
+            if self.type == t:
+                return self
+            raise ValueError("The type of expression {} was changed from {} to {}. The type of an expression should only be assigned once!".format(self, self.type, t))
         self.type = t
         return self
     def __repr__(self):
