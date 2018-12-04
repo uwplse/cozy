@@ -6,9 +6,7 @@ set -e
 function test_example {
   cozy $1.ds --c++ $2 --java $3 --simple
   g++ -std=c++11 -c $2
-  rm $2
   javac $3
-  rm $3
 }
 
 cd examples
@@ -38,3 +36,17 @@ test_example polyupdate polyupdate.cpp Polyupdate.java
 #test_example rot1 rot1.cpp Rot1.java
 
 # TODO: fix the commented out examples
+
+# check if generated code has changed
+if [[ $(git ls-files -m *.java) ]]; then
+    echo "there are changed Java files"
+    git ls-files -m *.java
+else
+    echo "no Java files are changed"
+fi
+if [[ $(git ls-files -m *.cpp) ]]; then
+    echo "there are changed C++ files"
+    git ls-files -m *.cpp
+else
+    echo "no C++ files are changed"
+fi
