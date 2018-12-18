@@ -149,6 +149,7 @@ FLOAT = TFloat()
 STRING = TString()
 BOOL_BAG = TBag(BOOL)
 INT_BAG = TBag(INT)
+INT_LIST = TList(INT)
 
 ETRUE = EBool(True).with_type(BOOL)
 EFALSE = EBool(False).with_type(BOOL)
