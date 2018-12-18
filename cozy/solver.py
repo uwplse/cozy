@@ -28,7 +28,6 @@ from cozy.evaluation import eval_bulk
 from cozy.contexts import Context
 
 collection_depth_opt = Option("collection-depth", int, 4, metavar="N", description="Bound for bounded verification")
-use_quantified_encoding = Option("quantified-encoding", bool, False, description="Allow the use of quantifiers during formula encoding. The resulting formulas are still decideable using Z3's macro_finder option. Enabling this option offloads work from Python to Z3. Generally it harms performance.")
 
 class SolverReportedUnknown(Exception):
     pass
@@ -1030,8 +1029,6 @@ class IncrementalSolver(object):
         with _LOCK:
             ctx = z3.Context()
             solver = z3.Solver(ctx=ctx) if logic is None else z3.SolverFor(logic, ctx=ctx)
-            if use_quantified_encoding.value:
-                solver.set(":smt.macro_finder", True)
             if timeout is not None:
                 solver.set("timeout", int(timeout * 1000))
             solver.set("core.validate", validate_model)
