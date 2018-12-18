@@ -6,6 +6,7 @@ from cozy.typecheck import typecheck, retypecheck
 from cozy.target_syntax import *
 from cozy.structures.heaps import *
 from cozy.syntax_tools import pprint, equal, implies, mk_lambda, free_vars
+from cozy.evaluation import eval
 
 zero = ENum(0).with_type(TInt())
 one  = ENum(1).with_type(TInt())
@@ -188,6 +189,46 @@ class TestSolver(unittest.TestCase):
             ENot(EDeepEq(xs, ys))])
         assert retypecheck(formula)
         print(satisfy(formula, validate_model=True))
+
+    def test_sorting_len(self):
+        """
+        Make sure we can find a model for an ESorted expression whose argument
+        collection is larger than the collection_depth parameter.
+        """
+        xs = EVar("xs").with_type(INT_LIST)
+        target_len = 3
+        formula = EAll([
+            EEq(ELen(xs), ENum(target_len).with_type(INT)),
+            EEq(ELen(ESorted(EBinOp(xs, "+", xs), ETRUE)), ENum(target_len*2).with_type(INT))])
+        assert retypecheck(formula)
+        assert satisfiable(formula, collection_depth=target_len, validate_model=True)
+
+    def test_sorting_under_binder(self):
+        """Make sure that ESorted works underneath a binder.
+
+        This case is tricky because the encoding for ESorted introduces a fresh
+        variable, and that variable needs to be fresh *every time the function
+        would be called*.
+        """
+        xs = EVar("xs").with_type(INT_LIST)
+        ys = EVar("ys").with_type(INT_LIST)
+        sorted_xs = ESorted(xs, ETRUE)
+        sorted_ys = ESorted(ys, ETRUE)
+        e1 = EFlatMap(
+            EBinOp(ESingleton(ZERO), "+", ESingleton(ONE)),
+            mk_lambda(INT, lambda i: ESorted(ECond(EEq(i, ZERO), xs, ys), ETRUE)))
+        e2 = EBinOp(sorted_xs, "+", sorted_xs)
+        e = EImplies(
+            ENot(EEq(sorted_xs, sorted_ys)),
+            ENot(EEq(e1, e2)))
+        assert retypecheck(e)
+        print(pprint(e))
+        model = satisfy(ENot(e), validate_model=True)
+        if model is not None:
+            print(model)
+            print(eval(e1, model))
+            print(eval(e2, model))
+            assert False
 
     def test_regression6(self):
         satisfy(EBinOp(EMakeMap2(EMap(EVar('entries').with_type(TBag(THandle('Entry', TRecord((('key', TNative('uint64_t')), ('pixmap', TNative('QPixmap *')), ('indexData', TNative('QByteArray')), ('memSize', TInt()), ('diskSize', TInt()), ('st', TEnum(('Disk', 'Loading', 'DiskAndMemory', 'MemoryOnly', 'Saving', 'NetworkPending', 'IndexPending', 'Invalid'))), ('inUse', TBool())))))), ELambda(EVar('_var44268').with_type(THandle('Entry', TRecord((('key', TNative('uint64_t')), ('pixmap', TNative('QPixmap *')), ('indexData', TNative('QByteArray')), ('memSize', TInt()), ('diskSize', TInt()), ('st', TEnum(('Disk', 'Loading', 'DiskAndMemory', 'MemoryOnly', 'Saving', 'NetworkPending', 'IndexPending', 'Invalid'))), ('inUse', TBool()))))), EGetField(EGetField(EVar('_var44268').with_type(THandle('Entry', TRecord((('key', TNative('uint64_t')), ('pixmap', TNative('QPixmap *')), ('indexData', TNative('QByteArray')), ('memSize', TInt()), ('diskSize', TInt()), ('st', TEnum(('Disk', 'Loading', 'DiskAndMemory', 'MemoryOnly', 'Saving', 'NetworkPending', 'IndexPending', 'Invalid'))), ('inUse', TBool()))))), 'val').with_type(TRecord((('key', TNative('uint64_t')), ('pixmap', TNative('QPixmap *')), ('indexData', TNative('QByteArray')), ('memSize', TInt()), ('diskSize', TInt()), ('st', TEnum(('Disk', 'Loading', 'DiskAndMemory', 'MemoryOnly', 'Saving', 'NetworkPending', 'IndexPending', 'Invalid'))), ('inUse', TBool())))), 'key').with_type(TNative('uint64_t')))).with_type(TBag(TNative('uint64_t'))), ELambda(EVar('_var44256').with_type(TNative('uint64_t')), EFilter(EVar('entries').with_type(TBag(THandle('Entry', TRecord((('key', TNative('uint64_t')), ('pixmap', TNative('QPixmap *')), ('indexData', TNative('QByteArray')), ('memSize', TInt()), ('diskSize', TInt()), ('st', TEnum(('Disk', 'Loading', 'DiskAndMemory', 'MemoryOnly', 'Saving', 'NetworkPending', 'IndexPending', 'Invalid'))), ('inUse', TBool())))))), ELambda(EVar('_var44268').with_type(THandle('Entry', TRecord((('key', TNative('uint64_t')), ('pixmap', TNative('QPixmap *')), ('indexData', TNative('QByteArray')), ('memSize', TInt()), ('diskSize', TInt()), ('st', TEnum(('Disk', 'Loading', 'DiskAndMemory', 'MemoryOnly', 'Saving', 'NetworkPending', 'IndexPending', 'Invalid'))), ('inUse', TBool()))))), EBinOp(EGetField(EGetField(EVar('_var44268').with_type(THandle('Entry', TRecord((('key', TNative('uint64_t')), ('pixmap', TNative('QPixmap *')), ('indexData', TNative('QByteArray')), ('memSize', TInt()), ('diskSize', TInt()), ('st', TEnum(('Disk', 'Loading', 'DiskAndMemory', 'MemoryOnly', 'Saving', 'NetworkPending', 'IndexPending', 'Invalid'))), ('inUse', TBool()))))), 'val').with_type(TRecord((('key', TNative('uint64_t')), ('pixmap', TNative('QPixmap *')), ('indexData', TNative('QByteArray')), ('memSize', TInt()), ('diskSize', TInt()), ('st', TEnum(('Disk', 'Loading', 'DiskAndMemory', 'MemoryOnly', 'Saving', 'NetworkPending', 'IndexPending', 'Invalid'))), ('inUse', TBool())))), 'key').with_type(TNative('uint64_t')), '==', EVar('_var44256').with_type(TNative('uint64_t'))).with_type(TBool()))).with_type(TBag(THandle('Entry', TRecord((('key', TNative('uint64_t')), ('pixmap', TNative('QPixmap *')), ('indexData', TNative('QByteArray')), ('memSize', TInt()), ('diskSize', TInt()), ('st', TEnum(('Disk', 'Loading', 'DiskAndMemory', 'MemoryOnly', 'Saving', 'NetworkPending', 'IndexPending', 'Invalid'))), ('inUse', TBool())))))))).with_type(TMap(TNative('uint64_t'), TBag(THandle('Entry', TRecord((('key', TNative('uint64_t')), ('pixmap', TNative('QPixmap *')), ('indexData', TNative('QByteArray')), ('memSize', TInt()), ('diskSize', TInt()), ('st', TEnum(('Disk', 'Loading', 'DiskAndMemory', 'MemoryOnly', 'Saving', 'NetworkPending', 'IndexPending', 'Invalid'))), ('inUse', TBool()))))))), '==', EMakeMap2(ESingleton(EVar('_var44256').with_type(TNative('uint64_t'))).with_type(TBag(TNative('uint64_t'))), ELambda(EVar('_var44256').with_type(TNative('uint64_t')), EEmptyList().with_type(TBag(THandle('Entry', TRecord((('key', TNative('uint64_t')), ('pixmap', TNative('QPixmap *')), ('indexData', TNative('QByteArray')), ('memSize', TInt()), ('diskSize', TInt()), ('st', TEnum(('Disk', 'Loading', 'DiskAndMemory', 'MemoryOnly', 'Saving', 'NetworkPending', 'IndexPending', 'Invalid'))), ('inUse', TBool())))))))).with_type(TMap(TNative('uint64_t'), TBag(THandle('Entry', TRecord((('key', TNative('uint64_t')), ('pixmap', TNative('QPixmap *')), ('indexData', TNative('QByteArray')), ('memSize', TInt()), ('diskSize', TInt()), ('st', TEnum(('Disk', 'Loading', 'DiskAndMemory', 'MemoryOnly', 'Saving', 'NetworkPending', 'IndexPending', 'Invalid'))), ('inUse', TBool())))))))).with_type(TBool()), vars=OrderedSet([EVar('entries').with_type(TBag(THandle('Entry', TRecord((('key', TNative('uint64_t')), ('pixmap', TNative('QPixmap *')), ('indexData', TNative('QByteArray')), ('memSize', TInt()), ('diskSize', TInt()), ('st', TEnum(('Disk', 'Loading', 'DiskAndMemory', 'MemoryOnly', 'Saving', 'NetworkPending', 'IndexPending', 'Invalid'))), ('inUse', TBool())))))), EVar('_var44256').with_type(TNative('uint64_t'))]), collection_depth=2, validate_model=True)

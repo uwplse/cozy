@@ -790,34 +790,9 @@ class ToZ3(Visitor):
                 return self.visit(thing, env)
 
     def visit_ELambda(self, lam : ELambda, env):
-
-        env = dict(env)
-        cache = { }
-        in_type = lam.arg.type
-        body_type = lam.body.type
-
         def compiled_lambda(arg):
-            argv = list(flatten(in_type, arg))
-            key = len(argv)
-            funcs = cache.get(key)
-
-            if funcs is None:
-                symb_argv = [v if isinstance(v, int) else z3.Const(fresh_name(), v.sort()) for v in argv]
-                assert len(symb_argv) == len(argv)
-                z3_vars = [v for v in symb_argv if not isinstance(v, int)]
-                symb_arg = pack(in_type, iter(symb_argv))
-                with extend(env, lam.arg.id, symb_arg):
-                    res = self.visit(lam.body, env)
-                funcs = []
-                for z3_body in flatten(body_type, res):
-                    if isinstance(z3_body, int):
-                        funcs.append(z3_body)
-                    else:
-                        funcs.append((z3_vars, z3_body))
-                cache[key] = funcs
-
-            return pack(body_type, (f if isinstance(f, int) else z3.substitute(f[1], *zip(f[0], [x for x in argv if not isinstance(x, int)])) for f in funcs))
-
+            with extend(env, lam.arg.id, arg):
+                return self.visit(lam.body, env)
         return compiled_lambda
 
     def visit_clauses(self, clauses, e, env):
