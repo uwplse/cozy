@@ -1,5 +1,5 @@
 """Static cost model to order expressions."""
-
+import tempfile
 from collections import OrderedDict
 from enum import Enum
 
@@ -17,6 +17,8 @@ from cozy.state_maintenance import mutate
 from cozy.polynomials import Polynomial, DominantTerm
 from cozy.opts import Option
 from cozy.structures.treemultiset import ETreeMultisetElems, ETreeMultisetPeek
+
+import redis
 
 cost_model_selection = Option("cost-model", int, 2,
     description="Cost model to use.  "
@@ -135,6 +137,10 @@ class CostModel(object):
         self.funcs = OrderedDict(funcs)
         self.ops = ops
         self.freebies = freebies
+        self.cache = redis.Redis(host='localhost', port=6379, db=0)
+        self.cache_query = 0
+        self.cache_hits = 0
+        self.cache_file = tempfile.NamedTemporaryFile(mode="w+", delete=False, prefix="cozy_cache_rates")
 
     def __repr__(self):
         return "CostModel(assumptions={!r}, examples={!r}, funcs={!r}, freebies={!r}, ops={!r})".format(
@@ -149,6 +155,22 @@ class CostModel(object):
         return tuple(self.solver.examples)
 
     def _compare(self, e1 : Exp, e2 : Exp, context : Context):
+        key = str(e1) + ':' + str(e2) + ':' + str(context.path_conditions()) + str(self.assumptions) + str(self.funcs)
+
+        self.cache_query += 1
+        value = self.cache.get(key)
+
+        if value is None:
+            value = self.__compare(e1, e2, context)
+            self.cache.set(key, value.value)
+        else:
+            self.cache_hits += 1
+            value = Order(value.decode('utf-8'))
+        self.cache_file.write("{}\n".format(float(self.cache_hits) / self.cache_query))
+
+        return value
+
+    def __compare(self, e1 : Exp, e2 : Exp, context : Context):
         e1_constant = not free_vars(e1) and not free_funcs(e1)
         e2_constant = not free_vars(e2) and not free_funcs(e2)
         if e1_constant and e2_constant:
