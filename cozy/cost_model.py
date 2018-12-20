@@ -140,7 +140,7 @@ class CostModel(object):
         self.cache = redis.Redis(host='localhost', port=6379, db=0)
         self.cache_query = 0
         self.cache_hits = 0
-        self.cache_file = tempfile.NamedTemporaryFile(mode="w+", delete=False, prefix="cozy_cache_rates")
+        self.cache_file = tempfile.NamedTemporaryFile(mode="w+", delete=False, prefix="cozy_cache_rates_")
 
     def __repr__(self):
         return "CostModel(assumptions={!r}, examples={!r}, funcs={!r}, freebies={!r}, ops={!r})".format(
