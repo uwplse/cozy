@@ -96,11 +96,6 @@ def never_stop():
     """Takes no arguments, always returns False."""
     return False
 
-# global counter for improve calls
-# Since it's global, have a lock for it as well
-_improve_calls = 0
-_counter_lock = threading.Lock()
-
 def improve(
         target        : Exp,
         context       : Context,
@@ -143,12 +138,6 @@ def improve(
           solution is out of reach.  This is more desireable than running for
           an indeterminate amount of time doing nothing.
     """
-
-    global _improve_calls
-    with _counter_lock:
-        _improve_calls += 1
-        with open("/tmp/improve_calls.log", "a+") as f:
-            f.write("{}\n".format(_improve_calls))
 
     print("call to improve:")
     print("""improve(
