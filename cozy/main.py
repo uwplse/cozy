@@ -196,8 +196,4 @@ def run():
             print("Implementation was dumped to {}".format(save_failed_codegen_inputs.value))
         raise
 
-    from .cost_model import no_cost_model_cache
-    if no_cost_model_cache.value:
-        print("Number of improvements done (no cache): {}".format(imprv_count.value))
-    else:
-        print("Number of improvements done (with cache): {}".format(imprv_count.value))
+    print("Number of improvements done: {}".format(imprv_count.value))
