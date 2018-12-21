@@ -107,7 +107,7 @@ def improve(
         examples      : [{str:object}]     = (),
         cost_model    : CostModel          = None,
         ops           : [Op]               = (),
-        imprv_count   : Value              = Value('i', 0)):
+        improve_count   : Value              = None):
     """Improve the target expression using enumerative synthesis.
 
     This function is a generator that yields increasingly better and better
@@ -276,9 +276,9 @@ def improve(
                 print("Now watching {} targets".format(len(watched_targets)))
                 break
 
-        if imprv_count is not None:
-            with imprv_count.get_lock():
-                imprv_count.value += 1
+        if improve_count is not None:
+            with improve_count.get_lock():
+                improve_count.value += 1
 
 SearchInfo = namedtuple("SearchInfo", (
     "context",

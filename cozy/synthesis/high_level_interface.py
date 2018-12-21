@@ -45,7 +45,7 @@ class ImproveQueryJob(jobs.Job):
             hints       : [Exp]     = [],
             freebies    : [Exp]     = [],
             ops         : [Op]      = [],
-            imprv_count             = None):
+            improve_count             = None):
         super().__init__()
         self.state = state
         self.assumptions = assumptions
@@ -57,7 +57,7 @@ class ImproveQueryJob(jobs.Job):
         self.freebies = freebies
         self.ops = ops
         self.k = k
-        self.imprv_count = imprv_count
+        self.improve_count = improve_count
     def __str__(self):
         return "ImproveQueryJob[{}]".format(self.q.name)
     def run(self):
@@ -86,7 +86,7 @@ class ImproveQueryJob(jobs.Job):
                         stop_callback=lambda: self.stop_requested,
                         cost_model=cost_model,
                         ops=self.ops,
-                        imprv_count=self.imprv_count)):
+                        improve_count=self.improve_count)):
 
                     new_rep, new_ret = unpack_representation(expr)
                     self.k(new_rep, new_ret)
@@ -99,7 +99,7 @@ def improve_implementation(
         impl              : Implementation,
         timeout           : datetime.timedelta = datetime.timedelta(seconds=60),
         progress_callback : Callable[[Implementation], Any] = None,
-        imprv_count       : Value = None) -> Implementation:
+        improve_count     : Value = None) -> Implementation:
     """Improve an implementation.
 
     This function tries to synthesize a better version of the given
@@ -148,7 +148,7 @@ def improve_implementation(
                         hints=[EStateVar(c).with_type(c.type) for c in impl.concretization_functions.values()],
                         freebies=[e for (v, e) in impl.concretization_functions.items() if EVar(v) in states_maintained_by_q],
                         ops=impl.op_specs,
-                        imprv_count=imprv_count))
+                        improve_count=improve_count))
 
             # figure out what old jobs we can stop
             impl_query_names = set(q.name for q in impl.query_specs)
