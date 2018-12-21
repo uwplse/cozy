@@ -28,6 +28,9 @@ cost_model_selection = Option("cost-model", int, 2,
         + "2: optimize for a mix of asymptotic runtime, storage size, and exact runtime.  "
         + "3: optimize for a mix of asymptotic runtime and state maintenance cost.")
 
+no_cost_model_cache = Option("no-cost-model-cache", bool, False,
+    description="Turns of caching of the result of expression comparisons in the cost model.")
+
 class Order(Enum):
     EQUAL     = "="
     LT        = "<"
@@ -152,6 +155,9 @@ class CostModel(object):
         return tuple(self.solver.examples)
 
     def _compare(self, e1 : Exp, e2 : Exp, context : Context):
+        if no_cost_model_cache.value:
+            return self.__compare(e1, e2, context)
+
         key = str(e1) + ':' + str(e2) + ':' + str(context.path_conditions()) + str(self.assumptions) + str(self.funcs)
 
         value = self.cache.get(key)
