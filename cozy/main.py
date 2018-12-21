@@ -10,6 +10,8 @@ import argparse
 import datetime
 import pickle
 
+from multiprocessing import Value
+
 from cozy import parse
 from cozy import codegen
 from cozy import common
@@ -54,6 +56,8 @@ def run():
     parser.add_argument("file", nargs="?", default=None, help="Input file (omit to use stdin)")
     args = parser.parse_args()
     opts.read(args)
+
+    imprv_count = Value('i', 0)
 
     if args.resume:
         with common.open_maybe_stdin(args.file or "-", mode="rb") as f:
@@ -138,7 +142,8 @@ def run():
         ast = synthesis.improve_implementation(
             ast,
             timeout           = datetime.timedelta(seconds=args.timeout),
-            progress_callback = callback)
+            progress_callback = callback,
+            imprv_count=imprv_count)
 
         if server is not None:
             server.join()
@@ -190,3 +195,5 @@ def run():
                 f.write("share_info = {}\n".format(repr(share_info)))
             print("Implementation was dumped to {}".format(save_failed_codegen_inputs.value))
         raise
+
+    print("Number of improvements done: {}".format(imprv_count.value))

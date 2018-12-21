@@ -16,6 +16,8 @@ from collections import OrderedDict, namedtuple
 import itertools
 from typing import Callable
 
+from multiprocessing import Value
+
 from cozy.syntax import (
     INT, BOOL, TMap,
     Op,
@@ -104,7 +106,8 @@ def improve(
         hints         : [Exp]              = (),
         examples      : [{str:object}]     = (),
         cost_model    : CostModel          = None,
-        ops           : [Op]               = ()):
+        ops           : [Op]               = (),
+        imprv_count   : Value              = Value('i', 0)):
     """Improve the target expression using enumerative synthesis.
 
     This function is a generator that yields increasingly better and better
@@ -272,6 +275,9 @@ def improve(
                 watched_targets.append(new_target)
                 print("Now watching {} targets".format(len(watched_targets)))
                 break
+
+        with imprv_count.get_lock():
+            imprv_count.value += 1
 
 SearchInfo = namedtuple("SearchInfo", (
     "context",
