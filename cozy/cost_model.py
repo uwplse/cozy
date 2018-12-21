@@ -138,9 +138,6 @@ class CostModel(object):
         self.ops = ops
         self.freebies = freebies
         self.cache = redis.Redis(host='localhost', port=6379, db=0)
-        self.cache_query = 0
-        self.cache_hits = 0
-        self.cache_file = tempfile.NamedTemporaryFile(mode="w+", delete=False, prefix="cozy_cache_rates_")
 
     def __repr__(self):
         return "CostModel(assumptions={!r}, examples={!r}, funcs={!r}, freebies={!r}, ops={!r})".format(
@@ -157,16 +154,13 @@ class CostModel(object):
     def _compare(self, e1 : Exp, e2 : Exp, context : Context):
         key = str(e1) + ':' + str(e2) + ':' + str(context.path_conditions()) + str(self.assumptions) + str(self.funcs)
 
-        self.cache_query += 1
         value = self.cache.get(key)
 
         if value is None:
             value = self.__compare(e1, e2, context)
             self.cache.set(key, value.value)
         else:
-            self.cache_hits += 1
             value = Order(value.decode('utf-8'))
-        self.cache_file.write("{}\n".format(float(self.cache_hits) / self.cache_query))
 
         return value
 
