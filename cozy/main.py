@@ -57,7 +57,7 @@ def run():
     args = parser.parse_args()
     opts.read(args)
 
-    imprv_count = Value('i', 0)
+    improve_count = Value('i', 0)
 
     if args.resume:
         with common.open_maybe_stdin(args.file or "-", mode="rb") as f:
@@ -143,7 +143,7 @@ def run():
             ast,
             timeout           = datetime.timedelta(seconds=args.timeout),
             progress_callback = callback,
-            imprv_count=imprv_count)
+            improve_count=improve_count)
 
         if server is not None:
             server.join()
@@ -196,4 +196,4 @@ def run():
             print("Implementation was dumped to {}".format(save_failed_codegen_inputs.value))
         raise
 
-    print("Number of improvements done: {}".format(imprv_count.value))
+    print("Number of improvements done: {}".format(improve_count.value))
