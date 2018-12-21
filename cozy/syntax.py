@@ -79,6 +79,12 @@ class Exp(ADT):
             raise ValueError("The type of expression {} was changed from {} to {}. The type of an expression should only be assigned once!".format(self, self.type, t))
         self.type = t
         return self
+    def replace_type(self, t):
+        '''This should be used with caution to get around type restriction, maybe in code-gen phase
+        '''
+        assert hasattr(self, "type"), "Expression {} doesn't have existing type to be replaced".format(self)
+        self.type = t
+        return self
     def __repr__(self):
         s = super().__repr__()
         if hasattr(self, "type"):
