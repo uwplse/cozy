@@ -1,5 +1,5 @@
 """Static cost model to order expressions."""
-import tempfile
+
 from collections import OrderedDict
 from enum import Enum
 
@@ -18,8 +18,6 @@ from cozy.polynomials import Polynomial, DominantTerm
 from cozy.opts import Option
 from cozy.structures.treemultiset import ETreeMultisetElems, ETreeMultisetPeek
 
-import redis
-
 cost_model_selection = Option("cost-model", int, 2,
     description="Cost model to use.  "
         + "Higher numbers are much slower to evaluate but often yield better results.  "
@@ -27,9 +25,6 @@ cost_model_selection = Option("cost-model", int, 2,
         + "1: optimize for asymptotic runtime.  "
         + "2: optimize for a mix of asymptotic runtime, storage size, and exact runtime.  "
         + "3: optimize for a mix of asymptotic runtime and state maintenance cost.")
-
-no_cost_model_cache = Option("no-cost-model-cache", bool, False,
-    description="Turns of caching of the result of expression comparisons in the cost model.")
 
 class Order(Enum):
     EQUAL     = "="
@@ -140,7 +135,6 @@ class CostModel(object):
         self.funcs = OrderedDict(funcs)
         self.ops = ops
         self.freebies = freebies
-        self.cache = redis.Redis(host='localhost', port=6379, db=0)
 
     def __repr__(self):
         return "CostModel(assumptions={!r}, examples={!r}, funcs={!r}, freebies={!r}, ops={!r})".format(
@@ -155,22 +149,6 @@ class CostModel(object):
         return tuple(self.solver.examples)
 
     def _compare(self, e1 : Exp, e2 : Exp, context : Context):
-        if no_cost_model_cache.value:
-            return self.__compare(e1, e2, context)
-
-        key = str(e1) + ':' + str(e2) + ':' + str(context.path_conditions()) + str(self.assumptions) + str(self.funcs)
-
-        value = self.cache.get(key)
-
-        if value is None:
-            value = self.__compare(e1, e2, context)
-            self.cache.set(key, value.value)
-        else:
-            value = Order(value.decode('utf-8'))
-
-        return value
-
-    def __compare(self, e1 : Exp, e2 : Exp, context : Context):
         e1_constant = not free_vars(e1) and not free_funcs(e1)
         e2_constant = not free_vars(e2) and not free_funcs(e2)
         if e1_constant and e2_constant:
