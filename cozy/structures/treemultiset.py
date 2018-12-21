@@ -176,7 +176,7 @@ class Ordereds(object):
             elem_type = e.type.elem_type
             x = fresh_var(elem_type, "x")
             from cozy.syntax_tools import shallow_copy
-            xs = shallow_copy(e.e).with_type(e.type)
+            xs = shallow_copy(e.e).replace_type(e.type)
             return seq([
                 SDecl(out, EEmptyList().with_type(out.type)),
                 SForEach(x, xs, SCall(out, "add", (x,)))])

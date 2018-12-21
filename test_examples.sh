@@ -7,11 +7,20 @@ function test_example {
   cozy $1.ds --c++ $2 --java $3 --simple
   g++ -std=c++11 -c $2
   rm $2
-  javac $3
+  javac -cp .:* $3
+  rm $3
+}
+
+function test_example_1min_guava {
+  cozy $1.ds --c++ $2 --java $3 --timeout 60 --guava
+  g++ -std=c++11 -c $2
+  rm $2
+  javac -cp .:* $3
   rm $3
 }
 
 cd examples
+make guava-23.0.jar
 
 #test_example ztopo-cache ztopo-cozy.cpp TileCache.java
 test_example basic basic.cpp Basic.java
@@ -35,6 +44,7 @@ test_example func func.cpp Structure.java
 test_example intset intset.cpp ClauseDB.java
 test_example nested-map nested-map.cpp In.java
 test_example polyupdate polyupdate.cpp Polyupdate.java
+test_example_1min_guava lsort lsort.cpp LSort.java
 #test_example rot1 rot1.cpp Rot1.java
 
 # TODO: fix the commented out examples
