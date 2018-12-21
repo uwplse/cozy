@@ -45,7 +45,7 @@ class ImproveQueryJob(jobs.Job):
             hints       : [Exp]     = [],
             freebies    : [Exp]     = [],
             ops         : [Op]      = [],
-            imprv_count             = Value('i', 0)):
+            imprv_count             = None):
         super().__init__()
         self.state = state
         self.assumptions = assumptions
@@ -99,7 +99,7 @@ def improve_implementation(
         impl              : Implementation,
         timeout           : datetime.timedelta = datetime.timedelta(seconds=60),
         progress_callback : Callable[[Implementation], Any] = None,
-        imprv_count       : Value = Value('i', 0)) -> Implementation:
+        imprv_count       : Value = None) -> Implementation:
     """Improve an implementation.
 
     This function tries to synthesize a better version of the given
