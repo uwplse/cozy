@@ -276,8 +276,9 @@ def improve(
                 print("Now watching {} targets".format(len(watched_targets)))
                 break
 
-        with imprv_count.get_lock():
-            imprv_count.value += 1
+        if imprv_count is not None:
+            with imprv_count.get_lock():
+                imprv_count.value += 1
 
 SearchInfo = namedtuple("SearchInfo", (
     "context",
