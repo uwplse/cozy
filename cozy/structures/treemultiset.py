@@ -5,7 +5,7 @@ TODO(zhen): define a virtual class for universal structure extension
 
 from cozy.common import pick_to_sum, No
 from cozy.syntax import *
-from cozy.syntax_tools import fresh_var, pprint
+from cozy.syntax_tools import fresh_var, pprint, inline_lets
 from cozy.pools import Pool, RUNTIME_POOL, STATE_POOL
 
 TTreeMultiset = declare_case(Type, "TTreeMultisetNative", ["elem_type"])
@@ -111,10 +111,11 @@ class Ordereds(object):
         elif isinstance(e, EMakeMaxTreeMultiset):
             return ESorted(e.e, EFALSE).with_type(TList(e.e.type.elem_type))
         elif isinstance(e, ETreeMultisetElems):
-            if isinstance(e.e, EMakeMaxTreeMultiset):
-                return ESorted(e.e.e, EFALSE).with_type(e.type)
-            elif isinstance(e.e, EMakeMinTreeMultiset):
-                return ESorted(e.e.e, ETRUE).with_type(e.type)
+            ee = inline_lets(e.e)
+            if isinstance(ee, EMakeMaxTreeMultiset):
+                return ESorted(ee.e, EFALSE).with_type(e.type)
+            elif isinstance(ee, EMakeMinTreeMultiset):
+                return ESorted(ee.e, ETRUE).with_type(e.type)
         elif isinstance(e, ETreeMultisetPeek):
             return EListGet(e.e, e.index).with_type(e.type)
         raise NotImplementedError(e)
