@@ -2,6 +2,7 @@
 
 from collections import OrderedDict
 from enum import Enum
+import hashlib
 
 from cozy.common import OrderedSet
 from cozy.target_syntax import *
@@ -25,6 +26,10 @@ cost_model_selection = Option("cost-model", int, 2,
         + "1: optimize for asymptotic runtime.  "
         + "2: optimize for a mix of asymptotic runtime, storage size, and exact runtime.  "
         + "3: optimize for a mix of asymptotic runtime and state maintenance cost.")
+
+global_cache = Option("global_cache", bool, False,
+        description="Turn on/off in-memory global cache to speed up synthesis. "
+            + "Need local redis daemon at localhost:6379.")
 
 class Order(Enum):
     EQUAL     = "="
@@ -135,6 +140,9 @@ class CostModel(object):
         self.funcs = OrderedDict(funcs)
         self.ops = ops
         self.freebies = freebies
+        if global_cache.value:
+            import redis
+            self.cache = redis.Redis(host="localhost", port=6379, db=0)
 
     def __repr__(self):
         return "CostModel(assumptions={!r}, examples={!r}, funcs={!r}, freebies={!r}, ops={!r})".format(
@@ -148,7 +156,20 @@ class CostModel(object):
     def examples(self):
         return tuple(self.solver.examples)
 
-    def _compare(self, e1 : Exp, e2 : Exp, context : Context):
+    def _compare(self, e1: Exp, e2: Exp, context: Context):
+        key = str(e1) + ':' + str(e2) + ':' + str(context.path_conditions())
+        if global_cache.value:
+            value = self.cache.get(key)
+            if value is None:
+                value = self._compare_(e1, e2, context)
+                self.cache.set(key, value.value)
+                return value
+            else:
+                return Order(value.decode('utf-8'))
+        else:
+                return self._compare_(e1, e2, context)
+
+    def _compare_(self, e1 : Exp, e2 : Exp, context : Context):
         e1_constant = not free_vars(e1) and not free_funcs(e1)
         e2_constant = not free_vars(e2) and not free_funcs(e2)
         if e1_constant and e2_constant:
