@@ -16,6 +16,8 @@ from collections import OrderedDict, namedtuple
 import itertools
 from typing import Callable
 
+from multiprocessing import Value
+
 from cozy.syntax import (
     INT, BOOL, TMap,
     Op,
@@ -40,6 +42,8 @@ from cozy.structures import extension_handler
 
 from .acceleration import try_optimize
 from .enumeration import Enumerator, Fingerprint, retention_policy
+
+import threading
 
 eliminate_vars = Option("eliminate-vars", bool, False)
 enable_blacklist = Option("enable-blacklist", bool, False,
@@ -102,7 +106,8 @@ def improve(
         hints         : [Exp]              = (),
         examples      : [{str:object}]     = (),
         cost_model    : CostModel          = None,
-        ops           : [Op]               = ()):
+        ops           : [Op]               = (),
+        improve_count   : Value              = None):
     """Improve the target expression using enumerative synthesis.
 
     This function is a generator that yields increasingly better and better
@@ -270,6 +275,10 @@ def improve(
                 watched_targets.append(new_target)
                 print("Now watching {} targets".format(len(watched_targets)))
                 break
+
+        if improve_count is not None:
+            with improve_count.get_lock():
+                improve_count.value += 1
 
 SearchInfo = namedtuple("SearchInfo", (
     "context",
