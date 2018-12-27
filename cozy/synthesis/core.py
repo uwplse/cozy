@@ -94,6 +94,10 @@ allow_binop_state = Option("allow-binop-state", bool, False,
         + "desireable for Cozy to use simpler concretization functions and "
         + "have the data structure do fast binary operations at run time.")
 
+improvement_limit = Option("improvement-limit", int, -1,
+                           description='Applies a limit to the number of improvements cozy will run on'
+                                       'the specification. (-1) means no limit.')
+
 def never_stop():
     """Takes no arguments, always returns False."""
     return False
@@ -279,6 +283,9 @@ def improve(
         if improve_count is not None:
             with improve_count.get_lock():
                 improve_count.value += 1
+                if improvement_limit != -1 and improve_count.value >= improvement_limit.value:
+                    print("improve limit reached")
+                    return
 
 SearchInfo = namedtuple("SearchInfo", (
     "context",
