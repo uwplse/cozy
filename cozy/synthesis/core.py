@@ -214,6 +214,9 @@ def improve(
     blacklist = {}
 
     while True:
+        if improvement_limit != -1 and improve_count.value >= improvement_limit.value:
+            print("improve limit reached")
+            return
         # 1. find any potential improvement to any sub-exp of target
         for new_target in search_for_improvements(
                 targets=watched_targets,
@@ -283,9 +286,6 @@ def improve(
         if improve_count is not None:
             with improve_count.get_lock():
                 improve_count.value += 1
-                if improvement_limit != -1 and improve_count.value >= improvement_limit.value:
-                    print("improve limit reached")
-                    return
 
 SearchInfo = namedtuple("SearchInfo", (
     "context",
