@@ -214,7 +214,7 @@ def improve(
     blacklist = {}
 
     while True:
-        if improvement_limit != -1 and improve_count.value >= improvement_limit.value:
+        if improvement_limit.value != -1 and improve_count.value >= improvement_limit.value:
             print("improve limit reached")
             return
         # 1. find any potential improvement to any sub-exp of target
