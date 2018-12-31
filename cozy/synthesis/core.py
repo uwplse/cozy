@@ -43,8 +43,6 @@ from cozy.structures import extension_handler
 from .acceleration import try_optimize
 from .enumeration import Enumerator, Fingerprint, retention_policy
 
-import threading
-
 eliminate_vars = Option("eliminate-vars", bool, False)
 enable_blacklist = Option("enable-blacklist", bool, False,
     description='If enabled, skip expressions that have been ' +
