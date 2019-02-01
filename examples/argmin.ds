@@ -9,6 +9,10 @@ MinFinder:
         assume exists xs;
         argmin {x -> x.val} xs
 
+    // this should return null if xs is empty
+    query findmin2()
+        argmin {x -> x.val} xs
+
     op chval(x : T, nv : Native "int")
         assume x in xs;
         assume x.val != nv;
