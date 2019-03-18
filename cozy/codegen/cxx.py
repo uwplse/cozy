@@ -553,6 +553,13 @@ class CxxPrinter(CodeGenerator):
         e = self.visit(ret.e)
         self.write_stmt("return ", e, ";")
 
+    def visit_debugging_info(self, expr: Exp):
+        if hasattr(expr, 'debugging_info'):
+            for line in expr.debugging_info.strip().split('\n'):
+                self.write("// " + line + "\n")
+        else:
+            print("no debugging_info type: %s" % type(expr.debugging_info))
+
     def visit_SCall(self, call):
         target = self.visit(call.target)
         args = [self.visit(a) for a in call.args]
@@ -560,6 +567,7 @@ class CxxPrinter(CodeGenerator):
 
         if type(call.target.type) in (TBag, TList):
             if call.func == "add":
+                self.visit_debugging_info(call.args[0])
                 self.write(target, ".push_back(", args[0], ");")
             elif call.func == "remove":
                 v = self.fv(TNative("auto"), "it")

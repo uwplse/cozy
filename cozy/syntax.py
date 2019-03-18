@@ -71,7 +71,24 @@ BOps = (BOp.And,
         BOp.Or,
         BOp.In)
 
+import inspect
+
 class Exp(ADT):
+    def __init__(self):
+        ADT.__init__(self)
+        self.debugging_info = ""
+        frame_idx = 1
+        depth = 2
+        while depth > 0:
+            caller_frame_record = inspect.stack()[frame_idx]
+            frame = caller_frame_record[0]
+            info = inspect.getframeinfo(frame)
+            frame_idx += 1
+            if info.function == "__init__":
+                continue
+            line = "%s %s %s" % (info.filename, info.function, info.lineno)
+            self.debugging_info += line + "\n"
+            depth -= 1
     def with_type(self, t):
         if hasattr(self, "type"):
             if self.type == t:
