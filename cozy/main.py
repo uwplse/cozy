@@ -176,6 +176,11 @@ def run():
     impl = code
     share_info = defaultdict(list)
 
+    fname = "codegen.synthesized"
+    with open(fname, "wb") as f:
+            pickle.dump(impl, f)
+            print("Saved special code-gen checkpoint {}".format(fname))
+
     try:
         java = args.java
         if java is not None:
