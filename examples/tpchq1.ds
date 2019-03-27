@@ -1,0 +1,167 @@
+TPCH_Store:
+
+    type Char = Native "char"
+    type Date = Int
+
+    type LINEITEM = {
+        orderkey     : Int,
+        partkey      : Int,
+        suppkey      : Int,
+        linenumber   : Int,
+        quantity     : Float,
+        extendedprice: Float,
+        discount     : Float,
+        tax          : Float,
+        returnflag   : Char,
+        linestatus   : Char,
+        shipdate     : Date,
+        commitdate   : Date,
+        receiptdate  : Date,
+        shipinstruct : String,
+        shipmode     : String,
+        comment      : String
+    }
+
+    type ORDERS = {
+        orderkey     : Int,
+        custkey      : Int,
+        orderstatus  : Char,
+        totalprice   : Float,
+        orderdate    : Date,
+        orderpriority: String,
+        clerk        : String,
+        shippriority : Int,
+        comment      : String
+    }
+
+    type PART = {
+        partkey      : Int,
+        name         : String,
+        mfgr         : String,
+        brand        : String,
+        part_type    : String, // NOTE: renamed from "type" to avoid keyword conflict
+        size         : Int,
+        container    : String,
+        retailprice  : Float,
+        comment      : String
+    }
+
+    type CUSTOMER = {
+        custkey      : Int,
+        name         : String,
+        address      : String,
+        nationkey    : Int,
+        phone        : String,
+        acctbal      : Float,
+        mktsegment   : String,
+        comment      : String
+    }
+
+    type SUPPLIER = {
+        suppkey      : Int,
+        name         : String,
+        address      : String,
+        nationkey    : Int,
+        phone        : String,
+        acctbal      : Float,
+        comment      : String
+    }
+
+    type PARTSUPP = {
+        partkey      : Int,
+        suppkey      : Int,
+        availqty     : Int,
+        supplycost   : Float,
+        comment      : String
+    }
+
+    type NATION = {
+        nationkey    : Int,
+        name         : String,
+        regionkey    : Int,
+        comment      : String
+    }
+
+    type REGION = {
+        regionkey    : Int,
+        name         : String,
+        comment      : String
+    }
+
+    state lineitem : Bag<LINEITEM>
+    state orders   : Bag<ORDERS>
+    state part     : Bag<PART>
+    state customer : Bag<CUSTOMER>
+    state supplier : Bag<SUPPLIER>
+    state partsupp : Bag<PARTSUPP>
+    state nation   : Bag<NATION>
+    state region   : Bag<REGION>
+
+    // "primary" keys
+    invariant unique [p.partkey | p <- part];
+    invariant unique [s.suppkey | s <- supplier];
+    invariant unique [(ps.partkey, ps.suppkey) | ps <- partsupp];
+    invariant unique [c.custkey | c <- customer];
+    invariant unique [o.orderkey | o <- orders];
+    invariant unique [(l.orderkey, l.linenumber) | l <- lineitem];
+    invariant unique [n.nationkey | n <- nation];
+    invariant unique [r.regionkey | r <- region];
+
+    // "foreign" keys
+    invariant all [exists [p | p <- part,      p.partkey   == ps.partkey]  | ps <- partsupp];
+    invariant all [exists [s | s <- supplier,  s.suppkey   == ps.suppkey]  | ps <- partsupp];
+    invariant all [exists [n | n <- nation,    n.nationkey == c.nationkey] | c <- customer];
+    invariant all [exists [c | c <- customer,  c.custkey   == o.custkey]   | o <- orders];
+    invariant all [exists [o | o <- orders,    o.orderkey  == l.orderkey]  | l <- lineitem];
+    invariant all [exists [p | p <- part,      p.partkey   == l.partkey]   | l <- lineitem];
+    invariant all [exists [s | s <- supplier,  s.suppkey   == l.suppkey]   | l <- lineitem];
+    invariant all [exists [ps | ps <- partsupp, ps.partkey == l.partkey and ps.suppkey == l.suppkey] | l <- lineitem];
+    invariant all [exists [r | r <- region,    r.regionkey == n.regionkey] | n <- nation];
+
+    op addLineitem(
+            orderkey     : Int,
+            partkey      : Int,
+            suppkey      : Int,
+            linenumber   : Int,
+            quantity     : Float,
+            extendedprice: Float,
+            discount     : Float,
+            tax          : Float,
+            returnflag   : Char,
+            linestatus   : Char,
+            shipdate     : Date,
+            commitdate   : Date,
+            receiptdate  : Date,
+            shipinstruct : String,
+            shipmode     : String,
+            comment      : String)
+        assume exists     [o  | o <- orders,    o.orderkey  == orderkey];
+        assume exists     [p  | p <- part,      p.partkey   == partkey];
+        assume exists     [s  | s <- supplier,  s.suppkey   == suppkey];
+        assume exists     [ps | ps <- partsupp, ps.partkey == partkey and ps.suppkey == suppkey];
+        assume not exists [l  | l <- lineitem, l.orderkey == orderkey and l.linenumber == linenumber];
+        lineitem.add({
+            orderkey      : orderkey,
+            partkey       : partkey,
+            suppkey       : suppkey,
+            linenumber    : linenumber,
+            quantity      : quantity,
+            extendedprice : extendedprice,
+            discount      : discount,
+            tax           : tax,
+            returnflag    : returnflag,
+            linestatus    : linestatus,
+            shipdate      : shipdate,
+            commitdate    : commitdate,
+            receiptdate   : receiptdate,
+            shipinstruct  : shipinstruct,
+            shipmode      : shipmode,
+            comment       : comment});
+
+    op deleteOldSales(orderkey : Int)
+        orders.remove_all([o | o <- orders, o.orderkey == orderkey]);
+        lineitem.remove_all([l | l <- lineitem, l.orderkey == orderkey]);
+
+    query issueQuery()
+        distinct [(l.returnflag, l.linestatus) | l <- lineitem, l.shipdate <= 0]
+

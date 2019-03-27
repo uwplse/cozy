@@ -1,3 +1,5 @@
 !MaxBagMain.java
 !LSortMain.java
 *.jar
+*.synthesized
+!tpchq1.hpp

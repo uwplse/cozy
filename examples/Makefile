@@ -12,4 +12,10 @@ guava-23.0.jar:
 %.class: %.java guava-23.0.jar
 	javac -cp .:* $<
 
+%.synthesized: %.ds
+	cozy '$<' -t 900 --save '$@'
+
+%.hpp: %.synthesized
+	cozy --resume '$<' --c++ '$@'
+
 java: MaxBag.class MaxBagMain.class LSort.class
