@@ -9,7 +9,7 @@ Aggr:
         sum [ i | i <- l ]
 
     query countGt10()
-        sum [ 1 | x <- l, x > 10 ]
+        sum [ 1 | i <- l, i > 10 ]
 
 //    query minimum()
 //        min l
