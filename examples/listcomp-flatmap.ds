@@ -1,0 +1,22 @@
+ListComp02:
+    type R = {
+        A: Int,
+        B: String
+    }
+    type S = {
+        B: String,
+        C: Int
+    }
+
+    state Rs : Bag<R>
+    state Ss : Bag<S>
+
+    // the resulted flatMap can't be reduced easily
+    query q()
+        [(r, s) | r <- Rs, s <- Ss ]
+
+    op insert_r(r: R)
+        Rs.add(r);
+
+    op insert_s(s: S)
+        Ss.add(s);
