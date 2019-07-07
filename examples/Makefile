@@ -13,3 +13,12 @@ guava-23.0.jar:
 	javac -cp .:* $<
 
 java: MaxBag.class MaxBagMain.class LSort.class
+
+listcomp.h: listcomp-flatmap.ds
+	cozy listcomp-flatmap.ds --c++ listcomp.h
+
+listcomp: listcomp.cpp listcomp.h
+	g++ -O3 -Werror '$<' -o '$@'
+
+run-listcomp: listcomp
+	time ./listcomp
