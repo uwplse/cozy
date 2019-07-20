@@ -8,12 +8,14 @@ ListComp02:
         C: Int
     }
 
+    extern mul(i : Int, j : Int) : Int = "{i} * {j}"
+
     state Rs : Bag<R>
     state Ss : Bag<S>
 
     // the resulted flatMap can't be reduced easily
     query q()
-        [(r, s) | r <- Rs, s <- Ss ]
+        sum [ mul(r.A, s.C) | r <- Rs, s <- Ss ]
 
     op insert_r(r: R)
         Rs.add(r);

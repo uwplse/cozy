@@ -149,6 +149,9 @@ def _try_optimize(e : Exp, context : Context, pool : Pool):
     if isinstance(e, EMap):
         for ee in optimized_map(e.e, e.transform_function, args=args):
             yield _check(ee, context, RUNTIME_POOL)
+    if isinstance(e, EFlatMap):
+        for ee in optimized_flatmap(e.e, e.transform_function, args=args):
+            yield _check(ee, context, RUNTIME_POOL)
     from cozy.syntax import ESorted
     from cozy.structures.treemultiset import EMakeMaxTreeMultiset, TMaxTreeMultiset, EMakeMinTreeMultiset, TMinTreeMultiset, ETreeMultisetElems
     target = e
@@ -648,7 +651,27 @@ def optimized_sum(xs, args):
             yield EBinOp(s, "-", x).with_type(x.type)
     if isinstance(xs, ESingleton):
         yield xs.e
+    if isinstance(xs, EFlatMap):
+        f = xs.transform_function
+        if isinstance(f.body, EBinOp) and f.body.op == "+":
+            for e1 in optimized_flatmap(xs.e, ELambda(f.arg, f.body.e1), args):
+                for e2 in optimized_flatmap(xs.e, ELambda(f.arg, f.body.e2), args):
+                    for e in optimized_sum(EBinOp(e1, "+", e2).with_type(e1.type), args):
+                        yield e
+
     yield sum_of(xs)
+
+def optimized_flatmap(xs, f, args):
+    res_type = type(xs.type)(f.body.type)
+    res_type = res_type.elem_type
+    if isinstance(xs, EStateVar) and not any(v in args for v in free_vars(f)):
+        yield EStateVar(EFlatMap(xs.e, f).with_type(res_type)).with_type(res_type)
+    if isinstance(xs, EBinOp):
+        if xs.op in ("+", "-"):
+            for a in optimized_flatmap(xs.e1, f, args):
+                for b in optimized_flatmap(xs.e2, f, args):
+                    yield EBinOp(a, xs.op, b).with_type(res_type)
+    yield EFlatMap(xs, f).with_type(res_type)
 
 def optimized_the(xs, args):
     t = xs.type.elem_type
