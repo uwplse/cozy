@@ -630,7 +630,7 @@ sum_of = lambda xs: EUnaryOp(UOp.Sum, xs).with_type(xs.type.elem_type)
 def optimized_sum(xs, args):
     elem_type = xs.type.elem_type
     if isinstance(xs, EStateVar):
-        yield EStateVar(sum_of(xs)).with_type(elem_type)
+        yield EStateVar(sum_of(strip_EStateVar(xs))).with_type(elem_type)
     if isinstance(xs, EBinOp) and xs.op == "+":
         for a in optimized_sum(xs.e1, args=args):
             for b in optimized_sum(xs.e2, args=args):
