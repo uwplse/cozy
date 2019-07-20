@@ -308,7 +308,7 @@ def optimized_exists(xs):
     if isinstance(xs, EFilter):
         return optimized_any_matches(xs.e, xs.predicate)
     elif isinstance(xs, EStateVar):
-        return EStateVar(EUnaryOp(UOp.Exists, xs.e).with_type(BOOL)).with_type(BOOL)
+        return statevar(EUnaryOp(UOp.Exists, xs.e), BOOL)
     elif isinstance(xs, EBinOp) and xs.op == "+":
         return EAny([
             optimized_exists(xs.e1),
@@ -429,7 +429,7 @@ def optimized_best(xs, keyfunc, op, args):
                 xs.transform_function.apply_to(b),
                 construct_value(elem_type))
     if isinstance(xs, EStateVar) and not any(v in args for v in free_vars(keyfunc)):
-        yield EStateVar(argbest(xs.e, keyfunc).with_type(elem_type)).with_type(elem_type)
+        yield statevar(argbest(xs.e, keyfunc), elem_type)
     if isinstance(xs, ECond):
         for a in optimized_best(xs.then_branch, keyfunc, op, args=args):
             for b in optimized_best(xs.else_branch, keyfunc, op, args=args):
@@ -657,7 +657,7 @@ def optimized_the(xs, args):
             for e2 in optimized_the(xs.else_branch, args):
                 yield optimized_cond(xs.cond, e1, e2)
     if isinstance(xs, EStateVar):
-        yield EStateVar(EUnaryOp(UOp.The, xs.e).with_type(t)).with_type(t)
+        yield statevar(EUnaryOp(UOp.The, xs.e), t)
     if isinstance(xs.type, TList):
         x = excluded_element(xs, args)
         if x is not None:
@@ -680,7 +680,7 @@ def optimized_distinct(xs, args):
         yield xs
         return
     if isinstance(xs, EStateVar):
-        yield EStateVar(EUnaryOp(UOp.Distinct, xs.e).with_type(xs.type)).with_type(xs.type)
+        yield statevar(EUnaryOp(UOp.Distinct, xs.e), xs.type)
     if isinstance(xs, EBinOp):
         if xs.op == "+":
             v = fresh_var(xs.type.elem_type)

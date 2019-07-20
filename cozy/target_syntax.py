@@ -19,6 +19,9 @@ EStm       = declare_case(Exp, "EStm", ["stm", "out_var"])
 # State var barrier: sub-expression should be maintained as a fresh state var
 EStateVar  = declare_case(Exp, "EStateVar", ["e"])
 
+def statevar(e, ty):
+    return EStateVar(e.with_type(ty)).with_type(ty)
+
 def EIsSingleton(e):
     arg = EVar(fresh_name()).with_type(e.type.elem_type)
     return EBinOp(EUnaryOp(UOp.Sum, EMap(e, ELambda(arg, ONE)).with_type(TBag(INT))).with_type(INT), "<=", ONE).with_type(BOOL)
