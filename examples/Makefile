@@ -14,11 +14,13 @@ guava-23.0.jar:
 
 java: MaxBag.class MaxBagMain.class LSort.class
 
+TIMEOUT ?= 240
+
 listcomp.h: listcomp-flatmap.ds
-	cozy listcomp-flatmap.ds --c++ listcomp.h
+	cozy -t $(TIMEOUT) --allow-big-sets listcomp-flatmap.ds --c++ listcomp.h -p 8080 --verbose --save listcomp.synthesized
 
 listcomp: listcomp.cpp listcomp.h
-	g++ -O3 -Werror '$<' -o '$@'
+	g++ -std=c++11 -O3 -Werror '$<' -o '$@'
 
 run-listcomp: listcomp
 	time ./listcomp

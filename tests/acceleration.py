@@ -2,13 +2,13 @@ from collections import OrderedDict
 import unittest
 import sys
 
-from cozy.common import OrderedSet, unique
+from cozy.common import OrderedSet, unique, save_property
 from cozy.target_syntax import *
 from cozy.syntax_tools import pprint, pprint_unpacked
 from cozy.contexts import RootCtx
 from cozy.pools import Pool, RUNTIME_POOL
 from cozy.synthesis.acceleration import try_optimize, optimized_the
-from cozy.synthesis.core import possibly_useful
+from cozy.synthesis.core import possibly_useful, allow_big_sets
 from cozy.solver import ModelCachingSolver
 from cozy.evaluation import eval
 from cozy.cost_model import CostModel, Order, debug_comparison
@@ -24,7 +24,7 @@ def can_improve(e, context, assumptions : Exp = ETRUE, pool : Pool = RUNTIME_POO
     options = list(unique(options))
     print("unique: {}".format(len(options)))
     for i, ee in enumerate(options):
-        print(" --> trying {}/{}...".format(i, len(options)))
+        print("\n --> trying {}/{}...".format(i, len(options)))
         pprint_unpacked(ee, out=sys.stdout)
         wf = exp_wf(ee, context=context, pool=pool, assumptions=assumptions)
         if not wf:
@@ -60,6 +60,31 @@ def can_improve(e, context, assumptions : Exp = ETRUE, pool : Pool = RUNTIME_POO
     return found_improvement
 
 class TestAccelerationRules(unittest.TestCase):
+    def test_flatmap_sum(self):
+        with save_property(allow_big_sets, "value"):
+            allow_big_sets.value = True
+            target = EUnaryOp('sum', EFlatMap(
+                EStateVar(EVar('Rs').with_type(TBag(TRecord((('A', TInt()), ('B', TString())))))).with_type(
+                    TBag(TRecord((('A', TInt()), ('B', TString()))))),
+                ELambda(EVar('r').with_type(TRecord((('A', TInt()), ('B', TString())))), EBinOp(EMap(
+                    EStateVar(EVar('Ss').with_type(TBag(TRecord((('B', TString()), ('C', TInt())))))).with_type(
+                        TBag(TRecord((('B', TString()), ('C', TInt()))))),
+                    ELambda(EVar('_var6932').with_type(TRecord((('B', TString()), ('C', TInt())))), ECall('mul', (
+                    EGetField(EVar('r').with_type(TRecord((('A', TInt()), ('B', TString())))), 'A').with_type(TInt()),
+                    EGetField(EVar('_var6932').with_type(TRecord((('B', TString()), ('C', TInt())))), 'C').with_type(
+                        TInt()))).with_type(TInt()))).with_type(TBag(TInt())), '+', ESingleton(ECall('mul', (
+                EGetField(EVar('r').with_type(TRecord((('A', TInt()), ('B', TString())))), 'A').with_type(TInt()),
+                EGetField(EVar('s').with_type(TRecord((('B', TString()), ('C', TInt())))), 'C').with_type(
+                    TInt()))).with_type(TInt())).with_type(TBag(TInt()))).with_type(TBag(TInt())))).with_type(
+                TBag(TInt()))).with_type(TInt())
+            context = RootCtx(state_vars=OrderedSet([EVar('Rs').with_type(TBag(TRecord((('A', TInt()), ('B', TString()))))),
+                                                    EVar('Ss').with_type(
+                                                        TBag(TRecord((('B', TString()), ('C', TInt())))))]),
+                            args=OrderedSet([EVar('s').with_type(TRecord((('B', TString()), ('C', TInt()))))]),
+                            funcs=OrderedDict([('mul', TFunc((TInt(), TInt()), TInt()))]))
+            assumptions = EBool(True).with_type(TBool())
+            assert can_improve(target, context=context, assumptions=assumptions)
+
 
     def test_argmin(self):
         xs = EVar("xs").with_type(INT_BAG)
