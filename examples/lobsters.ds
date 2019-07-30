@@ -1,0 +1,46 @@
+// https://github.com/lobsters/lobsters
+Lobsters:
+  type HiddenToUser = {
+    story_id : Int,
+    user_id : Int
+  }
+  type StoryTag = {
+    story_id : Int,
+    tag_id : Int
+  }
+  handletype Vote = {
+    id : Int,
+    user_id : Int,
+    comment_id : Int
+  }
+  handletype Story = {
+    merged_story_id : Int,
+    is_expired : Bool,
+    created_at : Int,
+    vote_count : Int,
+    hidden_to_users : Bag<HiddenToUser>,
+    tags : Bag<StoryTag>,
+    votes : Bag<Vote>
+  }
+  state stories : Bag<Story>
+  state votes : Bag<Vote>
+  invariant unique [ v.val.id | v <- votes ];
+  invariant all [ v in votes | s <- stories, v <- s.val.votes ];
+  query selectStoryVotes(p1: Int, p2 : Int, p3 : Int, p4 : Int)
+    [ (s, [ v | v <- s.val.votes,
+                v.val.comment_id == 0,
+                v.val.user_id == p4 ])
+        | s <- stories,
+          s.val.merged_story_id == 0,
+          s.val.is_expired == false,
+          s.val.vote_count > 0,
+          not (exists [ u | u <- s.val.hidden_to_users, u.user_id == p1 ]),
+          not (exists [ t | t <- s.val.tags, t.tag_id == p2 ]),
+          s.val.created_at > p3 ]
+  op insertVote(v : Vote)
+    assume not (exists [ v0 | v0 <- votes, v0.val.id == v.val.id ]);
+    votes.add(v);
+
+  op insertStory(s : Story)
+    assume all [ v in votes | v <- s.val.votes ];
+    stories.add(s);
