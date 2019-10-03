@@ -9,7 +9,7 @@ from cozy.typecheck import retypecheck, typecheck
 from cozy.evaluation import mkval
 from cozy.cost_model import CostModel
 from cozy.synthesis import construct_initial_implementation, improve_implementation
-from cozy.synthesis.core import improve
+from cozy.synthesis.core import improve, allow_random_assignment_heuristic
 from cozy.synthesis.enumeration import Enumerator, Fingerprint
 from cozy.parse import parse_spec
 from cozy.solver import valid, satisfy
@@ -42,14 +42,15 @@ def check_discovery(spec, expected, state_vars=[], args=[], examples=[], assumpt
 class TestSynthesisCore(unittest.TestCase):
 
     def test_easy_synth(self):
-        res = None
-        x = EVar("x").with_type(BOOL)
-        xs = EVar("xs").with_type(TBag(BOOL))
-        target = EFilter(EStateVar(xs), ELambda(x, x))
-        assumptions = EUnaryOp(UOp.All, xs)
-        assert retypecheck(target)
-        assert retypecheck(assumptions)
-        assert check_discovery(target, EStateVar(EVar("xs")), args=[x], state_vars=[xs], assumptions=assumptions)
+        with save_property(allow_random_assignment_heuristic, "value"):
+            allow_random_assignment_heuristic.value = False
+            x = EVar("x").with_type(BOOL)
+            xs = EVar("xs").with_type(TBag(BOOL))
+            target = EFilter(EStateVar(xs), ELambda(x, x))
+            assumptions = EUnaryOp(UOp.All, xs)
+            assert retypecheck(target)
+            assert retypecheck(assumptions)
+            assert check_discovery(target, EStateVar(EVar("xs")), args=[x], state_vars=[xs], assumptions=assumptions)
 
     def test_bag_plus_minus(self):
         t = THandle("H", INT)

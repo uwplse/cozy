@@ -22,8 +22,14 @@ listcomp.h: listcomp-flatmap.ds
 select.h: select-flatmap.ds
 	cozy -t $(TIMEOUT) --allow-big-sets select-flatmap.ds --c++ select.h -p 8080 --verbose --save select.synthesized
 
+select: select.cpp select.h
+	g++ -std=c++11 -O3 -Werror '$<' -o '$@'
+
 listcomp: listcomp.cpp listcomp.h
 	g++ -std=c++11 -O3 -Wno-parentheses-equality -Werror '$<' -o '$@'
+
+run-select: select
+	time ./select
 
 run-listcomp: listcomp
 	time ./listcomp
