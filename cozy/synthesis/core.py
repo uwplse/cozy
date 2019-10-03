@@ -18,6 +18,7 @@ from typing import Callable
 
 from multiprocessing import Value
 
+from cozy import random_assignment
 from cozy.syntax import (
     INT, BOOL, TMap,
     Op,
@@ -30,7 +31,7 @@ from cozy.target_syntax import (
 from cozy.typecheck import is_collection, is_scalar
 from cozy.syntax_tools import subst, pprint, free_vars, fresh_var, alpha_equivalent, strip_EStateVar, freshen_binders, wrap_naked_statevars, break_conj, inline_lets
 from cozy.wf import exp_wf
-from cozy.common import No, OrderedSet, unique, OrderedSet, StopException
+from cozy.common import No, unique, OrderedSet, StopException
 from cozy.solver import valid, solver_for_context, ModelCachingSolver
 from cozy.evaluation import construct_value
 from cozy.cost_model import CostModel, Order, LINEAR_TIME_UOPS
@@ -95,6 +96,9 @@ allow_binop_state = Option("allow-binop-state", bool, False,
 improvement_limit = Option("improvement-limit", int, -1,
     description="Applies a limit to the number of improvements cozy will run"
         + "on the specification.  (-1) means no limit.")
+
+allow_random_assignment_heuristic = Option("allow-random-assignment-heuristic", bool, True,
+    description="Use a random assignment heuristic instead of solver to solve sat/unsat problem")
 
 def never_stop():
     """Takes no arguments, always returns False."""
@@ -242,7 +246,22 @@ def improve(
 
             # 2. check
             with task("verifying candidate"):
-                counterexample = solver.satisfy(ENot(EEq(target, new_target)))
+                # try heuristic based solving first
+                e = ENot(EEq(target, new_target))
+                if allow_random_assignment_heuristic.value:
+                    if random_assignment.unsatisfiable(e):
+                        counterexample = None
+                    else:
+                        try:
+                            counterexample = random_assignment.satisfy(e, solver, assumptions)
+                        except Exception:
+                            counterexample = None
+                        if counterexample is None:
+                            event("failed assignmnents: for %s\n" % e)
+                            counterexample = solver.satisfy(e)
+                            event("counter-example: for %s\n" % counterexample)
+                else:
+                    counterexample = solver.satisfy(e)
 
             if counterexample is not None:
                 if counterexample in examples:
