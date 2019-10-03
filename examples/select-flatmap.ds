@@ -1,0 +1,25 @@
+SelectFlatmap:
+    type R = {
+        A: Int,
+        B: String
+    }
+    type S = {
+        B: String,
+        C: Int
+    }
+    type Q = {
+        B: String,
+        C: Int
+    }
+    type W = {
+        B: String,
+        C: Int
+    }
+
+    state Rs : Bag<R>
+    state Ss : Bag<S>
+    state Qs : Bag<Q>
+    state Ws : Bag<W>
+
+    query q()
+        [ (r.A, s.C, q.B, w.C) | r <- Rs, s <- Ss, q <- Qs, w <- Ws, r.A == 15, q.B == w.B ]
