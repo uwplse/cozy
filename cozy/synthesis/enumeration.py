@@ -87,7 +87,10 @@ class Fingerprint(object):
         return (self.type, self.outputs)
 
     def __hash__(self) -> int:
-        return hash(self._as_tuple())
+        try:
+            return hash(self._as_tuple())
+        except TypeError:
+            pass
 
     def __eq__(self, other) -> bool:
         """Test for deep equality.

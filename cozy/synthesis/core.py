@@ -18,6 +18,7 @@ from typing import Callable
 
 from multiprocessing import Value
 
+from cozy.counterexample import find_counterexample
 from cozy.syntax import (
     INT, BOOL, TMap,
     Op,
@@ -32,7 +33,7 @@ from cozy.syntax_tools import subst, pprint, free_vars, fresh_var, alpha_equival
 from cozy.wf import exp_wf
 from cozy.common import No, OrderedSet, unique, OrderedSet, StopException
 from cozy.solver import valid, solver_for_context, ModelCachingSolver
-from cozy.evaluation import construct_value
+from cozy.evaluation import construct_value, eval
 from cozy.cost_model import CostModel, Order, LINEAR_TIME_UOPS
 from cozy.opts import Option
 from cozy.pools import Pool, RUNTIME_POOL, STATE_POOL, pool_name
@@ -223,7 +224,10 @@ def improve(
 
             # 2. check
             with task("verifying candidate"):
-                counterexample = solver.satisfy(ENot(EEq(target, new_target)))
+                # TODO: heuristic based, random testing based refutation
+                counterexample = find_counterexample(ENot(EEq(target, new_target)))
+                if counterexample is None:
+                    counterexample = solver.satisfy(ENot(EEq(target, new_target)))
 
             if counterexample is not None:
                 if counterexample in examples:
