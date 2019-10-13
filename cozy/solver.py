@@ -16,10 +16,10 @@ import threading
 import z3
 
 from cozy.target_syntax import *
-from cozy.syntax_tools import BottomUpExplorer, pprint, free_vars, free_funcs, cse, all_exps, purify
+from cozy.syntax_tools import BottomUpExplorer, pprint, free_vars, free_funcs, cse, all_exps, purify, alpha_equivalent
 from cozy.typecheck import is_collection, is_numeric
 from cozy.common import declare_case, fresh_name, Visitor, FrozenDict, typechecked, extend, OrderedSet, make_random_access
-from cozy import evaluation
+from cozy import evaluation, random_assignment
 from cozy.opts import Option
 from cozy.structures import extension_handler
 from cozy.logging import task
@@ -342,6 +342,8 @@ class ToZ3(Visitor):
             return res[0][0]
 
         elif isinstance(t, TBag) or isinstance(t, TSet):
+            # FIXME: specialize on syntactic forms of e1 and e2
+
             elem_type = t.elem_type
             lhs_mask, lhs_elems = e1
             rhs_mask, rhs_elems = e2
@@ -620,7 +622,10 @@ class ToZ3(Visitor):
         # constraint 2: the new list is sorted
         for i in range(len(bag_elems)):
             for j in range(i + 1, len(bag_elems)):
-                self.solver.add(self.implies(self.all([bag_mask2[i], bag_mask2[j]]), ite(BOOL, asc, bag_elems2[i] <= bag_elems2[j], bag_elems2[i] >= bag_elems2[j])))
+                try:
+                    self.solver.add(self.implies(self.all([bag_mask2[i], bag_mask2[j]]), ite(BOOL, asc, bag_elems2[i] <= bag_elems2[j], bag_elems2[i] >= bag_elems2[j])))
+                except TypeError as e:
+                    raise e
         return v
     def visit_ETreeMultisetElems(self, e, env):
         # this is a no-op since Z3 encoding of inner treeset will be converted to ESorted, and transformed into Z3
@@ -654,7 +659,15 @@ class ToZ3(Visitor):
         # ("distinct" is very expensive for the solver)
         if e.op == BOp.In and isinstance(e.e2, EUnaryOp) and e.e2.op == UOp.Distinct:
             return self.visit(EIn(e.e1, e.e2.e), env)
-
+        if e.op == "==" and isinstance(e.e1, EFlatMap) and isinstance(e.e2, EFlatMap):
+            v1 = self.visit(e.e1, env)
+            v2 = self.visit(e.e2, env)
+            ret = self.eq(e.e1.type, v1, v2)
+            if alpha_equivalent(e.e1.e, e.e2.e):
+                return ret
+            u1 = self.visit(ELen(e.e1.e), env)
+            u2 = self.visit(ELen(e.e2.e), env)
+            return self.all(self.eq(ENum, u1, u2), ret)
         # normal path
         v1 = self.visit(e.e1, env)
         v2 = self.visit(e.e2, env)

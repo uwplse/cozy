@@ -225,9 +225,20 @@ def improve(
             # 2. check
             with task("verifying candidate"):
                 # TODO: heuristic based, random testing based refutation
-                counterexample = random_assignment.satisfy(ENot(EEq(target, new_target)))
-                if counterexample is None:
-                    counterexample = solver.satisfy(ENot(EEq(target, new_target)))
+                e = ENot(EEq(target, new_target))
+                if random_assignment.notvalid(e):
+                    counterexample = None
+                else:
+                    counterexample = random_assignment.satisfy(e)
+                    if counterexample is None:
+                        event("failed assignmnents: for %s\n" % e)
+                        counterexample = solver.satisfy(e)
+                # counterexample2 = solver.satisfy(ENot(EEq(target, new_target)))
+                # if counterexample1 is not None:
+                #     # assert counterexample2 is not None
+                #     if counterexample2 is not None:
+                #         assert counterexample1.keys() == counterexample2.keys()
+                # counterexample = counterexample2
                 # if counterexample is not None:
                     # with open("../tests/counterexamples.py", "a") as f:
                     #     f.write("tests.append((%s, %s, %s))\n" % (target, new_target, counterexample))

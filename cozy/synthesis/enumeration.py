@@ -77,7 +77,7 @@ class Fingerprint(object):
     @staticmethod
     def of(e : Exp, inputs : [{str:object}]):
         """Compute the fingerprint of an expression over the given inputs."""
-        return Fingerprint(e.type, eval_bulk(e, inputs))
+        return Fingerprint(e.type, eval_bulk(e, inputs, True))
 
     def __init__(self, type : Type, outputs : [object]):
         self.type = type

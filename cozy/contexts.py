@@ -231,7 +231,7 @@ class UnderBinder(Context):
         inst = self._parent.instantiate_examples(examples)
         res = []
         for ex in inst:
-            vals = eval(self.bag, ex)
+            vals = eval(self.bag, ex, use_default_values_for_undefined_vars=True)
             for v in unique(vals):
                 ex = dict(ex)
                 ex[self.var.id] = v
