@@ -18,7 +18,7 @@ from typing import Callable
 
 from multiprocessing import Value
 
-# from cozy.counterexample import find_counterexample
+from cozy import random_assignment
 from cozy.syntax import (
     INT, BOOL, TMap,
     Op,
@@ -225,12 +225,12 @@ def improve(
             # 2. check
             with task("verifying candidate"):
                 # TODO: heuristic based, random testing based refutation
-                # counterexample = find_counterexample(ENot(EEq(target, new_target)))
-                # if counterexample is None:
-                counterexample = solver.satisfy(ENot(EEq(target, new_target)))
-                if counterexample is not None:
-                    with open("../tests/counterexamples.py", "a") as f:
-                        f.write("tests.append((%s, %s, %s))\n" % (target, new_target, counterexample))
+                counterexample = random_assignment.satisfy(ENot(EEq(target, new_target)))
+                if counterexample is None:
+                    counterexample = solver.satisfy(ENot(EEq(target, new_target)))
+                # if counterexample is not None:
+                    # with open("../tests/counterexamples.py", "a") as f:
+                    #     f.write("tests.append((%s, %s, %s))\n" % (target, new_target, counterexample))
 
             if counterexample is not None:
                 if counterexample in examples:

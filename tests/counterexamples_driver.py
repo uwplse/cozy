@@ -1,4 +1,4 @@
-from cozy.counterexample import *
+from cozy.random_assignment import *
 from tests.counterexamples import *
 
 for target, new_target, counterexample in tests:
