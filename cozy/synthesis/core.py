@@ -18,7 +18,7 @@ from typing import Callable
 
 from multiprocessing import Value
 
-from cozy.counterexample import find_counterexample
+# from cozy.counterexample import find_counterexample
 from cozy.syntax import (
     INT, BOOL, TMap,
     Op,
@@ -228,9 +228,9 @@ def improve(
                 # counterexample = find_counterexample(ENot(EEq(target, new_target)))
                 # if counterexample is None:
                 counterexample = solver.satisfy(ENot(EEq(target, new_target)))
-                # if counterexample is not None:
-                    # with open("../tests/counterexamples.py", "a") as f:
-                    #     f.write("tests.append((%s, %s, %s))\n" % (target, new_target, counterexample))
+                if counterexample is not None:
+                    with open("../tests/counterexamples.py", "a") as f:
+                        f.write("tests.append((%s, %s, %s))\n" % (target, new_target, counterexample))
 
             if counterexample is not None:
                 if counterexample in examples:
