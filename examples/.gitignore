@@ -2,3 +2,5 @@
 !LSortMain.java
 *.jar
 *.synthesized
+listcomp
+*.rb

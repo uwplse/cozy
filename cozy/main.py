@@ -50,6 +50,9 @@ def run():
     cxx_opts.add_argument("--c++", metavar="FILE.h", default=None, help="Output file for C++ (header-only class), use '-' for stdout")
     cxx_opts.add_argument("--use-qhash", action="store_true", help="QHash---the Qt implementation of hash maps---often outperforms the default C++ map implementations")
 
+    ruby_opts = parser.add_argument_group("Ruby codegen")
+    ruby_opts.add_argument("--ruby", metavar="FILE.rb", default=None, help="Output file for Ruby, use '-' for stdout")
+
     internal_opts = parser.add_argument_group("Internal parameters")
     opts.setup(internal_opts)
 
@@ -187,6 +190,11 @@ def run():
         if cxx is not None:
             with common.open_maybe_stdout(cxx) as out:
                 codegen.CxxPrinter(out=out, use_qhash=args.use_qhash).visit(impl, state_map, share_info, abstract_state=ast.spec.statevars)
+
+        ruby = args.ruby
+        if ruby is not None:
+            with common.open_maybe_stdout(ruby) as out:
+                codegen.RubyPrinter(out=out).visit(impl, state_map, share_info, abstract_state=ast.spec.statevars)
     except:
         print("Code generation failed!")
         if save_failed_codegen_inputs.value:
