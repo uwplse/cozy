@@ -216,9 +216,9 @@ def improve(
     while True:
 
         # 0. check whether we are allowed to keep working
-        if improve_count is not None and improvement_limit.value != -1:
+        if improve_count is not None:
             with improve_count.get_lock():
-                if improve_count.value >= improvement_limit.value:
+                if improvement_limit.value != -1 and improve_count.value >= improvement_limit.value:
                     print("improve limit reached")
                     return
 
