@@ -95,8 +95,8 @@ allow_binop_state = Option("allow-binop-state", bool, False,
         + "have the data structure do fast binary operations at run time.")
 
 improvement_limit = Option("improvement-limit", int, -1,
-                           description='Applies a limit to the number of improvements cozy will run on'
-                                       'the specification. (-1) means no limit.')
+    description="Applies a limit to the number of improvements cozy will run"
+        + "on the specification.  (-1) means no limit.")
 
 def never_stop():
     """Takes no arguments, always returns False."""
@@ -111,7 +111,7 @@ def improve(
         examples      : [{str:object}]     = (),
         cost_model    : CostModel          = None,
         ops           : [Op]               = (),
-        improve_count   : Value              = None):
+        improve_count : Value              = None):
     """Improve the target expression using enumerative synthesis.
 
     This function is a generator that yields increasingly better and better
