@@ -214,9 +214,21 @@ def improve(
     blacklist = {}
 
     while True:
-        if improvement_limit.value != -1 and improve_count.value >= improvement_limit.value:
-            print("improve limit reached")
-            return
+
+        # 0. check whether we are allowed to keep working
+        if improve_count is not None and improvement_limit.value != -1:
+            with improve_count.get_lock():
+                if improve_count.value >= improvement_limit.value:
+                    print("improve limit reached")
+                    return
+
+                # NOTE: This code treats `improve_count` as a "budget", and it
+                # "pays" for the improvement before actually doing the work.
+                # Put another way, `improve_count.value` is the sum of (1) the
+                # number of improvements found and (2) the number of
+                # improvements being actively worked on.
+                improve_count.value += 1
+
         # 1. find any potential improvement to any sub-exp of target
         for new_target in search_for_improvements(
                 targets=watched_targets,
@@ -282,10 +294,6 @@ def improve(
                 watched_targets.append(new_target)
                 print("Now watching {} targets".format(len(watched_targets)))
                 break
-
-        if improve_count is not None:
-            with improve_count.get_lock():
-                improve_count.value += 1
 
 SearchInfo = namedtuple("SearchInfo", (
     "context",
