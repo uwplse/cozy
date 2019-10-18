@@ -92,6 +92,10 @@ allow_binop_state = Option("allow-binop-state", bool, False,
         + "desireable for Cozy to use simpler concretization functions and "
         + "have the data structure do fast binary operations at run time.")
 
+improvement_limit = Option("improvement-limit", int, -1,
+    description="Applies a limit to the number of improvements cozy will run"
+        + "on the specification.  (-1) means no limit.")
+
 def never_stop():
     """Takes no arguments, always returns False."""
     return False
@@ -105,7 +109,7 @@ def improve(
         examples      : [{str:object}]     = (),
         cost_model    : CostModel          = None,
         ops           : [Op]               = (),
-        improve_count   : Value              = None):
+        improve_count : Value              = None):
     """Improve the target expression using enumerative synthesis.
 
     This function is a generator that yields increasingly better and better
@@ -208,6 +212,21 @@ def improve(
     blacklist = {}
 
     while True:
+
+        # 0. check whether we are allowed to keep working
+        if improve_count is not None:
+            with improve_count.get_lock():
+                if improvement_limit.value != -1 and improve_count.value >= improvement_limit.value:
+                    print("improve limit reached")
+                    return
+
+                # NOTE: This code treats `improve_count` as a "budget", and it
+                # "pays" for the improvement before actually doing the work.
+                # Put another way, `improve_count.value` is the sum of (1) the
+                # number of improvements found and (2) the number of
+                # improvements being actively worked on.
+                improve_count.value += 1
+
         # 1. find any potential improvement to any sub-exp of target
         for new_target in search_for_improvements(
                 targets=watched_targets,
@@ -273,10 +292,6 @@ def improve(
                 watched_targets.append(new_target)
                 print("Now watching {} targets".format(len(watched_targets)))
                 break
-
-        if improve_count is not None:
-            with improve_count.get_lock():
-                improve_count.value += 1
 
 SearchInfo = namedtuple("SearchInfo", (
     "context",
