@@ -10,7 +10,7 @@ from cozy.syntax import (
     Type, INT, BOOL, TNative, TSet, TList, TBag, THandle, TEnum, TTuple, TRecord, TFloat,
     Exp, EVar, ENum, EFALSE, ETRUE, ZERO, ENull, EEq, ELt, ENot, ECond, EAll,
     EEnumEntry, ETuple, ETupleGet, EGetField,
-    Stm, SNoOp, SIf, SDecl, SSeq, seq, SForEach, SAssign)
+    Stm, SNoOp, SIf, SDecl, SSeq, seq, SForEach, SAssign, SCall)
 from cozy.target_syntax import TArray, TRef, EEnumToInt, EMapKeys, SReturn
 from cozy.syntax_tools import pprint, all_types, fresh_var, subst, free_vars, all_exps, break_seq, shallow_copy
 from cozy.typecheck import is_collection, is_scalar
@@ -271,6 +271,13 @@ class CxxPrinter(CodeGenerator):
         m = self.fv(e.type)
         self.declare(m, e)
         return m.id
+
+    def visit_EMapKeys(self, e):
+        key = self.fv(e.type.elem_type)
+        keys = self.fv(e.type)
+        add_to_keys = SCall(keys, "add", [key])
+        self.visit(SForEach(key, e, add_to_keys))
+        return keys.id
 
     def visit_EHasKey(self, e):
         map = self.visit(e.map)

@@ -22,3 +22,6 @@ ListComp02:
 
     op insert_s(s: S)
         Ss.add(s);
+
+    op delete_r(a: Int)
+        Rs.remove_all([ r | r <- Rs, r.A == a ]);
