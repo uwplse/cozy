@@ -101,7 +101,12 @@ def run():
 
     start = datetime.datetime.now()
 
-    if not args.simple:
+    if args.simple:
+        if args.save:
+            with open(args.save, "wb") as f:
+                pickle.dump(ast, f)
+                print("Saved implementation to file {}".format(args.save))
+    else:
         callback = None
         server = None
 
@@ -146,15 +151,11 @@ def run():
             ast,
             timeout           = datetime.timedelta(seconds=args.timeout),
             progress_callback = callback,
-            improve_count=improve_count)
+            improve_count=improve_count,
+            dump_synthesized_in_file=args.save)
 
         if server is not None:
             server.join()
-
-    if args.save:
-        with open(args.save, "wb") as f:
-            pickle.dump(ast, f)
-            print("Saved implementation to file {}".format(args.save))
 
     print("Generating IR...")
     code = ast.code
