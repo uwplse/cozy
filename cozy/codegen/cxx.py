@@ -275,6 +275,7 @@ class CxxPrinter(CodeGenerator):
     def visit_EMapKeys(self, e):
         key = self.fv(e.type.elem_type)
         keys = self.fv(e.type)
+        self.declare(keys)
         add_to_keys = SCall(keys, "add", [key])
         self.visit(SForEach(key, e, add_to_keys))
         return keys.id
