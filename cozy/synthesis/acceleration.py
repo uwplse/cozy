@@ -630,7 +630,13 @@ def optimized_map(xs, f, args):
 
 sum_of = lambda xs: EUnaryOp(UOp.Sum, xs).with_type(xs.type.elem_type)
 
-def optimized_sum(xs, args):
+def optimized_sum(xs, args, inplace_opt=True):
+    """
+    :param xs:
+    :param args:
+    :param inplace_opt: whether to apply inplace optimization, which might cause infinite recursive
+    :return:
+    """
     elem_type = xs.type.elem_type
     if isinstance(xs, EStateVar):
         yield EStateVar(sum_of(strip_EStateVar(xs))).with_type(elem_type)
@@ -653,12 +659,22 @@ def optimized_sum(xs, args):
         yield xs.e
     if isinstance(xs, EFlatMap):
         f = xs.transform_function
+        # sum flatMap(e1 + e2, f) == sum flatMap(e1, f) + sum flatMap(e2, f)
         if isinstance(f.body, EBinOp) and f.body.op == "+":
             for e1 in optimized_flatmap(xs.e, ELambda(f.arg, f.body.e1), args):
                 for e2 in optimized_flatmap(xs.e, ELambda(f.arg, f.body.e2), args):
                     for e in optimized_sum(EBinOp(e1, "+", e2).with_type(e1.type), args):
                         yield e
-
+        # sum flatMap(R, \r -> map(S, \s -> g(r, s))) == sum flatMap(S, \s -> map(R, \r -> g(r, s)))
+        if isinstance(f.body, EMap) and inplace_opt:
+            R = xs.e
+            r = f.arg
+            S = f.body.e
+            s = f.body.transform_function.arg
+            g = f.body.transform_function.body
+            for e in optimized_flatmap(S, ELambda(s, EMap(R, ELambda(r, g)).with_type(type(R.type)(g.type))), args):
+                for e2 in optimized_sum(e, args, inplace_opt=False):
+                    yield e2
     yield sum_of(xs)
 
 def optimized_flatmap(xs, f, args):
