@@ -10,6 +10,7 @@ import itertools
 from typing import Callable, Any
 import sys
 import os
+import pickle
 from queue import Empty
 from multiprocessing import Value
 
@@ -99,7 +100,8 @@ def improve_implementation(
         impl              : Implementation,
         timeout           : datetime.timedelta = datetime.timedelta(seconds=60),
         progress_callback : Callable[[Implementation], Any] = None,
-        improve_count     : Value = None) -> Implementation:
+        improve_count     : Value = None,
+        save              : str = None) -> Implementation:
     """Improve an implementation.
 
     This function tries to synthesize a better version of the given
@@ -240,6 +242,11 @@ def improve_implementation(
                     reconcile_jobs()
                 else:
                     print("  (skipped; {} was aleady cleaned up)".format(q.name))
+
+        if save:
+            with open(save, "wb") as f:
+                pickle.dump(impl, f)
+                print("Saved implementation to file {}".format(save))
 
         # stop jobs
         print("Stopping jobs")
