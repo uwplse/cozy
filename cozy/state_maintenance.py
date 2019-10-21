@@ -204,6 +204,8 @@ def sketch_update(
     subgoals (new queries that appear in the code).
     """
 
+    if alpha_equivalent(old_value, new_value):
+        return (syntax.SNoOp(), [])
     if valid(syntax.EImplies(
             syntax.EAll(itertools.chain(assumptions, invariants)),
             syntax.EEq(old_value, new_value))):
