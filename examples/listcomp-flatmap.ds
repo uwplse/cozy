@@ -25,3 +25,6 @@ ListComp02:
 
     op delete_r(a: Int)
         Rs.remove_all([ r | r <- Rs, r.A == a ]);
+
+    op delete_s(c: Int)
+        Ss.remove_all([ s | s <- Ss, s.C == c ]);
