@@ -10,6 +10,7 @@ import itertools
 from typing import Callable, Any
 import sys
 import os
+import pickle
 from queue import Empty
 from multiprocessing import Value
 
@@ -99,7 +100,8 @@ def improve_implementation(
         impl              : Implementation,
         timeout           : datetime.timedelta = datetime.timedelta(seconds=60),
         progress_callback : Callable[[Implementation], Any] = None,
-        improve_count     : Value = None) -> Implementation:
+        improve_count     : Value = None,
+        dump_synthesized_in_file: str = None) -> Implementation:
     """Improve an implementation.
 
     This function tries to synthesize a better version of the given
@@ -108,6 +110,10 @@ def improve_implementation(
     If provided, progress_callback will be called whenever a better
     implementation is found.  It will be given the better implementation, which
     it should not modify or cache.
+
+    If provided, the synthesized implementation will be dumped to dump_synthesized_in_file
+    before cleaning up the running threads when the loop terminates (because of time-outs etc.).
+    This is useful when thread that invokes Z3 is not responsive to cleanup.
     """
 
     start_time = datetime.datetime.now()
@@ -240,6 +246,11 @@ def improve_implementation(
                     reconcile_jobs()
                 else:
                     print("  (skipped; {} was aleady cleaned up)".format(q.name))
+
+        if dump_synthesized_in_file is not None:
+            with open(dump_synthesized_in_file, "wb") as f:
+                pickle.dump(impl, f)
+                print("Dumped implementation to file {}".format(dump_synthesized_in_file))
 
         # stop jobs
         print("Stopping jobs")
