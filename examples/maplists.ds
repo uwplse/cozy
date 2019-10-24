@@ -1,0 +1,21 @@
+MapOfLists:
+    type R = {
+        A: Int,
+        B: String
+    }
+    type S = {
+        B: String,
+        C: Int
+    }
+
+    state Rs : Bag<R>
+    state Ss : Bag<S>
+
+    query q()
+        [(r.A, sum [ s.C | s <- Ss, s.B == r.B ]) | r <- Rs ]
+
+    op insert_r(r: R)
+        Rs.add(r);
+
+    op insert_s(s: S)
+        Ss.add(s);
