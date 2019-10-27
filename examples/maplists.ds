@@ -11,8 +11,12 @@ MapOfLists:
     state Rs : Bag<R>
     state Ss : Bag<S>
 
+    // TODO: fold this into q
+    private query sumRB(b: String)
+        sum [ s.C | s <- Ss, s.B == b ]
+
     query q()
-        [(r.A, sum [ s.C | s <- Ss, s.B == r.B ]) | r <- Rs ]
+        [(r.A, sumRB(r.B)) | r <- Rs ]
 
     op insert_r(r: R)
         Rs.add(r);

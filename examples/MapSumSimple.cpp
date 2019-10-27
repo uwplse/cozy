@@ -1,7 +1,7 @@
 // listcomp example main driver
 #include <iostream>
 
-#include "maplists.h"
+#include "MapSumSimple.h"
 
 #include <chrono>
 
@@ -18,13 +18,13 @@ long now_ms() {
 
 int main(int argc, char const *argv[])
 {
-    MapOfLists l;
+    MapSumSimple l;
     long initial_count = now_ms();
     for (int i = 0; i < max_iter; i++) {
         if (i % (max_iter / 100) == 0) {
             std::cout << i << " " << now_ms() - initial_count << std::endl;
         }
-        l.insert_s(MapOfLists::S("a", 2));
+        l.insert_s(MapSumSimple::S("a", 2));
     }
     return 0;
 }
