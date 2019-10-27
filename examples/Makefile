@@ -36,3 +36,6 @@ run-select: select
 
 run-listcomp: listcomp
 	time ./listcomp
+
+MapSumSimple.h: MapSumSimple.ds
+	cozy -t 900 --allow-big-sets MapSumSimple.ds --c++ MapSumSimple.h --save MapSumSimple.synthesized -p 8080
