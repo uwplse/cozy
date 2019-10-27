@@ -1,0 +1,23 @@
+#!/usr/bin/env python3
+
+import pickle
+import sys
+
+from cozy.syntax_tools import pprint
+
+synthesized = sys.argv[1]
+method_name = None
+if len(sys.argv) > 2:
+    method_name = sys.argv[2]
+
+impl = pickle.load(open(synthesized, "rb"))
+
+print("===== imple.code =======")
+print(pprint(impl.code))
+
+for x, y in impl.concretization_functions.items():
+    print("===== " + x + " ======")
+    print(pprint(y))
+
+import IPython
+IPython.embed()

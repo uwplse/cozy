@@ -39,3 +39,6 @@ run-listcomp: listcomp
 
 MapSumSimple.h: MapSumSimple.ds
 	cozy -t 900 --allow-big-sets MapSumSimple.ds --c++ MapSumSimple.h --save MapSumSimple.synthesized -p 8080
+
+maplists.h: maplists.ds
+	cozy -t 450 --allow-big-sets maplists.ds --c++ maplists.h --save maplists.synthesized -p 8080
