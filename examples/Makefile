@@ -25,6 +25,9 @@ select.h: select-flatmap.ds
 select: select.cpp select.h
 	g++ -std=c++11 -O3 -Werror '$<' -o '$@'
 
+maplists.h: maplists.synthesized
+	cozy --simple --c++ maplists.h --resume maplists.synthesized
+
 maplists: maplists.cpp maplists.h
 	g++ -std=c++11 -O3 -Wno-parentheses-equality -Werror '$<' -o '$@'
 
@@ -39,6 +42,3 @@ run-listcomp: listcomp
 
 MapSumSimple.h: MapSumSimple.ds
 	cozy -t 900 --allow-big-sets MapSumSimple.ds --c++ MapSumSimple.h --save MapSumSimple.synthesized -p 8080
-
-maplists.h: maplists.ds
-	cozy -t 450 --allow-big-sets maplists.ds --c++ maplists.h --save maplists.synthesized -p 8080

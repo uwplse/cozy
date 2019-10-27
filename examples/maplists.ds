@@ -11,6 +11,8 @@ MapOfLists:
     state Rs : Bag<R>
     state Ss : Bag<S>
 
+    invariant unique [r.A | r <- Rs];
+
     // TODO: fold this into q
     private query sumRB(b: String)
         sum [ s.C | s <- Ss, s.B == b ]
@@ -19,6 +21,7 @@ MapOfLists:
         [(r.A, sumRB(r.B)) | r <- Rs ]
 
     op insert_r(r: R)
+        assume not exists [ r0 | r0 <- Rs, r.A == r0.A ];
         Rs.add(r);
 
     op insert_s(s: S)
