@@ -13,12 +13,8 @@ MapOfLists:
 
     invariant unique [r.A | r <- Rs];
 
-    // TODO: fold this into q
-    private query sumRB(b: String)
-        sum [ s.C | s <- Ss, s.B == b ]
-
     query q()
-        [(r.A, sumRB(r.B)) | r <- Rs ]
+        [(r.A, sum [ s.C | s <- Ss, s.B == r.B, s.C > 1 ]) | r <- Rs ]
 
     op insert_r(r: R)
         assume not exists [ r0 | r0 <- Rs, r.A == r0.A ];
