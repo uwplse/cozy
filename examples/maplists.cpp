@@ -24,6 +24,7 @@ int main(int argc, char const *argv[])
         if (i % (max_iter / 100) == 0) {
             std::cout << i << " " << now_ms() - initial_count << std::endl;
         }
+        l.insert_r(MapOfLists::R(3, "a"));
         l.insert_s(MapOfLists::S("a", 2));
     }
     return 0;

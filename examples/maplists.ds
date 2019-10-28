@@ -8,13 +8,15 @@ MapOfLists:
         C: Int
     }
 
+    extern fmul(x : Int, y : Int) : Float = "{x} * {y}"
+
     state Rs : Bag<R>
     state Ss : Bag<S>
 
     invariant unique [r.A | r <- Rs];
 
     query q()
-        [(r.A, sum [ s.C | s <- Ss, s.B == r.B, s.C > 1 ]) | r <- Rs ]
+        [(r.A, sum [ s.C | s <- Ss, s.B == r.B ]) | r <- Rs ]
 
     op insert_r(r: R)
         assume not exists [ r0 | r0 <- Rs, r.A == r0.A ];
