@@ -1,4 +1,4 @@
-MapOfLists:
+ListSums:
     type R = {
         A: Int,
         B: String

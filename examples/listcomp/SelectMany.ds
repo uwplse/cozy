@@ -1,4 +1,4 @@
-SelectFlatmap:
+SelectMany:
     type R = {
         A: Int,
         B: String

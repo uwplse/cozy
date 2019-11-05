@@ -1,4 +1,4 @@
-#include "select.h"
+#include "SelectMany.h"
 #include <iostream>
 
 void query(SelectFlatmap::_Type3508 elem) {
@@ -7,15 +7,15 @@ void query(SelectFlatmap::_Type3508 elem) {
 }
 
 int main() {
-    SelectFlatmap::R r(15, "hello");
-    std::vector<SelectFlatmap::R> Rs;
+    SelectMany::R r(15, "hello");   
+    std::vector<SelectMany::R> Rs;
     Rs.push_back(r);
 
-    SelectFlatmap::W w("world", 100);
-    std::vector<SelectFlatmap::W> Ws;
+    SelectMany::W w("world", 100);
+    std::vector<SelectMany::W> Ws;
     Ws.push_back(w);
 
-    SelectFlatmap m(Rs, Ws, Ws, Ws);
+    SelectMany m(Rs, Ws, Ws, Ws);
     m.q(query);
     return 0;
 }

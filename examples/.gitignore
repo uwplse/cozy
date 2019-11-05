@@ -2,7 +2,3 @@
 !LSortMain.java
 *.jar
 *.synthesized
-listcomp
-select
-maplists
-MapSumSimple

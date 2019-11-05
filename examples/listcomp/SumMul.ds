@@ -1,4 +1,4 @@
-ListComp02:
+SumMul:
     type R = {
         A: Int,
         B: String
