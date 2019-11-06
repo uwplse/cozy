@@ -5,3 +5,5 @@ TIMEOUT ?= 240
 
 %.bin: %.cpp %.h
 	g++ -std=c++11 -O3 -Werror '$<' -o '$@'
+
+all: ListSums.bin SelectMany.bin SumMul.bin
