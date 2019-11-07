@@ -155,6 +155,8 @@ def _try_optimize(e : Exp, context : Context, pool : Pool):
     from cozy.syntax import ESorted
     from cozy.structures.treemultiset import EMakeMaxTreeMultiset, TMaxTreeMultiset, EMakeMinTreeMultiset, TMinTreeMultiset, ETreeMultisetElems
     target = e
+    if isinstance(target, ESorted) and isinstance(target.e, EEmptyList):
+        yield _check(target.e, context, RUNTIME_POOL)
     if isinstance(target, ESorted) and isinstance(target.e, EStateVar):
         e_max = EMakeMaxTreeMultiset(target.e.e).with_type(TMaxTreeMultiset(target.e.e.type.elem_type))
         e_min = EMakeMinTreeMultiset(target.e.e).with_type(TMinTreeMultiset(target.e.e.type.elem_type))
