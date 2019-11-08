@@ -370,6 +370,8 @@ def excluded_element(xs, args):
                 return (e1.e, EListGet(e1.e, e1.end).with_type(xs.type.elem_type))
     return None
 
+from cozy.syntax_tools import pprint
+
 def optimized_best(xs, keyfunc, op, args):
     argbest = EArgMin if op == "<" else EArgMax
     elem_type = xs.type.elem_type
@@ -471,17 +473,19 @@ def optimized_val(e):
 def optimized_get_field(e, f, args):
     if isinstance(e.type, THandle) and f == "val":
         yield optimized_val(e)
-    if isinstance(e, EStateVar):
+    elif isinstance(e, EStateVar):
         for gf in optimized_get_field(e.e, f, args):
             yield EStateVar(gf).with_type(gf.type)
-    if isinstance(e, EMakeRecord):
+    elif isinstance(e, EMakeRecord):
         yield dict(e.fields)[f]
-    if isinstance(e, ECond):
+    elif isinstance(e, ECond):
         for then_case in optimized_get_field(e.then_branch, f, args):
             for else_case in optimized_get_field(e.else_branch, f, args):
                 yield optimized_cond(e.cond, then_case, else_case)
-    if isinstance(e.type, TRecord):
+    elif isinstance(e.type, TRecord):
         yield EGetField(e, f).with_type(dict(e.type.fields)[f])
+    else:
+        pass
 
 def mapkeys(m):
     if isinstance(m, EMakeMap2):

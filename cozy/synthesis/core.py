@@ -222,7 +222,7 @@ def improve(
             with improve_count.get_lock():
                 if improvement_limit.value != -1 and improve_count.value >= improvement_limit.value:
                     print("improve limit reached")
-                    return
+                    # return
 
                 # NOTE: This code treats `improve_count` as a "budget", and it
                 # "pays" for the improvement before actually doing the work.

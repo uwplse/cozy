@@ -303,7 +303,7 @@ class RubyPrinter(CxxPrinter):
         emap = self.visit(e.map)
         ekey = self.visit(e.key)
         edefault = self.visit(evaluation.construct_value(e.type))
-        return "{emap}.fetch({edefault}, {ekey})".format(emap=emap, ekey=ekey, edefault=edefault)
+        return "{emap}.fetch({ekey}, {edefault})".format(emap=emap, ekey=ekey, edefault=edefault)
 
     def visit_EMakeRecord(self, e):
         t = self.visit(e.type, "")
