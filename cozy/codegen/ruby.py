@@ -12,7 +12,7 @@ from cozy.syntax import (
     EEq, ENot, EAll, ECond, EGetField, EEnumEntry,
     SNoOp, SAssign, SForEach, seq, SDecl, ELt)
 from cozy.target_syntax import TMap, EMapGet, SWhile, SReturn
-from cozy.syntax_tools import free_vars, subst, all_exps
+from cozy.syntax_tools import free_vars, subst, all_exps, pprint
 from cozy.typecheck import is_scalar, is_collection
 
 from .cxx import CxxPrinter
@@ -92,7 +92,8 @@ class RubyPrinter(CxxPrinter):
                 with self.block():
                     for name, t in spec.statevars:
                         initial_value = state_exps[name]
-                        self.visit(simplify_and_optimize(SAssign(EVar("@" + name).with_type(t), initial_value)))
+                        e = simplify_and_optimize(SAssign(EVar("@" + name).with_type(t), initial_value))
+                        self.visit(e)
                 self.write("end")
                 self.end_statement()
 
@@ -364,3 +365,12 @@ class RubyPrinter(CxxPrinter):
         l1 = self.visit(s.lval1)
         l2 = self.visit(s.lval2)
         self.write_stmt(l1, ", ", l2, " = ", l2, ", ", l1)
+
+    def visit_ENull(self, e):
+        return "nil"
+
+    def visit_ENative(self, e):
+        assert e.e == ENum(0)
+        v = self.fv(e.type, "tmp")
+        self.write_stmt(self.visit(v), " = ", "nil")
+        return v.id

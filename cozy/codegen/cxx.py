@@ -852,3 +852,6 @@ class CxxPrinter(CodeGenerator):
             self.write("\n", spec.footer)
             if not spec.footer.endswith("\n"):
                 self.write("\n")
+
+    def visit_ENull(self, e):
+        return "nullptr"
