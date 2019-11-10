@@ -7,7 +7,7 @@
 
 using namespace std::chrono;
 
-constexpr int max_iter = 10000;
+constexpr int max_iter = 100000;
 
 int main(int argc, char const *argv[])
 {
