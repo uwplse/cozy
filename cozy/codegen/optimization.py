@@ -368,9 +368,6 @@ class ExpressionOptimizer(BottomUpRewriter):
                 SForEach(loop_var, e.e,
                     SAssign(sum_var, EBinOp(sum_var, "+", loop_var).with_type(INT)))])))
             return sum_var
-        elif op == UOp.Length:
-            arg = EVar("x").with_type(e.e.type.elem_type)
-            return self.visit(EUnaryOp(UOp.Sum, EMap(e.e, ELambda(arg, ONE)).with_type(INT_BAG)).with_type(INT))
         elif op == UOp.All:
             arg = EVar("x").with_type(e.e.type.elem_type)
             return self.visit(EUnaryOp(UOp.Empty, EFilter(e.e, ELambda(arg, ENot(arg))).with_type(INT_BAG)).with_type(INT))

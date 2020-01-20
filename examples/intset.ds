@@ -1,4 +1,4 @@
-ClauseDB:
+Intset:
 
     state ints : Set<Int>
 

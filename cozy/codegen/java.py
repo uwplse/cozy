@@ -9,7 +9,7 @@ from cozy.syntax import (
     TBag, TSet, TList,
     Exp, ENum, ONE, ZERO, EVar, EBinOp, EEmptyList, ENull, ETuple, EMakeRecord,
     EEq, ENot, EAll, ECond,
-    SNoOp, SAssign, SForEach, seq, SDecl, ELt)
+    SNoOp, SAssign, SForEach, seq, SDecl, ELt, UOp)
 from cozy.target_syntax import TMap, EMapGet, SWhile, SReturn
 from cozy.syntax_tools import free_vars, subst, all_exps
 from cozy.typecheck import is_scalar, is_collection
@@ -139,6 +139,13 @@ class JavaPrinter(CxxPrinter):
     def visit_EEmptyList(self, e):
         t = self.visit(e.type, "()")
         return "new " + t
+
+    def visit_EUnaryOp(self, e):
+        op = e.op
+        if op == UOp.Length:
+            ee = self.visit(e.e)
+            return "({}.size())".format(ee)
+        return super().visit_EUnaryOp(e)
 
     def visit_EEmptyMap(self, e):
         map_type = e.type

@@ -426,7 +426,10 @@ class CxxPrinter(CodeGenerator):
             self.declare(v, e.e)
             self.visit(self.reverse_inplace(v))
             return v.id
-        elif op in (UOp.Distinct, UOp.AreUnique, UOp.Length, UOp.Sum, UOp.All, UOp.Any, UOp.Exists, UOp.Empty, UOp.The):
+        elif op == UOp.Length:
+            ee = self.visit(e.e)
+            return "({}.size())".format(ee)
+        elif op in (UOp.Distinct, UOp.AreUnique, UOp.Sum, UOp.All, UOp.Any, UOp.Exists, UOp.Empty, UOp.The):
             raise Exception("{!r} operator is supposed to be handled by simplify_and_optimize".format(op))
         else:
             raise NotImplementedError(op)
