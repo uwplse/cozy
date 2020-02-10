@@ -6,43 +6,6 @@
 
 import igraph
 
-def _safe_feedback_arc_set(g, method="ip"):
-    """
-    Compute the feedback arc set for directed graph `g`.
-    This is a set of edges that, when removed, break cycles and
-    convert the graph `g` into a DAG.
-
-    This function works around a potential segfault in igraph:
-    https://github.com/igraph/igraph/issues/858
-    """
-
-    assert g.is_directed()
-
-    # No verts? No problem!
-    if g.vcount() == 0:
-        return []
-
-    orig_g = g
-    g = g.copy()
-
-    # Add a "terminal" node with an edge from every vertex.
-    # This should not affect the feedback arc set.
-    new_vertex_id = g.vcount()
-    g.add_vertices(1)
-    g.add_edges([(v, new_vertex_id) for v in range(new_vertex_id)])
-
-    edge_ids = g.feedback_arc_set(method=method)
-
-    # I assume the edge ids are the same between g and its copy?
-    # Let's do a little bit of checking just in case.
-    g.delete_vertices([new_vertex_id])
-    to_check = [g.es[e].source for e in edge_ids]
-    d1 = orig_g.degree(to_check)
-    d2 = g.degree(to_check)
-    assert d1 == d2, "{!r} vs {!r}".format(d1, d2)
-
-    return edge_ids
-
 class DirectedGraph(object):
 
     def __init__(self, nodes, successors):
@@ -70,7 +33,7 @@ class DirectedGraph(object):
         This is a set of edges that, when removed, break all cycles and convert
         `g` into a DAG.
         """
-        return _safe_feedback_arc_set(self.g)
+        return self.g.feedback_arc_set(method="ip")
 
     def delete_edges(self, edge_ids):
         """Delete a set of edges."""
