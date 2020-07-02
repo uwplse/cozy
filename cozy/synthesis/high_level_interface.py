@@ -62,7 +62,6 @@ class ImproveQueryJob(jobs.Job):
     def __str__(self):
         return "ImproveQueryJob[{}]".format(self.q.name)
     def run(self):
-        print("STARTING IMPROVEMENT JOB {}".format(self.q.name))
         os.makedirs(log_dir.value, exist_ok=True)
         with open(os.path.join(log_dir.value, "{}.log".format(self.q.name)), "w", buffering=LINE_BUFFER_MODE) as f:
             sys.stdout = f
@@ -145,6 +144,7 @@ def improve_implementation(
             for q in impl.query_specs:
                 if q.name not in job_query_names:
                     states_maintained_by_q = impl.states_maintained_by(q)
+                    print("STARTING IMPROVEMENT JOB {}".format(q.name))
                     new.append(ImproveQueryJob(
                         impl.abstract_state,
                         list(impl.spec.assumptions) + list(q.assumptions),
