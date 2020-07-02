@@ -172,7 +172,7 @@ def improve_implementation(
         # wait for results
         timeout = Timeout(timeout)
         done = False
-        while not done and not timeout.is_timed_out():
+        while not done and not timeout.is_timed_out() and not jobs.was_interrupted():
             for j in improvement_jobs:
                 if j.done:
                     if j.successful:

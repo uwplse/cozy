@@ -22,6 +22,7 @@ from cozy import invariant_preservation
 from cozy import synthesis
 from cozy.structures import rewriting
 from cozy import opts
+from cozy import jobs
 
 save_failed_codegen_inputs = opts.Option("save-failed-codegen-inputs", str, "/tmp/failed_codegen.py", metavar="PATH")
 checkpoint_prefix = opts.Option("checkpoint-prefix", str, "")
@@ -59,6 +60,14 @@ def run():
     parser.add_argument("file", nargs="?", default=None, help="Input file (omit to use stdin)")
     args = parser.parse_args()
     opts.read(args)
+
+    # Install a handler for SIGINT, the signal that is delivered when you
+    # Ctrl+C a process in Bash.  Cozy also uses SIGINT to terminate child jobs,
+    # and this handler will be inherited by those child jobs.  Conveniently,
+    # the Z3 API also catches SIGINT and stops gracefully, so Cozy can
+    # interrupt child jobs even if they are busy with Z3 solver calls.  SIGINT
+    # is the only signal that interrupts Z3 API calls gracefully.
+    jobs.handle_sigint_gracefully()
 
     improve_count = Value('i', 0)
 

@@ -17,14 +17,46 @@ the `multiprocessing` module, but its use introduces some caveats:
    `multiprocessing` module.
 """
 
+import os
 from multiprocessing import Process, Array, Queue
 from queue import Queue as PlainQueue, Empty, Full
 import threading
+import signal
 
 from cozy.common import partition
 from cozy.opts import Option
 
 do_profiling = Option("profile", bool, False, description="Profile Cozy itself")
+
+_interrupted = False
+def _set_interrupt_flag(signal_number, stack_frame):
+    global _interrupted
+    # print("GOT INTERRUPTED")
+    # import traceback
+    # traceback.print_stack(stack_frame)
+    _interrupted = True
+
+def handle_sigint_gracefully():
+    """Install a graceful handler for SIGINT.
+
+    The handler sets a flag to true when SIGINT happens and does nothing else.
+    Use `was_interrupted()` to check the flag.
+
+    Note: the installed handler is inherited by child processes.  The
+    Job.stop_requested property checks the SIGINT flag in addition to its own
+    private flag, giving an additional cross-process way to stop a running job
+    gracefully.
+    """
+    signal.signal(signal.SIGINT, _set_interrupt_flag)
+
+def was_interrupted():
+    """Determine if SIGINT was sent to this process.
+
+    Precisely, this procedure returns true if a SIGINT signal was ever
+    delivered to this process after the first time handle_sigint_gracefully()
+    was called.
+    """
+    return _interrupted
 
 class Job(object):
     """An interruptable job.
@@ -82,6 +114,7 @@ class Job(object):
 
     def _run(self):
         """Private helper that wraps .run() and sets various exit flags."""
+        handle_sigint_gracefully()
         try:
             if do_profiling.value:
                 import cProfile
@@ -103,7 +136,7 @@ class Job(object):
 
         The implementation of .run() should check this periodically and return
         when it becomes True."""
-        return self._flags[0]
+        return was_interrupted() or self._flags[0]
 
     @property
     def done(self):
@@ -121,9 +154,29 @@ class Job(object):
         Causes this Job's .stop_requested property to become True.
 
         Clients can call .join() to wait for the job to wrap up.
+
+        This method delivers a SIGINT to the job process, interrupting any
+        running Z3 solver call.
         """
         print("requesting stop for {}".format(self))
         self._flags[0] = True
+
+        # Ah, there's a bit of danger here (time-of-check to time-of-use bug):
+        #  (1) is_alive() returns true
+        #  (2) the job process exits
+        #  (3) its PID is reassigned to a different process
+        #  (4) oops, we deliver SIGINT to the wrong process!
+        # Sadly, Python doesn't give us a way to access the actual underlying
+        # process handle, so (I think) this is the best we can do.  In fact,
+        # the actual Python source code has the same bug:
+        # https://github.com/python/cpython/blob/3.8/Lib/multiprocessing/popen_fork.py#L50
+        if self._thread.is_alive():
+            try:
+                os.kill(self._thread.pid, signal.SIGINT)
+            except ProcessLookupError:
+                # This can happen if the job finished in the background between
+                # the check and the kill call.
+                pass
 
     def join(self, timeout=None):
         """Wait for the job to finish and clean up its resources.
