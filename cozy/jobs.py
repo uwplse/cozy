@@ -139,7 +139,8 @@ class Job(object):
         except Exception as e:
             import traceback
             traceback.print_exc()
-        self._flags[1] = True
+        finally:
+            self._flags[1] = True
 
     @property
     def stop_requested(self):
