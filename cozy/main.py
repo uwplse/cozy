@@ -62,11 +62,8 @@ def run():
     opts.read(args)
 
     # Install a handler for SIGINT, the signal that is delivered when you
-    # Ctrl+C a process in Bash.  Cozy also uses SIGINT to terminate child jobs,
-    # and this handler will be inherited by those child jobs.  Conveniently,
-    # the Z3 API also catches SIGINT and stops gracefully, so Cozy can
-    # interrupt child jobs even if they are busy with Z3 solver calls.  SIGINT
-    # is the only signal that interrupts Z3 API calls gracefully.
+    # Ctrl+C a process.  This allows Cozy to exit cleanly when it is
+    # interrupted.  If you need to stop Cozy forcibly, use SIGTERM or SIGKILL.
     jobs.handle_sigint_gracefully()
 
     improve_count = Value('i', 0)

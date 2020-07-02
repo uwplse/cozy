@@ -110,10 +110,12 @@ class Job(object):
 
     def __init__(self):
         self._thread = _multiprocessing_context.Process(target=self._run, daemon=True)
-        self._flags = _multiprocessing_context.Array("b", [False] * 3)
+        self._flags = _multiprocessing_context.Array("b", [False] * 4)
         # flags[0] - stop_requested?
         # flags[1] - done?
         # flags[2] - true iff completed with no exception
+        # flags[3] - if true then SIGINT will be handled gracefully
+        #  (NOTE: false indicates that SIGINT *might* be handled gracefully)
 
     def start(self):
         """Start the job by invoking its .run() method asynchronously."""
@@ -126,6 +128,7 @@ class Job(object):
     def _run(self):
         """Private helper that wraps .run() and sets various exit flags."""
         handle_sigint_gracefully()
+        self._flags[3] = True
         try:
             if do_profiling.value:
                 import cProfile
@@ -182,7 +185,7 @@ class Job(object):
         # process handle, so (I think) this is the best we can do.  In fact,
         # the actual Python source code has the same bug:
         # https://github.com/python/cpython/blob/3.8/Lib/multiprocessing/popen_fork.py#L50
-        if self._thread.is_alive():
+        if self._flags[3] and self._thread.is_alive():
             try:
                 os.kill(self._thread.pid, signal.SIGINT)
             except ProcessLookupError:
