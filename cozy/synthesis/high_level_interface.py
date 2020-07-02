@@ -42,7 +42,7 @@ class ImproveQueryJob(jobs.Job):
             assumptions : [Exp],
             q           : Query,
             context     : Context,
-            k,
+            solutions_q,
             hints       : [Exp]     = [],
             freebies    : [Exp]     = [],
             ops         : [Op]      = [],
@@ -57,7 +57,7 @@ class ImproveQueryJob(jobs.Job):
         self.hints = hints
         self.freebies = freebies
         self.ops = ops
-        self.k = k
+        self.solutions_q = solutions_q
         self.improve_count = improve_count
     def __str__(self):
         return "ImproveQueryJob[{}]".format(self.q.name)
@@ -90,7 +90,7 @@ class ImproveQueryJob(jobs.Job):
                         improve_count=self.improve_count)):
 
                     new_rep, new_ret = unpack_representation(expr)
-                    self.k(new_rep, new_ret)
+                    self.solutions_q.put((self.q, new_rep, new_ret))
                 print("PROVED OPTIMALITY FOR {}".format(self.q.name))
             except core.StopException:
                 print("stopping synthesis of {}".format(self.q.name))
@@ -150,7 +150,7 @@ def improve_implementation(
                         list(impl.spec.assumptions) + list(q.assumptions),
                         q,
                         context=impl.context_for_method(q),
-                        k=(lambda q: lambda new_rep, new_ret: solutions_q.put((q, new_rep, new_ret)))(q),
+                        solutions_q=solutions_q.handle_for_subjobs(),
                         hints=[EStateVar(c).with_type(c.type) for c in impl.concretization_functions.values()],
                         freebies=[e for (v, e) in impl.concretization_functions.items() if EVar(v) in states_maintained_by_q],
                         ops=impl.op_specs,

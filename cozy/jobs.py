@@ -18,7 +18,7 @@ the `multiprocessing` module, but its use introduces some caveats:
 """
 
 import os
-from multiprocessing import Process, Array, Queue
+import multiprocessing
 from queue import Queue as PlainQueue, Empty, Full
 import threading
 import signal
@@ -57,6 +57,17 @@ def was_interrupted():
     was called.
     """
     return _interrupted
+
+# This module uses the "spawn" method for multiprocessing interaction.  This is
+# a little bit of forward-compatibility.  The "spawn" context is the default on
+# Windows (always) and MacOS (in Python 3.8+).  It was introduced in Python
+# 3.4.  The "spawn" context behaves a bit differently from the "fork" context
+# used by default on Linux.  In particular:
+#  - It is allegely a bit slower (but I haven't seen much difference).
+#  - More objects need to be pickled.
+#  - It is less likely to cause crashes due to MacOS's bad fork()
+#    implementation (https://bugs.python.org/issue33725).
+_multiprocessing_context = multiprocessing.get_context("spawn")
 
 class Job(object):
     """An interruptable job.
@@ -98,8 +109,8 @@ class Job(object):
     """
 
     def __init__(self):
-        self._thread = Process(target=self._run, daemon=True)
-        self._flags = Array("b", [False] * 3)
+        self._thread = _multiprocessing_context.Process(target=self._run, daemon=True)
+        self._flags = _multiprocessing_context.Array("b", [False] * 3)
         # flags[0] - stop_requested?
         # flags[1] - done?
         # flags[2] - true iff completed with no exception
@@ -273,7 +284,7 @@ class SafeQueue(object):
         - This queue needs to be closed.
     Proper usage example:
         with SafeQueue() as q:
-            # spawn processes to insert items into q
+            # spawn processes to insert items into q.handle_for_subjobs()
             # get items from q
             # join spawned processes
 
@@ -281,7 +292,7 @@ class SafeQueue(object):
     """
     def __init__(self, queue_to_wrap=None):
         if queue_to_wrap is None:
-            queue_to_wrap = Queue()
+            queue_to_wrap = _multiprocessing_context.Queue()
         self.q = queue_to_wrap
         self.sideq = PlainQueue()
         self.stop_requested = False
@@ -326,3 +337,12 @@ class SafeQueue(object):
                 res.append(self.get(block=False))
             except Empty:
                 return res
+    def handle_for_subjobs(self):
+        """Obtain a handle that can be passed to a Job.
+
+        Due to the limitations of Python's multiprocessing module, a SafeQueue
+        cannot be passed as an argument to a Job.  This method returns a Queue
+        object that can.  The parent is still responsible for holding onto this
+        object and cleaning it up.
+        """
+        return self.q
