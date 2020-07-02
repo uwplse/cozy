@@ -31,7 +31,7 @@ from cozy.target_syntax import (
 from cozy.typecheck import is_collection, is_scalar
 from cozy.syntax_tools import subst, pprint, free_vars, fresh_var, alpha_equivalent, strip_EStateVar, freshen_binders, wrap_naked_statevars, break_conj, inline_lets
 from cozy.wf import exp_wf
-from cozy.common import No, unique, OrderedSet, StopException
+from cozy.common import No, unique, OrderedSet, StopException, never_stop
 from cozy.solver import valid, solver_for_context, ModelCachingSolver
 from cozy.evaluation import construct_value
 from cozy.cost_model import CostModel, Order, LINEAR_TIME_UOPS
@@ -99,10 +99,6 @@ improvement_limit = Option("improvement-limit", int, -1,
 
 allow_random_assignment_heuristic = Option("allow-random-assignment-heuristic", bool, True,
     description="Use a random assignment heuristic instead of solver to solve sat/unsat problem")
-
-def never_stop():
-    """Takes no arguments, always returns False."""
-    return False
 
 def improve(
         target        : Exp,
