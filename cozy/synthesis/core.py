@@ -193,7 +193,10 @@ def improve(
     vars = list(v for (v, p) in context.vars())
     funcs = context.funcs()
 
-    solver = solver_for_context(context, assumptions=assumptions)
+    solver = solver_for_context(
+        context,
+        assumptions=assumptions,
+        stop_callback=stop_callback)
 
     if not solver.satisfiable(ETRUE):
         print("assumptions are unsat; this query will never be called")

@@ -12,13 +12,14 @@ from collections import defaultdict, OrderedDict
 from datetime import datetime, timedelta
 from functools import lru_cache
 import threading
+from typing import Callable
 
 import z3
 
 from cozy.target_syntax import *
 from cozy.syntax_tools import BottomUpExplorer, pprint, free_vars, free_funcs, cse, all_exps, purify
 from cozy.typecheck import is_collection, is_numeric
-from cozy.common import declare_case, fresh_name, Visitor, FrozenDict, typechecked, extend, OrderedSet, make_random_access
+from cozy.common import declare_case, fresh_name, Visitor, FrozenDict, typechecked, extend, OrderedSet, make_random_access, StopException, never_stop
 from cozy import evaluation
 from cozy.opts import Option
 from cozy.structures import extension_handler
@@ -224,13 +225,22 @@ def grid(rows, cols):
     return [[None for c in range(cols)] for r in range(rows)]
 
 class ToZ3(Visitor):
-    def __init__(self, z3ctx, z3solver):
+    def __init__(self, z3ctx, z3solver, stop_callback : Callable[[], bool]):
+        """Create a "ToZ3" object that can convert ASTs to Z3 queries.
+
+        :param z3ctx:         A Z3 context object to use.
+        :param z3solver:      A Z3 solver object to use.
+        :param stop_callback: A zero-argument function that will be checked
+                              periodically.  The solver will raise a
+                              StopException when the callback returns True.
+        """
         self.ctx = z3ctx
         self.solver = z3solver
         self.int_zero = z3.IntVal(0, self.ctx)
         self.int_one  = z3.IntVal(1, self.ctx)
         self.true = z3.BoolVal(True, self.ctx)
         self.false = z3.BoolVal(False, self.ctx)
+        self.stop_callback = stop_callback
         assert to_bool(self.true) is True
         assert to_bool(self.false) is False
         assert to_bool(self.int_zero) is None
@@ -285,6 +295,9 @@ class ToZ3(Visitor):
         else:
             raise NotImplementedError(t)
     def eq(self, t, e1, e2, deep=False):
+        if self.stop_callback():
+            raise StopException("interrupted while encoding equality constraint")
+
         if e1 is e2:
             return self.true
 
@@ -831,6 +844,8 @@ class ToZ3(Visitor):
     def visit_bool(self, e, env):
         return z3.BoolVal(e, self.ctx)
     def visit(self, e, *args):
+        if self.stop_callback():
+            raise StopException("interrupted while encoding {}".format(pprint(e)))
         try:
             return super().visit(e, *args)
         except KeyboardInterrupt:
@@ -1005,7 +1020,8 @@ class IncrementalSolver(object):
             model_callback = None,
             logic : str = None,
             timeout : float = None,
-            do_cse : bool = True):
+            do_cse : bool = True,
+            stop_callback : Callable[[], bool] = never_stop):
 
         if collection_depth is None:
             collection_depth = collection_depth_opt.value
@@ -1026,7 +1042,7 @@ class IncrementalSolver(object):
             if timeout is not None:
                 solver.set("timeout", int(timeout * 1000))
             solver.set("core.validate", validate_model)
-            visitor = ToZ3(ctx, solver)
+            visitor = ToZ3(ctx, solver, stop_callback=stop_callback)
 
             self.visitor = visitor
             self.z3_solver = solver
@@ -1267,13 +1283,13 @@ class ModelCachingSolver(object):
     calls can often be avoided using a counterexample found on a previous call.
     """
 
-    def __init__(self, vars : [EVar], funcs : { str : TFunc }, examples : [dict] = (), assumptions : Exp = ETRUE):
+    def __init__(self, vars : [EVar], funcs : { str : TFunc }, examples : [dict] = (), assumptions : Exp = ETRUE, **kwargs):
         self.vars = list(vars)
         self.funcs = OrderedDict(funcs)
         self.calls = 0
         self.hits = 0
         self.examples = list(examples)
-        self.solver = IncrementalSolver(vars=vars, funcs=funcs)
+        self.solver = IncrementalSolver(vars=vars, funcs=funcs, **kwargs)
         self.solver.add_assumption(assumptions)
 
     def satisfy(self, e):
@@ -1295,8 +1311,9 @@ class ModelCachingSolver(object):
         return not self.satisfiable(ENot(e))
 
 @lru_cache()
-def solver_for_context(context : Context, assumptions : Exp = ETRUE):
+def solver_for_context(context : Context, assumptions : Exp = ETRUE, **kwargs):
     return ModelCachingSolver(
         vars        = [v for v, _ in context.vars()],
         funcs       = context.funcs(),
-        assumptions = assumptions)
+        assumptions = assumptions,
+        **kwargs)
