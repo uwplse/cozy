@@ -108,14 +108,36 @@ class Job(object):
     way to retrieve the thrown exception, if any.
     """
 
+    # -------------------------------------------------------------------------
+    # Names for cell indexes in a Job's flags array.  For efficiency, the flags
+    # are represented as a compact boolean array in shared memory.  These
+    # constants give human-readable names to the elements of that array.  All
+    # flags are initially false.
+
+    # The parent process sets this flag to true when it wants to request that
+    # a Job should stop gracefully.
+    _STOP_REQUESTED_FLAG           = 0
+
+    # The Job sets this flag to true when it finishes, regardless of the
+    # outcome.
+    _DONE_FLAG                     = 1
+
+    # The Job sets this flag to true when it finishes without an exception.
+    _DONE_NORMALLY_FLAG            = 2
+
+    # The Job sets this flag to true after it installs a handler for SIGINT.
+    # The parent should only send SIGINT if this flag is true.  If this flag is
+    # false, then the handler MAY OR MAY NOT have been installed yet.
+    _SIGINT_HANDLER_INSTALLED_FLAG = 3
+
+    # The total number of flags.
+    _FLAG_COUNT                    = 4
+
+    # -------------------------------------------------------------------------
+
     def __init__(self):
         self._thread = multiprocessing_context.Process(target=self._run, daemon=True)
-        self._flags = multiprocessing_context.Array("b", [False] * 4)
-        # flags[0] - stop_requested?
-        # flags[1] - done?
-        # flags[2] - true iff completed with no exception
-        # flags[3] - if true then SIGINT will be handled gracefully
-        #  (NOTE: false indicates that SIGINT *might* be handled gracefully)
+        self._flags = multiprocessing_context.Array("b", [False] * Job._FLAG_COUNT)
 
     def start(self):
         """Start the job by invoking its .run() method asynchronously."""
@@ -128,7 +150,7 @@ class Job(object):
     def _run(self):
         """Private helper that wraps .run() and sets various exit flags."""
         install_graceful_sigint_handler()
-        self._flags[3] = True
+        self._flags[Job._SIGINT_HANDLER_INSTALLED_FLAG] = True
         try:
             if do_profiling.value:
                 import cProfile
@@ -138,12 +160,12 @@ class Job(object):
                 cProfile.runctx("self.run()", globals(), locals(), filename=filename)
             else:
                 self.run()
-            self._flags[2] = True
+            self._flags[Job._DONE_NORMALLY_FLAG] = True
         except Exception as e:
             import traceback
             traceback.print_exc()
         finally:
-            self._flags[1] = True
+            self._flags[Job._DONE_FLAG] = True
 
     @property
     def stop_requested(self):
@@ -151,17 +173,17 @@ class Job(object):
 
         The implementation of .run() should check this periodically and return
         when it becomes True."""
-        return was_interrupted() or self._flags[0]
+        return was_interrupted() or self._flags[Job._STOP_REQUESTED_FLAG]
 
     @property
     def done(self):
         """True if the job has stopped."""
-        return self._flags[1] or (self._thread.exitcode is not None)
+        return self._flags[Job._DONE_FLAG] or (self._thread.exitcode is not None)
 
     @property
     def successful(self):
         """True if the job has stopped without throwing an uncaught exception."""
-        return self._flags[2]
+        return self._flags[Job._DONE_NORMALLY_FLAG]
 
     def request_stop(self):
         """Request a graceful stop.
@@ -174,7 +196,7 @@ class Job(object):
         running Z3 solver call.
         """
         print("requesting stop for {}".format(self))
-        self._flags[0] = True
+        self._flags[Job._STOP_REQUESTED_FLAG] = True
 
         # Ah, there's a bit of danger here (time-of-check to time-of-use bug):
         #  (1) is_alive() returns true
@@ -185,7 +207,7 @@ class Job(object):
         # process handle, so (I think) this is the best we can do.  In fact,
         # the actual Python source code has the same bug:
         # https://github.com/python/cpython/blob/3.8/Lib/multiprocessing/popen_fork.py#L50
-        if self._flags[3] and self._thread.is_alive():
+        if self._flags[Job._SIGINT_HANDLER_INSTALLED_FLAG] and self._thread.is_alive():
             try:
                 os.kill(self._thread.pid, signal.SIGINT)
             except ProcessLookupError:
