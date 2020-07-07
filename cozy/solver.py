@@ -1032,6 +1032,7 @@ class IncrementalSolver(object):
         self.collection_depth = collection_depth
         self.validate_model = validate_model
         self.model_callback = model_callback
+        self.stop_callback = stop_callback
         self._env = OrderedDict()
         self.stk = []
         self.do_cse = do_cse
@@ -1171,6 +1172,11 @@ class IncrementalSolver(object):
             with task("invoke Z3"):
                 res = solver.check()
             _tock(e, "solve")
+
+            if self.stop_callback():
+                solver.pop()
+                raise StopException("stop requested during Z3 solver call")
+
             if res == z3.unsat:
                 solver.pop()
                 return None
