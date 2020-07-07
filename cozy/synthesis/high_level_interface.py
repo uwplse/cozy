@@ -73,19 +73,22 @@ class ImproveQueryJob(jobs.Job):
             if nice_children.value:
                 os.nice(20)
 
-            cost_model = CostModel(
-                    funcs=self.context.funcs(),
-                    assumptions=EAll(self.assumptions),
-                    freebies=self.freebies,
-                    ops=self.ops)
+            stop_callback = lambda: self.stop_requested
 
             try:
+                cost_model = CostModel(
+                        funcs=self.context.funcs(),
+                        assumptions=EAll(self.assumptions),
+                        freebies=self.freebies,
+                        ops=self.ops,
+                        solver_args={"stop_callback": stop_callback})
+
                 for expr in itertools.chain((self.q.ret,), core.improve(
                         target=self.q.ret,
                         assumptions=EAll(self.assumptions),
                         context=self.context,
                         hints=self.hints,
-                        stop_callback=lambda: self.stop_requested,
+                        stop_callback=stop_callback,
                         cost_model=cost_model,
                         ops=self.ops,
                         improve_count=self.improve_count)):

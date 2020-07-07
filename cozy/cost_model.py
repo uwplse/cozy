@@ -118,7 +118,8 @@ class CostModel(object):
             examples                = (),
             funcs                   = (),
             freebies        : [Exp] = [],
-            ops             : [Op]  = []):
+            ops             : [Op]  = [],
+            solver_args     : dict  = {}):
         """
         assumptions : assumed to be true when comparing expressions
         examples    : initial examples (the right set of examples can speed up
@@ -129,7 +130,7 @@ class CostModel(object):
         ops         : mutators which are used to determine how expensive it is
                       to maintain a state variable
         """
-        self.solver = ModelCachingSolver(vars=(), funcs=funcs, examples=examples, assumptions=assumptions)
+        self.solver = ModelCachingSolver(vars=(), funcs=funcs, examples=examples, assumptions=assumptions, **solver_args)
         self.assumptions = assumptions
         # self.examples = list(examples)
         self.funcs = OrderedDict(funcs)
