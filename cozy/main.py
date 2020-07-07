@@ -62,7 +62,7 @@ def run():
     # Install a handler for SIGINT, the signal that is delivered when you
     # Ctrl+C a process.  This allows Cozy to exit cleanly when it is
     # interrupted.  If you need to stop Cozy forcibly, use SIGTERM or SIGKILL.
-    jobs.handle_sigint_gracefully()
+    jobs.install_graceful_sigint_handler()
 
     improve_count = jobs.multiprocessing_context.Value('i', 0)
 

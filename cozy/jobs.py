@@ -36,7 +36,7 @@ def _set_interrupt_flag(signal_number, stack_frame):
     # traceback.print_stack(stack_frame)
     _interrupted = True
 
-def handle_sigint_gracefully():
+def install_graceful_sigint_handler():
     """Install a graceful handler for SIGINT.
 
     The handler sets a flag to true when SIGINT happens and does nothing else.
@@ -53,7 +53,7 @@ def was_interrupted():
     """Determine if SIGINT was sent to this process.
 
     Precisely, this procedure returns true if a SIGINT signal was ever
-    delivered to this process after the first time handle_sigint_gracefully()
+    delivered to this process after the first time install_graceful_sigint_handler()
     was called.
     """
     return _interrupted
@@ -127,7 +127,7 @@ class Job(object):
 
     def _run(self):
         """Private helper that wraps .run() and sets various exit flags."""
-        handle_sigint_gracefully()
+        install_graceful_sigint_handler()
         self._flags[3] = True
         try:
             if do_profiling.value:
