@@ -67,7 +67,7 @@ def was_interrupted():
 #  - More objects need to be pickled.
 #  - It is less likely to cause crashes due to MacOS's bad fork()
 #    implementation (https://bugs.python.org/issue33725).
-_multiprocessing_context = multiprocessing.get_context("spawn")
+multiprocessing_context = multiprocessing.get_context("spawn")
 
 class Job(object):
     """An interruptable job.
@@ -109,8 +109,8 @@ class Job(object):
     """
 
     def __init__(self):
-        self._thread = _multiprocessing_context.Process(target=self._run, daemon=True)
-        self._flags = _multiprocessing_context.Array("b", [False] * 4)
+        self._thread = multiprocessing_context.Process(target=self._run, daemon=True)
+        self._flags = multiprocessing_context.Array("b", [False] * 4)
         # flags[0] - stop_requested?
         # flags[1] - done?
         # flags[2] - true iff completed with no exception
@@ -296,7 +296,7 @@ class SafeQueue(object):
     """
     def __init__(self, queue_to_wrap=None):
         if queue_to_wrap is None:
-            queue_to_wrap = _multiprocessing_context.Queue()
+            queue_to_wrap = multiprocessing_context.Queue()
         self.q = queue_to_wrap
         self.sideq = PlainQueue()
         self.stop_requested = False

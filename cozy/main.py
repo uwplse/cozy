@@ -10,8 +10,6 @@ import argparse
 import datetime
 import pickle
 
-from multiprocessing import Value
-
 from cozy import parse
 from cozy import codegen
 from cozy import common
@@ -66,7 +64,7 @@ def run():
     # interrupted.  If you need to stop Cozy forcibly, use SIGTERM or SIGKILL.
     jobs.handle_sigint_gracefully()
 
-    improve_count = Value('i', 0)
+    improve_count = jobs.multiprocessing_context.Value('i', 0)
 
     if args.resume:
         with common.open_maybe_stdin(args.file or "-", mode="rb") as f:
