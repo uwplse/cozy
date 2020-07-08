@@ -10,8 +10,6 @@ import argparse
 import datetime
 import pickle
 
-from multiprocessing import Value
-
 from cozy import parse
 from cozy import codegen
 from cozy import common
@@ -22,6 +20,7 @@ from cozy import invariant_preservation
 from cozy import synthesis
 from cozy.structures import rewriting
 from cozy import opts
+from cozy import jobs
 
 save_failed_codegen_inputs = opts.Option("save-failed-codegen-inputs", str, "/tmp/failed_codegen.py", metavar="PATH")
 checkpoint_prefix = opts.Option("checkpoint-prefix", str, "")
@@ -60,7 +59,12 @@ def run():
     args = parser.parse_args()
     opts.read(args)
 
-    improve_count = Value('i', 0)
+    # Install a handler for SIGINT, the signal that is delivered when you
+    # Ctrl+C a process.  This allows Cozy to exit cleanly when it is
+    # interrupted.  If you need to stop Cozy forcibly, use SIGTERM or SIGKILL.
+    jobs.install_graceful_sigint_handler()
+
+    improve_count = jobs.multiprocessing_context.Value('i', 0)
 
     if args.resume:
         with common.open_maybe_stdin(args.file or "-", mode="rb") as f:

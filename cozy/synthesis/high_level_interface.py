@@ -42,7 +42,7 @@ class ImproveQueryJob(jobs.Job):
             assumptions : [Exp],
             q           : Query,
             context     : Context,
-            k,
+            solutions_q,
             hints       : [Exp]     = [],
             freebies    : [Exp]     = [],
             ops         : [Op]      = [],
@@ -57,44 +57,53 @@ class ImproveQueryJob(jobs.Job):
         self.hints = hints
         self.freebies = freebies
         self.ops = ops
-        self.k = k
+        self.solutions_q = solutions_q
         self.improve_count = improve_count
     def __str__(self):
         return "ImproveQueryJob[{}]".format(self.q.name)
     def run(self):
-        print("STARTING IMPROVEMENT JOB {}".format(self.q.name))
         os.makedirs(log_dir.value, exist_ok=True)
         with open(os.path.join(log_dir.value, "{}.log".format(self.q.name)), "w", buffering=LINE_BUFFER_MODE) as f:
+            original_stdout = sys.stdout
             sys.stdout = f
+
             print("STARTING IMPROVEMENT JOB {}".format(self.q.name))
             print(pprint(self.q))
 
             if nice_children.value:
                 os.nice(20)
 
-            cost_model = CostModel(
-                    funcs=self.context.funcs(),
-                    assumptions=EAll(self.assumptions),
-                    freebies=self.freebies,
-                    ops=self.ops)
+            stop_callback = lambda: self.stop_requested
 
             try:
+                cost_model = CostModel(
+                        funcs=self.context.funcs(),
+                        assumptions=EAll(self.assumptions),
+                        freebies=self.freebies,
+                        ops=self.ops,
+                        solver_args={"stop_callback": stop_callback})
+
                 for expr in itertools.chain((self.q.ret,), core.improve(
                         target=self.q.ret,
                         assumptions=EAll(self.assumptions),
                         context=self.context,
                         hints=self.hints,
-                        stop_callback=lambda: self.stop_requested,
+                        stop_callback=stop_callback,
                         cost_model=cost_model,
                         ops=self.ops,
                         improve_count=self.improve_count)):
 
                     new_rep, new_ret = unpack_representation(expr)
-                    self.k(new_rep, new_ret)
+                    self.solutions_q.put((self.q, new_rep, new_ret))
                 print("PROVED OPTIMALITY FOR {}".format(self.q.name))
             except core.StopException:
                 print("stopping synthesis of {}".format(self.q.name))
                 return
+
+            # Restore the original stdout handle.  Python multiprocessing does
+            # some stream flushing as the process exits, and if we leave stdout
+            # unchanged then it will refer to a closed file when that happens.
+            sys.stdout = original_stdout
 
 def improve_implementation(
         impl              : Implementation,
@@ -145,12 +154,13 @@ def improve_implementation(
             for q in impl.query_specs:
                 if q.name not in job_query_names:
                     states_maintained_by_q = impl.states_maintained_by(q)
+                    print("STARTING IMPROVEMENT JOB {}".format(q.name))
                     new.append(ImproveQueryJob(
                         impl.abstract_state,
                         list(impl.spec.assumptions) + list(q.assumptions),
                         q,
                         context=impl.context_for_method(q),
-                        k=(lambda q: lambda new_rep, new_ret: solutions_q.put((q, new_rep, new_ret)))(q),
+                        solutions_q=solutions_q.handle_for_subjobs(),
                         hints=[EStateVar(c).with_type(c.type) for c in impl.concretization_functions.values()],
                         freebies=[e for (v, e) in impl.concretization_functions.items() if EVar(v) in states_maintained_by_q],
                         ops=impl.op_specs,
@@ -172,7 +182,7 @@ def improve_implementation(
         # wait for results
         timeout = Timeout(timeout)
         done = False
-        while not done and not timeout.is_timed_out():
+        while not done and not timeout.is_timed_out() and not jobs.was_interrupted():
             for j in improvement_jobs:
                 if j.done:
                     if j.successful:

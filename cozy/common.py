@@ -553,6 +553,13 @@ def compare_with_lt(x, y):
     else:
         return 0
 
+def never_stop():
+    """Takes no arguments, always returns False.
+
+    This is the default "stop callback" value for procedures that require one.
+    """
+    return False
+
 class StopException(Exception):
     """
     Used to indicate that a process should stop operation.
