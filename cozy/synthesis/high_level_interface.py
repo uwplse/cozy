@@ -67,15 +67,15 @@ class ImproveQueryJob(jobs.Job):
             original_stdout = sys.stdout
             sys.stdout = f
 
-            print("STARTING IMPROVEMENT JOB {}".format(self.q.name))
-            print(pprint(self.q))
-
-            if nice_children.value:
-                os.nice(20)
-
-            stop_callback = lambda: self.stop_requested
-
             try:
+                print("STARTING IMPROVEMENT JOB {}".format(self.q.name))
+                print(pprint(self.q))
+
+                if nice_children.value:
+                    os.nice(20)
+
+                stop_callback = lambda: self.stop_requested
+
                 cost_model = CostModel(
                         funcs=self.context.funcs(),
                         assumptions=EAll(self.assumptions),
@@ -99,11 +99,11 @@ class ImproveQueryJob(jobs.Job):
             except core.StopException:
                 print("stopping synthesis of {}".format(self.q.name))
                 return
-
-            # Restore the original stdout handle.  Python multiprocessing does
-            # some stream flushing as the process exits, and if we leave stdout
-            # unchanged then it will refer to a closed file when that happens.
-            sys.stdout = original_stdout
+            finally:
+                # Restore the original stdout handle.  Python multiprocessing does
+                # some stream flushing as the process exits, and if we leave stdout
+                # unchanged then it will refer to a closed file when that happens.
+                sys.stdout = original_stdout
 
 def improve_implementation(
         impl              : Implementation,
