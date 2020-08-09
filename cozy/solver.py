@@ -471,6 +471,8 @@ class ToZ3(Visitor):
                 res = self.tuple_sorts[t] = z3.TupleSort(fresh_name("CustomTupleSort"), [self.symbolic_sort(t) for t in t.ts], self.ctx)
             sort, constructor, projections = res
             return sort
+        elif isinstance(t, TRecord):
+            return self.symbolic_sort(TTuple(tuple(ft for field, ft in t.fields)))
         else:
             raise NotImplementedError(t)
     def symbolic_form(self, t, x):
@@ -523,6 +525,10 @@ class ToZ3(Visitor):
             self.symbolic_sort(t)
             sort, constructor, projections = self.tuple_sorts[t]
             return constructor(*[self.symbolic_form(tt, elem) for tt, elem in zip(t.ts, x)])
+        elif isinstance(t, TRecord):
+            return self.symbolic_form(
+                TTuple(tuple(ft for field, ft in t.fields)),
+                tuple(x[field] for field, ft in t.fields))
         else:
             raise NotImplementedError(t)
     def count_in(self, t, bag, x, deep=False):
