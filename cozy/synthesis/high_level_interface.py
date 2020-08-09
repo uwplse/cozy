@@ -93,8 +93,8 @@ class ImproveQueryJob(jobs.Job):
                         ops=self.ops,
                         improve_count=self.improve_count)):
 
-                    new_rep, new_ret = unpack_representation(expr)
-                    self.solutions_q.put((self.q, new_rep, new_ret))
+                    self.solutions_q.put((self.q, expr))
+
                 print("PROVED OPTIMALITY FOR {}".format(self.q.name))
             except core.StopException:
                 print("stopping synthesis of {}".format(self.q.name))
@@ -194,7 +194,7 @@ def improve_implementation(
             done = all(j.done for j in improvement_jobs)
 
             try:
-                # list of (Query, new_rep, new_ret) objects
+                # list of (Query, packed_expr) objects
                 results = solutions_q.drain(block=True, timeout=0.5)
             except Empty:
                 continue
@@ -204,7 +204,7 @@ def improve_implementation(
             improved_queries_by_name = OrderedDict()
             killed = 0
             for r in results:
-                q, new_rep, new_ret = r
+                q, packed_expr = r
                 if q.name in improved_queries_by_name:
                     killed += 1
                 improved_queries_by_name[q.name] = r
@@ -221,12 +221,12 @@ def improve_implementation(
                 return -1
             improvements.sort(key = lambda i: index_of(impl.query_specs, lambda qq: qq.name == i[0].name))
             print("update order:")
-            for (q, _, _) in improvements:
+            for (q, _) in improvements:
                 print("  --> {}".format(q.name))
 
             # update query implementations
             i = 1
-            for (q, new_rep, new_ret) in improvements:
+            for (q, packed_expr) in improvements:
                 if timeout.is_timed_out():
                     break
 
@@ -240,6 +240,7 @@ def improve_implementation(
                 #   - we visited the improvement for X first
                 #   - after cleanup, q is no longer needed and was removed
                 if q.name in [qq.name for qq in impl.query_specs]:
+                    new_rep, new_ret = unpack_representation(packed_expr)
                     elapsed = datetime.datetime.now() - start_time
                     print("SOLUTION FOR {} AT {} [size={}]".format(q.name, elapsed, new_ret.size() + sum(proj.size() for (v, proj) in new_rep)))
                     print("-" * 40)
