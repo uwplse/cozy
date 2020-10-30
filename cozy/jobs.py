@@ -12,6 +12,10 @@ the `multiprocessing` module, but its use introduces some caveats:
  - There is no shared memory between Jobs, so the only way to collect results
    is by using a SafeQueue or by using `multiprocessing.Value` or
    `multiprocessing.Array`.
+ - All option values (from the cozy.opts module) are copied into a job.
+   However, since there is no shared memory, changes to option values won't be
+   visible in the job after it starts.  (You shouldn't be dynamically changing
+   option values anyway.)
  - The synchronization primitives (i.e. locks) in the `threading` module do not
    affect Jobs; you must use the synchronization primitives in the
    `multiprocessing` module.
@@ -24,9 +28,9 @@ import threading
 import signal
 
 from cozy.common import partition
-from cozy.opts import Option
+import cozy.opts as opts
 
-do_profiling = Option("profile", bool, False, description="Profile Cozy itself")
+do_profiling = opts.Option("profile", bool, False, description="Profile Cozy itself")
 
 _interrupted = False
 def _set_interrupt_flag(signal_number, stack_frame):
@@ -141,6 +145,8 @@ class Job(object):
 
     def start(self):
         """Start the job by invoking its .run() method asynchronously."""
+        # NOTE: take a snapshot of option values here (as late as possible).
+        self._options = opts.snapshot()
         self._thread.start()
 
     def run(self):
@@ -149,6 +155,8 @@ class Job(object):
 
     def _run(self):
         """Private helper that wraps .run() and sets various exit flags."""
+        # NOTE: options are restored from the snapshot taken in self.start().
+        opts.restore(self._options)
         install_graceful_sigint_handler()
         self._flags[Job._SIGINT_HANDLER_INSTALLED_FLAG] = True
         try:

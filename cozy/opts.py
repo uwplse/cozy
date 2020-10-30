@@ -12,6 +12,10 @@ so far.
 # All Option objects that have ever been created.
 _OPTS = []
 
+# Default values for options.  The `restore` procedure needs this to override
+# values for options in modules that have not been imported yet.
+_DEFAULT_VALUE_OVERRIDES = {}
+
 class Option(object):
     def __init__(self, name, type, default, description="", metavar=None):
         assert type in (bool, str, int)
@@ -19,7 +23,7 @@ class Option(object):
         self.description = description
         self.type = type
         self.default = default
-        self.value = default
+        self.value = _DEFAULT_VALUE_OVERRIDES.get(name, default)
         self.metavar = metavar
         _OPTS.append(self)
 
@@ -49,3 +53,18 @@ def read(args):
             o.value = not o.value
         if o.type is int:
             o.value = int(o.value)
+
+def snapshot():
+    """Produce a snapshot of current option values."""
+    return { o.name : o.value for o in _OPTS }
+
+def restore(snap):
+    """Restore a snapshot of option values."""
+    global _DEFAULT_VALUE_OVERRIDES
+
+    # Set the values for options that have already been imported.
+    for o in _OPTS:
+        o.value = snap.get(o.name, o.value)
+
+    # Set the overrides for options that have not yet been imported.
+    _DEFAULT_VALUE_OVERRIDES = dict(snap)
