@@ -7,7 +7,7 @@ from cozy.syntax import (
     TBag, TSet, TList,
     Exp, ENum, EVar, ETuple, ETupleGet,
     ENot, EGetField, EEnumEntry,
-    SNoOp, SAssign, SDecl)
+    SNoOp, SAssign, SDecl, UOp)
 from cozy.target_syntax import EMapGet, SReturn
 from cozy.syntax_tools import all_exps
 from cozy.typecheck import is_scalar
@@ -148,6 +148,13 @@ class RubyPrinter(CxxPrinter):
             self.visit(simplify_and_optimize(SReturn(q.ret)))
         self.write("end")
         self.end_statement()
+
+    def visit_EUnaryOp(self, e):
+        op = e.op
+        if op == UOp.Length:
+            ee = self.visit(e.e)
+            return "({}.length)".format(ee)
+        return super().visit_EUnaryOp(e)
 
     def visit_EEmptyList(self, e):
         return "[]"
